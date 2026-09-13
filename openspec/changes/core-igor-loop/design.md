@@ -104,7 +104,13 @@ consequences is worth reaching first.
   calibration silently governs the buffer, so `igor budget` reports calibration *age* and
   exhaustion cross-checks the number.
 - **The LLM triage call is the one unbounded cost** → Predicates gate it, and skipped items are
-  recorded so the ratio is observable rather than assumed.
+  recorded so the ratio is observable rather than assumed. First measurement, against live
+  repositories: an open-issue query returns 500 candidates on `cli/cli` and 159 on
+  `BrightID/BrightID`, of which 10% and 0.6% respectively already have work in flight. So the
+  free in-flight skip removes far less than hoped on a quiet repository, and lane predicates
+  are carrying essentially all of the reduction. Paths named in issue text are rarer still —
+  14% and 1.3% — so a `paths.under` lane will be weak on a repository that discusses symptoms
+  rather than files.
 - **Polling wastes calls when nothing changes** → Accepted for latency that does not matter;
   watermarks reduce it and are a cache, not a correctness mechanism.
 

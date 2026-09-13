@@ -1,48 +1,10 @@
-import { execFile, spawn } from 'node:child_process'
+import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
+import { gh, GhError } from './gh.js'
 
 const run = promisify(execFile)
 
-export class GitHubError extends Error {}
-
-/**
- * Runs a command, optionally writing to its stdin. `execFile`'s promisified form silently
- * ignores an `input` option — that belongs to `execFileSync` — so anything reading stdin
- * hangs forever waiting on input that never arrives.
- */
-function runWithInput(
-  command: string,
-  args: readonly string[],
-  input: string,
-): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { stdio: ['pipe', 'pipe', 'pipe'] })
-    let stdout = ''
-    let stderr = ''
-    child.stdout.on('data', (chunk) => (stdout += chunk))
-    child.stderr.on('data', (chunk) => (stderr += chunk))
-    child.on('error', reject)
-    child.on('close', (code) => {
-      if (code === 0) resolve(stdout)
-      else reject(new Error(stderr.trim() || `exited with code ${code}`))
-    })
-    child.stdin.end(input)
-  })
-}
-
-/** Uses the gh CLI so credentials and enterprise hosts are whatever the user already set up. */
-async function gh(args: string[], input?: string): Promise<unknown> {
-  try {
-    const stdout =
-      input === undefined
-        ? (await run('gh', args, { maxBuffer: 32 * 1024 * 1024 })).stdout
-        : await runWithInput('gh', args, input)
-    return stdout.trim() === '' ? null : JSON.parse(stdout)
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    throw new GitHubError(`gh ${args.slice(0, 2).join(' ')} failed: ${message}`)
-  }
-}
+export class GitHubError extends GhError {}
 
 /** Reads `owner/name` from a checkout's origin remote, so it cannot drift from config. */
 export async function repoFromCheckout(dir: string): Promise<string> {
@@ -134,10 +96,11 @@ export async function openPullRequest(
   base: string,
   title: string,
   body: string,
+  draft = false,
 ): Promise<OpenedPr> {
   const pr = (await gh(
     ['api', `repos/${repo}/pulls`, '--method', 'POST', '--input', '-'],
-    JSON.stringify({ title, head, base, body }),
+    JSON.stringify({ title, head, base, body, draft }),
   )) as { number: number; html_url: string }
   return { number: pr.number, url: pr.html_url }
 }

@@ -20,13 +20,13 @@
 
 ## 3. Surface adapter and GitHub
 
-- [ ] 3.1 Define the tracker interface: search, claim, verify claim (returning held/lost/stopped), report, identity, and whether assignment is native
-- [ ] 3.2 Define the code-host interface: produce a reversible artifact, and link it back to an item
-- [ ] 3.3 Define the normalized candidate: id, url, title, body, author, state, labels, linked paths, age, work-in-flight
-- [ ] 3.4 Implement the GitHub tracker: issue search from a native query passed through verbatim
-- [ ] 3.5 Implement GitHub work-in-flight detection via linked pull requests
-- [ ] 3.6 Implement the GitHub code host: draft pull request, linked with `Closes #n`
-- [ ] 3.7 Verify the normalized shape is produced identically whether an issue has labels, assignees, or neither
+- [x] 3.1 Define the tracker interface: search, claim, verify claim (returning held/lost/stopped), report, identity, and whether assignment is native
+- [x] 3.2 Define the code-host interface: produce a reversible artifact, and link it back to an item
+- [x] 3.3 Define the normalized candidate: id, url, title, body, author, state, labels, linked paths, age, work-in-flight
+- [x] 3.4 Implement the GitHub tracker: issue search from a native query passed through verbatim
+- [x] 3.5 Implement GitHub work-in-flight detection via linked pull requests
+- [x] 3.6 Implement the GitHub code host: draft pull request, linked with `Closes #n`
+- [x] 3.7 Verify the normalized shape is produced identically whether an issue has labels, assignees, or neither
 
 ## 4. Discovery
 

@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process'
+import { gh, GhError } from './gh.js'
 
 /**
  * Machine output gets a machine venue. State lives on an orphan branch so `main` stays
@@ -7,27 +7,9 @@ import { spawn } from 'node:child_process'
  */
 export const STATE_BRANCH = 'igor-state'
 
-export class StateError extends Error {}
+export class StateError extends GhError {}
 
-function ghJson(args: readonly string[], input?: string): Promise<unknown> {
-  return new Promise((resolve, reject) => {
-    const child = spawn('gh', args, { stdio: ['pipe', 'pipe', 'pipe'] })
-    let out = ''
-    let err = ''
-    child.stdout.on('data', (c) => (out += c))
-    child.stderr.on('data', (c) => (err += c))
-    child.on('error', reject)
-    child.on('close', (code) => {
-      if (code !== 0) return reject(new StateError(err.trim() || `gh exited ${code}`))
-      try {
-        resolve(out.trim() === '' ? null : JSON.parse(out))
-      } catch {
-        reject(new StateError(`gh returned unparseable output: ${out.slice(0, 200)}`))
-      }
-    })
-    child.stdin.end(input ?? '')
-  })
-}
+const ghJson = gh
 
 async function branchExists(repo: string, branch: string): Promise<boolean> {
   try {
