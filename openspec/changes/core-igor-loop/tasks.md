@@ -1,22 +1,22 @@
 ## 1. Foundations
 
-- [ ] 1.1 Extend config loading to resolve role files from the destination, alongside the existing store config
+- [x] 1.1 Extend config loading to resolve role files from the destination, alongside the existing store config
 - [x] 1.2 Implement state-branch read and write through the git tree API, reusing the machinery `propose` already uses — no checkout
 - [x] 1.3 Create the orphan state branch on first write, so a fresh destination needs no setup
 - [x] 1.4 Verify losing the state branch entirely degrades to re-examining old items, never to duplicate claims — a missing file reads as `undefined` rather than throwing
 
 ## 2. Role config
 
-- [ ] 2.1 Define the role type: `extends`, `seat`, `sources`, `lane`, `instructions`, `completion`, `claim`, `allow`, `budget_share`, `reviewers` — filename as name
-- [ ] 2.2 Implement `extends` resolution across levels, with the org base as the default parent
-- [ ] 2.3 Implement monotonic merging for permission-shaped fields, rejecting a role that widens `allow` or raises `budget_share`
-- [ ] 2.4 Implement override merging for settings and append merging for `instructions`
-- [ ] 2.5 Implement append merging for `lane`, conjoining constraints so an org exclusion cannot be escaped by any role
-- [ ] 2.6 Validate `allow` against the closed vocabulary so a typo fails loudly rather than granting nothing
-- [ ] 2.7 Reject a `completion` action absent from the effective `allow`, so completion cannot bypass a permission
-- [ ] 2.8 Apply defaults for settle interval, cooldown, and calibration staleness, marked as tunable guesses
-- [ ] 2.9 Implement `igor role explain`, showing the effective merged config and which level each value came from
-- [ ] 2.10 Tests for each merge semantic, especially that widening is rejected and that lane exclusions survive
+- [x] 2.1 Define the role type: `extends`, `seat`, `sources`, `lane`, `instructions`, `completion`, `claim`, `allow`, `budget_share`, `reviewers` — filename as name
+- [x] 2.2 Implement `extends` resolution across levels, with the org base as the default parent
+- [x] 2.3 Implement monotonic merging for permission-shaped fields, rejecting a role that widens `allow` or raises `budget_share`
+- [x] 2.4 Implement override merging for settings and append merging for `instructions`
+- [x] 2.5 Implement append merging for `lane`, conjoining constraints so an org exclusion cannot be escaped by any role
+- [x] 2.6 Validate `allow` against the closed vocabulary so a typo fails loudly rather than granting nothing
+- [x] 2.7 Reject a `completion` action absent from the effective `allow`, so completion cannot bypass a permission
+- [x] 2.8 Apply defaults for settle interval, cooldown, and calibration staleness, marked as tunable guesses
+- [x] 2.9 Implement `igor role explain`, showing the effective merged config and which level each value came from
+- [x] 2.10 Tests for each merge semantic, especially that widening is rejected and that lane exclusions survive
 
 ## 3. Surface adapter and GitHub
 

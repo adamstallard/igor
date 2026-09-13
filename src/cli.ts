@@ -9,6 +9,7 @@ import { loadAll, takenIds, writeEntry, serialize, StoreError } from './store.js
 import { propose, ProposeError } from './propose.js'
 import { reconcile, promoteInPlace } from './reconcile.js'
 import { GitHubError } from './github.js'
+import { explainRole, loadRole, rolesFrom, RoleError } from './role.js'
 import type { Entry, Status } from './entry.js'
 
 function today(): string {
@@ -215,6 +216,30 @@ program
     if (promoted.length === 0) process.stdout.write('nothing to promote\n')
   })
 
+const role = program.command('role').description('Inspect the roles an Igor can be given')
+
+role
+  .command('list')
+  .description('Show the roles defined in the destination')
+  .action(() => {
+    const config = loadConfig(program.opts()['config'])
+    const names = rolesFrom(config)
+    if (names.length === 0) {
+      process.stdout.write(`no roles in ${config.destination}/roles\n`)
+      return
+    }
+    for (const name of names) process.stdout.write(`${name}\n`)
+  })
+
+role
+  .command('explain')
+  .description('Show a role’s effective config and which level each value came from')
+  .argument('<name>')
+  .action((name: string) => {
+    const config = loadConfig(program.opts()['config'])
+    process.stdout.write(`${explainRole(loadRole(config, name))}\n`)
+  })
+
 try {
   await program.parseAsync()
 } catch (error) {
@@ -222,7 +247,8 @@ try {
     error instanceof ConfigError ||
     error instanceof StoreError ||
     error instanceof ProposeError ||
-    error instanceof GitHubError
+    error instanceof GitHubError ||
+    error instanceof RoleError
   ) {
     process.stderr.write(`${error.message}\n`)
     process.exit(1)
