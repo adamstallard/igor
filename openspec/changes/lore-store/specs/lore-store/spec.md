@@ -159,6 +159,31 @@ show entries with their derived support and recency.
 - **THEN** each shows a support count and recency weight computed from provenance
 - **AND** neither is read from a stored field
 
+### Requirement: Configuration belongs to the team's repository, not the tool's
+
+Configuration SHALL be located outside the Igor installation, and the tool SHALL refuse to
+start when it is given a config path resolving inside it — whether or not a file is there.
+Absent an explicit path, the tool SHALL search upward from the working directory, so running
+it anywhere inside the destination repository requires no flags. An explicit path and an
+environment variable SHALL override the search.
+
+#### Scenario: Config found by searching upward
+
+- **WHEN** the tool runs in a nested directory beneath a repository holding the config
+- **THEN** the config is found without a flag
+
+#### Scenario: Config inside the installation refused
+
+- **WHEN** a config path resolves inside the Igor installation
+- **THEN** the tool refuses and explains that configuration describes a team while Igor is
+  shared
+- **AND** the refusal does not depend on a file existing at that path
+
+#### Scenario: No config anywhere above
+
+- **WHEN** no config exists in the working directory or any parent
+- **THEN** the error names the example file to copy and where it belongs
+
 ### Requirement: The lore destination is configured and bounded
 
 The store SHALL read a configured **destination** — the repository and path entries are
