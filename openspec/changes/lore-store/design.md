@@ -91,6 +91,26 @@ private material out of a repo that may one day be public.
 "edit YAML by hand and hope" is not a workflow. `create` scaffolds an entry and assigns the id;
 `validate` runs the schema checks over the store; `list` shows what exists with derived scores.
 
+**Branch protection and merge automation arrive together, and not before a second writer.**
+Both answer the same question — what happens when someone other than the tool's owner merges
+lore — so neither earns its cost on a single-writer repository.
+
+When they do arrive, three settings have to line up. Enable **require a pull request before
+merging**, which still permits an author to merge their own proposal and only blocks direct
+pushes to main. Do **not** enable **require approvals**: GitHub refuses to let anyone approve
+their own pull request, so that setting hard-blocks a solo author with no workaround, and
+self-merge is the path a single reviewer depends on.
+
+Protection then breaks reconciliation's promotion step, which pushes to main. The fix is a
+merge-triggered workflow in the destination repository that flips status itself — which is
+worth having anyway, because otherwise promotion depends on someone having this tool installed
+and remembering to run it, and a teammate who merges lore would silently produce entries that
+never fire. The workflow's own push is subject to the same protection, so the Actions actor
+needs a bypass entry.
+
+Reconciliation stays the fallback for repositories without CI, and finds nothing to promote
+where the workflow already ran.
+
 ## Risks / Trade-offs
 
 - **The schema proves wrong once something reads it** → Entries are markdown with frontmatter,
