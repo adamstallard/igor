@@ -2,8 +2,9 @@
 
 - [ ] 1.1 Initialize a TypeScript project with `package.json`, `tsconfig.json`, and a CLI entry point
 - [ ] 1.2 Add dependencies: GitHub API client, YAML parsing, glob matching, and a local embedding runtime
-- [ ] 1.3 Implement config loading for lore path, repositories in scope, store-level `reviewers`, batch cap, recency half-life, substance thresholds, and embedding provider
+- [ ] 1.3 Implement config loading for lore destination, repositories in scope, store-level `reviewers`, batch cap, recency half-life, substance thresholds, and embedding provider
 - [ ] 1.4 Make config refuse to run when no repositories are listed, rather than defaulting to all accessible repositories
+- [ ] 1.5 Configure the lore destination independently of mined repositories, and refuse to start when it resolves inside Igor's own repository
 
 ## 2. Verify the stick-detection premise
 
@@ -21,7 +22,8 @@ design changes.
 - [ ] 3.3 Implement entry read and write at `<lore-path>/entries/<id>.md`, with the id never changing on a claim edit
 - [ ] 3.4 Implement derived scoring from provenance: support count, exponential recency decay by half-life, and author weighting
 - [ ] 3.5 Verify `scope: role:<name>` validates with no role definitions present anywhere
-- [ ] 3.6 Tests covering each validation rejection and the recomputation of recency across two dates
+- [ ] 3.6 Accept hand-authored entries whose provenance is an authorship item with no `url`, while still rejecting empty provenance
+- [ ] 3.7 Tests covering each validation rejection and the recomputation of recency across two dates
 
 ## 4. Review mining
 

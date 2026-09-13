@@ -73,11 +73,30 @@ generated slug collides with an existing entry, a numeric discriminator SHALL be
 - **WHEN** a generated slug matches the id of an existing entry
 - **THEN** a numeric discriminator is appended to produce a unique id
 
+### Requirement: Entries may be authored directly, without mining
+
+The store SHALL accept entries written by hand, with no mined provenance. A directly authored
+entry SHALL record provenance as an authorship item carrying `author` and `at` and no `url`.
+Mining is one way to populate lore, not a precondition for it.
+
+#### Scenario: Hand-written entry accepted
+
+- **WHEN** a person writes an entry directly with a provenance item of `{author, at}` and no
+  `url`
+- **THEN** validation passes and the entry is written
+
+#### Scenario: Empty provenance rejected
+
+- **WHEN** an entry carries no provenance items at all
+- **THEN** validation fails, because an entry must record where it came from even when the
+  answer is "someone wrote it"
+
 ### Requirement: Provenance is the sole source of derived scores
 
-Each provenance item MUST carry `url`, `author`, and `at`. Support count, recency weight, and
-author weighting SHALL be computed from provenance at read time. The store MUST NOT persist
-`support` or `recency` as frontmatter fields.
+Each provenance item MUST carry `author` and `at`, and MUST carry `url` when it cites a mined
+artifact. Support count, recency weight, and author weighting SHALL be computed from
+provenance at read time. The store MUST NOT persist `support` or `recency` as frontmatter
+fields.
 
 #### Scenario: Support derived from provenance
 
@@ -96,10 +115,28 @@ author weighting SHALL be computed from provenance at read time. The store MUST 
 
 ### Requirement: Store configuration is explicit
 
-The store SHALL read configuration providing at minimum: the lore path, the repositories in
-scope, a store-level `reviewers` list, the batch cap, the recency decay half-life, and the
-embedding provider. The embedding provider SHALL default to a local implementation so that no
-repository content leaves the environment unless explicitly configured otherwise.
+The store SHALL read configuration providing at minimum: the lore destination, the
+repositories in scope, a store-level `reviewers` list, the batch cap, the recency decay
+half-life, and the embedding provider. The embedding provider SHALL default to a local
+implementation so that no repository content leaves the environment unless explicitly
+configured otherwise.
+
+The **lore destination** — the repository and path entries are written to — SHALL be
+configured independently of the repositories being mined, so that history in one repository
+can produce lore stored in another.
+
+#### Scenario: Destination differs from mined repositories
+
+- **WHEN** repositories in scope are `org/web` and `org/api`, and the lore destination is
+  `org/knowledge`
+- **THEN** entries derived from both are written to `org/knowledge`
+- **AND** review pull requests are opened against `org/knowledge`
+
+#### Scenario: Destination inside the Igor installation refused
+
+- **WHEN** the configured lore destination resolves inside the Igor tool's own repository
+- **THEN** the run refuses to start
+- **AND** the error states that lore belongs to the operating team, not to Igor
 
 #### Scenario: Default embedding provider
 
