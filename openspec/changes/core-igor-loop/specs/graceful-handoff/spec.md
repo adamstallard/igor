@@ -51,17 +51,30 @@ reporting the Igor as unavailable without qualification.
 - **THEN** it does not defer on the grounds of being busy
 - **AND** budget remains its only reason to defer
 
-### Requirement: The handoff is funded before the budget is spent
+### Requirement: A handoff is composable without a model call
 
-Capacity for a handoff SHALL be reserved so that exhaustion cannot prevent the handoff itself
-from being posted.
+The handoff SHALL be assembled from recorded state — what was claimed, which steps completed,
+what artifact exists, and the reset time — and MUST NOT require a worker invocation to
+produce.
 
-#### Scenario: Handoff succeeds at exhaustion
+Reserving budget for the handoff was considered and rejected: the situation demanding a
+handoff is frequently the situation in which no call can be made at all, so a reserve does not
+help. A handoff that depends on the thing that just failed is not a handoff.
 
-- **WHEN** an Igor reaches its budget limit
-- **THEN** sufficient capacity remains to compose and post the handoff
+#### Scenario: Handoff posted after the budget is exhausted
 
-#### Scenario: Handoff not starved by the work it reports on
+- **WHEN** an Igor is rate-limited mid-task
+- **THEN** the handoff is composed from recorded state and posted
+- **AND** no worker invocation is required to produce it
 
-- **WHEN** a task consumes budget up to the limit
-- **THEN** the handoff is still posted
+#### Scenario: Handoff posted after an unrecoverable failure
+
+- **WHEN** execution fails in a way that cannot be retried
+- **THEN** the handoff still reports what was done and what remains
+- **AND** it does so without depending on the failed path
+
+#### Scenario: Quality is traded for reliability deliberately
+
+- **WHEN** a templated handoff is compared against one a model would write
+- **THEN** the templated one is accepted as less fluent
+- **AND** the reason recorded is that it works when the alternative cannot run

@@ -93,6 +93,11 @@ artifact type.
 
 Inheritance SHALL apply three merge semantics, selected per field:
 
+The `allow` vocabulary is a **closed set**, so a typo fails validation rather than silently
+granting nothing: `comment`, `review-comment`, `draft-pr`, `pr`, `label`, `assign`, `close`,
+`merge`, `send`. The safe default an org base should ship with is `[draft-pr, comment]` —
+everything reversible, nothing final.
+
 - **Monotonic** for permission-shaped fields (`allow`, `budget_share`, repositories and
   surfaces in reach): a role MAY restrict what it inherits and MUST NOT widen it.
 - **Override** for settings (`completion`, `claim`, poll interval): the most specific level wins.
@@ -152,3 +157,25 @@ any surface.
 - **WHEN** a lane predicate is wrong such that out-of-scope items would be claimed
 - **THEN** those items appear in the dry run output
 - **AND** the mistake is visible before anything is posted publicly
+
+### Requirement: Timing values are configurable with stated defaults
+
+Every interval SHALL be configurable and SHALL have a default, since an unstated default is a
+value someone guesses differently each time: a **settle interval** of 10 seconds before a claim
+is verified, a **cooldown** of 1 hour before a stopped item returns to the pool, and a
+**calibration staleness threshold** of 30 days after which a budget report flags its own
+figures as old.
+
+These are starting points to tune against observation, not derived values, and SHALL be
+recorded as such rather than presented as considered.
+
+#### Scenario: Default applied when unset
+
+- **WHEN** a role does not set the settle interval
+- **THEN** the inherited or default value is used
+- **AND** the effective value is visible via `role explain`
+
+#### Scenario: Stale calibration flagged
+
+- **WHEN** a seat's calibration is older than the staleness threshold
+- **THEN** the budget report marks it stale rather than reporting headroom as though current

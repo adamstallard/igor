@@ -101,14 +101,27 @@ consequences is worth reaching first.
 - **Polling wastes calls when nothing changes** → Accepted for latency that does not matter;
   watermarks reduce it and are a cache, not a correctness mechanism.
 
+## Resolved while writing the specs
+
+- **Triage returns a structured verdict with a reason.** The reason is what makes `dry-run`
+  useful and what a human reads when a decision looks wrong; a bare boolean would make both
+  impossible.
+- **The action space is enforced at the loop**, by refusing to act on outputs outside it — not
+  by instructing the worker. Asking a model nicely is not enforcement, and the whole point is
+  that a steered worker still cannot exceed the space.
+- **Partial failure hands off rather than retrying.** A silent retry loop on a claimed item is
+  precisely the failure the claim protocol makes worst: humans have backed off, and nothing is
+  happening or being said.
+- **Spend is a trailing sum, not a per-window accumulator.** The provider's limits roll, so
+  there is no boundary to detect and an implementation waiting for a reset would wait forever.
+- **The handoff is composed from state, without a model call.** Reserving budget for it was
+  rejected — the situation demanding a handoff is often one where no call can be made, so a
+  handoff depending on the thing that just failed is not a handoff.
+
 ## Open Questions
 
-- What does the triage prompt actually look like, and does it return a structured verdict with
-  a reason? Leaning yes — the reason is what makes `dry-run` useful and what a human reads when
-  a decision looks wrong.
-- How is the worker's action space enforced in practice — by refusing to act on outputs outside
-  it, by tooling given to the worker, or both? Both, probably, but the enforcement point that
-  matters is the loop rather than the prompt.
-- What happens when execution fails partway: retry, hand off, or leave the claim? Leaning
-  hand-off, since a silent retry loop on a claimed item is the failure the claim protocol makes
-  worst.
+- The three intervals (settle, cooldown, calibration staleness) have defaults but they are
+  guesses, and only observation will say whether an hour is the right cooldown or wildly wrong.
+- Whether `allow` needs finer grain than a verb — "may comment, but not on issues it did not
+  claim" is expressible only by adding scope to each permission, which is complexity worth
+  deferring until something needs it.

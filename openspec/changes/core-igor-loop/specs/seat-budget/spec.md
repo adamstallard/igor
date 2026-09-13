@@ -59,25 +59,37 @@ The system MUST NOT require hitting the limit in order to learn it.
 - **WHEN** a seat has never been calibrated
 - **THEN** headroom is reported as unknown rather than estimated
 
-### Requirement: Spend accumulates from each invocation's reported cost
+### Requirement: Spend is a trailing sum, not a per-window accumulator
 
-The system SHALL accumulate the cost each worker invocation reports, per seat, per window,
-recording it to the state branch.
+The system SHALL record each worker invocation's reported cost with its timestamp, per seat,
+on the state branch. Spend SHALL be computed as the **sum over a trailing interval** — the
+last five hours, and separately the last week — rather than accumulated against a window that
+resets.
+
+The provider's limits are *rolling*, so there is no boundary to detect and no moment at which
+a counter returns to zero. An implementation that waits for a reset would never see one.
 
 #### Scenario: Cost accumulated per seat
 
 - **WHEN** two roles sharing a seat each perform work
-- **THEN** both costs accumulate against that one seat
+- **THEN** both costs count against that one seat
 
-#### Scenario: Window boundaries respected
+#### Scenario: Spend is computed over a trailing interval
 
-- **WHEN** a usage window resets
-- **THEN** accumulated spend for the new window starts from zero
+- **WHEN** spend is reported for a seat
+- **THEN** it is the sum of costs recorded within the trailing interval
+- **AND** no window-reset event is required for older costs to stop counting
+
+#### Scenario: Costs age out continuously
+
+- **WHEN** a cost recorded six hours ago is considered against a five-hour interval
+- **THEN** it is excluded
+- **AND** it was excluded without any reset having occurred
 
 ### Requirement: Budget reporting includes the age of the calibration
 
 A budget report SHALL state, per seat: the calibrated cap, **how long ago it was calibrated**,
-spend in the current window, the reserve, and remaining headroom.
+trailing spend over each interval, the reserve, and remaining headroom.
 
 #### Scenario: Report includes calibration age
 
