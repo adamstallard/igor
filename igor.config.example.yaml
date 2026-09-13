@@ -1,0 +1,23 @@
+# Copy to igor.config.yaml and edit. The real file is gitignored, because it carries
+# repository names, reviewer handles, and expert designations.
+
+# Where entries are written. Relative paths resolve against this config file.
+# Lore belongs to the operating team, so this must resolve OUTSIDE the Igor
+# installation — the tool refuses to start otherwise.
+destination: ../our-team-knowledge
+
+# Any one of these may approve an entry. Also the escalation target when the author an
+# entry was mined from does not respond.
+reviewers:
+  - alice
+  - bob
+
+# Authors whose provenance carries extra weight. A correction from the person who owns
+# an area should outrank a drive-by.
+experts:
+  - alice
+
+scoring:
+  # Days for an entry's recency to halve. An entry whose freshest provenance is one
+  # half-life old scores 0.5; today's scores 1.0.
+  halfLifeDays: 365

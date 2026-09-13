@@ -20,10 +20,31 @@ locatable directly from a supersession pointer or a provenance reference.
 ### Requirement: Frontmatter conforms to a validated schema
 
 Every entry's frontmatter MUST contain `id`, `claim`, `scope`, `status`, `conditions`,
-`provenance`, `supersedes`, and `reviewed`. `conditions` MUST contain a `prose` string and
-MAY contain a `paths` array of glob patterns. `scope` MUST be `global`, `role:<name>`, or
-`project:<name>`. `status` MUST be `provisional`, `active`, or `deprecated`. Entries failing
-validation SHALL be rejected rather than written.
+`provenance`, and `supersedes`. `reviewed` MUST be present when `status` is `active` and MAY
+be absent otherwise, since a provisional entry has not been reviewed by definition.
+`conditions` MUST contain a `prose` string and MAY contain a `paths` array of glob patterns.
+`scope` MUST be `global`, `role:<name>`, or `project:<name>`. `status` MUST be `provisional`,
+`active`, or `deprecated`. Entries failing validation SHALL be rejected rather than written.
+
+Dates MUST be accepted whether or not they are quoted in the source YAML, because a person
+authoring an entry will not quote them and a YAML parser turns an unquoted date into a
+timestamp rather than a string.
+
+#### Scenario: Provisional entry needs no review block
+
+- **WHEN** an entry with `status: provisional` and no `reviewed` block is validated
+- **THEN** validation passes
+
+#### Scenario: Active entry requires a review block
+
+- **WHEN** an entry with `status: active` and no `reviewed` block is validated
+- **THEN** validation fails naming `reviewed`
+
+#### Scenario: Unquoted date accepted
+
+- **WHEN** an entry's provenance carries an unquoted `at: 2026-09-13`
+- **THEN** validation passes
+- **AND** the value reads back as the string `2026-09-13`
 
 #### Scenario: Valid entry accepted
 

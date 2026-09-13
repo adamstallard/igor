@@ -46,6 +46,41 @@ Two indexes are compiled from it: exact predicates over metadata (paths, labels,
 and learned conditions over the recognizer's internal state. Both return entries; neither
 requires an Igor to think to ask.
 
+## Getting started
+
+The lore store is built; nothing else is yet.
+
+```sh
+npm install
+cp igor.config.example.yaml igor.config.yaml   # then set a destination
+npm run build
+```
+
+`destination` must resolve **outside** this repository — lore belongs to the operating team,
+and the tool refuses to start otherwise. `igor.config.yaml` is gitignored because it carries
+repository names and people's handles.
+
+```sh
+npm run lore -- create \
+  --claim "Fetch data with the shared query hook rather than inside useEffect" \
+  --prose "When adding or changing data fetching in a React component" \
+  --author you --scope role:frontend --path 'src/**/*.tsx' \
+  --body "The hook handles caching, deduping, and cancellation on unmount."
+
+npm run lore -- list       # entries with support and recency derived from provenance
+npm run lore -- validate    # reports every invalid entry, exits non-zero if any
+```
+
+An entry's id is a slug derived from its claim and then frozen, so rewording a claim later
+never moves what other entries point at. Dates may be written unquoted.
+
 ## Status
 
-Early. Nothing is built yet. This repo currently holds the design.
+**Built:** the lore store — schema, validation, id derivation, provenance-derived scoring,
+supersession, the destination boundary, and the CLI above.
+
+**Next:** hand-author a seed store, then `core-igor-loop`. Mining review history into lore
+(`lore-from-reviews`) is specced and deferred until there is history worth mining.
+
+Design lives in [`docs/architecture.md`](docs/architecture.md); change proposals in
+`openspec/changes/`.
