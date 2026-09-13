@@ -73,9 +73,25 @@ Until roles exist, the same need is met by a store-level `reviewers` list in the
 config, which is where an entry escalates when the author it was mined from does not respond.
 Roles later narrow that to per-role lists; they do not introduce the concept.
 
-**One Igor, several roles, because a seat costs the same idle.** A role too narrow to fill
-its seat's allowance wastes capacity that was already paid for. Holding a second role
-absorbs the slack. This also mirrors how organizations actually staff people across areas.
+**One Igor may hold several roles, but the reason is conditional.** The original argument was
+that a seat costs the same idle, so a role too narrow to fill its allowance wastes capacity
+already paid for — holding a second role absorbs the slack.
+
+That argument depends entirely on **one seat per Igor**. Seats can be shared (§6.5), and once
+they are, the pressure disappears: five narrow Igors on one pooled seat beat one broad Igor,
+because specialization buys things breadth destroys —
+
+- **Legibility.** If every Igor does everything, "which Igor claimed this" carries no
+  information. A narrow identity tells a human what lane the work is in.
+- **Differential trust.** The docs Igor may open pull requests freely while the infra Igor may
+  only comment. One Igor holding every role forces the action space to be the union or the
+  intersection of its roles, and both are wrong.
+- **Failure isolation.** A bad role config breaks one lane rather than everything.
+
+Under a shared pool the priority ordering moves to **fleet level** — one ordering across Igors
+rather than a ranked list inside each — which is cleaner anyway. Role breadth then becomes an
+empirical tuning decision that follows expected work volume, exactly like staffing: a role that
+reliably fills capacity gets dedicated resources, one that does not gets pooled.
 
 Three properties make that safe:
 
@@ -535,7 +551,34 @@ rewrite — turning the eventual fully-open migration into a dial rather than a 
   against a subscription seat. Refresh behavior past expiry is undocumented; budget for an
   annual manual regeneration as a known operational task.
 
-### 6.5 Igor is necessarily self-hosted — **constraint**
+### 6.5 A seat is a pool, not an identity — **planned**
+
+Nothing prevents several Igors, or an Igor and a human, from running against the same
+subscription seat. One token, several processes. Three configurations, with different
+consequences:
+
+- **One seat per Igor.** Maximum isolated capacity; one role's flood cannot starve another.
+  Costs a seat each, and raises the question of whether a seat can belong to a non-human
+  identity at all.
+- **Several Igors sharing a seat.** They compete for one rolling allowance, so the budget
+  policy moves from inside an Igor to across the fleet. Removes the pressure toward broad
+  roles entirely (§2.1).
+- **Igors sharing a human's seat.** Cheapest, and it **dissolves the seat-provisioning
+  question** rather than answering it: no placeholder identities are created and nothing
+  claims a bot is a person — a person is running automation under their own subscription.
+  That is still not explicitly documented as acceptable, but it is a far better question than
+  the one it replaces.
+
+**A reserve floor is required whenever a human shares the seat.** Igors stop at a configured
+fraction of the allowance and leave the remainder untouched, so a person never sits down to
+find their capacity was quietly consumed overnight. Without it the failure is invisible,
+unattributable, and lands on the human; with it, it is a configured limit they chose.
+
+Two practical notes: several processes on one token may hit per-account concurrency limits,
+and all activity appears under one account upstream — so distinguishing which Igor did what
+depends on local logging, not on anything the provider records.
+
+### 6.6 Igor is necessarily self-hosted — **constraint**
 
 An Igor runs on a subscription seat token, and a seat token cannot be handed to a third
 party. There is therefore no managed-service version of this in which a vendor runs Igors on
@@ -608,4 +651,6 @@ Agreed in principle, not scoped, roughly in dependency order:
 6. SAE-legible conditions (§4.3) — research.
 7. Post-hoc output recognition (§4.4).
 8. Difficulty routing (§6.2).
-9. Additional adapters: Linear, then Discord.
+9. Seat pooling and the fleet-level budget policy, with a reserve floor where a human shares
+   the seat (§6.5).
+10. Additional adapters: Linear, then Discord.
