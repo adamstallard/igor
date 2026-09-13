@@ -15,8 +15,25 @@ permalink, and timestamp.
 
 #### Scenario: Unlisted repository skipped
 
-- **WHEN** the credential has access to `org/secrets` but it is not listed in scope
-- **THEN** no comments from `org/secrets` are extracted
+- **WHEN** the credential has access to a repository that is not listed in scope
+- **THEN** no comments from it are extracted
+
+#### Scenario: No repositories configured
+
+- **WHEN** mining runs with an empty list of repositories in scope
+- **THEN** it refuses to run rather than defaulting to everything the credential can reach
+
+### Requirement: Review comments are mined from the repository where the pull request was opened
+
+Mining SHALL treat each repository in scope as the source of its own review comments, and MUST
+NOT assume that a fork inherits the review history of its upstream. Where both a fork and its
+upstream are of interest, both SHALL be listed in scope.
+
+#### Scenario: Fork does not inherit upstream review history
+
+- **WHEN** a repository in scope is a fork whose commit history includes its upstream's commits
+- **THEN** only review comments opened against the fork are extracted
+- **AND** the upstream's review comments are absent unless the upstream is also in scope
 
 ### Requirement: Corrections are classified by whether they stuck
 

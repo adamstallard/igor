@@ -113,38 +113,52 @@ fields.
 - **WHEN** an entry's frontmatter includes a `support` field
 - **THEN** validation fails, because the field is derived rather than stored
 
-### Requirement: Store configuration is explicit
+### Requirement: Entries can be created, validated, and listed from a CLI
 
-The store SHALL read configuration providing at minimum: the lore destination, the
-repositories in scope, a store-level `reviewers` list, the batch cap, the recency decay
-half-life, and the embedding provider. The embedding provider SHALL default to a local
-implementation so that no repository content leaves the environment unless explicitly
-configured otherwise.
+The store SHALL provide commands to create an entry, validate the store, and list its
+contents. `create` SHALL scaffold a well-formed entry and assign its id. `validate` SHALL
+report every invalid entry with its reason rather than stopping at the first. `list` SHALL
+show entries with their derived support and recency.
 
-The **lore destination** — the repository and path entries are written to — SHALL be
-configured independently of the repositories being mined, so that history in one repository
-can produce lore stored in another.
+#### Scenario: Entry created from the CLI
 
-#### Scenario: Destination differs from mined repositories
+- **WHEN** a person runs the create command with a claim
+- **THEN** a well-formed entry file is written with an id derived from that claim
+- **AND** the entry passes validation without further editing
 
-- **WHEN** repositories in scope are `org/web` and `org/api`, and the lore destination is
-  `org/knowledge`
-- **THEN** entries derived from both are written to `org/knowledge`
-- **AND** review pull requests are opened against `org/knowledge`
+#### Scenario: Validation reports every failure
+
+- **WHEN** the store contains three invalid entries and validate is run
+- **THEN** all three are reported with their reasons
+- **AND** the command exits non-zero
+
+#### Scenario: Listing shows derived scores
+
+- **WHEN** entries are listed
+- **THEN** each shows a support count and recency weight computed from provenance
+- **AND** neither is read from a stored field
+
+### Requirement: The lore destination is configured and bounded
+
+The store SHALL read a configured **destination** — the repository and path entries are
+written to — independently of anything else Igor is pointed at, so that knowledge derived
+from one repository can be stored in another. The tool SHALL refuse to start when the
+destination resolves inside Igor's own repository.
+
+#### Scenario: Destination independent of other configuration
+
+- **WHEN** the destination is configured as one repository and Igor is operating against
+  others
+- **THEN** entries are written to the configured destination
+- **AND** no entry is written to a repository merely because it was operated against
 
 #### Scenario: Destination inside the Igor installation refused
 
-- **WHEN** the configured lore destination resolves inside the Igor tool's own repository
+- **WHEN** the configured destination resolves inside the Igor tool's own repository
 - **THEN** the run refuses to start
 - **AND** the error states that lore belongs to the operating team, not to Igor
 
-#### Scenario: Default embedding provider
+#### Scenario: Destination not configured
 
-- **WHEN** configuration does not specify an embedding provider
-- **THEN** a local provider is used
-- **AND** no repository content is sent to an external service
-
-#### Scenario: Repositories not configured
-
-- **WHEN** no repositories are listed in scope
-- **THEN** mining refuses to run rather than defaulting to all accessible repositories
+- **WHEN** no destination is configured
+- **THEN** the run refuses rather than choosing one

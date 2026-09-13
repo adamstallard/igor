@@ -9,16 +9,19 @@ Meanwhile, senior people re-teach the same corrections by hand for years. If the
 lead has written some version of the same comment fourteen times across two years, that is
 a rule the team has been paying to re-explain, one pull request at a time.
 
-This change turns that history into **lore**: a small, curated, human-readable store of
-what the team has learned, with provenance back to the comments it came from. It runs as a
-one-time backfill against history that already exists, so it needs no agent, no running
-process, and no waiting.
+This change turns that history into **lore** entries, with provenance back to the comments
+they came from. It runs as a one-time backfill against history that already exists, so it
+needs no agent, no running process, and no waiting.
+
+**Depends on `lore-store`** for the entry schema, validation, derived scoring, and the
+destination boundary. Mined entries are ordinary entries whose provenance cites pull request
+comments rather than an author writing directly.
 
 ## What Changes
 
-- **A lore store exists.** Markdown files in git, one per entry, with frontmatter carrying
-  the claim, the conditions under which it applies, provenance links, support count, and
-  status. Small enough for a person to read end to end.
+- **Mining configuration**: repositories in scope, the embedding provider, batch cap, and
+  substance thresholds. Mining refuses to run when no repositories are listed, rather than
+  defaulting to everything the credential can reach.
 - **Review comments are mined and filtered.** Pull review comments for repos in scope, then
   keep the ones that carry signal:
   - **Did the correction stick?** Compare the comment's line range against later commits in
@@ -58,11 +61,9 @@ Explicitly out of scope:
 
 ### New Capabilities
 
-- `lore-store`: Entry schema and on-disk layout — claim, conditions, scope, provenance,
-  support count, status lifecycle (provisional, active, deprecated), supersession, and the
-  git conventions that make the store diffable and reviewable.
-- `review-mining`: Extracting review comments for repos in scope, detecting whether a
-  correction stuck, and scoring by author and substance.
+- `review-mining`: Mining configuration — repositories in scope and the embedding provider —
+  plus extracting review comments, detecting whether a correction stuck, excluding bots, and
+  scoring by author and substance.
 - `lore-consolidation`: Clustering related corrections, drafting candidate entries, deriving
   predicates from source paths, deduplicating against existing entries, and routing
   candidates with a scope label.
@@ -71,7 +72,9 @@ Explicitly out of scope:
 
 ### Modified Capabilities
 
-None — this is the first change in the project.
+None. The entry schema, validation, derived scoring, and destination boundary all come from
+`lore-store` and are used here unchanged — mined entries are ordinary entries whose provenance
+happens to cite pull request comments.
 
 ## Impact
 
