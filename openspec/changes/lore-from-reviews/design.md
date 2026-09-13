@@ -40,9 +40,57 @@ deliberately capped in the hundreds. Lore lives at a configured path (default `l
 the repo being operated on, not inside Igor itself, because lore is the operating team's
 data while Igor is the tool acting on it.
 
-Frontmatter carries: `id`, `claim`, `conditions`, `scope`, `provenance`, `support`,
-`recency`, `status` (`provisional` | `active` | `deprecated`), `supersedes`, `reviewed`.
-`core-igor-loop` adds firing metadata; nothing here should block that.
+The filename is the entry id. Frontmatter:
+
+```yaml
+id: use-query-hook-not-useeffect-fetch   # kebab slug, frozen at creation
+claim: >-                                 # one or two sentences
+  Fetch data with the shared query hook rather than calling fetch inside
+  useEffect — the hook handles caching, deduping, and cancellation.
+scope: role:frontend                      # global | role:<name> | project:<name>
+status: provisional                       # provisional | active | deprecated
+conditions:
+  paths: ["src/**/*.tsx"]                 # derived predicate; may be absent
+  prose: >-                               # always present
+    Applies when adding or changing data fetching in a React component.
+provenance:
+  - url: https://github.com/org/repo/pull/412#discussion_r1029481
+    author: sarah
+    at: 2026-03-14
+supersedes: []
+reviewed:
+  by: sarah
+  at: 2026-09-13
+```
+
+The body holds reasoning and exceptions. `core-igor-loop` adds `fired` (count and
+timestamp); nothing here should block that.
+
+**Provenance is the single source of truth for scoring.** Support count is the number of
+provenance items, recency is a decay over their dates, and author weighting reads their
+authors — all derived at index time rather than stored. Storing `support` or `recency` as
+frontmatter would desync as soon as time passed or a provenance item was added.
+
+**The id is frozen at creation.** The slug is derived from the claim because legible
+supersession pointers and diffs are worth more than a hash, but rewording a claim later must
+not move the id, since other entries reference it. Collisions take a numeric discriminator.
+
+**A minimal role stub ships with this change.** Review routing and the role-versus-lore
+routing rule both need a role concept, but roles are otherwise defined in `core-igor-loop` —
+a dependency inversion that has to be resolved somewhere. Resolving it here, minimally:
+
+```yaml
+name: frontend
+reviewers: [sarah, miguel]
+paths: ["src/**/*.tsx", "src/styles/**"]
+```
+
+`reviewers` is a list rather than an owner: any one of them can approve, and it is the
+escalation target when a mined author does not respond. `core-igor-loop` extends the same
+file with queries, claim templates, and standing instructions, so a role is defined once
+rather than invented twice. The alternative considered — dropping role routing from this
+change and producing only area-wide lore — is simpler but discards the "expert codifies
+judgment into the role" path that motivates review mining in the first place.
 
 **Source: review comments only.** Almost every review comment is already a correction
 event, so the salience filtering that Slack or ticket history would need is mostly

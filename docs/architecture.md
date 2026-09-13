@@ -53,6 +53,40 @@ Three distinct objects, often confused:
 Routing rule: guidance specific to one role's behavior is role config; guidance applying to
 anyone touching an area is lore.
 
+### 2.1 Roles — stub **scoped**, runtime **planned**
+
+Roles and Igors are **many-to-many**. Many Igors can run the same role; one Igor can hold
+several.
+
+A role file starts minimal — `name`, `reviewers`, `paths` — and grows. `lore-from-reviews`
+needs only that much to route candidates and assign review. `core-igor-loop` extends the
+same file with search queries, claim templates, and standing instructions, so the role is
+defined once rather than invented twice.
+
+**`reviewers` is a list, not an owner.** Any one of them can approve a lore entry or role
+config change, and it is where an entry escalates when the author it was mined from does not
+respond. No quorum and no single accountable person — that would be org structure leaking
+into config for no benefit.
+
+**One Igor, several roles, because a seat costs the same idle.** A role too narrow to fill
+its seat's allowance wastes capacity that was already paid for. Holding a second role
+absorbs the slack. This also mirrors how organizations actually staff people across areas.
+
+Three properties make that safe:
+
+- **Multi-role at discovery, single-role at execution.** An Igor runs the union of its
+  roles' queries, but triage assigns each candidate to exactly one role, and only that
+  role's standing instructions and lore scopes load for the work. The discovery surface
+  widens; the working context does not get diluted, so one role's conventions cannot bleed
+  into another's task.
+- **Ranked roles are the amortization policy.** Each Igor holds an *ordered* role list.
+  Higher-ranked roles get first call on the budget; lower-ranked ones absorb what is left.
+  This implements "spare capacity flows down" and simultaneously answers what to do when two
+  roles both have pending work. Ties break by item age.
+- **Interchangeability survives.** An Igor is still fully described by its ordered role
+  list, so two Igors with the same list remain swappable. Worth keeping explicit, because
+  this is the property that would quietly erode into Igors having individual identities.
+
 ---
 
 ## 3. Lore
@@ -60,9 +94,22 @@ anyone touching an area is lore.
 ### 3.1 Store — **scoped**
 
 One markdown file per entry, in git, at a configurable path in the *operating team's* repo
-(lore is their data; Igor is the tool). Frontmatter carries `id`, `claim`, `conditions`,
-`scope`, `provenance`, `support`, `recency`, `status`, `supersedes`, `reviewed`, and later
-`fired` (count and timestamp).
+(lore is their data; Igor is the tool). The filename is the entry id, so a file is findable
+directly from a supersession pointer or provenance reference.
+
+Frontmatter carries `id`, `claim`, `scope`, `status`, `conditions` (`paths` predicate plus
+always-present `prose`), `provenance`, `supersedes`, `reviewed`, and later `fired` (count and
+timestamp). The body holds the reasoning and any exceptions.
+
+**Provenance is the single source of truth for scoring.** Each provenance item carries a
+`url`, an `author`, and an `at` date, which makes support count (how many items), recency
+(decay over their dates), and author-weighting all *derived* rather than stored. Storing
+`support` or `recency` as fields would desync — a recency written in September is wrong by
+November.
+
+**The id is derived from the claim at creation, then frozen.** A kebab slug keeps diffs and
+supersession pointers legible, but rewording a claim later must not move the id, since other
+entries and external references point at it. Collisions get a numeric discriminator.
 
 Git is chosen for diffability (drift detection is `git log`), a review workflow that already
 exists, greppability, human readability, and portability across vendors and models. Indexes
