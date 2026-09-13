@@ -71,12 +71,22 @@ Mining SHALL identify comments authored by bots or automated reviewers and exclu
 default, with configuration able to re-include named authors. Exclusions SHALL be recorded in
 the same way as substance filtering, so that what was dropped remains inspectable.
 
-#### Scenario: Bot reviewer excluded
+Detection MUST treat the account type reported by the host as authoritative. Login-pattern
+matching MAY supplement it but MUST NOT be the primary mechanism, because automated reviewers
+do not reliably carry a marker in their login.
 
-- **WHEN** review comments include entries authored by an account of type `Bot` or matching a
-  configured bot pattern
+#### Scenario: Bot reviewer excluded by account type
+
+- **WHEN** review comments include entries whose author account type is `Bot`
 - **THEN** those comments are excluded from clustering
 - **AND** the exclusion and its reason are recorded
+
+#### Scenario: Automated reviewer without a login marker
+
+- **WHEN** an automated reviewer posts under a login carrying no `[bot]` suffix or other
+  naming marker, but is typed as a bot by the host
+- **THEN** it is still excluded
+- **AND** exclusion does not depend on the login string
 
 #### Scenario: Human review of AI-authored code retained
 
