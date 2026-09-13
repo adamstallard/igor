@@ -109,7 +109,25 @@ describe('append — levels accumulate', () => {
     })
     const lane = resolveRole(dir, 'fe').role.lane
     expect(lane.labels!.excludes).toEqual(['Human', 'wontfix'])
-    expect(lane.labels!.includes).toEqual(['ai'])
+    expect(lane.labels!.includes).toEqual([['ai']])
+  })
+
+  it('conjoins inclusive constraints rather than pooling them into one "any of"', () => {
+    // Flattening would let a role widen its own lane by narrowing it: org requiring `ai` and a
+    // role requiring `frontend`, read as one "any of" list, matches an item labelled only `ai`.
+    const dir = store({
+      org: 'allow: [unassign]\nlane:\n  labels:\n    includes: [ai, bot]\n',
+      fe: 'lane:\n  labels:\n    includes: [frontend]\n',
+    })
+    expect(resolveRole(dir, 'fe').role.lane.labels!.includes).toEqual([['ai', 'bot'], ['frontend']])
+  })
+
+  it('conjoins path groups the same way', () => {
+    const dir = store({
+      org: 'allow: [unassign]\nlane:\n  paths:\n    under: ["src/**"]\n',
+      fe: 'lane:\n  paths:\n    under: ["**/*.tsx"]\n',
+    })
+    expect(resolveRole(dir, 'fe').role.lane.paths!.under).toEqual([['src/**'], ['**/*.tsx']])
   })
 
   it('cannot escape an inherited exclusion by redeclaring the field', () => {
@@ -162,6 +180,14 @@ describe('explain', () => {
 
   it('shows an appended lane as coming from several levels', () => {
     expect(text).toMatch(/lane:.*org, fe/)
+  })
+
+  it('renders conjoined groups as "and", so a reader sees each level adds a constraint', () => {
+    const two = store({
+      org: 'allow: [unassign]\nlane:\n  labels:\n    includes: [ai, bot]\n',
+      fe: 'lane:\n  labels:\n    includes: [frontend]\n',
+    })
+    expect(explainRole(resolveRole(two, 'fe'))).toContain('ai or bot  and  frontend')
   })
 })
 

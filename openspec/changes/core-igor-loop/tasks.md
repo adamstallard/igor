@@ -37,8 +37,8 @@
 
 ## 5. Triage
 
-- [ ] 5.1 Implement the predicate evaluator over normalized candidates — `includes`, `excludes`, `under`, `max_days`
-- [ ] 5.2 Reuse that evaluator for lane matching, so lore firing and lane checks share one implementation
+- [x] 5.1 Implement the predicate evaluator over normalized candidates — `includes`, `excludes`, `under`, `max_days`
+- [x] 5.2 Reuse that evaluator for lane matching, so lore firing and lane checks share one implementation
 - [ ] 5.3 Skip any candidate with work already in flight, before any model call
 - [ ] 5.3a Hard-skip a closed candidate, since stage one is deliberately loose and a source query may omit `is:open` — not a lane the org can forget to write
 - [ ] 5.4 Implement the LLM triage call over predicate survivors, returning a structured verdict with a reason

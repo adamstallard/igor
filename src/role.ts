@@ -38,9 +38,21 @@ export interface Source {
   query: string
 }
 
+/**
+ * Inclusive constraints are a **conjunction of disjunctions**: each group comes from one level
+ * of the lineage, a candidate satisfies a group by matching any member, and it must satisfy
+ * every group.
+ *
+ * Flattening the groups would break the append promise. With org declaring `includes: [ai]` and
+ * a role declaring `includes: [frontend]`, one flat list read as "any of" matches an item
+ * labelled only `ai` — so the role would have *widened* its own lane by narrowing it, which is
+ * the exact escape appending exists to prevent. Grouped, the role's constraint is additional.
+ *
+ * Exclusions need no grouping: any match rejects, so a flat union already narrows.
+ */
 export interface Lane {
-  labels?: { includes?: string[]; excludes?: string[] }
-  paths?: { under?: string[] }
+  labels?: { includes?: string[][]; excludes?: string[] }
+  paths?: { under?: string[][] }
   age?: { maxDays?: number }
 }
 
@@ -139,18 +151,16 @@ function mergeLane(base: Lane, next: Lane): Lane {
   // Append: constraints accumulate, so an org exclusion cannot be escaped by a role adding
   // its own. Narrowing is the only direction available.
   const merged: Lane = {}
-  const labels = {
-    includes: [...(base.labels?.includes ?? []), ...(next.labels?.includes ?? [])],
-    excludes: [...(base.labels?.excludes ?? []), ...(next.labels?.excludes ?? [])],
-  }
-  if (labels.includes.length || labels.excludes.length) {
+  const includes = [...(base.labels?.includes ?? []), ...(next.labels?.includes ?? [])]
+  const excludes = [...(base.labels?.excludes ?? []), ...(next.labels?.excludes ?? [])]
+  if (includes.length || excludes.length) {
     merged.labels = {
-      ...(labels.includes.length ? { includes: [...new Set(labels.includes)] } : {}),
-      ...(labels.excludes.length ? { excludes: [...new Set(labels.excludes)] } : {}),
+      ...(includes.length ? { includes } : {}),
+      ...(excludes.length ? { excludes: [...new Set(excludes)] } : {}),
     }
   }
   const under = [...(base.paths?.under ?? []), ...(next.paths?.under ?? [])]
-  if (under.length) merged.paths = { under: [...new Set(under)] }
+  if (under.length) merged.paths = { under }
 
   const maxDays = [base.age?.maxDays, next.age?.maxDays].filter((d): d is number => d !== undefined)
   if (maxDays.length) merged.age = { maxDays: Math.min(...maxDays) }
@@ -166,8 +176,9 @@ function parseLane(v: unknown, where: string): Lane {
     if (!isRecord(labels)) throw new RoleError(`${where}.lane.labels must be a mapping`)
     const includes = strArray(labels['includes'], `${where}.lane.labels.includes`)
     const excludes = strArray(labels['excludes'], `${where}.lane.labels.excludes`)
+    // One level contributes one group: "any of these", which the merge then conjoins.
     lane.labels = {
-      ...(includes.length ? { includes } : {}),
+      ...(includes.length ? { includes: [includes] } : {}),
       ...(excludes.length ? { excludes } : {}),
     }
   }
@@ -175,7 +186,7 @@ function parseLane(v: unknown, where: string): Lane {
   if (paths !== undefined) {
     if (!isRecord(paths)) throw new RoleError(`${where}.lane.paths must be a mapping`)
     const under = strArray(paths['under'], `${where}.lane.paths.under`)
-    if (under.length) lane.paths = { under }
+    if (under.length) lane.paths = { under: [under] }
   }
   const age = v['age']
   if (age !== undefined) {
@@ -411,10 +422,13 @@ export function explainRole({ role, from }: ResolvedRole): string {
   if (role.sources.length === 0) lines.push('  (none)')
 
   lines.push('', `lane:${at('lane')}`)
-  if (role.lane.labels?.includes) lines.push(`  labels include: ${role.lane.labels.includes.join(', ')}`)
+  // Groups are rendered as "and", so a reader sees that each level's constraint is additional
+  // rather than pooled — the whole point of conjoining them.
+  const groups = (g: string[][]) => g.map((one) => one.join(' or ')).join('  and  ')
+  if (role.lane.labels?.includes) lines.push(`  labels include: ${groups(role.lane.labels.includes)}`)
   if (role.lane.labels?.excludes) lines.push(`  labels exclude: ${role.lane.labels.excludes.join(', ')}`)
-  if (role.lane.paths?.under) lines.push(`  paths under:    ${role.lane.paths.under.join(', ')}`)
-  if (role.lane.age?.maxDays) lines.push(`  max age:        ${role.lane.age.maxDays} days`)
+  if (role.lane.paths?.under) lines.push(`  paths under:    ${groups(role.lane.paths.under)}`)
+  if (role.lane.age?.maxDays) lines.push(`  max age:        ${role.lane.age.maxDays} days since created`)
   if (Object.keys(role.lane).length === 0) lines.push('  (unconstrained)')
 
   if (role.instructions.length > 0) {
