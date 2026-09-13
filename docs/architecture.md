@@ -1136,6 +1136,31 @@ for the bare object store, while pushing is per-role and uses that role's own. A
 created per task and a task belongs to one Igor, so git identity is set when the worktree is
 created rather than configured globally.
 
+#### 6.9.1 The rule generalizes by claim primitive, not by surface
+
+**Identity must be structural where the surface's claim primitive is structural, and may be
+textual where the claim is a message.**
+
+GitHub and Linear both have an assignee field, which only accepts real users, so both need a
+machine user per role. A message-only surface is the opposite case: the claim *is* the message
+and Igor authors its content, so the role name travels inside the payload and one bot per org
+suffices. Verification re-reads the channel, finds the earliest claim for the item, and checks
+whether it names this role — which works whatever account posted it. The shared-account failure
+that breaks GitHub cannot arise, because nothing is being read back out of a field that only
+holds accounts.
+
+Consequences for a message-only adapter:
+
+- **Parse a machine-readable claim line, never the display name.** Display names are for
+  people, are spoofable where webhooks are available, and are simply wrong under a shared bot.
+- **Per-role display names are legibility, not identity.** Where a surface offers per-message
+  name overrides, use them so a human sees which Igor — and still parse the payload.
+- **Prefer a thread over a mention for stop.** A claim that opens a thread makes a stop a reply
+  in that thread: correctly scoped without parsing who was addressed, and it matches the bare
+  `stop` case. Mention-parsing is the fallback for surfaces without threads.
+- **Inbound identity is unaffected.** Messages arrive with a real author on every surface, so
+  the authority intersection (§5.4) holds regardless of how many bots do the posting.
+
 ---
 
 ## 7. Prior art
