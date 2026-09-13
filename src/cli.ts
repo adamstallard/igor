@@ -10,6 +10,8 @@ import { propose, ProposeError } from './propose.js'
 import { reconcile, promoteInPlace } from './reconcile.js'
 import { GitHubError } from './github.js'
 import { explainRole, loadRole, rolesFrom, RoleError } from './role.js'
+import { dryRun } from './dryrun.js'
+import { TriageError } from './triage.js'
 import type { Entry, Status } from './entry.js'
 
 function today(): string {
@@ -240,6 +242,23 @@ role
     process.stdout.write(`${explainRole(loadRole(config, name))}\n`)
   })
 
+role
+  .command('dry-run')
+  .description('Report what a role would claim and why — claims nothing, posts nothing')
+  .argument('<name>')
+  .option('--since <days>', 'how far back to look', '7')
+  .option('--limit <n>', 'cap on model calls', '20')
+  .option('--no-model', 'stop after the free stages')
+  .action(async (name: string, opts) => {
+    const config = loadConfig(program.opts()['config'])
+    const report = await dryRun(loadRole(config, name), {
+      sinceDays: Number(opts.since),
+      limit: Number(opts.limit),
+      useModel: opts.model !== false,
+    })
+    process.stdout.write(`${report.lines.join('\n')}\n`)
+  })
+
 try {
   await program.parseAsync()
 } catch (error) {
@@ -248,7 +267,8 @@ try {
     error instanceof StoreError ||
     error instanceof ProposeError ||
     error instanceof GitHubError ||
-    error instanceof RoleError
+    error instanceof RoleError ||
+    error instanceof TriageError
   ) {
     process.stderr.write(`${error.message}\n`)
     process.exit(1)

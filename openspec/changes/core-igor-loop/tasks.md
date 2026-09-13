@@ -44,20 +44,20 @@
 - [x] 5.2 Reuse that evaluator for lane matching, so lore firing and lane checks share one implementation
 - [ ] 5.3 Skip any candidate with work already in flight, before any model call
 - [ ] 5.3a Hard-skip a closed candidate, since stage one is deliberately loose and a source query may omit `is:open` — not a lane the org can forget to write
-- [ ] 5.4 Implement the LLM triage call over predicate survivors, returning a structured verdict with a reason
+- [x] 5.4 Implement the LLM triage call over predicate survivors, returning a structured verdict with a reason
 - [ ] 5.5 Record every decision with its reason, including skips, to the state branch
 - [ ] 5.6 Record the cost each invocation reports, timestamped, per seat
-- [ ] 5.7 Verify predicates gate the model call, so triage cost scales with survivors rather than with what the tracker returned
+- [x] 5.7 Verify predicates gate the model call, so triage cost scales with survivors rather than with what the tracker returned
 
 ## 6. Milestone: dry-run
 
 Nothing before this point claims or posts anything. Reach it, look at the output, and tune
 lane predicates before the loop is allowed to act.
 
-- [ ] 6.1 Implement `igor role dry-run`, reporting what a role would claim and why, claiming nothing
-- [ ] 6.2 Run it against a real repository and read every verdict by hand
+- [x] 6.1 Implement `igor role dry-run`, reporting what a role would claim and why, claiming nothing
+- [x] 6.2 Run it against a real repository and read every verdict by hand
 - [ ] 6.3 Tune lane predicates against what it actually surfaced, and record what was wrong in the first attempt
-- [ ] 6.4 Check the survivor ratio: how many candidates reach the model, and whether predicates are carrying their weight
+- [x] 6.4 Check the survivor ratio: how many candidates reach the model, and whether predicates are carrying their weight
 
 ## 7. Claiming and stop
 

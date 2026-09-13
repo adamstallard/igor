@@ -110,7 +110,10 @@ consequences is worth reaching first.
   free in-flight skip removes far less than hoped on a quiet repository, and lane predicates
   are carrying essentially all of the reduction. Paths named in issue text are rarer still —
   14% and 1.3% — so a `paths.under` lane will be weak on a repository that discusses symptoms
-  rather than files.
+  rather than files. Priced at the dry-run milestone: **$0.016 and ~10 seconds per verdict** on
+  Haiku, driven by 700–1600 output tokens of reasoning rather than by the cached preamble. A
+  steady-state cycle costs cents a day; an unbounded cold start over a thousand candidates would
+  cost roughly $16 and take hours, which is what the cold-start window exists to prevent.
 - **Polling wastes calls when nothing changes** → Accepted for latency that does not matter;
   watermarks reduce it and are a cache, not a correctness mechanism.
 
