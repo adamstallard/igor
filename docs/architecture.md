@@ -1066,6 +1066,26 @@ that change must avoid assuming: no per-Igor credential file, no Igor owning its
 lifecycle, no recognizer client assuming it is the only one. Cheap to respect now, expensive to
 unpick later.
 
+### 6.7.2 Checkouts: one object store, worktrees per task — **planned**
+
+Only **execution** needs a checkout. Discovery, triage, claiming and state all go through the
+API, so nothing is cloned until a worker has to grep, run tests, and edit.
+
+With many Igors on one server (§6.7.1), the shape is **one bare clone per repository plus
+`git worktree add` per task**, not a clone per Igor. Worktrees share the object store, so each
+task costs a working tree rather than a copy of the history, and cleanup is
+`git worktree remove`.
+
+Space is the obvious argument and the weaker one. **Fetch cost is the real reason:** one shared
+object store is fetched once and every worktree sees the new objects, where N clones are
+fetched N times, every cycle, forever. Space is a one-time cost you can buy out of; repeated
+fetches are ongoing latency on the hot path.
+
+Caveats: worktrees share an object store, so `gc` or corruption reaches all of them, and two
+worktrees cannot check out the same branch — which does not bite, since each task gets its own
+branch. Moot for the first Igor, which runs one task at a time; recorded so nobody builds
+clone-per-task and has to unpick it.
+
 ### 6.8 Igor is necessarily self-hosted — **constraint**
 
 An Igor runs on a subscription seat token, and a seat token cannot be handed to a third
