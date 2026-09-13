@@ -1,17 +1,42 @@
-import { execFile } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { promisify } from 'node:util'
 
 const run = promisify(execFile)
 
 export class GitHubError extends Error {}
 
+/**
+ * Runs a command, optionally writing to its stdin. `execFile`'s promisified form silently
+ * ignores an `input` option — that belongs to `execFileSync` — so anything reading stdin
+ * hangs forever waiting on input that never arrives.
+ */
+function runWithInput(
+  command: string,
+  args: readonly string[],
+  input: string,
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { stdio: ['pipe', 'pipe', 'pipe'] })
+    let stdout = ''
+    let stderr = ''
+    child.stdout.on('data', (chunk) => (stdout += chunk))
+    child.stderr.on('data', (chunk) => (stderr += chunk))
+    child.on('error', reject)
+    child.on('close', (code) => {
+      if (code === 0) resolve(stdout)
+      else reject(new Error(stderr.trim() || `exited with code ${code}`))
+    })
+    child.stdin.end(input)
+  })
+}
+
 /** Uses the gh CLI so credentials and enterprise hosts are whatever the user already set up. */
 async function gh(args: string[], input?: string): Promise<unknown> {
   try {
-    const { stdout } = await run('gh', args, {
-      ...(input === undefined ? {} : { input }),
-      maxBuffer: 32 * 1024 * 1024,
-    })
+    const stdout =
+      input === undefined
+        ? (await run('gh', args, { maxBuffer: 32 * 1024 * 1024 })).stdout
+        : await runWithInput('gh', args, input)
     return stdout.trim() === '' ? null : JSON.parse(stdout)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
@@ -117,13 +142,22 @@ export async function openPullRequest(
   return { number: pr.number, url: pr.html_url }
 }
 
-/** Assignees and reviewers are separate on GitHub; a PR author cannot review their own. */
-export async function assign(repo: string, number: number, logins: readonly string[]) {
-  if (logins.length === 0) return
-  await gh(
+/**
+ * Assigns and reports who was actually assigned. GitHub accepts a request naming a
+ * non-collaborator and silently drops them, so the caller has to read the result back rather
+ * than trust that the call succeeded.
+ */
+export async function assign(
+  repo: string,
+  number: number,
+  logins: readonly string[],
+): Promise<string[]> {
+  if (logins.length === 0) return []
+  const issue = (await gh(
     ['api', `repos/${repo}/issues/${number}/assignees`, '--method', 'POST', '--input', '-'],
     JSON.stringify({ assignees: logins }),
-  )
+  )) as { assignees: { login: string }[] }
+  return issue.assignees.map((a) => a.login)
 }
 
 export async function requestReviewers(

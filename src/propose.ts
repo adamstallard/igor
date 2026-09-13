@@ -114,7 +114,9 @@ export function pullRequestBody(entries: readonly Entry[], author: string): stri
       lines.push(`**Paths:** ${entry.conditions.paths.map((p) => `\`${p}\``).join(', ')}`)
     }
     if (others.length > 0) {
-      lines.push(`**Also drawn from:** ${others.map((a) => `@${a}`).join(', ')}`)
+      // Plain names, not @mentions: a mention notifies someone who may have no idea this
+      // repository exists, and they did not ask to be pulled into it.
+      lines.push(`**Also drawn from:** ${others.join(', ')}`)
     }
     lines.push(`**Derived from ${entry.provenance.length} comment(s):**`)
     for (const item of entry.provenance) {
@@ -131,6 +133,8 @@ export interface ProposalResult {
   entries: string[]
   reviewers: string[]
   pr: OpenedPr
+  /** Set when the dominant author could not be assigned and the store reviewers took it. */
+  reassignedTo?: string[]
 }
 
 function branchName(author: string, now: Date): string {
@@ -179,10 +183,25 @@ export async function propose(
     )
 
     const others = [...new Set(group.flatMap(contributingAuthors))].filter((a) => a !== author)
-    await assign(repo, pr.number, [author])
+    let assigned = await assign(repo, pr.number, [author])
+    let reassignedTo: string[] | undefined
+
+    if (!assigned.includes(author)) {
+      // The dominant author is not a collaborator here — common when mining a repository
+      // whose contributors are not in the lore repository. Falling back keeps the pull
+      // request from sitting unowned, which is the same reasoning as a departed author.
+      assigned = await assign(repo, pr.number, config.reviewers)
+      reassignedTo = assigned
+    }
     await requestReviewers(repo, pr.number, others)
 
-    results.push({ author, entries: group.map((e) => e.id), reviewers: others, pr })
+    results.push({
+      author,
+      entries: group.map((e) => e.id),
+      reviewers: others,
+      pr,
+      ...(reassignedTo ? { reassignedTo } : {}),
+    })
   }
   return results
 }

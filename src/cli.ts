@@ -137,8 +137,11 @@ program
     }
 
     for (const r of await propose(config, entries, serialize)) {
+      const owner = r.reassignedTo
+        ? `${r.reassignedTo.join(', ')} (${r.author} is not a collaborator here)`
+        : r.author
       process.stdout.write(
-        `${r.pr.url}\n  assigned: ${r.author}${r.reviewers.length ? `  reviewers: ${r.reviewers.join(', ')}` : ''}\n  ${r.entries.join(', ')}\n`,
+        `${r.pr.url}\n  assigned: ${owner}${r.reviewers.length ? `  also drawn from: ${r.reviewers.join(', ')}` : ''}\n  ${r.entries.join(', ')}\n`,
       )
     }
   })
