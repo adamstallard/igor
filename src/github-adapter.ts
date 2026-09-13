@@ -1,4 +1,5 @@
 import { gh, ghGraphql } from './gh.js'
+import { isStop } from './signals.js'
 import {
   AdapterError,
   daysSince,
@@ -109,21 +110,6 @@ export function normalizeIssue(repo: string, issue: RawIssue, now: number = Date
     idleDays: daysSince(issue.updatedAt, now),
     ...(inFlight === undefined ? {} : { inFlight }),
   }
-}
-
-/**
- * A stop is unconditional and open to anyone, so recognizing one cannot depend on who wrote
- * it. It must still be deliberate rather than any occurrence of the word: either the comment
- * opens with `stop` (optionally addressing the Igor first), or it names the Igor and stops it.
- */
-export function isStop(body: string, identity: string): boolean {
-  const text = body.trim()
-  if (/^stop\b/i.test(text)) return true
-  // Only an address to *this* Igor counts. A generic leading mention would make
-  // "@alice stop doing that" — one person addressing another on an issue an Igor happens to
-  // hold — stop the Igor, which is a misfire rather than the intended human override.
-  const named = identity.replace(/^@/, '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  return named !== '' && new RegExp(`@?${named}\\b[\\s,:]+stop\\b`, 'i').test(text)
 }
 
 interface SearchResult {

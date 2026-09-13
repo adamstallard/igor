@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { daysSince, extractPaths } from '../src/adapter.js'
-import { GitHubTracker, isStop, normalizeIssue, type RawIssue } from '../src/github-adapter.js'
+import { GitHubTracker, normalizeIssue, type RawIssue } from '../src/github-adapter.js'
 
 const NOW = Date.parse('2026-09-13T00:00:00Z')
 
@@ -118,39 +118,6 @@ describe('path extraction', () => {
 
   it('deduplicates across title and body', () => {
     expect(extractPaths('fix src/a.ts', 'src/a.ts is wrong')).toEqual(['src/a.ts'])
-  })
-})
-
-describe('stop recognition', () => {
-  it('recognizes a bare stop from anyone', () => {
-    // Unconditional and open to anyone: recognition cannot depend on who wrote it.
-    expect(isStop('stop', 'igor-bot')).toBe(true)
-    expect(isStop('Stop please, this is the wrong issue', 'igor-bot')).toBe(true)
-  })
-
-  it('recognizes a stop addressed to the Igor', () => {
-    expect(isStop('@igor-bot stop', 'igor-bot')).toBe(true)
-    expect(isStop('igor-bot, stop — I am taking this', 'igor-bot')).toBe(true)
-  })
-
-  it('does not fire on the word appearing in prose', () => {
-    expect(isStop('This will stop working after the migration', 'igor-bot')).toBe(false)
-    expect(isStop('We should stop supporting node 18', 'igor-bot')).toBe(false)
-  })
-
-  it('does not fire on a longer word starting with stop', () => {
-    expect(isStop('stopwatch behaviour is wrong', 'igor-bot')).toBe(false)
-  })
-
-  it('does not fire when one person tells another to stop', () => {
-    // A generic leading mention would turn a conversation between two humans on an issue an
-    // Igor happens to hold into a stop. Only an address to this Igor counts.
-    expect(isStop('@alice stop doing that', 'igor-bot')).toBe(false)
-    expect(isStop('@alice, stop — I will take it', 'igor-bot')).toBe(false)
-  })
-
-  it('does not fire on an Igor whose name merely prefixes the mention', () => {
-    expect(isStop('@igor-bot-two stop', 'igor-bot')).toBe(false)
   })
 })
 
