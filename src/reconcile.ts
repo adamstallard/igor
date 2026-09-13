@@ -9,6 +9,11 @@ export interface Promoted {
   by: string
   at: string
   pr: number
+  /**
+   * Set when whoever merged was not among the assignees. Their name is still recorded —
+   * they did approve it — but attributing the judgment silently would misstate who vouched.
+   */
+  mergerWasNotAssigned?: boolean
 }
 
 export interface Declined {
@@ -102,10 +107,40 @@ export async function reconcile(
         status: 'active',
         reviewed: { by, at },
       })
-      result.promoted.push({ id, by, at, pr: pr.number })
+      const unexpected = pr.mergedBy !== undefined && !pr.assignees.includes(pr.mergedBy)
+      result.promoted.push({
+        id,
+        by,
+        at,
+        pr: pr.number,
+        ...(unexpected ? { mergerWasNotAssigned: true } : {}),
+      })
     }
   }
   return result
+}
+
+/**
+ * Promotes provisional entries in place. Used by a merge-triggered workflow in the
+ * destination repository, where the answer to "who approved this" comes from the event
+ * rather than from querying pull requests.
+ */
+export function promoteInPlace(
+  config: Config,
+  by: string,
+  at: string,
+  only?: readonly string[],
+): Promoted[] {
+  const wanted = only === undefined ? undefined : new Set(only.map((p) => basename(p, '.md')))
+  const promoted: Promoted[] = []
+  for (const id of takenIds(config.destination)) {
+    if (wanted !== undefined && !wanted.has(id)) continue
+    const loaded = loadEntry(config.destination, id)
+    if (loaded.entry === undefined || loaded.entry.status !== 'provisional') continue
+    writeEntry(config.destination, { ...loaded.entry, status: 'active', reviewed: { by, at } })
+    promoted.push({ id, by, at, pr: 0 })
+  }
+  return promoted
 }
 
 export { StoreError }

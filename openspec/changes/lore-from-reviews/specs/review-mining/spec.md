@@ -124,6 +124,11 @@ Mining SHALL record processed comment identifiers in a ledger, and a subsequent 
 reprocess a comment already in the ledger. Re-running over an expanded history SHALL add new
 material without duplicating prior results.
 
+The ledger is also what stops a rejected candidate returning: its source comments are already
+processed, so the cluster cannot re-form. A later comment expressing the same rule does form a
+new, smaller cluster and may be proposed again — that is new evidence for a rule the team
+previously declined, and asking once more is the intended behaviour rather than a defect.
+
 #### Scenario: Second run adds only new comments
 
 - **WHEN** mining runs, then runs again after new pull requests have merged
@@ -133,3 +138,15 @@ material without duplicating prior results.
 
 - **WHEN** mining runs twice with no intervening repository activity
 - **THEN** the second run produces no new candidates
+
+#### Scenario: A rejected candidate does not return from the same comments
+
+- **WHEN** a candidate was rejected and mining runs again over the same history
+- **THEN** its source comments are in the ledger and are not reprocessed
+- **AND** the candidate is not proposed again
+
+#### Scenario: New evidence may raise a previously rejected rule
+
+- **WHEN** a new comment expresses a rule whose earlier candidate was rejected
+- **THEN** it forms a new cluster from unprocessed comments
+- **AND** it may be proposed with the support that new evidence carries

@@ -1,11 +1,13 @@
 #!/usr/bin/env node
+import { copyFileSync, existsSync, mkdirSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { Command } from 'commander'
-import { loadConfig, ConfigError } from './config.js'
+import { loadConfig, igorRoot, ConfigError } from './config.js'
 import { uniqueId } from './id.js'
 import { scoreEntry } from './scoring.js'
 import { loadAll, takenIds, writeEntry, serialize, StoreError } from './store.js'
 import { propose, ProposeError } from './propose.js'
-import { reconcile } from './reconcile.js'
+import { reconcile, promoteInPlace } from './reconcile.js'
 import { GitHubError } from './github.js'
 import type { Entry, Status } from './entry.js'
 
@@ -154,7 +156,10 @@ program
     const config = loadConfig(program.opts()['config'])
     const r = await reconcile(config, { staleAfterDays: Number(opts.staleAfter) })
 
-    for (const p of r.promoted) process.stdout.write(`promoted  ${p.id}  by ${p.by} on ${p.at}\n`)
+    for (const p of r.promoted) {
+      const flag = p.mergerWasNotAssigned ? '  (merged by someone not assigned to review it)' : ''
+      process.stdout.write(`promoted  ${p.id}  by ${p.by} on ${p.at}${flag}\n`)
+    }
     for (const d of r.declined) process.stdout.write(`declined  ${d.id}  (pr #${d.pr})\n`)
     for (const s of r.stale) {
       process.stdout.write(
@@ -175,6 +180,39 @@ program
     if (r.promoted.length > 0) {
       process.stdout.write('\nPromotions edited files locally — commit and push them.\n')
     }
+  })
+
+program
+  .command('init-workflow')
+  .description('Write the merge-triggered promotion workflow into the destination')
+  .option('--force', 'overwrite an existing workflow')
+  .action((opts) => {
+    const config = loadConfig(program.opts()['config'])
+    const source = join(igorRoot(), 'templates', 'promote-on-merge.yml')
+    const target = join(config.destination, '.github', 'workflows', 'promote-on-merge.yml')
+    if (existsSync(target) && !opts.force) {
+      throw new StoreError(`${target} already exists — pass --force to overwrite`)
+    }
+    mkdirSync(dirname(target), { recursive: true })
+    copyFileSync(source, target)
+    process.stdout.write(
+      `${target}\n\nCommit and push it. If the default branch is protected, add the GitHub\n` +
+        `Actions actor to the ruleset's bypass list, or this workflow's own push is blocked\n` +
+        `by the same rule it exists to work around.\n`,
+    )
+  })
+
+program
+  .command('promote')
+  .description('Set provisional entries active in place — for a merge-triggered workflow')
+  .requiredOption('--by <login>', 'who approved, normally whoever merged')
+  .option('--at <date>', 'ISO date of approval', new Date().toISOString().slice(0, 10))
+  .option('--only <path...>', 'limit to these entry paths; without it, every provisional entry')
+  .action((opts) => {
+    const config = loadConfig(program.opts()['config'])
+    const promoted = promoteInPlace(config, opts.by, opts.at, opts.only)
+    for (const p of promoted) process.stdout.write(`promoted  ${p.id}  by ${p.by} on ${p.at}\n`)
+    if (promoted.length === 0) process.stdout.write('nothing to promote\n')
   })
 
 try {

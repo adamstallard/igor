@@ -45,9 +45,10 @@
 - [x] 6.6 Refuse privately-sourced provenance when the destination is public, with visibility declarable in config
 - [x] 6.7 Reconcile on invocation: promote merged entries with a reviewed block, report rejections and quiet pull requests
 - [x] 6.8 Treat closed-unmerged as deferred rather than rejected
-- [ ] 6.9 Record rejections durably so a later run cannot re-propose them — currently derived per run and not persisted
-- [ ] 6.10 Ship a merge-triggered workflow template plus an `init-workflow` command, so promotion does not depend on someone having igor installed
-- [ ] 6.11 Report when the merger was not an assigned reviewer rather than recording them silently
+- [ ] 6.9 *(optional)* Record rejections durably. Largely covered by the processed-comment ledger in `lore-from-reviews`: a comment never reprocessed cannot re-form its cluster. Only adds value if the ledger is lost, or to suppress a rule regardless of new evidence — which is a stronger claim than a deletion should make
+- [x] 6.10 Ship a merge-triggered workflow template plus an `init-workflow` command, so promotion does not depend on someone having igor installed
+- [x] 6.11 Report when the merger was not an assigned reviewer rather than recording them silently
+- [x] 6.12 Document lore repository setup: require-a-pull-request but never require-approvals, and the Actions bypass entry a protected branch needs
 
 ## 7. First real store
 

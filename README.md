@@ -74,6 +74,47 @@ npm run lore -- validate    # reports every invalid entry, exits non-zero if any
 An entry's id is a slug derived from its claim and then frozen, so rewording a claim later
 never moves what other entries point at. Dates may be written unquoted.
 
+## Review
+
+Entries reach the store through pull requests, and **only `active` entries fire** — so review
+is what puts an entry into force, not a formality afterwards.
+
+```sh
+npm run lore -- propose --from <dir of candidates>   # one PR per dominant author
+npm run lore -- reconcile                            # promote merged, report the rest
+```
+
+In a proposal pull request: **delete** a file to reject it, **edit** one to amend it, **merge**
+to accept the rest, **close without merging** to defer. You can merge your own proposal —
+GitHub won't let you *approve* your own pull request, but merging is what counts as approval
+here, so a single maintainer is never stuck.
+
+## Setting up a lore repository
+
+Any repository works; it just needs to be somewhere other than this one.
+
+**Branch protection, once more than one person can write to it.** Enable **"require a pull
+request before merging"** — it still lets an author merge their own proposal and only blocks
+direct pushes to `main`. Do **not** enable **"require approvals"**: GitHub refuses to let
+anyone approve their own pull request, so that setting hard-blocks a solo maintainer with no
+workaround.
+
+**Merge-triggered promotion, at the same time.** Without it, promotion depends on someone
+having igor installed and remembering to run `reconcile` — so a teammate can merge lore that
+then silently never fires.
+
+```sh
+npm run lore -- init-workflow
+```
+
+That writes `.github/workflows/promote-on-merge.yml` into the destination. Commit it. **If the
+branch is protected, add the GitHub Actions actor to the ruleset's bypass list**, or the
+workflow's own push is blocked by the same rule it exists to work around.
+
+Neither is worth doing on a single-writer repository — both answer the same question, which is
+what happens when someone other than the tool's owner merges, so add them together when that
+becomes possible.
+
 ## Status
 
 **Built:** the lore store — schema, validation, id derivation, provenance-derived scoring,

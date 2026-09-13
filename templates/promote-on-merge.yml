@@ -1,0 +1,84 @@
+# Promotes merged lore entries from provisional to active.
+#
+# Without this, promotion depends on someone having igor installed and remembering to run
+# `igor-lore reconcile` — so a teammate could merge lore that then silently never fires,
+# because only active entries fire.
+#
+# If the default branch is protected, add the GitHub Actions actor to the ruleset's bypass
+# list, or this workflow's own push is blocked by the same rule it exists to work around.
+name: Promote merged lore
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: promote-lore
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the lore store
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Find entry files changed by this push
+        id: changed
+        run: |
+          before='${{ github.event.before }}'
+          if [ -z "$before" ] || [ "$before" = "0000000000000000000000000000000000000000" ]; then
+            before="$(git rev-parse HEAD~1 2>/dev/null || git rev-parse HEAD)"
+          fi
+          files="$(git diff --name-only --diff-filter=AM "$before" HEAD -- 'entries/*.md' | tr '\n' ' ')"
+          echo "files=$files" >> "$GITHUB_OUTPUT"
+
+      - name: Check out igor
+        if: steps.changed.outputs.files != ''
+        uses: actions/checkout@v4
+        with:
+          # Pin to a tag once igor is released; main is fine while it is moving.
+          repository: adamstallard/igor
+          ref: main
+          path: .igor
+
+      - uses: actions/setup-node@v4
+        if: steps.changed.outputs.files != ''
+        with:
+          node-version: '22'
+
+      - name: Promote
+        if: steps.changed.outputs.files != ''
+        working-directory: .igor
+        run: |
+          npm ci --silent
+          cat > igor.config.yaml <<EOF
+          destination: ..
+          publicStore: ${{ github.event.repository.private && 'false' || 'true' }}
+          EOF
+          npx tsx src/cli.ts promote \
+            --by '${{ github.actor }}' \
+            --at "$(date -u +%Y-%m-%d)" \
+            --only ${{ steps.changed.outputs.files }}
+
+      - name: Commit the promotions
+        if: steps.changed.outputs.files != ''
+        run: |
+          rm -rf .igor
+          if git diff --quiet -- entries; then
+            echo "nothing was promoted"
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add entries
+          git commit -m 'Promote merged lore entries to active
+
+          Approved by merging. Promoted automatically so that an entry takes effect
+          without anyone needing igor installed.'
+          git push
