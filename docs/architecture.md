@@ -472,6 +472,30 @@ the cheapest available calibration mechanism.
 
 ## 5. Surfaces and coordination
 
+### 5.0 The unit of work is an issue, wherever it lives — **scoped** (`core-igor-loop`)
+
+The atomic unit is **an issue**, not a GitHub Issue. Linear, ClickUp and Jira all hold issues,
+and all of them have a real assignee field — so "prefer the atomic write where a native claim
+primitive exists" holds across trackers rather than being a GitHub quirk.
+
+That splits a surface into **two roles** which GitHub happens to combine, which is why it is
+easy to miss:
+
+- **Tracker** — where work is discovered, claimed, and reported on. Linear, GitHub Issues,
+  ClickUp, Jira.
+- **Code host** — where the artifact lands. Usually GitHub.
+
+They are linked by convention, and the convention varies: Linear reads branch names like
+`adam/ENG-123-…`; GitHub Issues reads `Closes #123` in a pull request body. GitHub Issues plus
+GitHub is the degenerate case where one surface plays both roles.
+
+The adapter interface therefore separates them even while only GitHub ships, because the
+linkage is exactly the part that would otherwise get hardcoded.
+
+Reviewing other people's pull requests is the natural *second* unit and a poor first one: you
+do not assign yourself a review, and two reviewers is not a collision, so the claim mechanic
+has nothing to bite on.
+
 ### 5.1 Adapters, not integrations — **scoped** (`core-igor-loop`)
 
 Slack, ClickUp, GitHub, Linear, and Discord are *examples* of surfaces, not the
@@ -500,8 +524,35 @@ empirically and treat it as very likely sufficient rather than provably correct.
 
 ### 5.3 Every pickup takes a claim — **scoped**
 
-An Igor claims on the work surface where humans can see it, or it skips the item. There is no
+An Igor claims on the tracker where humans can see it, or it skips the item. There is no
 second, quieter destination and no confidence score deciding between them.
+
+**Igors win races against humans, and that is not fixable.** An Igor polling every few minutes
+claims a new item before a human has opened their notifications. First-claim-wins therefore
+favours Igors systematically, and over weeks humans would find everything already taken.
+
+So the claim protocol is doing two different jobs and only one of them is a race. The settle
+delay and the conditional write are for **Igor against Igor**, genuine contests between equals.
+**Human against Igor is not a race at all — it is an override**, and what matters there is that
+the override is cheap and obvious rather than that the race is fair.
+
+**Stop is that override, and it stays a single verb.** Immediate, unconditional, releases the
+claim, available to anyone (§5.4). What happens *next* is read from the tracker rather than
+from a second command:
+
+- **A human assigns themselves** — they have taken it; the Igor leaves it alone.
+- **Nobody claims it** — it becomes eligible again after a cooldown.
+- **Someone says go ahead** — eligible immediately, short-circuiting the cooldown.
+
+That yields pause-with-resume without inventing a second verb, and the resume signal is just a
+message on the surface. The failure it avoids: if stop blacklisted an item permanently, a human
+who stopped to look and then wandered off would have silently deleted that work from the pool,
+since the watermark already marks it seen.
+
+**A minimal stop belongs in `core-igor-loop`, not in `directed-interaction`.** The conversational
+layer is a later change, but the change that introduces the speed asymmetry is the change that
+must ship the override for it — otherwise the first Igor can only be stopped by killing the
+process.
 
 **Shadow mode was designed and then dropped**, and the reasoning is worth keeping because it
 corrects what this design is defending against. Shadow meant doing the work but posting it as
@@ -529,7 +580,7 @@ The cases that seemed to need shadow are better handled by scope. An item where 
 itself be disruptive — an incident ticket mid-outage — belongs outside the role's query, not
 inside a mode.
 
-### 5.4 Directed interaction — **planned** (`core-igor-loop`)
+### 5.4 Directed interaction — **scoped** (`directed-interaction`)
 
 The moment an Igor posts a claim, people reply to it. Having no answer for that means the
 behavior gets decided by accident.
