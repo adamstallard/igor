@@ -13,9 +13,10 @@ This change turns that history into **lore** entries, with provenance back to th
 they came from. It runs as a one-time backfill against history that already exists, so it
 needs no agent, no running process, and no waiting.
 
-**Depends on `lore-store`** for the entry schema, validation, derived scoring, and the
-destination boundary. Mined entries are ordinary entries whose provenance cites pull request
-comments rather than an author writing directly.
+**Depends on `lore-store`** for the entry schema, validation, derived scoring, the
+destination boundary, and the whole propose-and-review workflow — mining produces candidate
+entries and hands them to `propose` exactly as a person would. A mined entry is an ordinary
+entry whose provenance cites pull request comments rather than an author writing directly.
 
 ## What Changes
 
@@ -41,10 +42,10 @@ comments rather than an author writing directly.
   `scope` label (`global`, `role:<name>`, `project:<name>`). Promoting role-scoped guidance
   into standing role config waits for `core-igor-loop`, because nothing loads role config
   until then — and a label costs nothing to apply now and is enough to promote from later.
-- **The person whose comments were mined reviews the result.** Each candidate is opened as a
-  pull request assigned to the author it was derived from: "here are fourteen times you said
-  this, we turned it into a rule — is that right?" Nothing enters lore without that
-  approval.
+- **Candidates are handed to `propose`.** Mining stops at producing candidate entries; the
+  pull request, its assignment, and the review contract all come from `lore-store`. What
+  mining contributes is the provenance that makes the assignment meaningful — a candidate
+  lands with the person whose comments it was drawn from.
 
 Explicitly out of scope:
 
@@ -67,8 +68,6 @@ Explicitly out of scope:
 - `lore-consolidation`: Clustering related corrections, drafting candidate entries, deriving
   predicates from source paths, deduplicating against existing entries, and routing
   candidates with a scope label.
-- `lore-review`: The approval workflow — opening candidates as pull requests, assigning each
-  to the author it was derived from, and writing approved entries with provenance intact.
 
 ### Modified Capabilities
 

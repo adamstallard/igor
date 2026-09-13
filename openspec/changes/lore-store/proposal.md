@@ -35,13 +35,19 @@ with. Lore is additive, so nothing downstream is blocked on the store being full
   tool refuses to write into its own repository.
 - **A CLI creates, validates, and lists entries**, so hand-authoring is a supported workflow
   rather than hand-editing YAML and hoping.
+- **Entries reach the store through review.** `propose` opens one pull request per dominant
+  author with the review contract in the body; merging approves; `reconcile` promotes merged
+  entries to `active` and reports what was rejected or has gone quiet. Only `active` entries
+  fire, so review is what puts an entry into force rather than a formality after the fact.
 
 Explicitly out of scope:
 
 - **Mining.** Extraction from review history is `lore-from-reviews`, which depends on this
   change for its schema.
 - **Retrieval and firing.** Injecting entries into a worker's context belongs with the
-  consumer, in `core-igor-loop`. Entries here are read by humans.
+  consumer, in `core-igor-loop`. Entries here are read by humans. The decision that **only
+  `active` entries fire** is recorded there; it is what makes the review step load-bearing
+  rather than ceremonial.
 - **Indexes.** Neither the predicate index nor condition vectors are built until something
   consumes them.
 - **Consolidation.** Promoting, pruning, and superseding entries automatically comes once
@@ -54,6 +60,11 @@ Explicitly out of scope:
 - `lore-store`: Entry schema and on-disk layout, validation, id derivation and immutability,
   provenance-derived scoring, the status lifecycle and supersession, destination
   configuration and its boundary, and the CLI for creating, validating, and listing entries.
+- `lore-review`: Proposing candidates as pull requests grouped by dominant author, the review
+  contract carried in the body, verified assignment, rejection by deletion versus deferral by
+  closing, merge as approval, reconciliation on invocation, and the guard against privately
+  sourced entries reaching a public destination. Not mining-specific — hand-authored
+  candidates take the same path.
 
 ### Modified Capabilities
 

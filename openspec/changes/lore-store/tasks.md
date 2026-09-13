@@ -35,7 +35,21 @@
 - [x] 5.4 Verify a created entry passes validation with no further editing
 - [ ] 5.5 Let `create` take more than one provenance item — a mined entry normally cites several comments, and the command currently cannot express that
 
-## 6. First real store
+## 6. Propose and review
+
+- [x] 6.1 Group candidates by dominant author, breaking an equal split toward the later contribution
+- [x] 6.2 Open one pull request per dominant author on a prefixed branch, via the git tree API so nothing is cloned
+- [x] 6.3 Write the review contract into the pull request body with each candidate's claim, conditions, and provenance links
+- [x] 6.4 Credit other contributing authors by plain name and request them as reviewers, never by @mention
+- [x] 6.5 Read assignment back and fall back to the store reviewers when the dominant author is not a collaborator
+- [x] 6.6 Refuse privately-sourced provenance when the destination is public, with visibility declarable in config
+- [x] 6.7 Reconcile on invocation: promote merged entries with a reviewed block, report rejections and quiet pull requests
+- [x] 6.8 Treat closed-unmerged as deferred rather than rejected
+- [ ] 6.9 Record rejections durably so a later run cannot re-propose them — currently derived per run and not persisted
+- [ ] 6.10 Ship a merge-triggered workflow template plus an `init-workflow` command, so promotion does not depend on someone having igor installed
+- [ ] 6.11 Report when the merger was not an assigned reviewer rather than recording them silently
+
+## 7. First real store
 
 - [ ] 6.1 Hand-author a seed store of conventions already known, using the CLI
 - [ ] 6.2 Read the result end to end and note what the schema made awkward to express
