@@ -354,6 +354,71 @@ duplicating the same shadow task.
 Igor still does the work and posts it as a suggestion. Shadowing then shrinks as confidence
 calibrates, instead of ending on a date someone picked.
 
+### 5.4 Directed interaction — **planned** (`core-igor-loop`)
+
+The moment an Igor posts a claim, people reply to it. Having no answer for that means the
+behavior gets decided by accident.
+
+**Separate answering from acting.** Answering costs a little budget and changes nothing, so
+an Igor can be liberal about responding. Acting is where risk lives, so it is strict about
+what it will *do* in response. The action-space cap (§6.1) already bounds the damage of a
+successful prompt injection — it cannot merge, send, or delete — but reversible is not
+harmless: a draft PR that exfiltrates a secret is closable, and the secret is still burned.
+
+**Authority to instruct never exceeds authority over the artifact.** If someone cannot merge
+to a repository, their instruction to an Igor working in it carries no weight. Injection by an
+outsider therefore gains them nothing they could not already do directly. In practice
+"authorized" means the role's `reviewers` plus anyone with write access to the repository in
+question.
+
+**Stop is the deliberate exception: unauthenticated, open to anyone.** A stop fails in the
+safe direction — worst case an Igor stands down and a human does the work. Everything that
+*expands* what an Igor does requires authorization; the one thing that *contracts* it is open
+to all, so anyone who sees it going wrong can halt it immediately.
+
+**Everything an Igor reads is data, not instruction.** Issue bodies, comments, linked pages,
+code — all untrusted, delimited as such when passed to the worker. The trusted instruction
+channel is role config and lore, nothing else. This must be explicit rather than assumed,
+because ingesting arbitrary text from shared surfaces is the entire premise.
+
+**Staying out of threads:**
+
+- **Reply only when explicitly addressed**, never to every comment on a claimed item.
+- **Cap exchanges per thread** at two or three, then stop and leave it to a human. An Igor
+  still talking after four rounds is not converging.
+- **Cap conversational spend** as a fraction of cycle budget, so talking cannot starve work.
+- **No free-form Igor-to-Igor conversation.** Agent exchange is structured — claims,
+  handoffs, stand-downs. Two Igors in a polite loop would burn a week's allowance in an
+  afternoon.
+
+**A direct request is a candidate that enters at triage rather than discovery.** Everything
+downstream is identical; only provenance differs. No separate code path, and every existing
+guardrail applies unchanged. Refusing direct requests to preserve the "finds its own work"
+property would be a design principle eating a real use case — self-directed discovery is the
+novel part, not the only part.
+
+- **Requested work outranks discovered work**, and this cuts across role ranking: a request to
+  a third-ranked role is served ahead of a discovered item in the first, because ranking exists
+  to allocate *spare* capacity rather than to ignore people. Cap requests per requester per
+  period so one enthusiastic person cannot consume a seat.
+- **Out-of-lane requests are declined with a route** — "not my lane, `igor-backend` covers it"
+  — which also makes the fleet legible to people who have no idea which Igor does what.
+- **Ambiguous requests get exactly one clarifying question**, then a hand-back rather than a
+  guess. The per-thread exchange cap enforces this automatically.
+- **An Igor is never "busy", only out of budget.** It fans out subagents, so serial attention
+  is not its constraint the way it is a human's. When the allowance is gone, say so with the
+  reset time and route via the handoff machinery (§6.4) pointed at the requester. Silence is
+  the worst available response.
+
+**Lore is queryable by humans, not only injected into agents.** "What's our convention for X?"
+is a legitimate question to put to an Igor. This closes a loop: a question lore cannot answer
+is a repeated-retrieval-miss, which is already a consolidation salience signal (§3.5) — so
+questions people actually ask become demand-driven evidence of what lore is missing.
+
+**Audit what was accepted.** Every instruction acted on, who gave it, and what changed as a
+result. If someone did successfully steer an Igor, that should be discoverable afterwards
+rather than invisible.
+
 ---
 
 ## 6. Execution

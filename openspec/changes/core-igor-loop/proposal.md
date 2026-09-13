@@ -44,7 +44,12 @@ the team's accumulated judgment rather than learning it from scratch.
   the action space rather than by silence, which is what lets the loop deliver value from
   week one.
 - **Budget exhaustion produces a handoff.** When an Igor cannot continue, it posts what it
-  did, what remains, and who could pick it up.
+  did, what remains, and who could pick it up. An Igor is never "busy" — it fans out
+  subagents, so budget is its only reason to defer, and it says so with a reset time.
+- **People can talk to an Igor, within limits.** It answers when addressed, about its own
+  work and about lore. Acting on what it is told requires authority the speaker already has
+  over the artifact, except **stop**, which anyone may say because it fails safe. Direct
+  requests enter the pipeline at triage as ordinary candidates and outrank discovered work.
 
 Explicitly out of scope:
 
@@ -75,6 +80,11 @@ Explicitly out of scope:
   lore, constrained to reversible outputs, capturing transcript and outcome.
 - `graceful-handoff`: Detecting budget exhaustion or unrecoverable failure and posting
   state-of-work, remaining steps, and suggested pickups.
+- `directed-interaction`: Replying when addressed; answering about current work and about
+  lore; accepting direct requests as triage-stage candidates; authorization bounded by the
+  speaker's existing authority over the artifact, with unauthenticated stop; treating all
+  ingested content as data rather than instruction; per-thread and per-requester caps; and an
+  audit trail of every instruction acted on.
 
 ### Modified Capabilities
 
