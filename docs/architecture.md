@@ -144,6 +144,35 @@ product per condition: ten thousand conditions against a 4096-dim state is a sin
 matmul, microseconds, and independent of how much text the entries contain. Unlike RAG,
 retrieval cost does not grow with corpus size.
 
+### 3.2.1 Lore is one of four context channels
+
+Lore is not the only way a worker gets context, and it is the only conditional one:
+
+| Channel | When | Source |
+|---|---|---|
+| **Standing instructions** | always | role config |
+| **The work item** | always | the claimed issue, diff, or thread |
+| **Ambient** | on demand, free | the codebase and its own docs — the worker is a coding agent with file access |
+| **Fired lore** | when a condition matches | the lore store |
+
+An Igor with an empty lore store is therefore not crippled: it has its role, the task, and the
+whole codebase — what a competent new hire walks in with. **Lore is additive, not
+foundational**, which is what makes hand-authored bootstrapping viable (§3.5.1).
+
+**Lore exists for what the worker would not know to ask for.** On-demand retrieval handles
+anything the worker thinks to look up. Lore covers the other case — "we never use that pattern
+here, it broke us in March" — which nobody searches for because nobody knows to. That is the
+entire justification for unbidden firing, and it is why better search cannot replace the
+channel.
+
+**Open: may the worker query surfaces mid-task?** Reading the repository is obviously
+available. Searching Linear or Slack for the discussion behind an ambiguous item is not
+specified. Recommended: allow read-only surface search, capped in call count, with everything
+returned marked untrusted exactly as ingested content already is (§5.4). A human would read
+the original discussion before touching something ambiguous, and forbidding it buys no safety
+— the content is equally untrusted whether it arrives by firing or by fetching. The cap
+guards against rabbit-holing, not against attack.
+
 ### 3.3 Firing — **planned**
 
 Firing is **unbidden**. The worker never issues a query or elects to search; matching
