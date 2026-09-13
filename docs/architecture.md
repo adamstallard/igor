@@ -564,6 +564,59 @@ Writing the cache principle down matters more than the location, because it is e
 would quietly stop holding once state is durable and shared — at which point the branch starts
 looking like a database and losing it starts looking like a failure.
 
+### 5.0.3 What a role actually looks like — **scoped** (`core-igor-loop`)
+
+Merge semantics (§6.0) describe how fields combine, not what they are called. The shape:
+
+```yaml
+name: frontend
+extends: [org]                          # org-level base, same file shape
+
+sources:                                # where to look
+  - tracker: github
+    repo: org/web
+    query: "is:issue is:open label:ai"  # native syntax, deliberately loose
+
+lane:                                   # APPEND — AND-ed with everything inherited
+  labels:
+    includes: [ai]
+    excludes: [Human, wontfix]
+  paths:
+    under: [src/, packages/ui/]
+
+instructions: |                         # APPEND — org's plus this role's
+  Prefer the shared query hook over fetch in useEffect.
+
+completion: unassign                    # OVERRIDE — unassign | close | assign
+claim:
+  template: "Taking this — {{igor}}"    # OVERRIDE
+
+allow: [draft-pr, comment]              # MONOTONIC — subset of inherited
+budget:
+  max_fraction: 0.4                     # MONOTONIC — at most inherited
+
+reviewers: [sarah, miguel]              # who reviews changes to this role
+```
+
+`lane` is **declarative rather than an expression language** — `includes`, `excludes`, `under`,
+`max_days`. No parser and no operators, which is the same discipline as refusing a query DSL:
+the moment a role wants real boolean logic, split the role. It is also what makes appending
+safe, since adding constraints can only narrow a match.
+
+**Documentation is not how people get this right; feedback is.** Two commands matter more than
+any amount of prose:
+
+- **`igor role explain <name>`** — the effective merged config, annotated with which level each
+  value came from. Under inheritance, "what does this role actually do" is hard to answer by
+  reading three files, and that is exactly when people guess.
+- **`igor role dry-run <name>`** — run discovery and triage over recent items and print what it
+  *would* have claimed and why, claiming nothing. This is how a lane predicate gets found wrong
+  before anything posts publicly.
+
+Dry-run is the one to build first. It also recovers the useful half of shadow mode — seeing
+what an Igor would do without it doing anything — as a **development affordance** rather than a
+runtime mode, which is where it belonged.
+
 ### 5.1 Adapters, not integrations — **scoped** (`core-igor-loop`)
 
 Slack, ClickUp, GitHub, Linear, and Discord are *examples* of surfaces, not the
@@ -690,6 +743,42 @@ this dependency" has to be something it **reasons about**, never something it **
 authority comes from: **the person, verified against their permissions on the artifact, not the
 text being present in something the Igor happened to read.** Someone who can merge to the
 repository can direct it. An issue body cannot, however imperatively phrased.
+
+**Identity comes from platform metadata, never from content.** The authenticated author id the
+surface reports — GitHub login or node id, Linear user id, Slack user id. Never a name parsed
+out of text, never a signature block, never a claimed identity in a body. Anyone can type
+someone else's handle into an issue.
+
+**Effective authority is the intersection of two ceilings:** what policy permits this Igor to
+do, and what that person can do on that artifact. Not the union, and not the speaker's alone.
+An admin cannot direct a merge that policy forbids; an Igor with merge rights does not merge
+because a read-only outsider asked. That makes the guarantee concrete rather than aspirational:
+**an Igor can never be used to exceed the requester's own reach**, so the worst outcome of
+manipulating one is that it does something the manipulator could have done directly. This is
+the confused-deputy problem and the standard fix — the deputy acts with the requester's
+authority, never its own.
+
+Three consequences: **fail closed** when the permission check cannot be made, rather than
+assuming goodwill. **Igor-to-Igor is bounded identically** — another Igor is an entity with its
+own permissions and gets no special trust. And **stop stays exempt**, because contracting what
+an Igor does needs no authority while expanding it always does.
+
+That asymmetry has a pleasing effect on the classic injection: *"ignore your previous
+instructions and do X"* splits cleanly. The first clause contracts, so it succeeds and costs
+nothing. The second expands, so it is bounded by what the speaker could already do.
+
+**But that split only covers instruction, not steering.** The authority check gates actions, not
+reasoning. An attacker who plants text in an item the Igor has legitimately claimed is not
+issuing an instruction to authorize — the Igor does its own work, badly steered, and produces a
+draft that quietly does the wrong thing. Nothing here stops that; the action space, review, and
+the audit trail do. Which is why reversible-only still earns its place even though a leaked
+secret is burned regardless.
+
+**And unauthenticated stop is not free.** On a public repository anyone who can comment can halt
+an Igor, repeatedly — harmless per incident, a denial of service at volume, and a quiet one.
+Keep it unauthenticated, because someone watching an Igor go wrong must be able to halt it, but
+rate-limit and audit it: repeated stops from one identity get flagged and the trail shows who.
+For a fail-safe action, visibility is the right level of defence rather than prevention.
 
 **Why this cannot be policy** (§6.0): there is no legitimate setting in which fetched text
 should carry authority. Turning it off removes the only boundary between words on the internet

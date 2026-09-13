@@ -99,9 +99,12 @@ Explicitly out of scope:
 
 ### New Capabilities
 
-- `role-config`: What a role is — search queries, lane predicates, standing instructions,
-  claim templates, completion behaviour — where it lives, how it is validated and loaded, and
-  the org-level policy layer roles inherit and may narrow but not loosen.
+- `role-config`: The role file — `sources`, declarative `lane` predicates, `instructions`,
+  `completion`, `claim`, `allow`, `budget`, `reviewers` — the org-level base roles `extends`,
+  and the three merge semantics (monotonic for permissions, override for settings, append for
+  instructions and predicates). Plus `role explain`, which shows the effective merged config
+  and where each value came from, and `role dry-run`, which reports what a role *would* claim
+  without claiming anything.
 - `surface-adapter`: The adapter interface — search, claim, verify, report, identity — plus
   the declaration of whether a surface offers native assignment or only message-based
   convention, and the GitHub implementation.
