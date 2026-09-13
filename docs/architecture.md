@@ -568,9 +568,11 @@ looking like a database and losing it starts looking like a failure.
 
 Merge semantics (§6.0) describe how fields combine, not what they are called. The shape:
 
+`roles/frontend.yaml` — the filename is the name, as with lore entry ids:
+
 ```yaml
-name: frontend
 extends: [org]                          # org-level base, same file shape
+seat: adam-primary                      # which seat this Igor spends from
 
 sources:                                # where to look
   - tracker: github
@@ -588,15 +590,17 @@ instructions: |                         # APPEND — org's plus this role's
   Prefer the shared query hook over fetch in useEffect.
 
 completion: unassign                    # OVERRIDE — unassign | close | assign
-claim:
-  template: "Taking this — {{igor}}"    # OVERRIDE
+claim: "Taking this — {{igor}}"         # OVERRIDE
 
 allow: [draft-pr, comment]              # MONOTONIC — subset of inherited
-budget:
-  max_fraction: 0.4                     # MONOTONIC — at most inherited
+budget_share: 0.4                       # MONOTONIC — at most inherited
 
 reviewers: [sarah, miguel]              # who reviews changes to this role
 ```
+
+**Legibility is a standing constraint, not a finishing touch.** People read these, and so do
+models writing them — a flat obvious schema is easier to generate correctly than a nested one
+with implicit structure. Every level of nesting should have to earn itself.
 
 `lane` is **declarative rather than an expression language** — `includes`, `excludes`, `under`,
 `max_days`. No parser and no operators, which is the same discipline as refusing a query DSL:
@@ -616,6 +620,16 @@ any amount of prose:
 Dry-run is the one to build first. It also recovers the useful half of shadow mode — seeing
 what an Igor would do without it doing anything — as a **development affordance** rather than a
 runtime mode, which is where it belonged.
+
+### 5.0.4 Work already in flight — **scoped** (`core-igor-loop`)
+
+An Igor unassigns itself on completion, so the item returns to the pool and is rediscovered
+next cycle. Without a check it would claim it again and redo work sitting in review.
+
+**The rule is universal, the detection is per-adapter.** "Do not duplicate work already in
+flight" is never an org preference, so it is tool behaviour rather than config. But *how* you
+see it differs: a linked pull request on GitHub, a linked branch on Linear. The adapter answers
+"does this item have work in flight?" and the loop skips.
 
 ### 5.1 Adapters, not integrations — **scoped** (`core-igor-loop`)
 
@@ -774,11 +788,13 @@ draft that quietly does the wrong thing. Nothing here stops that; the action spa
 the audit trail do. Which is why reversible-only still earns its place even though a leaked
 secret is burned regardless.
 
-**And unauthenticated stop is not free.** On a public repository anyone who can comment can halt
-an Igor, repeatedly — harmless per incident, a denial of service at volume, and a quiet one.
-Keep it unauthenticated, because someone watching an Igor go wrong must be able to halt it, but
-rate-limit and audit it: repeated stops from one identity get flagged and the trail shows who.
-For a fail-safe action, visibility is the right level of defence rather than prevention.
+**Unauthenticated stop is not free, but the surface already handles it.** On a public
+repository anyone who can comment can halt an Igor repeatedly — harmless per incident, a quiet
+denial of service at volume. The answer is **the surface's own access control**, not a rate
+limiter Igor builds: a private repository means only collaborators can comment, so only people
+already trusted can stop anything. A public surface means the public can, which is a property
+of choosing a public surface rather than a hole to paper over. Audit still matters, because you
+want to see *who* — but building rate limiting would be solving a platform's problem for it.
 
 **Why this cannot be policy** (§6.0): there is no legitimate setting in which fetched text
 should carry authority. Turning it off removes the only boundary between words on the internet
@@ -912,6 +928,48 @@ rewrite — turning the eventual fully-open migration into a dial rather than a 
 - **Auth:** `claude setup-token` issues a one-year OAuth token for unattended headless use
   against a subscription seat. Refresh behavior past expiry is undocumented; budget for an
   annual manual regeneration as a known operational task.
+
+### 6.3.1 Calibrating the budget from human observation — **planned**
+
+Caps are not published, so an Igor cannot compute headroom. The obvious fix — learn the cap by
+hitting it and recording cumulative spend — was **rejected**: it requires the exhaustion we are
+trying to prevent, and on a seat shared with a person it teaches the Igor at the human's
+expense.
+
+**Humans can just look.** `/usage` shows real numbers, so a person reads them and submits them.
+The Igor is grounded from the first window rather than the second, and the correction loop runs
+cheaply in both directions: the Igor reports headroom, and a doubtful human checks in seconds.
+
+Three pieces:
+
+**Seats are named entities in org config**, which is what makes "who may calibrate this"
+answerable at all:
+
+```yaml
+seats:
+  - id: adam-primary
+    owner: adamstallard      # who can run /usage for it
+    reserve: 0.5             # untouchable, left for the human
+```
+
+A role references `seat: adam-primary`, which also makes pooling (§6.5) legible — you can see
+which Igors share a budget.
+
+**A calibration command** writing to the state branch, keyed by seat:
+
+```sh
+igor budget calibrate --seat adam-primary --used 12.40 --limit 40.00
+```
+
+**`igor budget`** reports per seat: calibrated cap, **how old that calibration is**, spend this
+window, the reserve, and headroom. Age matters — tiers and caps change, and a stale number
+silently governing today's buffer is the failure. Surfacing it turns "if the report seems off"
+from something a human must notice into something the tool says.
+
+Exhaustion recording survives as a **cross-check**: hitting the wall at 80% of the calibrated
+cap means the calibration is wrong and the tool should say so. Reactive handling becomes a pure
+backstop rather than the design, which is what lets the reserve floor protect a human at the
+time rather than one window late.
 
 ### 6.4 Graceful handoff — **scoped**
 

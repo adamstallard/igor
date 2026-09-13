@@ -71,9 +71,18 @@ role, the work item, and the codebase, which is what a competent new hire walks 
   — never merges, never sends, never irreversible state changes. Blast radius is capped by
   the action space rather than by silence, which is what lets the loop deliver value from
   week one.
-- **Budget exhaustion produces a handoff.** When an Igor cannot continue, it posts what it
-  did, what remains, and who could pick it up. An Igor is never "busy" — it fans out
+- **Budget comes from human calibration, not from hitting the wall.** Caps are unpublished, so
+  a person runs `/usage` and submits what they see; the Igor spends against that, minus a
+  configured reserve left untouched for the human sharing the seat. Seats are named entities in
+  org config with an owner, so who may calibrate is answerable. `igor budget` reports headroom
+  and how old the calibration is. Exhaustion is a cross-check, not the teacher.
+- **Budget exhaustion produces a handoff.** When an Igor cannot continue anyway, it posts what
+  it did, what remains, and who could pick it up. An Igor is never "busy" — it fans out
   subagents, so budget is its only reason to defer, and it says so with a reset time.
+- **An item with work already in flight is skipped.** Completion unassigns, so the item returns
+  to the pool and is rediscovered. The rule is universal — never duplicate work in review — and
+  the detection is per-adapter, since a linked pull request and a linked branch are the same
+  fact wearing different clothes.
 
 Explicitly out of scope:
 
@@ -119,6 +128,10 @@ Explicitly out of scope:
   constrained to reversible outputs, capturing transcript and outcome.
 - `graceful-handoff`: Detecting budget exhaustion or unrecoverable failure and posting
   state-of-work, remaining steps, and suggested pickups.
+- `seat-budget`: Seats as named config entities with an owner and a reserve; calibration
+  submitted by a human from `/usage` and stored per seat on the state branch; spend accumulated
+  from each invocation's reported cost; headroom, calibration age, and the reserve reported by
+  `igor budget`; exhaustion recorded as a cross-check against the calibration.
 
 ### Modified Capabilities
 
