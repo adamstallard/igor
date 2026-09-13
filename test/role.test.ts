@@ -152,6 +152,90 @@ describe('append — levels accumulate', () => {
   })
 })
 
+describe('siblings union — an Igor that does two jobs', () => {
+  const TWO = {
+    org: 'allow: [comment, draft-pr, unassign]\ncompletion: unassign\nlane:\n  labels:\n    excludes: [Human]\n',
+    backend: 'lane:\n  paths:\n    under: ["server/**"]\n',
+    frontend: 'lane:\n  paths:\n    under: ["web/**"]\n',
+  }
+
+  it('covers what either parent covers, rather than only their overlap', () => {
+    // Conjoining siblings would give Milton items under server/** AND web/**, so he would find
+    // nothing at all — the failure that motivated resolving over the graph.
+    const dir = store({ ...TWO, milton: 'extends: [backend, frontend]\n' })
+    expect(resolveRole(dir, 'milton').role.lane.paths!.under).toEqual([['server/**', 'web/**']])
+  })
+
+  it('still cannot escape a constraint the parents share', () => {
+    const dir = store({ ...TWO, milton: 'extends: [backend, frontend]\n' })
+    expect(resolveRole(dir, 'milton').role.lane.labels!.excludes).toEqual(['Human'])
+  })
+
+  it('unions permissions between siblings without either one widening', () => {
+    // backend may draft-pr and frontend may not; Milton does both jobs, so he may.
+    const dir = store({
+      ...TWO,
+      backend: 'allow: [comment, draft-pr, unassign]\n',
+      frontend: 'allow: [comment, unassign]\n',
+      milton: 'extends: [backend, frontend]\n',
+    })
+    expect(resolveRole(dir, 'milton').role.allow.sort()).toEqual(['comment', 'draft-pr', 'unassign'])
+  })
+
+  it('cannot reach past what the parents share above them', () => {
+    // The safety property that makes unioning siblings acceptable at all.
+    const dir = store({
+      ...TWO,
+      backend: 'allow: [comment, unassign]\n',
+      frontend: 'allow: [comment, unassign]\n',
+      milton: 'extends: [backend, frontend]\nallow: [comment, unassign, merge]\n',
+    })
+    expect(() => resolveRole(dir, 'milton')).toThrow(/widens allow with merge/)
+  })
+
+  it('does not treat one sibling permitting more as the other widening', () => {
+    // Read as a flat chain, frontend would look like it widened backend's allow.
+    const dir = store({
+      ...TWO,
+      backend: 'allow: [comment, unassign]\n',
+      frontend: 'allow: [comment, draft-pr, unassign]\n',
+      milton: 'extends: [backend, frontend]\n',
+    })
+    expect(() => resolveRole(dir, 'milton')).not.toThrow()
+  })
+
+  it('takes the most restrictive parent ceiling, so combining cannot raise it', () => {
+    const dir = store({
+      ...TWO,
+      backend: 'budget_share: 0.5\n',
+      frontend: 'budget_share: 0.2\n',
+      milton: 'extends: [backend, frontend]\n',
+    })
+    expect(resolveRole(dir, 'milton').role.budgetShare).toBe(0.2)
+  })
+
+  it('leaves the lane unconstrained when one job is unconstrained', () => {
+    // "Anything, or this" is anything — a constrained sibling must not narrow a free one.
+    const dir = store({ ...TWO, anything: 'sources: []\n', milton: 'extends: [backend, anything]\n' })
+    expect(resolveRole(dir, 'milton').role.lane.paths).toBeUndefined()
+  })
+
+  it('takes the looser age bound across siblings', () => {
+    const dir = store({
+      ...TWO,
+      backend: 'lane:\n  age:\n    max_days: 30\n',
+      frontend: 'lane:\n  age:\n    max_days: 90\n',
+      milton: 'extends: [backend, frontend]\n',
+    })
+    expect(resolveRole(dir, 'milton').role.lane.age!.maxDays).toBe(90)
+  })
+
+  it('still narrows down a chain, so extending one parent is unaffected', () => {
+    const dir = store({ ...TWO, deep: 'extends: [backend]\nlane:\n  paths:\n    under: ["server/api/**"]\n' })
+    expect(resolveRole(dir, 'deep').role.lane.paths!.under).toEqual([['server/**'], ['server/api/**']])
+  })
+})
+
 describe('completion must be permitted', () => {
   it('rejects completing with an action outside allow', () => {
     const dir = store({ org: 'allow: [comment]\ncompletion: close\n' })

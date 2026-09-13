@@ -1159,7 +1159,7 @@ essentially credential provisioning. And there is no hosting business here, only
 Deployment work belongs to `core-igor-loop`, the first change that introduces a continuously
 running process. `lore-from-reviews` is a batch CLI and needs none of it.
 
-### 6.9 Igors act as machine users, not as a GitHub App — **decided**
+### 6.9 Igors act as machine users on GitHub, not as a GitHub App — **decided**
 
 Three identities are separate and stay separate: **who acts** on the surface, **which seat
 pays** for the model, and **which role's policy governs**. Config already splits the second
@@ -1191,11 +1191,35 @@ created rather than configured globally.
 
 #### 6.9.1 The rule generalizes by claim primitive, not by surface
 
-**Identity must be structural where the surface's claim primitive is structural, and may be
-textual where the claim is a message.**
+**A claim must live in a field the acting identity is permitted to occupy.** Where no such
+field admits a non-human identity, the actor has to be a machine account. Where the claim is a
+message, identity can travel in the payload.
 
-GitHub and Linear both have an assignee field, which only accepts real users, so both need a
-machine user per role. A message-only surface is the opposite case: the claim *is* the message
+An earlier draft of this section said "GitHub and Linear both have an assignee field, which
+only accepts real users". Researching Linear disproved the second half, and the correction is
+worth keeping because the wrong version generalized a GitHub quirk into a law.
+
+- **GitHub** — only real users may be assignees, and an App's bot user may not (404/403,
+  measured). Machine account per Igor.
+- **ClickUp** — no bot or service-account concept exists at all; both personal tokens and
+  OAuth attribute actions to a human. Machine account per Igor, and it is a paid seat each.
+- **Linear** — has a first-class app identity (`actor=app`) that costs no seat, and although
+  an app still cannot be the *assignee*, Linear provides a parallel `Issue.delegate` field
+  that an app may occupy. It is singular, so it is an exclusive claim, and filterable and
+  searchable in the UI. Strictly better than GitHub, at zero cost.
+- **Message surfaces** — the claim is the message.
+
+Two Linear-specific consequences worth recording before anyone builds the adapter. **Delegation
+may be human-initiated only**: nothing in the documentation says an app may set its own
+`delegateId`, and if it cannot, Igors cannot claim their own work there. That is a ten-minute
+empirical test against a scratch workspace and it gates the whole approach. And **a delegate is
+not inert the way an assignee is**: dismissing the agent session removes the delegate. That is
+a hazard for a claim ledger and simultaneously a gift — it is a *native stop primitive*, and it
+should map onto `verifyClaim` returning `stopped` rather than being worked around.
+
+Linear's agents API is a Developer Preview and may change.
+
+A message-only surface is the opposite case: the claim *is* the message
 and Igor authors its content, so the role name travels inside the payload and one bot per org
 suffices. Verification re-reads the channel, finds the earliest claim for the item, and checks
 whether it names this role — which works whatever account posted it. The shared-account failure
