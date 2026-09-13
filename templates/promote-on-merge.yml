@@ -52,16 +52,13 @@ jobs:
         with:
           node-version: '22'
 
+      # Runs from the repository root so the committed igor.config.yaml is found by the
+      # usual upward search. Igor is a shared tool — a team's config never goes inside it.
       - name: Promote
         if: steps.changed.outputs.files != ''
-        working-directory: .igor
         run: |
-          npm ci --silent
-          cat > igor.config.yaml <<EOF
-          destination: ..
-          publicStore: ${{ github.event.repository.private && 'false' || 'true' }}
-          EOF
-          npx tsx src/cli.ts promote \
+          npm --prefix .igor ci --silent
+          .igor/node_modules/.bin/tsx .igor/src/cli.ts promote \
             --by '${{ github.actor }}' \
             --at "$(date -u +%Y-%m-%d)" \
             --only ${{ steps.changed.outputs.files }}

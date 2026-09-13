@@ -31,10 +31,12 @@ export {
 
 export {
   loadConfig,
+  findConfig,
   resolveConfig,
   igorRoot,
   ConfigError,
   DEFAULT_CONFIG_FILENAME,
+  EXAMPLE_CONFIG_FILENAME,
   DEFAULT_HALF_LIFE_DAYS,
   type Config,
 } from './config.js'

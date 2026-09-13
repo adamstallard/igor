@@ -1,10 +1,14 @@
-# Copy to igor.config.yaml and edit. The real file is gitignored, because it carries
-# repository names, reviewer handles, and expert designations.
+# Copy this to igor.config.yaml in the repository that holds your lore, and COMMIT it
+# there. It is shared team configuration — uncommitted, these values drift between
+# whoever runs the tool and entries score differently depending on whose machine
+# computed them.
+#
+# It does not belong inside a clone of Igor. Igor is a shared public tool; this file
+# describes your team. The tool refuses to start if it finds a config inside itself.
 
-# Where entries are written. Relative paths resolve against this config file.
-# Lore belongs to the operating team, so this must resolve OUTSIDE the Igor
-# installation — the tool refuses to start otherwise.
-destination: ../our-team-knowledge
+# Where entries are written, relative to this config file. When the config lives in the
+# lore repository, as it should, that is simply here.
+destination: .
 
 # Any one of these may approve an entry. Also the escalation target when the author an
 # entry was mined from does not respond.

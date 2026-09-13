@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { parse as parseYaml } from 'yaml'
 
 export const DEFAULT_CONFIG_FILENAME = 'igor.config.yaml'
+export const EXAMPLE_CONFIG_FILENAME = 'igor.config.example.yaml'
 export const DEFAULT_HALF_LIFE_DAYS = 365
 
 export interface Config {
@@ -91,12 +92,47 @@ export function resolveConfig(raw: unknown, configDir: string): Config {
   }
 }
 
+/**
+ * Walks up from a starting directory looking for the config, the way git and eslint do.
+ * Running the tool anywhere inside the destination repository then just works.
+ */
+export function findConfig(startDir: string = process.cwd()): string | undefined {
+  let dir = resolve(startDir)
+  for (;;) {
+    const candidate = resolve(dir, DEFAULT_CONFIG_FILENAME)
+    if (existsSync(candidate)) return candidate
+    const parent = dirname(dir)
+    if (parent === dir) return undefined
+    dir = parent
+  }
+}
+
 export function loadConfig(configPath?: string): Config {
-  const path = resolve(configPath ?? DEFAULT_CONFIG_FILENAME)
-  if (!existsSync(path)) {
+  const explicit = configPath ?? process.env['IGOR_CONFIG']
+  const path = explicit === undefined ? findConfig() : resolve(explicit)
+
+  if (path === undefined) {
     throw new ConfigError(
-      `no config at ${path} — copy ${DEFAULT_CONFIG_FILENAME}.example and set a destination`,
+      `no ${DEFAULT_CONFIG_FILENAME} found here or in any parent directory.\n` +
+        `It belongs in the repository holding your lore, committed, so the whole team shares\n` +
+        `one set of values. Copy ${EXAMPLE_CONFIG_FILENAME} there and set destination: .`,
     )
   }
+
+  // Checked before the file even has to exist: pointing at a path inside Igor is a
+  // misunderstanding of where config lives, and saying so beats "no config at ...".
+  // Igor is a public tool everyone shares; this file describes one team.
+  if (isInside(path, igorRoot())) {
+    throw new ConfigError(
+      `${path} is inside the Igor installation.\n` +
+        `Igor is the tool and is shared; this config describes your team, so it belongs in the\n` +
+        `repository holding your lore — committed, with destination: . — not in a clone of Igor.`,
+    )
+  }
+
+  if (!existsSync(path)) {
+    throw new ConfigError(`no config at ${path}`)
+  }
+
   return resolveConfig(parseYaml(readFileSync(path, 'utf8')), dirname(path))
 }

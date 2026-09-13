@@ -57,23 +57,22 @@ The lore store is built; nothing else is yet.
 
 ```sh
 npm install
-cp igor.config.example.yaml igor.config.yaml   # then set a destination
 npm run build
 ```
 
-`destination` must resolve **outside** this repository — lore belongs to the operating team,
-and the tool refuses to start otherwise.
+**The config does not live here.** Igor is a shared public tool; the config describes *your
+team*. Copy `igor.config.example.yaml` into the repository that holds your lore, set
+`destination: .`, and **commit it** — which repositories are in scope, who reviews, who counts
+as an expert and the decay half-life are shared decisions, and uncommitted they drift between
+whoever runs the tool until an entry scores differently depending on whose machine computed it.
 
-**Where the config belongs.** It is gitignored *here*, because igor is the tool and the config
-is per-installation. But it is shared team configuration — which repositories are in scope, who
-the reviewers are, who counts as an expert, the decay half-life — so it should be **committed
-to the lore repository**, with `destination: .`. Left uncommitted, every person configures it
-separately and the values drift, and an entry scores differently depending on who ran the
-command.
+The tool refuses to start if it finds a config inside its own installation, and otherwise
+searches upward from the current directory the way git does — so running it anywhere inside
+your lore repository just works. `-c <path>` and `IGOR_CONFIG` override.
 
 One caveat for a public lore repository: the `publicStore` guard rejects privately-sourced
 *provenance*, but a config that merely lists private repositories in scope would publish those
-names. Don't put private repositories in a public lore repo's config.
+names.
 
 ```sh
 npm run lore -- create \

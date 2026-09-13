@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { slugFromClaim, uniqueId } from '../src/id.js'
 import { score } from '../src/scoring.js'
 import { loadAll, writeEntry, resolveCurrent, takenIds } from '../src/store.js'
-import { resolveConfig, igorRoot, ConfigError } from '../src/config.js'
+import { resolveConfig, loadConfig, findConfig, igorRoot, ConfigError } from '../src/config.js'
 import type { Entry } from '../src/entry.js'
 
 function tempStore(): string {
@@ -253,5 +253,35 @@ describe('serialized form', () => {
     const dir = tempStore()
     const text = readFileSync(writeEntry(dir, entry()), 'utf8')
     expect(text).not.toContain('reviewed')
+  })
+})
+
+describe('finding the config', () => {
+  it('walks up from a nested directory', () => {
+    const root = tempStore()
+    mkdirSync(join(root, 'a', 'b'), { recursive: true })
+    writeFileSync(join(root, 'igor.config.yaml'), 'destination: .\n')
+    expect(findConfig(join(root, 'a', 'b'))).toBe(join(root, 'igor.config.yaml'))
+  })
+
+  it('returns undefined when there is none above', () => {
+    expect(findConfig(tempStore())).toBeUndefined()
+  })
+
+  it('refuses a config inside the Igor installation', () => {
+    // Igor is a shared public tool; a team's config never belongs in a clone of it.
+    expect(() => loadConfig(join(igorRoot(), 'igor.config.yaml'))).toThrow(
+      /inside the Igor installation/,
+    )
+  })
+
+  it('explains where the config belongs when none is found', () => {
+    const cwd = process.cwd()
+    try {
+      process.chdir(tempStore())
+      expect(() => loadConfig()).toThrow(/repository holding your lore/)
+    } finally {
+      process.chdir(cwd)
+    }
   })
 })

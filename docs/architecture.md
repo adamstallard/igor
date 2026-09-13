@@ -593,7 +593,43 @@ Two practical notes: several processes on one token may hit per-account concurre
 and all activity appears under one account upstream — so distinguishing which Igor did what
 depends on local logging, not on anything the provider records.
 
-### 6.6 Igor is necessarily self-hosted — **constraint**
+### 6.6 Distribution: public repository now, npm later — **planned**
+
+Igor is the tool and nobody forks it; one public repository serves every adopter. That much is
+settled, and it is load-bearing rather than cosmetic: a promotion workflow in someone else's
+lore repository checks Igor out by path, so **Igor's visibility and repository path are now a
+commitment**. Taking it private or renaming it breaks every adopter's promotion.
+
+The current template pins `ref: main`, which means every adopter's CI silently tracks this
+repository's main branch — a breaking change lands in their pipeline without them choosing it.
+Fine with one adopter who wants fixes immediately; a supply-chain hazard with two.
+
+**Publishing to npm is the right end state** (the name `igor-lore` is available and already
+matches `package.json`). It is strictly better than checkout-from-public-repo: versioned and
+pinnable so adopters choose when to move, faster in CI with no clone and no `npm ci` against a
+checkout, and independent of the repository continuing to exist under that path.
+
+Timing follows the same rule as branch protection and merge automation: **do it when a second
+adopter appears.** Until then pinning costs the only user the fixes they want, and publishing
+releases of something changing hourly is churn for nobody's benefit.
+
+### 6.7 Configuration belongs to the team, not the tool — **scoped**
+
+A team's configuration — repositories in scope, reviewers, experts, decay half-life — never
+belongs inside a clone of Igor, now that Igor is a shared public tool. It lives in the
+repository holding that team's lore, committed, with `destination: .`. Uncommitted, the values
+drift between whoever runs the tool until an entry scores differently depending on whose
+machine computed it.
+
+The tool refuses to start on a config found inside its own installation, and otherwise searches
+upward from the working directory the way git does, so running it anywhere inside the lore
+repository works with no flags.
+
+This generalizes: **the destination is not merely "where lore goes" — it is the team's Igor
+state.** Lore today, role definitions and fleet configuration later. Igor stays stateless and
+shared; everything specific to a team lives in one repository they own.
+
+### 6.8 Igor is necessarily self-hosted — **constraint**
 
 An Igor runs on a subscription seat token, and a seat token cannot be handed to a third
 party. There is therefore no managed-service version of this in which a vendor runs Igors on
@@ -666,6 +702,7 @@ Agreed in principle, not scoped, roughly in dependency order:
 6. SAE-legible conditions (§4.3) — research.
 7. Post-hoc output recognition (§4.4).
 8. Difficulty routing (§6.2).
-9. Seat pooling and the fleet-level budget policy, with a reserve floor where a human shares
+9. Publishing to npm, and pinning the promotion workflow to a release (§6.6)
+10. Seat pooling and the fleet-level budget policy, with a reserve floor where a human shares
    the seat (§6.5).
-10. Additional adapters: Linear, then Discord.
+11. Additional adapters: Linear, then Discord.
