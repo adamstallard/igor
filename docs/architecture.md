@@ -336,11 +336,11 @@ reviewer who never opens the queue again. Measured against a real corpus the cap
 277 comments yielded six entries and two pull requests, well under a cap of twenty.
 
 **Why batch matters technically:** deriving a condition vector needs positives *and*
-negatives. A single lived episode gives one positive and no contrast set — the unsolved
-one-shot problem (§7). A batch clustering many related episodes yields a cluster of
-positives with the rest of the corpus as negatives; the contrast set falls out free. The
-thing that makes continuous personal memory hard is precisely what team memory does not
-need.
+negatives. Negatives are never the problem — the corpus supplies them, as does every entry
+already in the store. *Positives* are: a single lived episode offers exactly one, which is the
+unsolved part (§7). A batch clustering related episodes yields several positives at once, so
+the contrastive setup is ordinary rather than exotic. What makes continuous personal memory
+hard is precisely what team memory does not face.
 
 ### 3.5.1 Sources beyond review comments — **planned**
 
@@ -725,10 +725,19 @@ not.
 **The missing joint:** nobody closes the loop from *experience → salience gate → newly
 written activation-keyed condition vector*.
 
-**The invention required, precisely:** deriving a condition vector from **one** lived
-episode rather than a curated contrastive corpus — one-shot learning in activation space.
-Everything around it can be assembled from published work. Team-level lore sidesteps this
-entirely by consolidating in batch (§3.5).
+**What is missing applies to the continuous case, not to lore.** An agent forming memory as it
+goes has lived an episode *once* and must encode it before the next arrives. It is not short of
+negatives — its whole prior history is available — but it has a single positive, and deriving a
+reliable separating direction from one example is the part nobody has shown working.
+"One-shot" is the loose name for it; the precise statement is one positive against abundant
+negatives.
+
+**Lore never faces this**, and not only because consolidation runs in batch (§3.5). An entry
+arrives with several provenance episodes as positives, and the rest of the corpus — including
+every other entry — as negatives. That is an ordinary contrastive setup, so the constraint
+belongs to the personal-memory direction and should not be read as blocking anything here.
+
+Everything around the missing joint can be assembled from published work.
 
 ---
 
