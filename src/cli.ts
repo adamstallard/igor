@@ -47,6 +47,13 @@ program
     }
     const file = writeEntry(config.destination, entry)
     process.stdout.write(`${id}\n${file}\n`)
+    if (entry.status === 'provisional') {
+      // Only active entries fire, so a provisional entry sitting on main does nothing and
+      // says nothing about why. Name the next step rather than leaving that silent.
+      process.stdout.write(
+        `\nprovisional — it will not fire until reviewed. Run:\n  igor-lore propose --from <dir>\n`,
+      )
+    }
   })
 
 program

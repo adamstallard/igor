@@ -212,6 +212,21 @@ guards against rabbit-holing, not against attack.
 
 ### 3.3 Firing — **planned**
 
+**Only `active` entries fire.** `provisional` means proposed but not yet in force. Gating on
+status is what makes review more than ceremony: if a provisional entry fired, an entry would
+behave identically before and after approval, and unreviewed lore would quietly shape agent
+behaviour — the failure the review gate exists to prevent.
+
+The cost is a transient. Reconcile promotes merged entries at the start of the next
+invocation rather than at merge time (there is no daemon — §5.4), so a freshly merged entry
+stays provisional for one cycle. That window is minutes while anything is running, and while
+nothing is running nothing is firing either.
+
+Consequence worth designing against: an entry created and committed straight to main, without
+going through `propose`, never fires and says nothing about why. The `create` command should
+name the next step rather than leaving that silent.
+
+
 Firing is **unbidden**. The worker never issues a query or elects to search; matching
 entries are injected before it runs. This is the property that distinguishes the design
 from RAG, and it sits entirely on the *condition* side — the payload mechanism is ordinary.
