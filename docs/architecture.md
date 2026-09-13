@@ -53,20 +53,25 @@ Three distinct objects, often confused:
 Routing rule: guidance specific to one role's behavior is role config; guidance applying to
 anyone touching an area is lore.
 
-### 2.1 Roles — stub **scoped**, runtime **planned**
+### 2.1 Roles — **planned** (`core-igor-loop`)
 
 Roles and Igors are **many-to-many**. Many Igors can run the same role; one Igor can hold
 several.
 
-A role file starts minimal — `name`, `reviewers`, `paths` — and grows. `lore-from-reviews`
-needs only that much to route candidates and assign review. `core-igor-loop` extends the
-same file with search queries, claim templates, and standing instructions, so the role is
-defined once rather than invented twice.
+Roles become real objects in `core-igor-loop`, not before. `lore-from-reviews` deliberately
+defines none: its reviewer comes from a mined comment's author, and routing guidance into
+role config is meaningless while nothing loads role config. Entries there carry a `scope`
+**label** (`role:frontend`) which is a tag, not a foreign key — enough to promote from later,
+costing nothing now. Defining the schema in the change that actually consumes it also means
+defining it with more information than we have today.
 
 **`reviewers` is a list, not an owner.** Any one of them can approve a lore entry or role
-config change, and it is where an entry escalates when the author it was mined from does not
-respond. No quorum and no single accountable person — that would be org structure leaking
-into config for no benefit.
+config change. No quorum and no single accountable person — that would be org structure
+leaking into config for no benefit.
+
+Until roles exist, the same need is met by a store-level `reviewers` list in the lore tool's
+config, which is where an entry escalates when the author it was mined from does not respond.
+Roles later narrow that to per-role lists; they do not introduce the concept.
 
 **One Igor, several roles, because a seat costs the same idle.** A role too narrow to fill
 its seat's allowance wastes capacity that was already paid for. Holding a second role

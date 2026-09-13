@@ -75,22 +75,23 @@ frontmatter would desync as soon as time passed or a provenance item was added.
 supersession pointers and diffs are worth more than a hash, but rewording a claim later must
 not move the id, since other entries reference it. Collisions take a numeric discriminator.
 
-**A minimal role stub ships with this change.** Review routing and the role-versus-lore
-routing rule both need a role concept, but roles are otherwise defined in `core-igor-loop` —
-a dependency inversion that has to be resolved somewhere. Resolving it here, minimally:
+**No role objects in this change.** An earlier draft defined a minimal role file here, on
+the grounds that review routing and role-versus-lore routing both need one. Neither holds:
 
-```yaml
-name: frontend
-reviewers: [sarah, miguel]
-paths: ["src/**/*.tsx", "src/styles/**"]
-```
+- The reviewer is the author the comments were mined from, which comes from provenance. A
+  role is only implicated in the fallback cases — no response, or a departed author — and a
+  single configured `reviewers` list for the store covers those without inventing a domain
+  concept.
+- Routing guidance into role config is meaningless while nothing consumes role config.
+  Roles do not become runtime objects until `core-igor-loop`, so "propose a role config
+  change" would mean writing to a file nothing reads.
 
-`reviewers` is a list rather than an owner: any one of them can approve, and it is the
-escalation target when a mined author does not respond. `core-igor-loop` extends the same
-file with queries, claim templates, and standing instructions, so a role is defined once
-rather than invented twice. The alternative considered — dropping role routing from this
-change and producing only area-wide lore — is simpler but discards the "expert codifies
-judgment into the role" path that motivates review mining in the first place.
+So everything this change produces is a lore entry, and `scope` is a **label**
+(`global`, `role:frontend`, `project:<name>`) rather than a foreign key. Tagging an entry
+`role:frontend` requires no role to exist. When `core-igor-loop` defines roles, entries
+already carrying that scope can be promoted into standing instructions at that point —
+which is also when there is enough information to define the role schema well. The cost of
+deferring is a possible tag rename if eventual role names diverge from the labels.
 
 **Source: review comments only.** Almost every review comment is already a correction
 event, so the salience filtering that Slack or ticket history would need is mostly
@@ -123,11 +124,12 @@ predicates are exact, free, perfectly legible, and need no model. Clusters whose
 paths share no useful prefix get a prose condition and no predicate — they are candidates
 for learned conditions in a much later change, not a reason to build that machinery now.
 
-**Routing: role config versus lore.** Guidance about how one role should behave becomes a
-proposed role config change; guidance that applies to anyone touching an area becomes a
-lore entry. The distinction matters because role config is always-loaded standing context
-while lore fires conditionally, and mis-routing either bloats every invocation or buries
-standing guidance behind a predicate.
+**Routing to role config is deferred, not abandoned.** The eventual distinction matters —
+role config is always-loaded standing context while lore fires conditionally, so
+mis-routing either bloats every invocation or buries standing guidance behind a predicate.
+But it cannot be acted on until something loads role config. Until then, candidates that
+would eventually be standing guidance are written as lore entries carrying a `role:` scope
+label, which is enough information to promote them later without deciding now.
 
 **Review is a pull request assigned to the mined author.** This is the consent mechanism
 and the accuracy mechanism at once: the only person who can confirm "yes, that is what I

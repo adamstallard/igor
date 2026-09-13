@@ -34,9 +34,10 @@ process, and no waiting.
 - **Conditions are derived, not invented.** The file paths of the source comments give the
   firing predicate directly — if every source comment landed on `.tsx` files under
   `src/components`, that is the condition. No learned conditions in this change.
-- **Candidates are routed.** Guidance specific to one role's behavior becomes a proposed
-  role config change; guidance that applies to anyone touching that area becomes a lore
-  entry.
+- **Candidates are labelled, not routed.** Every candidate becomes a lore entry carrying a
+  `scope` label (`global`, `role:<name>`, `project:<name>`). Promoting role-scoped guidance
+  into standing role config waits for `core-igor-loop`, because nothing loads role config
+  until then — and a label costs nothing to apply now and is enough to promote from later.
 - **The person whose comments were mined reviews the result.** Each candidate is opened as a
   pull request assigned to the author it was derived from: "here are fourteen times you said
   this, we turned it into a rule — is that right?" Nothing enters lore without that
@@ -64,7 +65,7 @@ Explicitly out of scope:
   correction stuck, and scoring by author and substance.
 - `lore-consolidation`: Clustering related corrections, drafting candidate entries, deriving
   predicates from source paths, deduplicating against existing entries, and routing
-  candidates between lore and role config.
+  candidates with a scope label.
 - `lore-review`: The approval workflow — opening candidates as pull requests, assigning each
   to the author it was derived from, and writing approved entries with provenance intact.
 
