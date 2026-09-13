@@ -188,29 +188,40 @@ export interface PrState {
   url: string
 }
 
+interface RawPr {
+  number: number
+  state: 'open' | 'closed'
+  merged_at: string | null
+  updated_at: string
+  html_url: string
+  assignees: { login: string }[]
+  merged_by: { login: string } | null
+  head: { ref: string }
+}
+
 export async function listOpenedBy(repo: string, branchPrefix: string): Promise<PrState[]> {
-  const prs = (await gh([
-    'api', `repos/${repo}/pulls?state=all&per_page=100`, '--paginate', '--slurp', '--jq',
-    `[.[][] | select(.head.ref | startswith("${branchPrefix}")) | {number, state, merged_at, updated_at, url: .html_url, assignees: [.assignees[].login], merged_by: .merged_by.login}]`,
-  ])) as {
-    number: number
-    state: 'open' | 'closed'
-    merged_at: string | null
-    updated_at: string
-    url: string
-    assignees: string[]
-    merged_by: string | null
-  }[]
-  return prs.map((p) => ({
-    number: p.number,
-    state: p.state,
-    merged: p.merged_at !== null,
-    ...(p.merged_by ? { mergedBy: p.merged_by } : {}),
-    ...(p.merged_at ? { mergedAt: p.merged_at.slice(0, 10) } : {}),
-    updatedAt: p.updated_at.slice(0, 10),
-    assignees: p.assignees,
-    url: p.url,
-  }))
+  // `--slurp` cannot be combined with `--jq`, so the filtering happens here rather than in
+  // the query. Pages come back as an array of arrays.
+  const pages = (await gh([
+    'api',
+    `repos/${repo}/pulls?state=all&per_page=100`,
+    '--paginate',
+    '--slurp',
+  ])) as RawPr[][]
+
+  return pages
+    .flat()
+    .filter((p) => p.head.ref.startsWith(branchPrefix))
+    .map((p) => ({
+      number: p.number,
+      state: p.state,
+      merged: p.merged_at !== null,
+      ...(p.merged_by ? { mergedBy: p.merged_by.login } : {}),
+      ...(p.merged_at ? { mergedAt: p.merged_at.slice(0, 10) } : {}),
+      updatedAt: p.updated_at.slice(0, 10),
+      assignees: p.assignees.map((a) => a.login),
+      url: p.html_url,
+    }))
 }
 
 /** Files a pull request proposed, read from its first commit rather than from stored state. */

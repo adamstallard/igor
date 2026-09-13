@@ -57,8 +57,18 @@ npm run build
 ```
 
 `destination` must resolve **outside** this repository — lore belongs to the operating team,
-and the tool refuses to start otherwise. `igor.config.yaml` is gitignored because it carries
-repository names and people's handles.
+and the tool refuses to start otherwise.
+
+**Where the config belongs.** It is gitignored *here*, because igor is the tool and the config
+is per-installation. But it is shared team configuration — which repositories are in scope, who
+the reviewers are, who counts as an expert, the decay half-life — so it should be **committed
+to the lore repository**, with `destination: .`. Left uncommitted, every person configures it
+separately and the values drift, and an entry scores differently depending on who ran the
+command.
+
+One caveat for a public lore repository: the `publicStore` guard rejects privately-sourced
+*provenance*, but a config that merely lists private repositories in scope would publish those
+names. Don't put private repositories in a public lore repo's config.
 
 ```sh
 npm run lore -- create \

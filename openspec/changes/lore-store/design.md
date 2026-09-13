@@ -91,6 +91,17 @@ private material out of a repo that may one day be public.
 "edit YAML by hand and hope" is not a workflow. `create` scaffolds an entry and assigns the id;
 `validate` runs the schema checks over the store; `list` shows what exists with derived scores.
 
+**Configuration belongs to the lore repository, not to igor.** It is gitignored in the tool's
+own repository because it is per-installation, but which repositories are in scope, who the
+reviewers and experts are, and the decay half-life are all shared team decisions. Uncommitted,
+they drift between the people running the tool, and an entry's score then depends on whose
+machine computed it. Committing the config alongside the entries it governs — with
+`destination: .` — keeps them together and versioned.
+
+A public lore repository needs one caution: the `publicStore` guard rejects privately-sourced
+provenance but does not inspect the config, so a config listing private repositories in scope
+would publish those names.
+
 **Branch protection and merge automation arrive together, and not before a second writer.**
 Both answer the same question — what happens when someone other than the tool's owner merges
 lore — so neither earns its cost on a single-writer repository.
