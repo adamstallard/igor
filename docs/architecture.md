@@ -1106,6 +1106,36 @@ essentially credential provisioning. And there is no hosting business here, only
 Deployment work belongs to `core-igor-loop`, the first change that introduces a continuously
 running process. `lore-from-reviews` is a batch CLI and needs none of it.
 
+### 6.9 Igors act as machine users, not as a GitHub App — **decided**
+
+Three identities are separate and stay separate: **who acts** on the surface, **which seat
+pays** for the model, and **which role's policy governs**. Config already splits the second
+and third; this section is about the first.
+
+**A GitHub App cannot be an assignee.** Measured against a real repository: the
+can-this-user-be-assigned check returns 404 for an app's bot user and the assignment attempt
+returns 403. An App is otherwise the tidier answer — scoped permissions, no seat, obviously not
+a person — but claiming by assignment is the whole reason assignment was chosen over a comment,
+and an App would silently degrade GitHub to a message-only surface. So Igors act as **machine
+users**: ordinary accounts with repository access.
+
+**One account per role, not one per org and not one per instance.** Roles are few, stable, and
+are what a person actually wants to see in an assignee field. A single shared account also
+breaks claim verification outright: every Igor reading the assignee back would see its own
+name and conclude it holds the item, so two Igors would proceed on one issue. Per-instance
+accounts solve nothing further, since instances of a role are interchangeable — that is the
+premise the name comes from.
+
+**A claim message is posted regardless.** It is required anyway on surfaces with no assignment
+(§5.2), it carries the stop instruction, and it names the specific Igor — which is what makes
+a shared account survivable if an org ever chooses one. One mechanism covering three needs
+beats three mechanisms.
+
+Interaction with worktrees (§6.7.2): fetching is shared and can use one read-only credential
+for the bare object store, while pushing is per-role and uses that role's own. A worktree is
+created per task and a task belongs to one Igor, so git identity is set when the worktree is
+created rather than configured globally.
+
 ---
 
 ## 7. Prior art

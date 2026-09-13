@@ -61,9 +61,9 @@ lane predicates before the loop is allowed to act.
 
 ## 7. Claiming and stop
 
-- [ ] 7.1 Claim by setting the assignee where the tracker has one, for visibility
+- [ ] 7.1 Claim by setting the assignee where the tracker has one, for visibility — as a machine user for the role, since a GitHub App cannot be an assignee
 - [ ] 7.2 Verify the claim after a settle interval by re-reading, and stand down if someone was first — scan for a stop from `claimedAt - settleSeconds`, since GitHub filters comments by `updated_at` at second granularity and a stop posted during the settle window must not fall in the gap
-- [ ] 7.3 Post a claim message from the role's template where the tracker has no assignment
+- [ ] 7.3 Post a claim message from the role's template on every claim, not only where the tracker lacks assignment — it names the specific Igor, carries the stop instruction, and is the only claim signal on a message-only surface
 - [ ] 7.4 Implement stop: unconditional, open to anyone, released on detection with no permission check
 - [ ] 7.5 Detect stop through claim verification rather than a separate operation, and re-check at checkpoints during long execution rather than only per cycle — each checkpoint scans from the original claim time, never from the previous checkpoint, or a stop is missed in the gap between them
 - [ ] 7.6 Post a one-line receipt naming any partial artifact on stop — a stop is exempt from the handoff, since it releases the claim and whoever stopped it is taking over
