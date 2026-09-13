@@ -512,10 +512,30 @@ This corrects an earlier framing. A scope label is not a training wheel Igor imp
 removes; it is the boundary the org already draws. There is nothing to graduate off — widening
 scope means widening the query.
 
-Two things worth keeping apart: the *query* must be concrete config, because something has to
-know to search `label:ai`. But **what a label means is team knowledge**, and belongs in lore —
-"work marked AI is agent-eligible, Human means leave it alone." An Igor reading its own lore
-then understands why it is scoped that way rather than only that it is.
+**But the query is only the first of three filters, and the org's idiosyncrasy belongs in the
+second.** Two operations were being conflated:
+
+- A **tracker query** is *remote*. The tracker executes it, so it must be in the tracker's
+  language, and it should be deliberately **loose** — fetch broadly.
+- **Lane matching** is *local*, over a candidate the adapter has already normalized. That is
+  where predicates belong: `labels includes AI`, `labels excludes Human`, `paths under
+  services/billing`. Normalized fields, so portable across trackers in a way a query is not.
+
+So triage is three stages, mirroring lore firing exactly: loose native query, then free precise
+predicates, then an LLM call for only the residue predicates cannot express. A loose remote
+query plus a precise local filter is more robust than a clever remote one, and the **same
+predicate evaluator serves both lore firing and role lane matching** — one implementation.
+
+The distinction to keep: **no DSL for remote queries, predicates for local matching.**
+Translating `label:ai` into ClickUp tag syntax is the trap. Filtering normalized candidates is
+not. It does mean the adapter's normalization contract has to be real — labels, title, body,
+author, state, age, linked paths, url — since predicates are only as portable as that shape is
+consistent.
+
+Separately: the *query and predicates* are concrete config, but **what a label means is team
+knowledge** and belongs in lore — "work marked AI is agent-eligible, Human means leave it
+alone." An Igor reading its own lore understands why it is scoped that way rather than only
+that it is.
 
 ### 5.0.2 State is a cache; correctness never depends on it — **scoped** (`core-igor-loop`)
 
@@ -785,6 +805,31 @@ repository works with no flags.
 This generalizes: **the destination is not merely "where lore goes" — it is the team's Igor
 state.** Lore today, role definitions and fleet configuration later. Igor stays stateless and
 shared; everything specific to a team lives in one repository they own.
+
+### 6.7.1 One server per org, many Igors — **planned**
+
+The natural deployment is **one server per organization running many Igor loops**, not one
+process per Igor each holding its own credentials.
+
+- **One shared recognizer.** This is where the local open-weight model (§4.1) runs, and sharing
+  is what makes its cost argument work at all — serving one model to a dozen loops is cheap,
+  standing one up per Igor is absurd.
+- **One secret store**, with seat tokens pooled (§6.5). Members of the org can see each other's
+  keys, which is an ordinary trade for an internal tool and the right default; per-user
+  isolation is what you add when someone has a reason, not what you start with.
+- **Surface credentials are org-level anyway** — a GitHub App or token for the organization,
+  not one per Igor.
+
+The cost is a single point of failure and a wider blast radius if the box is compromised.
+
+An earlier design had a **relay** between the surfaces and the seats — middleware catching
+webhook events and forwarding them. Polling removed the need for it: no public endpoint, no
+per-surface relay, no bearer token on a receiving side. It is gone rather than pending.
+
+This does not change the first Igor, which runs as one process on a laptop. It changes what
+that change must avoid assuming: no per-Igor credential file, no Igor owning its own process
+lifecycle, no recognizer client assuming it is the only one. Cheap to respect now, expensive to
+unpick later.
 
 ### 6.8 Igor is necessarily self-hosted — **constraint**
 

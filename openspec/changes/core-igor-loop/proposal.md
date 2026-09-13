@@ -36,8 +36,14 @@ role, the work item, and the codebase, which is what a competent new hire walks 
   truth for what is claimed, so an Igor that loses its watermarks re-examines old items,
   finds them assigned or closed, and skips. That costs API calls and triage tokens, never a
   duplicate claim. Local by default; committable where the audit trail is worth the noise.
-- **Two-stage triage.** Deterministic query matching narrows the firehose for free. Only
-  survivors cost an LLM call, which decides whether the work is in lane and worth doing.
+- **Three-stage triage.** A deliberately loose query in the tracker's own language fetches
+  broadly. **Predicates over normalized candidate fields** then decide lane precisely and for
+  free — `labels includes AI`, `labels excludes Human` — which is where an org's own
+  conventions live, versioned in the role config. Only the residue reaches an LLM call. The
+  same predicate evaluator serves lore firing, so there is one implementation.
+- **The adapter's normalization contract is real**: labels, title, body, author, state, age,
+  linked paths, url. Predicates are only as portable across trackers as that shape is
+  consistent.
 - **Claim or skip.** Triage produces a binary outcome. There is no confidence score and no
   shadow mode — not deferred, dropped. What gets skipped is still recorded, because a
   record of what an Igor passed on is useful regardless.
