@@ -544,12 +544,25 @@ tracker is the source of truth for what is claimed.** An Igor that loses its sta
 an old item, finds it assigned or closed, and skips — so losing state costs API calls and
 triage tokens, never a duplicate claim.
 
-That makes the storage location a low-stakes choice: **local by default**, since committing it
-would write to the destination repository every cycle in a way configuration never does.
-Committing is available where an audit trail is worth the noise.
+**It lives on an orphan branch of the destination**, not on `main` and not on a laptop. The
+generalisation: **machine output goes in a machine venue on every surface** — its own channel
+in Slack or Discord, its own branch in git. Coordination claims already work that way, so
+state should not be the exception.
 
-Writing the principle down matters more than the location, because it is exactly what would
-quietly stop holding if some real decision were later moved into the watermark.
+An orphan branch specifically, sharing no history with `main`:
+
+- `main`'s log stays purely human-meaningful, which is the whole value of keeping lore in git
+- state survives a fresh clone, which local storage does not
+- it is still inspectable — `git show igor-state:state.json`, no checkout
+- no merge conflicts with `main`, and no accidental merge, since there is no common ancestor
+- writing it reuses the tree API already used to propose entries, so nothing is cloned
+
+Transcripts from task execution belong there too: durable machine output that has no business
+in `main`.
+
+Writing the cache principle down matters more than the location, because it is exactly what
+would quietly stop holding once state is durable and shared — at which point the branch starts
+looking like a database and losing it starts looking like a failure.
 
 ### 5.1 Adapters, not integrations — **scoped** (`core-igor-loop`)
 
@@ -704,6 +717,39 @@ rather than invisible.
 ---
 
 ## 6. Execution
+
+### 6.0 Policy is org config, not tool behaviour — **planned**
+
+Three times this design encoded one org's convention as though it were universal: a canonical
+label, tracker query syntax, and what an Igor does when work is finished. The rule that
+prevents a fourth:
+
+- **Deterministic and decides behaviour** → config. Completion actions, permitted artifacts,
+  who gets assigned next.
+- **Needs judgment, applies conditionally** → lore. "This area is sensitive, hand it to a
+  person."
+- **Neither** belongs hardcoded in the tool.
+
+So "an Igor never closes anything" is a *default*, not a rule. Some orgs will want Igors that
+review each other, assign to each other or to humans, and mark one another's work complete —
+workflows the tool has no business precluding.
+
+**Policy is not a new artifact.** It is the org-level layer of the config roles already
+inherit: same shape, wider scope, with one constraint — **a role may narrow policy, never
+loosen it.** The org sets the ceiling and roles lower it, which is how differential trust works
+(the docs Igor opens pull requests freely, the infra Igor only comments) without letting a role
+escalate its own permissions.
+
+**What cannot be policy**, or "configurable" eats the security model:
+
+- **Claim before starting.** The coordination mechanism the design exists to provide.
+- **Stop is unconditional and open to anyone** (§5.3).
+- **Ingested content is data, never instruction** (§5.4).
+
+Everything else — completion behaviour, whether an Igor may close, even whether it is confined
+to reversible artifacts — is policy with a safe default. Reversible-only in particular was
+being treated as inviolable when it is really a strong default an org may raise for a role it
+has come to trust.
 
 ### 6.1 Action space, not silence — **scoped**
 

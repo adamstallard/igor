@@ -34,8 +34,19 @@ role, the work item, and the codebase, which is what a competent new hire walks 
   teams already have conventions and theirs fit better.
 - **State is a cache, and correctness never depends on it.** The tracker is the source of
   truth for what is claimed, so an Igor that loses its watermarks re-examines old items,
-  finds them assigned or closed, and skips. That costs API calls and triage tokens, never a
-  duplicate claim. Local by default; committable where the audit trail is worth the noise.
+  finds them assigned or closed, and skips. That costs tokens, never a duplicate claim.
+- **State lives on an orphan branch of the destination**, along with execution transcripts.
+  Machine output gets a machine venue on every surface — its own channel in chat, its own
+  branch in git — so `main` stays purely human-meaningful while state still survives a fresh
+  clone and stays inspectable.
+- **Completion behaviour is policy, not a rule.** What an Igor does when it believes work is
+  finished — unassign, close, assign onward, request review — is org config with a safe
+  default of unassign-and-leave-the-artifact. Some orgs will want Igors that review each
+  other and mark one another's work complete, and the tool should not preclude that.
+- **Policy is the org-level layer of role config**, not a new artifact: same shape, wider
+  scope, and a role may narrow it but never loosen it. Claiming before starting,
+  unconditional stop, and treating ingested content as data are not policy — they are the
+  properties config must not be able to weaken.
 - **Three-stage triage.** A deliberately loose query in the tracker's own language fetches
   broadly. **Predicates over normalized candidate fields** then decide lane precisely and for
   free — `labels includes AI`, `labels excludes Human` — which is where an org's own
@@ -88,8 +99,9 @@ Explicitly out of scope:
 
 ### New Capabilities
 
-- `role-config`: What a role is — search queries, lane definition, standing instructions,
-  claim templates — where it lives, and how it is validated and loaded.
+- `role-config`: What a role is — search queries, lane predicates, standing instructions,
+  claim templates, completion behaviour — where it lives, how it is validated and loaded, and
+  the org-level policy layer roles inherit and may narrow but not loosen.
 - `surface-adapter`: The adapter interface — search, claim, verify, report, identity — plus
   the declaration of whether a surface offers native assignment or only message-based
   convention, and the GitHub implementation.
