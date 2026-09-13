@@ -90,12 +90,15 @@ effort and reads as flattering rather than extractive.
   one person feeling their judgment was harvested over their objection.
 - **Non-response past a window routes to the role owner**, who may approve on currency
   grounds.
-- **Authors who have left are not mined at all.** They cannot consent and cannot correct a
-  misattribution. This is deliberately more conservative than necessary and does discard
-  real signal; it is a config-level default that can be revisited. The alternative
-  considered — mine them, attribute the rule to the role rather than the person, and have
-  the current role owner vouch — is recorded here because it is the likely revision if the
-  lost signal proves material.
+- **Authors who have left are mined, but the rule is attributed to the role, not the
+  person, and the current role owner vouches for it.** The entry reads as the present owner
+  asserting "this is our convention," with provenance citing the historical comment as
+  evidence. Nobody speaks for a departed person; a public artifact they did write is simply
+  cited, which is ordinary. The rejected alternative — excluding departed authors entirely
+  — was considered more defensible at first but discards most of the historical corpus in
+  any team with turnover, including conventions still in force, while protecting against a
+  misattribution that attributing to the role already prevents. Currency, the thing that
+  actually matters, could not have been vouched for by a departed author anyway.
 
 **Batch cap of 20, configurable.** The failure mode that kills this approach is not bad
 extraction, it is dumping four hundred candidates on a reviewer who then never opens the
