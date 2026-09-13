@@ -2,15 +2,42 @@
 
 ### Requirement: Candidates are grouped into one pull request per reviewer
 
-Review SHALL group a batch's candidates by the author their comments were mined from, and
-open exactly one pull request per such author containing that author's candidates. A
-candidate SHALL be independently acceptable or refusable within that pull request.
+Review SHALL group a batch's candidates by their **dominant author** — the author
+contributing the most provenance items — and open exactly one pull request per dominant
+author containing that author's candidates. A candidate SHALL be independently acceptable or
+refusable within that pull request.
 
-#### Scenario: Batch split by author
+#### Scenario: Batch split by dominant author
 
-- **WHEN** a batch of 20 candidates draws on comments from 3 distinct authors
+- **WHEN** a batch of 20 candidates has 3 distinct dominant authors
 - **THEN** 3 pull requests are opened, each containing only that author's candidates
 - **AND** each is assigned to that author for review
+
+### Requirement: Every contributing author reviews what was derived from them
+
+A candidate drawn from more than one author SHALL add every other contributing author as a
+reviewer on the pull request holding it. Any one of them MAY approve, and any one of them MAY
+decline, with a decline discarding the candidate as it would from the dominant author. Where
+two authors contribute equally, the dominant author SHALL be the one whose most recent
+contribution is later, since that is closest to current practice.
+
+#### Scenario: Mixed-authorship candidate
+
+- **WHEN** a candidate draws four provenance items from one author and two from another
+- **THEN** it is placed in the first author's pull request
+- **AND** the second author is added as a reviewer on that pull request
+
+#### Scenario: Contributing author declines
+
+- **WHEN** a contributing author who is not the dominant author declines a candidate
+- **THEN** the candidate is discarded
+- **AND** it is recorded as declined so re-clustering cannot re-propose it
+
+#### Scenario: Equal contribution
+
+- **WHEN** two authors contribute the same number of provenance items to a candidate
+- **THEN** the author whose most recent contribution is later is treated as dominant
+- **AND** the other is added as a reviewer
 
 #### Scenario: One refusal does not block the rest
 

@@ -39,12 +39,13 @@ design changes.
 
 ## 5. Review workflow
 
-- [ ] 5.1 Group a batch by mined author and open exactly one pull request per author, assigned to them
-- [ ] 5.2 Support accepting or declining each candidate independently within a pull request
-- [ ] 5.3 Record declined candidates and their source comments so re-clustering cannot re-propose them
-- [ ] 5.4 Implement non-response escalation to the store-level `reviewers` after the configured window, recording the original assignee as non-responding rather than declining
-- [ ] 5.5 Handle departed authors: assign to store reviewers, phrase the claim as team convention, and keep provenance naming the original author
-- [ ] 5.6 On approval, write the entry with `status: active`, a `reviewed` block, and provenance unmodified from the proposal
+- [ ] 5.1 Group a batch by dominant author and open exactly one pull request per dominant author, assigned to them
+- [ ] 5.2 Add every other contributing author as a reviewer on a mixed-authorship candidate's pull request, breaking an equal split by latest contribution
+- [ ] 5.3 Support accepting or declining each candidate independently within a pull request
+- [ ] 5.4 Record declined candidates and their source comments so re-clustering cannot re-propose them
+- [ ] 5.5 Implement non-response escalation to the store-level `reviewers` after the configured window, recording the original assignee as non-responding rather than declining
+- [ ] 5.6 Handle departed authors: assign to store reviewers, phrase the claim as team convention, and keep provenance naming the original author
+- [ ] 5.7 On approval, write the entry with `status: active`, a `reviewed` block, and provenance unmodified from the proposal
 
 ## 6. First real run
 

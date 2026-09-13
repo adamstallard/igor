@@ -3,10 +3,10 @@
 # keep something out of history: publishing a repo exposes all history, so a
 # leak committed and later deleted is still exposed at publication.
 
-# Lore stores, roles, and anything derived from a real repository's review
-# history. These belong in the operating team's repo, never in Igor's.
+# Lore stores and anything derived from a real repository's review history.
+# These belong in the operating team's repo, never in Igor's — the destination
+# guard enforces that, and these patterns are the belt-and-braces half.
 lore/
-roles/
 entries/
 *.ledger
 
