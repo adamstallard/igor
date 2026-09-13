@@ -3,11 +3,22 @@
 # keep something out of history: publishing a repo exposes all history, so a
 # leak committed and later deleted is still exposed at publication.
 
-# Lore stores and anything derived from a real repository's review history.
-# Lore belongs in the operating team's repo, never in Igor's.
+# Lore stores, roles, and anything derived from a real repository's review
+# history. These belong in the operating team's repo, never in Igor's.
 lore/
+roles/
 entries/
 *.ledger
+
+# Real config — repo names, reviewer handles, expert designations, and
+# possibly inline keys. Commit the .example.* variants instead, with
+# placeholders, so the shape is documented without the contents.
+igor.config.*
+!igor.config.example.*
+*.config.local.*
+config.local.*
+.igorrc
+.igor/
 
 # Scratch, spikes, and run output
 scratch/
