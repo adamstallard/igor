@@ -21,10 +21,11 @@ Igor. The role is versioned in git. The knowledge belongs to the team.
 
 Igors poll rather than wait for triggers. Each cycle:
 
-1. **Search** — deterministic queries against Slack, ClickUp, and GitHub, defined by the
-   role. No model involved.
-2. **Recognize** — a small local model decides whether a candidate is in this role's lane,
-   and which lore entries apply to it.
+1. **Search** — deterministic queries against whichever surfaces the role watches, through
+   pluggable adapters. GitHub first, because nearly every team has it; Linear and Discord
+   follow. No model involved.
+2. **Recognize** — decide whether a candidate is in this role's lane, and which lore entries
+   apply to it.
 3. **Claim** — before starting, the Igor posts to the relevant surface so humans and other
    Igors know it is working, and can back off or join in.
 4. **Work** — a frontier model does the task, with the fired lore already in context.
@@ -37,10 +38,14 @@ Lore is not a wiki and not a vector index over everything. It is a small, curate
 lessons, each carrying the conditions under which it applies, its provenance, and how many
 independent episodes support it.
 
-Entries are promoted by a periodic **consolidation** pass that scans what actually
-happened — corrections, surprises, reverts, repeated questions — drafts candidate
-entries, and queues them for human review. Approval is a pull request. Entries that stop
-firing are pruned. The store stays small enough for a person to read.
+Entries arrive as pull requests and only take effect once merged — **only `active` entries
+fire**, so review is what puts a rule into force. They can be written by hand or mined from
+what actually happened: corrections, surprises, reverts, repeated questions. Entries that
+stop firing are pruned.
+
+Store size is not the constraint; **firing volume** is. A handful of entries reach a worker
+per invocation, which is independent of how many exist — so unlike an always-loaded context
+file, lore pays no tax for growing.
 
 Two indexes are compiled from it: exact predicates over metadata (paths, labels, repos)
 and learned conditions over the recognizer's internal state. Both return entries; neither
@@ -127,11 +132,17 @@ becomes possible.
 
 ## Status
 
-**Built:** the lore store — schema, validation, id derivation, provenance-derived scoring,
-supersession, the destination boundary, and the CLI above.
+**Built:** the lore store and its review workflow — schema, validation, frozen slug ids,
+provenance-derived scoring, supersession, the destination boundary, `propose`/`reconcile`,
+merge-triggered promotion, and the CLI above.
 
-**Next:** hand-author a seed store, then `core-igor-loop`. Mining review history into lore
-(`lore-from-reviews`) is specced and deferred until there is history worth mining.
+**Next:** `core-igor-loop` — nothing yet consumes lore, which is where its value is. The first
+Igor needs no lore at all, since a role config, the work item, and the codebase are three of
+the four context channels.
+
+**Deferred:** mining review history (`lore-from-reviews`) is specced but waiting. A spike over
+one real repository turned 277 review comments into six entries worth keeping, so at that
+scale hand-mining is cheaper than automating it. Revisit on a corpus where it isn't.
 
 Design lives in [`docs/architecture.md`](docs/architecture.md); change proposals in
 `openspec/changes/`.
