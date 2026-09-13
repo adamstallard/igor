@@ -1,8 +1,8 @@
 # Igor Architecture
 
-The full design, including parts not yet scoped into changes. Each section marks whether it
-is **scoped** (has a change proposal), **planned** (agreed, not yet scoped), or **research**
-(known to be unsolved).
+The full design, including parts not yet scoped into changes. Each section marks whether it is
+**built** (shipped and in use), **scoped** (has a change proposal), **planned** (agreed, not
+yet scoped), or **research** (known to be unsolved).
 
 Individual change proposals under `openspec/changes/` should reference this document rather
 than restating it.
@@ -16,7 +16,8 @@ is lost, because everything durable lives in git: the role config, and the **lor
 
 The loop, per cycle:
 
-1. **Search** — deterministic queries against a surface. No model. Free.
+1. **Search** — deterministic queries against a surface, through a pluggable adapter (§5.1).
+   No model. Free.
 2. **Recognize** — is this in the role's lane, how confident are we, and which lore fires?
 3. **Claim** — take the work publicly before starting.
 4. **Work** — execute with fired lore already in context.
@@ -30,7 +31,8 @@ which for this class of work is irrelevant.
 
 ## 2. Why team memory, not per-agent memory
 
-**Scoped** (`lore-from-reviews`).
+**Built** (`lore-store`). Mining that memory out of review history (`lore-from-reviews`) is
+scoped but deferred.
 
 Per-agent memory has a fleet problem: five Igors on the same role each learn their own
 lessons, producing five partial knowledge sets with no merge path and stranded improvements
@@ -100,10 +102,10 @@ Three properties make that safe:
   role's standing instructions and lore scopes load for the work. The discovery surface
   widens; the working context does not get diluted, so one role's conventions cannot bleed
   into another's task.
-- **Ranked roles are the amortization policy.** Each Igor holds an *ordered* role list.
-  Higher-ranked roles get first call on the budget; lower-ranked ones absorb what is left.
-  This implements "spare capacity flows down" and simultaneously answers what to do when two
-  roles both have pending work. Ties break by item age.
+- **Priority is fleet-level, not per-Igor.** An earlier draft ranked roles inside each Igor so
+  spare budget flowed down; that was the amortization policy, and it only made sense under
+  one-seat-per-Igor. With seats pooled (§6.5) the ordering belongs across Igors instead. Ties
+  break by item age either way.
 - **Interchangeability survives.** An Igor is still fully described by its ordered role
   list, so two Igors with the same list remain swappable. Worth keeping explicit, because
   this is the property that would quietly erode into Igors having individual identities.
@@ -112,7 +114,7 @@ Three properties make that safe:
 
 ## 3. Lore
 
-### 3.1 Store — **scoped**
+### 3.1 Store — **built**
 
 One markdown file per entry, in git, at a configurable path in the *operating team's* repo
 (lore is their data; Igor is the tool). The filename is the entry id, so a file is findable
@@ -122,8 +124,9 @@ Frontmatter carries `id`, `claim`, `scope`, `status`, `conditions` (`paths` pred
 always-present `prose`), `provenance`, `supersedes`, `reviewed`, and later `fired` (count and
 timestamp). The body holds the reasoning and any exceptions.
 
-**Provenance is the single source of truth for scoring.** Each provenance item carries a
-`url`, an `author`, and an `at` date, which makes support count (how many items), recency
+**Provenance is the single source of truth for scoring.** Each provenance item carries an
+`author` and an `at` date, plus a `url` when it cites a mined artifact — a hand-authored entry
+records authorship with no link (§3.2.1). That makes support count (how many items), recency
 (decay over their dates), and author-weighting all *derived* rather than stored. Storing
 `support` or `recency` as fields would desync — a recency written in September is wrong by
 November.
@@ -133,9 +136,9 @@ supersession pointers legible, but rewording a claim later must not move the id,
 entries and external references point at it. Collisions get a numeric discriminator.
 
 Git is chosen for diffability (drift detection is `git log`), a review workflow that already
-exists, greppability, human readability, and portability across vendors and models. Indexes
-are *derived* from the store and stamped with its commit; the store is truth, indexes are
-disposable.
+exists, greppability, human readability, and portability across vendors and models. Indexes,
+when they exist, will be *derived* from the store and stamped with its commit; the store is
+truth, indexes are disposable.
 
 **Store size is not the constraint, and conflating it with firing volume is a mistake.** Three
 separate things:
@@ -161,10 +164,43 @@ number: lore should be **as large as it can be while every entry has a precise c
 demonstrable value**. The fire-count loop in §3.3 already implements exactly that test, and
 neither half of it refers to the total.
 
-### 3.2 Two indexes — predicates **scoped**, vectors **planned**
+### 3.1.1 How entries get into the store — **built**
 
-Both are compiled from the store at build time. Both take the current situation and return
-entry ids. Neither requires having an entry in hand first.
+Entries arrive by pull request, and since only `active` entries fire (§3.3), review is what
+puts a rule into force rather than a formality after it.
+
+`propose` takes a directory of candidates, groups them by **dominant author** — whoever
+contributed the most provenance items, ties broken toward the later contribution — and opens
+one pull request per author on a prefixed branch, built through the git tree API so nothing is
+cloned. Every other contributing author is requested as a reviewer and named in the body by
+plain name, never an @mention: a mention notifies someone who may never have seen the
+repository.
+
+Grouping by author rather than by entry is deliberate. Six entries produced two pull requests
+in the first real run, not six, and each person gets one conversation.
+
+The body carries the contract, using affordances the reviewer already knows: **delete a file**
+to reject permanently, **edit** one to amend it, **merge** to accept the rest, **close without
+merging** to defer. Rejection has to be the deliberate act of deleting something; closing a tab
+is passive and must not destroy a candidate.
+
+**Merging is approval.** GitHub will not let anyone approve their own pull request, so tying
+approval to merge is what keeps a single maintainer from being stuck — they open and merge
+their own proposal, and `reviewed.by` records them honestly. A merger who was not an assigned
+reviewer is flagged rather than recorded as though they had been asked.
+
+Promotion then happens one of two ways. Where the destination runs the merge-triggered workflow
+(§6.7), entries are active the moment they merge. Otherwise `reconcile` promotes at the next
+invocation — there is no daemon — and also reports rejections and pull requests that have gone
+quiet past a window, for escalation to the store-level `reviewers`.
+
+None of this is mining-specific. A hand-authored candidate takes the identical path, which is
+why it lives in `lore-store` rather than `lore-from-reviews`.
+
+### 3.2 Two indexes — both **planned**
+
+Neither is built. Both would be compiled from the store at build time, take the current
+situation, and return entry ids, with neither requiring an entry in hand first.
 
 **Predicate index** — inverted, keyed on metadata available before any model runs: file
 path globs, repo, labels, service, channel. Exact, free, perfectly legible, trivially
@@ -181,7 +217,7 @@ product per condition: ten thousand conditions against a 4096-dim state is a sin
 matmul, microseconds, and independent of how much text the entries contain. Unlike RAG,
 retrieval cost does not grow with corpus size.
 
-### 3.2.1 Lore is one of four context channels
+### 3.2.1 Lore is one of four context channels — **context**
 
 Lore is not the only way a worker gets context, and it is the only conditional one:
 
@@ -217,14 +253,16 @@ status is what makes review more than ceremony: if a provisional entry fired, an
 behave identically before and after approval, and unreviewed lore would quietly shape agent
 behaviour — the failure the review gate exists to prevent.
 
-The cost is a transient. Reconcile promotes merged entries at the start of the next
-invocation rather than at merge time (there is no daemon — §5.4), so a freshly merged entry
-stays provisional for one cycle. That window is minutes while anything is running, and while
-nothing is running nothing is firing either.
+The cost is a transient, and how small depends on the destination. Where the destination runs
+the merge-triggered promotion workflow (§6.7), an entry is active the moment it merges and
+there is no window at all. Where it does not, `reconcile` promotes at the start of the next
+invocation — there is no daemon — so a merged entry stays provisional for one cycle. That
+window is minutes while anything is running, and while nothing is running nothing is firing
+either.
 
-Consequence worth designing against: an entry created and committed straight to main, without
-going through `propose`, never fires and says nothing about why. The `create` command should
-name the next step rather than leaving that silent.
+Consequence: an entry created and committed straight to main, without going through `propose`,
+never fires — and would otherwise say nothing about why. `create` therefore reports that the
+entry is provisional and names `propose` as the next step.
 
 
 Firing is **unbidden**. The worker never issues a query or elects to search; matching
@@ -292,13 +330,14 @@ a classifier, which would reintroduce the diffuse-and-unexcisable problem one le
 **Weight corrections by source.** A correction from the role's designated expert outranks a
 drive-by. The same mechanism defends against bad imprinting generally.
 
-**Batch, offline, human-reviewed.** Nothing enters durable lore unseen. Batches are capped
-and sequential — the failure mode that kills this is dumping hundreds of candidates on a
-reviewer who never opens the queue again.
+**Batch, offline, human-reviewed.** Nothing enters durable lore unseen. Batches are to be
+capped and sequential — the failure mode that kills this is dumping hundreds of candidates on a
+reviewer who never opens the queue again. Measured against a real corpus the cap binds late:
+277 comments yielded six entries and two pull requests, well under a cap of twenty.
 
 **Why batch matters technically:** deriving a condition vector needs positives *and*
 negatives. A single lived episode gives one positive and no contrast set — the unsolved
-one-shot problem (§6). A batch clustering many related episodes yields a cluster of
+one-shot problem (§7). A batch clustering many related episodes yields a cluster of
 positives with the rest of the corpus as negatives; the contrast set falls out free. The
 thing that makes continuous personal memory hard is precisely what team memory does not
 need.
@@ -353,9 +392,12 @@ gap, by value per unit of expert attention:
 
 **Consent is a people problem before a technical one.** Building a model of a named
 colleague's judgment requires their agreement. The mechanism: route each candidate entry to
-the author it was mined from. Decline kills it outright; non-response routes to the role
-owner; people who have left are not mined, since they can neither consent nor correct a
-misattribution.
+the author it was mined from. Decline kills it outright; non-response routes to the
+store-level `reviewers`. People who have left **are** mined, but the rule is attributed to the
+role rather than to them and a current reviewer vouches for it — nobody speaks for a departed
+colleague, and citing a comment they publicly wrote is ordinary. Excluding them was considered
+and rejected: it discards most of the historical corpus in any team with turnover, to guard
+against a misattribution that role attribution already prevents.
 
 ---
 
@@ -480,8 +522,8 @@ harmless: a draft PR that exfiltrates a secret is closable, and the secret is st
 **Authority to instruct never exceeds authority over the artifact.** If someone cannot merge
 to a repository, their instruction to an Igor working in it carries no weight. Injection by an
 outsider therefore gains them nothing they could not already do directly. In practice
-"authorized" means the role's `reviewers` plus anyone with write access to the repository in
-question.
+"authorized" means the store-level `reviewers` — per-role lists once roles exist — plus anyone
+with write access to the repository in question.
 
 **Stop is the deliberate exception: unauthenticated, open to anyone.** A stop fails in the
 safe direction — worst case an Igor stands down and a human does the work. Everything that
@@ -509,10 +551,11 @@ guardrail applies unchanged. Refusing direct requests to preserve the "finds its
 property would be a design principle eating a real use case — self-directed discovery is the
 novel part, not the only part.
 
-- **Requested work outranks discovered work**, and this cuts across role ranking: a request to
-  a third-ranked role is served ahead of a discovered item in the first, because ranking exists
-  to allocate *spare* capacity rather than to ignore people. Cap requests per requester per
-  period so one enthusiastic person cannot consume a seat.
+- **Requested work outranks discovered work**, and this cuts across the fleet-level priority
+  ordering (§2.1): a request to a low-priority role is served ahead of a discovered item in a
+  high one, because the ordering exists to allocate *spare* capacity rather than to ignore
+  people. Cap requests per requester per period so one enthusiastic person cannot consume a
+  seat.
 - **Out-of-lane requests are declined with a route** — "not my lane, `igor-backend` covers it"
   — which also makes the fleet legible to people who have no idea which Igor does what.
 - **Ambiguous requests get exactly one clarifying question**, then a hand-back rather than a
@@ -566,6 +609,13 @@ rewrite — turning the eventual fully-open migration into a dial rather than a 
   against a subscription seat. Refresh behavior past expiry is undocumented; budget for an
   annual manual regeneration as a known operational task.
 
+### 6.4 Graceful handoff — **scoped**
+
+The failure mode the claim protocol creates: an Igor announces "I'm on this", humans and
+other Igors back off, then it goes silent mid-task. So exhaustion must produce a posted
+state-of-work, remaining steps, and suggested pickups. The summarizing call should be cheap
+and separate, not competing for the exhausted budget.
+
 ### 6.5 A seat is a pool, not an identity — **planned**
 
 Nothing prevents several Igors, or an Igor and a human, from running against the same
@@ -613,7 +663,7 @@ Timing follows the same rule as branch protection and merge automation: **do it 
 adopter appears.** Until then pinning costs the only user the fixes they want, and publishing
 releases of something changing hourly is churn for nobody's benefit.
 
-### 6.7 Configuration belongs to the team, not the tool — **scoped**
+### 6.7 Configuration belongs to the team, not the tool — **built**
 
 A team's configuration — repositories in scope, reviewers, experts, decay half-life — never
 belongs inside a clone of Igor, now that Igor is a shared public tool. It lives in the
@@ -643,13 +693,6 @@ essentially credential provisioning. And there is no hosting business here, only
 
 Deployment work belongs to `core-igor-loop`, the first change that introduces a continuously
 running process. `lore-from-reviews` is a batch CLI and needs none of it.
-
-### 6.4 Graceful handoff — **scoped**
-
-The failure mode the claim protocol creates: an Igor announces "I'm on this", humans and
-other Igors back off, then it goes silent mid-task. So exhaustion must produce a posted
-state-of-work, remaining steps, and suggested pickups. The summarizing call should be cheap
-and separate, not competing for the exhausted budget.
 
 ---
 
@@ -702,7 +745,7 @@ Agreed in principle, not scoped, roughly in dependency order:
 6. SAE-legible conditions (§4.3) — research.
 7. Post-hoc output recognition (§4.4).
 8. Difficulty routing (§6.2).
-9. Publishing to npm, and pinning the promotion workflow to a release (§6.6)
+9. Publishing to npm, and pinning the promotion workflow to a release (§6.6).
 10. Seat pooling and the fleet-level budget policy, with a reserve floor where a human shares
-   the seat (§6.5).
+    the seat (§6.5).
 11. Additional adapters: Linear, then Discord.
