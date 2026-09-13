@@ -30,10 +30,13 @@
 
 ## 4. Discovery
 
-- [ ] 4.1 Run each source's query on an interval, normalizing results through the adapter
-- [ ] 4.2 Watermark per source, and treat the watermark as a cache that may be absent
-- [ ] 4.3 Persist discovery state to the state branch, writing only when something changed
-- [ ] 4.4 Verify a re-run over unchanged sources produces no new candidates and no state write
+- [x] 4.1 Run each source's query on an interval, normalizing results through the adapter
+- [x] 4.2 Watermark per source, and treat the watermark as a cache that may be absent
+- [x] 4.2a Bound a cold start to a look-back window, so a first run does not face the whole backlog
+- [x] 4.2b Compare timestamps as instants, since surfaces differ on sub-second precision
+- [x] 4.2c Poll sources independently, leaving a failing source's watermark unchanged
+- [x] 4.3 Persist discovery state to the state branch, writing only when something changed
+- [x] 4.4 Verify a re-run over unchanged sources produces no new candidates and no state write
 
 ## 5. Triage
 

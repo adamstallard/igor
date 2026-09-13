@@ -47,6 +47,49 @@ indefinitely. A watermark is an efficiency measure only.
 - **WHEN** an item is created after the last watermark
 - **THEN** it appears in the next discovery run
 
+### Requirement: A first run does not face the whole backlog
+
+A source with no watermark SHALL consider only items updated within a bounded look-back window,
+and SHALL set its watermark from that run. It MUST NOT triage a repository's entire open
+history because it has not run before.
+
+Without the bound, an Igor pointed at an established repository wakes up facing every open
+item at once — a cost spike, and an Igor appearing to lay claim to years of open work in its
+first minute. Handing it the backlog stays something a person does deliberately.
+
+#### Scenario: Established repository does not flood the first cycle
+
+- **WHEN** a source runs for the first time against a repository with a long open history
+- **THEN** only items updated within the look-back window are considered
+- **AND** the watermark is set so the next run continues from there
+
+#### Scenario: A cold start is distinguishable in the record
+
+- **WHEN** an operator reads the record of a first run
+- **THEN** it is identifiable as a cold start
+- **AND** the count of items considered can be read in that context
+
+### Requirement: Timestamps are compared as instants
+
+Watermark comparison SHALL be by instant, never by lexical ordering of the timestamp string,
+because surfaces differ in whether they render sub-second precision.
+
+#### Scenario: Equivalent timestamps spelled differently
+
+- **WHEN** a watermark and an item carry the same instant written with and without milliseconds
+- **THEN** the item is not considered fresh
+
+### Requirement: A failing source does not cost the others their cycle
+
+Sources SHALL be polled independently. A source that errors SHALL be reported, and its
+watermark SHALL be left unchanged so nothing is skipped as a result of the failure.
+
+#### Scenario: One tracker unreachable
+
+- **WHEN** one of two sources fails and the other succeeds
+- **THEN** the successful source is triaged normally
+- **AND** the failing source's watermark is unchanged
+
 ### Requirement: State is a cache and correctness never depends on it
 
 The tracker SHALL be the source of truth for what is claimed. Losing discovery state MUST NOT
