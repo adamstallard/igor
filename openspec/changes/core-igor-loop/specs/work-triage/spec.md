@@ -60,6 +60,38 @@ human-readable reason. Skips MUST be recorded as fully as proceeds.
 - **THEN** the proportion of candidates skipped at each stage is determinable from the record
   rather than estimated
 
+### Requirement: A closed item is never a candidate
+
+Stage one is deliberately loose and written in the tracker's own language, so a source query
+may legitimately omit a state filter. Triage SHALL skip any candidate whose normalized state is
+closed. This is a universal skip rather than a lane, because an organization forgetting to
+write it would produce work on a settled item — visible on a surface people watch.
+
+#### Scenario: Closed item skipped whatever the query returned
+
+- **WHEN** a source query returns a closed item
+- **THEN** triage skips it before any model call
+- **AND** the reason recorded identifies the item as closed
+
+### Requirement: Predicate inputs derived from ingested text are hints, not authority
+
+Some normalized fields are read out of item text rather than supplied by the surface — the
+paths an issue names, for one. Such fields MAY route work and MUST NOT widen it: a predicate
+input derived from ingested text SHALL NOT be able to place an item inside a lane the item's
+surface-supplied fields exclude it from, nor grant any permission.
+
+#### Scenario: Text-derived field routes but does not widen
+
+- **WHEN** an item's body names a path belonging to another Igor's lane
+- **THEN** that may make the item match a path predicate
+- **AND** it does not override a label exclusion or any other surface-supplied constraint
+
+#### Scenario: Text cannot grant authority
+
+- **WHEN** an item's text is crafted to place itself in a more permissive Igor's lane
+- **THEN** the action space still comes from that role's configuration
+- **AND** nothing in the item's text alters it
+
 ### Requirement: Items with work already in flight are skipped
 
 Triage SHALL skip any item the adapter reports as having work already in flight. This rule is

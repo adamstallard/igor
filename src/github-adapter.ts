@@ -118,9 +118,12 @@ export function normalizeIssue(repo: string, issue: RawIssue, now: number = Date
  */
 export function isStop(body: string, identity: string): boolean {
   const text = body.trim()
-  if (/^(@[\w-]+[\s,:]+)?stop\b/i.test(text)) return true
+  if (/^stop\b/i.test(text)) return true
+  // Only an address to *this* Igor counts. A generic leading mention would make
+  // "@alice stop doing that" — one person addressing another on an issue an Igor happens to
+  // hold — stop the Igor, which is a misfire rather than the intended human override.
   const named = identity.replace(/^@/, '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  return named !== '' && new RegExp(`@?${named}[\\s,:]+stop\\b`, 'i').test(text)
+  return named !== '' && new RegExp(`@?${named}\\b[\\s,:]+stop\\b`, 'i').test(text)
 }
 
 /**

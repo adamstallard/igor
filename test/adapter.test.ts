@@ -141,6 +141,17 @@ describe('stop recognition', () => {
   it('does not fire on a longer word starting with stop', () => {
     expect(isStop('stopwatch behaviour is wrong', 'igor-bot')).toBe(false)
   })
+
+  it('does not fire when one person tells another to stop', () => {
+    // A generic leading mention would turn a conversation between two humans on an issue an
+    // Igor happens to hold into a stop. Only an address to this Igor counts.
+    expect(isStop('@alice stop doing that', 'igor-bot')).toBe(false)
+    expect(isStop('@alice, stop — I will take it', 'igor-bot')).toBe(false)
+  })
+
+  it('does not fire on an Igor whose name merely prefixes the mention', () => {
+    expect(isStop('@igor-bot-two stop', 'igor-bot')).toBe(false)
+  })
 })
 
 describe('tracker contract', () => {
