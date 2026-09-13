@@ -496,6 +496,41 @@ Reviewing other people's pull requests is the natural *second* unit and a poor f
 do not assign yourself a review, and two reviewers is not a collision, so the claim mechanic
 has nothing to bite on.
 
+### 5.0.1 Scope comes from the org's own convention — **scoped** (`core-igor-loop`)
+
+Igor defines no canonical label. Teams already have conventions — gmango marks ClickUp work
+`AI` or `Human` — and imposing an `igor` label on top would fit worse than the one they have.
+
+So a role's discovery query is written in the **tracker's native query language and passed
+through verbatim**: `label:ai` on GitHub, a tag filter on ClickUp, Linear's own syntax. No
+normalized filter DSL in between — the same trap as inventing a query language for lore
+predicates, months of work producing something less debuggable than the native thing. The cost
+is that a role is not portable across trackers, which is acceptable because roles are per-org
+and orgs mostly run one tracker.
+
+This corrects an earlier framing. A scope label is not a training wheel Igor imposes and later
+removes; it is the boundary the org already draws. There is nothing to graduate off — widening
+scope means widening the query.
+
+Two things worth keeping apart: the *query* must be concrete config, because something has to
+know to search `label:ai`. But **what a label means is team knowledge**, and belongs in lore —
+"work marked AI is agent-eligible, Human means leave it alone." An Igor reading its own lore
+then understands why it is scoped that way rather than only that it is.
+
+### 5.0.2 State is a cache; correctness never depends on it — **scoped** (`core-igor-loop`)
+
+Watermarks and seen-item records are an efficiency measure, not a correctness mechanism. **The
+tracker is the source of truth for what is claimed.** An Igor that loses its state re-examines
+an old item, finds it assigned or closed, and skips — so losing state costs API calls and
+triage tokens, never a duplicate claim.
+
+That makes the storage location a low-stakes choice: **local by default**, since committing it
+would write to the destination repository every cycle in a way configuration never does.
+Committing is available where an audit trail is worth the noise.
+
+Writing the principle down matters more than the location, because it is exactly what would
+quietly stop holding if some real decision were later moved into the watermark.
+
 ### 5.1 Adapters, not integrations — **scoped** (`core-igor-loop`)
 
 Slack, ClickUp, GitHub, Linear, and Discord are *examples* of surfaces, not the

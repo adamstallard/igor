@@ -28,7 +28,14 @@ role, the work item, and the codebase, which is what a competent new hire walks 
   otherwise be hardcoded. The interface separates the roles even though only GitHub ships
   here.
 - **Igors poll rather than wait.** A long-running process runs the role's queries on an
-  interval, watermarking per source so items are not reconsidered forever.
+  interval, watermarking per source so items are not reconsidered forever. The query is the
+  tracker's own — `label:ai`, a ClickUp tag, a Linear filter — passed through verbatim rather
+  than translated through a filter language Igor invents. Igor defines no canonical label;
+  teams already have conventions and theirs fit better.
+- **State is a cache, and correctness never depends on it.** The tracker is the source of
+  truth for what is claimed, so an Igor that loses its watermarks re-examines old items,
+  finds them assigned or closed, and skips. That costs API calls and triage tokens, never a
+  duplicate claim. Local by default; committable where the audit trail is worth the noise.
 - **Two-stage triage.** Deterministic query matching narrows the firehose for free. Only
   survivors cost an LLM call, which decides whether the work is in lane and worth doing.
 - **Claim or skip.** Triage produces a binary outcome. There is no confidence score and no
