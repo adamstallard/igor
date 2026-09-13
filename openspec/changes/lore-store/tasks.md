@@ -33,7 +33,7 @@
 - [x] 5.2 Implement `validate`: report every invalid entry with its reason, exit non-zero on any failure
 - [x] 5.3 Implement `list`: show entries with derived support and recency
 - [x] 5.4 Verify a created entry passes validation with no further editing
-- [ ] 5.5 Let `create` take more than one provenance item — a mined entry normally cites several comments, and the command currently cannot express that
+- [ ] 5.5 *(beyond spec — enhancement, not a requirement of this change)* Let `create` take more than one provenance item — a mined entry normally cites several comments, and the command currently cannot express that
 
 ## 6. Propose and review
 
@@ -46,7 +46,7 @@
 - [x] 6.7 Reconcile on invocation: promote merged entries with a reviewed block, report rejections and quiet pull requests
 - [x] 6.8 Treat closed-unmerged as deferred rather than rejected
 - [x] 6.13 Locate configuration in the destination repository: upward search, explicit path and environment override, and refusal when it resolves inside the installation
-- [ ] 6.9 *(optional)* Record rejections durably. Largely covered by the processed-comment ledger in `lore-from-reviews`: a comment never reprocessed cannot re-form its cluster. Only adds value if the ledger is lost, or to suppress a rule regardless of new evidence — which is a stronger claim than a deletion should make
+- [ ] 6.9 *(beyond spec — optional)* Record rejections durably. Largely covered by the processed-comment ledger in `lore-from-reviews`: a comment never reprocessed cannot re-form its cluster. Only adds value if the ledger is lost, or to suppress a rule regardless of new evidence — which is a stronger claim than a deletion should make
 - [x] 6.10 Ship a merge-triggered workflow template plus an `init-workflow` command, so promotion does not depend on someone having igor installed
 - [x] 6.11 Report when the merger was not an assigned reviewer rather than recording them silently
 - [x] 6.12 Document lore repository setup: require-a-pull-request but never require-approvals, and the Actions bypass entry a protected branch needs
