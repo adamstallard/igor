@@ -19,6 +19,8 @@ Igor. The role is versioned in git. The knowledge belongs to the team.
 
 ## How it works
 
+This is the design. Only the lore half exists today — see [Status](#status).
+
 Igors poll rather than wait for triggers. Each cycle:
 
 1. **Search** — deterministic queries against whichever surfaces the role watches, through
@@ -34,9 +36,9 @@ Igors poll rather than wait for triggers. Each cycle:
 
 ## Lore
 
-Lore is not a wiki and not a vector index over everything. It is a small, curated set of
-lessons, each carrying the conditions under which it applies, its provenance, and how many
-independent episodes support it.
+Lore is not a wiki and not a vector index over everything. It is a curated set of lessons,
+each carrying the conditions under which it applies, its provenance, and how many independent
+episodes support it.
 
 Entries arrive as pull requests and only take effect once merged — **only `active` entries
 fire**, so review is what puts a rule into force. They can be written by hand or mined from
@@ -47,13 +49,11 @@ Store size is not the constraint; **firing volume** is. A handful of entries rea
 per invocation, which is independent of how many exist — so unlike an always-loaded context
 file, lore pays no tax for growing.
 
-Two indexes are compiled from it: exact predicates over metadata (paths, labels, repos)
+Two indexes will be compiled from it: exact predicates over metadata (paths, labels, repos)
 and learned conditions over the recognizer's internal state. Both return entries; neither
-requires an Igor to think to ask.
+requires an Igor to think to ask. Neither is built — retrieval lands with the first Igor.
 
 ## Getting started
-
-The lore store is built; nothing else is yet.
 
 ```sh
 npm install
