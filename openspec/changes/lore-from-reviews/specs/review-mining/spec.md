@@ -65,6 +65,32 @@ their comments SHALL receive a higher weight in cluster scoring than unweighted 
   expert
 - **THEN** the expert's cluster scores higher
 
+### Requirement: Bot and automated-reviewer comments are excluded by default
+
+Mining SHALL identify comments authored by bots or automated reviewers and exclude them by
+default, with configuration able to re-include named authors. Exclusions SHALL be recorded in
+the same way as substance filtering, so that what was dropped remains inspectable.
+
+#### Scenario: Bot reviewer excluded
+
+- **WHEN** review comments include entries authored by an account of type `Bot` or matching a
+  configured bot pattern
+- **THEN** those comments are excluded from clustering
+- **AND** the exclusion and its reason are recorded
+
+#### Scenario: Human review of AI-authored code retained
+
+- **WHEN** a human reviews a pull request whose code was written by an AI assistant
+- **THEN** the human's comments are retained, because the correction is human judgment about
+  what the team wants
+
+#### Scenario: Bot author explicitly re-included
+
+- **WHEN** configuration names a bot author as re-included
+- **THEN** that author's comments participate in clustering
+- **AND** candidates drawn from them escalate to store reviewers, since a bot cannot be
+  assigned a review
+
 ### Requirement: Mining is idempotent across runs
 
 Mining SHALL record processed comment identifiers in a ledger, and a subsequent run SHALL NOT

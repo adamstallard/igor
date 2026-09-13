@@ -27,10 +27,11 @@ design changes.
 
 - [ ] 4.1 Extract review comments for configured repositories, retaining body, author, file path, line range, permalink, and timestamp
 - [ ] 4.2 Implement stick classification using the approach confirmed in 2.2, recording it as a per-comment signal rather than an include/exclude gate
-- [ ] 4.3 Implement substance filtering on length, absence of reasoning, and nit markers, recording each exclusion and its reason
-- [ ] 4.4 Resolve comment authors and apply expert weighting from config
-- [ ] 4.5 Implement the processed-comment ledger
-- [ ] 4.6 Verify a re-run over unchanged history produces no new candidates, and a re-run after new merges processes only new comments
+- [ ] 4.3 Exclude bot and automated-reviewer authors by default, with named re-inclusion via config
+- [ ] 4.4 Implement substance filtering on length, absence of reasoning, and nit markers, recording each exclusion and its reason
+- [ ] 4.5 Resolve comment authors and apply expert weighting from config
+- [ ] 4.6 Implement the processed-comment ledger
+- [ ] 4.7 Verify a re-run over unchanged history produces no new candidates, and a re-run after new merges processes only new comments
 
 ## 5. Consolidation
 
