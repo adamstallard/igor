@@ -33,6 +33,7 @@
 - [x] 5.2 Implement `validate`: report every invalid entry with its reason, exit non-zero on any failure
 - [x] 5.3 Implement `list`: show entries with derived support and recency
 - [x] 5.4 Verify a created entry passes validation with no further editing
+- [ ] 5.5 Let `create` take more than one provenance item — a mined entry normally cites several comments, and the command currently cannot express that
 
 ## 6. First real store
 

@@ -190,12 +190,42 @@ a second entry.
   frontmatter, so migration is a scripted rewrite over a few hundred files rather than a
   data migration.
 
+## Measured yield
+
+A spike over one real repository — 277 inline review comments, four years, three human
+reviewers, no bots — produced **six** entries a person would want to keep. That is the
+number to design against, not the "the same correction fourteen times" framing this change
+was originally pitched on.
+
+Composition of that corpus: 46% prose that is mostly feature-specific design discussion
+rather than reusable convention, 18% acknowledgements and bare commit links, 14% questions,
+11% suggestion blocks (largely wording), 8% one-liners too short to carry a rule. The
+recurring-convention fraction is small.
+
+The six that did emerge were worth having and are not things a frontier model would supply
+unprompted: index the fields you query on, match the vocabulary already in use, filter in the
+query rather than in application code, do not overload a falsey parameter, errors reaching the
+API need a typed code, sibling functions should share a signature. Support ranged from 1 to 6
+instances.
+
+Two consequences. **Batch caps of 20 are far larger than a corpus this size will fill** — the
+cap protects against a reviewer wall that may not materialize until the corpus is an order of
+magnitude bigger. And **the value of this change scales with corpus size much more steeply
+than assumed**, which argues for pointing it at the largest available history first rather
+than the most familiar one.
+
+Clustering in the spike was done by reading, not by embeddings, so it sets a rough ceiling
+rather than a prediction of what the implementation will achieve.
+
 ## Open Questions
 
-- Does the GitHub API expose enough to detect stick reliably — comment line ranges against
-  subsequent commit diffs within a pull request — or does it need the Timeline API and
-  additional calls per comment? This should be verified empirically against one real repo
-  before the extraction step is built.
+- **`position: null` does not work for stick detection.** It was expected to be a cheap proxy
+  — GitHub marks a comment outdated when later commits change the code it was anchored to —
+  but across all 277 comments in the spike corpus, zero had a null position. Detection needs
+  the more expensive route: comparing comment line ranges against subsequent commit diffs
+  within the pull request, or the Timeline API. Confirm the cost of that before building on
+  it; if it is high, consider whether stick detection earns its place at all given the yield
+  measured above.
 - Which embedding model for clustering, and does it run locally or through an API? Affects
   whether repository content leaves the environment.
 - Should lore eventually live in its own repository rather than a path inside the operating

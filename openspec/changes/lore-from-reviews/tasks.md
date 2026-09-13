@@ -12,7 +12,7 @@ schema, validation, and derived scoring all come from there and are not rebuilt 
 Do this before building anything that depends on it — if the data isn't there, the filter
 design changes.
 
-- [ ] 2.1 Against one real repository, determine whether the GitHub API exposes review comment line ranges and subsequent in-PR commit diffs well enough to detect whether a correction stuck
+- [x] 2.1 Against one real repository, determine whether the GitHub API exposes review comment line ranges and subsequent in-PR commit diffs well enough to detect whether a correction stuck — `position: null` ruled out, zero of 277 comments carried it
 - [ ] 2.2 If insufficient, evaluate the Timeline API or per-comment position tracking, and pick an approach
 - [ ] 2.3 Record the finding and chosen approach in `design.md`, replacing the corresponding open question
 
