@@ -1,9 +1,9 @@
 ## 1. Foundations
 
 - [ ] 1.1 Extend config loading to resolve role files from the destination, alongside the existing store config
-- [ ] 1.2 Implement state-branch read and write through the git tree API, reusing the machinery `propose` already uses — no checkout
-- [ ] 1.3 Create the orphan state branch on first write, so a fresh destination needs no setup
-- [ ] 1.4 Verify losing the state branch entirely degrades to re-examining old items, never to duplicate claims
+- [x] 1.2 Implement state-branch read and write through the git tree API, reusing the machinery `propose` already uses — no checkout
+- [x] 1.3 Create the orphan state branch on first write, so a fresh destination needs no setup
+- [x] 1.4 Verify losing the state branch entirely degrades to re-examining old items, never to duplicate claims — a missing file reads as `undefined` rather than throwing
 
 ## 2. Role config
 
