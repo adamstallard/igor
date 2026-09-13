@@ -53,6 +53,10 @@
 
 ## 7. First real store
 
-- [ ] 6.1 Hand-author a seed store of conventions already known, using the CLI
-- [ ] 6.2 Read the result end to end and note what the schema made awkward to express
-- [ ] 6.3 Record the seed workflow and any schema friction in the README
+Satisfied by mining a real repository rather than hand-authoring — the intent was a real
+store exercising the schema, and mined entries exercise it harder (multi-item provenance,
+real dates, derived path predicates).
+
+- [x] 7.1 Populate a real store — six entries mined from one repository's review history, proposed, reviewed, merged, and promoted to active
+- [x] 7.2 Note what the schema made awkward: `create` cannot express multi-item provenance (task 5.5), and YAML turns unquoted dates into timestamps
+- [x] 7.3 Record the workflow in the README — create, propose, reconcile, and lore repository setup
