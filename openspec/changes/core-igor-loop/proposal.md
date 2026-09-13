@@ -27,9 +27,9 @@ role, the work item, and the codebase, which is what a competent new hire walks 
   interval, watermarking per source so items are not reconsidered forever.
 - **Two-stage triage.** Deterministic query matching narrows the firehose for free. Only
   survivors cost an LLM call, which decides whether the work is in lane and worth doing.
-- **Claim or skip.** Triage produces a binary outcome; there is no confidence score and no
-  shadow mode in this change. What gets skipped is recorded, because that record is the
-  input to deciding whether shadowing is worth building.
+- **Claim or skip.** Triage produces a binary outcome. There is no confidence score and no
+  shadow mode — not deferred, dropped. What gets skipped is still recorded, because a
+  record of what an Igor passed on is useful regardless.
 - **Claims are verified, not assumed.** Where a surface has a native assignment primitive,
   use it and prefer a conditional write. Where it has only messages, post, wait a settle
   interval, re-read, and stand down if someone claimed first.
@@ -47,11 +47,13 @@ Explicitly out of scope:
   codebase. Firing lore into context is an enhancement, not a precondition.
 - **Talking to an Igor** (`directed-interaction`). People will reply to claims, but that
   cannot be tested before claims exist.
-- **Shadow mode and confidence scoring.** Confidence drove exactly one decision —
-  shadow-versus-claim — so cutting shadow removes the need for the score entirely. Neither
-  is deferred out of timidity: a self-reported confidence from a model is badly calibrated,
-  and the signal that would work is empirical, from whether past work of a given shape was
-  accepted. That history only exists once this change has run.
+- **Shadow mode and confidence scoring — dropped, not deferred.** Every justification for
+  shadow failed on inspection (§5.3): risk is already capped by reversible-only, courtesy by
+  visible claims and open stop, calibration is triage's job, and the learning signal assumed
+  a human would *replace* the draft when in practice they iterate on it, so the diff it
+  depended on mostly does not exist. Confidence drove nothing but shadow, so it goes too.
+  The cases that seemed to need shadow are handled by scope: an item where a claim would
+  itself be disruptive belongs outside the role's query.
 - **Fleet supervision.** One Igor at a time. Concurrent Igors follow once claim behaviour is
   proven against humans alone.
 - **The local recognizer, condition vectors, SAE-legible conditions.** Triage is an LLM call.
@@ -92,5 +94,5 @@ entries (`lore-retrieval`).
   working, so claim correctness matters more than task quality in this change.
 - Consumes a seat's rolling usage allowance. Caps are not published, so headroom must be
   estimated from observed per-invocation cost rather than computed against a known limit.
-- Produces the first episodes: claims, outcomes, corrections, and skips. Every later change
-  — lore consolidation, confidence scoring, shadow mode — depends on that record existing.
+- Produces the first episodes: claims, outcomes, corrections, and skips. Ongoing lore
+  consolidation depends on that record existing.

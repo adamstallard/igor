@@ -18,7 +18,7 @@ The loop, per cycle:
 
 1. **Search** — deterministic queries against a surface, through a pluggable adapter (§5.1).
    No model. Free.
-2. **Recognize** — is this in the role's lane, how confident are we, and which lore fires?
+2. **Recognize** — is this in the role's lane, and which lore fires?
 3. **Claim** — take the work publicly before starting.
 4. **Work** — execute with fired lore already in context.
 5. **Report** — status back to the surface, including a handoff if budget runs out.
@@ -382,8 +382,9 @@ gap, by value per unit of expert attention:
    produces, already labelled, written by exactly the people whose judgment is wanted.
    Scoped as `lore-from-reviews`.
 2. **Weight corrections directed at Igors by who made them.**
-3. **Shadow mode** — produce a draft, diff against what the human actually did. Free ground
-   truth, zero risk. Triggered by uncertainty rather than run as a phase (§5.3).
+3. ~~**Shadow mode**~~ — dropped (§5.3). It assumed a human would replace the agent's draft,
+   producing a clean diff to learn from; in practice people iterate on the draft instead, so
+   the ground truth this depended on mostly does not exist.
 4. **Rationed elicitation** — ask the expert when uncertain, cap the rate. Ranked low
    because expert knowledge is largely tacit and experts routinely cannot articulate it,
    which is why observation beats asking.
@@ -497,16 +498,36 @@ before a slightly earlier write has propagated, which a settle delay addresses. 
 must exceed worst-case propagation lag, which no platform publishes — so tune it
 empirically and treat it as very likely sufficient rather than provably correct.
 
-### 5.3 Claims are universal; visibility varies — **scoped**
+### 5.3 Every pickup takes a claim — **scoped**
 
-Every pickup takes a claim. Confident work claims on the work surface where humans see it;
-shadow work claims in a coordination channel watched by Igors and interested humans. One
-code path, one race routine, two destinations — which is what prevents two Igors silently
-duplicating the same shadow task.
+An Igor claims on the work surface where humans can see it, or it skips the item. There is no
+second, quieter destination and no confidence score deciding between them.
 
-**Shadow is a mode, not a phase.** When triage concludes a human should own an item, the
-Igor still does the work and posts it as a suggestion. Shadowing then shrinks as confidence
-calibrates, instead of ending on a date someone picked.
+**Shadow mode was designed and then dropped**, and the reasoning is worth keeping because it
+corrects what this design is defending against. Shadow meant doing the work but posting it as
+a suggestion rather than taking ownership, gated on a confidence score. Each justification
+failed:
+
+- *Risk* is already capped by the action space (§6.1) — a bad draft costs a review comment.
+- *Learning* assumed a human would **replace** the output, giving a clean diff to learn from.
+  In practice people iterate on it instead, so the diff mostly does not exist.
+- *Courtesy* is covered by claims being visible and stop being open to anyone (§5.4).
+- *Calibration* is triage's in-lane judgment, not a separate mode.
+
+Confidence drove nothing else, so dropping shadow removed the score too — which was the
+weakest part anyway: a model's self-reported confidence is poorly calibrated, and the signal
+that would work is empirical, from whether past work of a shape was accepted.
+
+**The correction underneath it:** the failure being designed against was "the agent produced
+something wrong and the effort was wasted." The realistic failures are "nobody noticed the
+output" and "two people did the same work" — coordination problems that claiming solves, not
+quality problems that shadowing solves. It also gives reversible-only a better reason than
+risk: iteration is expected, so the artifact has to be something a human can iterate on and
+commit themselves.
+
+The cases that seemed to need shadow are better handled by scope. An item where a claim would
+itself be disruptive — an incident ticket mid-outage — belongs outside the role's query, not
+inside a mode.
 
 ### 5.4 Directed interaction — **planned** (`core-igor-loop`)
 
