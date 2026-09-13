@@ -107,9 +107,10 @@ describe('pullRequestBody', () => {
     expect(body).toContain('discussion_r20210102')
   })
 
-  it('credits other contributing authors so they know why they were asked', () => {
-    expect(body).toContain('@abram')
-    expect(body).not.toContain('@adam')
+  it('credits other contributing authors without @mentioning them', () => {
+    expect(body).toContain('**Also drawn from:** abram')
+    // A mention notifies someone who may never have seen this repository.
+    expect(body).not.toContain('@')
   })
 
   it('names a hand-authored provenance item rather than showing an empty link', () => {
