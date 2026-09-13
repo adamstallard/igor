@@ -114,6 +114,10 @@ consequences is worth reaching first.
   Haiku, driven by 700–1600 output tokens of reasoning rather than by the cached preamble. A
   steady-state cycle costs cents a day; an unbounded cold start over a thousand candidates would
   cost roughly $16 and take hours, which is what the cold-start window exists to prevent.
+  Execution, measured on two real items at the same milestone: **$0.05 and 11 seconds** for a
+  one-line CI change, **$0.37 and 60 seconds** for a small React fix that needed the worker to
+  read around the code first. A sevenfold spread on two items that both looked "small" from the
+  issue text, so per-item execution cost cannot be predicted from triage — only bounded.
 - **Polling wastes calls when nothing changes** → Accepted for latency that does not matter;
   watermarks reduce it and are a cache, not a correctness mechanism.
 
