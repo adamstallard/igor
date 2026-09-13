@@ -1005,6 +1005,59 @@ Two practical notes: several processes on one token may hit per-account concurre
 and all activity appears under one account upstream — so distinguishing which Igor did what
 depends on local logging, not on anything the provider records.
 
+#### 6.5.1 Ordered pools and ceilings — **decided**
+
+Three concepts, no more: a **seat** is capacity, a **pool** is an ordered list of seats, and a
+role's `budget_share` is a **ceiling** on what it may draw from its pool.
+
+```yaml
+seats:
+  - id: igor-1
+    token_env: IGOR_SEAT_1
+    dedicated: true          # nobody works here; reserve is 0
+  - id: adam
+    owner: adam@example.com
+    token_env: IGOR_SEAT_ADAM
+    reserve: 0.5             # Adam keeps half his allowance for himself
+
+pools:
+  - id: engineering
+    seats: [igor-1, igor-2, igor-3, adam, kapo, hudson]
+```
+
+**Pool order is the whole allocation mechanism.** An Igor takes the first seat in its pool with
+headroom, so dedicated capacity drains before anyone's personal allowance is touched. That
+single ordering replaces a separate overflow concept, and it means the common arrangement —
+some dedicated seats, plus whatever the team has spare — is expressed by listing them in that
+order.
+
+**`budget_share` is a ceiling, not a reservation, and shares need not sum to one.** Three roles
+may each declare `0.4`. It reads as "this role may never consume more than 40% of the pool",
+not "40% is set aside for it". The reasons are practical:
+
+- Adding a fourth Igor would otherwise mean editing three other roles to make room. Ceilings
+  compose; reservations require global coordination every time the fleet changes.
+- A reservation idles capacity. Ceilings let a busy Igor use what a quiet one is not.
+- Ceilings inherit monotonically, which is already how permissions behave — a role may lower
+  its ceiling and never raise it (§5.0.3).
+
+The failure mode of ceilings is that a busy role can crowd out a quiet one. That is visible in
+`igor budget`, self-corrects when the busy role finishes, and never reaches the humans, because
+each seat's own `reserve` is checked first and independently.
+
+**Enforcement order**, most protective first: the seat's reserve, then the role's ceiling
+against its trailing spend, then the next seat in the pool. Exhausting every seat in a pool is
+a graceful handoff (§5.5), never a hard stop.
+
+**Where legibility comes from.** Config states the *policy* — which pool a role draws on and
+what its ceiling is. The record states the *fact* — every invocation stores role, seat, cost
+and time, so "which Igor spent whose allowance" is answerable historically even though the
+seat is chosen dynamically. `igor budget` reports both: per seat its cap, calibration age,
+trailing spend, reserve and headroom; per role its ceiling, spend and which seats it drew on.
+
+A role may still name a single seat rather than a pool, for an Igor that must never borrow a
+human's capacity. The pool is the general case, not the only one.
+
 ### 6.6 Distribution: public repository now, npm later — **planned**
 
 Igor is the tool and nobody forks it; one public repository serves every adopter. That much is
