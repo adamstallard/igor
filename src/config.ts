@@ -14,6 +14,11 @@ export interface Config {
   /** Authors whose provenance carries extra weight. */
   experts: string[]
   halfLifeDays: number
+  /**
+   * Whether the destination repository is public. Declared so the provenance guard works
+   * without a network call; looked up when absent.
+   */
+  publicStore?: boolean
 }
 
 export class ConfigError extends Error {}
@@ -72,11 +77,17 @@ export function resolveConfig(raw: unknown, configDir: string): Config {
     }
   }
 
+  const publicStore = data['publicStore']
+  if (publicStore !== undefined && typeof publicStore !== 'boolean') {
+    throw new ConfigError('publicStore must be true or false')
+  }
+
   return {
     destination,
     reviewers: requireStringArray(data['reviewers'], 'reviewers'),
     experts: requireStringArray(data['experts'], 'experts'),
     halfLifeDays,
+    ...(publicStore === undefined ? {} : { publicStore }),
   }
 }
 

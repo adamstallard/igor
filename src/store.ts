@@ -57,7 +57,7 @@ const KEY_ORDER = [
   'reviewed',
 ] as const
 
-function serialize(entry: Entry): string {
+export function serialize(entry: Entry): string {
   const { body, ...rest } = entry
   const ordered: Record<string, unknown> = {}
   for (const key of KEY_ORDER) {

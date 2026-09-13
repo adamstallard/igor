@@ -3,7 +3,10 @@ import { Command } from 'commander'
 import { loadConfig, ConfigError } from './config.js'
 import { uniqueId } from './id.js'
 import { scoreEntry } from './scoring.js'
-import { loadAll, takenIds, writeEntry, StoreError } from './store.js'
+import { loadAll, takenIds, writeEntry, serialize, StoreError } from './store.js'
+import { propose, ProposeError } from './propose.js'
+import { reconcile } from './reconcile.js'
+import { GitHubError } from './github.js'
 import type { Entry, Status } from './entry.js'
 
 function today(): string {
@@ -104,10 +107,75 @@ program
     }
   })
 
+program
+  .command('propose')
+  .description('Open a pull request per dominant author proposing candidate entries')
+  .requiredOption('--from <dir>', 'directory of candidate entry files')
+  .action(async (opts) => {
+    const config = loadConfig(program.opts()['config'])
+    const candidates = loadAll(opts.from)
+    const bad = candidates.filter((c) => c.errors.length > 0)
+    if (bad.length > 0) {
+      for (const item of bad) {
+        process.stderr.write(`${item.file}\n`)
+        for (const e of item.errors) process.stderr.write(`  ${e.field || '(root)'}: ${e.message}\n`)
+      }
+      throw new ProposeError(`${bad.length} candidate(s) invalid — refusing to propose`)
+    }
+    const entries = candidates.map((c) => c.entry!).filter((e) => !takenIds(config.destination).has(e.id))
+    if (entries.length !== candidates.length) {
+      process.stdout.write(
+        `skipping ${candidates.length - entries.length} candidate(s) already in the store\n`,
+      )
+    }
+
+    for (const r of await propose(config, entries, serialize)) {
+      process.stdout.write(
+        `${r.pr.url}\n  assigned: ${r.author}${r.reviewers.length ? `  reviewers: ${r.reviewers.join(', ')}` : ''}\n  ${r.entries.join(', ')}\n`,
+      )
+    }
+  })
+
+program
+  .command('reconcile')
+  .description('Promote merged entries, report declines, and flag stale pull requests')
+  .option('--stale-after <days>', 'days without activity before a pull request is stale', '7')
+  .action(async (opts) => {
+    const config = loadConfig(program.opts()['config'])
+    const r = await reconcile(config, { staleAfterDays: Number(opts.staleAfter) })
+
+    for (const p of r.promoted) process.stdout.write(`promoted  ${p.id}  by ${p.by} on ${p.at}\n`)
+    for (const d of r.declined) process.stdout.write(`declined  ${d.id}  (pr #${d.pr})\n`)
+    for (const s of r.stale) {
+      process.stdout.write(
+        `stale     #${s.pr} last active ${s.lastActivity}, assigned ${s.assignees.join(', ') || '(nobody)'} — escalate to ${config.reviewers.join(', ') || '(no store reviewers configured)'}\n  ${s.url}\n`,
+      )
+    }
+    if (r.deferred.length > 0) {
+      process.stdout.write(`deferred  ${r.deferred.map((n) => `#${n}`).join(', ')} (closed unmerged)\n`)
+    }
+    if (r.promoted.length === 0 && r.declined.length === 0 && r.stale.length === 0) {
+      process.stdout.write('nothing to reconcile\n')
+    }
+    if (r.declined.length > 0) {
+      process.stdout.write(
+        '\nDeclines assume the checkout is current. Pull the destination before trusting them.\n',
+      )
+    }
+    if (r.promoted.length > 0) {
+      process.stdout.write('\nPromotions edited files locally — commit and push them.\n')
+    }
+  })
+
 try {
-  program.parse()
+  await program.parseAsync()
 } catch (error) {
-  if (error instanceof ConfigError || error instanceof StoreError) {
+  if (
+    error instanceof ConfigError ||
+    error instanceof StoreError ||
+    error instanceof ProposeError ||
+    error instanceof GitHubError
+  ) {
     process.stderr.write(`${error.message}\n`)
     process.exit(1)
   }

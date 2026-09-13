@@ -16,6 +16,7 @@ export { slugFromClaim, uniqueId } from './id.js'
 export { score, scoreEntry, type Scores, type ScoringOptions } from './scoring.js'
 
 export {
+  serialize,
   loadAll,
   loadEntry,
   writeEntry,
@@ -37,3 +38,19 @@ export {
   DEFAULT_HALF_LIFE_DAYS,
   type Config,
 } from './config.js'
+
+export {
+  propose,
+  pullRequestBody,
+  dominantAuthor,
+  contributingAuthors,
+  groupByDominant,
+  checkProvenanceVisibility,
+  ProposeError,
+  BRANCH_PREFIX,
+  type ProposalResult,
+} from './propose.js'
+
+export { reconcile, type Reconciliation } from './reconcile.js'
+
+export { GitHubError, repoFromCheckout } from './github.js'
