@@ -121,8 +121,29 @@ exists, greppability, human readability, and portability across vendors and mode
 are *derived* from the store and stamped with its commit; the store is truth, indexes are
 disposable.
 
-Size is a design goal, not a limitation. At 5–20 promotions a week with pruning, a year
-lands in the hundreds — small enough to read end to end, which is what makes it trustworthy.
+**Store size is not the constraint, and conflating it with firing volume is a mistake.** Three
+separate things:
+
+- **Firing volume** — how many entries reach a worker per invocation. Genuinely hard: context
+  is finite and injecting forty marginal entries degrades output. Capped at 5–10 (§3.3).
+- **Store size** — how many exist. Largely unconstrained. With precise conditions a
+  10,000-entry store fires the same few entries a 200-entry store would, plus it covers the
+  rare case the small store missed. A path predicate fires identically regardless of what else
+  exists, and retrieval is one matmul or an index lookup either way.
+- **Reviewability** — an entry should be readable in under a minute and the store should be
+  searchable. Neither requires reading it cover to cover.
+
+**The reason a `CLAUDE.md` must stay short is exactly the reason lore need not be.** An
+always-loaded file taxes every invocation with its length. Lore is conditional, so it carries
+no such tax — which is the whole advantage over conventional context files, and capping lore at
+comparable sizes discards it.
+
+What actually limits growth is **review throughput** (curation is where the value is, and ~20
+per batch is what a reviewer tolerates — that bounds the rate, not the ceiling) and **per-entry
+precision** (a vague condition fires wrongly and costs everyone). The rule is therefore not a
+number: lore should be **as large as it can be while every entry has a precise condition and
+demonstrable value**. The fire-count loop in §3.3 already implements exactly that test, and
+neither half of it refers to the total.
 
 ### 3.2 Two indexes — predicates **scoped**, vectors **planned**
 

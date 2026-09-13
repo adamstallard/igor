@@ -16,7 +16,7 @@ failure mode is a malformed file in a store nothing yet reads.
 
 **Goals:**
 
-- A store a human can read end to end and would want to.
+- A store whose individual entries are readable in under a minute and searchable as a whole.
 - Hand-authoring as a first-class workflow, not a fallback.
 - Entries that carry provenance, so any claim can be traced to where it came from.
 - A schema that survives its consumers being built later.
@@ -32,8 +32,9 @@ failure mode is a malformed file in a store nothing yet reads.
 which is how drift gets detected once entries start arriving automatically — plus a review
 workflow that already exists, greppability, human readability, and portability across vendor
 and model changes. A database would retrieve faster and review worse, and retrieval speed is
-irrelevant at a store size deliberately kept in the hundreds. Naming the file after the id
-means an entry is locatable directly from a supersession pointer without scanning.
+not the binding constraint — firing volume is, and it is capped independently of how many
+entries exist. Naming the file after the id means an entry is locatable directly from a
+supersession pointer without scanning.
 
 **The schema:**
 
@@ -98,8 +99,8 @@ private material out of a repo that may one day be public.
   other, so staleness is visible; pruning arrives with consolidation.
 - **A store nothing reads gets no feedback** → Accepted deliberately. The alternative is
   building a consumer first and discovering the schema is wrong with more built on top of it.
-- **Derived scores recomputed on every read cost time** → Negligible at a store size capped in
-  the hundreds by design; if it ever matters, cache keyed on the store's git commit.
+- **Derived scores recomputed on every read cost time** → Linear in provenance items and
+  cheap; if a large store ever makes it matter, cache keyed on the store's git commit.
 
 ## Open Questions
 
