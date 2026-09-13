@@ -94,8 +94,8 @@ artifact type.
 Inheritance SHALL apply three merge semantics, selected per field:
 
 The `allow` vocabulary is a **closed set**, so a typo fails validation rather than silently
-granting nothing: `comment`, `review-comment`, `draft-pr`, `pr`, `label`, `assign`, `close`,
-`merge`, `send`. The safe default an org base should ship with is `[draft-pr, comment]` —
+granting nothing: `comment`, `review-comment`, `draft-pr`, `pr`, `label`, `assign`, `unassign`,
+`close`, `merge`, `send`. The safe default an org base should ship with is `[draft-pr, comment]` —
 everything reversible, nothing final.
 
 - **Monotonic** for permission-shaped fields (`allow`, `budget_share`, repositories and
@@ -158,6 +158,22 @@ any surface.
 - **THEN** those items appear in the dry run output
 - **AND** the mistake is visible before anything is posted publicly
 
+### Requirement: A completion action must be permitted by `allow`
+
+`completion` names an action — `unassign`, `close`, or `assign` — and that action MUST appear
+in the role's effective `allow`. Otherwise completion is a permission bypass: a role forbidden
+from closing could close by naming it as its completion behaviour.
+
+#### Scenario: Completion outside allow is rejected
+
+- **WHEN** a role sets `completion: close` and its effective `allow` omits `close`
+- **THEN** validation fails
+
+#### Scenario: Default completion requires its permission
+
+- **WHEN** a role relies on the default `completion: unassign`
+- **THEN** `unassign` must be present in its effective `allow`
+
 ### Requirement: Timing values are configurable with stated defaults
 
 Every interval SHALL be configurable and SHALL have a default, since an unstated default is a
@@ -175,7 +191,3 @@ recorded as such rather than presented as considered.
 - **THEN** the inherited or default value is used
 - **AND** the effective value is visible via `role explain`
 
-#### Scenario: Stale calibration flagged
-
-- **WHEN** a seat's calibration is older than the staleness threshold
-- **THEN** the budget report marks it stale rather than reporting headroom as though current

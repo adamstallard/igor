@@ -13,13 +13,14 @@
 - [ ] 2.4 Implement override merging for settings and append merging for `instructions`
 - [ ] 2.5 Implement append merging for `lane`, conjoining constraints so an org exclusion cannot be escaped by any role
 - [ ] 2.6 Validate `allow` against the closed vocabulary so a typo fails loudly rather than granting nothing
-- [ ] 2.7 Apply defaults for settle interval, cooldown, and calibration staleness, marked as tunable guesses
-- [ ] 2.8 Implement `igor role explain`, showing the effective merged config and which level each value came from
-- [ ] 2.9 Tests for each merge semantic, especially that widening is rejected and that lane exclusions survive
+- [ ] 2.7 Reject a `completion` action absent from the effective `allow`, so completion cannot bypass a permission
+- [ ] 2.8 Apply defaults for settle interval, cooldown, and calibration staleness, marked as tunable guesses
+- [ ] 2.9 Implement `igor role explain`, showing the effective merged config and which level each value came from
+- [ ] 2.10 Tests for each merge semantic, especially that widening is rejected and that lane exclusions survive
 
 ## 3. Surface adapter and GitHub
 
-- [ ] 3.1 Define the tracker interface: search, claim, verify claim, report, identity, and whether assignment is native
+- [ ] 3.1 Define the tracker interface: search, claim, verify claim (returning held/lost/stopped), report, identity, and whether assignment is native
 - [ ] 3.2 Define the code-host interface: produce a reversible artifact, and link it back to an item
 - [ ] 3.3 Define the normalized candidate: id, url, title, body, author, state, labels, linked paths, age, work-in-flight
 - [ ] 3.4 Implement the GitHub tracker: issue search from a native query passed through verbatim
@@ -59,10 +60,12 @@ lane predicates before the loop is allowed to act.
 - [ ] 7.1 Claim by setting the assignee where the tracker has one, for visibility
 - [ ] 7.2 Verify the claim after a settle interval by re-reading, and stand down if someone was first
 - [ ] 7.3 Post a claim message from the role's template where the tracker has no assignment
-- [ ] 7.4 Implement stop: unconditional, open to anyone, immediate release of the claim
-- [ ] 7.5 Return a stopped item to the pool after the cooldown, unless a human has assigned themselves
-- [ ] 7.6 Treat a go-ahead on the surface as short-circuiting the cooldown
-- [ ] 7.7 Verify stop cannot be disabled by any config value
+- [ ] 7.4 Implement stop: unconditional, open to anyone, released on detection with no permission check
+- [ ] 7.5 Detect stop through claim verification rather than a separate operation, and re-check at checkpoints during long execution rather than only per cycle
+- [ ] 7.6 Post a one-line receipt naming any partial artifact on stop — a stop is exempt from the handoff, since it releases the claim and whoever stopped it is taking over
+- [ ] 7.7 Return a stopped item to the pool after the cooldown, unless a human has assigned themselves
+- [ ] 7.8 Treat a go-ahead on the surface as short-circuiting the cooldown
+- [ ] 7.9 Verify stop cannot be disabled by any config value
 
 ## 8. Execution
 

@@ -2,23 +2,37 @@
 
 ### Requirement: An Igor never goes silent on a claimed item
 
-Where an Igor cannot continue work it has claimed — for any reason — it SHALL post a handoff to
-the item before stopping. Silence on a claimed item MUST NOT be a permitted outcome.
+Where an Igor stops work it has claimed **of its own accord** — exhaustion, unrecoverable
+failure, or any condition it detects itself — it SHALL post a handoff to the item before
+releasing. Silence after a claim MUST NOT be a permitted outcome, because the claim told
+others to stand off.
+
+**A stop directed at the Igor is exempt.** Stop releases the claim immediately and posting a
+handoff would delay it; the rationale does not apply either, since whoever issued the stop is
+presumably taking the work. Where partial work product exists, the release message SHALL name
+it — a one-line receipt, not a handoff.
 
 #### Scenario: Handoff posted on exhaustion
 
 - **WHEN** an Igor exhausts its budget mid-task
 - **THEN** it posts a handoff to the claimed item before stopping
 
+#### Scenario: A directed stop posts no handoff
+
+- **WHEN** a stop is issued for a claimed item
+- **THEN** the claim is released without waiting to compose a handoff
+
+#### Scenario: A directed stop names partial work
+
+- **WHEN** a stop arrives after a draft artifact was already produced
+- **THEN** the release message names that artifact
+- **AND** it is a single line rather than a full handoff
+
 #### Scenario: Handoff posted on unrecoverable failure
 
 - **WHEN** execution fails in a way the Igor cannot recover from
 - **THEN** it posts a handoff rather than leaving the claim silent
 
-#### Scenario: Silence is a defect
-
-- **WHEN** an Igor stops work on a claimed item without posting
-- **THEN** that is a failure of this requirement, because the claim told others to stand off
 
 ### Requirement: A handoff states what was done, what remains, and who could continue
 
@@ -73,8 +87,3 @@ help. A handoff that depends on the thing that just failed is not a handoff.
 - **THEN** the handoff still reports what was done and what remains
 - **AND** it does so without depending on the failed path
 
-#### Scenario: Quality is traded for reliability deliberately
-
-- **WHEN** a templated handoff is compared against one a model would write
-- **THEN** the templated one is accepted as less fluent
-- **AND** the reason recorded is that it works when the alternative cannot run

@@ -66,7 +66,39 @@ resolved.
 - **THEN** a claim is expressed as a post
 - **AND** claim resolution still relies on ordering rather than on any surface-specific primitive
 
+### Requirement: Claim verification also reports a stop
+
+A tracker adapter's claim verification SHALL return one of **held**, **lost**, or **stopped**,
+so that a stop directed at an Igor has a defined path in. Stop was pulled forward from the
+conversational layer, and an obligation to honour it is unimplementable without an input.
+
+Detection reuses the re-read the Igor already performs, rather than adding an operation. It
+follows that **"immediately" means on detection and without further condition** — not
+instantaneously. Long-running execution SHALL therefore re-check at checkpoints rather than
+only once per cycle, since a cycle interval is far longer than someone watching an Igor go
+wrong will tolerate.
+
+#### Scenario: Verification reports a held claim
+
+- **WHEN** the Igor still holds the claim and no stop is present
+- **THEN** verification returns held
+
+#### Scenario: Verification reports a stop
+
+- **WHEN** a stop has been issued against a claimed item
+- **THEN** verification returns stopped
+- **AND** it does so without any permission check
+
+#### Scenario: Stop is detected during long execution
+
+- **WHEN** execution runs longer than one checkpoint interval
+- **THEN** the stop is detected at a checkpoint rather than at the end of the task
+
 ### Requirement: Adapters report work already in flight
+
+Work-in-flight is a field of the normalized candidate, and this operation is what populates
+it. It is not a second, separately-queried fact — one source, so triage and any other reader
+cannot disagree about it.
 
 A tracker adapter SHALL answer whether a given item already has work in flight, using whatever
 signal that surface provides.
