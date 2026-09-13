@@ -222,6 +222,37 @@ positives with the rest of the corpus as negatives; the contrast set falls out f
 thing that makes continuous personal memory hard is precisely what team memory does not
 need.
 
+### 3.5.1 Sources beyond review comments — **planned**
+
+The organizing principle: **mine where a human already did the work of explaining why.**
+Review comments qualify because explanation is the artifact's purpose. Ranked by how much
+explanatory structure already exists:
+
+**Already lore in the wrong format.** *Architecture Decision Records* are claim plus
+reasoning plus applicability — importing them is closer to format conversion than
+extraction. *Incident postmortems* are explicitly "what went wrong and what we will do
+differently." Both nearly free where they exist, and often they do not.
+
+**Strong signal, cheap query.** *Revert commits* carry a built-in negative outcome signal and
+need no clever detection — likely the best second source precisely because every team reverts
+even when no team writes ADRs. *Fix commits referencing an issue* pair cause with correction.
+*PR descriptions*, especially "why not X" passages where an author preempts an objection.
+*Issues closed as won't-fix with reasoning* encode rejection rules, which are valuable and
+recorded almost nowhere else.
+
+**Real but harder.** *Code comments explaining non-obvious decisions* are already lore,
+scattered and unindexed; cheap to extract, wildly variable in quality. *Repeated questions on
+any surface* — asked three times means the answer is not discoverable. *Recurring CI or lint
+failures* indicate a convention gap, but need different tooling.
+
+**Noisy, defer.** *Chat threads.* The detectable pattern is question → answer → confirmation,
+which is a real handle with poor precision. Worth doing eventually and worth doing last.
+
+Each source is its own change rather than one "mine everything," because the salience signal
+*is* most of the work and it differs per source — stick-detection for reviews, the revert
+itself for reverts, structure for postmortems. Bundling them would mean building four
+detectors simultaneously with no way to tell which one is producing garbage.
+
 ### 3.6 Learning from human experts — **planned**
 
 The frontier model supplies general craft and cannot supply local convention. Closing that
