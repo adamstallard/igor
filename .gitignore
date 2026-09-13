@@ -1,0 +1,29 @@
+# Defense in depth only. The real boundary is that private data is written
+# OUTSIDE this tree — see docs/architecture.md. Never rely on this file to
+# keep something out of history: publishing a repo exposes all history, so a
+# leak committed and later deleted is still exposed at publication.
+
+# Lore stores and anything derived from a real repository's review history.
+# Lore belongs in the operating team's repo, never in Igor's.
+lore/
+entries/
+*.ledger
+
+# Scratch, spikes, and run output
+scratch/
+out/
+tmp/
+*.local.*
+
+# Credentials
+.env
+.env.*
+*.pem
+*.key
+credentials.json
+
+# Node
+node_modules/
+dist/
+*.tsbuildinfo
+npm-debug.log*
