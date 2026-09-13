@@ -68,6 +68,13 @@ standing instructions, the normalized item, and the repository. It produces draf
 requests and comments — never merges, sends, or irreversible state changes. Output constraint
 is enforced by what the loop will act on, not by asking the model nicely.
 
+**Execution is the only stage that needs a checkout, and it gets one through a seam.** Everything
+else goes through the API. The tree is disposable and provisioned per task, which costs nothing
+here — one Igor running one task at a time — and is what lets §6.7.2's shared object store
+arrive as a swap rather than a rewrite. The spec deliberately does not say *clone* or
+*worktree*: naming a shape here would bake in the clone-per-task assumption §6.7.2 exists to
+warn off.
+
 **Budget is calibrated by a human, not learned by exhaustion** (§6.3.1). Caps are
 unpublished; a person runs `/usage` and submits what they see. Seats are named config entities
 with an owner and a reserve, so an Igor sharing a seat leaves the human a floor it will not

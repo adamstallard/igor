@@ -23,6 +23,36 @@ rather than as instruction.
 - **THEN** it is treated as information about the task
 - **AND** it does not alter the action space, the role, or what is claimed
 
+### Requirement: Execution obtains a disposable working tree through one seam
+
+Execution is the only stage needing a checkout; discovery, triage, claiming and state all go
+through the API. Execution SHALL obtain its working tree through a single provisioning seam and
+SHALL treat that tree as disposable, making no assumption that a checkout persists between
+tasks or is shared with another task. The tree SHALL be released when the task ends, whatever
+its outcome.
+
+#### Scenario: Working tree provisioned for a task that needs one
+
+- **WHEN** a claimed item is executed
+- **THEN** the working tree is obtained through the provisioning seam
+- **AND** no other stage of the loop requires a checkout
+
+#### Scenario: No state carries between tasks
+
+- **WHEN** a task begins in a working tree
+- **THEN** it does not depend on any file left behind by a previous task
+
+#### Scenario: The tree is released on failure as well as success
+
+- **WHEN** a task ends in failure, handoff, or a stop
+- **THEN** its working tree is released
+
+#### Scenario: The provisioning strategy is replaceable
+
+- **WHEN** the way trees are provisioned changes
+- **THEN** only the seam changes
+- **AND** no requirement above depends on trees being clones, worktrees, or any other shape
+
 ### Requirement: Only reversible artifacts are produced
 
 Execution SHALL be confined to the artifact types the role's effective `allow` list permits,

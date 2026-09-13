@@ -69,6 +69,7 @@ lane predicates before the loop is allowed to act.
 
 ## 8. Execution
 
+- [ ] 8.0 Implement the working-tree seam: provision a disposable tree per task, release it on any outcome
 - [ ] 8.1 Invoke headless Claude with the role's standing instructions and the normalized item
 - [ ] 8.2 Delimit all ingested content as untrusted data, distinct from standing instructions
 - [ ] 8.3 Enforce the action space at the loop: refuse to act on any output outside `allow`
@@ -76,6 +77,7 @@ lane predicates before the loop is allowed to act.
 - [ ] 8.5 Write the transcript to the state branch
 - [ ] 8.6 Apply the completion action from policy, defaulting to unassign-and-leave-the-artifact
 - [ ] 8.7 Verify an output naming an action outside `allow` is refused rather than attempted
+- [ ] 8.8 Verify a task cannot see a file left by a previous task, and that a failed task still releases its tree
 
 ## 9. Graceful handoff
 

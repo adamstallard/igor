@@ -1086,6 +1086,11 @@ worktrees cannot check out the same branch — which does not bite, since each t
 branch. Moot for the first Igor, which runs one task at a time; recorded so nobody builds
 clone-per-task and has to unpick it.
 
+The **seam** this arrives behind is specified now, in `core-igor-loop`'s `task-execution`:
+execution obtains a disposable working tree through one provisioning function and assumes
+nothing about its shape — not a clone, not a worktree. The shared object store above is then a
+swap behind that function rather than a change to how execution is written.
+
 ### 6.8 Igor is necessarily self-hosted — **constraint**
 
 An Igor runs on a subscription seat token, and a seat token cannot be handed to a third
