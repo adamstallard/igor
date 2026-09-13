@@ -50,15 +50,25 @@ consistent.
 
 ### Requirement: Adapters declare how a claim is expressed
 
-A tracker adapter SHALL declare whether the surface offers a native assignment field or only
-message-based convention. This declaration determines how a claim is *expressed*, not how it is
-resolved.
+A tracker adapter SHALL declare whether the surface offers a native **holder field** — a field
+naming who has the item — or only message-based convention. This declaration determines how a
+claim is *expressed*, not how it is resolved.
 
-#### Scenario: Native assignment declared
+Which field that is belongs to the adapter, not to the loop. GitHub's is the assignee; Linear's
+is `delegate`, because an app identity there may hold the latter and not the former. Naming
+"assignee" above the adapter would make one surface's vocabulary into everyone's.
 
-- **WHEN** an adapter declares native assignment
-- **THEN** a claim sets the assignee field
-- **AND** that assignment is the signal humans read
+#### Scenario: Native holder field declared
+
+- **WHEN** an adapter declares a native holder field
+- **THEN** a claim sets that field
+- **AND** the field's value is the signal humans read
+
+#### Scenario: The loop does not name the field
+
+- **WHEN** two trackers express a claim through differently-named fields
+- **THEN** the loop's behaviour is identical
+- **AND** nothing above the adapter refers to either field by name
 
 #### Scenario: Message-only surface declared
 

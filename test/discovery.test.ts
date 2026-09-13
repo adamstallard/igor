@@ -21,7 +21,7 @@ const source: Source = { tracker: 'github', repo: 'o/r', query: 'is:issue is:ope
 function fakeTracker(candidates: Candidate[], onSearch?: () => void): Tracker {
   return {
     name: 'github',
-    nativeAssignment: true,
+    nativeHolderField: true,
     identity: async () => 'igor-bot',
     search: async () => {
       onSearch?.()

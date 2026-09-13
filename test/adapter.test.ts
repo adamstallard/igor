@@ -155,8 +155,8 @@ describe('stop recognition', () => {
 })
 
 describe('tracker contract', () => {
-  it('declares native assignment, so a claim is visible where people look', () => {
-    expect(new GitHubTracker().nativeAssignment).toBe(true)
+  it('declares a native holder field, so a claim is visible where people look', () => {
+    expect(new GitHubTracker().nativeHolderField).toBe(true)
   })
 
   it('supplies its own linkage convention rather than the loop hardcoding one', () => {

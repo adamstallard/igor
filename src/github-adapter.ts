@@ -126,16 +126,16 @@ export function isStop(body: string, identity: string): boolean {
   return named !== '' && new RegExp(`@?${named}\\b[\\s,:]+stop\\b`, 'i').test(text)
 }
 
+interface SearchResult {
+  search: { pageInfo: { hasNextPage: boolean; endCursor: string }; nodes: (RawIssue | null)[] }
+}
+
 /**
  * Issue bodies are what make a page expensive. Measured against a repository with long ones,
  * 30 per page succeeds and 50 returns "Resource limits for this query exceeded" — but the
  * ceiling moves with body length, so it is a repo-dependent property rather than a constant to
  * hardcode confidently. Start below the measured limit and halve on refusal.
  */
-interface SearchResult {
-  search: { pageInfo: { hasNextPage: boolean; endCursor: string }; nodes: (RawIssue | null)[] }
-}
-
 const PAGE_SIZE = 25
 const MIN_PAGE_SIZE = 5
 /**
@@ -148,7 +148,7 @@ const MAX_PAGES = Math.ceil(1000 / MIN_PAGE_SIZE)
 export class GitHubTracker implements Tracker {
   readonly name = 'github'
   /** GitHub has assignees, so a claim is visible where people already look. */
-  readonly nativeAssignment = true
+  readonly nativeHolderField = true
 
   private login?: string
 

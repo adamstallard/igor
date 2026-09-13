@@ -70,10 +70,14 @@ export interface Source {
 export interface Tracker {
   readonly name: string
   /**
-   * Whether the surface has an assignment field. This determines how a claim is *expressed*,
-   * never how it is resolved — resolution is ordering plus a settle interval on every surface.
+   * Whether the surface has a field naming who holds an item. Determines how a claim is
+   * *expressed*, never how it is resolved — resolution is ordering plus a settle interval
+   * everywhere.
+   *
+   * Which field it is stays inside the adapter. GitHub's is the assignee; Linear's is
+   * `delegate`, since an app identity there may hold the latter and not the former.
    */
-  readonly nativeAssignment: boolean
+  readonly nativeHolderField: boolean
 
   /** Who this Igor is on this surface, for claiming and for reading its own claim back. */
   identity(): Promise<string>
