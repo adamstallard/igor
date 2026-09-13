@@ -389,6 +389,21 @@ rewrite — turning the eventual fully-open migration into a dial rather than a 
   against a subscription seat. Refresh behavior past expiry is undocumented; budget for an
   annual manual regeneration as a known operational task.
 
+### 6.5 Igor is necessarily self-hosted — **constraint**
+
+An Igor runs on a subscription seat token, and a seat token cannot be handed to a third
+party. There is therefore no managed-service version of this in which a vendor runs Igors on
+someone's behalf; every adopter runs their own.
+
+This is a consequence of the auth model rather than a preference, and it has two effects.
+Standing Igor up must be genuinely easy for someone who did not build it, so deployment
+artifacts should be runnable rather than a prose checklist — a compose file or unit file in
+`deploy/`, with `docs/deployment.md` covering only what cannot be executed, which is
+essentially credential provisioning. And there is no hosting business here, only a tool.
+
+Deployment work belongs to `core-igor-loop`, the first change that introduces a continuously
+running process. `lore-from-reviews` is a batch CLI and needs none of it.
+
 ### 6.4 Graceful handoff — **scoped**
 
 The failure mode the claim protocol creates: an Igor announces "I'm on this", humans and
