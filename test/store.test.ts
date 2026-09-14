@@ -1,10 +1,18 @@
-import { mkdtempSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { slugFromClaim, uniqueId } from '../src/id.js'
 import { score } from '../src/scoring.js'
-import { loadAll, writeEntry, resolveCurrent, takenIds } from '../src/store.js'
+import {
+  ENTRIES_DIR,
+  StoreError,
+  createTarget,
+  loadAll,
+  writeEntry,
+  resolveCurrent,
+  takenIds,
+} from '../src/store.js'
 import { resolveConfig, loadConfig, findConfig, igorRoot, ConfigError } from '../src/config.js'
 import type { Entry } from '../src/entry.js'
 
@@ -267,5 +275,63 @@ describe('finding the config', () => {
     } finally {
       process.chdir(cwd)
     }
+  })
+})
+
+describe('creating into a candidate directory', () => {
+  it('writes where propose --from looks, leaving the store untouched', () => {
+    const destination = tempStore()
+    const candidates = tempStore()
+
+    const target = createTarget(destination, candidates)
+    writeEntry(target.dir, entry())
+
+    // The gate propose --from applies before it reads anything.
+    expect(existsSync(join(candidates, ENTRIES_DIR))).toBe(true)
+    expect(loadAll(candidates).map((c) => c.id)).toEqual(['use-query-hook'])
+    expect(loadAll(destination)).toEqual([])
+  })
+
+  it('takes ids against the store as well as the target', () => {
+    const destination = tempStore()
+    const candidates = tempStore()
+    const slug = slugFromClaim(entry().claim)
+    writeEntry(destination, entry({ id: slug }))
+
+    expect(uniqueId(entry().claim, createTarget(destination, candidates).taken)).toBe(`${slug}-2`)
+  })
+
+  it('takes ids against candidates already staged in the target', () => {
+    const destination = tempStore()
+    const candidates = tempStore()
+    const slug = slugFromClaim(entry().claim)
+    writeEntry(candidates, entry({ id: slug }))
+
+    expect(uniqueId(entry().claim, createTarget(destination, candidates).taken)).toBe(`${slug}-2`)
+  })
+
+  it('refuses a directory that is not there rather than conjuring it', () => {
+    const destination = tempStore()
+    const missing = join(tempStore(), 'canddiates')
+
+    expect(() => createTarget(destination, missing)).toThrow(StoreError)
+    expect(existsSync(missing)).toBe(false)
+  })
+
+  it('refuses a path that is a file', () => {
+    const destination = tempStore()
+    const file = join(tempStore(), 'notes.md')
+    writeFileSync(file, 'not a store', 'utf8')
+
+    expect(() => createTarget(destination, file)).toThrow(/not a directory/)
+  })
+
+  it('falls back to the destination and its ids when no target is given', () => {
+    const destination = tempStore()
+    writeEntry(destination, entry())
+
+    const target = createTarget(destination)
+    expect(target.dir).toBe(destination)
+    expect(target.taken).toEqual(new Set(['use-query-hook']))
   })
 })

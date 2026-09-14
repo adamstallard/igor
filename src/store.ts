@@ -1,5 +1,5 @@
-import { mkdirSync, readdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
-import { basename, join } from 'node:path'
+import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync, existsSync } from 'node:fs'
+import { basename, join, resolve } from 'node:path'
 import matter from 'gray-matter'
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
 import { validateFrontmatter, type Entry, type ValidationError } from './entry.js'
@@ -127,6 +127,33 @@ export function writeEntry(destination: string, entry: Entry): string {
 
 export function takenIds(destination: string): Set<string> {
   return new Set(listFiles(destination).map((f) => basename(f, '.md')))
+}
+
+export interface CreateTarget {
+  dir: string
+  taken: Set<string>
+}
+
+/**
+ * Where `create` writes, and the ids it may not reuse there.
+ *
+ * `into` names a candidate directory outside the store, laid out the same way so that
+ * `propose --from` reads back what was written.
+ *
+ * Ids are taken against the store as well as the target, because `propose` silently drops a
+ * candidate whose id is already in the store — a collision left to be found there disappears
+ * rather than being reported.
+ *
+ * The directory itself must be there already. `entries/` beneath it is layout the tool owns,
+ * but a mistyped path would otherwise be created in full and look like it worked.
+ */
+export function createTarget(destination: string, into?: string): CreateTarget {
+  if (into === undefined) return { dir: destination, taken: takenIds(destination) }
+  const dir = resolve(into)
+  if (!existsSync(dir) || !statSync(dir).isDirectory()) {
+    throw new StoreError(`${dir} is not a directory — create it before writing into it`)
+  }
+  return { dir, taken: new Set([...takenIds(destination), ...takenIds(dir)]) }
 }
 
 /**

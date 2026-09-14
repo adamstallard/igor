@@ -99,11 +99,16 @@ igor create \
   --claim "Fetch data with the shared query hook rather than inside useEffect" \
   --prose "When adding or changing data fetching in a React component" \
   --author you --scope role:frontend --path 'src/**/*.tsx' \
-  --body "The hook handles caching, deduping, and cancellation on unmount."
+  --body "The hook handles caching, deduping, and cancellation on unmount." \
+  --into ../candidates   # a candidate for review, rather than straight into the store
 
 igor list       # entries with support and newest evidence, derived from provenance
 igor validate    # reports every invalid entry, exits non-zero if any
 ```
+
+`--into <dir>` writes to `<dir>/entries/`, which is where `propose --from <dir>` reads — so
+the two compose without you laying the directory out yourself. Without it the entry lands in
+the store, where `propose` will not take it as a candidate.
 
 An entry's id is a slug derived from its claim and then frozen, so rewording a claim later
 never moves what other entries point at. Dates may be written unquoted.
