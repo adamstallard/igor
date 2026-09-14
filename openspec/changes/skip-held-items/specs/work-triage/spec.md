@@ -15,36 +15,64 @@ issue every cycle — noise directed at exactly the people a claim exists to inf
 - **THEN** triage skips it before any model call and before any claim
 - **AND** the reason recorded names who holds it
 
+#### Scenario: A second holder alongside the Igor still means someone else's
+
+- **WHEN** a candidate is held by both the running Igor and another party
+- **THEN** it is skipped, on the same reading a mid-run claim check uses: people add
+  themselves to a holder list rather than replacing what is there
+
 #### Scenario: An item the Igor itself holds is still a candidate
 
 - **WHEN** a candidate is held only by the running Igor and has no work in flight
 - **THEN** it is not skipped, because that is a claim left behind by a process that stopped
 
-#### Scenario: Not overridable by configuration
+#### Scenario: Nobody named means nobody holds it
 
-- **WHEN** a role attempts to disable the skip
-- **THEN** validation fails
+- **WHEN** a candidate names no holder
+- **THEN** the skip does not apply
 
-### Requirement: A recorded decision is not re-derived while its reason holds
+### Requirement: An item handed back is not re-worked until something answers
 
-Where triage has declined an item, that decision SHALL be recorded and SHALL suppress
-reconsideration until the item changes in a way that could alter it.
+Where an Igor has handed an item back rather than producing something, that outcome SHALL be
+recorded, and the item SHALL NOT be worked again while nothing has answered it.
 
-An Igor's own activity moves an item's timestamp, so an item declined this cycle looks fresh
-the next one. Without a recorded decision the loop rediscovers, re-triages and re-declines the
-same item forever, paying for it each time.
+An Igor's own handoff comment moves the item's timestamp past the watermark, so the item looks
+fresh next cycle. Nothing else stops it: the claim was released, no pull request exists, the
+lane still admits it and the model gives the same verdict on the same text. The Igor re-claims
+and re-works it every poll interval, at full worker cost, forever.
 
-#### Scenario: A declined item does not return unchanged
+An answer is anything that could change the outcome: a reply from anyone other than the Igor,
+or an edit to the item itself. Both are required, because a handoff *invites* a reply — an item
+suppressed until its title or labels change would stay silent precisely where a person supplied
+the missing context in a comment.
 
-- **WHEN** an item was declined and nothing about it has changed since
-- **THEN** it is not triaged again
+#### Scenario: A handed-back item does not return unanswered
 
-#### Scenario: The Igor's own comment does not make an item fresh
+- **WHEN** an item was handed back and nothing has been said on it since, and the item itself
+  is unchanged
+- **THEN** it is not worked again
 
-- **WHEN** an Igor comments on an item and thereby moves its timestamp
-- **THEN** that alone does not make the item a candidate again
+#### Scenario: The Igor's own handoff does not make an item fresh
 
-#### Scenario: A changed item is reconsidered
+- **WHEN** the only activity since the handoff is the Igor's own message
+- **THEN** that alone does not make the item workable again
 
-- **WHEN** an item declined earlier is edited, relabelled, or released by its holder
-- **THEN** it is triaged again
+#### Scenario: A reply lifts the suppression
+
+- **WHEN** anyone other than the Igor comments on a handed-back item
+- **THEN** it is worked again
+
+#### Scenario: An edit lifts the suppression
+
+- **WHEN** a handed-back item is retitled, rewritten, relabelled, or its holder changes
+- **THEN** it is worked again, whether or not anyone commented
+
+#### Scenario: Running out of budget is not a decision about the item
+
+- **WHEN** an item was handed back because the budget was exhausted
+- **THEN** it is not suppressed, because nothing about the item produced that outcome
+
+#### Scenario: The record is a cache, not a source of truth
+
+- **WHEN** the record is missing or unreadable
+- **THEN** the item is worked again rather than the cycle failing

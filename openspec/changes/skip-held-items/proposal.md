@@ -25,9 +25,10 @@ cycle before any claim is attempted.
 **An item the Igor itself holds is not skipped.** A claim with nothing in flight behind it is a
 claim a dead process left, and re-taking it is how that recovers.
 
-**A stood-down item is not reconsidered until something changes.** The outcome is recorded per
-item, and an item declined for a reason that still holds does not return next cycle merely
-because the Igor's own comment moved its timestamp.
+**An item handed back is not re-worked until something answers.** A handoff releases the claim
+and leaves no pull request, so nothing downstream stops the item returning — and the handoff
+comment itself moves the timestamp past the watermark, which is what makes it return. The
+outcome is recorded, and lifted by a reply from anyone else or by an edit to the item.
 
 Explicitly out of scope:
 
@@ -41,7 +42,7 @@ Explicitly out of scope:
 ### Modified Capabilities
 
 - `work-triage`: a third universal skip — an item held by another party — and a requirement that
-  a recorded decision is not re-derived while its reason still holds.
+  an item handed back is not re-worked while nothing has answered it.
 
 ## Impact
 
