@@ -38,8 +38,10 @@ first Igor wait on it would have been a false dependency.
 
 Explicitly out of scope:
 
-- **Learned condition vectors and the vector index.** Predicates cover this change.
-  Activation-keyed conditions need the recognition layer moved off a closed API.
+- **Learned condition vectors and the vector index.** A small open-weight recognizer is the
+  design (§4.1), and it is buildable — what is missing is contrastive examples to derive
+  vectors from. Those come from the relevance decisions this change records, so retrieval
+  precedes vectors rather than competing with them (§4.2.1).
 - **The promote/prune feedback loop.** Fire counts are recorded here; acting on them —
   promoting an always-firing entry into standing role config, pruning one that never fires —
   waits until there is enough firing history to act on. Reasoning in `docs/architecture.md`

@@ -457,6 +457,39 @@ A direction in the recognizer's activation space separating "condition present" 
 state at layer L on the final input token, project onto the condition vector, threshold. If
 it exceeds, the intervention applies for the remainder of the pass.
 
+### 4.2.1 The filter that precedes vectors also trains them — **planned**
+
+Condition vectors are built from contrastive examples, and §4.2 does not say where those come
+from. They come from the mechanism vectors replace.
+
+Before the recognizer exists, relevance is judged by a model: one call receives every in-scope
+entry's *condition* — a sentence and a path glob, roughly forty tokens each — alongside the
+item, and answers which apply. Only the matched entries, whole, reach the worker. Two hundred
+entries is about eight thousand tokens, one cheap call, and it works today.
+
+**Every decision that call makes is a labelled example.** Condition, item, applied or not, and
+the clause the model gave. That is precisely the positives-and-negatives corpus a condition
+vector needs, produced as a side effect of running normally. The filter is not a stopgap ahead
+of the real mechanism; it is how the real mechanism gets its training data, which makes it a
+prerequisite rather than a detour.
+
+**Log rejections, not only fires.** A bare fire count cannot distinguish an entry whose
+condition never matched from one nothing ever considered, and those call for opposite
+responses — the first is a mis-derived condition, the second means the entry is out of scope
+for everything the fleet does. The rejection log answers four questions the fire count cannot:
+
+- **What do vectors train on** — the negatives, which are most of the corpus.
+- **Why did the lesson we needed not fire** — answerable after the fact, with the model's own
+  clause, rather than by re-running and hoping.
+- **Is the filter wrong in a systematic way** — a whole class rejected consistently is visible
+  in aggregate and invisible one item at a time.
+- **Which entries have stopped earning their place** (§3.4.1) — considered a hundred times and
+  applied never is strong evidence; never fired is ambiguous.
+
+**A filter miss is silent**, which is the hazard worth designing against: the worker proceeds
+confidently without the lesson and nothing looks wrong. Err toward including. The cost of a
+false positive is tokens; the cost of a false negative is the whole point of lore.
+
 ### 4.3 SAE-legible conditions — **research**
 
 A sparse autoencoder decomposes activations into a sparse combination from a learned
