@@ -14,6 +14,7 @@ import { planCycle, runItem, type CycleReport } from './loop.js'
 import { serve, untilSignalled } from './serve.js'
 import { GitHubTracker, GitHubCodeHost } from './github-adapter.js'
 import type { Candidate } from './adapter.js'
+import { laneVerdict, universalSkip } from './predicate.js'
 import { CloneProvider } from './worktree.js'
 import { recordExecution } from './execute.js'
 import { TriageError } from './triage.js'
@@ -325,6 +326,18 @@ program
         await tracker.search({ tracker: 'github', repo, query: `is:issue ${opts.claim.split('#')[1]}` })
       ).filter((c) => c.id === opts.claim)
       if (item === undefined) throw new RoleError(`no open item ${opts.claim}`)
+
+      // Naming an item skips triage — a person directing an Igor is exercising their own
+      // judgement, and the lane exists to substitute for one. The universal skips still
+      // apply: acting on a closed item, or one already being worked, is not a preference
+      // anybody gets to express.
+      const universal = universalSkip(item)
+      if (universal) throw new RoleError(`refusing ${item.id}: ${universal.reason}`)
+
+      const lane = laneVerdict(role.lane, item)
+      if (lane.outcome === 'skip') {
+        process.stdout.write(`note: outside this role's lane (${lane.reason}) — working it anyway\n`)
+      }
       await work(item)
       return
     }

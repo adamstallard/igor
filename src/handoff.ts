@@ -27,6 +27,8 @@ import type { Role } from './role.js'
 export type HandoffReason =
   | { kind: 'budget'; seat?: string; resetAt?: string }
   | { kind: 'failure'; detail: string }
+  // Looking carefully and finding nothing is a result, not a breakdown, and reads as one.
+  | { kind: 'nothing-to-do'; detail: string }
 
 export interface Handoff {
   reason: HandoffReason
@@ -124,7 +126,9 @@ export function composeHandoff(role: Role, candidate: Candidate, handoff: Handof
         (handoff.reason.resetAt
           ? `, back at ${clock(handoff.reason.resetAt)}${until(handoff.reason.resetAt, now)}`
           : ', and when it returns is not known')
-      : `it hit something it could not get past: ${handoff.reason.detail}. It will not retry`
+      : handoff.reason.kind === 'nothing-to-do'
+        ? handoff.reason.detail
+        : `it hit something it could not get past: ${handoff.reason.detail}. It will not retry`
 
   const who =
     handoff.suggested.length > 0 ? `${handoff.suggested.join(' or ')} could pick this up.` : ''

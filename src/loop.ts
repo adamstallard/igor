@@ -139,14 +139,11 @@ export async function runItem(
       // "Nothing to do" still owes an explanation. The Igor claimed the item, so releasing it
       // unchanged and unremarked leaves it looking handled when nobody has handled it. It is
       // not a failure in the sense of something breaking, so it should not read as one.
-      const detail =
+      const reason: HandoffReason =
         execution.outcome === 'nothing-to-do'
-          ? 'it looked at this and found nothing it could usefully change'
-          : execution.reason
-      const out = await handOffFrom(
-        tracker, candidate, role, identity, claim.claimedAt,
-        { kind: 'failure', detail }, execution,
-      )
+          ? { kind: 'nothing-to-do', detail: 'it read this and found nothing it could usefully change' }
+          : { kind: 'failure', detail: execution.reason }
+      const out = await handOffFrom(tracker, candidate, role, identity, claim.claimedAt, reason, execution)
       return { outcome: 'handed-off', candidate, reason: execution.reason, execution, costUsd: execution.costUsd, spoke: out.posted }
     }
   }

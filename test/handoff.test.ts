@@ -211,3 +211,22 @@ describe('posting it', () => {
     expect(log.reported[0]).toMatch(/never started/)
   })
 })
+
+describe('finding nothing is a result, not a breakdown', () => {
+  const text = composeHandoff(role(), candidate(), {
+    reason: { kind: 'nothing-to-do', detail: 'it read this and found nothing it could usefully change' },
+    done: ['claimed this 12 minutes ago'],
+    remaining: ['all of it — nothing was changed, so this needs a person to look'],
+    suggested: ['alice'],
+  }, NOW)
+
+  it('does not describe it as something it could not get past', () => {
+    expect(text).not.toMatch(/could not get past/)
+    expect(text).not.toMatch(/will not retry/)
+  })
+
+  it('still says what it did and what is left', () => {
+    expect(text).toMatch(/found nothing it could usefully change/)
+    expect(text).toMatch(/needs a person to look/)
+  })
+})
