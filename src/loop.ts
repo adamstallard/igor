@@ -22,6 +22,27 @@ import { systemPrompt, triageBatch, TRIAGE_MODEL } from './triage.js'
  * happening or being said.
  */
 
+/**
+ * Pulls the explanation out of a worker's report, which opens with a heading or a bare
+ * statement and then elaborates. The first substantial paragraph is the answer; the rest is
+ * detail the transcript keeps.
+ */
+export function declineReason(transcript: string, limit = 400): string {
+  const cleaned = transcript
+    .split('\n')
+    .filter((l) => !/^\s*(#|\*\*Why:\*\*\s*$)/.test(l))
+    .join('\n')
+    .replace(/\*\*Why:\*\*\s*/i, '')
+    .trim()
+  if (cleaned === '') return 'it read this and found nothing it could usefully change'
+  const paragraphs = cleaned.split(/\n\s*\n/).filter((p) => p.trim().length > 40)
+  const first = (paragraphs[0] ?? cleaned).replace(/\s+/g, ' ').trim()
+  if (first.length <= limit) return first
+  const cut = first.slice(0, limit)
+  const at = cut.lastIndexOf('. ')
+  return at > limit / 2 ? cut.slice(0, at + 1) : `${cut.trimEnd()}…`
+}
+
 export interface ItemDeps {
   tracker: Tracker
   codeHost: CodeHost
@@ -45,8 +66,12 @@ export interface ItemRun {
   spoke: boolean
 }
 
+export type Step = 'claiming' | 'settling' | 'working' | 'publishing' | 'completing'
+
 export interface RunOptions extends ExecuteOptions {
   claim?: ClaimOptions
+  /** Called as each stage begins. A worker can run for minutes; silence is not a status. */
+  onStep?: (step: Step) => void
   /** Supplied by the budget layer once it exists; absent means budget is not being enforced. */
   budget?: { exhausted: () => boolean; seat?: string; resetAt?: string }
 }
@@ -60,7 +85,12 @@ export async function runItem(
 ): Promise<ItemRun> {
   const { tracker, codeHost, trees } = deps
 
-  const claim = await takeClaim(tracker, candidate, role, identity, options.claim ?? {})
+  const step = options.onStep ?? (() => {})
+  step('claiming')
+  const claim = await takeClaim(tracker, candidate, role, identity, {
+    ...(options.claim ?? {}),
+    onSettle: () => step('settling'),
+  })
   if (claim.outcome !== 'held') {
     // Nothing was claimed, or someone else holds it. Neither owes a handoff: a refused claim
     // means the Igor never told anyone to stand off, and a lost one means somebody else is
@@ -91,13 +121,16 @@ export async function runItem(
     return { outcome: 'handed-off', candidate, reason: 'budget exhausted before starting', costUsd: 0, spoke: out.posted }
   }
 
+  step('working')
   const execution = await execute(trees, tracker, codeHost, candidate, role, {
     ...options,
+    onPublish: () => step('publishing'),
     stillHeld: async () => (await checkpoint(tracker, claim, identity)).status === 'held',
   })
 
   switch (execution.outcome) {
     case 'produced': {
+      step('completing')
       const refusal = await complete(tracker, candidate, role, identity)
       if (refusal) {
         await tracker
@@ -139,9 +172,11 @@ export async function runItem(
       // "Nothing to do" still owes an explanation. The Igor claimed the item, so releasing it
       // unchanged and unremarked leaves it looking handled when nobody has handled it. It is
       // not a failure in the sense of something breaking, so it should not read as one.
+      // The worker's own account of why it declined is the most useful sentence available,
+      // and it is otherwise only in the transcript, which nobody reading the item will open.
       const reason: HandoffReason =
         execution.outcome === 'nothing-to-do'
-          ? { kind: 'nothing-to-do', detail: 'it read this and found nothing it could usefully change' }
+          ? { kind: 'nothing-to-do', detail: declineReason(execution.transcript) }
           : { kind: 'failure', detail: execution.reason }
       const out = await handOffFrom(tracker, candidate, role, identity, claim.claimedAt, reason, execution)
       return { outcome: 'handed-off', candidate, reason: execution.reason, execution, costUsd: execution.costUsd, spoke: out.posted }

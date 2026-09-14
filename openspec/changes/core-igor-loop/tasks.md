@@ -108,8 +108,8 @@ lane predicates before the loop is allowed to act.
 ## 11. First supervised run
 
 - [x] 11.1 Run one Igor against one repository, in the foreground, watched
-- [ ] 11.2 Confirm the first claim is correct before letting it execute anything
-- [ ] 11.3 Record what the real run contradicted, since every previous one has contradicted something
+- [x] 11.2 Confirm the first claim is correct before letting it execute anything
+- [x] 11.3 Record what the real run contradicted, since every previous one has contradicted something
 - [ ] 11.4 Record the tuned intervals and the observed survivor ratio in the README
 
 ## 12. The loop itself

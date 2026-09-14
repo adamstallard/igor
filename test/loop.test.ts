@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 import type { Artifact, Candidate, ClaimVerdict, CodeHost, Tracker } from '../src/adapter.js'
 import type { Role } from '../src/role.js'
 import type { TreeProvider, WorkingTree, ChangedFile } from '../src/worktree.js'
-import { runItem, type ItemDeps } from '../src/loop.js'
+import { declineReason, runItem, type ItemDeps } from '../src/loop.js'
 
 const candidate = (over: Partial<Candidate> = {}): Candidate =>
   ({ id: 'github:o/r#7', repo: 'o/r', native: '7', title: 'A bug', body: '', author: 'reporter', assignees: [], labels: [], paths: [], state: 'open' }) as Candidate
@@ -132,5 +132,43 @@ describe('paths that owe nothing', () => {
     const r = await runItem(d, candidate(), role(), 'igor-bot', noWait)
     expect(r.outcome).toBe('lost')
     expect(r.spoke).toBe(false)
+  })
+})
+
+describe('the worker explains its own refusal', () => {
+  it('lifts the reason out of the report rather than leaving it in the transcript', async () => {
+    // Nobody reading the issue opens the transcript, so the one useful sentence has to travel.
+    const { d, posts } = deps({ changes: [] })
+    await runItem(d, candidate(), role(), 'igor-bot', {
+      ...noWait,
+      worker: async () => ({
+        result:
+          'No changes made — no edits to the tree.\n\n**Why:** the issue asks me to fix ' +
+          '`src/api/client.ts`, but that file does not exist in this repository.',
+        total_cost_usd: 0.07,
+      }),
+    })
+    expect(posts.at(-1)).toContain('does not exist in this repository')
+    expect(posts.at(-1)).not.toMatch(/could not get past/)
+  })
+
+  it('falls back to a plain statement when the worker said nothing', async () => {
+    const { d, posts } = deps({ changes: [] })
+    await runItem(d, candidate(), role(), 'igor-bot', {
+      ...noWait,
+      worker: async () => ({ result: '', total_cost_usd: 0 }),
+    })
+    expect(posts.at(-1)).toMatch(/found nothing it could usefully change/)
+  })
+
+  it('reports each stage, since a worker can run for minutes', async () => {
+    const steps: string[] = []
+    const { d } = deps({ changes: [] })
+    await runItem(d, candidate(), role(), 'igor-bot', {
+      ...noWait,
+      worker: async () => ({ result: 'nothing to do', total_cost_usd: 0 }),
+      onStep: (s) => steps.push(s),
+    })
+    expect(steps).toEqual(['claiming', 'settling', 'working'])
   })
 })

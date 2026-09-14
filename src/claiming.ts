@@ -55,6 +55,7 @@ export interface ClaimOptions {
   now?: () => number
   /** Skip the claim message — used only by callers that post their own. */
   announce?: boolean
+  onSettle?: () => void
 }
 
 /**
@@ -98,6 +99,7 @@ export async function takeClaim(
     await tracker.report(candidate, claimMessage(role, identity))
   }
 
+  options.onSettle?.()
   await wait(role.settleSeconds * 1000)
   const verdict = await tracker.verifyClaim(candidate, identity, since)
 

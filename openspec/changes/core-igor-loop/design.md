@@ -140,6 +140,27 @@ consequences is worth reaching first.
   rejected — the situation demanding a handoff is often one where no call can be made, so a
   handoff depending on the thing that just failed is not a handoff.
 
+## What the first supervised run contradicted
+
+**Triage judges the issue; the worker judges the code, and they can disagree.** Triage rated an
+item "concrete, well-specified, implementable from the issue text alone" and approved it. The
+worker cloned the repository, found that the file the issue names does not exist, and declined
+rather than inventing a module to satisfy the description.
+
+Both were right. Triage does not clone — that is the whole cost argument for three stages — so
+it can only assess the text, and text can describe work a repository cannot support. The
+disagreement is inherent, not a defect, and the system behaved correctly at every step: claimed,
+looked, changed nothing, explained, released.
+
+What it did get wrong was reporting. The worker's account was in the transcript and the handoff
+said only "found nothing it could usefully change", so the one sentence a reader needed — the
+file does not exist — was in the place nobody opens. A decline now carries the worker's own
+explanation onto the item.
+
+**A run is silent for as long as the worker takes.** Half a minute in this case, up to fifteen
+by the timeout, with no output between claiming and the result. Legibility was supposed to be a
+goal at every step, and the gap between "working" and an answer had none.
+
 ## Open Questions
 
 - The two intervals (settle, cooldown) have defaults but they are guesses, and only observation

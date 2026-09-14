@@ -307,7 +307,10 @@ program
     const work = async (item: Candidate) => {
       const gate = await gateFor()
       process.stdout.write(`\nworking ${item.id}  "${item.title}"\n  seat: ${gate.seat ?? '(unenforced)'}\n`)
-      const run = await runItem(deps, item, role, identity, { budget: gate })
+      const run = await runItem(deps, item, role, identity, {
+        budget: gate,
+        onStep: (step) => process.stdout.write(`  ${step}…\n`),
+      })
       process.stdout.write(`  ${run.outcome}: ${run.reason}\n`)
       if (run.execution) {
         await recordExecution(destination, item, role, run.execution, gate.seat)

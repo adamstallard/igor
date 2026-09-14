@@ -184,6 +184,7 @@ export interface ExecuteOptions {
   timeoutMs?: number
   /** Checked between the worker finishing and anything being published. */
   stillHeld?: () => Promise<boolean>
+  onPublish?: () => void
   branchPrefix?: string
 }
 
@@ -297,6 +298,7 @@ export async function execute(
       }
     }
 
+    options.onPublish?.()
     const artifact = await codeHost.produce({
       repo: candidate.repo,
       branch: branchFor(role, candidate, options.branchPrefix),
