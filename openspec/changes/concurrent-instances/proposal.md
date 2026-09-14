@@ -14,6 +14,10 @@ item in parallel and open two pull requests.
 **Depends on `core-igor-loop`.** Nothing else is needed: the disambiguating mechanism already
 exists for a different reason.
 
+The universal skip for an item somebody else holds does not cover this. It cannot: an item only
+the Igor's account holds has to stay a candidate, or a claim left behind by a process that died
+is never recovered. That is precisely the case a sibling's live claim is indistinguishable from.
+
 ## What Changes
 
 **A process identifies itself, and a claim records which one took it.** Every claim already
@@ -59,8 +63,7 @@ Explicitly out of scope:
 ### Modified Capabilities
 
 - `work-claiming`: A claim is held by the process that took it, not by the account. Verification
-  distinguishes a sibling process from the Igor itself, and an item assigned to someone else as
-  well as to the Igor reads as lost rather than held.
+  distinguishes a sibling process from the Igor itself.
 - `work-discovery`: A conflicted state write is retried rather than failing the cycle, and
   candidates are attempted in an order that differs between processes.
 
