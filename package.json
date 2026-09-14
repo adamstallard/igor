@@ -4,7 +4,7 @@
   "description": "The lore store: curated team knowledge as markdown in git",
   "type": "module",
   "bin": {
-    "igor-lore": "./dist/cli.js"
+    "igor": "./dist/cli.js"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -16,7 +16,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
-    "lore": "tsx src/cli.ts"
+    "lore": "tsx src/cli.ts",
+    "igor": "tsx src/cli.ts"
   },
   "dependencies": {
     "commander": "^12.1.0",

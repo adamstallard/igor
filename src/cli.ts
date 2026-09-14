@@ -31,8 +31,8 @@ function today(): string {
 
 const program = new Command()
 program
-  .name('igor-lore')
-  .description('Curated team knowledge as markdown in git')
+  .name('igor')
+  .description('Teammates that find their own work, claim it where people can see, and hand off cleanly')
   .option('-c, --config <path>', 'path to igor.config.yaml')
 
 program

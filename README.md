@@ -53,6 +53,23 @@ Two indexes will be compiled from it: exact predicates over metadata (paths, lab
 and learned conditions over the recognizer's internal state. Both return entries; neither
 requires an Igor to think to ask. Neither is built — retrieval lands with the first Igor.
 
+## Installing
+
+Igor is not on npm yet, so it is built from a clone and linked onto your path:
+
+```bash
+git clone https://github.com/adamstallard/igor.git
+cd igor
+npm install
+npm run build
+npm link          # puts `igor` on your PATH
+```
+
+`npm unlink -g igor` removes it. Without linking, `npm run igor -- <command>` from the clone
+does the same thing and needs no build.
+
+Every command below assumes `igor` is on your path.
+
 ## Getting started
 
 ```sh
@@ -75,14 +92,14 @@ One caveat for a public lore repository: the `publicStore` guard rejects private
 names.
 
 ```sh
-npm run lore -- create \
+igor create \
   --claim "Fetch data with the shared query hook rather than inside useEffect" \
   --prose "When adding or changing data fetching in a React component" \
   --author you --scope role:frontend --path 'src/**/*.tsx' \
   --body "The hook handles caching, deduping, and cancellation on unmount."
 
-npm run lore -- list       # entries with support and recency derived from provenance
-npm run lore -- validate    # reports every invalid entry, exits non-zero if any
+igor list       # entries with support and recency derived from provenance
+igor validate    # reports every invalid entry, exits non-zero if any
 ```
 
 An entry's id is a slug derived from its claim and then frozen, so rewording a claim later
@@ -94,8 +111,8 @@ Entries reach the store through pull requests, and **only `active` entries fire*
 is what puts an entry into force, not a formality afterwards.
 
 ```sh
-npm run lore -- propose --from <dir of candidates>   # one PR per dominant author
-npm run lore -- reconcile                            # promote merged, report the rest
+igor propose --from <dir of candidates>   # one PR per dominant author
+igor reconcile                            # promote merged, report the rest
 ```
 
 In a proposal pull request: **delete** a file to reject it, **edit** one to amend it, **merge**
@@ -110,12 +127,18 @@ dollars, so Igor cannot look it up — a person tells it, once, and Igor derives
 
 ### Doing it
 
-Run `/usage` in any Claude Code session signed in as that seat. It shows a 5-hour figure and a
-weekly figure. Give Igor both:
+Type `/usage` in any Claude Code session signed in as that seat. It shows a 5-hour figure and
+a weekly figure. Give Igor both, **from your lore repository** — that is where the config lives
+and where the readings are stored:
 
 ```bash
+cd ~/your-lore-repo
 igor budget calibrate --seat igor-1 --five-hour 42 --weekly 18
 ```
+
+Igor finds its config by walking up from the working directory, the way `git` does. Seats are
+org-wide rather than per-repository, so it does not matter which repository an Igor is *working*
+— calibration always happens where the lore and the state branch live.
 
 Igor already knows what its own work has cost, so a percentage plus that spend implies a cap.
 Nothing is ever learned by hitting the limit.
@@ -170,7 +193,7 @@ having igor installed and remembering to run `reconcile` — so a teammate can m
 then silently never fires.
 
 ```sh
-npm run lore -- init-workflow
+igor init-workflow
 ```
 
 That writes `.github/workflows/promote-on-merge.yml` into the destination. Commit it. **If the

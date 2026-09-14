@@ -142,7 +142,7 @@ export function seatStatus(
       window,
       spentUsd,
       known: false,
-      note: `never calibrated — run \`igor budget calibrate --seat ${seat.id}\` after reading /usage`,
+      note: `never calibrated — type /usage, then: igor budget calibrate --seat ${seat.id} --five-hour <n> --weekly <n>`,
     }
   }
 
@@ -475,7 +475,10 @@ export function calibrationNotices(
     }
   }
   if (notices.length > 0) {
-    notices.push('Run /usage in any Claude Code session, then: igor budget calibrate --seat <id> --five-hour <n> --weekly <n>')
+    notices.push(
+      'Type /usage in any Claude Code session, then run:\n' +
+        '  igor budget calibrate --seat <id> --five-hour <n> --weekly <n>',
+    )
   }
   return notices
 }
