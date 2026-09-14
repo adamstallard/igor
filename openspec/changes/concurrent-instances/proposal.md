@@ -34,6 +34,13 @@ Watermarks are a cache, so the cost is duplicated triage rather than duplicated 
 protocol resolves the race after it. Preventing the overlap would need coordination this
 design has done without everywhere else.
 
+**Processes attempt candidates in different orders.** Nothing sorts or shuffles today: GitHub's
+search order flows through discovery, screening and triage unchanged, so every process receives
+the same list and every process tries the first item first. N−1 lose it, then N−2 lose the
+second, and so on — quadratic wasted claims, each burning a settle interval and posting a claim
+comment that is immediately retracted. Diverging the order makes a collision incidental instead
+of guaranteed, and costs a shuffle.
+
 **Concurrent state writes conflict, and a conflicted write is retried rather than fatal.** Two
 processes advancing a watermark race on the same blob. Today one throws and the cycle is
 reported as failed, which is recoverable but reads as a defect.
@@ -54,7 +61,8 @@ Explicitly out of scope:
 - `work-claiming`: A claim is held by the process that took it, not by the account. Verification
   distinguishes a sibling process from the Igor itself, and an item assigned to someone else as
   well as to the Igor reads as lost rather than held.
-- `work-discovery`: A conflicted state write is retried rather than failing the cycle.
+- `work-discovery`: A conflicted state write is retried rather than failing the cycle, and
+  candidates are attempted in an order that differs between processes.
 
 ## Impact
 

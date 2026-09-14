@@ -27,6 +27,20 @@ Igors poll rather than waiting for triggers. Polling avoids needing a public end
 webhook relay per platform, and per-surface bearer-token management. The cost is latency,
 which for this class of work is irrelevant.
 
+**What that argument does and does not cover.** It holds wherever a push would require the
+surface to reach *in* — a self-hosted Igor behind a firewall cannot receive a webhook without
+becoming a service someone operates. It does not hold for a surface the Igor already holds an
+outbound connection to. A Discord bot keeps a socket open and is handed every message in its
+channels; polling that channel asks for information already arriving, at higher latency and
+more calls. Take the push there.
+
+Two things that does not change. Discovery still polls, because a tracker has no push a
+firewalled Igor can receive. And a push is not coordination: it tells one Igor that something
+happened and decides nothing about who takes it, so the claim protocol is untouched.
+
+Where it earns its keep is **stop**. A stop is currently seen at the next checkpoint, and its
+whole value is being fast — the one place in this design where latency is not irrelevant.
+
 ---
 
 ## 2. Why team memory, not per-agent memory
