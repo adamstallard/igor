@@ -174,6 +174,14 @@ export function verdictFrom(
   return holders.length > 0 ? { status: 'held' } : { status: 'lost' }
 }
 
+/**
+ * Pure, and total over what the endpoint can return: a deleted author comes back as null, and
+ * a caller comparing identities should never have to consider undefined.
+ */
+export function commentsFrom(raw: readonly RawComment[] | null | undefined): Comment[] {
+  return (raw ?? []).map((c) => ({ author: c.user?.login ?? '', at: c.created_at, body: c.body ?? '' }))
+}
+
 export class GitHubTracker implements Tracker {
   readonly name = 'github'
   /** GitHub has assignees, so a claim is visible where people already look. */
@@ -255,15 +263,12 @@ export class GitHubTracker implements Tracker {
   }
 
   async commentsSince(candidate: Candidate, since: string): Promise<Comment[]> {
-    const comments = await gh<RawComment[]>([
-      'api',
-      `repos/${candidate.repo}/issues/${candidate.native}/comments?since=${encodeURIComponent(since)}&per_page=100`,
-    ])
-    return (comments ?? []).map((c) => ({
-      author: c.user?.login ?? '',
-      at: c.created_at,
-      body: c.body ?? '',
-    }))
+    return commentsFrom(
+      await gh<RawComment[]>([
+        'api',
+        `repos/${candidate.repo}/issues/${candidate.native}/comments?since=${encodeURIComponent(since)}&per_page=100`,
+      ]),
+    )
   }
 
   async report(candidate: Candidate, message: string): Promise<void> {

@@ -23,7 +23,7 @@ import { serve, untilSignalled } from './serve.js'
 import { GitHubTracker, GitHubCodeHost } from './github-adapter.js'
 import type { Candidate } from './adapter.js'
 import { laneVerdict, universalSkip } from './predicate.js'
-import { noteHandoff } from './deferred.js'
+import { noteHandoff, shouldDefer } from './deferred.js'
 import { CloneProvider } from './worktree.js'
 import { recordExecution } from './execute.js'
 import { overBudgetMessage, recordFiring, renderLore, selectEntries } from './firing.js'
@@ -358,8 +358,8 @@ program
         onStep: (step) => process.stdout.write(`  ${step}…\n`),
       })
       process.stdout.write(`  ${run.outcome}: ${run.reason}\n`)
-      if (run.outcome === 'handed-off') {
-        await noteHandoff(destination, item, run.handoff, run.reason).catch(() => undefined)
+      if (shouldDefer(run.outcome, run.handoff)) {
+        await noteHandoff(destination, item, run.reason).catch(() => undefined)
       }
       if (run.execution) {
         await recordExecution(destination, item, role, run.execution, gate.seat)

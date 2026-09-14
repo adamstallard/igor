@@ -9,7 +9,7 @@ import {
   advance, discover, EMPTY_STATE, freshCandidates, loadDiscoveryState, saveDiscoveryState,
 } from './discovery.js'
 import { countStages, screen } from './predicate.js'
-import { fingerprint, loadDeferrals, stillDeferred } from './deferred.js'
+import { fingerprint, loadDeferrals, stillDeferred, type DeferralState } from './deferred.js'
 import { systemPrompt, triageBatch, TRIAGE_MODEL } from './triage.js'
 
 /**
@@ -302,7 +302,8 @@ export async function planCycle(
     }
   }
 
-  const live = await undeferred(deps, survivors, options.identity ?? '', report)
+  const deferrals = await loadDeferrals(deps.destination)
+  const live = await dropDeferred(deps.tracker, survivors, deferrals, options.identity ?? '', report)
   // Sliced after the deferrals, so an item nobody has answered does not consume a triage slot.
   const considered = live.slice(0, options.limit ?? 10)
   if (considered.length > 0) {
@@ -337,13 +338,13 @@ export async function planCycle(
  * candidate. A tracker that will not answer means the item is reconsidered: the record is a
  * cache, and failing toward the work is the right direction for one.
  */
-async function undeferred(
-  deps: CycleDeps,
+export async function dropDeferred(
+  tracker: Tracker,
   survivors: readonly Candidate[],
+  deferrals: DeferralState,
   identity: string,
-  report: CycleReport,
+  report: Pick<CycleReport, 'skipped' | 'skippedDeferred'>,
 ): Promise<Candidate[]> {
-  const deferrals = await loadDeferrals(deps.destination)
   const kept: Candidate[] = []
   for (const candidate of survivors) {
     const entry = deferrals.items[candidate.id]
@@ -353,7 +354,7 @@ async function undeferred(
     }
     let spoken
     try {
-      spoken = await deps.tracker.commentsSince(candidate, entry.at)
+      spoken = await tracker.commentsSince(candidate, entry.at)
     } catch {
       kept.push(candidate)
       continue

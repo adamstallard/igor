@@ -5,7 +5,11 @@ import { describe, expect, it } from 'vitest'
 import type { Artifact, Candidate, ClaimVerdict, CodeHost, Tracker } from '../src/adapter.js'
 import type { Role } from '../src/role.js'
 import type { TreeProvider, WorkingTree, ChangedFile } from '../src/worktree.js'
-import { declineReason, recordDecisions, runItem, type ItemDeps } from '../src/loop.js'
+import {
+  declineReason, dropDeferred, recordDecisions, runItem,
+  type CycleReport, type ItemDeps,
+} from '../src/loop.js'
+import { defer, NO_DEFERRALS } from '../src/deferred.js'
 
 const candidate = (over: Partial<Candidate> = {}): Candidate =>
   ({ id: 'github:o/r#7', repo: 'o/r', native: '7', title: 'A bug', body: '', author: 'reporter', assignees: [], labels: [], paths: [], state: 'open', ...over }) as unknown as Candidate
@@ -67,6 +71,8 @@ describe('an Igor never goes silent on something it claimed', () => {
     })
     expect(r.outcome).toBe('handed-off')
     expect(r.spoke).toBe(true)
+    // Named, because running out of money says nothing about the item and must not defer it.
+    expect(r.handoff).toBe('budget')
     expect(posts.at(-1)).toMatch(/budget.*igor-1/s)
     expect(released).toEqual(['igor-bot'])
   })
@@ -80,6 +86,7 @@ describe('an Igor never goes silent on something it claimed', () => {
     })
     expect(r.outcome).toBe('handed-off')
     expect(r.spoke).toBe(true)
+    expect(r.handoff).toBe('failure')
     expect(posts.at(-1)).toMatch(/will not retry/i)
   })
 
@@ -88,6 +95,7 @@ describe('an Igor never goes silent on something it claimed', () => {
     const { d, posts } = deps({ changes: [] })
     const r = await runItem(d, candidate(), role(), 'igor-bot', { ...noWait, worker: idleWorker })
     expect(r.spoke).toBe(true)
+    expect(r.handoff).toBe('nothing-to-do')
     expect(posts.at(-1)).toMatch(/Still to do/)
   })
 
@@ -224,5 +232,68 @@ describe('what triage decided is written down, skips included', () => {
       calls += 1
     })
     expect(calls).toBe(0)
+  })
+})
+
+describe('items handed back earlier', () => {
+  const NOW = Date.parse('2026-09-14T12:00:00Z')
+  const item = (n: number, over: Partial<Candidate> = {}) =>
+    candidate({ id: `github:o/r#${n}`, native: String(n), ...over })
+
+  function tracker(spoken: Record<string, { author: string; at: string; body: string }[]> = {}, throws = false) {
+    let asked = 0
+    const t = {
+      commentsSince: async (c: Candidate) => {
+        asked += 1
+        if (throws) throw new Error('tracker unreachable')
+        return spoken[c.id] ?? []
+      },
+    } as unknown as Tracker
+    return { t, asked: () => asked }
+  }
+
+  const record = (c: Candidate, reason = 'could not reproduce') => defer(NO_DEFERRALS, c, reason, NOW)
+  const blank = () => ({ skipped: [] as CycleReport['skipped'], skippedDeferred: 0 })
+
+  it('drops an item nothing has answered', async () => {
+    const c = item(7)
+    const report = blank()
+    const kept = await dropDeferred(tracker().t, [c], record(c), 'igor-bot', report)
+    expect(kept).toEqual([])
+    expect(report.skippedDeferred).toBe(1)
+    expect(report.skipped[0]?.reason).toContain('could not reproduce')
+    expect(report.skipped[0]?.stage).toBe('deferred')
+  })
+
+  it('keeps it once somebody replies', async () => {
+    const c = item(7)
+    const spoke = tracker({ 'github:o/r#7': [{ author: 'alice', at: '', body: 'here is the repro' }] })
+    expect(await dropDeferred(spoke.t, [c], record(c), 'igor-bot', blank())).toEqual([c])
+  })
+
+  it('keeps it once it has been edited, without asking who spoke', async () => {
+    // The fingerprint already settled it, so the request is not worth making.
+    const before = item(7)
+    const asker = tracker()
+    expect(await dropDeferred(asker.t, [item(7, { title: 'Rewritten' })], record(before), 'igor-bot', blank()))
+      .toHaveLength(1)
+    expect(asker.asked()).toBe(0)
+  })
+
+  it('asks only about items that have a record', async () => {
+    const c = item(7)
+    const asker = tracker()
+    await dropDeferred(asker.t, [c, item(8), item(9)], record(c), 'igor-bot', blank())
+    expect(asker.asked()).toBe(1)
+  })
+
+  it('works the item when the tracker will not say, since the record is only a cache', async () => {
+    const c = item(7)
+    expect(await dropDeferred(tracker({}, true).t, [c], record(c), 'igor-bot', blank())).toEqual([c])
+  })
+
+  it('passes everything through when nothing was ever handed back', async () => {
+    const all = [item(7), item(8)]
+    expect(await dropDeferred(tracker().t, all, NO_DEFERRALS, 'igor-bot', blank())).toEqual(all)
   })
 })

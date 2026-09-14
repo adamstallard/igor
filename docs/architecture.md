@@ -676,6 +676,12 @@ An orphan branch specifically, sharing no history with `main`:
 Transcripts from task execution belong there too: durable machine output that has no business
 in `main`.
 
+Items handed back live there as well, in `deferred.json`. A handoff releases the claim and
+leaves no pull request, so nothing downstream stops the item returning — and the handoff
+comment itself lifts the item above the watermark, which is what makes it return. The record is
+what keeps the Igor quiet until a reply or an edit answers it, and losing it costs one repeated
+handoff.
+
 Writing the cache principle down matters more than the location, because it is exactly what
 would quietly stop holding once state is durable and shared — at which point the branch starts
 looking like a database and losing it starts looking like a failure.

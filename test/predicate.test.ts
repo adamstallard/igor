@@ -44,6 +44,37 @@ describe('universal skips', () => {
   it('passes an ordinary open item through', () => {
     expect(universalSkip(candidate())).toBeUndefined()
   })
+
+  it('skips an item somebody else holds, and names them', () => {
+    // Nothing else filters on this: not the loose query, not the lane, and triage never sees
+    // the holder. Without it an Igor claims and retracts on a colleague's issue every cycle.
+    const v = universalSkip(candidate({ assignees: ['alice'] }), 'igor-bot')
+    expect(v?.outcome).toBe('skip')
+    expect(v?.stage).toBe('universal')
+    expect(v?.reason).toContain('alice')
+  })
+
+  it('skips an item held by the Igor and somebody else both', () => {
+    // People add themselves to a holder list rather than replacing what is there, so a second
+    // name reads as somebody taking the work — the same reading verifyClaim applies mid-run.
+    expect(universalSkip(candidate({ assignees: ['igor-bot', 'alice'] }), 'igor-bot')?.reason).toContain('alice')
+  })
+
+  it('keeps an item only the Igor holds, which is a claim a dead process left', () => {
+    expect(universalSkip(candidate({ assignees: ['igor-bot'] }), 'igor-bot')).toBeUndefined()
+  })
+
+  it('reads every holder as somebody else where no identity was supplied', () => {
+    // A preview does not know who would be running, and over-reporting a skip is the safe
+    // direction for one.
+    expect(universalSkip(candidate({ assignees: ['igor-bot'] }))?.reason).toContain('igor-bot')
+  })
+
+  it('carries the identity through the whole screen, not only the direct call', () => {
+    const held = screen({}, [candidate({ assignees: ['igor-bot'] })], 'igor-bot')
+    expect(held[0]?.verdict.outcome).toBe('proceed')
+    expect(screen({}, [candidate({ assignees: ['alice'] })], 'igor-bot')[0]?.verdict.outcome).toBe('skip')
+  })
 })
 
 describe('label predicates', () => {

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { daysSince, extractPaths } from '../src/adapter.js'
-import { GitHubTracker, normalizeIssue, verdictFrom, type RawComment, type RawIssue } from '../src/github-adapter.js'
+import {
+  commentsFrom, GitHubTracker, normalizeIssue, verdictFrom, type RawComment, type RawIssue,
+} from '../src/github-adapter.js'
 
 const NOW = Date.parse('2026-09-13T00:00:00Z')
 
@@ -172,6 +174,26 @@ describe('verifying a claim', () => {
   it('truncates a very long stop, since the receipt quotes it', () => {
     const v = verdictFrom('igor-bot', ['igor-bot'], [comment({ body: `stop ${'x'.repeat(1000)}` })])
     expect(v.reason).toHaveLength(500)
+  })
+})
+
+describe('reading what was said', () => {
+  it('normalizes author, time and body', () => {
+    expect(commentsFrom([comment()])).toEqual([
+      { author: 'alice', at: '2026-09-12T00:00:00Z', body: 'looks good' },
+    ])
+  })
+
+  it('names a deleted author as nobody rather than undefined', () => {
+    // A caller asking "did anyone but me speak" should never have to consider undefined.
+    expect(commentsFrom([comment({ user: null, body: null })])).toEqual([
+      { author: '', at: '2026-09-12T00:00:00Z', body: '' },
+    ])
+  })
+
+  it('reads an item with no comments as nobody having spoken', () => {
+    expect(commentsFrom(null)).toEqual([])
+    expect(commentsFrom([])).toEqual([])
   })
 })
 
