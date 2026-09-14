@@ -118,40 +118,37 @@ export function suggest(role: Role, candidate: Candidate, identity: string): str
 }
 
 export function composeHandoff(role: Role, candidate: Candidate, handoff: Handoff, now: number = Date.now()): string {
-  const lines = [`**${role.name}** is releasing this and will not carry on with it.`, '']
+  const why =
+    handoff.reason.kind === 'budget'
+      ? `the budget${handoff.reason.seat ? ` on seat \`${handoff.reason.seat}\`` : ''} is used up` +
+        (handoff.reason.resetAt
+          ? `, back at ${clock(handoff.reason.resetAt)}${until(handoff.reason.resetAt, now)}`
+          : ', and when it returns is not known')
+      : `it hit something it could not get past: ${handoff.reason.detail}. It will not retry`
 
-  if (handoff.reason.kind === 'budget') {
-    const seat = handoff.reason.seat ? ` on seat \`${handoff.reason.seat}\`` : ''
-    // State when capacity returns rather than reporting unavailability flatly — "gone" and
-    // "back in two hours" call for very different responses from whoever reads this.
-    const back = handoff.reason.resetAt
-      ? `Capacity returns at ${clock(handoff.reason.resetAt)}${until(handoff.reason.resetAt, now)}.`
-      : 'When capacity returns is not known — the cap is not published and the last reading is stale.'
-    lines.push(`**Why:** the budget${seat} is used up. ${back}`, '')
-  } else {
-    lines.push(
-      `**Why:** it hit something it could not get past — ${handoff.reason.detail}`,
-      '',
-      'It will not try again on its own. Retrying quietly on a claimed item is how an item',
-      'ends up looking handled while nothing is happening.',
-      '',
-    )
+  const who =
+    handoff.suggested.length > 0 ? `${handoff.suggested.join(' or ')} could pick this up.` : ''
+
+  // Most handoffs happen before anything was produced, where a sectioned report is seven
+  // headings around two facts. Expand only when there is something to expand about.
+  const substantive = handoff.done.length > 1 || handoff.artifact !== undefined
+  if (!substantive) {
+    const nothing = handoff.remaining[0] ?? 'nothing was done'
+    return [`**${role.name}** released this — ${why}.`, '', `Still to do: ${nothing}.`, who]
+      .filter((l) => l !== '')
+      .join('\n')
   }
 
-  lines.push('**Done so far:**', ...handoff.done.map((d) => `- ${d}`), '')
-  lines.push('**Still to do:**', ...handoff.remaining.map((r) => `- ${r}`), '')
-
-  if (handoff.artifact) {
-    lines.push(`Partial work is at ${handoff.artifact.url} — continue from it rather than starting over.`, '')
-  }
-
-  lines.push(
-    handoff.suggested.length > 0
-      ? `**Could pick this up:** ${handoff.suggested.join(', ')}`
-      : '**Could pick this up:** anyone — no reviewers are configured for this role.',
+  const lines = [
+    `**${role.name}** released this — ${why}.`,
     '',
-    'This is unassigned again and free to take.',
-  )
+    `**Done:** ${handoff.done.join(', ')}.`,
+    `**Left:** ${handoff.remaining.join('; ')}.`,
+  ]
+  if (handoff.artifact) {
+    lines.push(`**Partial work:** ${handoff.artifact.url} — continue from it rather than starting over.`)
+  }
+  if (who !== '') lines.push('', who)
   return lines.join('\n')
 }
 

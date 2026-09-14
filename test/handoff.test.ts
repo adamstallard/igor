@@ -92,11 +92,11 @@ describe('who could continue', () => {
     expect(suggest(role({ reviewers: [] }), candidate(), 'igor-bot')).toEqual(['reporter'])
   })
 
-  it('says anyone rather than nobody when there is no one to name', () => {
+  it('names nobody rather than saying "anyone", which an unassigned item already says', () => {
     const text = composeHandoff(role({ reviewers: [] }), candidate({ author: '' }), {
       reason: { kind: 'failure', detail: 'x' }, done: [], remaining: [], suggested: [],
     }, NOW)
-    expect(text).toMatch(/anyone/)
+    expect(text).not.toMatch(/could pick this up/)
   })
 })
 
@@ -143,7 +143,7 @@ describe('a failure handoff', () => {
   })
 
   it('says plainly that it will not retry', () => {
-    expect(text).toMatch(/will not try again/i)
+    expect(text).toMatch(/will not retry/i)
   })
 
   it('links partial work so the next party resumes rather than restarts', () => {
@@ -152,9 +152,21 @@ describe('a failure handoff', () => {
   })
 
   it('states what was done, what remains, and who could continue', () => {
-    expect(text).toMatch(/Done so far/)
-    expect(text).toMatch(/Still to do/)
-    expect(text).toMatch(/Could pick this up/)
+    expect(text).toMatch(/\*\*Done:\*\*/)
+    expect(text).toMatch(/\*\*Left:\*\*/)
+    expect(text).toMatch(/alice could pick this up/)
+  })
+
+  it('collapses to two lines when there is nothing to report but the claim', () => {
+    // The common case. Seven headings around two facts is the thing being avoided.
+    const brief = composeHandoff(role(), candidate(), {
+      reason: { kind: 'budget', seat: 'igor-1' },
+      done: ['claimed this 12 minutes ago'],
+      remaining: ['everything — the work never started'],
+      suggested: ['alice'],
+    }, NOW)
+    expect(brief.split('\n').filter((l) => l.trim() !== '')).toHaveLength(3)
+    expect(brief.length).toBeLessThan(240)
   })
 })
 

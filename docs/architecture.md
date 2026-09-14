@@ -102,10 +102,9 @@ Three properties make that safe:
   role's standing instructions and lore scopes load for the work. The discovery surface
   widens; the working context does not get diluted, so one role's conventions cannot bleed
   into another's task.
-- **Priority is fleet-level, not per-Igor.** An earlier draft ranked roles inside each Igor so
-  spare budget flowed down; that was the amortization policy, and it only made sense under
-  one-seat-per-Igor. With seats pooled (§6.5) the ordering belongs across Igors instead. Ties
-  break by item age either way.
+- **Priority is fleet-level, not per-Igor.** Ranking roles inside a single Igor so spare
+  budget flows down its own list only makes sense when each Igor owns a seat. Seats are
+  pooled (§6.5), so the ordering belongs across Igors. Ties break by item age either way.
 - **Interchangeability survives.** An Igor is still fully described by its ordered role
   list, so two Igors with the same list remain swappable. Worth keeping explicit, because
   this is the property that would quietly erode into Igors having individual identities.
@@ -1195,9 +1194,9 @@ created rather than configured globally.
 field admits a non-human identity, the actor has to be a machine account. Where the claim is a
 message, identity can travel in the payload.
 
-An earlier draft of this section said "GitHub and Linear both have an assignee field, which
-only accepts real users". Researching Linear disproved the second half, and the correction is
-worth keeping because the wrong version generalized a GitHub quirk into a law.
+Do not read GitHub's constraint as a general one. A surface having a structural claim field
+does not imply that field accepts only real users — Linear's does not — and treating one
+surface's quirk as a law costs the better mechanism everywhere else.
 
 - **GitHub** — only real users may be assignees, and an App's bot user may not (404/403,
   measured). Machine account per Igor.

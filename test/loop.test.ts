@@ -79,7 +79,7 @@ describe('an Igor never goes silent on something it claimed', () => {
     })
     expect(r.outcome).toBe('handed-off')
     expect(r.spoke).toBe(true)
-    expect(posts.at(-1)).toMatch(/will not try again/i)
+    expect(posts.at(-1)).toMatch(/will not retry/i)
   })
 
   it('explains itself even when it found nothing to change', async () => {
