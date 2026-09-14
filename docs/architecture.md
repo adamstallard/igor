@@ -928,47 +928,35 @@ rewrite — turning the eventual fully-open migration into a dial rather than a 
   against a subscription seat. Refresh behavior past expiry is undocumented; budget for an
   annual manual regeneration as a known operational task.
 
-### 6.3.1 Calibrating the budget from human observation — **planned**
+### 6.3.1 Capacity is read from the seat — **decided**
 
-Caps are not published, so an Igor cannot compute headroom. The obvious fix — learn the cap by
-hitting it and recording cumulative spend — was **rejected**: it requires the exhaustion we are
-trying to prevent, and on a seat shared with a person it teaches the Igor at the human's
-expense.
+`claude -p '/usage'` reports the fraction of a seat's session and weekly limits consumed, plus
+when each resets. It costs nothing, spends no tokens, is answered client-side in under a
+second, and can be run under any token. So an Igor asks its own seat whenever the answer
+matters.
 
-**Humans can just look.** `/usage` shows real numbers, so a person reads them and submits them.
-The Igor is grounded from the first window rather than the second, and the correction loop runs
-cheaply in both directions: the Igor reports headroom, and a doubtful human checks in seconds.
+This removes the machinery a stored reading would need. There is no cap in dollars to derive,
+because the comparison happens in percent — the unit the provider actually reports. There is no
+reading to go stale, because none is kept. And there is no way to read one seat and record it
+against another, because the figure comes from that seat's own credential: a seat naming a
+token that is unavailable is reported unreadable rather than falling through to whatever login
+is ambient.
 
-Three pieces:
+Do not treat an unreadable seat as an empty one. Unknown headroom is not permission, and the
+failure of that assumption is spending someone's capacity on a guess.
 
-**Seats are named entities in org config**, which is what makes "who may calibrate this"
-answerable at all:
+Recorded cost keeps a narrower job: attributing a seat between the roles drawing on it, and
+answering after the fact which Igor spent whose allowance. Igor knows what each role cost in
+dollars and what fraction of the limit is gone, but not the rate between them; their ratio is
+enough, because a role responsible for half of Igor's spend accounts for half of Igor's share
+of the limit.
 
-```yaml
-seats:
-  - id: adam-primary
-    owner: adamstallard      # who can run /usage for it
-    reserve: 0.5             # untouchable, left for the human
-```
-
-A role references `seat: adam-primary`, which also makes pooling (§6.5) legible — you can see
-which Igors share a budget.
-
-**A calibration command** writing to the state branch, keyed by seat:
-
-```sh
-igor budget calibrate --seat adam-primary --used 12.40 --limit 40.00
-```
-
-**`igor budget`** reports per seat: calibrated cap, **how old that calibration is**, spend this
-window, the reserve, and headroom. Age matters — tiers and caps change, and a stale number
-silently governing today's buffer is the failure. Surfacing it turns "if the report seems off"
-from something a human must notice into something the tool says.
-
-Exhaustion recording survives as a **cross-check**: hitting the wall at 80% of the calibrated
-cap means the calibration is wrong and the tool should say so. Reactive handling becomes a pure
-backstop rather than the design, which is what lets the reserve floor protect a human at the
-time rather than one window late.
+One caveat, unverified: the usage output carries the line *"Approximate, based on local
+sessions on this machine — does not include other devices or claude.ai."* It sits under the
+contributing-factors heading, so it most likely qualifies that breakdown rather than the
+headline percentages. If it also qualifies them, the figures understate real consumption — and
+that errs toward overspending, which is the direction that matters. Worth confirming before
+relying on the numbers for a seat used from more than one machine.
 
 ### 6.4 Graceful handoff — **scoped**
 

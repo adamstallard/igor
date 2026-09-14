@@ -178,9 +178,7 @@ from closing could close by naming it as its completion behaviour.
 
 Every interval SHALL be configurable and SHALL have a default, since an unstated default is a
 value someone guesses differently each time: a **settle interval** of 10 seconds before a claim
-is verified, a **cooldown** of 1 hour before a stopped item returns to the pool, and a
-**calibration staleness threshold** of 30 days after which a budget report flags its own
-figures as old.
+is verified, and a **cooldown** of 1 hour before a stopped item returns to the pool.
 
 These are starting points to tune against observation, not derived values, and SHALL be
 recorded as such rather than presented as considered.

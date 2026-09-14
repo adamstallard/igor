@@ -97,12 +97,12 @@ the time, so the question is answerable from the record.
 
 ### Requirement: The reserve is untouchable
 
-An Igor SHALL treat the seat's reserve as unavailable. Spend MUST stop at the reserve boundary
+An Igor SHALL treat the seat's reserve as unavailable. Work MUST stop at the reserve boundary
 rather than at exhaustion, so that a person sharing the seat retains capacity.
 
 #### Scenario: Igor stops at the reserve
 
-- **WHEN** cumulative spend reaches the calibrated cap less the reserve
+- **WHEN** the fraction of the limit consumed reaches 100% less the reserve
 - **THEN** the Igor stops taking new work and hands off any in progress
 - **AND** the reserved capacity remains unspent
 
@@ -111,81 +111,80 @@ rather than at exhaustion, so that a person sharing the seat retains capacity.
 - **WHEN** an Igor shares a seat with the person who owns it
 - **THEN** the reserved fraction is available to that person regardless of Igor activity
 
-### Requirement: The cap is supplied by human calibration, not discovered by exhaustion
+### Requirement: Usage is read from the seat, not supplied by a person
 
-Capacity SHALL be established from calibration a person submits after reading the seat's usage.
-The system MUST NOT require hitting the limit in order to learn it.
+Remaining capacity SHALL be read from the seat itself at the moment it matters. The system
+MUST NOT store a usage reading, derive a spending cap from one, or require a person to submit
+one.
 
-#### Scenario: Calibration submitted and stored
+The provider answers this for free and client-side, so a stored reading would only be a worse
+copy of something already available — one that ages, and that can be taken from the wrong
+session.
 
-- **WHEN** a person submits observed usage and limit for a seat
-- **THEN** the calibration is stored on the state branch keyed by that seat
+#### Scenario: Capacity established without a person
 
-#### Scenario: Grounded from the first window
+- **WHEN** an Igor needs to know whether it may spend
+- **THEN** the seat's usage is read directly
+- **AND** no human input and no stored reading are involved
 
-- **WHEN** a seat has been calibrated and an Igor begins work
-- **THEN** headroom is computed from that calibration
-- **AND** no exhaustion is required first
+#### Scenario: A seat is read through its own credential
 
-#### Scenario: Uncalibrated seat reports honestly
+- **WHEN** a seat declares where its token is held
+- **THEN** the reading is taken using that token
+- **AND** the figure therefore describes that seat and no other
 
-- **WHEN** a seat has never been calibrated
-- **THEN** headroom is reported as unknown rather than estimated
+#### Scenario: A missing token is refused, not substituted
 
-### Requirement: Spend is a trailing sum, not a per-window accumulator
+- **WHEN** a seat names a token that is not available
+- **THEN** the seat is reported unreadable
+- **AND** no other credential is used in its place
 
-The system SHALL record each worker invocation's reported cost with its timestamp, per seat,
-on the state branch. Spend SHALL be computed as the **sum over a trailing interval** — the
-last five hours, and separately the last week — rather than accumulated against a window that
-resets.
+#### Scenario: An unreadable seat is not treated as free
 
-The provider's limits are *rolling*, so there is no boundary to detect and no moment at which
-a counter returns to zero. An implementation that waits for a reset would never see one.
+- **WHEN** a seat's usage cannot be read
+- **THEN** that seat is passed over
+- **AND** the reason is reported
 
-#### Scenario: Cost accumulated per seat
+#### Scenario: One unreadable seat does not blind the rest
 
-- **WHEN** two roles sharing a seat each perform work
-- **THEN** both costs count against that one seat
+- **WHEN** one seat of several cannot be read
+- **THEN** the others are still reported and still usable
 
-#### Scenario: Spend is computed over a trailing interval
+### Requirement: Limits the provider reports but the loop does not enforce are still shown
 
-- **WHEN** spend is reported for a seat
-- **THEN** it is the sum of costs recorded within the trailing interval
-- **AND** no window-reset event is required for older costs to stop counting
+Where the provider reports a limit the loop does not act on — a per-model weekly limit
+alongside the overall one — that figure SHALL appear in budget reporting.
 
-#### Scenario: Costs age out continuously
+A fleet concentrated on one model can exhaust a limit the headline figures never show, and
+omitting it would make that failure unexplainable.
 
-- **WHEN** a cost recorded six hours ago is considered against a five-hour interval
-- **THEN** it is excluded
-- **AND** it was excluded without any reset having occurred
+#### Scenario: Per-model limit surfaced
 
-### Requirement: Budget reporting includes the age of the calibration
+- **WHEN** the provider reports a limit scoped to one model
+- **THEN** budget reporting includes it
 
-A budget report SHALL state, per seat: the calibrated cap, **how long ago it was calibrated**,
-trailing spend over each interval, the reserve, and remaining headroom.
+### Requirement: Recorded spend attributes a seat between its roles
 
-#### Scenario: Report includes calibration age
+Recorded cost SHALL be used to apportion a seat between the roles drawing on it, and MUST NOT
+be the basis for deciding that a seat is exhausted. Whether capacity remains comes from the
+reading; what fraction of it a role is responsible for comes from the record.
 
-- **WHEN** budget is reported for a calibrated seat
-- **THEN** the age of the calibration is shown alongside the cap
+#### Scenario: A role's share derived from its spend
 
-#### Scenario: Stale calibration surfaced
+- **WHEN** two roles have drawn on one seat
+- **THEN** each role's share of the consumed limit follows its share of recorded cost
 
-- **WHEN** a calibration is older than a configured staleness threshold
-- **THEN** the report flags it as stale rather than presenting the figure without qualification
+#### Scenario: No recorded spend attributes nothing
 
-### Requirement: Exhaustion cross-checks the calibration
+- **WHEN** a seat has no recorded spend
+- **THEN** no role is held to have consumed any of it
 
-Where a limit error occurs, the system SHALL record cumulative spend at that moment and compare
-it against the calibrated cap, reporting a discrepancy rather than silently continuing.
+### Requirement: Budget reporting states what each seat has left
 
-#### Scenario: Exhaustion contradicting calibration reported
+Reporting SHALL show, per seat and per window, the fraction consumed, the reserve, the
+remaining headroom, and when the window resets.
 
-- **WHEN** a limit error arrives while spend is well below the calibrated cap
-- **THEN** the discrepancy is recorded and surfaced as a calibration problem
+#### Scenario: Headroom legible per window
 
-#### Scenario: Reactive handling remains a backstop
-
-- **WHEN** a limit error occurs despite calibration
-- **THEN** work stops and a handoff is posted
-- **AND** the event is treated as an exception rather than the expected mechanism
+- **WHEN** an operator inspects the budget
+- **THEN** each seat's consumption, reserve, headroom and reset time are shown for every window

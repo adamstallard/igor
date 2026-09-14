@@ -120,63 +120,54 @@ to accept the rest, **close without merging** to defer. You can merge your own p
 GitHub won't let you *approve* your own pull request, but merging is what counts as approval
 here, so a single maintainer is never stuck.
 
-## Budgets and calibration
+## Budgets
 
-An Igor spends a Claude subscription seat. The provider does not publish that seat's cap in
-dollars, so Igor cannot look it up — a person tells it, once, and Igor derives the rest.
-
-### Doing it
-
-Type `/usage` in any Claude Code session signed in as that seat. It shows a 5-hour figure and
-a weekly figure. Give Igor both, **from your lore repository** — that is where the config lives
-and where the readings are stored:
-
-```bash
-cd ~/your-lore-repo
-igor budget calibrate --seat igor-1 --five-hour 42 --weekly 18
-```
-
-Igor finds its config by walking up from the working directory, the way `git` does. Seats are
-org-wide rather than per-repository, so it does not matter which repository an Igor is *working*
-— calibration always happens where the lore and the state branch live.
-
-Igor already knows what its own work has cost, so a percentage plus that spend implies a cap.
-Nothing is ever learned by hitting the limit.
-
-Add the reset times if `/usage` showed them — a handoff can then say when capacity returns
-rather than reporting the Igor as simply unavailable:
-
-```bash
-igor budget calibrate --seat igor-1 --five-hour 42 --weekly 18 \
-  --five-hour-resets 2026-09-14T02:00:00Z
-```
-
-### When to do it
-
-Igor asks. `igor run` and `igor budget` print a line for any seat that is uncalibrated or whose
-reading has gone stale, ending with the command to run. You should not have to remember.
-
-Calibrate a seat once when you add it, and again when the notice appears. A reading older than
-30 days is still governing when work stops, which is why the notice exists.
-
-### What the numbers mean
+An Igor spends a Claude subscription seat. It asks that seat how much is left, through that
+seat's own token, whenever the answer matters — so there is nothing to submit, nothing to keep
+up to date, and no way to read one seat and charge another.
 
 ```
-seat            window   cap    spent  reserve headroom  calibrated
-igor-1          5h       $2.58   $0.05   $0.00   $2.53  0d ago
-adam            5h          ?   $0.00      ?      ?  never
+$ igor budget
+seat             window    used  reserve  headroom  resets
+igor-1           session    17%       0%       83%  Sep 13 at 8pm (America/Los_Angeles)
+igor-1           week       12%       0%       88%  Sep 18 at 4pm (America/Los_Angeles)
+                 wk:Fable    0%
+adam             session    17%      50%       33%  Sep 13 at 8pm (America/Los_Angeles)
+
+pool engineering: igor-1 has 83% of the session left
 ```
 
-- **cap** — derived from your reading, not measured.
-- **reserve** — the fraction of a shared seat Igors will not touch, so you never sit down to
-  find your capacity gone. Dedicated seats reserve nothing.
-- **headroom** — cap less reserve less trailing spend.
-- **`?`** — never calibrated. Igor will not use that seat: unknown headroom is not permission.
+- **used** — how much of that window is gone, read live.
+- **reserve** — the share of a seat Igors will not touch, so you never sit down to find your
+  capacity spent. Dedicated seats reserve nothing.
+- **headroom** — what is left after the reserve. A seat is usable only when **both** windows
+  have some: the session limit bites first, the weekly one bites longest.
+- **wk:** rows — per-model weekly limits. Igor does not enforce these, and shows them so that a
+  fleet concentrated on one model does not exhaust a limit nothing reported.
 
-**The derived cap is deliberately low on a shared seat.** Igor's ledger counts only Igor's
-spend, so your own usage pushes the percentage up without Igor seeing the cost, and the implied
-cap comes out under the real one. Igor stops earlier than it strictly must, which is the
-harmless direction to be wrong in.
+### Configuring seats
+
+```yaml
+budget:
+  seats:
+    - {id: igor-1, dedicated: true, token_env: IGOR_SEAT_1}
+    - {id: adam, owner: adam@example.com, reserve: 0.5, token_env: IGOR_SEAT_ADAM}
+  pools:
+    - {id: engineering, seats: [igor-1, adam]}
+```
+
+`token_env` names the environment variable holding that seat's token, from
+`claude setup-token` run while signed in as it. A seat naming a variable that is not set is
+reported unreadable and skipped — Igor will not fall back to whatever login happens to be
+around, because reading one seat and spending another is the mistake worth making impossible.
+
+**Pool order is the allocation mechanism.** An Igor takes the first seat with headroom, so
+listing dedicated seats first means personal capacity is only ever borrowed once the dedicated
+seats are spent.
+
+A role's `budget_share` is a **ceiling**, not a reservation: several roles may declare the same
+one, an idle role holds nothing back, and adding an Igor requires editing no other role. Each
+seat's reserve is enforced separately, so no ceiling however generous reaches a person's floor.
 
 ## Setting up a lore repository
 

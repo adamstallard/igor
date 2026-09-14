@@ -28,7 +28,6 @@ export type Completion = (typeof COMPLETIONS)[number]
 export const DEFAULTS = {
   settleSeconds: 10,
   cooldownMinutes: 60,
-  calibrationStaleDays: 30,
   pollMinutes: 10,
 } as const
 

@@ -14,7 +14,7 @@
 - [x] 2.5 Implement append merging for `lane`, conjoining constraints so an org exclusion cannot be escaped by any role
 - [x] 2.6 Validate `allow` against the closed vocabulary so a typo fails loudly rather than granting nothing
 - [x] 2.7 Reject a `completion` action absent from the effective `allow`, so completion cannot bypass a permission
-- [x] 2.8 Apply defaults for settle interval, cooldown, and calibration staleness, marked as tunable guesses
+- [x] 2.8 Apply defaults for settle interval and cooldown, marked as tunable guesses
 - [x] 2.9 Implement `igor role explain`, showing the effective merged config and which level each value came from
 - [x] 2.10 Tests for each merge semantic, especially that widening is rejected and that lane exclusions survive
 
@@ -97,17 +97,17 @@ lane predicates before the loop is allowed to act.
 - [x] 10.1a Select the first seat in a role's pool with headroom, passing over exhausted ones; a role may name a single seat instead
 - [x] 10.1b Enforce `budget_share` as a ceiling on the pool, not a reservation — shares need not sum to one
 - [x] 10.1c Record role, seat, cost and time per invocation, since the seat is chosen at run time and config cannot say which paid
-- [x] 10.2 Implement `igor budget calibrate`, storing a human's `/usage` reading per seat on the state branch
-- [x] 10.3 Compute spend as a trailing sum over the last five hours and the last week — no window reset
-- [x] 10.4 Implement `igor budget`, reporting cap, calibration age, trailing spend, reserve, and headroom
+- [x] 10.2 Read each seat's usage live through that seat's own token, refusing rather than substituting a credential
+- [x] 10.3 Use recorded cost to apportion a seat between roles, never to decide it is exhausted
+- [x] 10.4 Implement `igor budget`, reporting consumption, reserve, headroom and reset per window
 - [x] 10.5 Stop work at the reserve floor, leaving a shared seat's remainder for the human — enforced per seat, independently of any role ceiling
 - [x] 10.5a Hand off when no seat in the pool has headroom, rather than stopping silently
-- [x] 10.6 Record an exhaustion as a cross-check, flagging a calibration the evidence contradicts
-- [x] 10.7 Verify an uncalibrated seat reports honestly rather than guessing a cap
+- [x] 10.6 Report per-model limits the loop does not enforce, so an unexplained exhaustion is explainable
+- [x] 10.7 Verify an unreadable seat is passed over rather than treated as free
 
 ## 11. First supervised run
 
-- [ ] 11.1 Run one Igor against one repository, in the foreground, watched
+- [x] 11.1 Run one Igor against one repository, in the foreground, watched
 - [ ] 11.2 Confirm the first claim is correct before letting it execute anything
 - [ ] 11.3 Record what the real run contradicted, since every previous one has contradicted something
 - [ ] 11.4 Record the tuned intervals and the observed survivor ratio in the README

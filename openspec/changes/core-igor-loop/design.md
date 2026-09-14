@@ -75,8 +75,10 @@ arrive as a swap rather than a rewrite. The spec deliberately does not say *clon
 *worktree*: naming a shape here would bake in the clone-per-task assumption §6.7.2 exists to
 warn off.
 
-**Budget is calibrated by a human, not learned by exhaustion** (§6.3.1). Caps are
-unpublished; a person runs `/usage` and submits what they see. Seats are named config entities
+**Capacity is read from the seat, not supplied by a person** (§6.3.1). `claude -p '/usage'`
+reports what fraction of a seat is consumed, free and client-side, so an Igor asks its own seat
+whenever the answer matters. Comparison happens in percent, which removes the cap, the stored
+reading and the staleness that deriving dollars would need. Seats are named config entities
 with an owner and a reserve, so an Igor sharing a seat leaves the human a floor it will not
 touch.
 
@@ -100,9 +102,9 @@ consequences is worth reaching first.
 - **Injection steers work the Igor legitimately claimed** → Unsolved by anything here. Bounded
   by the action space, review, and the audit trail. The authority model defeats escalation via
   instruction, not steering.
-- **An unpublished cap means budget estimates are inherited from a human's reading** → Stale
-  calibration silently governs the buffer, so `igor budget` reports calibration *age* and
-  exhaustion cross-checks the number.
+- **The usage figures may not count other machines** → The output warns that its breakdown is
+  local; whether that qualifies the headline percentages too is unconfirmed. If it does, they
+  understate consumption, which errs toward overspending.
 - **The LLM triage call is the one unbounded cost** → Predicates gate it, and skipped items are
   recorded so the ratio is observable rather than assumed. First measurement, against live
   repositories: an open-issue query returns 500 candidates on `cli/cli` and 159 on
@@ -140,8 +142,8 @@ consequences is worth reaching first.
 
 ## Open Questions
 
-- The three intervals (settle, cooldown, calibration staleness) have defaults but they are
-  guesses, and only observation will say whether an hour is the right cooldown or wildly wrong.
+- The two intervals (settle, cooldown) have defaults but they are guesses, and only observation
+  will say whether an hour is the right cooldown or wildly wrong.
 - Whether `allow` needs finer grain than a verb — "may comment, but not on issues it did not
   claim" is expressible only by adding scope to each permission, which is complexity worth
   deferring until something needs it.

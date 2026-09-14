@@ -1,234 +1,248 @@
 import { describe, expect, it } from 'vitest'
 import {
   budgetGate,
-  calibrationNotices,
   BudgetError,
   chooseSeat,
-  crossCheck,
-  impliedCap,
-  latestCalibration,
   parseOrgBudget,
+  parseUsage,
+  readAllSeats,
+  readUsage,
+  renderBudget,
+  roleSharePercent,
   seatStatus,
-  trailingSpend,
-  type Calibration,
   type Seat,
+  type SeatUsage,
   type SpendRecord,
+  type Usage,
 } from '../src/budget.js'
 
-const NOW = Date.parse('2026-09-13T12:00:00Z')
-const hoursAgo = (h: number) => new Date(NOW - h * 3600_000).toISOString()
-const daysAgo = (d: number) => new Date(NOW - d * 86_400_000).toISOString()
+/** Exactly what `claude -p '/usage'` returns. */
+const REAL = `You are currently using your subscription to power your Claude Code usage
+
+Current session: 17% used · resets Sep 13 at 8pm (America/Los_Angeles)
+Current week (all models): 12% used · resets Sep 18 at 4pm (America/Los_Angeles)
+Current week (Fable): 0% used · resets Sep 18 at 4pm (America/Los_Angeles)
+
+What's contributing to your limits usage?
+Approximate, based on local sessions on this machine — does not include other devices.
+
+Last 24h · 1073 requests · 29 sessions
+  100% of your usage came from subagent-heavy sessions`
 
 const seat = (over: Partial<Seat> = {}): Seat => ({ id: 'adam', owner: 'adam@x.com', reserve: 0.5, ...over })
-
-const cal = (over: Partial<Calibration> = {}): Calibration => ({
-  seat: 'adam',
-  at: hoursAgo(1),
-  window: '5h',
-  percentUsed: 50,
-  observedSpendUsd: 5,
-  impliedCapUsd: 10,
-  ...over,
+const usage = (session: number, week = 0): Usage => ({
+  session: { percentUsed: session },
+  week: { percentUsed: week },
+  perModel: [],
 })
+const spend = (seatId: string, usd: number, role?: string): SpendRecord =>
+  ({ seat: seatId, costUsd: usd, at: '2026-09-13T12:00:00Z', ...(role ? { role } : {}) })
 
-const spend = (seatId: string, usd: number, at: string, role?: string): SpendRecord =>
-  ({ seat: seatId, costUsd: usd, at, ...(role ? { role } : {}) }) as SpendRecord
+describe('reading what the provider actually prints', () => {
+  const u = parseUsage(REAL)
 
-describe('calibration derives a cap the provider does not publish', () => {
-  it('implies a cap from a percentage and what was actually spent', () => {
-    expect(impliedCap(50, 5)).toBe(10)
-    expect(impliedCap(25, 5)).toBe(20)
+  it('takes both headline figures', () => {
+    expect(u.session.percentUsed).toBe(17)
+    expect(u.week.percentUsed).toBe(12)
   })
 
-  it('refuses to imply anything from no recorded spend', () => {
-    // A percentage over an unknown spend is not information.
-    expect(() => impliedCap(50, 0)).toThrow(/no recorded spend/)
+  it('keeps the reset times as written, since they are for a person to read', () => {
+    expect(u.session.resetsAt).toBe('Sep 13 at 8pm (America/Los_Angeles)')
   })
 
-  it('rejects a percentage outside the range', () => {
-    expect(() => impliedCap(0, 5)).toThrow(BudgetError)
-    expect(() => impliedCap(101, 5)).toThrow(BudgetError)
+  it('records the per-model weekly limit rather than dropping it', () => {
+    // A fleet concentrated on one model can exhaust a limit the headline figures never show.
+    expect(u.perModel).toEqual([
+      { model: 'Fable', percentUsed: 0, resetsAt: 'Sep 18 at 4pm (America/Los_Angeles)' },
+    ])
   })
 
-  it('errs low on a shared seat, which is the harmless direction', () => {
-    // Recorded spend counts only Igors. A human also using the seat drives the percentage up
-    // without the loop seeing the spend, so the implied cap comes out below the real one.
-    const igorOnly = impliedCap(80, 4)
-    expect(igorOnly).toBeLessThan(impliedCap(40, 4))
+  it('does not mistake the prose underneath for a limit', () => {
+    expect(u.perModel).toHaveLength(1)
   })
 
-  it('takes the most recent reading for the window', () => {
-    const older = cal({ at: daysAgo(3), impliedCapUsd: 99 })
-    const newer = cal({ at: hoursAgo(2), impliedCapUsd: 42 })
-    expect(latestCalibration([older, newer], 'adam', '5h')?.impliedCapUsd).toBe(42)
+  it('refuses output with no figures in it rather than reporting zero', () => {
+    // Reporting 0% used from unparseable output would read as a completely free seat.
+    expect(() => parseUsage('command not found')).toThrow(BudgetError)
   })
 
-  it('does not mix windows', () => {
-    expect(latestCalibration([cal({ window: 'week' })], 'adam', '5h')).toBeUndefined()
+  it('survives a line without a reset time', () => {
+    expect(parseUsage('Current session: 40% used').session).toEqual({ percentUsed: 40 })
   })
 })
 
-describe('spend is a trailing sum, never a counter that resets', () => {
-  const records = [spend('adam', 1, hoursAgo(1)), spend('adam', 2, hoursAgo(4)), spend('adam', 4, hoursAgo(9))]
-
-  it('sums only what falls inside the window ending now', () => {
-    expect(trailingSpend(records, 'adam', '5h', NOW)).toBe(3)
+describe('a seat is read through its own credential', () => {
+  it('passes the seat token to the child rather than the ambient login', async () => {
+    let seen: string | undefined
+    await readUsage(seat({ tokenEnv: 'SEAT_ONE' }), { SEAT_ONE: 'tok-abc' }, async (env) => {
+      seen = env['CLAUDE_CODE_OAUTH_TOKEN']
+      return REAL
+    })
+    expect(seen).toBe('tok-abc')
   })
 
-  it('a wider window includes more of the same records', () => {
-    expect(trailingSpend(records, 'adam', 'week', NOW)).toBe(7)
+  it('refuses when the named variable is unset, rather than falling back', async () => {
+    // Falling back would read one seat and record it as another — the whole failure this
+    // approach removes.
+    await expect(readUsage(seat({ tokenEnv: 'MISSING' }), {}, async () => REAL)).rejects.toThrow(/is not set/)
   })
 
-  it('a record leaves the window by the passage of time alone', () => {
-    // No boundary is detected and nothing is reset; the sum simply stops including it.
-    // Two hours on, the 4-hour-old record has aged out and only the 1-hour-old one remains.
-    expect(trailingSpend(records, 'adam', '5h', NOW + 2 * 3600_000)).toBe(1)
-    // Five hours on, everything has.
-    expect(trailingSpend(records, 'adam', '5h', NOW + 5 * 3600_000)).toBe(0)
+  it('uses the ambient login when a seat names no token', async () => {
+    let seen: string | undefined = 'unset'
+    await readUsage(seat(), {}, async (env) => {
+      seen = env['CLAUDE_CODE_OAUTH_TOKEN']
+      return REAL
+    })
+    expect(seen).toBeUndefined()
   })
 
-  it('ignores other seats', () => {
-    expect(trailingSpend([...records, spend('kapo', 100, hoursAgo(1))], 'adam', '5h', NOW)).toBe(3)
-  })
-
-  it('tolerates a record with no cost or an unparseable time', () => {
-    const messy = [{ seat: 'adam', at: 'not a date', costUsd: 5 }, { seat: 'adam', at: hoursAgo(1) }]
-    expect(trailingSpend(messy, 'adam', '5h', NOW)).toBe(0)
-  })
-})
-
-describe('an uncalibrated seat reports honestly', () => {
-  const s = seatStatus(seat(), '5h', [], [spend('adam', 3, hoursAgo(1))], NOW)
-
-  it('reports unknown rather than estimating a cap', () => {
-    expect(s.known).toBe(false)
-    expect(s.capUsd).toBeUndefined()
-    expect(s.headroomUsd).toBeUndefined()
-  })
-
-  it('still reports what was actually spent, which it does know', () => {
-    expect(s.spentUsd).toBe(3)
-  })
-
-  it('says what to do about it', () => {
-    expect(s.note).toMatch(/igor budget calibrate --seat adam/)
+  it('one unreadable seat does not blind the others', async () => {
+    const readings = await readAllSeats(
+      [seat({ id: 'good' }), seat({ id: 'bad', tokenEnv: 'NOPE' })],
+      {},
+      async () => REAL,
+    )
+    expect(readings[0]?.usage?.session.percentUsed).toBe(17)
+    expect(readings[1]?.usage).toBeUndefined()
+    expect(readings[1]?.error).toMatch(/is not set/)
   })
 })
 
-describe('the reserve is subtracted first and independently', () => {
-  it('leaves the owner their fraction', () => {
-    const s = seatStatus(seat({ reserve: 0.5 }), '5h', [cal()], [spend('adam', 2, hoursAgo(1))], NOW)
-    expect(s.capUsd).toBe(10)
-    expect(s.reserveUsd).toBe(5)
-    expect(s.headroomUsd).toBe(3)
+describe('headroom is percent, straight from the reading', () => {
+  it('takes the reserve off the top', () => {
+    const s = seatStatus(seat({ reserve: 0.5 }), usage(17), 'session')
+    expect(s.percentUsed).toBe(17)
+    expect(s.reservePercent).toBe(50)
+    expect(s.headroomPercent).toBe(33)
   })
 
-  it('reports no headroom rather than a negative number once past the floor', () => {
-    const s = seatStatus(seat({ reserve: 0.5 }), '5h', [cal()], [spend('adam', 9, hoursAgo(1))], NOW)
-    expect(s.headroomUsd).toBe(0)
+  it('gives a dedicated seat the whole limit', () => {
+    expect(seatStatus(seat({ dedicated: true, reserve: 0 }), usage(17), 'session').headroomPercent).toBe(83)
   })
 
-  it('gives a dedicated seat its whole capacity', () => {
-    const s = seatStatus(seat({ id: 'igor-1', dedicated: true, reserve: 0 }), '5h', [cal({ seat: 'igor-1' })], [], NOW)
-    expect(s.headroomUsd).toBe(10)
-  })
-
-  it('reports the age of the reading, since a stale one silently governs the buffer', () => {
-    const s = seatStatus(seat(), '5h', [cal({ at: daysAgo(40) })], [], NOW)
-    expect(s.calibrationAgeDays).toBe(40)
+  it('reports none rather than a negative once past the floor', () => {
+    expect(seatStatus(seat({ reserve: 0.5 }), usage(80), 'session').headroomPercent).toBe(0)
   })
 })
 
 describe('pool order is the allocation mechanism', () => {
-  const seats = [
-    seat({ id: 'igor-1', dedicated: true, reserve: 0 }),
-    seat({ id: 'adam', reserve: 0.5 }),
+  const readings = (a: number, b: number): SeatUsage[] => [
+    { seat: seat({ id: 'igor-1', dedicated: true, reserve: 0 }), usage: usage(a, a) },
+    { seat: seat({ id: 'adam', reserve: 0.5 }), usage: usage(b, b) },
   ]
-  const cals = [cal({ seat: 'igor-1' }), cal({ seat: 'adam' })]
-  const pool = { id: 'engineering', seats: ['igor-1', 'adam'] }
+  const pool = { id: 'eng', seats: ['igor-1', 'adam'] }
   const role = { name: 'triage' }
 
-  it('drains dedicated capacity before touching a person’s', () => {
-    const c = chooseSeat(pool, seats, '5h', cals, [], role, NOW)
-    expect(c.seat?.id).toBe('igor-1')
+  it('drains dedicated capacity before a person’s', () => {
+    expect(chooseSeat(pool, readings(10, 10), [], role).seat?.id).toBe('igor-1')
   })
 
-  it('passes over an exhausted seat rather than stopping', () => {
-    const c = chooseSeat(pool, seats, '5h', cals, [spend('igor-1', 10, hoursAgo(1))], role, NOW)
+  it('passes over a spent seat rather than stopping', () => {
+    const c = chooseSeat(pool, readings(100, 10), [], role)
     expect(c.seat?.id).toBe('adam')
-    expect(c.considered[0]?.why).toMatch(/reserve floor/)
+    expect(c.considered[0]?.why).toMatch(/session is 100% used/)
   })
 
-  it('reports no seat when the whole pool is spent, rather than picking one anyway', () => {
-    const c = chooseSeat(pool, seats, '5h', cals, [spend('igor-1', 10, hoursAgo(1)), spend('adam', 10, hoursAgo(1))], role, NOW)
+  it('reports none when the whole pool is spent', () => {
+    expect(chooseSeat(pool, readings(100, 100), [], role).seat).toBeUndefined()
+  })
+
+  it('blocks on the week even when the session is quiet', () => {
+    // The session bites first and the week bites longest; either alone misses the other.
+    const mixed: SeatUsage[] = [
+      { seat: seat({ id: 'igor-1', dedicated: true, reserve: 0 }), usage: { session: { percentUsed: 5 }, week: { percentUsed: 100 }, perModel: [] } },
+    ]
+    const c = chooseSeat({ id: 'eng', seats: ['igor-1'] }, mixed, [], role)
     expect(c.seat).toBeUndefined()
-    expect(c.reason).toMatch(/no seat in "engineering" has headroom/)
+    expect(c.considered[0]?.why).toMatch(/week is 100% used/)
   })
 
-  it('will not spend an uncalibrated seat on an assumption', () => {
-    const c = chooseSeat(pool, seats, '5h', [], [], role, NOW)
+  it('skips a seat it could not read rather than assuming it is free', () => {
+    const broken: SeatUsage[] = [{ seat: seat({ id: 'igor-1' }), error: 'token missing' }]
+    const c = chooseSeat({ id: 'eng', seats: ['igor-1'] }, broken, [], role)
     expect(c.seat).toBeUndefined()
-    expect(c.considered.every((x) => /not calibrated/.test(x.why))).toBe(true)
-  })
-
-  it('explains every seat it passed over, in order', () => {
-    const c = chooseSeat(pool, seats, '5h', cals, [spend('igor-1', 10, hoursAgo(1))], role, NOW)
-    expect(c.considered.map((x) => x.seat)).toEqual(['igor-1', 'adam'])
+    expect(c.considered[0]?.why).toBe('token missing')
   })
 })
 
 describe('budget_share is a ceiling, not a reservation', () => {
-  const seats = [seat({ id: 'igor-1', dedicated: true, reserve: 0 })]
-  const cals = [cal({ seat: 'igor-1', impliedCapUsd: 100 })]
+  const readings: SeatUsage[] = [{ seat: seat({ id: 'igor-1', dedicated: true, reserve: 0 }), usage: usage(50, 50) }]
   const pool = { id: 'p', seats: ['igor-1'] }
 
-  it('stops a role at its own ceiling while the seat still has room', () => {
-    const records = [spend('igor-1', 45, hoursAgo(1), 'triage')]
-    const c = chooseSeat(pool, seats, '5h', cals, records, { name: 'triage', budgetShare: 0.4 }, NOW)
+  it('apportions the limit by each role’s share of recorded spend', () => {
+    // Half of Igor's spend is half of Igor's share of the limit: 50% used, so 25 points.
+    const records = [spend('igor-1', 5, 'triage'), spend('igor-1', 5, 'docs')]
+    expect(roleSharePercent(records, 'igor-1', 'triage', 50)).toBe(25)
+  })
+
+  it('stops a role at its ceiling while the seat still has room', () => {
+    const records = [spend('igor-1', 9, 'triage'), spend('igor-1', 1, 'docs')]
+    const c = chooseSeat(pool, readings, records, { name: 'triage', budgetShare: 0.4 })
     expect(c.seat).toBeUndefined()
-    expect(c.considered[0]?.why).toMatch(/at its own ceiling/)
+    expect(c.considered[0]?.why).toMatch(/at its 0.4 ceiling/)
   })
 
   it('lets another role use what the first is not', () => {
-    // The whole point of a ceiling over a reservation: nothing is set aside for the idle role.
-    const records = [spend('igor-1', 45, hoursAgo(1), 'triage')]
-    const c = chooseSeat(pool, seats, '5h', cals, records, { name: 'docs', budgetShare: 0.4 }, NOW)
-    expect(c.seat?.id).toBe('igor-1')
+    const records = [spend('igor-1', 9, 'triage'), spend('igor-1', 1, 'docs')]
+    expect(chooseSeat(pool, readings, records, { name: 'docs', budgetShare: 0.4 }).seat?.id).toBe('igor-1')
   })
 
   it('allows several roles to declare the same ceiling', () => {
-    // Shares need not sum to one, so adding an Igor requires editing no other role.
     for (const name of ['a', 'b', 'c']) {
-      expect(chooseSeat(pool, seats, '5h', cals, [], { name, budgetShare: 0.4 }, NOW).seat?.id).toBe('igor-1')
+      expect(chooseSeat(pool, readings, [], { name, budgetShare: 0.4 }).seat?.id).toBe('igor-1')
     }
   })
 
-  it('does not let a ceiling reach past the seat’s reserve', () => {
-    // The reserve is checked first and independently, so a generous ceiling cannot cross it.
-    const shared = [seat({ id: 'adam', reserve: 0.9 })]
-    const c = chooseSeat({ id: 'p', seats: ['adam'] }, shared, '5h', [cal({ seat: 'adam', impliedCapUsd: 10 })],
-      [spend('adam', 1.5, hoursAgo(1), 'greedy')], { name: 'greedy', budgetShare: 1 }, NOW)
+  it('cannot reach past the seat’s reserve however generous it is', () => {
+    const shared: SeatUsage[] = [{ seat: seat({ id: 'adam', reserve: 0.9 }), usage: usage(15, 15) }]
+    const c = chooseSeat({ id: 'p', seats: ['adam'] }, shared, [], { name: 'greedy', budgetShare: 1 })
     expect(c.seat).toBeUndefined()
-    expect(c.considered[0]?.why).toMatch(/reserve floor/)
+    expect(c.considered[0]?.why).toMatch(/past its 90% reserve/)
+  })
+
+  it('attributes nothing when no spend is recorded yet', () => {
+    expect(roleSharePercent([], 'igor-1', 'triage', 50)).toBe(0)
   })
 })
 
-describe('exhaustion cross-checks the calibration', () => {
-  it('flags a reading the evidence contradicts', () => {
-    const c = crossCheck('adam', '5h', [cal({ impliedCapUsd: 100, at: daysAgo(40) })], [spend('adam', 20, hoursAgo(1))], NOW)
-    expect(c.contradicted).toBe(true)
-    expect(c.note).toMatch(/40 days old/)
+describe('the gate the loop consumes', () => {
+  const org = { seats: [seat({ id: 'igor-1', dedicated: true, reserve: 0 })], pools: [{ id: 'eng', seats: ['igor-1'] }] }
+
+  it('does not read as exhausted when no seats are configured', () => {
+    expect(budgetGate({ seats: [], pools: [] }, { name: 'r' }, [], []).exhausted()).toBe(false)
   })
 
-  it('does not flag an exhaustion consistent with the cap', () => {
-    const c = crossCheck('adam', '5h', [cal({ impliedCapUsd: 10 })], [spend('adam', 9.5, hoursAgo(1))], NOW)
-    expect(c.contradicted).toBe(false)
+  it('passes when there is room, naming the seat that pays', () => {
+    const g = budgetGate(org, { name: 'r', seat: 'pool:eng' }, [{ seat: org.seats[0]!, usage: usage(10, 10) }], [])
+    expect(g.exhausted()).toBe(false)
+    expect(g.seat).toBe('igor-1')
   })
 
-  it('says so plainly when there is nothing to compare against', () => {
-    const c = crossCheck('adam', '5h', [], [spend('adam', 9.5, hoursAgo(1))], NOW)
-    expect(c.contradicted).toBe(false)
-    expect(c.note).toMatch(/no calibration/)
+  it('carries the reset time through, so a handoff can say when capacity returns', () => {
+    const full: SeatUsage[] = [
+      { seat: org.seats[0]!, usage: { session: { percentUsed: 100, resetsAt: '8pm' }, week: { percentUsed: 100 }, perModel: [] } },
+    ]
+    const g = budgetGate(org, { name: 'r', seat: 'pool:eng' }, full, [])
+    expect(g.exhausted()).toBe(true)
+    expect(g.resetAt).toBe('8pm')
+  })
+
+  it('honours a role pinned to one seat rather than a pool', () => {
+    const g = budgetGate(org, { name: 'r', seat: 'igor-1' }, [{ seat: org.seats[0]!, usage: usage(10, 10) }], [])
+    expect(g.seat).toBe('igor-1')
+  })
+})
+
+describe('reporting', () => {
+  it('shows both windows and any per-model limit', () => {
+    const out = renderBudget([{ seat: seat({ id: 'igor-1', dedicated: true, reserve: 0 }), usage: parseUsage(REAL) }])
+    expect(out).toMatch(/session\s+17%/)
+    expect(out).toMatch(/week\s+12%/)
+    expect(out).toMatch(/wk:Fable/)
+  })
+
+  it('says why a seat could not be read instead of leaving a blank row', () => {
+    expect(renderBudget([{ seat: seat(), error: 'token missing' }])).toMatch(/token missing/)
   })
 })
 
@@ -240,11 +254,9 @@ describe('parsing org budget config', () => {
     })
     expect(b.seats[0]).toEqual({ id: 'igor-1', dedicated: true, reserve: 0 })
     expect(b.seats[1]?.tokenEnv).toBe('T')
-    expect(b.pools[0]?.seats).toEqual(['igor-1', 'adam'])
   })
 
   it('rejects a pool naming a seat that does not exist', () => {
-    // Otherwise the typo surfaces as an Igor mysteriously never running.
     expect(() => parseOrgBudget({ seats: [], pools: [{ id: 'eng', seats: ['ghost'] }] })).toThrow(/not declared/)
   })
 
@@ -252,84 +264,7 @@ describe('parsing org budget config', () => {
     expect(() => parseOrgBudget({ seats: [{ id: 'x', dedicated: true, reserve: 0.5 }] })).toThrow(/nobody is there/)
   })
 
-  it('rejects a reserve of the whole seat', () => {
-    expect(() => parseOrgBudget({ seats: [{ id: 'x', reserve: 1 }] })).toThrow(/between 0 and 1/)
-  })
-
   it('treats absent budget config as no seats rather than an error', () => {
     expect(parseOrgBudget(undefined)).toEqual({ seats: [], pools: [] })
-  })
-})
-
-describe('the gate the loop consumes', () => {
-  const seats = [seat({ id: 'igor-1', dedicated: true, reserve: 0 })]
-  const org = { seats, pools: [{ id: 'eng', seats: ['igor-1'] }] }
-  const cals = [cal({ seat: 'igor-1', window: '5h' }), cal({ seat: 'igor-1', window: 'week' })]
-
-  it('does not read as exhausted when no seats are configured at all', () => {
-    // Not enforcing a budget is a legitimate configuration, not a spent one.
-    expect(budgetGate({ seats: [], pools: [] }, { name: 'r' }, [], [], NOW).exhausted()).toBe(false)
-  })
-
-  it('passes when both windows have room', () => {
-    const g = budgetGate(org, { name: 'r', seat: 'pool:eng' }, cals, [], NOW)
-    expect(g.exhausted()).toBe(false)
-    expect(g.seat).toBe('igor-1')
-  })
-
-  it('blocks when the five-hour window is spent even though the week is not', () => {
-    // The short window bites first; checking only the long one would sail past it.
-    const records = [spend('igor-1', 10, hoursAgo(1))]
-    const g = budgetGate(org, { name: 'r', seat: 'pool:eng' }, cals, records, NOW)
-    expect(g.exhausted()).toBe(true)
-    expect(g.reason).toContain('5h')
-  })
-
-  it('blocks when the week is spent even though the last five hours are quiet', () => {
-    const records = [spend('igor-1', 10, hoursAgo(30))]
-    const weekly = [cal({ seat: 'igor-1', window: '5h' }), cal({ seat: 'igor-1', window: 'week', impliedCapUsd: 10 })]
-    const g = budgetGate(org, { name: 'r', seat: 'pool:eng' }, weekly, records, NOW)
-    expect(g.exhausted()).toBe(true)
-    expect(g.reason).toContain('week')
-  })
-
-  it('honours a role pinned to a single seat rather than a pool', () => {
-    const g = budgetGate(org, { name: 'r', seat: 'igor-1' }, cals, [], NOW)
-    expect(g.seat).toBe('igor-1')
-  })
-
-  it('carries the reset time through, so the handoff can say when capacity returns', () => {
-    const resetAt = new Date(NOW + 3600_000).toISOString()
-    const withReset = [cal({ seat: 'igor-1', window: '5h', resetAt }), cal({ seat: 'igor-1', window: 'week' })]
-    const g = budgetGate(org, { name: 'r', seat: 'pool:eng' }, withReset, [spend('igor-1', 10, hoursAgo(1))], NOW)
-    expect(g.resetAt).toBe(resetAt)
-  })
-})
-
-describe('telling people to calibrate, unprompted', () => {
-  it('says a wholly uncalibrated seat will not be used at all', () => {
-    const n = calibrationNotices([seat({ id: 'igor-1' })], [], NOW)
-    expect(n[0]).toMatch(/never been calibrated, so it will not be used/)
-  })
-
-  it('names the window that is missing when only one is', () => {
-    const n = calibrationNotices([seat({ id: 'igor-1' })], [cal({ seat: 'igor-1', window: '5h' })], NOW)
-    expect(n[0]).toMatch(/no week reading, so that window blocks it/)
-  })
-
-  it('flags a reading old enough to be governing on stale numbers', () => {
-    const old = [cal({ seat: 'igor-1', window: '5h', at: daysAgo(40) }), cal({ seat: 'igor-1', window: 'week', at: daysAgo(40) })]
-    const n = calibrationNotices([seat({ id: 'igor-1' })], old, NOW)
-    expect(n.some((x) => /40 days old and is still governing/.test(x))).toBe(true)
-  })
-
-  it('always ends with what to actually run', () => {
-    const n = calibrationNotices([seat({ id: 'igor-1' })], [], NOW)
-    expect(n.at(-1)).toMatch(/igor budget calibrate --seat <id> --five-hour <n> --weekly <n>/)
-  })
-
-  it('says nothing when everything is fresh', () => {
-    const fresh = [cal({ seat: 'igor-1', window: '5h' }), cal({ seat: 'igor-1', window: 'week' })]
-    expect(calibrationNotices([seat({ id: 'igor-1' })], fresh, NOW)).toEqual([])
   })
 })

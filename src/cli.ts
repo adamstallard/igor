@@ -14,14 +14,10 @@ import { dryRun } from './dryrun.js'
 import { planCycle, runItem } from './loop.js'
 import { GitHubTracker, GitHubCodeHost } from './github-adapter.js'
 import { CloneProvider } from './worktree.js'
-import { budgetGate, calibrationNotices } from './budget.js'
 import { recordExecution } from './execute.js'
 import { TriageError } from './triage.js'
-import {
-  BudgetError, chooseSeat, impliedCap, loadLedger, renderBudget, seatStatus, trailingSpend,
-  CALIBRATIONS_PATH, type Calibration, type Window,
-} from './budget.js'
-import { appendRecord, readStateRaw } from './state.js'
+import { BudgetError, budgetGate, loadSpend, readAllSeats, renderBudget } from './budget.js'
+import { readStateRaw } from './state.js'
 import { repoFromCheckout } from './github.js'
 import type { Entry, Status } from './entry.js'
 
@@ -286,10 +282,13 @@ program
     const destination = await repoFromCheckout(config.destination)
     const deps = { tracker, codeHost: new GitHubCodeHost(), trees: new CloneProvider(), destination }
 
-    const { calibrations, spend } = await loadLedger(destination, (p) => readStateRaw(destination, p))
-    const gate = budgetGate(config.budget, role, calibrations, spend)
-    for (const notice of calibrationNotices(config.budget.seats, calibrations)) {
-      process.stderr.write(`  ! ${notice}\n`)
+    const [readings, spend] = await Promise.all([
+      readAllSeats(config.budget.seats),
+      loadSpend((p) => readStateRaw(destination, p)),
+    ])
+    const gate = budgetGate(config.budget, role, readings, spend)
+    for (const r of readings) {
+      if (r.error !== undefined) process.stderr.write(`  ! seat "${r.seat.id}": ${r.error}\n`)
     }
 
     if (opts.claim) {
@@ -340,78 +339,22 @@ program
     }
   })
 
-const budget = program.command('budget').description('Seats, what they cost, and what is left')
-
-budget
-  .description('Report cap, calibration age, trailing spend, reserve and headroom per seat')
-  .option('--window <window>', '5h | week', '5h')
-  .action(async (opts) => {
+program
+  .command('budget')
+  .description('What each seat has left, read live from the seat itself')
+  .action(async () => {
     const config = loadConfig(program.opts()['config'])
-    const window = opts.window as Window
-    if (window !== '5h' && window !== 'week') throw new BudgetError('window must be 5h or week')
     const repo = await repoFromCheckout(config.destination)
-    const { calibrations, spend } = await loadLedger(repo, (p) => readStateRaw(repo, p))
-    const statuses = config.budget.seats.map((s) => seatStatus(s, window, calibrations, spend))
-    process.stdout.write(renderBudget(statuses))
+    const [readings, spend] = await Promise.all([
+      readAllSeats(config.budget.seats),
+      loadSpend((path) => readStateRaw(repo, path)),
+    ])
+    process.stdout.write(renderBudget(readings))
 
     for (const pool of config.budget.pools) {
-      const choice = chooseSeat(pool, config.budget.seats, window, calibrations, spend, { name: '(any role)' })
-      process.stdout.write(`\npool ${pool.id}: ${choice.reason}\n`)
-      for (const c of choice.considered) process.stdout.write(`  ${c.seat.padEnd(15)} ${c.why}\n`)
+      const gate = budgetGate(config.budget, { name: '(any role)', seat: `pool:${pool.id}` }, readings, spend)
+      process.stdout.write(`\npool ${pool.id}: ${gate.reason}\n`)
     }
-  })
-
-budget
-  .command('calibrate')
-  .description('Store a /usage reading for a seat, from which its cap is derived')
-  .requiredOption('--seat <id>', 'which seat you read')
-  .option('--five-hour <percent>', 'the 5-hour figure /usage showed')
-  .option('--weekly <percent>', 'the weekly figure /usage showed')
-  .option('--five-hour-resets <iso>', 'when /usage says the 5-hour window resets')
-  .option('--weekly-resets <iso>', 'when /usage says the weekly window resets')
-  .action(async (opts) => {
-    const config = loadConfig(program.opts()['config'])
-    if (opts.fiveHour === undefined && opts.weekly === undefined) {
-      throw new BudgetError(
-        'give at least one of --five-hour or --weekly.\n\n' +
-          'Run /usage in any Claude Code session; it shows both figures at once, so calibrate\n' +
-          'both while you have them in front of you.',
-      )
-    }
-    if (!config.budget.seats.some((s) => s.id === opts.seat)) {
-      throw new BudgetError(
-        `no seat "${opts.seat}" in config. Declared: ${config.budget.seats.map((s) => s.id).join(', ') || 'none'}`,
-      )
-    }
-    const repo = await repoFromCheckout(config.destination)
-    const { spend } = await loadLedger(repo, (p) => readStateRaw(repo, p))
-
-    const submit = async (window: Window, percent: string, resetAt?: string) => {
-      const observed = trailingSpend(spend, opts.seat, window)
-      const cap = impliedCap(Number(percent), observed)
-      const calibration: Calibration = {
-        seat: opts.seat,
-        at: new Date().toISOString(),
-        window,
-        percentUsed: Number(percent),
-        observedSpendUsd: Number(observed.toFixed(4)),
-        impliedCapUsd: Number(cap.toFixed(4)),
-        ...(resetAt ? { resetAt } : {}),
-      }
-      await appendRecord(repo, CALIBRATIONS_PATH, calibration as unknown as Record<string, unknown>,
-        `Calibrate ${opts.seat} (${window})`)
-      process.stdout.write(
-        `${window.padEnd(5)} ${percent}% used against $${observed.toFixed(2)} recorded — cap about $${cap.toFixed(2)}\n`,
-      )
-    }
-
-    if (opts.fiveHour !== undefined) await submit('5h', opts.fiveHour, opts.fiveHourResets)
-    if (opts.weekly !== undefined) await submit('week', opts.weekly, opts.weeklyResets)
-
-    process.stdout.write(
-      '\nIf anyone else uses this seat, the real cap is higher than shown: their spend drove the\n' +
-        'percentage up without appearing in the ledger. Erring low means stopping early.\n',
-    )
   })
 
 try {
