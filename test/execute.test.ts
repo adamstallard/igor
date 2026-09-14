@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { Artifact, ArtifactRequest, Candidate, CodeHost, Tracker } from '../src/adapter.js'
 import type { Role } from '../src/role.js'
-import { branchFor, complete, permits, stripLinkage, workerPrompt, workerSystemPrompt } from '../src/execute.js'
+import { branchFor, complete, permits, prBody, PR_BODY_LIMIT, stripLinkage, workerPrompt, workerSystemPrompt } from '../src/execute.js'
 import { withTree, type ChangedFile, type TreeProvider, type WorkingTree } from '../src/worktree.js'
 
 const candidate = (over: Partial<Candidate> = {}): Candidate =>
@@ -226,5 +226,29 @@ describe('branch naming', () => {
 
   it('does not produce a branch ending in a separator', () => {
     expect(branchFor(role(), candidate({ title: 'fix the thing!!!' }))).not.toMatch(/-$/)
+  })
+})
+
+describe('what a person has to read', () => {
+  it('passes a short summary through untouched', () => {
+    expect(prBody('Closes #7', 'Bumped Node 16 to 20.', candidate())).toBe('Closes #7\n\nBumped Node 16 to 20.')
+  })
+
+  it('truncates a long one and points at where the rest lives', () => {
+    // Generating text is free and reading it is not. The full transcript is already on the
+    // state branch, so repeating it here spends the reviewer's attention for nothing.
+    const long = `${'First sentence here. '.repeat(80)}`
+    const body = prBody('Closes #7', long, candidate())
+    expect(body.length).toBeLessThan(PR_BODY_LIMIT + 250)
+    expect(body).toMatch(/igor-state/)
+  })
+
+  it('cuts at a sentence rather than mid-word', () => {
+    const long = `${'Alpha beta gamma delta. '.repeat(60)}`
+    expect(prBody('Closes #7', long, candidate())).toMatch(/delta\.\n/)
+  })
+
+  it('is just the linkage when the worker said nothing', () => {
+    expect(prBody('Closes #7', '', candidate())).toBe('Closes #7')
   })
 })

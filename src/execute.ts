@@ -152,6 +152,31 @@ export const headlessClaude: WorkerRunner = ({ cwd, system, prompt, model, timeo
   })
 }
 
+/**
+ * What a person reads. Kept short on purpose.
+ *
+ * The full transcript is already written to the state branch, so putting it here duplicates it
+ * in the one place attention is scarce. Generating text is free and reading it is not, which
+ * makes the reviewer's time the budget worth protecting — not the token count.
+ */
+export const PR_BODY_LIMIT = 700
+
+export function prBody(linkage: string, transcript: string, candidate: Candidate): string {
+  const summary = stripLinkage(transcript, linkage)
+  if (summary.length <= PR_BODY_LIMIT) {
+    return summary === '' ? linkage : `${linkage}\n\n${summary}`
+  }
+  // Keep the opening, which is where a summary puts its point, and say where the rest lives.
+  const cut = summary.slice(0, PR_BODY_LIMIT)
+  const atSentence = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('.\n'))
+  const kept = atSentence > PR_BODY_LIMIT / 2 ? cut.slice(0, atSentence + 1) : cut.trimEnd()
+  return (
+    `${linkage}\n\n${kept}\n\n` +
+    `_Full transcript: \`transcripts/${candidate.tracker}/${candidate.repo}/${candidate.native}.md\` ` +
+    `on the \`igor-state\` branch._`
+  )
+}
+
 export interface ExecuteOptions {
   /** Defaults to headless Claude. */
   worker?: WorkerRunner
@@ -276,9 +301,7 @@ export async function execute(
       repo: candidate.repo,
       branch: branchFor(role, candidate, options.branchPrefix),
       title: candidate.title,
-      // Strip the linkage if the worker wrote it anyway: two "Closes #6" lines are harmless
-      // to GitHub and read as carelessness to a person.
-      body: `${linkage}\n\n${stripLinkage(transcript, linkage).slice(0, 60_000)}`,
+      body: prBody(linkage, transcript, candidate),
       files,
       reviewers: role.reviewers,
       // Reversible by default: a draft asks for review rather than announcing completion.
