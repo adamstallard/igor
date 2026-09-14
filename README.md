@@ -103,6 +103,58 @@ to accept the rest, **close without merging** to defer. You can merge your own p
 GitHub won't let you *approve* your own pull request, but merging is what counts as approval
 here, so a single maintainer is never stuck.
 
+## Budgets and calibration
+
+An Igor spends a Claude subscription seat. The provider does not publish that seat's cap in
+dollars, so Igor cannot look it up — a person tells it, once, and Igor derives the rest.
+
+### Doing it
+
+Run `/usage` in any Claude Code session signed in as that seat. It shows a 5-hour figure and a
+weekly figure. Give Igor both:
+
+```bash
+igor budget calibrate --seat igor-1 --five-hour 42 --weekly 18
+```
+
+Igor already knows what its own work has cost, so a percentage plus that spend implies a cap.
+Nothing is ever learned by hitting the limit.
+
+Add the reset times if `/usage` showed them — a handoff can then say when capacity returns
+rather than reporting the Igor as simply unavailable:
+
+```bash
+igor budget calibrate --seat igor-1 --five-hour 42 --weekly 18 \
+  --five-hour-resets 2026-09-14T02:00:00Z
+```
+
+### When to do it
+
+Igor asks. `igor run` and `igor budget` print a line for any seat that is uncalibrated or whose
+reading has gone stale, ending with the command to run. You should not have to remember.
+
+Calibrate a seat once when you add it, and again when the notice appears. A reading older than
+30 days is still governing when work stops, which is why the notice exists.
+
+### What the numbers mean
+
+```
+seat            window   cap    spent  reserve headroom  calibrated
+igor-1          5h       $2.58   $0.05   $0.00   $2.53  0d ago
+adam            5h          ?   $0.00      ?      ?  never
+```
+
+- **cap** — derived from your reading, not measured.
+- **reserve** — the fraction of a shared seat Igors will not touch, so you never sit down to
+  find your capacity gone. Dedicated seats reserve nothing.
+- **headroom** — cap less reserve less trailing spend.
+- **`?`** — never calibrated. Igor will not use that seat: unknown headroom is not permission.
+
+**The derived cap is deliberately low on a shared seat.** Igor's ledger counts only Igor's
+spend, so your own usage pushes the percentage up without Igor seeing the cost, and the implied
+cap comes out under the real one. Igor stops earlier than it strictly must, which is the
+harmless direction to be wrong in.
+
 ## Setting up a lore repository
 
 Any repository works; it just needs to be somewhere other than this one.

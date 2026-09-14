@@ -4,6 +4,11 @@ import { complete, execute, type ExecuteOptions, type ExecutionResult } from './
 import { handOffFrom, type HandoffReason } from './handoff.js'
 import type { Role } from './role.js'
 import type { TreeProvider } from './worktree.js'
+import {
+  advance, discover, EMPTY_STATE, freshCandidates, loadDiscoveryState, saveDiscoveryState,
+} from './discovery.js'
+import { countStages, screen } from './predicate.js'
+import { systemPrompt, triageBatch, TRIAGE_MODEL } from './triage.js'
 
 /**
  * One claimed item, start to finish.
@@ -145,4 +150,114 @@ export async function runItem(
       return { outcome: 'handed-off', candidate, reason: execution.reason, execution, costUsd: execution.costUsd, spoke: out.posted }
     }
   }
+}
+
+export interface CycleDeps extends ItemDeps {
+  /** Repository holding the state branch — the lore destination, not the worked repository. */
+  destination: string
+}
+
+export interface CycleCandidate {
+  candidate: Candidate
+  reason: string
+}
+
+export interface CycleReport {
+  role: string
+  returned: number
+  fresh: number
+  skippedUniversal: number
+  skippedLane: number
+  triaged: number
+  toClaim: CycleCandidate[]
+  triageCostUsd: number
+  lines: string[]
+}
+
+export interface CycleOptions extends RunOptions {
+  /** Cap on model calls per cycle, so one loose lane cannot spend a day's budget. */
+  limit?: number
+  /** Look back this far instead of reading the stored watermark. */
+  sinceDays?: number
+  triageModel?: string
+  now?: number
+}
+
+/**
+ * Discovery, triage, and the decision — everything up to but not including a claim.
+ *
+ * Separated from acting so a supervised run can show what it would do and stop. The watermark
+ * advances here regardless, because deciding not to act on an item is still having considered
+ * it, and reconsidering it every cycle would cost the model call again for the same answer.
+ */
+export async function planCycle(
+  deps: CycleDeps,
+  role: Role,
+  options: CycleOptions = {},
+): Promise<CycleReport> {
+  const now = options.now ?? Date.now()
+  const lines: string[] = []
+  const report: CycleReport = {
+    role: role.name,
+    returned: 0,
+    fresh: 0,
+    skippedUniversal: 0,
+    skippedLane: 0,
+    triaged: 0,
+    toClaim: [],
+    triageCostUsd: 0,
+    lines,
+  }
+
+  const stored = options.sinceDays === undefined ? await loadDiscoveryState(deps.destination) : EMPTY_STATE
+  const { results, failures } = await discover({ [deps.tracker.name]: deps.tracker }, role.sources, stored, now)
+
+  for (const failure of failures) {
+    lines.push(`  ${failure.source.repo}: ${failure.error.message}`)
+  }
+
+  const survivors: Candidate[] = []
+  for (const result of results) {
+    const fresh =
+      options.sinceDays === undefined
+        ? result.fresh
+        : freshCandidates(await deps.tracker.search(result.source), undefined, now, options.sinceDays)
+
+    const screened = screen(role.lane, fresh)
+    const counts = countStages(screened)
+    report.returned += result.returned
+    report.fresh += fresh.length
+    report.skippedUniversal += counts.universal
+    report.skippedLane += counts.predicate
+    survivors.push(...screened.filter((s) => s.verdict.outcome === 'proceed').map((s) => s.candidate))
+
+    lines.push(
+      `${result.source.repo}  ${result.returned} returned, ${fresh.length} fresh` +
+        `${result.coldStart ? ' (cold start)' : ''}, ${counts.universal} closed or busy, ` +
+        `${counts.predicate} out of lane, ${counts.survivors} to the model`,
+    )
+  }
+
+  const considered = survivors.slice(0, options.limit ?? 10)
+  if (considered.length > 0) {
+    const batch = await triageBatch(
+      considered,
+      systemPrompt(role.name, role.instructions),
+      options.triageModel ?? TRIAGE_MODEL,
+    )
+    report.triaged = batch.results.length
+    report.triageCostUsd = batch.costUsd
+    for (const { candidate, verdict } of batch.results) {
+      if (verdict.outcome === 'proceed') report.toClaim.push({ candidate, reason: verdict.reason })
+      lines.push(`  ${verdict.outcome === 'proceed' ? 'CLAIM' : 'skip '} ${candidate.native}  ${verdict.reason}`)
+    }
+    for (const { candidate, error } of batch.failures) {
+      lines.push(`  ERROR ${candidate.native}  ${error.message.slice(0, 80)}`)
+    }
+  }
+
+  if (options.sinceDays === undefined && results.length > 0) {
+    await saveDiscoveryState(deps.destination, advance(stored, results))
+  }
+  return report
 }

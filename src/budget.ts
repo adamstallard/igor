@@ -437,3 +437,45 @@ export function budgetGate(
     reason: choices[0]?.reason ?? 'has headroom',
   }
 }
+
+export const STALE_AFTER_DAYS = 30
+
+/**
+ * What a person needs telling, unprompted, about the state of their budget readings.
+ *
+ * A calibration nobody revisits silently governs every stop decision, and the failure is
+ * invisible: the numbers keep looking authoritative as they drift. So the commands people
+ * actually run say something, rather than leaving it to whoever thinks to look.
+ */
+export function calibrationNotices(
+  seats: readonly Seat[],
+  calibrations: readonly Calibration[],
+  now: number = Date.now(),
+  staleAfterDays: number = STALE_AFTER_DAYS,
+): string[] {
+  const notices: string[] = []
+  for (const seat of seats) {
+    const missing = (['5h', 'week'] as Window[]).filter(
+      (w) => latestCalibration(calibrations, seat.id, w) === undefined,
+    )
+    if (missing.length === 2) {
+      notices.push(`seat "${seat.id}" has never been calibrated, so it will not be used at all.`)
+      continue
+    }
+    if (missing.length === 1) {
+      notices.push(`seat "${seat.id}" has no ${missing[0]} reading, so that window blocks it.`)
+    }
+    for (const w of ['5h', 'week'] as Window[]) {
+      const cal = latestCalibration(calibrations, seat.id, w)
+      if (cal === undefined) continue
+      const age = Math.floor((now - Date.parse(cal.at)) / 86_400_000)
+      if (age > staleAfterDays) {
+        notices.push(`seat "${seat.id}" ${w} reading is ${age} days old and is still governing when work stops.`)
+      }
+    }
+  }
+  if (notices.length > 0) {
+    notices.push('Run /usage in any Claude Code session, then: igor budget calibrate --seat <id> --five-hour <n> --weekly <n>')
+  }
+  return notices
+}

@@ -11,6 +11,11 @@ import { reconcile, promoteInPlace } from './reconcile.js'
 import { GitHubError } from './github.js'
 import { explainRole, loadRole, rolesFrom, RoleError } from './role.js'
 import { dryRun } from './dryrun.js'
+import { planCycle, runItem } from './loop.js'
+import { GitHubTracker, GitHubCodeHost } from './github-adapter.js'
+import { CloneProvider } from './worktree.js'
+import { budgetGate, calibrationNotices } from './budget.js'
+import { recordExecution } from './execute.js'
 import { TriageError } from './triage.js'
 import {
   BudgetError, chooseSeat, impliedCap, loadLedger, renderBudget, seatStatus, trailingSpend,
@@ -265,6 +270,76 @@ role
     process.stdout.write(`${report.lines.join('\n')}\n`)
   })
 
+program
+  .command('run')
+  .description('One cycle: discover, triage, and — only when told to — claim and work an item')
+  .argument('<role>')
+  .option('--limit <n>', 'cap on model calls this cycle', '10')
+  .option('--since <days>', 'look back this far instead of using the stored watermark')
+  .option('--claim <id>', 'act on this item, which a previous run reported it would claim')
+  .action(async (name: string, opts) => {
+    const config = loadConfig(program.opts()['config'])
+    const resolved = loadRole(config, name)
+    const role = resolved.role
+    const tracker = new GitHubTracker()
+    const identity = await tracker.identity()
+    const destination = await repoFromCheckout(config.destination)
+    const deps = { tracker, codeHost: new GitHubCodeHost(), trees: new CloneProvider(), destination }
+
+    const { calibrations, spend } = await loadLedger(destination, (p) => readStateRaw(destination, p))
+    const gate = budgetGate(config.budget, role, calibrations, spend)
+    for (const notice of calibrationNotices(config.budget.seats, calibrations)) {
+      process.stderr.write(`  ! ${notice}\n`)
+    }
+
+    if (opts.claim) {
+      // Acting is opt-in and names one item, so a supervised run cannot become an unsupervised
+      // one by being invoked twice.
+      const [item] = (
+        await tracker.search({
+          tracker: 'github',
+          repo: opts.claim.split('#')[0]!.replace(/^github:/, ''),
+          query: `is:issue ${opts.claim.split('#')[1]}`,
+        })
+      ).filter((c) => c.id === opts.claim)
+      if (item === undefined) throw new RoleError(`no open item ${opts.claim}`)
+
+      process.stdout.write(`working ${item.id}  "${item.title}"\n  ${gate.reason}\n\n`)
+      const run = await runItem(deps, item, role, identity, { budget: gate })
+      process.stdout.write(`${run.outcome}: ${run.reason}\n`)
+      if (run.execution) {
+        await recordExecution(destination, item, role, run.execution, gate.seat)
+        process.stdout.write(`  cost $${run.execution.costUsd.toFixed(4)}\n`)
+        if (run.execution.artifact) process.stdout.write(`  ${run.execution.artifact.url}\n`)
+      }
+      if (!run.spoke && run.outcome !== 'refused' && run.outcome !== 'lost') {
+        process.stdout.write('  WARNING: held a claim and left no message — that is a bug\n')
+      }
+      return
+    }
+
+    const report = await planCycle(deps, role, {
+      limit: Number(opts.limit),
+      ...(opts.since === undefined ? {} : { sinceDays: Number(opts.since) }),
+    })
+    process.stdout.write(`${report.lines.join('\n')}\n\n`)
+    process.stdout.write(
+      `${report.returned} returned, ${report.fresh} fresh, ${report.triaged} triaged ` +
+        `($${report.triageCostUsd.toFixed(4)}), ${report.toClaim.length} to claim\n`,
+    )
+    if (!gate.exhausted()) process.stdout.write(`seat: ${gate.seat ?? '(unenforced)'} — ${gate.reason}\n`)
+    else process.stdout.write(`BUDGET: ${gate.reason}\n`)
+
+    if (report.toClaim.length === 0) {
+      process.stdout.write('\nNothing to claim. Nothing was claimed or posted.\n')
+      return
+    }
+    process.stdout.write('\nNothing has been claimed. To act on one:\n')
+    for (const c of report.toClaim) {
+      process.stdout.write(`  igor run ${name} --claim ${c.candidate.id}\n      ${c.candidate.title}\n`)
+    }
+  })
+
 const budget = program.command('budget').description('Seats, what they cost, and what is left')
 
 budget
@@ -290,13 +365,19 @@ budget
   .command('calibrate')
   .description('Store a /usage reading for a seat, from which its cap is derived')
   .requiredOption('--seat <id>', 'which seat you read')
-  .requiredOption('--percent <n>', 'percent of the limit /usage reported as used')
-  .option('--window <window>', '5h | week', '5h')
-  .option('--reset-at <iso>', 'when /usage says the window resets')
+  .option('--five-hour <percent>', 'the 5-hour figure /usage showed')
+  .option('--weekly <percent>', 'the weekly figure /usage showed')
+  .option('--five-hour-resets <iso>', 'when /usage says the 5-hour window resets')
+  .option('--weekly-resets <iso>', 'when /usage says the weekly window resets')
   .action(async (opts) => {
     const config = loadConfig(program.opts()['config'])
-    const window = opts.window as Window
-    if (window !== '5h' && window !== 'week') throw new BudgetError('window must be 5h or week')
+    if (opts.fiveHour === undefined && opts.weekly === undefined) {
+      throw new BudgetError(
+        'give at least one of --five-hour or --weekly.\n\n' +
+          'Run /usage in any Claude Code session; it shows both figures at once, so calibrate\n' +
+          'both while you have them in front of you.',
+      )
+    }
     if (!config.budget.seats.some((s) => s.id === opts.seat)) {
       throw new BudgetError(
         `no seat "${opts.seat}" in config. Declared: ${config.budget.seats.map((s) => s.id).join(', ') || 'none'}`,
@@ -304,26 +385,32 @@ budget
     }
     const repo = await repoFromCheckout(config.destination)
     const { spend } = await loadLedger(repo, (p) => readStateRaw(repo, p))
-    const observed = trailingSpend(spend, opts.seat, window)
-    const cap = impliedCap(Number(opts.percent), observed)
 
-    const calibration: Calibration = {
-      seat: opts.seat,
-      at: new Date().toISOString(),
-      window,
-      percentUsed: Number(opts.percent),
-      observedSpendUsd: Number(observed.toFixed(4)),
-      impliedCapUsd: Number(cap.toFixed(4)),
-      ...(opts.resetAt ? { resetAt: opts.resetAt } : {}),
+    const submit = async (window: Window, percent: string, resetAt?: string) => {
+      const observed = trailingSpend(spend, opts.seat, window)
+      const cap = impliedCap(Number(percent), observed)
+      const calibration: Calibration = {
+        seat: opts.seat,
+        at: new Date().toISOString(),
+        window,
+        percentUsed: Number(percent),
+        observedSpendUsd: Number(observed.toFixed(4)),
+        impliedCapUsd: Number(cap.toFixed(4)),
+        ...(resetAt ? { resetAt } : {}),
+      }
+      await appendRecord(repo, CALIBRATIONS_PATH, calibration as unknown as Record<string, unknown>,
+        `Calibrate ${opts.seat} (${window})`)
+      process.stdout.write(
+        `${window.padEnd(5)} ${percent}% used against $${observed.toFixed(2)} recorded — cap about $${cap.toFixed(2)}\n`,
+      )
     }
-    await appendRecord(repo, CALIBRATIONS_PATH, calibration as unknown as Record<string, unknown>,
-      `Calibrate ${opts.seat} (${window})`)
+
+    if (opts.fiveHour !== undefined) await submit('5h', opts.fiveHour, opts.fiveHourResets)
+    if (opts.weekly !== undefined) await submit('week', opts.weekly, opts.weeklyResets)
 
     process.stdout.write(
-      `recorded: ${opts.percent}% of the ${window} limit used, against $${observed.toFixed(2)} of\n` +
-        `recorded Igor spend — so the cap is about $${cap.toFixed(2)}.\n\n` +
-        `If anyone else uses this seat, the real cap is higher than that: their spend drove the\n` +
-        `percentage up without appearing in the ledger. Erring low means stopping early.\n`,
+      '\nIf anyone else uses this seat, the real cap is higher than shown: their spend drove the\n' +
+        'percentage up without appearing in the ledger. Erring low means stopping early.\n',
     )
   })
 

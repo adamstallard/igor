@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   budgetGate,
+  calibrationNotices,
   BudgetError,
   chooseSeat,
   crossCheck,
@@ -302,5 +303,33 @@ describe('the gate the loop consumes', () => {
     const withReset = [cal({ seat: 'igor-1', window: '5h', resetAt }), cal({ seat: 'igor-1', window: 'week' })]
     const g = budgetGate(org, { name: 'r', seat: 'pool:eng' }, withReset, [spend('igor-1', 10, hoursAgo(1))], NOW)
     expect(g.resetAt).toBe(resetAt)
+  })
+})
+
+describe('telling people to calibrate, unprompted', () => {
+  it('says a wholly uncalibrated seat will not be used at all', () => {
+    const n = calibrationNotices([seat({ id: 'igor-1' })], [], NOW)
+    expect(n[0]).toMatch(/never been calibrated, so it will not be used/)
+  })
+
+  it('names the window that is missing when only one is', () => {
+    const n = calibrationNotices([seat({ id: 'igor-1' })], [cal({ seat: 'igor-1', window: '5h' })], NOW)
+    expect(n[0]).toMatch(/no week reading, so that window blocks it/)
+  })
+
+  it('flags a reading old enough to be governing on stale numbers', () => {
+    const old = [cal({ seat: 'igor-1', window: '5h', at: daysAgo(40) }), cal({ seat: 'igor-1', window: 'week', at: daysAgo(40) })]
+    const n = calibrationNotices([seat({ id: 'igor-1' })], old, NOW)
+    expect(n.some((x) => /40 days old and is still governing/.test(x))).toBe(true)
+  })
+
+  it('always ends with what to actually run', () => {
+    const n = calibrationNotices([seat({ id: 'igor-1' })], [], NOW)
+    expect(n.at(-1)).toMatch(/igor budget calibrate --seat <id> --five-hour <n> --weekly <n>/)
+  })
+
+  it('says nothing when everything is fresh', () => {
+    const fresh = [cal({ seat: 'igor-1', window: '5h' }), cal({ seat: 'igor-1', window: 'week' })]
+    expect(calibrationNotices([seat({ id: 'igor-1' })], fresh, NOW)).toEqual([])
   })
 })
