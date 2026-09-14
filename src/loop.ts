@@ -45,6 +45,18 @@ export function declineReason(transcript: string, limit = 400): string {
   return at > limit / 2 ? cut.slice(0, at + 1) : `${cut.trimEnd()}…`
 }
 
+/**
+ * What was left behind, for whoever took the item over. Deliberately makes no request: an Igor
+ * that lost an item should not then appear in someone's review queue over it.
+ */
+export function handOverNote(role: Role, by: string | undefined, url: string): string {
+  const who = by === undefined ? '' : ` ${by} has it now, and`
+  return (
+    `**${role.name}** was working this and has released it.${who} what exists so far is ${url}, ` +
+    `left as a draft with no review requested. It is yours to keep, continue, or discard.`
+  )
+}
+
 export interface ItemDeps {
   tracker: Tracker
   codeHost: CodeHost
@@ -133,7 +145,7 @@ export async function runItem(
     ...options,
     ...(options.lore === undefined ? {} : { lore: options.lore }),
     onPublish: () => step('publishing'),
-    stillHeld: async () => (await checkpoint(tracker, claim, identity)).status === 'held',
+    claimStatus: async () => (await checkpoint(tracker, claim, identity)).status,
   })
 
   switch (execution.outcome) {
@@ -171,9 +183,17 @@ export async function runItem(
         return { outcome: 'stopped', candidate, reason: execution.reason, execution, costUsd: execution.costUsd, spoke: true }
       }
       if (verdict.status === 'lost') {
-        // Silent on purpose: whoever took it is visibly on it, and a message would only tell
-        // them what they just did.
-        return { outcome: 'lost', candidate, reason: execution.reason, execution, costUsd: execution.costUsd, spoke: false }
+        // Silent where there is nothing to hand over: whoever took it is visibly on it, and a
+        // message would only tell them what they just did. A draft left behind is different —
+        // unannounced, it is work nobody knows exists.
+        const artifact = execution.artifact
+        if (artifact !== undefined) {
+          await tracker.report(candidate, handOverNote(role, verdict.by, artifact.url)).catch(() => undefined)
+        }
+        return {
+          outcome: 'lost', candidate, reason: execution.reason, execution,
+          costUsd: execution.costUsd, spoke: artifact !== undefined,
+        }
       }
       // Still held, so the refusal was the action space rather than the claim: that is a
       // dead end the Igor cannot get past, which is what a handoff is for.

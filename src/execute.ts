@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import type { Artifact, Candidate, CodeHost, Tracker } from './adapter.js'
+import type { Artifact, Candidate, ClaimVerdict, CodeHost, Tracker } from './adapter.js'
 import type { Action, Role } from './role.js'
 import { withTree, type ChangedFile, type TreeProvider, type WorkingTree } from './worktree.js'
 import { appendRecord, writeState } from './state.js'
@@ -187,8 +187,11 @@ export interface ExecuteOptions {
   lore?: string
   model?: string
   timeoutMs?: number
-  /** Checked between the worker finishing and anything being published. */
-  stillHeld?: () => Promise<boolean>
+  /**
+   * The claim's status between the worker finishing and anything being published. Reports
+   * the status rather than a boolean because a stop and a loss want opposite answers.
+   */
+  claimStatus?: () => Promise<ClaimVerdict['status']>
   onPublish?: () => void
   branchPrefix?: string
 }
@@ -259,14 +262,15 @@ export async function execute(
 
     // Re-check the claim before publishing anything. The worker may have run for minutes, and
     // a stop that arrived during it must prevent the artifact rather than merely follow it.
-    if (options.stillHeld && !(await options.stillHeld())) {
+    const status = options.claimStatus === undefined ? 'held' : await options.claimStatus()
+    if (status === 'stopped') {
       return {
         outcome: 'refused' as const,
         changed,
-        refusals: [...refusals, { action: 'draft-pr', why: 'the claim was lost or stopped during execution' }],
+        refusals: [...refusals, { action: 'draft-pr', why: 'stopped during execution' }],
         transcript,
         costUsd,
-        reason: 'stopped or lost mid-execution; nothing was published',
+        reason: 'stopped mid-execution; nothing was published',
       }
     }
 
@@ -303,6 +307,11 @@ export async function execute(
       }
     }
 
+    // Somebody took the item over while the worker ran. Publishing is still the right move —
+    // the tree is disposable, so discarding here destroys the diff for nobody's benefit — but
+    // it is offered rather than submitted: a draft, and nothing asked of the new holder.
+    const lost = status === 'lost'
+
     options.onPublish?.()
     const artifact = await codeHost.produce({
       repo: candidate.repo,
@@ -310,10 +319,22 @@ export async function execute(
       title: candidate.title,
       body: prBody(linkage, transcript, candidate),
       files,
-      reviewers: role.reviewers,
+      reviewers: lost ? [] : role.reviewers,
       // Reversible by default: a draft asks for review rather than announcing completion.
-      draft: wanted === 'draft-pr',
+      draft: lost || wanted === 'draft-pr',
     })
+
+    if (lost) {
+      return {
+        outcome: 'refused' as const,
+        artifact,
+        changed,
+        refusals,
+        transcript,
+        costUsd,
+        reason: `lost mid-execution; left ${artifact.ref} as a draft`,
+      }
+    }
 
     return {
       outcome: 'produced' as const,

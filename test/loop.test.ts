@@ -2,7 +2,7 @@ import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import type { Artifact, Candidate, ClaimVerdict, CodeHost, Tracker } from '../src/adapter.js'
+import type { Artifact, ArtifactRequest, Candidate, ClaimVerdict, CodeHost, Tracker } from '../src/adapter.js'
 import type { Role } from '../src/role.js'
 import type { TreeProvider, WorkingTree, ChangedFile } from '../src/worktree.js'
 import {
@@ -39,9 +39,13 @@ function deps(opts: {
     release: async (_c, as) => { released.push(as) },
     linkage: () => 'Closes #7',
   }
+  const produced: ArtifactRequest[] = []
   const codeHost: CodeHost = {
     name: 'fake',
-    produce: async (): Promise<Artifact> => ({ kind: 'pull-request', ref: '#9', url: 'https://example.test/9' }),
+    produce: async (r): Promise<Artifact> => {
+      produced.push(r)
+      return { kind: 'pull-request', ref: '#9', url: 'https://example.test/9' }
+    },
   }
   const trees: TreeProvider = {
     name: 'fake',
@@ -52,7 +56,7 @@ function deps(opts: {
       release: async () => {},
     }),
   }
-  return { d: { tracker, codeHost, trees } as ItemDeps, posts, released }
+  return { d: { tracker, codeHost, trees } as ItemDeps, posts, released, produced }
 }
 
 const noWait = { claim: { wait: async () => {} } }
@@ -321,13 +325,45 @@ describe('standing down after the settle window', () => {
     expect(released).toContain('igor-bot')
   })
 
-  it('says nothing on a loss, since there is never anything published to hand over', async () => {
-    // The claim is re-checked before anything is produced, so a lost item has no artifact.
-    const { d, posts } = then({ status: 'lost', by: 'alice' })
+  it('leaves what the worker produced as a draft rather than discarding it', async () => {
+    // Somebody taking the item over is not asking for the diff to be destroyed, and the
+    // working tree goes with the run.
+    const { d, produced, posts } = then({ status: 'lost', by: 'alice' })
     const r = await runItem(d, candidate(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+    expect(r.outcome).toBe('lost')
+    expect(produced).toHaveLength(1)
+    expect(produced[0]?.draft).toBe(true)
+    // Nothing is asked of the person who took it over.
+    expect(produced[0]?.reviewers).toEqual([])
+    expect(posts.at(-1)).toMatch(/alice has it now/)
+    expect(posts.at(-1)).toContain('https://example.test/9')
+    expect(r.spoke).toBe(true)
+  })
+
+  it('publishes nothing on a stop, which is the case the re-check was built for', async () => {
+    const { d, produced } = then({ status: 'stopped', by: 'bob' })
+    const r = await runItem(d, candidate(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+    expect(r.outcome).toBe('stopped')
+    expect(produced).toEqual([])
+  })
+
+  it('does not complete an item it no longer holds', async () => {
+    // Unassigning or moving an item somebody else took would undo their claim.
+    const { d, released } = then({ status: 'lost', by: 'alice' })
+    await runItem(d, candidate(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+    // Exactly one release, the stand-down — not a second from the completion policy.
+    expect(released).toEqual(['igor-bot'])
+  })
+
+  it('still publishes nothing where the role may not open a pull request', async () => {
+    // Losing a claim does not widen what an Igor may do.
+    const { d, produced, posts } = then({ status: 'lost', by: 'alice' })
+    const r = await runItem(d, candidate(), role({ allow: ['comment'] }), 'igor-bot', {
+      ...noWait,
+      worker: busyWorker,
+    })
+    expect(produced).toEqual([])
     expect(r.spoke).toBe(false)
-    expect(r.execution?.artifact).toBeUndefined()
-    // Only the claim message itself.
     expect(posts).toHaveLength(1)
   })
 })
