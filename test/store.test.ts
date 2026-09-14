@@ -163,8 +163,6 @@ describe('supersession', () => {
 })
 
 describe('scoring', () => {
-  const asOf = new Date('2026-09-13T00:00:00Z')
-
   it('derives support from the number of provenance items', () => {
     const provenance = Array.from({ length: 14 }, (_, i) => ({
       author: 'sarah',
@@ -196,20 +194,13 @@ describe('scoring', () => {
   it('reports no date when there is no provenance', () => {
     expect(score([]).newestAt).toBeUndefined()
   })
-   const later = score(provenance, {
-      halfLifeDays: 365,
-      asOf: new Date('2027-09-13T00:00:00Z'),
-    })
-    expect(later.recency).toBeLessThan(now.recency)
-  })
-
   it('counts expert provenance separately', () => {
     const s = score(
       [
         { author: 'sarah', at: '2026-01-01' },
         { author: 'drive-by', at: '2026-01-01' },
       ],
-      { halfLifeDays: 365, experts: ['sarah'], asOf },
+      { experts: ['sarah'] },
     )
     expect(s).toMatchObject({ support: 2, expertSupport: 1 })
   })
@@ -230,13 +221,6 @@ describe('destination boundary', () => {
 
   it('refuses when no destination is configured', () => {
     expect(() => resolveConfig({}, '/tmp/team')).toThrow(/destination is required/)
-  })
-
-
-  it('rejects a nonsensical half-life', () => {
-    expect(() =>
-      resolveConfig({ destination: '/tmp/x', scoring: { halfLifeDays: 0 } }, '/tmp'),
-    ).toThrow(ConfigError)
   })
 })
 
