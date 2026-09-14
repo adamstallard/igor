@@ -66,10 +66,6 @@ A count derives from the log; the log cannot be recovered from a count.
 - **Conflict resolution at retrieval** — narrower scope, then higher support, then more
   recent. Recognising that two entries contradict requires understanding both, which only the
   worker has. A retrieval rule picking a winner hides the store defect review exists to catch.
-- **A separate firing site for triage.** A lesson about which work to take is a different
-  animal from one about how to do it, and the mechanism is not exotic — triage already makes a
-  model call. But no entry in the store wants it, nothing in `scope` can express it, and lane
-  predicates already cover the mechanical half. Recorded in §4.2.2 as the shape to reach for.
 
 ## Risks / Trade-offs
 

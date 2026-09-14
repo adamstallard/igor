@@ -66,9 +66,12 @@ Explicitly out of scope:
   vectors from, which the filter produces.
 - **The promote/prune feedback loop.** Fire counts are recorded here; acting on them waits
   until there is history to act on. Reasoning in §3.4.1, tracked as adamstallard/igor#4.
-- **Conflict resolution at retrieval.** Two contradictory active entries are a store defect,
-  and recognising the contradiction requires understanding both — which only the worker has.
-  Inject both and let it say so.
+- **Injecting lore into triage as well as the worker.** A lesson about *which work to take* —
+  "issues from external reporters need a maintainer to confirm scope before anyone starts" —
+  helps the decision to claim and is useless to a worker that has already started. Triage
+  already makes a model call, so the mechanism is not exotic. Deferred because no entry in the
+  store is a triage lesson, and because expressing it needs a field on the condition saying
+  where it applies, which nothing yet wants (§4.2.2).
 
 ## Capabilities
 
