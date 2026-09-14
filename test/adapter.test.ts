@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { daysSince, extractPaths } from '../src/adapter.js'
-import { GitHubTracker, normalizeIssue, type RawIssue } from '../src/github-adapter.js'
+import { GitHubTracker, normalizeIssue, verdictFrom, type RawComment, type RawIssue } from '../src/github-adapter.js'
 
 const NOW = Date.parse('2026-09-13T00:00:00Z')
 
@@ -118,6 +118,60 @@ describe('path extraction', () => {
 
   it('deduplicates across title and body', () => {
     expect(extractPaths('fix src/a.ts', 'src/a.ts is wrong')).toEqual(['src/a.ts'])
+  })
+})
+
+const comment = (over: Partial<RawComment> = {}): RawComment => ({
+  body: 'looks good',
+  user: { login: 'alice' },
+  created_at: '2026-09-12T00:00:00Z',
+  ...over,
+})
+
+describe('verifying a claim', () => {
+  it('holds when the Igor is the only assignee', () => {
+    expect(verdictFrom('igor-bot', ['igor-bot'], [])).toEqual({ status: 'held' })
+  })
+
+  it('stands down when someone assigns themselves alongside the Igor', () => {
+    // People add themselves to an assignee list rather than replacing what is there, so a
+    // claim is lost while the Igor's own name is still on the item.
+    expect(verdictFrom('igor-bot', ['igor-bot', 'alice'], [])).toEqual({ status: 'lost', by: 'alice' })
+  })
+
+  it('names the other party rather than the Igor, whatever the order', () => {
+    expect(verdictFrom('igor-bot', ['alice', 'igor-bot'], []).by).toBe('alice')
+    expect(verdictFrom('igor-bot', ['igor-bot', 'alice', 'bob'], []).by).toBe('alice')
+  })
+
+  it('stands down when the Igor was replaced outright', () => {
+    expect(verdictFrom('igor-bot', ['alice'], [])).toEqual({ status: 'lost', by: 'alice' })
+  })
+
+  it('stands down with nobody to name when the Igor was simply unassigned', () => {
+    expect(verdictFrom('igor-bot', [], [])).toEqual({ status: 'lost' })
+  })
+
+  it('reports a stop rather than the co-assignee, since a stop owes a receipt', () => {
+    const v = verdictFrom('igor-bot', ['igor-bot', 'alice'], [comment({ body: 'stop, I have got this' })])
+    expect(v.status).toBe('stopped')
+    expect(v.by).toBe('alice')
+    expect(v.reason).toBe('stop, I have got this')
+    expect(v.at).toBe('2026-09-12T00:00:00Z')
+  })
+
+  it('ignores a comment that is not a stop', () => {
+    expect(verdictFrom('igor-bot', ['igor-bot'], [comment()])).toEqual({ status: 'held' })
+  })
+
+  it('survives a comment with no body and no author', () => {
+    const v = verdictFrom('igor-bot', ['igor-bot'], [comment({ body: null, user: null })])
+    expect(v).toEqual({ status: 'held' })
+  })
+
+  it('truncates a very long stop, since the receipt quotes it', () => {
+    const v = verdictFrom('igor-bot', ['igor-bot'], [comment({ body: `stop ${'x'.repeat(1000)}` })])
+    expect(v.reason).toHaveLength(500)
   })
 })
 
