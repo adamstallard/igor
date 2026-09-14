@@ -34,6 +34,6 @@
 
 ## 6. Against the real store
 
-- [ ] 6.1 Run an Igor on `adamstallard/igor` with `adamstallard/igor-lore` as its destination
-- [ ] 6.2 Read what actually reached the worker, and whether the lore changed what it produced
-- [ ] 6.3 Record what the run contradicted, since every previous one has contradicted something
+- [x] 6.1 Run an Igor on `adamstallard/igor` with `adamstallard/igor-lore` as its destination
+- [x] 6.2 Read what actually reached the worker, and whether the lore changed what it produced
+- [x] 6.3 Record what the run contradicted, since every previous one has contradicted something

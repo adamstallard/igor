@@ -83,6 +83,36 @@ A count derives from the log; the log cannot be recovered from a count.
   degrades output is the justification for having a budget at all, and nothing here tests it.
   With 1,600 tokens it cannot be tested; when it can, the experiment is cheap.
 
+## What the first run against a real store contradicted
+
+Ran on `adamstallard/igor#1` with all five entries in context. It produced a draft pull
+request that typechecks, passes 293 tests including six it wrote, and refuses partial
+`--url`/`--author` pairing rather than guessing which author a URL belongs to. Good work.
+
+**Whether lore caused any of it is unproven.** The worker wrote the conditional-spread pattern
+the `exactOptionalPropertyTypes` entry teaches, and its report mentions reasoning about that
+constraint by name. But TypeScript would have rejected the alternative anyway, so the entry may
+have saved a compile-fix cycle rather than prevented anything. Suggestive, not attributable —
+and attribution needs a comparison this change cannot run, since the same item cannot be worked
+twice from the same starting state.
+
+**Four of five entries were irrelevant to the item and did no visible harm.** That is the
+inject-everything trade-off holding at this size. It says nothing about fifty.
+
+**Execution cost $3.60** — twenty-five times the average across four sandbox items, seventy
+times the one-line CI fix. Real work on a real codebase is a different economic animal, and
+every cost figure recorded before this one described toy changes.
+
+**Part of that is the worker spawning subagents.** Its report describes "a second reviewer pass"
+over the diff. So an execution is not one model call with a knowable cost — it is a tree of
+them, and the budget gate sees only the total, after the fact.
+
+**And it exceeded the item.** Asked to let `create` cite multiple provenance items, it also
+authored a new OpenSpec change — proposal, tasks and a spec delta — that nobody requested. The
+standing instruction to keep specs current made that defensible, and it is still scope the
+action space does not bound: `allow` governs what *kind* of action an Igor may take, and
+nothing governs how much it may change while taking one.
+
 ## Open Questions
 
 - The token budget has no basis yet. It should be large enough that six entries are nowhere
@@ -91,3 +121,5 @@ A count derives from the log; the log cannot be recovered from a count.
 - Whether the worker should be told an entry is old. The date travels with the entry, but
   nothing says what a worker should make of a lesson whose evidence is five years old and
   still active.
+- Whether the action space should bound the *size* of a change, not only its kind. One run
+  produced an unrequested OpenSpec change alongside the fix it was asked for.
