@@ -5,7 +5,15 @@ import { Command } from 'commander'
 import { loadConfig, igorRoot, ConfigError } from './config.js'
 import { uniqueId } from './id.js'
 import { scoreEntry } from './scoring.js'
-import { loadAll, takenIds, writeEntry, serialize, StoreError, ENTRIES_DIR } from './store.js'
+import {
+  loadAll,
+  takenIds,
+  writeEntry,
+  serialize,
+  createTarget,
+  StoreError,
+  ENTRIES_DIR,
+} from './store.js'
 import { propose, ProposeError } from './propose.js'
 import { reconcile, promoteInPlace } from './reconcile.js'
 import { GitHubError } from './github.js'
@@ -45,9 +53,11 @@ program
   .option('--path <glob...>', 'path predicate; repeatable')
   .option('--status <status>', 'provisional | active | deprecated', 'provisional')
   .option('--body <text>', 'reasoning and exceptions')
+  .option('--into <dir>', `write the entry to <dir>/${ENTRIES_DIR}/ as a candidate, not to the store`)
   .action((opts) => {
     const config = loadConfig(program.opts()['config'])
-    const id = uniqueId(opts.claim, takenIds(config.destination))
+    const target = createTarget(config.destination, opts.into)
+    const id = uniqueId(opts.claim, target.taken)
     const entry: Entry = {
       id,
       claim: opts.claim,
@@ -61,14 +71,18 @@ program
       supersedes: [],
       body: opts.body ?? '',
     }
-    const file = writeEntry(config.destination, entry)
+    const file = writeEntry(target.dir, entry)
     process.stdout.write(`${id}\n${file}\n`)
     if (entry.status === 'provisional') {
       // Only active entries fire, so a provisional entry sitting on main does nothing and
-      // says nothing about why. Name the next step rather than leaving that silent.
-      process.stdout.write(
-        `\nprovisional — it will not fire until reviewed. Run:\n  igor propose --from <dir>\n`,
-      )
+      // says nothing about why. Name the next step rather than leaving that silent, and where
+      // the entry landed in the store say that propose will not take it from there.
+      const next = opts.into
+        ? `Run:\n  igor propose --from ${opts.into}\n`
+        : `It is in the store, though, and propose only takes candidates from\n` +
+          `outside it. Write candidates with --into <dir>, then:\n` +
+          `  igor propose --from <dir>\n`
+      process.stdout.write(`\nprovisional — it will not fire until reviewed.\n${next}`)
     }
   })
 
@@ -97,7 +111,7 @@ program
 
 program
   .command('list')
-  .description('Show entries with support and newest evidence, derived from provenance')
+  .description('Show entries with support and recency derived from provenance')
   .option('--scope <scope>', 'filter by scope')
   .action((opts) => {
     const config = loadConfig(program.opts()['config'])
@@ -420,19 +434,7 @@ program
     const deps = { tracker, codeHost: new GitHubCodeHost(), trees: new CloneProvider(), destination }
 
     const stamp = () => new Date().toISOString().slice(11, 19)
-    const fireLore = (item: Candidate) => {
-      const entries = loadAll(config.destination)
-        .map((l) => l.entry)
-        .filter((e): e is Entry => e !== undefined)
-      const result = selectEntries(entries, role, { experts: config.experts })
-      const over = overBudgetMessage(result)
-      if (over) process.stderr.write(`  ! ${over}\n`)
-      void recordFiring(destination, item.id, role, result, appendRecord).catch(() => undefined)
-      return renderLore(result.fired)
-    }
-
     const summary = await serve(deps, role, identity, {
-      loreFor: fireLore,
       limit: Number(opts.limit),
       ...(opts.poll === undefined ? {} : { pollMinutes: Number(opts.poll) }),
       ...(opts.cycles === undefined ? {} : { maxCycles: Number(opts.cycles) }),
