@@ -131,7 +131,7 @@ program
 program
   .command('propose')
   .description('Open a pull request per dominant author proposing candidate entries')
-  .requiredOption('--from <dir>', 'directory of candidate entry files')
+  .requiredOption('--from <dir>', 'store-shaped directory holding candidates in <dir>/entries/')
   .action(async (opts) => {
     const config = loadConfig(program.opts()['config'])
     const candidates = loadAll(opts.from)
