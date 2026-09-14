@@ -242,3 +242,47 @@ describe('the budget stops the cycle, not the process', () => {
     expect(events.some((e) => e.kind === 'stopping' && /between items/.test(e.reason))).toBe(true)
   })
 })
+
+describe('the loop fires lore, not only the run command', () => {
+  it('asks for lore per item and hands it to the worker', async () => {
+    // The daemon is what actually runs. Wiring lore only into the one-shot command left the
+    // requirement true of the command and false of the loop.
+    const asked: string[] = []
+    let seen: string | undefined
+    const { d } = deps([issue(1), issue(2)])
+    await serve(d, role(), 'igor-bot', {
+      ...base,
+      maxCycles: 1,
+      loreFor: (item) => {
+        asked.push(item.id)
+        return `lesson for ${item.native}`
+      },
+      worker: async ({ system }) => {
+        seen = system
+        return { result: 'no change needed', total_cost_usd: 0 }
+      },
+    })
+    expect(asked).toEqual(['github:o/r#1', 'github:o/r#2'])
+    expect(seen).toContain('lesson for 2')
+  })
+
+  it('asks per item rather than once per cycle, since the store can change underneath', async () => {
+    let calls = 0
+    const { d } = deps([issue(1), issue(2), issue(3)])
+    await serve(d, role(), 'igor-bot', {
+      ...base,
+      maxCycles: 1,
+      loreFor: () => {
+        calls += 1
+        return ''
+      },
+    })
+    expect(calls).toBe(3)
+  })
+
+  it('works without lore configured at all', async () => {
+    const { d } = deps([issue(1)])
+    const s = await serve(d, role(), 'igor-bot', { ...base, maxCycles: 1 })
+    expect(s.worked).toBe(1)
+  })
+})

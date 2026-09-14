@@ -67,7 +67,7 @@ program
       // Only active entries fire, so a provisional entry sitting on main does nothing and
       // says nothing about why. Name the next step rather than leaving that silent.
       process.stdout.write(
-        `\nprovisional — it will not fire until reviewed. Run:\n  igor-lore propose --from <dir>\n`,
+        `\nprovisional — it will not fire until reviewed. Run:\n  igor propose --from <dir>\n`,
       )
     }
   })
@@ -97,7 +97,7 @@ program
 
 program
   .command('list')
-  .description('Show entries with support and recency derived from provenance')
+  .description('Show entries with support and newest evidence, derived from provenance')
   .option('--scope <scope>', 'filter by scope')
   .action((opts) => {
     const config = loadConfig(program.opts()['config'])
@@ -420,7 +420,19 @@ program
     const deps = { tracker, codeHost: new GitHubCodeHost(), trees: new CloneProvider(), destination }
 
     const stamp = () => new Date().toISOString().slice(11, 19)
+    const fireLore = (item: Candidate) => {
+      const entries = loadAll(config.destination)
+        .map((l) => l.entry)
+        .filter((e): e is Entry => e !== undefined)
+      const result = selectEntries(entries, role, { experts: config.experts })
+      const over = overBudgetMessage(result)
+      if (over) process.stderr.write(`  ! ${over}\n`)
+      void recordFiring(destination, item.id, role, result, appendRecord).catch(() => undefined)
+      return renderLore(result.fired)
+    }
+
     const summary = await serve(deps, role, identity, {
+      loreFor: fireLore,
       limit: Number(opts.limit),
       ...(opts.poll === undefined ? {} : { pollMinutes: Number(opts.poll) }),
       ...(opts.cycles === undefined ? {} : { maxCycles: Number(opts.cycles) }),

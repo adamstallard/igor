@@ -20,6 +20,11 @@ export interface ServeOptions extends CycleOptions {
   /** Stop after this many cycles. Absent means run until told to stop. */
   maxCycles?: number
   gate: () => Promise<Gate>
+  /**
+   * Rendered lore for the item about to be worked. Supplied per item rather than per cycle:
+   * the store is a repository someone may have merged to while the loop was sleeping.
+   */
+  loreFor?: (item: Candidate) => string | Promise<string>
   onEvent?: (event: ServeEvent) => void
   sleep?: (ms: number) => Promise<void>
   /** Resolves when the process should wind down. */
@@ -83,7 +88,12 @@ export async function serve(
           break
         }
         emit({ kind: 'working', item: candidate, ...(gate.seat === undefined ? {} : { seat: gate.seat }) })
-        const run = await runItem(deps, candidate, role, identity, { ...options, budget: gate })
+        const lore = options.loreFor === undefined ? undefined : await options.loreFor(candidate)
+        const run = await runItem(deps, candidate, role, identity, {
+          ...options,
+          budget: gate,
+          ...(lore === undefined ? {} : { lore }),
+        })
         summary.worked += 1
         summary.costUsd += run.costUsd
         emit({ kind: 'worked', item: candidate, run })
