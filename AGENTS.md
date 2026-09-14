@@ -19,11 +19,6 @@ design, and an Igor can eventually pick up its own backlog.
 
 ## Code
 
-**Verify against the real thing.** Every substantial finding in this project's history came
-from running against a live API rather than reasoning about one: page sizes that are refused,
-identities that cannot be assigned, costs five times an estimate. Fixtures test the shape;
-only a real call tests the assumption.
-
 **Record what a measurement actually said**, including when it contradicts what the design
 assumed. `docs/architecture.md` holds the decisions, and a change's `design.md` holds what its
 implementation contradicted.
