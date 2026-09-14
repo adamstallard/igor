@@ -148,7 +148,9 @@ export async function propose(
   serialize: (entry: Entry) => string,
   options: { now?: Date } = {},
 ): Promise<ProposalResult[]> {
-  if (entries.length === 0) throw new ProposeError('no candidates to propose')
+  if (entries.length === 0) {
+    throw new ProposeError('every candidate is already in the store, so there is nothing to propose')
+  }
 
   const repo = await repoFromCheckout(config.destination)
   const storeIsPublic = config.publicStore ?? (await isPublic(repo))

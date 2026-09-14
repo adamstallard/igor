@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 import { copyFileSync, existsSync, mkdirSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { Command } from 'commander'
 import { loadConfig, igorRoot, ConfigError } from './config.js'
 import { uniqueId } from './id.js'
 import { scoreEntry } from './scoring.js'
-import { loadAll, takenIds, writeEntry, serialize, StoreError } from './store.js'
+import { loadAll, takenIds, writeEntry, serialize, StoreError, ENTRIES_DIR } from './store.js'
 import { propose, ProposeError } from './propose.js'
 import { reconcile, promoteInPlace } from './reconcile.js'
 import { GitHubError } from './github.js'
@@ -134,7 +134,21 @@ program
   .requiredOption('--from <dir>', 'store-shaped directory holding candidates in <dir>/entries/')
   .action(async (opts) => {
     const config = loadConfig(program.opts()['config'])
-    const candidates = loadAll(opts.from)
+
+    // Two very different mistakes both produce an empty candidate list, and the bare
+    // "no candidates" they used to share says nothing about which one happened.
+    const from = resolve(opts.from)
+    if (!existsSync(join(from, ENTRIES_DIR))) {
+      throw new ProposeError(
+        `${from} has no ${ENTRIES_DIR}/ directory.\n` +
+          `--from takes a store-shaped directory: candidates live in <dir>/${ENTRIES_DIR}/, ` +
+          `the same layout as the destination.`,
+      )
+    }
+    const candidates = loadAll(from)
+    if (candidates.length === 0) {
+      throw new ProposeError(`no entry files in ${join(from, ENTRIES_DIR)}`)
+    }
     const bad = candidates.filter((c) => c.errors.length > 0)
     if (bad.length > 0) {
       for (const item of bad) {
