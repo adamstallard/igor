@@ -171,8 +171,8 @@ export async function runItem(
         return { outcome: 'stopped', candidate, reason: execution.reason, execution, costUsd: execution.costUsd, spoke: true }
       }
       if (verdict.status === 'lost') {
-        // Silent on purpose: whoever took it is visibly on it, and there is nothing to hand
-        // over, because the claim is re-checked before anything is published.
+        // Silent on purpose: whoever took it is visibly on it, and a message would only tell
+        // them what they just did.
         return { outcome: 'lost', candidate, reason: execution.reason, execution, costUsd: execution.costUsd, spoke: false }
       }
       // Still held, so the refusal was the action space rather than the claim: that is a
@@ -311,10 +311,11 @@ export async function planCycle(
     }
   }
 
+  const limit = options.limit ?? 10
   const deferrals = await loadDeferrals(deps.destination)
-  const live = await dropDeferred(deps.tracker, survivors, deferrals, options.identity ?? '', report)
-  // Sliced after the deferrals, so an item nobody has answered does not consume a triage slot.
-  const considered = live.slice(0, options.limit ?? 10)
+  // Filtered before the limit is applied, so an item nobody has answered does not consume a
+  // triage slot — and told the limit, so it stops looking once the cycle has enough work.
+  const considered = await dropDeferred(deps.tracker, survivors, deferrals, options.identity ?? '', report, limit)
   if (considered.length > 0) {
     const batch = await (options.triage ?? triageBatch)(
       considered,
@@ -344,8 +345,11 @@ export async function planCycle(
  *
  * The tracker is asked only about items that already have a record and still match their
  * fingerprint, so the extra request is paid for the few items in that state rather than per
- * candidate. A tracker that will not answer means the item is reconsidered: the record is a
- * cache, and failing toward the work is the right direction for one.
+ * candidate — and not at all once the cycle has the `wanted` items it can act on, since
+ * everything past that is dropped by the caller regardless.
+ *
+ * A tracker that will not answer means the item is reconsidered: the record is a cache, and
+ * failing toward the work is the right direction for one.
  */
 export async function dropDeferred(
   tracker: Tracker,
@@ -353,9 +357,11 @@ export async function dropDeferred(
   deferrals: DeferralState,
   identity: string,
   report: Pick<CycleReport, 'skipped' | 'skippedDeferred'>,
+  wanted = Infinity,
 ): Promise<Candidate[]> {
   const kept: Candidate[] = []
   for (const candidate of survivors) {
+    if (kept.length >= wanted) break
     const entry = deferrals.items[candidate.id]
     if (entry === undefined || entry.fingerprint !== fingerprint(candidate)) {
       kept.push(candidate)

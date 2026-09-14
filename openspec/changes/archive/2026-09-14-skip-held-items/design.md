@@ -44,10 +44,13 @@ rather than by retitling, is a worse failure than the one being fixed. So a matc
 fingerprint is necessary but not sufficient — the tracker is also asked whether anyone else has
 spoken since.
 
-That costs one request per suppressed item. It is bounded by the triage limit, paid only for
-items that already have a record, and is the same call `verifyClaim` makes. Adding a comments
-connection to the search query instead would raise the cost of every page, on a query whose
-page size was already measured down to 25 to stay inside GitHub's limits.
+That costs one request per item that has a record and still matches its fingerprint — no
+others are asked about — and the scan stops once the cycle has as many items as it can triage,
+so a busy repository does not pay for survivors it was going to drop anyway. The worst cycle
+asks once per fresh in-lane survivor, which the watermark is what bounds. It is the same call
+`verifyClaim` makes. Adding a comments connection to the search query instead would raise the
+cost of every page, on a query whose page size was already measured down to 25 to stay inside
+GitHub's limits.
 
 ### `commentsSince` is a tracker primitive
 

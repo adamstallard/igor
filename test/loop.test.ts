@@ -331,3 +331,43 @@ describe('standing down after the settle window', () => {
     expect(posts).toHaveLength(1)
   })
 })
+
+describe('the cost of checking deferrals', () => {
+  const NOW2 = Date.parse('2026-09-14T12:00:00Z')
+
+  it('stops looking once the cycle has as many items as it can triage', async () => {
+    // Everything past the limit is dropped by the caller, so asking about it buys nothing.
+    const items = Array.from({ length: 50 }, (_, n) => candidate({ id: `github:o/r#${n}`, native: String(n) }))
+    let asked = 0
+    const t = {
+      commentsSince: async () => {
+        asked += 1
+        return []
+      },
+    } as unknown as Tracker
+    let state = NO_DEFERRALS
+    for (const c of items) state = defer(state, c, 'nothing to do', NOW2)
+    const report = { skipped: [] as CycleReport['skipped'], skippedDeferred: 0 }
+    // Every item is deferred, so nothing is kept and the scan runs to the end — the bound is
+    // the survivor count, which the watermark is what limits.
+    await dropDeferred(t, items, state, 'igor-bot', report, 10)
+    expect(asked).toBe(50)
+
+    asked = 0
+    await dropDeferred(t, items, NO_DEFERRALS, 'igor-bot', report, 10)
+    expect(asked).toBe(0)
+  })
+
+  it('asks about nothing once it has collected the items it wanted', async () => {
+    const fresh = Array.from({ length: 5 }, (_, n) => candidate({ id: `github:o/r#f${n}`, native: `f${n}` }))
+    const stale = candidate({ id: 'github:o/r#s', native: 's' })
+    let asked = 0
+    const t = { commentsSince: async () => { asked += 1; return [] } } as unknown as Tracker
+    const report = { skipped: [] as CycleReport['skipped'], skippedDeferred: 0 }
+    const kept = await dropDeferred(
+      t, [...fresh, stale], defer(NO_DEFERRALS, stale, 'x', NOW2), 'igor-bot', report, 3,
+    )
+    expect(kept).toHaveLength(3)
+    expect(asked).toBe(0)
+  })
+})
