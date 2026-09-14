@@ -158,12 +158,21 @@ export async function runItem(
     case 'refused': {
       // The claim went away mid-execution. A stop, most likely — so a receipt, not a handoff.
       const verdict = await checkpoint(tracker, claim, identity)
+      if (verdict.status === 'stopped' || verdict.status === 'lost') {
+        // Released before anything is said, so the receipt is true by the time it can be read.
+        // `takeClaim` does this for a stand-down inside the settle window; standing down later
+        // is the same obligation, and skipping it left the Igor's name on an item it had just
+        // announced it was releasing.
+        await tracker.release(candidate, identity).catch(() => undefined)
+      }
       if (verdict.status === 'stopped') {
         const artifact = execution.artifact ? execution.artifact.url : undefined
         await tracker.report(candidate, stopReceipt(role, verdict, artifact)).catch(() => undefined)
         return { outcome: 'stopped', candidate, reason: execution.reason, execution, costUsd: execution.costUsd, spoke: true }
       }
       if (verdict.status === 'lost') {
+        // Silent on purpose: whoever took it is visibly on it, and there is nothing to hand
+        // over, because the claim is re-checked before anything is published.
         return { outcome: 'lost', candidate, reason: execution.reason, execution, costUsd: execution.costUsd, spoke: false }
       }
       // Still held, so the refusal was the action space rather than the claim: that is a

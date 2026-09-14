@@ -59,6 +59,8 @@ const noWait = { claim: { wait: async () => {} } }
 
 /** A worker that fails the way a missing CLI would, without spawning anything. */
 const brokenWorker = async () => { throw new Error('claude: command not found') }
+/** A worker that runs fine and leaves the tree reporting changes. */
+const busyWorker = async () => ({ result: 'Fixed it.', total_cost_usd: 0.02 })
 /** A worker that runs fine and touches nothing. */
 const idleWorker = async () => ({ result: 'I looked and there is nothing to change.', total_cost_usd: 0.01 })
 
@@ -295,5 +297,37 @@ describe('items handed back earlier', () => {
   it('passes everything through when nothing was ever handed back', async () => {
     const all = [item(7), item(8)]
     expect(await dropDeferred(tracker().t, all, NO_DEFERRALS, 'igor-bot', blank())).toEqual(all)
+  })
+})
+
+describe('standing down after the settle window', () => {
+  // The first verdict is the settle check, which must hold for execution to begin; the second
+  // is the mid-execution checkpoint that finds the claim gone.
+  const then = (v: ClaimVerdict) =>
+    deps({ verdicts: [{ status: 'held' }, v], changes: [{ path: 'a.ts', content: 'x', kind: 'modified' }] })
+
+  it('releases on a stop found mid-execution, so the receipt is true when it is read', async () => {
+    const { d, posts, released } = then({ status: 'stopped', by: 'bob' })
+    const r = await runItem(d, candidate(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+    expect(r.outcome).toBe('stopped')
+    expect(posts.at(-1)).toMatch(/released this/)
+    expect(released).toContain('igor-bot')
+  })
+
+  it('releases on a claim lost mid-execution rather than leaving a second name on the item', async () => {
+    const { d, released } = then({ status: 'lost', by: 'alice' })
+    const r = await runItem(d, candidate(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+    expect(r.outcome).toBe('lost')
+    expect(released).toContain('igor-bot')
+  })
+
+  it('says nothing on a loss, since there is never anything published to hand over', async () => {
+    // The claim is re-checked before anything is produced, so a lost item has no artifact.
+    const { d, posts } = then({ status: 'lost', by: 'alice' })
+    const r = await runItem(d, candidate(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+    expect(r.spoke).toBe(false)
+    expect(r.execution?.artifact).toBeUndefined()
+    // Only the claim message itself.
+    expect(posts).toHaveLength(1)
   })
 })
