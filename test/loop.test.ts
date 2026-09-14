@@ -8,7 +8,7 @@ import type { TreeProvider, WorkingTree, ChangedFile } from '../src/worktree.js'
 import { declineReason, recordDecisions, runItem, type ItemDeps } from '../src/loop.js'
 
 const candidate = (over: Partial<Candidate> = {}): Candidate =>
-  ({ id: 'github:o/r#7', repo: 'o/r', native: '7', title: 'A bug', body: '', author: 'reporter', assignees: [], labels: [], paths: [], state: 'open' }) as Candidate
+  ({ id: 'github:o/r#7', repo: 'o/r', native: '7', title: 'A bug', body: '', author: 'reporter', assignees: [], labels: [], paths: [], state: 'open', ...over }) as unknown as Candidate
 
 const role = (over: Partial<Role> = {}): Role =>
   ({ name: 'triage', reviewers: ['alice'], allow: ['comment', 'draft-pr', 'unassign'], completion: 'unassign', instructions: [], settleSeconds: 0, cooldownMinutes: 60, ...over }) as Role
@@ -29,6 +29,7 @@ function deps(opts: {
     identity: async () => 'igor-bot',
     search: async () => [],
     claim: async () => opts.claimSticks ?? true,
+    commentsSince: async () => [],
     verifyClaim: async () => verdicts[Math.min(i++, verdicts.length - 1)]!,
     report: async (_c, m) => { posts.push(m) },
     release: async (_c, as) => { released.push(as) },

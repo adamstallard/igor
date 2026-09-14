@@ -41,7 +41,7 @@ const issue = (n: number): Candidate =>
     updatedAt: '2026-09-13T00:00:00Z',
     ageDays: 0,
     idleDays: 0,
-  }) as Candidate
+  }) as unknown as Candidate
 
 function deps(found: Candidate[], opts: { searchThrows?: boolean } = {}) {
   let searches = 0
@@ -55,6 +55,7 @@ function deps(found: Candidate[], opts: { searchThrows?: boolean } = {}) {
       return found
     },
     claim: async () => true,
+    commentsSince: async () => [],
     verifyClaim: async () => ({ status: 'held' }),
     report: async () => {},
     release: async () => {},

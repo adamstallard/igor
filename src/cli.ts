@@ -23,6 +23,7 @@ import { serve, untilSignalled } from './serve.js'
 import { GitHubTracker, GitHubCodeHost } from './github-adapter.js'
 import type { Candidate } from './adapter.js'
 import { laneVerdict, universalSkip } from './predicate.js'
+import { noteHandoff } from './deferred.js'
 import { CloneProvider } from './worktree.js'
 import { recordExecution } from './execute.js'
 import { overBudgetMessage, recordFiring, renderLore, selectEntries } from './firing.js'
@@ -283,7 +284,8 @@ function renderCycle(report: CycleReport, verbose: boolean): string {
   for (const f of report.failures) out.push(`  ! ${f}`)
   out.push(
     `${report.returned} returned, ${report.fresh} fresh${report.coldStart ? ' (cold start)' : ''}, ` +
-      `${report.skippedUniversal} closed or busy, ${report.skippedLane} out of lane, ` +
+      `${report.skippedUniversal} closed, busy or held, ${report.skippedLane} out of lane, ` +
+      (report.skippedDeferred > 0 ? `${report.skippedDeferred} awaiting an answer, ` : '') +
       `${report.triaged} triaged ($${report.triageCostUsd.toFixed(4)})`,
   )
   if (verbose && report.skipped.length > 0) {
@@ -356,6 +358,9 @@ program
         onStep: (step) => process.stdout.write(`  ${step}…\n`),
       })
       process.stdout.write(`  ${run.outcome}: ${run.reason}\n`)
+      if (run.outcome === 'handed-off') {
+        await noteHandoff(destination, item, run.handoff, run.reason).catch(() => undefined)
+      }
       if (run.execution) {
         await recordExecution(destination, item, role, run.execution, gate.seat)
         process.stdout.write(`  cost $${run.execution.costUsd.toFixed(4)}\n`)
@@ -378,7 +383,7 @@ program
       // judgement, and the lane exists to substitute for one. The universal skips still
       // apply: acting on a closed item, or one already being worked, is not a preference
       // anybody gets to express.
-      const universal = universalSkip(item)
+      const universal = universalSkip(item, identity)
       if (universal) throw new RoleError(`refusing ${item.id}: ${universal.reason}`)
 
       const lane = laneVerdict(role.lane, item)
@@ -390,6 +395,7 @@ program
     }
 
     const report = await planCycle(deps, role, {
+      identity,
       limit: Number(opts.limit),
       ...(opts.since === undefined ? {} : { sinceDays: Number(opts.since) }),
     })
@@ -435,6 +441,7 @@ program
 
     const stamp = () => new Date().toISOString().slice(11, 19)
     const summary = await serve(deps, role, identity, {
+      identity,
       limit: Number(opts.limit),
       ...(opts.poll === undefined ? {} : { pollMinutes: Number(opts.poll) }),
       ...(opts.cycles === undefined ? {} : { maxCycles: Number(opts.cycles) }),

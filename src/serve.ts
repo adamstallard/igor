@@ -2,6 +2,7 @@ import type { Candidate } from './adapter.js'
 import type { CycleDeps, CycleOptions, CycleReport, ItemRun } from './loop.js'
 import { planCycle, runItem } from './loop.js'
 import type { Gate } from './budget.js'
+import { noteHandoff } from './deferred.js'
 import type { Role } from './role.js'
 
 /**
@@ -96,6 +97,9 @@ export async function serve(
         })
         summary.worked += 1
         summary.costUsd += run.costUsd
+        if (run.outcome === 'handed-off') {
+          await noteHandoff(deps.destination, candidate, run.handoff, run.reason).catch(() => undefined)
+        }
         emit({ kind: 'worked', item: candidate, run })
       }
     } catch (error) {

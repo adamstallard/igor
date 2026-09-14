@@ -67,6 +67,13 @@ export interface Source {
   query: string
 }
 
+export interface Comment {
+  /** Empty where the surface reports none, so a caller comparing identities never sees undefined. */
+  author: string
+  at: string
+  body: string
+}
+
 export interface Tracker {
   readonly name: string
   /**
@@ -92,6 +99,13 @@ export interface Tracker {
    * second one. `since` bounds the scan for a stop to what arrived after the claim.
    */
   verifyClaim(candidate: Candidate, as: string, since: string): Promise<ClaimVerdict>
+
+  /**
+   * What has been said on an item since a moment, so the loop can ask whether anyone answered
+   * something it left. Distinct from `verifyClaim`, which reads comments to reach a verdict
+   * and returns the verdict rather than the material.
+   */
+  commentsSince(candidate: Candidate, since: string): Promise<Comment[]>
 
   report(candidate: Candidate, message: string): Promise<void>
 

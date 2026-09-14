@@ -8,6 +8,7 @@ import {
   type ArtifactRequest,
   type Candidate,
   type ClaimVerdict,
+  type Comment,
   type CodeHost,
   type InFlight,
   type Source,
@@ -251,6 +252,18 @@ export class GitHubTracker implements Tracker {
       ]),
     ])
     return verdictFrom(as, issue.assignees.map((a) => a.login), comments ?? [])
+  }
+
+  async commentsSince(candidate: Candidate, since: string): Promise<Comment[]> {
+    const comments = await gh<RawComment[]>([
+      'api',
+      `repos/${candidate.repo}/issues/${candidate.native}/comments?since=${encodeURIComponent(since)}&per_page=100`,
+    ])
+    return (comments ?? []).map((c) => ({
+      author: c.user?.login ?? '',
+      at: c.created_at,
+      body: c.body ?? '',
+    }))
   }
 
   async report(candidate: Candidate, message: string): Promise<void> {

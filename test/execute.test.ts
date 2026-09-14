@@ -77,6 +77,7 @@ function fakeTracker() {
     identity: async () => 'igor-bot',
     search: async () => [],
     claim: async () => true,
+    commentsSince: async () => [],
     verifyClaim: async () => ({ status: 'held' }),
     report: async () => {},
     release: async (_c, as) => {

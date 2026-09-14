@@ -46,6 +46,7 @@ function tracker(verdict: ClaimVerdict, opts: { claimSticks?: boolean; native?: 
       log.claimed.push(as)
       return opts.claimSticks ?? true
     },
+    commentsSince: async () => [],
     verifyClaim: async (_c, _as, since) => {
       log.verifiedSince.push(since)
       return verdict

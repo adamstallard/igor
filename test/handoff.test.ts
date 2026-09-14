@@ -8,21 +8,29 @@ const NOW = Date.parse('2026-09-13T12:00:00Z')
 const CLAIMED = new Date(NOW - 12 * 60_000).toISOString()
 
 const candidate = (over: Partial<Candidate> = {}): Candidate =>
-  ({ id: 'github:o/r#7', repo: 'o/r', native: '7', title: 'A bug', author: 'reporter', assignees: [], labels: [], paths: [], state: 'open' }) as Candidate
+  ({ id: 'github:o/r#7', repo: 'o/r', native: '7', title: 'A bug', author: 'reporter', assignees: [], labels: [], paths: [], state: 'open', ...over }) as unknown as Candidate
 
 const role = (over: Partial<Role> = {}): Role =>
-  ({ name: 'triage', reviewers: ['alice'], allow: ['comment', 'draft-pr', 'unassign'], completion: 'unassign', instructions: [], ...over }) as Role
+  ({ name: 'triage', reviewers: ['alice'], allow: ['comment', 'draft-pr', 'unassign'], completion: 'unassign', instructions: [], ...over }) as unknown as Role
 
-const result = (over: Partial<ExecutionResult> = {}): ExecutionResult => ({
-  outcome: 'produced',
-  changed: [{ path: 'a.ts', content: '', kind: 'modified' }],
-  refusals: [],
-  transcript: 'did the thing',
-  costUsd: 0.1,
-  reason: 'opened #9',
-  artifact: { kind: 'pull-request', ref: '#9', url: 'https://example.test/9' },
-  ...over,
-})
+/**
+ * An override of `undefined` means the field is absent, which is the distinction
+ * `exactOptionalPropertyTypes` draws and which several cases here depend on.
+ */
+const result = (over: { [K in keyof ExecutionResult]?: ExecutionResult[K] | undefined } = {}): ExecutionResult => {
+  const merged: Record<string, unknown> = {
+    outcome: 'produced',
+    changed: [{ path: 'a.ts', content: '', kind: 'modified' }],
+    refusals: [],
+    transcript: 'did the thing',
+    costUsd: 0.1,
+    reason: 'opened #9',
+    artifact: { kind: 'pull-request', ref: '#9', url: 'https://example.test/9' },
+    ...over,
+  }
+  for (const [k, v] of Object.entries(merged)) if (v === undefined) delete merged[k]
+  return merged as unknown as ExecutionResult
+}
 
 function tracker(opts: { reportThrows?: boolean; releaseThrows?: boolean } = {}) {
   const log = { reported: [] as string[], released: [] as string[] }
@@ -32,6 +40,7 @@ function tracker(opts: { reportThrows?: boolean; releaseThrows?: boolean } = {})
     identity: async () => 'igor-bot',
     search: async () => [],
     claim: async () => true,
+    commentsSince: async () => [],
     verifyClaim: async () => ({ status: 'held' }),
     report: async (_c, m) => {
       if (opts.reportThrows) throw new Error('surface unreachable')

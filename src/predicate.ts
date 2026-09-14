@@ -30,14 +30,21 @@ function globMatcher(patterns: string[]): (path: string) => boolean {
 
 /**
  * Skips no configuration can switch off. These are not lanes an org could forget to write:
- * acting on a closed item, or on one already being worked, is visible noise on a surface
- * people watch rather than an organizational preference.
+ * acting on a closed item, on one already being worked, or on one somebody else holds is
+ * visible noise on a surface people watch rather than an organizational preference.
+ *
+ * A name other than `as` means the item is not ours even where ours is also on it — the same
+ * reading `verdictFrom` applies mid-run, because people add themselves to a holder list rather
+ * than replacing what is there. Without an identity every holder reads as foreign, which is
+ * the safe direction for a preview that does not know who would be running.
  */
-export function universalSkip(candidate: Candidate): Verdict | undefined {
+export function universalSkip(candidate: Candidate, as?: string): Verdict | undefined {
   if (candidate.state === 'closed') return skip('universal', 'item is closed')
   if (candidate.inFlight) {
     return skip('universal', `work already in flight: ${candidate.inFlight.ref}`)
   }
+  const others = candidate.assignees.filter((a) => a !== as)
+  if (others.length > 0) return skip('universal', `held by ${others.join(', ')}`)
   return undefined
 }
 
@@ -82,10 +89,10 @@ export interface Triaged {
  * including the skips, so the ratio at each stage is determinable from the record rather than
  * estimated.
  */
-export function screen(lane: Lane, candidates: readonly Candidate[]): Triaged[] {
+export function screen(lane: Lane, candidates: readonly Candidate[], as?: string): Triaged[] {
   return candidates.map((candidate) => ({
     candidate,
-    verdict: universalSkip(candidate) ?? laneVerdict(lane, candidate),
+    verdict: universalSkip(candidate, as) ?? laneVerdict(lane, candidate),
   }))
 }
 

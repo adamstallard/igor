@@ -9,6 +9,7 @@ import {
   advance, discover, EMPTY_STATE, freshCandidates, loadDiscoveryState, saveDiscoveryState,
 } from './discovery.js'
 import { countStages, screen } from './predicate.js'
+import { fingerprint, loadDeferrals, stillDeferred } from './deferred.js'
 import { systemPrompt, triageBatch, TRIAGE_MODEL } from './triage.js'
 
 /**
@@ -65,6 +66,8 @@ export interface ItemRun {
   costUsd: number
   /** Whether a message was left on the item. False here is a bug, not a state. */
   spoke: boolean
+  /** Why it was handed back, where it was — a budget handoff says nothing about the item. */
+  handoff?: HandoffReason['kind']
 }
 
 export type Step = 'claiming' | 'settling' | 'working' | 'publishing' | 'completing'
@@ -119,7 +122,10 @@ export async function runItem(
       ...(options.budget.resetAt === undefined ? {} : { resetAt: options.budget.resetAt }),
     }
     const out = await handOffFrom(tracker, candidate, role, identity, claim.claimedAt, reason)
-    return { outcome: 'handed-off', candidate, reason: 'budget exhausted before starting', costUsd: 0, spoke: out.posted }
+    return {
+      outcome: 'handed-off', candidate, reason: 'budget exhausted before starting',
+      costUsd: 0, spoke: out.posted, handoff: 'budget',
+    }
   }
 
   step('working')
@@ -166,7 +172,10 @@ export async function runItem(
         tracker, candidate, role, identity, claim.claimedAt,
         { kind: 'failure', detail: execution.reason }, execution,
       )
-      return { outcome: 'handed-off', candidate, reason: execution.reason, execution, costUsd: execution.costUsd, spoke: out.posted }
+      return {
+        outcome: 'handed-off', candidate, reason: execution.reason, execution,
+        costUsd: execution.costUsd, spoke: out.posted, handoff: 'failure',
+      }
     }
 
     case 'failed':
@@ -181,7 +190,10 @@ export async function runItem(
           ? { kind: 'nothing-to-do', detail: declineReason(execution.transcript) }
           : { kind: 'failure', detail: execution.reason }
       const out = await handOffFrom(tracker, candidate, role, identity, claim.claimedAt, reason, execution)
-      return { outcome: 'handed-off', candidate, reason: execution.reason, execution, costUsd: execution.costUsd, spoke: out.posted }
+      return {
+        outcome: 'handed-off', candidate, reason: execution.reason, execution,
+        costUsd: execution.costUsd, spoke: out.posted, handoff: reason.kind,
+      }
     }
   }
 }
@@ -202,6 +214,8 @@ export interface CycleReport {
   fresh: number
   skippedUniversal: number
   skippedLane: number
+  /** Handed back earlier and nothing has answered, so not reconsidered. */
+  skippedDeferred: number
   triaged: number
   /** Everything dropped before a model call, with the reason, so a lane can be tuned. */
   skipped: { candidate: Candidate; reason: string; stage: string }[]
@@ -222,6 +236,11 @@ export interface CycleOptions extends RunOptions {
   now?: number
   /** Injected in tests so a cycle can be exercised without a model call. */
   triage?: typeof triageBatch
+  /**
+   * Who the Igor is on the tracker. Absent means every holder reads as somebody else, which
+   * is what a preview that does not know who would run should assume.
+   */
+  identity?: string
 }
 
 /**
@@ -243,6 +262,7 @@ export async function planCycle(
     fresh: 0,
     skippedUniversal: 0,
     skippedLane: 0,
+    skippedDeferred: 0,
     triaged: 0,
     skipped: [],
     verdicts: [],
@@ -266,7 +286,7 @@ export async function planCycle(
         ? result.fresh
         : freshCandidates(result.candidates, undefined, now, options.sinceDays)
 
-    const screened = screen(role.lane, fresh)
+    const screened = screen(role.lane, fresh, options.identity)
     const counts = countStages(screened)
     report.returned += result.returned
     report.fresh += fresh.length
@@ -282,7 +302,9 @@ export async function planCycle(
     }
   }
 
-  const considered = survivors.slice(0, options.limit ?? 10)
+  const live = await undeferred(deps, survivors, options.identity ?? '', report)
+  // Sliced after the deferrals, so an item nobody has answered does not consume a triage slot.
+  const considered = live.slice(0, options.limit ?? 10)
   if (considered.length > 0) {
     const batch = await (options.triage ?? triageBatch)(
       considered,
@@ -305,6 +327,45 @@ export async function planCycle(
   }
   await recordDecisions(deps.destination, role, report).catch(() => undefined)
   return report
+}
+
+/**
+ * Drops survivors handed back earlier that nothing has answered since.
+ *
+ * The tracker is asked only about items that already have a record and still match their
+ * fingerprint, so the extra request is paid for the few items in that state rather than per
+ * candidate. A tracker that will not answer means the item is reconsidered: the record is a
+ * cache, and failing toward the work is the right direction for one.
+ */
+async function undeferred(
+  deps: CycleDeps,
+  survivors: readonly Candidate[],
+  identity: string,
+  report: CycleReport,
+): Promise<Candidate[]> {
+  const deferrals = await loadDeferrals(deps.destination)
+  const kept: Candidate[] = []
+  for (const candidate of survivors) {
+    const entry = deferrals.items[candidate.id]
+    if (entry === undefined || entry.fingerprint !== fingerprint(candidate)) {
+      kept.push(candidate)
+      continue
+    }
+    let spoken
+    try {
+      spoken = await deps.tracker.commentsSince(candidate, entry.at)
+    } catch {
+      kept.push(candidate)
+      continue
+    }
+    if (stillDeferred(entry, candidate, spoken, identity)) {
+      report.skipped.push({ candidate, reason: `handed back, unanswered: ${entry.reason}`, stage: 'deferred' })
+      report.skippedDeferred += 1
+    } else {
+      kept.push(candidate)
+    }
+  }
+  return kept
 }
 
 export const DECISIONS_PATH = 'decisions.ndjson'
@@ -336,6 +397,7 @@ export async function recordDecisions(
       coldStart: report.coldStart,
       skippedUniversal: report.skippedUniversal,
       skippedLane: report.skippedLane,
+      skippedDeferred: report.skippedDeferred,
       triaged: report.triaged,
       claimed: report.toClaim.length,
       triageCostUsd: Number(report.triageCostUsd.toFixed(4)),
