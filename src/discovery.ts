@@ -87,7 +87,8 @@ export function nextWatermark(
 export interface SourceResult {
   source: Source
   key: string
-  /** Everything the query returned, before the watermark. */
+  /** Everything the query returned, before the watermark, so no caller re-runs the search. */
+  candidates: Candidate[]
   returned: number
   /** What the watermark let through, and what triage will therefore consider. */
   fresh: Candidate[]
@@ -108,6 +109,7 @@ export async function discoverSource(
   return {
     source,
     key,
+    candidates,
     returned: candidates.length,
     fresh: freshCandidates(candidates, previous, now),
     watermark: nextWatermark(candidates, previous, now),

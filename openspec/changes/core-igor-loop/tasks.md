@@ -111,3 +111,13 @@ lane predicates before the loop is allowed to act.
 - [ ] 11.2 Confirm the first claim is correct before letting it execute anything
 - [ ] 11.3 Record what the real run contradicted, since every previous one has contradicted something
 - [ ] 11.4 Record the tuned intervals and the observed survivor ratio in the README
+
+## 12. The loop itself
+
+- [x] 12.1 Consolidate discovery, triage and reporting into one funnel, so no second implementation drifts from it
+- [x] 12.2 `igor run <role>` works what triage approved; `--plan` stops after triage; `--claim` is the supervision override
+- [x] 12.3 Implement `igor serve`: cycle, sleep the role's poll interval, repeat
+- [x] 12.4 Survive a failing cycle rather than exiting, reporting it and continuing
+- [x] 12.5 On shutdown, finish the item in hand and begin no further one
+- [x] 12.6 Re-check the budget between items, not once per cycle
+- [ ] 12.7 Deployment artifacts — a unit file or compose file, and what running this actually requires

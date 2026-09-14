@@ -10,9 +10,10 @@ import { propose, ProposeError } from './propose.js'
 import { reconcile, promoteInPlace } from './reconcile.js'
 import { GitHubError } from './github.js'
 import { explainRole, loadRole, rolesFrom, RoleError } from './role.js'
-import { dryRun } from './dryrun.js'
-import { planCycle, runItem } from './loop.js'
+import { planCycle, runItem, type CycleReport } from './loop.js'
+import { serve, untilSignalled } from './serve.js'
 import { GitHubTracker, GitHubCodeHost } from './github-adapter.js'
+import type { Candidate } from './adapter.js'
 import { CloneProvider } from './worktree.js'
 import { recordExecution } from './execute.js'
 import { TriageError } from './triage.js'
@@ -249,63 +250,64 @@ role
     process.stdout.write(`${explainRole(loadRole(config, name))}\n`)
   })
 
-role
-  .command('dry-run')
-  .description('Report what a role would claim and why — claims nothing, posts nothing')
-  .argument('<name>')
-  .option('--since <days>', 'how far back to look', '7')
-  .option('--limit <n>', 'cap on model calls', '20')
-  .option('--no-model', 'stop after the free stages')
-  .action(async (name: string, opts) => {
-    const config = loadConfig(program.opts()['config'])
-    const report = await dryRun(loadRole(config, name), {
-      sinceDays: Number(opts.since),
-      limit: Number(opts.limit),
-      useModel: opts.model !== false,
-    })
-    process.stdout.write(`${report.lines.join('\n')}\n`)
-  })
+function renderCycle(report: CycleReport, verbose: boolean): string {
+  const out: string[] = []
+  for (const f of report.failures) out.push(`  ! ${f}`)
+  out.push(
+    `${report.returned} returned, ${report.fresh} fresh${report.coldStart ? ' (cold start)' : ''}, ` +
+      `${report.skippedUniversal} closed or busy, ${report.skippedLane} out of lane, ` +
+      `${report.triaged} triaged ($${report.triageCostUsd.toFixed(4)})`,
+  )
+  if (verbose && report.skipped.length > 0) {
+    out.push('', `skipped before any model call (${report.skipped.length}):`)
+    for (const s of report.skipped.slice(0, 40)) {
+      out.push(`  ${s.candidate.native.padStart(6)}  ${s.reason}  — ${s.candidate.title.slice(0, 56)}`)
+    }
+    if (report.skipped.length > 40) out.push(`  … and ${report.skipped.length - 40} more`)
+  }
+  if (report.verdicts.length > 0) {
+    out.push('', 'model verdicts:')
+    for (const v of report.verdicts) {
+      out.push(`  ${v.outcome === 'proceed' ? 'CLAIM' : 'skip '} ${v.candidate.native.padStart(6)}  ${v.candidate.title.slice(0, 52)}`)
+      out.push(`         ${v.reason}`)
+    }
+  }
+  return out.join('\n')
+}
 
 program
   .command('run')
-  .description('One cycle: discover, triage, and — only when told to — claim and work an item')
+  .description('One cycle: discover, triage, then claim and work what qualifies')
   .argument('<role>')
+  .option('--plan', 'stop after triage — claim nothing, post nothing')
   .option('--limit <n>', 'cap on model calls this cycle', '10')
+  .option('--max-items <n>', 'cap on items worked this cycle')
   .option('--since <days>', 'look back this far instead of using the stored watermark')
-  .option('--claim <id>', 'act on this item, which a previous run reported it would claim')
+  .option('--claim <id>', 'work only this item, which a previous run reported it would claim')
   .action(async (name: string, opts) => {
     const config = loadConfig(program.opts()['config'])
-    const resolved = loadRole(config, name)
-    const role = resolved.role
+    const role = loadRole(config, name).role
     const tracker = new GitHubTracker()
     const identity = await tracker.identity()
     const destination = await repoFromCheckout(config.destination)
     const deps = { tracker, codeHost: new GitHubCodeHost(), trees: new CloneProvider(), destination }
 
-    const [readings, spend] = await Promise.all([
-      readAllSeats(config.budget.seats),
-      loadSpend((p) => readStateRaw(destination, p)),
-    ])
-    const gate = budgetGate(config.budget, role, readings, spend)
-    for (const r of readings) {
-      if (r.error !== undefined) process.stderr.write(`  ! seat "${r.seat.id}": ${r.error}\n`)
+    const gateFor = async () => {
+      const [readings, spend] = await Promise.all([
+        readAllSeats(config.budget.seats),
+        loadSpend((path) => readStateRaw(destination, path)),
+      ])
+      for (const r of readings) {
+        if (r.error !== undefined) process.stderr.write(`  ! seat "${r.seat.id}": ${r.error}\n`)
+      }
+      return budgetGate(config.budget, role, readings, spend)
     }
 
-    if (opts.claim) {
-      // Acting is opt-in and names one item, so a supervised run cannot become an unsupervised
-      // one by being invoked twice.
-      const [item] = (
-        await tracker.search({
-          tracker: 'github',
-          repo: opts.claim.split('#')[0]!.replace(/^github:/, ''),
-          query: `is:issue ${opts.claim.split('#')[1]}`,
-        })
-      ).filter((c) => c.id === opts.claim)
-      if (item === undefined) throw new RoleError(`no open item ${opts.claim}`)
-
-      process.stdout.write(`working ${item.id}  "${item.title}"\n  ${gate.reason}\n\n`)
+    const work = async (item: Candidate) => {
+      const gate = await gateFor()
+      process.stdout.write(`\nworking ${item.id}  "${item.title}"\n  seat: ${gate.seat ?? '(unenforced)'}\n`)
       const run = await runItem(deps, item, role, identity, { budget: gate })
-      process.stdout.write(`${run.outcome}: ${run.reason}\n`)
+      process.stdout.write(`  ${run.outcome}: ${run.reason}\n`)
       if (run.execution) {
         await recordExecution(destination, item, role, run.execution, gate.seat)
         process.stdout.write(`  cost $${run.execution.costUsd.toFixed(4)}\n`)
@@ -314,6 +316,16 @@ program
       if (!run.spoke && run.outcome !== 'refused' && run.outcome !== 'lost') {
         process.stdout.write('  WARNING: held a claim and left no message — that is a bug\n')
       }
+      return run
+    }
+
+    if (opts.claim) {
+      const repo = opts.claim.replace(/^github:/, '').split('#')[0]!
+      const [item] = (
+        await tracker.search({ tracker: 'github', repo, query: `is:issue ${opts.claim.split('#')[1]}` })
+      ).filter((c) => c.id === opts.claim)
+      if (item === undefined) throw new RoleError(`no open item ${opts.claim}`)
+      await work(item)
       return
     }
 
@@ -321,22 +333,97 @@ program
       limit: Number(opts.limit),
       ...(opts.since === undefined ? {} : { sinceDays: Number(opts.since) }),
     })
-    process.stdout.write(`${report.lines.join('\n')}\n\n`)
-    process.stdout.write(
-      `${report.returned} returned, ${report.fresh} fresh, ${report.triaged} triaged ` +
-        `($${report.triageCostUsd.toFixed(4)}), ${report.toClaim.length} to claim\n`,
-    )
-    if (!gate.exhausted()) process.stdout.write(`seat: ${gate.seat ?? '(unenforced)'} — ${gate.reason}\n`)
-    else process.stdout.write(`BUDGET: ${gate.reason}\n`)
+    process.stdout.write(`${renderCycle(report, opts.plan === true)}\n`)
 
-    if (report.toClaim.length === 0) {
-      process.stdout.write('\nNothing to claim. Nothing was claimed or posted.\n')
+    if (opts.plan) {
+      process.stdout.write(`\n${report.toClaim.length} would be claimed. Nothing was claimed or posted.\n`)
+      for (const c of report.toClaim) {
+        process.stdout.write(`  igor run ${name} --claim ${c.candidate.id}\n`)
+      }
       return
     }
-    process.stdout.write('\nNothing has been claimed. To act on one:\n')
-    for (const c of report.toClaim) {
-      process.stdout.write(`  igor run ${name} --claim ${c.candidate.id}\n      ${c.candidate.title}\n`)
+
+    if (report.toClaim.length === 0) {
+      process.stdout.write('\nnothing to claim\n')
+      return
     }
+    const cap = opts.maxItems === undefined ? report.toClaim.length : Number(opts.maxItems)
+    for (const c of report.toClaim.slice(0, cap)) {
+      const run = await work(c.candidate)
+      // A closed budget stops the cycle rather than being rediscovered per item.
+      if (run.outcome === 'handed-off' && /budget/.test(run.reason)) {
+        process.stdout.write('\nstopping this cycle: the budget is spent\n')
+        break
+      }
+    }
+  })
+
+program
+  .command('serve')
+  .description('Run the cycle on the role\'s interval until stopped')
+  .argument('<role>')
+  .option('--limit <n>', 'cap on model calls per cycle', '10')
+  .option('--poll <minutes>', "override the role's poll interval")
+  .option('--cycles <n>', 'stop after this many cycles')
+  .action(async (name: string, opts) => {
+    const config = loadConfig(program.opts()['config'])
+    const role = loadRole(config, name).role
+    const tracker = new GitHubTracker()
+    const identity = await tracker.identity()
+    const destination = await repoFromCheckout(config.destination)
+    const deps = { tracker, codeHost: new GitHubCodeHost(), trees: new CloneProvider(), destination }
+
+    const stamp = () => new Date().toISOString().slice(11, 19)
+    const summary = await serve(deps, role, identity, {
+      limit: Number(opts.limit),
+      ...(opts.poll === undefined ? {} : { pollMinutes: Number(opts.poll) }),
+      ...(opts.cycles === undefined ? {} : { maxCycles: Number(opts.cycles) }),
+      until: untilSignalled(),
+      gate: async () => {
+        const [readings, spend] = await Promise.all([
+          readAllSeats(config.budget.seats),
+          loadSpend((path) => readStateRaw(destination, path)),
+        ])
+        return budgetGate(config.budget, role, readings, spend)
+      },
+      onEvent: (e) => {
+        const say = (line: string) => process.stdout.write(`${stamp()} ${line}\n`)
+        switch (e.kind) {
+          case 'planned':
+            say(
+              `cycle ${e.cycle}: ${e.report.fresh} fresh, ${e.report.triaged} triaged, ` +
+                `${e.report.toClaim.length} to claim ($${e.report.triageCostUsd.toFixed(4)})`,
+            )
+            for (const f of e.report.failures) say(`  ! ${f}`)
+            break
+          case 'working':
+            say(`  working ${e.item.native} "${e.item.title.slice(0, 50)}" on ${e.seat ?? '(unenforced)'}`)
+            break
+          case 'worked': {
+            say(`  ${e.run.outcome}: ${e.run.reason}`)
+            if (e.run.execution) {
+              void recordExecution(destination, e.item, role, e.run.execution).catch(() => undefined)
+            }
+            break
+          }
+          case 'cycle-failed':
+            say(`cycle ${e.cycle} failed: ${e.error.message}`)
+            break
+          case 'sleeping':
+            say(`sleeping ${e.minutes}m`)
+            break
+          case 'stopping':
+            say(`stopping: ${e.reason}`)
+            break
+          default:
+            break
+        }
+      },
+    })
+    process.stdout.write(
+      `\n${summary.cycles} cycles, ${summary.worked} items, ${summary.failures} failed cycles, ` +
+        `$${summary.costUsd.toFixed(4)}\n`,
+    )
   })
 
 program

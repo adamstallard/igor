@@ -169,9 +169,14 @@ export interface CycleReport {
   skippedUniversal: number
   skippedLane: number
   triaged: number
+  /** Everything dropped before a model call, with the reason, so a lane can be tuned. */
+  skipped: { candidate: Candidate; reason: string; stage: string }[]
+  /** Model verdicts, both ways — a skip with a reason is as useful as a claim. */
+  verdicts: { candidate: Candidate; outcome: 'proceed' | 'skip'; reason: string }[]
   toClaim: CycleCandidate[]
   triageCostUsd: number
-  lines: string[]
+  failures: string[]
+  coldStart: boolean
 }
 
 export interface CycleOptions extends RunOptions {
@@ -181,6 +186,8 @@ export interface CycleOptions extends RunOptions {
   sinceDays?: number
   triageModel?: string
   now?: number
+  /** Injected in tests so a cycle can be exercised without a model call. */
+  triage?: typeof triageBatch
 }
 
 /**
@@ -196,7 +203,6 @@ export async function planCycle(
   options: CycleOptions = {},
 ): Promise<CycleReport> {
   const now = options.now ?? Date.now()
-  const lines: string[] = []
   const report: CycleReport = {
     role: role.name,
     returned: 0,
@@ -204,16 +210,19 @@ export async function planCycle(
     skippedUniversal: 0,
     skippedLane: 0,
     triaged: 0,
+    skipped: [],
+    verdicts: [],
     toClaim: [],
     triageCostUsd: 0,
-    lines,
+    failures: [],
+    coldStart: false,
   }
 
   const stored = options.sinceDays === undefined ? await loadDiscoveryState(deps.destination) : EMPTY_STATE
   const { results, failures } = await discover({ [deps.tracker.name]: deps.tracker }, role.sources, stored, now)
 
   for (const failure of failures) {
-    lines.push(`  ${failure.source.repo}: ${failure.error.message}`)
+    report.failures.push(`${failure.source.repo}: ${failure.error.message}`)
   }
 
   const survivors: Candidate[] = []
@@ -221,7 +230,7 @@ export async function planCycle(
     const fresh =
       options.sinceDays === undefined
         ? result.fresh
-        : freshCandidates(await deps.tracker.search(result.source), undefined, now, options.sinceDays)
+        : freshCandidates(result.candidates, undefined, now, options.sinceDays)
 
     const screened = screen(role.lane, fresh)
     const counts = countStages(screened)
@@ -229,18 +238,19 @@ export async function planCycle(
     report.fresh += fresh.length
     report.skippedUniversal += counts.universal
     report.skippedLane += counts.predicate
-    survivors.push(...screened.filter((s) => s.verdict.outcome === 'proceed').map((s) => s.candidate))
-
-    lines.push(
-      `${result.source.repo}  ${result.returned} returned, ${fresh.length} fresh` +
-        `${result.coldStart ? ' (cold start)' : ''}, ${counts.universal} closed or busy, ` +
-        `${counts.predicate} out of lane, ${counts.survivors} to the model`,
-    )
+    report.coldStart ||= result.coldStart
+    for (const t of screened) {
+      if (t.verdict.outcome === 'skip') {
+        report.skipped.push({ candidate: t.candidate, reason: t.verdict.reason, stage: t.verdict.stage })
+      } else {
+        survivors.push(t.candidate)
+      }
+    }
   }
 
   const considered = survivors.slice(0, options.limit ?? 10)
   if (considered.length > 0) {
-    const batch = await triageBatch(
+    const batch = await (options.triage ?? triageBatch)(
       considered,
       systemPrompt(role.name, role.instructions),
       options.triageModel ?? TRIAGE_MODEL,
@@ -248,11 +258,11 @@ export async function planCycle(
     report.triaged = batch.results.length
     report.triageCostUsd = batch.costUsd
     for (const { candidate, verdict } of batch.results) {
+      report.verdicts.push({ candidate, outcome: verdict.outcome, reason: verdict.reason })
       if (verdict.outcome === 'proceed') report.toClaim.push({ candidate, reason: verdict.reason })
-      lines.push(`  ${verdict.outcome === 'proceed' ? 'CLAIM' : 'skip '} ${candidate.native}  ${verdict.reason}`)
     }
     for (const { candidate, error } of batch.failures) {
-      lines.push(`  ERROR ${candidate.native}  ${error.message.slice(0, 80)}`)
+      report.failures.push(`${candidate.native}: ${error.message.slice(0, 80)}`)
     }
   }
 
