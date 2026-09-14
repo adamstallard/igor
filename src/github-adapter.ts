@@ -131,6 +131,48 @@ const MIN_PAGE_SIZE = 5
  */
 const MAX_PAGES = Math.ceil(1000 / MIN_PAGE_SIZE)
 
+export interface RawComment {
+  body: string | null
+  user: { login: string } | null
+  created_at: string
+}
+
+/**
+ * Pure, so the precedence between a stop and a lost claim can be tested against fixtures
+ * rather than against the network.
+ *
+ * **Any holder other than this Igor means the item is not ours**, even where the Igor's own
+ * name is still on it: people add themselves to an assignee list rather than replacing what
+ * is there, so a second name reads as somebody taking the work. Do not reach for the
+ * timeline's `AssignedEvent` timestamps to decide who was first — an assignment can be
+ * removed and re-added, so the earliest event naming a login need not be the one that
+ * produced the current state, and standing down is right for a colleague joining just as
+ * much as for one who won a race.
+ */
+export function verdictFrom(
+  as: string,
+  holders: readonly string[],
+  comments: readonly RawComment[],
+): ClaimVerdict {
+  // Read before the holders, because a stop outranks a lost claim: it carries a receipt
+  // obligation, and someone who stops an Igor may well unassign it in the same breath.
+  for (const comment of comments) {
+    const body = comment.body ?? ''
+    if (isStop(body, as)) {
+      return {
+        status: 'stopped',
+        ...(comment.user ? { by: comment.user.login } : {}),
+        at: comment.created_at,
+        reason: body.trim().slice(0, 500),
+      }
+    }
+  }
+
+  const other = holders.find((h) => h !== as)
+  if (other !== undefined) return { status: 'lost', by: other }
+  return holders.length > 0 ? { status: 'held' } : { status: 'lost' }
+}
+
 export class GitHubTracker implements Tracker {
   readonly name = 'github'
   /** GitHub has assignees, so a claim is visible where people already look. */
@@ -203,29 +245,12 @@ export class GitHubTracker implements Tracker {
         '--jq',
         '{assignees, state}',
       ]),
-      gh<{ body: string; user: { login: string } | null; created_at: string }[]>([
+      gh<RawComment[]>([
         'api',
         `repos/${candidate.repo}/issues/${candidate.native}/comments?since=${encodeURIComponent(since)}&per_page=100`,
       ]),
     ])
-
-    // Checked before the assignee, because a stop outranks a lost claim: it carries a receipt
-    // obligation, and someone who stops an Igor may well unassign it in the same breath.
-    for (const comment of comments ?? []) {
-      if (isStop(comment.body ?? '', as)) {
-        return {
-          status: 'stopped',
-          ...(comment.user ? { by: comment.user.login } : {}),
-          at: comment.created_at,
-          reason: comment.body.trim().slice(0, 500),
-        }
-      }
-    }
-
-    const holders = issue.assignees.map((a) => a.login)
-    if (holders.includes(as)) return { status: 'held' }
-    const other = holders[0]
-    return { status: 'lost', ...(other === undefined ? {} : { by: other }) }
+    return verdictFrom(as, issue.assignees.map((a) => a.login), comments ?? [])
   }
 
   async report(candidate: Candidate, message: string): Promise<void> {
