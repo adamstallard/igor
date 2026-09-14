@@ -202,3 +202,35 @@ export function validateFrontmatter(data: unknown): ValidationError[] {
 export function isValidScope(scope: string): boolean {
   return SCOPE_PATTERN.test(scope)
 }
+
+export class ProvenanceInputError extends Error {}
+
+/**
+ * Builds provenance items from `create`'s parallel CLI arrays: one item per author, with
+ * `url` and `at` paired to it positionally. `--url`/`--at` must be given once per author or
+ * not at all — partial pairing would silently attach a url or date to the wrong author, so
+ * that case is rejected rather than guessed at. An author with no `--at` gets `today`.
+ */
+export function provenanceFromCitations(
+  authors: readonly string[],
+  urls: readonly string[] | undefined,
+  ats: readonly string[] | undefined,
+  today: string,
+): ProvenanceItem[] {
+  if (urls !== undefined && urls.length !== authors.length) {
+    throw new ProvenanceInputError(
+      `got ${urls.length} --url value(s) for ${authors.length} --author value(s) — ` +
+        `give one --url per --author, or omit --url entirely`,
+    )
+  }
+  if (ats !== undefined && ats.length !== authors.length) {
+    throw new ProvenanceInputError(
+      `got ${ats.length} --at value(s) for ${authors.length} --author value(s) — ` +
+        `give one --at per --author, or omit --at entirely`,
+    )
+  }
+  return authors.map((author, i) => {
+    const url = urls?.[i]
+    return { author, at: ats?.[i] ?? today, ...(url === undefined ? {} : { url }) }
+  })
+}
