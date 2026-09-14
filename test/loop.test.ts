@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 import type { Artifact, Candidate, ClaimVerdict, CodeHost, Tracker } from '../src/adapter.js'
 import type { Role } from '../src/role.js'
 import type { TreeProvider, WorkingTree, ChangedFile } from '../src/worktree.js'
-import { declineReason, runItem, type ItemDeps } from '../src/loop.js'
+import { declineReason, recordDecisions, runItem, type ItemDeps } from '../src/loop.js'
 
 const candidate = (over: Partial<Candidate> = {}): Candidate =>
   ({ id: 'github:o/r#7', repo: 'o/r', native: '7', title: 'A bug', body: '', author: 'reporter', assignees: [], labels: [], paths: [], state: 'open' }) as Candidate
@@ -170,5 +170,58 @@ describe('the worker explains its own refusal', () => {
       onStep: (s) => steps.push(s),
     })
     expect(steps).toEqual(['claiming', 'settling', 'working'])
+  })
+})
+
+describe('what triage decided is written down, skips included', () => {
+  const report = {
+    role: 'triage',
+    returned: 100,
+    fresh: 10,
+    coldStart: false,
+    skippedUniversal: 2,
+    skippedLane: 5,
+    triaged: 3,
+    skipped: [
+      { candidate: candidate({ id: 'a' }), reason: 'item is closed', stage: 'universal' },
+      { candidate: candidate({ id: 'b' }), reason: 'excluded by label: Human', stage: 'predicate' },
+    ],
+    verdicts: [
+      { candidate: candidate({ id: 'c' }), outcome: 'skip' as const, reason: 'too vague' },
+      { candidate: candidate({ id: 'd' }), outcome: 'proceed' as const, reason: 'concrete' },
+    ],
+    toClaim: [{ candidate: candidate({ id: 'd' }), reason: 'concrete' }],
+    triageCostUsd: 0.048,
+    failures: [],
+  }
+
+  it('records a skip as fully as a proceed', async () => {
+    let written: Record<string, unknown> | undefined
+    await recordDecisions('o/lore', role(), report as never, async (_r, _p, rec) => {
+      written = rec
+    })
+    const decisions = written!['decisions'] as { item: string; outcome: string; reason: string }[]
+    expect(decisions).toHaveLength(4)
+    expect(decisions.filter((d) => d.outcome === 'skip')).toHaveLength(3)
+    expect(decisions.every((d) => d.reason !== '')).toBe(true)
+  })
+
+  it('names the stage that decided each one, so the ratio is readable', async () => {
+    // "Where are candidates being dropped" is the question a lane is tuned against.
+    let written: Record<string, unknown> | undefined
+    await recordDecisions('o/lore', role(), report as never, async (_r, _p, rec) => {
+      written = rec
+    })
+    const decisions = written!['decisions'] as { stage: string }[]
+    expect(decisions.map((d) => d.stage)).toEqual(['universal', 'predicate', 'model', 'model'])
+    expect(written!['skippedLane']).toBe(5)
+  })
+
+  it('writes nothing when a cycle found nothing, rather than a line saying so', async () => {
+    let calls = 0
+    await recordDecisions('o/lore', role(), { ...report, fresh: 0, failures: [] } as never, async () => {
+      calls += 1
+    })
+    expect(calls).toBe(0)
   })
 })

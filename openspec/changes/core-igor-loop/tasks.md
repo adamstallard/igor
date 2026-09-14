@@ -42,11 +42,11 @@
 
 - [x] 5.1 Implement the predicate evaluator over normalized candidates — `includes`, `excludes`, `under`, `max_days`
 - [x] 5.2 Reuse that evaluator for lane matching, so lore firing and lane checks share one implementation
-- [ ] 5.3 Skip any candidate with work already in flight, before any model call
-- [ ] 5.3a Hard-skip a closed candidate, since stage one is deliberately loose and a source query may omit `is:open` — not a lane the org can forget to write
+- [x] 5.3 Skip any candidate with work already in flight, before any model call
+- [x] 5.3a Hard-skip a closed candidate, since stage one is deliberately loose and a source query may omit `is:open` — not a lane the org can forget to write
 - [x] 5.4 Implement the LLM triage call over predicate survivors, returning a structured verdict with a reason
-- [ ] 5.5 Record every decision with its reason, including skips, to the state branch
-- [ ] 5.6 Record the cost each invocation reports, timestamped, per seat
+- [x] 5.5 Record every decision with its reason, including skips, to the state branch
+- [x] 5.6 Record the cost each invocation reports, timestamped, per seat — execution per item, triage per cycle
 - [x] 5.7 Verify predicates gate the model call, so triage cost scales with survivors rather than with what the tracker returned
 
 ## 6. Milestone: dry-run

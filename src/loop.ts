@@ -4,6 +4,7 @@ import { complete, execute, type ExecuteOptions, type ExecutionResult } from './
 import { handOffFrom, type HandoffReason } from './handoff.js'
 import type { Role } from './role.js'
 import type { TreeProvider } from './worktree.js'
+import { appendRecord } from './state.js'
 import {
   advance, discover, EMPTY_STATE, freshCandidates, loadDiscoveryState, saveDiscoveryState,
 } from './discovery.js'
@@ -301,5 +302,48 @@ export async function planCycle(
   if (options.sinceDays === undefined && results.length > 0) {
     await saveDiscoveryState(deps.destination, advance(stored, results))
   }
+  await recordDecisions(deps.destination, role, report).catch(() => undefined)
   return report
+}
+
+export const DECISIONS_PATH = 'decisions.ndjson'
+
+/**
+ * Writes what triage decided, skips included.
+ *
+ * A skip is the more useful record of the two. Whether a lane is doing its job, and whether
+ * the model is earning what it costs, are questions about what was *rejected* — and printing
+ * that to a terminal nobody kept means the ratio can only ever be estimated afterwards.
+ *
+ * One line per cycle rather than one per candidate: the interesting quantity is the shape of
+ * the funnel, and a line per candidate would bury it in a repository people read with `git`.
+ */
+export async function recordDecisions(
+  destination: string,
+  role: Role,
+  report: CycleReport,
+  write: typeof appendRecord = appendRecord,
+): Promise<void> {
+  if (report.fresh === 0 && report.failures.length === 0) return
+  await write(
+    destination,
+    DECISIONS_PATH,
+    {
+      role: role.name,
+      returned: report.returned,
+      fresh: report.fresh,
+      coldStart: report.coldStart,
+      skippedUniversal: report.skippedUniversal,
+      skippedLane: report.skippedLane,
+      triaged: report.triaged,
+      claimed: report.toClaim.length,
+      triageCostUsd: Number(report.triageCostUsd.toFixed(4)),
+      decisions: [
+        ...report.skipped.map((s) => ({ item: s.candidate.id, stage: s.stage, outcome: 'skip', reason: s.reason })),
+        ...report.verdicts.map((v) => ({ item: v.candidate.id, stage: 'model', outcome: v.outcome, reason: v.reason })),
+      ],
+      ...(report.failures.length > 0 ? { failures: report.failures } : {}),
+    },
+    `Triage decisions for ${role.name}`,
+  )
 }
