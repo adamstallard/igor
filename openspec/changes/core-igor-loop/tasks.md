@@ -85,11 +85,11 @@ lane predicates before the loop is allowed to act.
 
 ## 9. Graceful handoff
 
-- [ ] 9.1 Compose the handoff from recorded state — claimed, steps completed, artifact, reset time — with no model call
-- [ ] 9.2 Post it on budget exhaustion, reporting what remains and who could pick it up
-- [ ] 9.3 Post it on unrecoverable failure, without depending on the path that failed
-- [ ] 9.4 Hand off rather than retry on partial failure, so a claimed item never goes silent
-- [ ] 9.5 Verify the handoff still posts when the worker cannot be invoked at all
+- [x] 9.1 Compose the handoff from recorded state — claimed, steps completed, artifact, reset time — with no model call
+- [x] 9.2 Post it on budget exhaustion, reporting what remains and who could pick it up
+- [x] 9.3 Post it on unrecoverable failure, without depending on the path that failed
+- [x] 9.4 Hand off rather than retry on partial failure, so a claimed item never goes silent
+- [x] 9.5 Verify the handoff still posts when the worker cannot be invoked at all
 
 ## 10. Seat budget
 

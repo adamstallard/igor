@@ -91,20 +91,23 @@ export function workerPrompt(candidate: Candidate, linkage: string): string {
   ].join('\n')
 }
 
-interface Headless {
+export interface WorkerOutput {
   result?: string
   total_cost_usd?: number
   is_error?: boolean
 }
 
-function runWorker(
-  cwd: string,
-  system: string,
-  prompt: string,
-  model: string,
-  timeoutMs: number,
-): Promise<Headless> {
-  return new Promise((resolve, reject) => {
+/** Injected in tests so the suite never spawns a subprocess or touches the network. */
+export type WorkerRunner = (input: {
+  cwd: string
+  system: string
+  prompt: string
+  model: string
+  timeoutMs: number
+}) => Promise<WorkerOutput>
+
+export const headlessClaude: WorkerRunner = ({ cwd, system, prompt, model, timeoutMs }) => {
+  return new Promise<WorkerOutput>((resolve, reject) => {
     const child = spawn(
       'claude',
       [
@@ -141,7 +144,7 @@ function runWorker(
       clearTimeout(timer)
       if (code !== 0) return reject(new ExecutionError(err.trim() || `worker exited ${code}`))
       try {
-        resolve(JSON.parse(out) as Headless)
+        resolve(JSON.parse(out) as WorkerOutput)
       } catch {
         reject(new ExecutionError(`worker returned unparseable output: ${out.slice(0, 200)}`))
       }
@@ -150,6 +153,8 @@ function runWorker(
 }
 
 export interface ExecuteOptions {
+  /** Defaults to headless Claude. */
+  worker?: WorkerRunner
   model?: string
   timeoutMs?: number
   /** Checked between the worker finishing and anything being published. */
@@ -186,15 +191,15 @@ export async function execute(
   const linkage = tracker.linkage(candidate)
 
   return withTree(provider, candidate.repo, async (tree: WorkingTree) => {
-    let worker: Headless
+    let worker: WorkerOutput
     try {
-      worker = await runWorker(
-        tree.path,
-        workerSystemPrompt(role, role.allow),
-        workerPrompt(candidate, linkage),
+      worker = await (options.worker ?? headlessClaude)({
+        cwd: tree.path,
+        system: workerSystemPrompt(role, role.allow),
+        prompt: workerPrompt(candidate, linkage),
         model,
-        options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-      )
+        timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+      })
     } catch (error) {
       return {
         outcome: 'failed' as const,

@@ -1,0 +1,233 @@
+import type { Artifact, Candidate, Tracker } from './adapter.js'
+import type { ExecutionResult } from './execute.js'
+import type { Role } from './role.js'
+
+/**
+ * What an Igor says before it lets go of something it claimed.
+ *
+ * A claim tells other people to stand off, so going quiet afterwards is the worst available
+ * outcome: the item looks handled and is not. Every self-directed stop — exhaustion, failure,
+ * a timeout — owes a handoff before releasing.
+ *
+ * **Composed from recorded state, with no model call.** Reserving budget for a model-written
+ * handoff was considered and rejected: the situation that demands a handoff is frequently the
+ * one where no call can be made at all, so a handoff depending on the thing that just failed
+ * is not a handoff. Everything here is string assembly over facts already known.
+ *
+ * A stop directed *at* the Igor is exempt and gets a one-line receipt instead (see
+ * `stopReceipt`). Composing a handoff would delay the release, and whoever issued the stop is
+ * presumably taking the work.
+ */
+
+/**
+ * Budget or failure. There is deliberately no "busy" — an Igor with capacity does not defer on
+ * the grounds of having a lot on, and leaving the variant out is a cheaper guarantee than a
+ * rule saying so.
+ */
+export type HandoffReason =
+  | { kind: 'budget'; seat?: string; resetAt?: string }
+  | { kind: 'failure'; detail: string }
+
+export interface Handoff {
+  reason: HandoffReason
+  done: string[]
+  remaining: string[]
+  suggested: string[]
+  artifact?: Artifact
+}
+
+const MINUTE = 60_000
+
+function ago(fromIso: string, now: number): string {
+  const ms = now - Date.parse(fromIso)
+  if (!Number.isFinite(ms) || ms < 0) return 'recently'
+  const minutes = Math.round(ms / MINUTE)
+  if (minutes < 1) return 'just now'
+  if (minutes < 60) return `${minutes} minute${minutes === 1 ? '' : 's'} ago`
+  const hours = Math.round(minutes / 60)
+  return `${hours} hour${hours === 1 ? '' : 's'} ago`
+}
+
+/** A person reads this, so render a wall-clock time rather than a machine timestamp. */
+function clock(iso: string): string {
+  const t = Date.parse(iso)
+  if (!Number.isFinite(t)) return iso
+  return `${new Date(t).toISOString().slice(0, 16).replace('T', ' ')} UTC`
+}
+
+function until(iso: string, now: number): string {
+  const ms = Date.parse(iso) - now
+  if (!Number.isFinite(ms)) return ''
+  if (ms <= 0) return ' (now)'
+  const minutes = Math.round(ms / MINUTE)
+  if (minutes < 60) return ` (in about ${minutes} minute${minutes === 1 ? '' : 's'})`
+  const hours = Math.round(minutes / 60)
+  return ` (in about ${hours} hour${hours === 1 ? '' : 's'})`
+}
+
+/**
+ * Derives the two lists from what was recorded, so they are facts rather than a narration the
+ * Igor produces about itself.
+ */
+export function stepsFrom(
+  claimedAt: string,
+  result: ExecutionResult | undefined,
+  now: number = Date.now(),
+): { done: string[]; remaining: string[] } {
+  const done = [`claimed this ${ago(claimedAt, now)}`]
+  const remaining: string[] = []
+
+  if (result === undefined) {
+    remaining.push('everything — the work never started')
+    return { done, remaining }
+  }
+
+  const edits = result.changed.filter((c) => c.kind !== 'deleted').length
+  if (edits > 0) done.push(`changed ${edits} file${edits === 1 ? '' : 's'}`)
+  if (result.artifact) done.push(`opened ${result.artifact.ref} as a draft`)
+
+  for (const refusal of result.refusals) {
+    remaining.push(`${refusal.action} was not attempted — ${refusal.why}`)
+  }
+
+  switch (result.outcome) {
+    case 'produced':
+      remaining.push('review the draft, finish it, or discard it')
+      break
+    case 'nothing-to-do':
+      remaining.push('all of it — nothing was changed, so this needs a person to look')
+      break
+    case 'refused':
+    case 'failed':
+      remaining.push(
+        edits > 0
+          ? 'the edits were made but never published, so they are gone with the working copy'
+          : 'all of it — nothing usable was produced',
+      )
+      break
+  }
+  return { done, remaining }
+}
+
+/** Reviewers first, then whoever raised it. Never the Igor, and never nobody. */
+export function suggest(role: Role, candidate: Candidate, identity: string): string[] {
+  const people = [...role.reviewers, candidate.author].filter(
+    (p) => p !== '' && p !== identity && p !== role.name,
+  )
+  return [...new Set(people)]
+}
+
+export function composeHandoff(role: Role, candidate: Candidate, handoff: Handoff, now: number = Date.now()): string {
+  const lines = [`**${role.name}** is releasing this and will not carry on with it.`, '']
+
+  if (handoff.reason.kind === 'budget') {
+    const seat = handoff.reason.seat ? ` on seat \`${handoff.reason.seat}\`` : ''
+    // State when capacity returns rather than reporting unavailability flatly — "gone" and
+    // "back in two hours" call for very different responses from whoever reads this.
+    const back = handoff.reason.resetAt
+      ? `Capacity returns at ${clock(handoff.reason.resetAt)}${until(handoff.reason.resetAt, now)}.`
+      : 'When capacity returns is not known — the cap is not published and the last reading is stale.'
+    lines.push(`**Why:** the budget${seat} is used up. ${back}`, '')
+  } else {
+    lines.push(
+      `**Why:** it hit something it could not get past — ${handoff.reason.detail}`,
+      '',
+      'It will not try again on its own. Retrying quietly on a claimed item is how an item',
+      'ends up looking handled while nothing is happening.',
+      '',
+    )
+  }
+
+  lines.push('**Done so far:**', ...handoff.done.map((d) => `- ${d}`), '')
+  lines.push('**Still to do:**', ...handoff.remaining.map((r) => `- ${r}`), '')
+
+  if (handoff.artifact) {
+    lines.push(`Partial work is at ${handoff.artifact.url} — continue from it rather than starting over.`, '')
+  }
+
+  lines.push(
+    handoff.suggested.length > 0
+      ? `**Could pick this up:** ${handoff.suggested.join(', ')}`
+      : '**Could pick this up:** anyone — no reviewers are configured for this role.',
+    '',
+    'This is unassigned again and free to take.',
+  )
+  return lines.join('\n')
+}
+
+export interface HandoffOutcome {
+  posted: boolean
+  released: boolean
+  text: string
+  /** Why posting failed, when it did. The handoff exists for broken situations. */
+  error?: string
+}
+
+/**
+ * Posts the handoff, then releases the claim.
+ *
+ * In that order deliberately: releasing first would briefly show an unclaimed item with no
+ * explanation, which is the state the handoff exists to prevent. A failure to post is recorded
+ * and the claim is still released — holding a claim an Igor has abandoned is worse than an
+ * unexplained release.
+ */
+export async function handOff(
+  tracker: Tracker,
+  candidate: Candidate,
+  role: Role,
+  identity: string,
+  handoff: Handoff,
+  now: number = Date.now(),
+): Promise<HandoffOutcome> {
+  const text = composeHandoff(role, candidate, handoff, now)
+  let posted = false
+  let error: string | undefined
+
+  try {
+    await tracker.report(candidate, text)
+    posted = true
+  } catch (e) {
+    error = e instanceof Error ? e.message : String(e)
+  }
+
+  let released = false
+  try {
+    await tracker.release(candidate, identity)
+    released = true
+  } catch {
+    // Recorded by the caller through the returned flags; nothing here can fix it.
+  }
+
+  return { posted, released, text, ...(error === undefined ? {} : { error }) }
+}
+
+/**
+ * The whole self-directed path in one call: derive the steps, name who could continue, post,
+ * release. Takes no worker and makes no model call, which is the property that matters.
+ */
+export async function handOffFrom(
+  tracker: Tracker,
+  candidate: Candidate,
+  role: Role,
+  identity: string,
+  claimedAt: string,
+  reason: HandoffReason,
+  result?: ExecutionResult,
+  now: number = Date.now(),
+): Promise<HandoffOutcome> {
+  const { done, remaining } = stepsFrom(claimedAt, result, now)
+  return handOff(
+    tracker,
+    candidate,
+    role,
+    identity,
+    {
+      reason,
+      done,
+      remaining,
+      suggested: suggest(role, candidate, identity),
+      ...(result?.artifact ? { artifact: result.artifact } : {}),
+    },
+    now,
+  )
+}
