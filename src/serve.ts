@@ -26,6 +26,8 @@ export interface ServeOptions extends CycleOptions {
    * the store is a repository someone may have merged to while the loop was sleeping.
    */
   loreFor?: (item: Candidate) => string | Promise<string>
+  /** Injected in tests, so the wiring is exercised rather than only the rule it applies. */
+  note?: typeof noteHandoff
   onEvent?: (event: ServeEvent) => void
   sleep?: (ms: number) => Promise<void>
   /** Resolves when the process should wind down. */
@@ -72,7 +74,9 @@ export async function serve(
     emit({ kind: 'cycle-start', cycle })
 
     try {
-      const report = await planCycle(deps, role, options)
+      // Identity comes from the argument, never from the options: the two disagreeing would
+      // mean the loop screening holders as one Igor and claiming as another.
+      const report = await planCycle(deps, role, { ...options, identity })
       summary.costUsd += report.triageCostUsd
       emit({ kind: 'planned', cycle, report })
 
@@ -98,7 +102,7 @@ export async function serve(
         summary.worked += 1
         summary.costUsd += run.costUsd
         if (shouldDefer(run.outcome, run.handoff)) {
-          await noteHandoff(deps.destination, candidate, run.reason).catch(() => undefined)
+          await (options.note ?? noteHandoff)(deps.destination, candidate, run.reason).catch(() => undefined)
         }
         emit({ kind: 'worked', item: candidate, run })
       }

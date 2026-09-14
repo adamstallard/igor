@@ -287,3 +287,44 @@ describe('the loop fires lore, not only the run command', () => {
     expect(s.worked).toBe(1)
   })
 })
+
+describe('the loop records what it handed back', () => {
+  const noted = () => {
+    const items: string[] = []
+    return { items, note: async (_d: string, c: Candidate) => { items.push(c.id) } }
+  }
+
+  it('records a handoff, so the item does not come back on its own comment', async () => {
+    // The worker finds nothing to change, which hands the item back — and the handoff comment
+    // is what lifts it above the watermark next cycle.
+    const { d } = deps([issue(1)])
+    const n = noted()
+    await serve(d, role(), 'igor-bot', { ...base, maxCycles: 1, note: n.note })
+    expect(n.items).toEqual(['github:o/r#1'])
+  })
+
+  it('records nothing when the budget ran out, which says nothing about the item', async () => {
+    const { d } = deps([issue(1)])
+    const n = noted()
+    const { events, onEvent } = collect()
+    // Open when the loop asks, so the item is started, and shut when the claim is held — which
+    // is the only path that produces a budget handoff rather than stopping the cycle.
+    let checks = 0
+    const fading: Gate = { exhausted: () => checks++ > 0, seat: 'igor-1', reason: 'spent' }
+    await serve(d, role(), 'igor-bot', { ...base, maxCycles: 1, note: n.note, onEvent, gate: async () => fading })
+    const worked = events.find((e) => e.kind === 'worked')
+    expect(worked?.kind === 'worked' && worked.run.handoff).toBe('budget')
+    expect(n.items).toEqual([])
+  })
+
+  it('keeps going when the record cannot be written', async () => {
+    const { d } = deps([issue(1)])
+    const s = await serve(d, role(), 'igor-bot', {
+      ...base,
+      maxCycles: 1,
+      note: async () => { throw new Error('state branch unreachable') },
+    })
+    expect(s.worked).toBe(1)
+    expect(s.failures).toBe(0)
+  })
+})

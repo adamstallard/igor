@@ -441,7 +441,6 @@ program
 
     const stamp = () => new Date().toISOString().slice(11, 19)
     const summary = await serve(deps, role, identity, {
-      identity,
       limit: Number(opts.limit),
       ...(opts.poll === undefined ? {} : { pollMinutes: Number(opts.poll) }),
       ...(opts.cycles === undefined ? {} : { maxCycles: Number(opts.cycles) }),
