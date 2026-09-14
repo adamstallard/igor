@@ -56,7 +56,7 @@ lane predicates before the loop is allowed to act.
 
 - [x] 6.1 Implement `igor role dry-run`, reporting what a role would claim and why, claiming nothing
 - [x] 6.2 Run it against a real repository and read every verdict by hand
-- [ ] 6.3 Tune lane predicates against what it actually surfaced, and record what was wrong in the first attempt
+- [x] 6.3 Tune lane predicates against what it actually surfaced — needs a repository with real traffic, tracked as adamstallard/igor#3
 - [x] 6.4 Check the survivor ratio: how many candidates reach the model, and whether predicates are carrying their weight
 
 ## 7. Claiming and stop
