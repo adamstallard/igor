@@ -143,7 +143,7 @@ truth, indexes are disposable.
 separate things:
 
 - **Firing volume** — how many entries reach a worker per invocation. Genuinely hard: context
-  is finite and injecting forty marginal entries degrades output. Capped at 5–10 (§3.3).
+  is finite and injecting forty marginal entries degrades output. Held to a token budget (§3.3).
 - **Store size** — how many exist. Largely unconstrained. With precise conditions a
   10,000-entry store fires the same few entries a 200-entry store would, plus it covers the
   rare case the small store missed. A path predicate fires identically regardless of what else
@@ -274,16 +274,37 @@ A trigger is `(condition → intervention)`. Interventions come in three kinds:
 - **Behavior steering** — a vector shifting disposition ("this subsystem has burned us").
 - **Capability routing** — select an adapter.
 
-**Firing budget.** Cap at roughly 5–10 entries by match strength with scope priority;
-flooding context dilutes everything. The firing statistics then feed a self-organizing
-loop: an entry firing on nearly every invocation is standing context in disguise and should
-be promoted into role config, and one that has not fired in months should be demoted or
-pruned. The always-on/situational boundary stops being a judgment call and becomes
-something usage data settles.
+**Firing budget.** A token budget on injected lore, not a count. Flooding context dilutes
+everything, so there is a limit; but "five entries" means nothing when entries differ in
+length by an order of magnitude, and a count would have to be re-guessed every time the
+store's shape changed.
 
-**Conflict resolution**, in order: narrower scope beats broader (role beats global), then
-higher support, then more recent. Anything unresolvable is a store defect and surfaces for
-review — two active contradictory entries mean consolidation merged badly.
+**When the budget is exceeded, say so — do not silently drop.** Whichever entries a rule
+discarded, nobody chose that rule, and the resulting miss is invisible: the worker proceeds
+confidently without a lesson and nothing looks wrong. Reporting "47 in-scope entries, 12k
+tokens, over the 4k budget" hands the problem to someone who can decide, which is the only
+party equipped to.
+
+Ordering, when a mechanism must choose, comes from the relevance mechanism itself: a model
+asked which conditions apply returns them in order, and a vector match returns scores.
+Neither needs a separate notion of match strength, and none of it is worth building before a
+store outgrows plain injection.
+
+**Conflicts are not resolved at retrieval.** Two contradictory active entries are a store
+defect, and detecting the contradiction requires understanding both — which only the worker
+has. Inject both and let it say so. A retrieval rule quietly picking a winner hides the
+defect that review exists to catch.
+
+**Firing records are machine output and live where machine output lives** — the state
+branch, beside discovery watermarks and execution transcripts, never in the entry files.
+Writing counts into the store would mean a commit to human-reviewed files on every fire,
+merge conflicts against human edits, and `git blame` on a curated corpus buried under
+machine churn.
+
+The deeper reason: it is not a count, it is a log. Each decision records the condition, the
+item, whether it applied and why — which is the contrastive corpus §4.2.1 needs. A count can
+be derived from the log; the log cannot be recovered from a count, so storing only the count
+discards the thing that turns out to matter most.
 
 ### 3.4 Entry and condition lifecycle — **planned**
 
@@ -489,6 +510,30 @@ for everything the fleet does. The rejection log answers four questions the fire
 **A filter miss is silent**, which is the hazard worth designing against: the worker proceeds
 confidently without the lesson and nothing looks wrong. Err toward including. The cost of a
 false positive is tokens; the cost of a false negative is the whole point of lore.
+
+### 4.2.2 Scope stays exact; relevance does not — **planned**
+
+Two filters look alike and are not. **Scope and status are exact and always applied**: a
+`project:` entry is invisible outside that project, and a `provisional` entry does not fire.
+Neither is a judgment about relevance — they are visibility and review state, and handing
+them to a model or a vector would let a guess decide who may see what.
+
+**Everything else is relevance, and predicates are a poor proxy for it.** A path glob is an
+attempt to say "this is about that part of the system" in a language that cannot quite express
+it, which is why it matches so weakly before a worker has opened anything. A relevance
+mechanism does that job directly.
+
+So conditions keep their path globs, but as **input to the judgment rather than the judgment
+itself** — a model reading "when throwing from code reachable by a request handler,
+`web_services/**/*.js`" is better informed than one reading the sentence alone, and a human
+reading the entry learns where it applies. There is no separate predicate pre-filter ahead of
+a vector match: one dot product against ten thousand conditions is a single matmul, so there
+is nothing for a pre-filter to save.
+
+**A field naming where a condition applies** — at triage, at execution, or both — is the
+natural way to express a lesson about *which work to take* rather than *how to do it*. No
+entry wants it yet and nothing in `scope` can carry it, so it is recorded as the shape to
+reach for rather than built.
 
 ### 4.3 SAE-legible conditions — **research**
 

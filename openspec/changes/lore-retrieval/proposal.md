@@ -59,12 +59,12 @@ Explicitly out of scope:
 
 ### Modified Capabilities
 
-- `lore-store`: Entries gain firing metadata — a fire count and last-fired timestamp — so a
-  later change can promote entries that always fire and prune those that never do.
+None. Firing records are machine output and belong on the state branch beside discovery
+watermarks and execution transcripts, so the entry files are untouched (§3.3).
 
 ## Impact
 
-- Reads the lore store; writes only firing metadata back to it.
+- Reads the lore store and writes nothing back to it. Firing decisions go to the state branch.
 - Changes what a worker sees, so a bad entry now affects output rather than sitting inert.
   That is the point, and it is why only reviewed entries fire.
 - Establishes the retrieval path that condition vectors would later slot into without
