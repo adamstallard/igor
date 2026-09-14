@@ -3,10 +3,14 @@
 ## Purpose
 TBD - created by archiving change core-igor-loop. Update Purpose after archive.
 ## Requirements
-### Requirement: Igors poll on an interval rather than waiting for triggers
+### Requirement: Nothing may require inbound reachability
 
 Discovery SHALL run each configured source's query on a configurable interval. The system MUST
 NOT require a public endpoint, webhook receiver, or per-surface relay.
+
+Polling is how that constraint is met for a tracker, not a preference in itself. A surface the
+Igor already holds an outbound connection to may push instead — a bot handed every message on
+a socket it opened requires no inbound reachability and gains nothing from being asked again.
 
 #### Scenario: Sources polled on the interval
 
