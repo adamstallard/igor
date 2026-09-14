@@ -169,6 +169,63 @@ A role's `budget_share` is a **ceiling**, not a reservation: several roles may d
 one, an idle role holds nothing back, and adding an Igor requires editing no other role. Each
 seat's reserve is enforced separately, so no ceiling however generous reaches a person's floor.
 
+## What it costs, and what the numbers actually were
+
+Measured, not estimated. Small samples — treat them as orders of magnitude.
+
+### The funnel
+
+Two live repositories, an `is:issue is:open` query, and a lane admitting items under a year old:
+
+| | `BrightID/BrightID` | `cli/cli` |
+|---|---|---|
+| returned by the query | 159 | 1000 (GitHub's cap) |
+| already had work in flight | 1 (0.6%) | 71 (7%) |
+| survived an `age ≤ 365d` lane | 1 | 237 |
+| **updated in the last day** | **0** | **5** |
+
+The last row is the one that matters. **Lane predicates do nearly all the reduction** — the
+free in-flight skip removes almost nothing on a quiet repository — and **the watermark does the
+rest**, turning a few hundred candidates into a handful a day. Without it, a cycle re-triages
+its whole backlog every time.
+
+Paths named in issue text are rare — 14% on `cli/cli`, 1.3% on `BrightID/BrightID` — so a
+`paths.under` lane is weak on a repository that discusses symptoms rather than files.
+
+### Per item
+
+| stage | cost | time |
+|---|---|---|
+| discovery | free (one GraphQL call, rate-limit cost 1 per 25 issues) | ~1s |
+| reading a seat's usage | free, no tokens | ~0.4s |
+| triage, per candidate | **~$0.016** | ~10s |
+| execution, per item | **$0.05 – $0.37** | 11 – 60s |
+
+Triage cost is driven by *output*, not input: each verdict emits 700–1600 tokens because the
+model reasons its way there. A trivial prompt costs $0.003 and misleads by fivefold.
+
+Execution across four real items averaged **$0.12**. The spread is not predictable from triage:
+
+- a one-line CI version bump — **$0.05**
+- a small React fix needing the worker to read around the code — **$0.37**
+- **declining** a vague report, after investigating it properly — **$0.23**
+
+That last one is worth internalising. **Refusing well is not free**, and it can cost more than
+succeeding: the worker still has to clone, read, and satisfy itself there is nothing to do.
+Triage had already spent $0.016 letting it through.
+
+### Intervals
+
+**These are still guesses.** Nothing observed so far has moved them, and saying otherwise
+would be worse than admitting it:
+
+| interval | default | what would change it |
+|---|---|---|
+| settle | 10s | two Igors racing; nothing has raced yet |
+| cooldown | 60m | someone finding a stopped item comes back too soon, or too late |
+| poll | 10m | latency mattering, or rate limits biting |
+| cold-start look-back | 7d | a first run finding nothing, or too much |
+
 ## Setting up a lore repository
 
 Any repository works; it just needs to be somewhere other than this one.
@@ -197,17 +254,14 @@ becomes possible.
 
 ## Status
 
-**Built:** the lore store and its review workflow — schema, validation, frozen slug ids,
-provenance-derived scoring, supersession, the destination boundary, `propose`/`reconcile`,
-merge-triggered promotion, and the CLI above.
+Working end to end against live repositories: discovery, triage, claiming, execution, handoff,
+budget, and a loop that runs on an interval. Verified by real runs that opened real pull
+requests and, more usefully, by runs that correctly declined to.
 
-**Next:** `core-igor-loop` — nothing yet consumes lore, which is where its value is. The first
-Igor needs no lore at all, since a role config, the work item, and the codebase are three of
-the four context channels.
+Not built: any tracker but GitHub, lore retrieval (nothing reads the lore yet), conversation
+beyond `stop`, and concurrent Igors. Linear looks strictly better than GitHub for claiming —
+app identities cost no seat and there is a parallel `delegate` field — but that rests on an
+untested assumption about whether an app may delegate to itself.
 
-**Deferred:** mining review history (`lore-from-reviews`) is specced but waiting. A spike over
-one real repository turned 277 review comments into six entries worth keeping, so at that
-scale hand-mining is cheaper than automating it. Revisit on a corpus where it isn't.
+Every interval is still a guess. See the costs section for what has actually been measured.
 
-Design lives in [`docs/architecture.md`](docs/architecture.md); change proposals in
-`openspec/changes/`.

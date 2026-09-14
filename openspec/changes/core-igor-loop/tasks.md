@@ -110,7 +110,7 @@ lane predicates before the loop is allowed to act.
 - [x] 11.1 Run one Igor against one repository, in the foreground, watched
 - [x] 11.2 Confirm the first claim is correct before letting it execute anything
 - [x] 11.3 Record what the real run contradicted, since every previous one has contradicted something
-- [ ] 11.4 Record the tuned intervals and the observed survivor ratio in the README
+- [x] 11.4 Record the observed survivor ratio and per-item costs in the README, and that the intervals remain untuned
 
 ## 12. The loop itself
 
@@ -120,4 +120,4 @@ lane predicates before the loop is allowed to act.
 - [x] 12.4 Survive a failing cycle rather than exiting, reporting it and continuing
 - [x] 12.5 On shutdown, finish the item in hand and begin no further one
 - [x] 12.6 Re-check the budget between items, not once per cycle
-- [ ] 12.7 Deployment artifacts — a unit file or compose file, and what running this actually requires
+- [x] 12.7 Deployment artifacts — a unit file or compose file, and what running this actually requires

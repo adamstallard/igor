@@ -1,0 +1,25 @@
+# One container per Igor. `docker compose up -d` after filling in .env.
+#
+# The image needs git, the gh CLI, node, and the claude CLI. Igor shells out to all four.
+
+services:
+  maintenance:
+    build: .
+    command: ["igor", "serve", "maintenance"]
+    working_dir: /srv/lore
+    volumes:
+      # The lore repository: config, roles, and the state branch. Igor reads its
+      # configuration by walking up from the working directory.
+      - ./lore:/srv/lore
+      # Execution clones into a temp directory and deletes it afterwards. A named volume
+      # keeps that churn off the host filesystem and out of the image layer.
+      - igor-trees:/tmp
+    env_file: .env
+    restart: unless-stopped
+    # Long enough to finish the item in hand. A container killed mid-item leaves a claim
+    # with no explanation.
+    stop_grace_period: 15m
+    stop_signal: SIGTERM
+
+volumes:
+  igor-trees:

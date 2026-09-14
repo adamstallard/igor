@@ -1,0 +1,49 @@
+# systemd unit for one Igor. Install per role:
+#
+#   sudo cp deploy/igor.service /etc/systemd/system/igor@.service
+#   sudo systemctl enable --now igor@maintenance
+#
+# The template takes the role name as its instance, so several Igors run side by side from
+# one unit file and one installation.
+
+[Unit]
+Description=Igor (%i)
+Documentation=https://github.com/adamstallard/igor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=igor
+WorkingDirectory=/srv/igor/lore
+
+# Absolute paths, because a service inherits no shell. A version manager that puts node
+# under a per-shell directory will break here the first time it cleans that directory up;
+# point at a stable interpreter instead.
+ExecStart=/usr/local/bin/igor serve %i
+
+# Seat tokens and the GitHub token. Keep this file 0600 and owned by the service user —
+# it holds credentials that can act on your repositories.
+EnvironmentFile=/etc/igor/env
+
+Restart=always
+RestartSec=30
+
+# Give the loop time to finish the item it holds. An Igor that is killed mid-item leaves a
+# claim with no explanation, which is the one failure the claim protocol exists to prevent.
+KillSignal=SIGTERM
+TimeoutStopSec=900
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=igor-%i
+
+# Nothing here needs privilege beyond its own working tree and a temp directory.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/srv/igor
+
+[Install]
+WantedBy=multi-user.target
