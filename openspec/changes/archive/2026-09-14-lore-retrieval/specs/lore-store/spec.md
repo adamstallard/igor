@@ -1,16 +1,25 @@
-## MODIFIED Requirements
+## REMOVED Requirements
 
 ### Requirement: Provenance is the sole source of derived scores
+
+Replaced by the requirement below, which narrows what is derived. A time-decayed recency
+weight was one of the three derived scores, and removing it changes the contract rather than
+adjusting it — every scenario about recomputation goes with it.
+
+## ADDED Requirements
+
+### Requirement: Provenance is the sole source of support and authorship
 
 Each provenance item MUST carry `author` and `at`, and MUST carry `url` when it cites a mined
 artifact. Support count, author weighting, and the date of the newest provenance SHALL be
 computed from provenance at read time. The store MUST NOT persist `support` as a frontmatter
 field.
 
-A time-decayed recency weight SHALL NOT be computed. Lore is mined from historical review
-comments and is old by construction, so a decay curve reports the entire store as stale while
-saying nothing about whether any lesson still holds. The date of the newest evidence is a fact
-a reader can act on; a decayed score is a judgment presented as one.
+A time-decayed weight SHALL NOT be derived. Lore is mined from historical review comments and
+is old by construction, so a decay curve reports an entire store as stale while saying nothing
+about whether any lesson still holds — and it ranks lowest the entries that have held longest.
+The date of the newest evidence is a fact a reader can act on; a decayed score is a judgment
+presented as one.
 
 #### Scenario: Support derived from provenance
 
