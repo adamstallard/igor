@@ -58,6 +58,25 @@ export async function ensureStateBranch(repo: string, branch = STATE_BRANCH): Pr
   if (!(await branchExists(repo, branch))) await createOrphanBranch(repo, branch)
 }
 
+/** Raw bytes, for the append-only logs that are newline-delimited rather than a JSON document. */
+export async function readStateRaw(
+  repo: string,
+  path: string,
+  branch = STATE_BRANCH,
+): Promise<string | undefined> {
+  try {
+    const file = (await ghJson([
+      'api',
+      `repos/${repo}/contents/${path}?ref=${branch}`,
+      '--jq',
+      '{content}',
+    ])) as { content: string }
+    return Buffer.from(file.content, 'base64').toString('utf8')
+  } catch {
+    return undefined
+  }
+}
+
 /** Returns undefined rather than throwing when absent — state is a cache, not a dependency. */
 export async function readState<T>(
   repo: string,

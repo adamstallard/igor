@@ -2,6 +2,7 @@ import { readFileSync, existsSync } from 'node:fs'
 import { dirname, isAbsolute, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parse as parseYaml } from 'yaml'
+import { parseOrgBudget, type OrgBudget } from './budget.js'
 
 export const DEFAULT_CONFIG_FILENAME = 'igor.config.yaml'
 export const EXAMPLE_CONFIG_FILENAME = 'igor.config.example.yaml'
@@ -20,6 +21,8 @@ export interface Config {
    * without a network call; looked up when absent.
    */
   publicStore?: boolean
+  /** Seats and pools an Igor may spend from. Absent means budget is not being enforced. */
+  budget: OrgBudget
 }
 
 export class ConfigError extends Error {}
@@ -85,6 +88,7 @@ export function resolveConfig(raw: unknown, configDir: string): Config {
 
   return {
     destination,
+    budget: parseOrgBudget(data['budget']),
     reviewers: requireStringArray(data['reviewers'], 'reviewers'),
     experts: requireStringArray(data['experts'], 'experts'),
     halfLifeDays,

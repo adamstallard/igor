@@ -12,6 +12,12 @@ import { GitHubError } from './github.js'
 import { explainRole, loadRole, rolesFrom, RoleError } from './role.js'
 import { dryRun } from './dryrun.js'
 import { TriageError } from './triage.js'
+import {
+  BudgetError, chooseSeat, impliedCap, loadLedger, renderBudget, seatStatus, trailingSpend,
+  CALIBRATIONS_PATH, type Calibration, type Window,
+} from './budget.js'
+import { appendRecord, readStateRaw } from './state.js'
+import { repoFromCheckout } from './github.js'
 import type { Entry, Status } from './entry.js'
 
 function today(): string {
@@ -259,6 +265,68 @@ role
     process.stdout.write(`${report.lines.join('\n')}\n`)
   })
 
+const budget = program.command('budget').description('Seats, what they cost, and what is left')
+
+budget
+  .description('Report cap, calibration age, trailing spend, reserve and headroom per seat')
+  .option('--window <window>', '5h | week', '5h')
+  .action(async (opts) => {
+    const config = loadConfig(program.opts()['config'])
+    const window = opts.window as Window
+    if (window !== '5h' && window !== 'week') throw new BudgetError('window must be 5h or week')
+    const repo = await repoFromCheckout(config.destination)
+    const { calibrations, spend } = await loadLedger(repo, (p) => readStateRaw(repo, p))
+    const statuses = config.budget.seats.map((s) => seatStatus(s, window, calibrations, spend))
+    process.stdout.write(renderBudget(statuses))
+
+    for (const pool of config.budget.pools) {
+      const choice = chooseSeat(pool, config.budget.seats, window, calibrations, spend, { name: '(any role)' })
+      process.stdout.write(`\npool ${pool.id}: ${choice.reason}\n`)
+      for (const c of choice.considered) process.stdout.write(`  ${c.seat.padEnd(15)} ${c.why}\n`)
+    }
+  })
+
+budget
+  .command('calibrate')
+  .description('Store a /usage reading for a seat, from which its cap is derived')
+  .requiredOption('--seat <id>', 'which seat you read')
+  .requiredOption('--percent <n>', 'percent of the limit /usage reported as used')
+  .option('--window <window>', '5h | week', '5h')
+  .option('--reset-at <iso>', 'when /usage says the window resets')
+  .action(async (opts) => {
+    const config = loadConfig(program.opts()['config'])
+    const window = opts.window as Window
+    if (window !== '5h' && window !== 'week') throw new BudgetError('window must be 5h or week')
+    if (!config.budget.seats.some((s) => s.id === opts.seat)) {
+      throw new BudgetError(
+        `no seat "${opts.seat}" in config. Declared: ${config.budget.seats.map((s) => s.id).join(', ') || 'none'}`,
+      )
+    }
+    const repo = await repoFromCheckout(config.destination)
+    const { spend } = await loadLedger(repo, (p) => readStateRaw(repo, p))
+    const observed = trailingSpend(spend, opts.seat, window)
+    const cap = impliedCap(Number(opts.percent), observed)
+
+    const calibration: Calibration = {
+      seat: opts.seat,
+      at: new Date().toISOString(),
+      window,
+      percentUsed: Number(opts.percent),
+      observedSpendUsd: Number(observed.toFixed(4)),
+      impliedCapUsd: Number(cap.toFixed(4)),
+      ...(opts.resetAt ? { resetAt: opts.resetAt } : {}),
+    }
+    await appendRecord(repo, CALIBRATIONS_PATH, calibration as unknown as Record<string, unknown>,
+      `Calibrate ${opts.seat} (${window})`)
+
+    process.stdout.write(
+      `recorded: ${opts.percent}% of the ${window} limit used, against $${observed.toFixed(2)} of\n` +
+        `recorded Igor spend — so the cap is about $${cap.toFixed(2)}.\n\n` +
+        `If anyone else uses this seat, the real cap is higher than that: their spend drove the\n` +
+        `percentage up without appearing in the ledger. Erring low means stopping early.\n`,
+    )
+  })
+
 try {
   await program.parseAsync()
 } catch (error) {
@@ -268,7 +336,8 @@ try {
     error instanceof ProposeError ||
     error instanceof GitHubError ||
     error instanceof RoleError ||
-    error instanceof TriageError
+    error instanceof TriageError ||
+    error instanceof BudgetError
   ) {
     process.stderr.write(`${error.message}\n`)
     process.exit(1)

@@ -93,17 +93,17 @@ lane predicates before the loop is allowed to act.
 
 ## 10. Seat budget
 
-- [ ] 10.1 Define seats in org config: id, owner, reserve; and pools as ordered lists of seats
-- [ ] 10.1a Select the first seat in a role's pool with headroom, passing over exhausted ones; a role may name a single seat instead
-- [ ] 10.1b Enforce `budget_share` as a ceiling on the pool, not a reservation — shares need not sum to one
-- [ ] 10.1c Record role, seat, cost and time per invocation, since the seat is chosen at run time and config cannot say which paid
-- [ ] 10.2 Implement `igor budget calibrate`, storing a human's `/usage` reading per seat on the state branch
-- [ ] 10.3 Compute spend as a trailing sum over the last five hours and the last week — no window reset
-- [ ] 10.4 Implement `igor budget`, reporting cap, calibration age, trailing spend, reserve, and headroom
-- [ ] 10.5 Stop work at the reserve floor, leaving a shared seat's remainder for the human — enforced per seat, independently of any role ceiling
-- [ ] 10.5a Hand off when no seat in the pool has headroom, rather than stopping silently
-- [ ] 10.6 Record an exhaustion as a cross-check, flagging a calibration the evidence contradicts
-- [ ] 10.7 Verify an uncalibrated seat reports honestly rather than guessing a cap
+- [x] 10.1 Define seats in org config: id, owner, reserve; and pools as ordered lists of seats
+- [x] 10.1a Select the first seat in a role's pool with headroom, passing over exhausted ones; a role may name a single seat instead
+- [x] 10.1b Enforce `budget_share` as a ceiling on the pool, not a reservation — shares need not sum to one
+- [x] 10.1c Record role, seat, cost and time per invocation, since the seat is chosen at run time and config cannot say which paid
+- [x] 10.2 Implement `igor budget calibrate`, storing a human's `/usage` reading per seat on the state branch
+- [x] 10.3 Compute spend as a trailing sum over the last five hours and the last week — no window reset
+- [x] 10.4 Implement `igor budget`, reporting cap, calibration age, trailing spend, reserve, and headroom
+- [x] 10.5 Stop work at the reserve floor, leaving a shared seat's remainder for the human — enforced per seat, independently of any role ceiling
+- [x] 10.5a Hand off when no seat in the pool has headroom, rather than stopping silently
+- [x] 10.6 Record an exhaustion as a cross-check, flagging a calibration the evidence contradicts
+- [x] 10.7 Verify an uncalibrated seat reports honestly rather than guessing a cap
 
 ## 11. First supervised run
 
