@@ -34,7 +34,7 @@ which for this class of work is irrelevant.
 **Built** (`lore-store`). Mining that memory out of review history (`lore-from-reviews`) is
 scoped but deferred.
 
-Per-agent memory has a fleet problem: five Igors on the same role each learn their own
+Per-agent memory has a fleet problem: five agents doing the same job each learn their own
 lessons, producing five partial knowledge sets with no merge path and stranded improvements
 when any one is retired. Making the *role* and the *lore* the learning objects inverts
 this — one Igor's lesson updates the shared artifact and every instance improves at once.
@@ -125,7 +125,7 @@ timestamp). The body holds the reasoning and any exceptions.
 
 **Provenance is the single source of truth for scoring.** Each provenance item carries an
 `author` and an `at` date, plus a `url` when it cites a mined artifact — a hand-authored entry
-records authorship with no link (§3.2.1). That makes support count (how many items), recency
+records authorship with no link (§3.2.1). That makes support count (how many items), the date
 (decay over their dates), and author-weighting all *derived* rather than stored. Storing
 `support` or `recency` as fields would desync — a recency written in September is wrong by
 November.
@@ -245,7 +245,7 @@ the original discussion before touching something ambiguous, and forbidding it b
 — the content is equally untrusted whether it arrives by firing or by fetching. The cap
 guards against rabbit-holing, not against attack.
 
-### 3.3 Firing — **planned**
+### 3.3 Firing — **built** (injection; relevance filtering still ahead)
 
 **Only `active` entries fire.** `provisional` means proposed but not yet in force. Gating on
 status is what makes review more than ceremony: if a provisional entry fired, an entry would
@@ -574,7 +574,7 @@ the cheapest available calibration mechanism.
 
 ## 5. Surfaces and coordination
 
-### 5.0 The unit of work is an issue, wherever it lives — **scoped** (`core-igor-loop`)
+### 5.0 The unit of work is an issue, wherever it lives — **built**
 
 The atomic unit is **an issue**, not a GitHub Issue. Linear, ClickUp and Jira all hold issues,
 and all of them have a real assignee field — so "prefer the atomic write where a native claim
@@ -598,7 +598,7 @@ Reviewing other people's pull requests is the natural *second* unit and a poor f
 do not assign yourself a review, and two reviewers is not a collision, so the claim mechanic
 has nothing to bite on.
 
-### 5.0.1 Scope comes from the org's own convention — **scoped** (`core-igor-loop`)
+### 5.0.1 Scope comes from the org's own convention — **built**
 
 Igor defines no canonical label. Teams already have conventions — gmango marks ClickUp work
 `AI` or `Human` — and imposing an `igor` label on top would fit worse than the one they have.
@@ -639,7 +639,7 @@ knowledge** and belongs in lore — "work marked AI is agent-eligible, Human mea
 alone." An Igor reading its own lore understands why it is scoped that way rather than only
 that it is.
 
-### 5.0.2 State is a cache; correctness never depends on it — **scoped** (`core-igor-loop`)
+### 5.0.2 State is a cache; correctness never depends on it — **built**
 
 Watermarks and seen-item records are an efficiency measure, not a correctness mechanism. **The
 tracker is the source of truth for what is claimed.** An Igor that loses its state re-examines
@@ -666,7 +666,7 @@ Writing the cache principle down matters more than the location, because it is e
 would quietly stop holding once state is durable and shared — at which point the branch starts
 looking like a database and losing it starts looking like a failure.
 
-### 5.0.3 What a role actually looks like — **scoped** (`core-igor-loop`)
+### 5.0.3 What a role actually looks like — **built**
 
 Merge semantics (§6.0) describe how fields combine, not what they are called. The shape:
 
@@ -723,7 +723,7 @@ Dry-run is the one to build first. It also recovers the useful half of shadow mo
 what an Igor would do without it doing anything — as a **development affordance** rather than a
 runtime mode, which is where it belonged.
 
-### 5.0.4 Work already in flight — **scoped** (`core-igor-loop`)
+### 5.0.4 Work already in flight — **built**
 
 An Igor unassigns itself on completion, so the item returns to the pool and is rediscovered
 next cycle. Without a check it would claim it again and redo work sitting in review.
@@ -733,7 +733,7 @@ flight" is never an org preference, so it is tool behaviour rather than config. 
 see it differs: a linked pull request on GitHub, a linked branch on Linear. The adapter answers
 "does this item have work in flight?" and the loop skips.
 
-### 5.1 Adapters, not integrations — **scoped** (`core-igor-loop`)
+### 5.1 Adapters, not integrations — **built** (GitHub only)
 
 Slack, ClickUp, GitHub, Linear, and Discord are *examples* of surfaces, not the
 architecture. An adapter provides: `search` returning normalized candidates, `claim`,
@@ -742,7 +742,7 @@ architecture. An adapter provides: `search` returning normalized candidates, `cl
 GitHub ships first on ubiquity — it is the one platform nearly every team has. Linear
 second (shares the assignment model), Discord third (forces the convention path).
 
-### 5.2 One claim mechanism, not two — **scoped**
+### 5.2 One claim mechanism, not two — **built**
 
 **Use the assignment field for visibility; use ordering for correctness.** Those are separate
 jobs and conflating them produced a design with two race mechanisms.
@@ -767,7 +767,7 @@ provably sufficient. Accepted because the failure needs two Igors hitting one it
 seconds, the consequence is duplicated work rather than damage, and two claims on one item is
 immediately visible to a human.
 
-### 5.3 Every pickup takes a claim — **scoped**
+### 5.3 Every pickup takes a claim — **built**
 
 An Igor claims on the tracker where humans can see it, or it skips the item. There is no
 second, quieter destination and no confidence score deciding between them.
@@ -950,7 +950,7 @@ rather than invisible.
 
 ## 6. Execution
 
-### 6.0 Policy is org config, not tool behaviour — **planned**
+### 6.0 Policy is org config, not tool behaviour — **built**
 
 Three times this design encoded one org's convention as though it were universal: a canonical
 label, tracker query syntax, and what an Igor does when work is finished. The rule that
@@ -1000,7 +1000,7 @@ to reversible artifacts — is policy with a safe default. Reversible-only in pa
 being treated as inviolable when it is really a strong default an org may raise for a role it
 has come to trust.
 
-### 6.1 Action space, not silence — **scoped**
+### 6.1 Action space, not silence — **built**
 
 Risk is capped by what an Igor may *finalize*, not by whether it is visible. Draft PRs,
 comments, proposals — never merges, sends, or irreversible state changes. This is what lets
@@ -1013,7 +1013,7 @@ local open-weight model (free, unlimited, no seat consumption); hard work goes t
 frontier model. As open models improve this is a threshold to move, not an architecture to
 rewrite — turning the eventual fully-open migration into a dial rather than a decision.
 
-### 6.3 Budget — **planned**
+### 6.3 Budget — **built**
 
 - **There is no proactive quota API.** `/usage` shows historical spend; no hook or endpoint
   warns before a cap. Wind-down must therefore be built reactively — catch the limit error,
@@ -1061,7 +1061,7 @@ headline percentages. If it also qualifies them, the figures understate real con
 that errs toward overspending, which is the direction that matters. Worth confirming before
 relying on the numbers for a seat used from more than one machine.
 
-### 6.4 Graceful handoff — **scoped**
+### 6.4 Graceful handoff — **built**
 
 The failure mode the claim protocol creates: an Igor announces "I'm on this", humans and
 other Igors back off, then it goes silent mid-task. So exhaustion must produce a posted
