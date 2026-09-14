@@ -311,6 +311,31 @@ condition simply is not compiled into the next index build — a reviewable diff
 state. This is a strong reason to keep conditions as editable data rather than fine-tuning
 a classifier, which would reintroduce the diffuse-and-unexcisable problem one level down.
 
+### 3.4.1 Fire counts decide what a lesson has become — **planned**
+
+Firing is recorded — a count and a last-fired timestamp per entry — and the counts are worth
+acting on, because the two extremes are both failures wearing the shape of an entry.
+
+**An entry that fires on nearly everything is not lore.** It is role configuration that ended
+up in the wrong place. Lore is for what applies *sometimes*, and something that always applies
+should be standing instruction, where it costs nothing to match and cannot be crowded out by a
+firing cap. Leaving it in the store means paying retrieval for a constant.
+
+**An entry that never fires is dead weight, and nobody will notice.** A store only grows.
+Without a signal, the failure is silent: entries accumulate, the index gets slower to build,
+consolidation gets harder to reason about, and nothing ever says which entries were carrying
+their weight. A never-firing entry is also evidence its condition was mis-derived — which
+§3.4 already distinguishes from the lesson itself being wrong.
+
+Neither promotion nor pruning should be automatic. Both change what an Igor knows, which is
+the thing review exists to gate, so they belong in the review queue as proposals with the
+firing history attached. The rule is a threshold and a window, and there is no basis for
+choosing either yet: it needs firing history from a real store, which does not exist.
+
+Deliberately not built with retrieval. Recording counts is cheap and can begin immediately;
+acting on them requires history to act on, and a threshold guessed before any data would be a
+number nobody could later argue with.
+
 ### 3.5 Consolidation — backfill **scoped**, ongoing **planned**
 
 **Salience signals**, roughly by value:

@@ -42,7 +42,8 @@ Explicitly out of scope:
   Activation-keyed conditions need the recognition layer moved off a closed API.
 - **The promote/prune feedback loop.** Fire counts are recorded here; acting on them —
   promoting an always-firing entry into standing role config, pruning one that never fires —
-  waits until there is enough firing history to act on.
+  waits until there is enough firing history to act on. Reasoning in `docs/architecture.md`
+  §3.4.1, tracked as adamstallard/igor#4.
 
 ## Capabilities
 
