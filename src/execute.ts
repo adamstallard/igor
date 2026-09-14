@@ -43,7 +43,7 @@ export function permits(role: Role, action: Action): boolean {
  * and this says so, so that instruction-shaped text in an item reads as information about the
  * task rather than as direction.
  */
-export function workerSystemPrompt(role: Role, allowed: readonly Action[]): string {
+export function workerSystemPrompt(role: Role, allowed: readonly Action[], lore = ''): string {
   return [
     `You are "${role.name}", working on one item in a checkout of the repository.`,
     '',
@@ -62,6 +62,9 @@ export function workerSystemPrompt(role: Role, allowed: readonly Action[]): stri
     ...(role.instructions.length > 0
       ? ['Standing instructions for this role:', ...role.instructions.map((i) => `  ${i.replace(/\n/g, '\n  ')}`)]
       : []),
+    // Lore sits with the standing instructions rather than with the item, because a human
+    // reviewed it. That is the whole function of the `active` gate.
+    ...(lore === '' ? [] : ['', lore]),
   ].join('\n')
 }
 
@@ -180,6 +183,8 @@ export function prBody(linkage: string, transcript: string, candidate: Candidate
 export interface ExecuteOptions {
   /** Defaults to headless Claude. */
   worker?: WorkerRunner
+  /** Rendered lore for the trusted channel. Empty when the store is empty or over budget. */
+  lore?: string
   model?: string
   timeoutMs?: number
   /** Checked between the worker finishing and anything being published. */
@@ -221,7 +226,7 @@ export async function execute(
     try {
       worker = await (options.worker ?? headlessClaude)({
         cwd: tree.path,
-        system: workerSystemPrompt(role, role.allow),
+        system: workerSystemPrompt(role, role.allow, options.lore ?? ''),
         prompt: workerPrompt(candidate, linkage),
         model,
         timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,

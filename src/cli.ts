@@ -17,6 +17,8 @@ import type { Candidate } from './adapter.js'
 import { laneVerdict, universalSkip } from './predicate.js'
 import { CloneProvider } from './worktree.js'
 import { recordExecution } from './execute.js'
+import { overBudgetMessage, recordFiring, renderLore, selectEntries } from './firing.js'
+import { appendRecord } from './state.js'
 import { TriageError } from './triage.js'
 import { BudgetError, budgetGate, loadSpend, readAllSeats, renderBudget } from './budget.js'
 import { readStateRaw } from './state.js'
@@ -111,13 +113,10 @@ program
     }
 
     for (const entry of entries) {
-      const s = scoreEntry(entry, {
-        halfLifeDays: config.halfLifeDays,
-        experts: config.experts,
-      })
+      const s = scoreEntry(entry, { experts: config.experts })
       const expert = s.expertSupport > 0 ? ` expert:${s.expertSupport}` : ''
       process.stdout.write(
-        `${entry.status.padEnd(11)} support:${String(s.support).padEnd(4)} recency:${s.recency.toFixed(2)}${expert}  ${entry.id}\n` +
+        `${entry.status.padEnd(11)} support:${String(s.support).padEnd(4)} newest:${s.newestAt ?? '(none)'}${expert}  ${entry.id}\n` +
           `            ${entry.scope}  ${entry.claim.replace(/\s+/g, ' ').trim()}\n`,
       )
     }
@@ -318,11 +317,28 @@ program
       return budgetGate(config.budget, role, readings, spend)
     }
 
+    // Lore is read fresh each item: the store is a repository someone may have just merged to.
+    const fireLore = (item: Candidate) => {
+      const entries = loadAll(config.destination)
+        .map((l) => l.entry)
+        .filter((e): e is Entry => e !== undefined)
+      const result = selectEntries(entries, role, { experts: config.experts })
+      const over = overBudgetMessage(result)
+      if (over) process.stderr.write(`  ! ${over}\n`)
+      else if (result.fired.length > 0) {
+        process.stdout.write(`  lore: ${result.fired.length} entries, ~${result.estimatedTokens} tokens\n`)
+      }
+      void recordFiring(destination, item.id, role, result, appendRecord).catch(() => undefined)
+      return renderLore(result.fired)
+    }
+
     const work = async (item: Candidate) => {
       const gate = await gateFor()
+      const lore = fireLore(item)
       process.stdout.write(`\nworking ${item.id}  "${item.title}"\n  seat: ${gate.seat ?? '(unenforced)'}\n`)
       const run = await runItem(deps, item, role, identity, {
         budget: gate,
+        lore,
         onStep: (step) => process.stdout.write(`  ${step}…\n`),
       })
       process.stdout.write(`  ${run.outcome}: ${run.reason}\n`)

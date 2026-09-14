@@ -125,6 +125,7 @@ export async function runItem(
   step('working')
   const execution = await execute(trees, tracker, codeHost, candidate, role, {
     ...options,
+    ...(options.lore === undefined ? {} : { lore: options.lore }),
     onPublish: () => step('publishing'),
     stillHeld: async () => (await checkpoint(tracker, claim, identity)).status === 'held',
   })

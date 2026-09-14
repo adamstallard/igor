@@ -171,26 +171,32 @@ describe('scoring', () => {
       at: '2026-03-14',
       url: `https://example.invalid/${i}`,
     }))
-    expect(score(provenance, { halfLifeDays: 365, asOf }).support).toBe(14)
+    expect(score(provenance).support).toBe(14)
   })
 
-  it('reads recency from the freshest item, not the pile', () => {
-    const old = Array.from({ length: 20 }, () => ({ author: 'a', at: '2020-01-01' }))
-    const stale = score(old, { halfLifeDays: 365, asOf })
-    const fresh = score([...old, { author: 'a', at: '2026-09-13' }], { halfLifeDays: 365, asOf })
-    expect(fresh.recency).toBeGreaterThan(stale.recency)
-    expect(fresh.recency).toBeCloseTo(1, 2)
+  it('reports the date of the freshest evidence, not a decayed weight', () => {
+    const old = [{ author: 'a', at: '2020-07-11' }, { author: 'b', at: '2021-01-02' }]
+    expect(score(old).newestAt).toBe('2021-01-02')
   })
 
-  it('halves at one half-life', () => {
-    const s = score([{ author: 'a', at: '2025-09-13' }], { halfLifeDays: 365, asOf })
-    expect(s.recency).toBeCloseTo(0.5, 2)
+  it('does not diminish an entry for being old', () => {
+    // Lore is mined from historical review comments and is old by construction. A decay
+    // curve reported this whole store as stale while saying nothing about whether any
+    // lesson still held, and buried the entries that had held longest.
+    const old = score([{ author: 'a', at: '2020-07-11' }])
+    const recent = score([{ author: 'a', at: '2026-09-13' }])
+    expect(old.support).toBe(recent.support)
+    expect(Object.keys(old).sort()).toEqual(Object.keys(recent).sort())
   })
 
-  it('recomputes lower on a later date with no change to the entry', () => {
-    const provenance = [{ author: 'a', at: '2026-01-01' }]
-    const now = score(provenance, { halfLifeDays: 365, asOf })
-    const later = score(provenance, {
+  it('ignores an unparseable date rather than reporting it as newest', () => {
+    expect(score([{ author: 'a', at: 'whenever' }, { author: 'b', at: '2024-01-28' }]).newestAt).toBe('2024-01-28')
+  })
+
+  it('reports no date when there is no provenance', () => {
+    expect(score([]).newestAt).toBeUndefined()
+  })
+   const later = score(provenance, {
       halfLifeDays: 365,
       asOf: new Date('2027-09-13T00:00:00Z'),
     })
@@ -226,12 +232,6 @@ describe('destination boundary', () => {
     expect(() => resolveConfig({}, '/tmp/team')).toThrow(/destination is required/)
   })
 
-  it('defaults the half-life but allows an override', () => {
-    expect(resolveConfig({ destination: '/tmp/x' }, '/tmp').halfLifeDays).toBe(365)
-    expect(
-      resolveConfig({ destination: '/tmp/x', scoring: { halfLifeDays: 90 } }, '/tmp').halfLifeDays,
-    ).toBe(90)
-  })
 
   it('rejects a nonsensical half-life', () => {
     expect(() =>

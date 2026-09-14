@@ -6,7 +6,6 @@ import { parseOrgBudget, type OrgBudget } from './budget.js'
 
 export const DEFAULT_CONFIG_FILENAME = 'igor.config.yaml'
 export const EXAMPLE_CONFIG_FILENAME = 'igor.config.example.yaml'
-export const DEFAULT_HALF_LIFE_DAYS = 365
 
 export interface Config {
   /** Absolute path to the repository or directory entries are written to. */
@@ -15,7 +14,6 @@ export interface Config {
   reviewers: string[]
   /** Authors whose provenance carries extra weight. */
   experts: string[]
-  halfLifeDays: number
   /**
    * Whether the destination repository is public. Declared so the provenance guard works
    * without a network call; looked up when absent.
@@ -66,21 +64,6 @@ export function resolveConfig(raw: unknown, configDir: string): Config {
     )
   }
 
-  const scoring = data['scoring']
-  let halfLifeDays = DEFAULT_HALF_LIFE_DAYS
-  if (scoring !== undefined) {
-    if (typeof scoring !== 'object' || scoring === null || Array.isArray(scoring)) {
-      throw new ConfigError('scoring must be a mapping')
-    }
-    const value = (scoring as Record<string, unknown>)['halfLifeDays']
-    if (value !== undefined) {
-      if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
-        throw new ConfigError('scoring.halfLifeDays must be a positive number of days')
-      }
-      halfLifeDays = value
-    }
-  }
-
   const publicStore = data['publicStore']
   if (publicStore !== undefined && typeof publicStore !== 'boolean') {
     throw new ConfigError('publicStore must be true or false')
@@ -91,7 +74,6 @@ export function resolveConfig(raw: unknown, configDir: string): Config {
     budget: parseOrgBudget(data['budget']),
     reviewers: requireStringArray(data['reviewers'], 'reviewers'),
     experts: requireStringArray(data['experts'], 'experts'),
-    halfLifeDays,
     ...(publicStore === undefined ? {} : { publicStore }),
   }
 }
