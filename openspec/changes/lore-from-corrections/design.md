@@ -55,10 +55,24 @@ than the lore is worth and ends with the review gate ignored. Recurrence is the 
 **Attributing the candidate to the Igor.** Routes review to an account that cannot confirm
 anything, and inflates support with an assertion that is not independent.
 
+### Structural searches are not worth gating
+
+"Search" spans four orders of magnitude and only one end of it is worth a thought.
+
+Structural searches have known cost and no model: `git log --grep='^Revert'` is one pass over
+history, `git blame -L` was measured at ~10ms a range, `git log --follow` is cheap. Tracker
+queries are nearly as predictable — review threads cost one point a page against an hourly
+budget of thousands. Nothing here needs estimating and nothing needs asking; running them is
+what an agent is for.
+
+They are also incrementally cacheable, which shrinks it further. A revert does not stop being
+one, and a comment's introducing commit does not move, so even a large history is scanned once
+and then only where it grew.
+
 ## Open
 
-**Whether an expensive search should ask first.** Reverts are one grep and comment survival is
-milliseconds, but a semantic search across review history may not be cheap. If corroboration
-turns out to cost enough to notice, a threshold above which the Igor offers rather than acts
-would be reasonable — and picking that threshold before anything has been measured is the
-guess this project keeps declining to make.
+**What a semantic search costs.** Finding comments that *mean* what a remark meant is the one
+tier whose cost is not known in advance — and it is the recognizer, which does not exist. Its
+profile is a question about resident models rather than about corroboration, and the threshold
+above which an Igor should offer rather than act cannot be chosen until something has measured
+it.
