@@ -50,9 +50,19 @@ to reply to.
   a receipt, nothing blocks, and no marker or settle interval applies. You do not claim an item
   to read it.
 
+  Read-only is not a mode that can only describe problems. The worker still investigates and
+  still works out the change; a comment carrying the fix is delivery, and for a small one it
+  beats a draft — readable in the thread where the question was asked, with the reasoning
+  beside it, and leaving nobody a branch to close. It needs no new plumbing either: the worker
+  knows what it would change, so the answer carries it.
+
+  Past some size that inverts. A four-line fix inline is a gift and a four-hundred-line one
+  buries the thread, so above a threshold the answer says what it would change and offers a
+  draft instead of pasting one.
+
   Where the person who *holds* the item is the one who mentioned the Igor, that is an
-  invitation and the action space may widen back to a draft — deliberately left out of the
-  first version, because it needs the authority check the rest of this change introduces.
+  invitation and the action space may widen back to a draft. Left out of the first version,
+  and less pressing than it looked, since a comment already delivers the common case.
 - **A direct request enters at triage as an ordinary candidate.** Same path, same
   guardrails; only provenance differs. Requested work outranks discovered work, because a
   human asking is a far stronger relevance signal than a query match.
