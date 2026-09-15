@@ -53,9 +53,21 @@ second, and so on — quadratic wasted claims, each burning a settle interval an
 comment that is immediately retracted. Diverging the order makes a collision incidental instead
 of guaranteed, and costs a shuffle.
 
-**Concurrent state writes conflict, and a conflicted write is retried rather than fatal.** Two
-processes advancing a watermark race on the same blob. Today one throws and the cycle is
-reported as failed, which is recoverable but reads as a defect.
+**Concurrent state writes conflict, and a conflicted write is retried rather than fatal.** Today
+one throws and the cycle is reported as failed, which is recoverable but reads as a defect.
+
+The conflict cannot be laid out away. Measured against the Contents API: two concurrent writes
+to **different paths** on one branch still return 409 — `is at f3b1c59… but expected 93283b5…` —
+because the conflict is on the branch ref, not the blob. Per-process files buy nothing. A retry
+once the ref settles succeeds.
+
+So retry is mandatory, and the only question is whether it is *correct*. **State becomes
+append-only, which is what makes it so.** `discovery.json` and `deferred.json` are both folds
+over a stream — the newest `updatedAt` per source, the last record per item — so each can be a
+log that is replayed on read. Retrying then means re-reading and re-appending the same line:
+order-independent, and incapable of clobbering. Retrying a read-modify-write of a keyed map
+means re-applying a semantic change to a base that moved, and the naive form of it — reissuing
+the same bytes with a fresh sha — silently destroys whatever the other writer just recorded.
 
 Explicitly out of scope:
 
