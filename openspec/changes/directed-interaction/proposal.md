@@ -91,9 +91,20 @@ to reply to.
   `igor-backend` covers it" — which also makes the fleet legible to people who have no idea
   which Igor does what.
 - **Ambiguity gets exactly one clarifying question**, then a hand-back rather than a guess.
-- **Caps everywhere.** Two or three exchanges per thread, then leave it to a human. A
-  fraction of cycle budget for conversation, so talking cannot starve work. A per-requester
-  cap so one enthusiastic person cannot consume a seat.
+- **Conversation is bounded by budget, not by a count of exchanges.** A fraction of cycle
+  budget for talking, so talking cannot starve work.
+
+  There is deliberately no "three replies and stop". Once strangers get no reply and
+  Igor-to-Igor exchange is structured, the only conversation partner left is a colleague with
+  write access asking about one item — and cutting them off at a number is hostile to exactly
+  the person this is for, whose fourth question is often the useful one. A count is also a
+  poor proxy for what it is protecting: three replies on a large repository can cost more than
+  ten on a small one, while the budget bounds the resource itself.
+
+- **No replies to bot accounts.** This is what a count would otherwise have caught: a bot with
+  write access that mentions an Igor can start an exchange neither side ends. Igor-to-Igor is
+  already structured, so the residue is other automation, and refusing it by account type is
+  exact where a count is a blunt guess.
 - **No free-form Igor-to-Igor conversation.** Agent exchange is structured — claims,
   handoffs, stand-downs. Two Igors being polite at each other would burn a week's allowance
   in an afternoon.
