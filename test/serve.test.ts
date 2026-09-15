@@ -2,7 +2,7 @@ import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import type { Artifact, Candidate, CodeHost, Tracker } from '../src/adapter.js'
+import type { Artifact, Candidate, ClaimVerdict, CodeHost, Tracker } from '../src/adapter.js'
 import type { Gate } from '../src/budget.js'
 import type { CycleDeps } from '../src/loop.js'
 import type { Role } from '../src/role.js'
@@ -43,7 +43,7 @@ const issue = (n: number): Candidate =>
     idleDays: 0,
   }) as unknown as Candidate
 
-function deps(found: Candidate[], opts: { searchThrows?: boolean } = {}) {
+function deps(found: Candidate[], opts: { searchThrows?: boolean; verdict?: ClaimVerdict } = {}) {
   let searches = 0
   const tracker: Tracker = {
     name: 'github',
@@ -56,7 +56,7 @@ function deps(found: Candidate[], opts: { searchThrows?: boolean } = {}) {
     },
     claim: async () => true,
     commentsSince: async () => [],
-    verifyClaim: async () => ({ status: 'held' }),
+    verifyClaim: async () => opts.verdict ?? { status: 'held' },
     report: async () => {},
     release: async () => {},
     linkage: () => 'Closes #1',
@@ -326,6 +326,47 @@ describe('the loop records what it handed back', () => {
       ...base,
       maxCycles: 1,
       note: async () => { throw new Error('state branch unreachable') },
+    })
+    expect(s.worked).toBe(1)
+    expect(s.failures).toBe(0)
+  })
+})
+
+describe('the loop records a stop', () => {
+  it('records it, so the item does not come straight back on its own receipt', async () => {
+    // Same failure as an unrecorded handoff, but worse: the item was put down by a person, and
+    // the claim message promises them the stop works.
+    const { d } = deps([issue(1)], { verdict: { status: 'stopped', by: 'bob', at: '2026-09-14T11:40:00Z' } })
+    const stops: { id: string; at?: string }[] = []
+    await serve(d, role(), 'igor-bot', {
+      ...base,
+      maxCycles: 1,
+      recordStop: async (_dest: string, c: Candidate, _reason: string, at?: string) => {
+        stops.push({ id: c.id, ...(at === undefined ? {} : { at }) })
+      },
+    })
+    expect(stops).toEqual([{ id: 'github:o/r#1', at: '2026-09-14T11:40:00Z' }])
+  })
+
+  it('records no stop for an item it simply finished', async () => {
+    const { d } = deps([issue(1)])
+    const stops: string[] = []
+    await serve(d, role(), 'igor-bot', {
+      ...base,
+      maxCycles: 1,
+      recordStop: async (_dest: string, c: Candidate) => { stops.push(c.id) },
+    })
+    expect(stops).toEqual([])
+  })
+
+  it('keeps going when the record cannot be written', async () => {
+    // An unwritable state branch costs the cooldown, not the cycle — the stop itself was
+    // already honoured on the item.
+    const { d } = deps([issue(1)], { verdict: { status: 'stopped', by: 'bob' } })
+    const s = await serve(d, role(), 'igor-bot', {
+      ...base,
+      maxCycles: 1,
+      recordStop: async () => { throw new Error('state branch unreachable') },
     })
     expect(s.worked).toBe(1)
     expect(s.failures).toBe(0)

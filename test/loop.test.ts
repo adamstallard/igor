@@ -6,10 +6,10 @@ import type { Artifact, ArtifactRequest, Candidate, ClaimVerdict, CodeHost, Trac
 import type { Role } from '../src/role.js'
 import type { TreeProvider, WorkingTree, ChangedFile } from '../src/worktree.js'
 import {
-  declineReason, dropDeferred, recordDecisions, runItem,
+  declineReason, dropDeferred, dropStopped, recordDecisions, runItem,
   type CycleReport, type ItemDeps,
 } from '../src/loop.js'
-import { defer, NO_DEFERRALS } from '../src/deferred.js'
+import { defer, NO_DEFERRALS, recordStop } from '../src/deferred.js'
 
 const candidate = (over: Partial<Candidate> = {}): Candidate =>
   ({ id: 'github:o/r#7', repo: 'o/r', native: '7', title: 'A bug', body: '', author: 'reporter', assignees: [], labels: [], paths: [], state: 'open', ...over }) as unknown as Candidate
@@ -128,6 +128,13 @@ describe('a stop gets a receipt, not a handoff', () => {
     expect(posts.at(-1)).toMatch(/stopped at bob's request/)
     expect(posts.at(-1)).not.toMatch(/Still to do/)
     expect(released).toContain('igor-bot')
+  })
+
+  it('leaves the stop time out where the surface gave none, rather than inventing one', async () => {
+    // The caller reads an absent time as now, which is the closest honest answer.
+    const { d } = deps({ verdicts: [{ status: 'stopped', by: 'bob' }] })
+    const r = await runItem(d, candidate(), role(), 'igor-bot', noWait)
+    expect(r.stoppedAt).toBeUndefined()
   })
 })
 
@@ -304,6 +311,90 @@ describe('items handed back earlier', () => {
   })
 })
 
+describe('items somebody stopped', () => {
+  const NOW = Date.parse('2026-09-14T12:00:00Z')
+  const STOPPED_AT = new Date(NOW - 30 * 60000).toISOString()
+  const item = (n: number, over: Partial<Candidate> = {}) =>
+    candidate({ id: `github:o/r#${n}`, native: String(n), ...over })
+
+  function tracker(spoken: Record<string, { author: string; at: string; body: string }[]> = {}, throws = false) {
+    let asked = 0
+    const t = {
+      commentsSince: async (c: Candidate) => {
+        asked += 1
+        if (throws) throw new Error('tracker unreachable')
+        return spoken[c.id] ?? []
+      },
+    } as unknown as Tracker
+    return { t, asked: () => asked }
+  }
+
+  const record = (c: Candidate, reason = 'stopped by bob') => recordStop(NO_DEFERRALS, c, reason, STOPPED_AT, NOW)
+  const blank = () => ({ skipped: [] as CycleReport['skipped'], skippedStopped: 0 })
+
+  it('holds an item back for the rest of its cooldown', async () => {
+    // Without this the stop lasts one cycle: the stop comment itself lifts the item above the
+    // watermark, and nothing downstream remembers it was stopped.
+    const c = item(7)
+    const report = blank()
+    expect(await dropStopped(tracker().t, [c], record(c), 60, 'igor-bot', report, NOW)).toEqual([])
+    expect(report.skippedStopped).toBe(1)
+    expect(report.skipped[0]?.reason).toContain('30 minutes left')
+    expect(report.skipped[0]?.stage).toBe('stopped')
+  })
+
+  it('lets it back once the cooldown has elapsed, without asking anyone', async () => {
+    const c = item(7)
+    const asker = tracker()
+    expect(await dropStopped(asker.t, [c], record(c), 20, 'igor-bot', blank(), NOW)).toEqual([c])
+    expect(asker.asked()).toBe(0)
+  })
+
+  it('lets it back early on a go-ahead', async () => {
+    const c = item(7)
+    const spoke = tracker({ 'github:o/r#7': [{ author: 'alice', at: '', body: 'go ahead' }] })
+    expect(await dropStopped(spoke.t, [c], record(c), 60, 'igor-bot', blank(), NOW)).toEqual([c])
+  })
+
+  it('does not hear a go-ahead in its own receipt', async () => {
+    // The receipt is the Igor talking to itself, and a stop is the wrong place to rely on a
+    // phrase never happening to match.
+    const c = item(7)
+    const own = tracker({ 'github:o/r#7': [{ author: 'igor-bot', at: '', body: 'carry on' }] })
+    expect(await dropStopped(own.t, [c], record(c), 60, 'igor-bot', blank(), NOW)).toEqual([])
+  })
+
+  it('keeps waiting when the tracker will not say, unlike a handoff record', async () => {
+    // Failing toward the work is right for a record whose loss costs a repeated question, and
+    // wrong for one whose loss costs re-claiming something a person stopped.
+    const c = item(7)
+    expect(await dropStopped(tracker({}, true).t, [c], record(c), 60, 'igor-bot', blank(), NOW)).toEqual([])
+  })
+
+  it('asks only about items that were stopped', async () => {
+    const c = item(7)
+    const asker = tracker()
+    await dropStopped(asker.t, [c, item(8), item(9)], record(c), 60, 'igor-bot', blank(), NOW)
+    expect(asker.asked()).toBe(1)
+  })
+
+  it('passes everything through when nothing was ever stopped', async () => {
+    const all = [item(7), item(8)]
+    expect(await dropStopped(tracker().t, all, NO_DEFERRALS, 60, 'igor-bot', blank(), NOW)).toEqual(all)
+  })
+
+  it('stops once the cycle has the items it wanted', async () => {
+    const fresh = Array.from({ length: 5 }, (_, n) => item(n))
+    const stopped = item(9)
+    const asker = tracker()
+    const kept = await dropStopped(
+      asker.t, [...fresh, stopped], record(stopped), 60, 'igor-bot', blank(), NOW, 3,
+    )
+    expect(kept).toHaveLength(3)
+    expect(asker.asked()).toBe(0)
+  })
+})
+
 describe('standing down after the settle window', () => {
   // The first verdict is the settle check, which must hold for execution to begin; the second
   // is the mid-execution checkpoint that finds the claim gone.
@@ -338,6 +429,13 @@ describe('standing down after the settle window', () => {
     expect(posts.at(-1)).toMatch(/alice has it now/)
     expect(posts.at(-1)).toContain('https://example.test/9')
     expect(r.spoke).toBe(true)
+  })
+
+  it('carries when the stop was issued, which is what the cooldown is measured from', async () => {
+    // Not when the run noticed: a worker can be minutes into an item before it checkpoints.
+    const { d } = then({ status: 'stopped', by: 'bob', at: '2026-09-14T11:40:00Z' })
+    const r = await runItem(d, candidate(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+    expect(r.stoppedAt).toBe('2026-09-14T11:40:00Z')
   })
 
   it('publishes nothing on a stop, which is the case the re-check was built for', async () => {

@@ -682,6 +682,15 @@ comment itself lifts the item above the watermark, which is what makes it return
 what keeps the Igor quiet until a reply or an edit answers it, and losing it costs one repeated
 handoff.
 
+**Stops are the exception, and the principle does not hold for them.** They live in the same
+file, and losing them costs a re-claim of something a person put down rather than a repeated
+question. The tracker does not cover for it: a claim re-reads the item for a stop only back to
+the settle window, so a stop comment still sitting on the item is outside what claiming looks
+at. What bounds the damage is that the other half of the rule — an item somebody has taken is
+skipped as held — is read live every cycle, so what a lost record costs is the waiting, not the
+deference. Restoring the invariant means widening the claim-time stop scan to the cooldown, so
+that "was I recently stopped" is answered by the tracker.
+
 Writing the cache principle down matters more than the location, because it is exactly what
 would quietly stop holding once state is durable and shared — at which point the branch starts
 looking like a database and losing it starts looking like a failure.

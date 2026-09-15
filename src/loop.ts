@@ -1,5 +1,5 @@
 import type { Candidate, CodeHost, Tracker } from './adapter.js'
-import { checkpoint, stopReceipt, takeClaim, type ClaimOptions } from './claiming.js'
+import { checkpoint, eligibleAfterStop, stopReceipt, takeClaim, type ClaimOptions } from './claiming.js'
 import { complete, execute, type ExecuteOptions, type ExecutionResult } from './execute.js'
 import { handOffFrom, type HandoffReason } from './handoff.js'
 import type { Role } from './role.js'
@@ -80,6 +80,11 @@ export interface ItemRun {
   spoke: boolean
   /** Why it was handed back, where it was — a budget handoff says nothing about the item. */
   handoff?: HandoffReason['kind']
+  /**
+   * When the stop was issued, where the surface said. Absent on any other outcome, and absent
+   * on a stop the surface gave no time for, which the caller reads as now.
+   */
+  stoppedAt?: string
 }
 
 export type Step = 'claiming' | 'settling' | 'working' | 'publishing' | 'completing'
@@ -114,7 +119,10 @@ export async function runItem(
     // it is presumably taking the work and composing a handoff would only delay the release.
     if (claim.outcome === 'stopped' && claim.verdict) {
       await tracker.report(candidate, stopReceipt(role, claim.verdict)).catch(() => undefined)
-      return { outcome: 'stopped', candidate, reason: claim.reason, costUsd: 0, spoke: true }
+      return {
+        outcome: 'stopped', candidate, reason: claim.reason, costUsd: 0, spoke: true,
+        ...(claim.verdict.at === undefined ? {} : { stoppedAt: claim.verdict.at }),
+      }
     }
     return {
       outcome: claim.outcome === 'lost' ? 'lost' : 'refused',
@@ -180,7 +188,11 @@ export async function runItem(
       if (verdict.status === 'stopped') {
         const artifact = execution.artifact ? execution.artifact.url : undefined
         await tracker.report(candidate, stopReceipt(role, verdict, artifact)).catch(() => undefined)
-        return { outcome: 'stopped', candidate, reason: execution.reason, execution, costUsd: execution.costUsd, spoke: true }
+        return {
+          outcome: 'stopped', candidate, reason: execution.reason, execution,
+          costUsd: execution.costUsd, spoke: true,
+          ...(verdict.at === undefined ? {} : { stoppedAt: verdict.at }),
+        }
       }
       if (verdict.status === 'lost') {
         // Silent where there is nothing to hand over: whoever took it is visibly on it, and a
@@ -245,6 +257,8 @@ export interface CycleReport {
   skippedLane: number
   /** Handed back earlier and nothing has answered, so not reconsidered. */
   skippedDeferred: number
+  /** Stopped, and neither the cooldown nor a go-ahead has let it back yet. */
+  skippedStopped: number
   triaged: number
   /** Everything dropped before a model call, with the reason, so a lane can be tuned. */
   skipped: { candidate: Candidate; reason: string; stage: string }[]
@@ -292,6 +306,7 @@ export async function planCycle(
     skippedUniversal: 0,
     skippedLane: 0,
     skippedDeferred: 0,
+    skippedStopped: 0,
     triaged: 0,
     skipped: [],
     verdicts: [],
@@ -332,10 +347,15 @@ export async function planCycle(
   }
 
   const limit = options.limit ?? 10
-  const deferrals = await loadDeferrals(deps.destination)
-  // Filtered before the limit is applied, so an item nobody has answered does not consume a
-  // triage slot — and told the limit, so it stops looking once the cycle has enough work.
-  const considered = await dropDeferred(deps.tracker, survivors, deferrals, options.identity ?? '', report, limit)
+  const quiet = await loadDeferrals(deps.destination)
+  // Both filters run before the limit is applied, so an item nobody has answered and an item
+  // somebody stopped do not consume triage slots — and both are told the limit, so they stop
+  // looking once the cycle has enough work. The stop gate goes first: it is the cheaper of the
+  // two, and it is the one whose answer a person is owed.
+  const awake = await dropStopped(
+    deps.tracker, survivors, quiet, role.cooldownMinutes, options.identity ?? '', report, now, limit,
+  )
+  const considered = await dropDeferred(deps.tracker, awake, quiet, options.identity ?? '', report, limit)
   if (considered.length > 0) {
     const batch = await (options.triage ?? triageBatch)(
       considered,
@@ -404,6 +424,63 @@ export async function dropDeferred(
   return kept
 }
 
+/**
+ * Drops survivors somebody stopped, until the tracker says they may come back.
+ *
+ * Without this the stop lasts one cycle. A stop moves the item's `updatedAt`, the lane still
+ * admits it and triage gives the same verdict on the same text, so the Igor re-claims what it
+ * was just told to put down — and the claim message promises anyone reading it that a stop
+ * works immediately.
+ *
+ * `eligibleAfterStop` holds the rule and the order the tracker is asked in; this only supplies
+ * the record and the request. A tracker that will not answer means no go-ahead was found and
+ * the item waits out the rest of its cooldown. That is the opposite of how `dropDeferred`
+ * fails, and deliberately: failing toward the work is right for a record whose loss costs a
+ * repeated question, and wrong for one whose loss costs re-claiming something a person
+ * stopped.
+ */
+export async function dropStopped(
+  tracker: Tracker,
+  survivors: readonly Candidate[],
+  state: DeferralState,
+  cooldownMinutes: number,
+  identity: string,
+  report: Pick<CycleReport, 'skipped' | 'skippedStopped'>,
+  now: number,
+  wanted = Infinity,
+): Promise<Candidate[]> {
+  const kept: Candidate[] = []
+  for (const candidate of survivors) {
+    if (kept.length >= wanted) break
+    const stop = state.stops[candidate.id]
+    if (stop === undefined) {
+      kept.push(candidate)
+      continue
+    }
+    const verdict = await eligibleAfterStop({
+      candidate,
+      stoppedAt: stop.at,
+      cooldownMinutes,
+      identity,
+      now,
+      since: async () =>
+        await tracker
+          .commentsSince(candidate, stop.at)
+          // Nothing the Igor says to itself is permission to resume, and a stop is the wrong
+          // place to rely on its own receipt never matching a go-ahead.
+          .then((spoken) => spoken.filter((c) => c.author !== identity))
+          .catch(() => []),
+    })
+    if (verdict.eligible) {
+      kept.push(candidate)
+    } else {
+      report.skipped.push({ candidate, reason: `stopped: ${verdict.reason}`, stage: 'stopped' })
+      report.skippedStopped += 1
+    }
+  }
+  return kept
+}
+
 export const DECISIONS_PATH = 'decisions.ndjson'
 
 /**
@@ -434,6 +511,7 @@ export async function recordDecisions(
       skippedUniversal: report.skippedUniversal,
       skippedLane: report.skippedLane,
       skippedDeferred: report.skippedDeferred,
+      skippedStopped: report.skippedStopped,
       triaged: report.triaged,
       claimed: report.toClaim.length,
       triageCostUsd: Number(report.triageCostUsd.toFixed(4)),
