@@ -27,7 +27,8 @@
 - [ ] 4.4 An unattended claim past the bound is adoptable
 - [ ] 4.5 Derive the tree sweep from rank rather than age, and drop the age heuristic
 - [ ] 4.6 Remove `ABSOLUTE_CEILING_MS`, which nothing depends on once recovery is by identity
-- [ ] 4.7 Tests for each of 4.1–4.4, and that the bound never shortens a run
+- [ ] 4.7 `docs/architecture.md` §6.7.2 pins the sweep threshold to that ceiling; restate it
+- [ ] 4.8 Tests for each of 4.1–4.4, and that the bound never shortens a run
 
 ## 5. State
 
