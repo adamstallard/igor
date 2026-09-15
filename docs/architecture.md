@@ -1089,15 +1089,16 @@ rewrite — turning the eventual fully-open migration into a dial rather than a 
   `total_cost_usd` and a per-model breakdown, so a wrapper can sum real spend. These are
   documented as client-side estimates.
 - **Caps are not published.** Per-seat 5-hour and weekly allowances vary by seat tier with
-  no numeric values documented. A percentage-of-cap buffer must be calibrated empirically
-  — run to the limit once, record cumulative cost, treat that as the working estimate, and
-  recalibrate periodically. Both numerator and denominator carry error, so keep the buffer
-  conservative.
+  no numeric values documented. Deriving one in dollars was built once and deleted; §6.3.1
+  is what replaced it, and §6.3.3 is what has since gone wrong with that.
 - **Auth:** `claude setup-token` issues a one-year OAuth token for unattended headless use
   against a subscription seat. Refresh behavior past expiry is undocumented; budget for an
   annual manual regeneration as a known operational task.
 
-### 6.3.1 Capacity is read from the seat — **decided**
+### 6.3.1 Capacity is read from the seat — **decided, and false for a seat token**
+
+Read §6.3.3 first. The reasoning below holds for an interactive login and not for the only
+credential a seat can hold, which is most of the point of it.
 
 `claude -p '/usage'` reports the fraction of a seat's session and weekly limits consumed, plus
 when each resets. It costs nothing, spends no tokens, is answered client-side in under a
@@ -1143,6 +1144,41 @@ credentials the worker cannot use and an injected item can ask it to print.
 This lands with the command allowlist (§5.0.3) and not before it. Until a worker can run
 commands, the credentials it inherits are unreachable; granting the commands without fixing the
 environment is what makes them reachable.
+
+### 6.3.3 A seat token cannot be measured — **open**
+
+`claude setup-token` credentials authenticate and spend correctly and report no usage.
+Measured on one machine, same command, same directory:
+
+| | interactive login | `setup-token` |
+|---|---|---|
+| `auth status` | `authMethod: claude.ai`, `subscriptionType: team` | `authMethod: oauth_token`, no identity fields |
+| `-p '/usage'` | session and weekly percentages | a session cost summary |
+
+Windows are reported against a subscription, and the CLI resolves none for these credentials.
+So "can be run under any token" in §6.3.1 is wrong, and with it the claim that there is no cap
+in dollars to derive: for a seat there is, because percent is unavailable.
+
+What this does and does not cost, which is narrower than it first looks:
+
+- **Igors sharing a seat with each other is unaffected.** Every Igor writes its spend to the
+  same state branch, so the record is complete for any consumer that keeps books. Sharing is
+  only opaque where the other consumer is a person.
+- **A reserve as a floor survives exactly.** Igor capping its own cumulative spend at
+  `(1 - reserve) x capacity` leaves the rest by construction, whatever the owner does. That
+  needs Igor's own record and a capacity figure, not a reading.
+- **A reserve that adapts does not.** Narrowing the floor because the owner is measurably
+  behind their own pace — `budget-pacing`'s fourth requirement — needs to see the owner.
+- **`budget_share` is untouched**, being computed from recorded cost already.
+
+Capacity itself need not be guessed: one `/usage` reading from an interactive login on the same
+account, divided into the spend Igor recorded over that window, gives it. That is a calibration
+and not a stored reading, and the distinction matters because §6.3.1 rejected the latter.
+
+**Calibration was built once and deleted** in `188a762`, on the premise that the CLI reports
+the number for free. It does, for a login. Anything reviving it should start from that history
+rather than from scratch, and should not revive the destructive part — running a seat to its
+limit to discover the limit.
 
 ### 6.4 Graceful handoff — **built**
 
@@ -1225,8 +1261,8 @@ a graceful handoff (§5.5), never a hard stop.
 **Where legibility comes from.** Config states the *policy* — which pool a role draws on and
 what its ceiling is. The record states the *fact* — every invocation stores role, seat, cost
 and time, so "which Igor spent whose allowance" is answerable historically even though the
-seat is chosen dynamically. `igor budget` reports both: per seat its cap, calibration age,
-trailing spend, reserve and headroom; per role its ceiling, spend and which seats it drew on.
+seat is chosen dynamically. `igor budget` reports both: per seat its windows, what each has
+used, its reserve and headroom; per role its ceiling, spend and which seats it drew on.
 
 A role may still name a single seat rather than a pool, for an Igor that must never borrow a
 human's capacity. The pool is the general case, not the only one.
