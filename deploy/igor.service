@@ -32,6 +32,13 @@ ExecStart=/usr/local/bin/igor serve %i
 EnvironmentFile=/etc/igor/env
 EnvironmentFile=-/etc/igor/%i.env
 
+# A seat token specifically may skip the line above instead: encrypt it once with
+# `systemd-creds encrypt`, name it here, and point that seat's `token_file` in
+# igor.config.yaml at the literal path systemd decrypts it to — `systemd.exec(5)` documents
+# where $CREDENTIALS_DIRECTORY resolves for a unit like this one. Nothing then sits in this
+# unit's own environment. See docs/deployment.md.
+#LoadCredential=igor-seat-example:/etc/igor/igor-seat-example.cred
+
 Restart=always
 RestartSec=30
 

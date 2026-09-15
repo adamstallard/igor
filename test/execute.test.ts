@@ -968,7 +968,7 @@ describe('the worker is given an environment rather than inheriting one', () => 
     vi.stubEnv('IGOR_SEAT_1', 'seat-one-token')
     vi.stubEnv('IGOR_SEAT_2', 'seat-two-token')
 
-    const run = await reportingWorker(REPORT_ENV, { seatTokenEnv: 'IGOR_SEAT_1' })
+    const run = await reportingWorker(REPORT_ENV, { seatToken: { tokenEnv: 'IGOR_SEAT_1' } })
     const env = JSON.parse(run.transcript) as Record<string, string>
 
     // Absence first, and not as an exact key set: what must not be there is the property, and
@@ -980,8 +980,8 @@ describe('the worker is given an environment rather than inheriting one', () => 
     expect(env['CLAUDE_CODE_OAUTH_TOKEN']).toBe('seat-one-token')
   })
 
-  it('passes what a toolchain needs to reach the network', () => {
-    const env = workerEnv(undefined, {
+  it('passes what a toolchain needs to reach the network', async () => {
+    const env = await workerEnv(undefined, {
       PATH: '/usr/bin',
       HOME: '/home/igor',
       HTTPS_PROXY: 'http://proxy:3128',
@@ -998,17 +998,27 @@ describe('the worker is given an environment rather than inheriting one', () => 
     })
   })
 
-  it('refuses a seat whose token variable is not set, rather than spawning without one', () => {
-    expect(() => workerEnv('IGOR_SEAT_9', { PATH: '/usr/bin' })).toThrow(/IGOR_SEAT_9/)
+  it('refuses a seat whose token variable is not set, rather than spawning without one', async () => {
+    await expect(workerEnv({ tokenEnv: 'IGOR_SEAT_9' }, { PATH: '/usr/bin' })).rejects.toThrow(/IGOR_SEAT_9/)
   })
 
-  it('leaves the worker on the ambient login where no seat names a token', () => {
-    const env = workerEnv(undefined, { PATH: '/usr/bin', CLAUDE_CODE_OAUTH_TOKEN: 'ambient' })
+  it('reads the token from a file or a command just as well', async () => {
+    const path = join(tempDir('igor-test-token-'), 'token')
+    writeFileSync(path, 'tok-from-file')
+    const env = await workerEnv({ tokenFile: path }, { PATH: '/usr/bin' })
+    expect(env['CLAUDE_CODE_OAUTH_TOKEN']).toBe('tok-from-file')
+
+    const cmd = await workerEnv({ tokenCommand: 'printf tok-from-cmd' }, { PATH: '/usr/bin' })
+    expect(cmd['CLAUDE_CODE_OAUTH_TOKEN']).toBe('tok-from-cmd')
+  })
+
+  it('leaves the worker on the ambient login where no seat names a token', async () => {
+    const env = await workerEnv(undefined, { PATH: '/usr/bin', CLAUDE_CODE_OAUTH_TOKEN: 'ambient' })
     expect(env['CLAUDE_CODE_OAUTH_TOKEN']).toBe('ambient')
   })
 
   it("records the failure on the item when the seat's token is missing", async () => {
-    const run = await reportingWorker(REPORT_ENV, { seatTokenEnv: 'IGOR_SEAT_ABSENT' })
+    const run = await reportingWorker(REPORT_ENV, { seatToken: { tokenEnv: 'IGOR_SEAT_ABSENT' } })
     expect(run.outcome).toBe('failed')
     expect(run.reason).toMatch(/IGOR_SEAT_ABSENT/)
     // The stub reports whenever it runs, so silence is how "no worker was spawned" is visible.

@@ -91,7 +91,12 @@ export interface RunOptions extends ExecuteOptions {
   /** Called as each stage begins. A worker can run for minutes; silence is not a status. */
   onStep?: (step: Step) => void
   /** Supplied by the budget layer once it exists; absent means budget is not being enforced. */
-  budget?: { exhausted: () => boolean; seat?: string; tokenEnv?: string; resetAt?: string }
+  budget?: {
+    exhausted: () => boolean
+    seat?: string
+    token?: { tokenEnv?: string; tokenFile?: string; tokenCommand?: string }
+    resetAt?: string
+  }
 }
 
 export async function runItem(
@@ -149,7 +154,7 @@ export async function runItem(
     // Named rather than left to the spread, which is a field nobody keeps correct. The worker
     // authenticating as the seat the gate chose is the whole point, and a pull request points
     // at its transcript only where the store arrives.
-    ...(options.budget?.tokenEnv === undefined ? {} : { seatTokenEnv: options.budget.tokenEnv }),
+    ...(options.budget?.token === undefined ? {} : { seatToken: options.budget.token }),
     ...(options.store === undefined ? {} : { store: options.store }),
     onPublish: () => step('publishing'),
     claimStatus: async () => (await checkpoint(tracker, claim, identity)).status,

@@ -60,8 +60,8 @@ Use whatever your team already uses for shared credentials:
 - a shared vault entry your password manager gives the operator access to, or
 - a one-time secret link, if your manager offers one — it expires after a single read.
 
-The operator puts it in an environment file the service reads, named by `token_env`, and it
-lives nowhere else.
+The operator puts it wherever the seat's entry names — an environment file for `token_env`, or
+a file or secret-store entry for `token_file` / `token_command` — and it lives nowhere else.
 
 ## Stopping
 

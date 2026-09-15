@@ -1130,10 +1130,10 @@ relying on the numbers for a seat used from more than one machine.
 
 ### 6.3.2 The worker's environment is written out, not inherited — **built**
 
-The seat the gate chooses is the seat the worker authenticates with: its `token_env` reaches
-the spawn, so the seat that is billed and the seat that is drawn down are the same one. Reading
-usage already worked this way; spending did not, and the two agreed only while one seat was
-declared.
+The seat the gate chooses is the seat the worker authenticates with: its token source — a
+`token_env`, `token_file`, or `token_command` — reaches the spawn, so the seat that is billed
+and the seat that is drawn down are the same one. Reading usage already worked this way;
+spending did not, and the two agreed only while one seat was declared.
 
 The worker is given a search path, a home directory, the host's proxy and certificate settings,
 and that one token. Nothing else — no `GH_TOKEN`, no other seat's. It needs none of them: it

@@ -169,10 +169,11 @@ repository.
    that does not fails at load rather than defaulting to a seat nobody chose for it. `reserve:
    0.5` keeps half your window for you. [Budgets](#budgets) covers pools and shares.
 
-   `token_env` is the *name* of a variable, which is why the config stays safe to commit. Igor
-   reads the token out of that variable in its own environment — there is no file it looks in,
-   so being signed in to `claude` yourself is not enough. It reads it at the moment it runs and
-   keeps nothing, so the variable only has to exist for that one process:
+   `token_env` is the *name* of a variable, which is why the config stays safe to commit. A
+   seat may instead name `token_file` (a path) or `token_command` (something to run and take
+   stdout) — never more than one. Igor reads whichever it names at the moment it runs and
+   keeps nothing, so being signed in to `claude` yourself is not enough on its own: with
+   `token_env`, the variable only has to exist for that one process:
 
    ```sh
    claude setup-token                                            # approve in the browser
@@ -195,8 +196,10 @@ repository.
    fallback for a machine with no secret store at all.
 
    A shell function is not inherited by a service, so leaving `igor serve` running under
-   launchd or systemd still puts the token in that unit's environment —
-   [#29](https://github.com/adamstallard/igor/issues/29) is what would close the gap. Under a service this is an `EnvironmentFile=` instead —
+   launchd or systemd this way still puts the token in that unit's environment for the unit's
+   whole lifetime. Under a service this is an `EnvironmentFile=` instead, or — better, where
+   systemd is available — `token_file` naming what `LoadCredential=` decrypts, which never
+   touches an environment at all.
    [`deployment.md`](docs/deployment.md#adding-a-seat-somebody-has-given-you) has that, the
    naming convention for several seats, and why not `~/.zshrc` directly. Where the
    subscription is somebody else's, [`docs/seats.md`](docs/seats.md) is the page to send them.
@@ -351,8 +354,10 @@ budget:
 
 A seat is a Claude subscription, not an Igor: several Igors draw on one through a pool and one
 may draw on several. `token_env` names the environment variable holding that seat's token —
-the name, never the value, so the config is safe to commit. Obtaining a token and installing
-it is [`docs/deployment.md`](docs/deployment.md#adding-a-seat-somebody-has-given-you), and
+the name, never the value, so the config is safe to commit. `token_file` (a path) and
+`token_command` (something to run and take stdout) name a token the same indirect way; a seat
+may set exactly one of the three. Obtaining a token and installing it is
+[`docs/deployment.md`](docs/deployment.md#adding-a-seat-somebody-has-given-you), and
 [`docs/seats.md`](docs/seats.md) is the page to send whoever's subscription it is.
 
 A role's `seat` names one of these: a seat id, for an Igor that must never borrow, or a pool
