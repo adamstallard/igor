@@ -97,16 +97,24 @@ deferring is a possible tag rename if eventual role names diverge from the label
 event, so the salience filtering that Slack or ticket history would need is mostly
 unnecessary. Broader sources are deferred rather than rejected.
 
-**Stick detection by line-range overlap with subsequent commits.** A comment followed by a
-change to the lines it targeted is a correction that landed; one that produced no change
-was argued down, deferred, or ignored. This is the highest-value filter available and it
-is computable from data the API already returns.
+**Stick detection reads `line: null`, GitHub's own outdated marker, not a diff of later
+commits.** A review comment's REST payload carries `line: null` exactly when GitHub
+considers the comment outdated — the hunk it was anchored to no longer exists in the pull
+request's final diff. It is free: it arrives in the same page of comments mining already
+fetches. `position` is not that marker despite what the API docs imply; it was populated on
+all 2,009 comments measured, outdated ones included.
 
-It is a heuristic with real holes in both directions — an author may comply with something
-they disagreed with, an unrelated edit may touch the same lines, and a correct comment may
-be deferred to a follow-up PR. It is treated as evidence, not truth: it weights a cluster
-rather than gating an individual comment, so noise averages out across a cluster and a
-single misread comment cannot promote a rule on its own.
+The measurement is in **Stick detection, measured** below. In short: the free signal is
+exactly GitHub's `outdated`, the 33×-more-expensive route of diffing later commits agrees
+with it only 75% of the time while measuring the same proxy, and what any of them prove is
+weaker than this change originally assumed.
+
+**Stick detection weights, it does not gate, and it is believed most when it says no.**
+Among threads hand-labelled as the author actually rejecting the correction, 32% read as
+outdated; among threads where the author said they had made the change, 80%; among threads
+with no reply at all, 69%. Outdated is therefore the common case and says little on its own,
+while *not* outdated on a merged pull request is the informative reading. A cluster is
+weighted down by comments that did not stick rather than up by comments that did.
 
 **Two scores, not one: support count and recency-decayed weight.** Cluster size alone
 rewards rules that were enforced heavily years ago and quietly abandoned, which is exactly
@@ -171,10 +179,141 @@ ledger of processed comment ids, plus dedupe against existing entries at draft t
 re-runs additive. An entry that a new pass would refine becomes a proposed edit rather than
 a second entry.
 
+## Stick detection, measured
+
+The corpus: 2,400 review comments from `vitejs/vite`, `microsoft/TypeScript`,
+`supabase/supabase` and `facebook/react` — the oldest 300 and newest 300 of each, spanning
+2013 to 2026. Removing bots (381) and file-level comments (10) leaves **2,009 human
+line-anchored comments**, every one of which joined to its GraphQL review thread: **1,664
+threads across 588 pull requests**, zero unmatched.
+
+### Which fields are actually there
+
+| field | null | reading |
+| --- | --- | --- |
+| `position` | 0/2,009 | always populated; not the outdated marker the docs imply |
+| `original_line` | 600/2,009 | all 600 from 2013–2014 — old comments carry no line anchor at all |
+| `line` | 1,175/2,009 | this is the outdated marker |
+| `side`, `diff_hunk`, `commit_id`, `original_commit_id` | 0/2,009 | always present |
+| `commit_id` ≠ `original_commit_id` | 1,367/2,009 | only says the head moved; proves nothing about the comment's lines |
+
+Restricted to the 1,409 comments that carry `original_line`, `line: null` and GraphQL
+`outdated` agree 97.2%, and the disagreement is one-directional: **809 comments are
+`line: null`, and every one of them is `outdated`** — zero exceptions. GraphQL flags a
+further 40 that REST still anchors. So the free field is a subset of the paid one, never a
+contradiction of it, and the 4.7% it misses is recoverable from the thread query that reply
+text needs anyway.
+
+### The expensive route is worse, not just dearer
+
+For 80 comments on merged pull requests with more than one commit, the anchored line range
+was compared against every later in-pull-request commit touching that file (`compare
+original_commit_id...head`, hunk-overlap on the pre-image). Four were unevaluable because
+`compare` omits `patch` for large files. On the remaining 76: 35 both, 7 outdated with no
+overlapping change, 12 changed without being marked outdated, 22 neither — **75%
+agreement**. Read as outdated predicting the diff, that is 83% precision and 74% recall, but
+neither side is ground truth, so the honest reading is simply that two proxies for the same
+thing disagree a quarter of the time.
+
+It costs **328 API calls per 1,000 comments** (one per unique pull-request/original-commit
+pair, cached) against **10** for the REST listing and **21** for batched GraphQL threads.
+Paying 33× to disagree a quarter of the time with a free signal would be worth it if the
+expensive one were ground truth. It is not: both measure the same proxy — "did the anchored
+hunk change" — and a rebase, a force-push, an unrelated edit in the same hunk, or a file
+deletion satisfies it with no correction having landed. Force-pushes are not an edge case:
+12 of 48 sampled merged pull requests (25%) had one, and a force-push rewrites the very
+commit range the comparison walks.
+
+### What outdated proves about agreement
+
+Thread state does not settle until the pull request does: of 1,297 threads from 2019 on,
+540 sat on unmerged pull requests and read 47.8% outdated against 66.8% on merged ones.
+Everything below is merged-only, n=757.
+
+A regex over the pull-request author's own replies, cross-tabbed against `isOutdated`,
+looked like it showed no separation — until all 38 threads it called pushback were read by
+hand. Only **19 were genuine rejections**; 10 were compliance the regex misread on words
+like "but" and "actually", and 9 were inconclusive discussion. Hand-labelled:
+
+| thread | n | outdated |
+| --- | --- | --- |
+| author rejected the correction | 19 | 32% |
+| author said they made the change | 92 | 80% |
+| no reply from the author | 492 | 69% |
+| regex called it pushback, hand-read as compliance | 10 | 80% |
+
+So `outdated` separates rejection from compliance by roughly 2.5× in odds, but the no-reply
+majority sits at 69%, near the compliance rate rather than midway. **Outdated is the default
+state and carries little information; not-outdated on a merged pull request is the signal.**
+
+Two honest limits. The 32%/80% contrast is measured only on the ~30% of threads that get any
+author reply, and those are the more engaged threads by construction; for the 492 no-reply
+threads there is no independent check on what outdated means. And 19 hand-labelled
+rejections is a small n — enough to reject the diluted regex reading, not enough to
+calibrate a weight against.
+
+### Signals rejected
+
+**Thread resolution.** 767 of 1,664 threads resolved (46%), but per repository that ranges
+from 18% (`facebook/react`) to 67% (`vitejs/vite`) — it measures house style, not agreement.
+Worse, the resolver was the pull-request author on 514 threads and the reviewing commenter
+on only 158: "resolved" usually means the person being corrected closed their own thread.
+Not used at all. A team that resolves deliberately — reviewer resolves, author does not —
+does emit a real signal here, but reading it needs per-repository calibration rather than a
+flag: https://github.com/adamstallard/igor/issues/19.
+
+**Reply-text classification by regex.** Half the threads the broad regex called pushback
+were compliance. Deciding "did the author agree" from prose needs the drafting model, not a
+pattern — but it is high-precision where it fires and costs nothing extra, since the thread
+query is already being made.
+
+**The Timeline API.** Across 48 merged pull requests its `committed` events carry sha,
+message and parents but no file or line data, and its `reviewed` events carry no per-comment
+anchor. Its one relevant event type, `line-commented`, simply re-embeds the same review
+comment objects the REST comments endpoint returns — same `line`, `original_line`, `position`
+— at the cost of a paginated timeline call per pull request. It adds nothing and charges
+more.
+
+### The corpus gate this forces
+
+Some comments cannot be anchored at all, and GitHub does not say so: it reports `outdated:
+false` rather than unknown. All 600 comments with a null `original_line` were outdated 0% of
+the time — **0/310 for 2013 and 0/317 for 2014** — against 58–64% from 2020 on. Scored
+naively, every one reads as "did not stick", so the signal fails silently in exactly the
+direction that looks like evidence.
+
+In this corpus the unanchorable set is exactly the old set: all 600 fall in 2013–2014 and no
+comment before 2015 carries an `original_line`. That is consistent with the field arriving
+with line anchoring, but the sample is bimodal — oldest 300 and newest 300 per repository,
+nothing between 2015 and 2018 — so the cutoff is unlocated and age is a correlate here, not a
+verified cause. The gate is therefore the absent anchor itself, not a date: mining skips
+comments with no `original_line`, and skips unmerged pull requests, rather than scoring them.
+
+The signal is free on either listing endpoint. Across six pull requests containing outdated
+comments, `repos/{owner}/{repo}/pulls/{n}/comments` and the repo-wide
+`repos/{owner}/{repo}/pulls/comments` agreed on line-nullity and anchor for all 38 shared
+comments, so mining pages whichever suits it without changing the 10-calls-per-1,000 figure.
+
+### What the change rests on now
+
+Stick detection was pitched here as "the highest-value filter available". It is not; it is a
+free, weak, mostly-negative weight. The filters now carrying this change are **substance**
+and **recurrence**, and this gate tested neither. The only evidence about them is the
+composition breakdown under **Measured yield** — 46% feature-specific prose, 18%
+acknowledgements, 14% questions — which says what has to be discarded, not that the
+discarding works. Group 6's
+first real run is where that gets tested, and it should be read as a second gate rather than
+a tuning pass.
+
 ## Risks / Trade-offs
 
-- **Stick detection misreads compliance for agreement** → Weight clusters rather than
-  gating comments; require multiple corroborating instances before promotion.
+- **Stick detection misreads compliance for agreement** → Measured: it barely separates the
+  two (69% of no-reply threads read outdated, against 80% for admitted compliance). Treated
+  as a downweight on clusters that did not stick rather than an upweight on those that did,
+  never as a per-comment gate, and never the sole reason a cluster is promoted.
+- **Stick detection fails silently on old history** → GitHub reports `outdated: false`,
+  not "unknown", for comments it cannot anchor. Comments with no `original_line` are skipped
+  outright rather than scored.
 - **The drafting model invents a rule the comments do not support** → Provenance links are
   mandatory and the reviewer is the person who wrote the source comments, so fabrication is
   visible to the one reader most able to catch it.
@@ -219,13 +358,6 @@ rather than a prediction of what the implementation will achieve.
 
 ## Open Questions
 
-- **`position: null` does not work for stick detection.** It was expected to be a cheap proxy
-  — GitHub marks a comment outdated when later commits change the code it was anchored to —
-  but across all 277 comments in the spike corpus, zero had a null position. Detection needs
-  the more expensive route: comparing comment line ranges against subsequent commit diffs
-  within the pull request, or the Timeline API. Confirm the cost of that before building on
-  it; if it is high, consider whether stick detection earns its place at all given the yield
-  measured above.
 - Which embedding model for clustering, and does it run locally or through an API? Affects
   whether repository content leaves the environment.
 - Should lore eventually live in its own repository rather than a path inside the operating

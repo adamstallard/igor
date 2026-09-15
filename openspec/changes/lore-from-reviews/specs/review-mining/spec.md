@@ -37,22 +37,46 @@ upstream are of interest, both SHALL be listed in scope.
 
 ### Requirement: Corrections are classified by whether they stuck
 
-Mining SHALL determine, for each comment, whether the lines it targeted were subsequently
-modified within the same pull request, and record that determination as a `stuck` signal on
-the comment. This signal SHALL be treated as evidence that weights a cluster, and MUST NOT be
-used to include or exclude an individual comment on its own.
+Mining SHALL record, for each comment, whether the pull request host still anchors it to a
+line in the final diff, as a `stuck` signal on the comment. This signal SHALL be treated as
+evidence that weights a cluster, and MUST NOT be used to include or exclude an individual
+comment on its own. Because the signal separates rejection from compliance only weakly, it
+SHALL be applied as a downweight on comments that did not stick, and SHALL NOT be the sole
+basis on which a cluster is promoted.
 
-#### Scenario: Comment followed by a change
+#### Scenario: Comment no longer anchored
 
-- **WHEN** a review comment targets lines 40-45 and a later commit in that pull request
-  modifies lines within that range
+- **WHEN** a review comment is no longer anchored to a line in the pull request's final diff
 - **THEN** the comment is recorded as `stuck: true`
 
-#### Scenario: Comment with no subsequent change
+#### Scenario: Comment still anchored at merge
 
-- **WHEN** a review comment's target lines are unchanged for the remainder of the pull request
+- **WHEN** a review comment is still anchored to a line when the pull request merges
 - **THEN** the comment is recorded as `stuck: false`
 - **AND** the comment is still carried forward into clustering
+
+#### Scenario: Stuck alone does not promote
+
+- **WHEN** a cluster's only distinguishing evidence is that its comments stuck
+- **THEN** the cluster is not promoted on that basis
+
+### Requirement: The corpus excludes comments whose stick signal is not computable
+
+Mining SHALL exclude review comments that the host cannot anchor to a line, and comments on
+pull requests that never merged, rather than recording them as not having stuck. The host
+reports an unanchorable comment as still-anchored rather than as unknown, so scoring it would
+manufacture negative evidence.
+
+#### Scenario: Comment the host cannot anchor
+
+- **WHEN** a review comment carries no original line anchor
+- **THEN** it is excluded from the corpus
+- **AND** the exclusion and its reason are recorded
+
+#### Scenario: Unmerged pull request
+
+- **WHEN** a review comment belongs to a pull request that has not merged
+- **THEN** it is excluded from the corpus, because its thread state has not settled
 
 ### Requirement: Non-substantive comments are filtered
 

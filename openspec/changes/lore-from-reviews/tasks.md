@@ -12,14 +12,16 @@ schema, validation, and derived scoring all come from there and are not rebuilt 
 Do this before building anything that depends on it — if the data isn't there, the filter
 design changes.
 
-- [x] 2.1 Against one real repository, determine whether the GitHub API exposes review comment line ranges and subsequent in-PR commit diffs well enough to detect whether a correction stuck — `position: null` ruled out, zero of 277 comments carried it
-- [ ] 2.2 If insufficient, evaluate the Timeline API or per-comment position tracking, and pick an approach
-- [ ] 2.3 Record the finding and chosen approach in `design.md`, replacing the corresponding open question
+- [x] 2.1 Against one real repository, determine whether the GitHub API exposes review comment line ranges and subsequent in-PR commit diffs well enough to detect whether a correction stuck — `position: null` ruled out, zero of 277 comments carried it. Re-verified over 2,009 comments in four repositories: `position` is never null, but that rules out the field, not the premise — `line: null` is the marker, and 2.2 found it free and equal to GitHub's own `outdated`
+- [x] 2.2 If insufficient, evaluate the Timeline API or per-comment position tracking, and pick an approach — `line: null` chosen; it is GitHub's own outdated marker, free in the comments payload, and identical to GraphQL `outdated` on every one of 809 cases. Timeline API rejected (re-embeds the same comment objects at higher cost); diffing later commits rejected (328 API calls per 1,000 comments against 10, and only 75% agreement with the free signal while measuring the same proxy); thread resolution rejected as a default (18–67% per-repo variance, resolved by the pull request's own author 3× more often than by the reviewer)
+- [x] 2.3 Record the finding and chosen approach in `design.md`, replacing the corresponding open question — see "Stick detection, measured"; the signal is far weaker than assumed (32% outdated on hand-labelled rejections vs 69% on no-reply threads), so it downweights rather than promotes
 
 ## 3. Review mining
 
 - [ ] 3.1 Extract review comments for configured repositories, retaining body, author, file path, line range, permalink, and timestamp
-- [ ] 3.2 Implement stick classification using the approach confirmed in 2.2, recording it as a per-comment signal rather than an include/exclude gate
+- [ ] 3.2 Implement stick classification using the approach confirmed in 2.2, recording it as a per-comment signal rather than an include/exclude gate, and applying it as a downweight rather than a promotion
+- [ ] 3.2a Exclude comments carrying no original line anchor and comments on unmerged pull requests, recording each exclusion and its reason, so an uncomputable stick signal is never scored as `stuck: false`
+- [ ] 3.2b Record the pull request author's replies on each thread as a separate signal, classified by the drafting model rather than by pattern matching — measured at 50% false positives by regex, and it reaches only the ~30% of threads that get a reply
 - [ ] 3.3 Exclude bot and automated-reviewer authors by default, with named re-inclusion via config
 - [ ] 3.4 Implement substance filtering on length, absence of reasoning, and nit markers, recording each exclusion and its reason
 - [ ] 3.5 Resolve comment authors and apply expert weighting from config
@@ -49,6 +51,6 @@ design changes.
 
 ## 6. First real run
 
-- [ ] 6.1 Run the full pipeline against one real repository and read the first batch by hand
+- [ ] 6.1 Run the full pipeline against one real repository and read the first batch by hand — treat this as the gate on substance filtering and clustering, which group 2 did not test and which now carry the change
 - [ ] 6.2 Tune staleness, substance, and cluster-distance thresholds against what that batch actually produced
 - [ ] 6.3 Record observed candidate quality and the tuned defaults in the README
