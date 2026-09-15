@@ -1,17 +1,20 @@
 # Igor
 
-Role-instanced AI teammates that find their own work, claim it in the open, and draw on
-what the team has already learned.
+AI teammates that find their own work, claim it in the open, and draw on what the team
+has already learned.
 
-An Igor is not a person. It is an instance of a role. You can run five Igors on the same
-role, retire one mid-week, and lose nothing — because nothing durable lives inside an
-Igor. The role is versioned in git. The knowledge belongs to the team.
+An Igor is a named teammate, and what it can do is the roles it holds — Milton might hold
+both backend and frontend. What an Igor is *not* is a person: nothing durable lives inside
+one. Run five processes of Milton, kill four mid-week, and nothing is lost. The roles are
+versioned in git and the knowledge belongs to the team.
 
 ## Vocabulary
 
-- **Igor** — a running instance. Interchangeable, disposable, holds no durable state.
-- **Role** — a versioned config: what to watch for, what it may claim, how to behave.
-  Many Igors can run the same role.
+- **Igor** — a named teammate, identified by its own account on the surfaces it works, so a
+  claim says who has your issue. Defined by the roles it holds; any distinct combination is
+  a distinct Igor. Its processes are interchangeable and hold no durable state.
+- **Role** — a versioned config: what to watch for, what it may claim, how to behave. Roles
+  compose, and a role may narrow what it inherits but never widen it.
 - **Lore** — the team's curated store of learned knowledge. Shared by every Igor,
   readable and editable by humans, versioned in git.
 - **Claim** — a public announcement, in the team's own tools, that an Igor has taken a
@@ -19,18 +22,18 @@ Igor. The role is versioned in git. The knowledge belongs to the team.
 
 ## How it works
 
-This is the design. Only the lore half exists today — see [Status](#status).
-
 Igors poll rather than wait for triggers. Each cycle:
 
 1. **Search** — deterministic queries against whichever surfaces the role watches, through
    pluggable adapters. GitHub first, because nearly every team has it; Linear and Discord
    follow. No model involved.
-2. **Recognize** — decide whether a candidate is in this role's lane, and which lore entries
-   apply to it.
+2. **Triage** — free predicates over the normalized candidates first, then a model call on
+   whatever survives. The cheap stage carries nearly all of the reduction.
 3. **Claim** — before starting, the Igor posts to the relevant surface so humans and other
    Igors know it is working, and can back off or join in.
-4. **Work** — a frontier model does the task, with the fired lore already in context.
+4. **Work** — a frontier model does the task in a disposable checkout, with the team's lore
+   already in context. It edits files; the loop decides what becomes of them, so the action
+   space holds even if the worker is steered.
 5. **Report** — status updates back to the same surfaces, including a graceful handoff if
    the Igor runs out of budget mid-task.
 
@@ -98,15 +101,16 @@ igor create \
   --author you --scope role:frontend --path 'src/**/*.tsx' \
   --body "The hook handles caching, deduping, and cancellation on unmount."
 
-# --author takes several names to cite a whole cluster of comments rather than just one;
-# --url and --at pair to each author positionally and both may be omitted (--at defaults to
-# today).
+# --author takes several names, to cite a cluster of comments rather than one. --url and --at
+# pair to each author positionally: give one per author or omit them entirely, since a partial
+# list would silently attach a url to the wrong person. --at defaults to today.
 igor create \
   --claim "..." --prose "..." \
-  --author sarah jose --url https://example.invalid/pr/1 https://example.invalid/pr/2 \
+  --author sarah jose \
+  --url https://example.invalid/pr/1 https://example.invalid/pr/2 \
   --at 2026-03-14 2026-03-20
 
-igor list       # entries with support and recency derived from provenance
+igor list       # entries with support and newest evidence, derived from provenance
 igor validate    # reports every invalid entry, exits non-zero if any
 ```
 
