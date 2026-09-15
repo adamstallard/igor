@@ -364,6 +364,17 @@ describe('items somebody stopped', () => {
     expect(await dropStopped(own.t, [c], record(c), 60, 'igor-bot', blank(), NOW)).toEqual([])
   })
 
+  it('does not let a stop lift itself', async () => {
+    // The stop comment is inside the window it bounds, and one comment can be both: "stop" at
+    // the front matches isStop, and what follows the address matches isGoAhead. Reading it as
+    // permission would undo the stop on the very next cycle.
+    const c = item(7)
+    const both = tracker({
+      'github:o/r#7': [{ author: 'bob', at: STOPPED_AT, body: 'stop @igor-bot — continue once I have looked' }],
+    })
+    expect(await dropStopped(both.t, [c], record(c), 60, 'igor-bot', blank(), NOW)).toEqual([])
+  })
+
   it('keeps waiting when the tracker will not say, unlike a handoff record', async () => {
     // Failing toward the work is right for a record whose loss costs a repeated question, and
     // wrong for one whose loss costs re-claiming something a person stopped.

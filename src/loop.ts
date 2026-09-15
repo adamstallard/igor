@@ -9,6 +9,7 @@ import {
   advance, discover, EMPTY_STATE, freshCandidates, loadDiscoveryState, saveDiscoveryState,
 } from './discovery.js'
 import { countStages, screen } from './predicate.js'
+import { isStop } from './signals.js'
 import { fingerprint, loadDeferrals, stillDeferred, type DeferralState } from './deferred.js'
 import { systemPrompt, triageBatch, TRIAGE_MODEL } from './triage.js'
 
@@ -466,9 +467,19 @@ export async function dropStopped(
       since: async () =>
         await tracker
           .commentsSince(candidate, stop.at)
-          // Nothing the Igor says to itself is permission to resume, and a stop is the wrong
-          // place to rely on its own receipt never matching a go-ahead.
-          .then((spoken) => spoken.filter((c) => c.author !== identity))
+          .then((spoken) =>
+            spoken.filter(
+              (c) =>
+                // Nothing the Igor says to itself is permission to resume, and a stop is the
+                // wrong place to rely on its own receipt never matching a go-ahead.
+                c.author !== identity &&
+                // The stop itself is inside the window it bounds, and one comment can match
+                // both: "stop @igor — continue once I've looked" is a stop by `^stop` and a
+                // go-ahead by what follows the address. A stop outranks, here as in
+                // `verdictFrom`, so it can never be the permission to undo itself.
+                !isStop(c.body, identity),
+            ),
+          )
           .catch(() => []),
     })
     if (verdict.eligible) {
