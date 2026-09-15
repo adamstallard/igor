@@ -3,8 +3,8 @@ import type { Artifact, ArtifactRequest, Candidate, ClaimVerdict, CodeHost, Trac
 import type { Role } from '../src/role.js'
 import type { TreeProvider, WorkingTree, ChangedFile } from '../src/worktree.js'
 import {
-  declineReason, dropDeferred, dropStopped, recordDecisions, runItem,
-  type CycleReport, type ItemDeps,
+  declineReason, dropDeferred, dropStopped, oneFetchPerItem, recordDecisions, runItem,
+  type CommentSource, type CycleReport, type ItemDeps,
 } from '../src/loop.js'
 import { defer, NO_DEFERRALS } from '../src/deferred.js'
 import { tempDir } from './tmp.js'
@@ -531,5 +531,53 @@ describe('the cost of checking deferrals', () => {
     )
     expect(kept).toHaveLength(3)
     expect(asked).toBe(0)
+  })
+})
+
+describe('one read, several windows', () => {
+  const at = (iso: string) => ({ author: 'alice', at: iso, body: 'here is the repro' })
+  const c = candidate({ id: 'github:o/r#7' })
+
+  function source(spoken: { author: string; at: string; body: string }[]) {
+    const asked: string[] = []
+    const t: CommentSource = {
+      commentsSince: async (_c, since) => {
+        asked.push(since)
+        return spoken.filter((m) => Date.parse(m.at) >= Date.parse(since))
+      },
+    }
+    return { t, asked }
+  }
+
+  it('answers a narrower window out of the read it already made', async () => {
+    const { t, asked } = source([at('2026-09-11T12:00:00Z')])
+    const read = oneFetchPerItem(t, () => '2026-09-09T12:00:00Z')
+    // The cooldown window first, then the deferral the read was taken for.
+    expect(await read.commentsSince(c, '2026-09-14T11:00:00Z')).toEqual([])
+    expect(await read.commentsSince(c, '2026-09-09T12:00:00Z')).toHaveLength(1)
+    expect(asked).toEqual(['2026-09-09T12:00:00Z'])
+  })
+
+  it('reads again rather than answering a wider window short', async () => {
+    // A truncated list is how a deferral outlives the reply that lifted it.
+    const { t, asked } = source([at('2026-09-11T12:00:00Z')])
+    const read = oneFetchPerItem(t, () => '2026-09-14T11:00:00Z')
+    expect(await read.commentsSince(c, '2026-09-14T11:00:00Z')).toEqual([])
+    expect(await read.commentsSince(c, '2026-09-09T12:00:00Z')).toHaveLength(1)
+    expect(asked).toHaveLength(2)
+  })
+
+  it('replays a failed read instead of asking a tracker that is already refusing', async () => {
+    let asked = 0
+    const t: CommentSource = {
+      commentsSince: async () => {
+        asked += 1
+        throw new Error('API rate limit exceeded')
+      },
+    }
+    const read = oneFetchPerItem(t, () => '2026-09-09T12:00:00Z')
+    await expect(read.commentsSince(c, '2026-09-14T11:00:00Z')).rejects.toThrow(/rate limit/)
+    await expect(read.commentsSince(c, '2026-09-09T12:00:00Z')).rejects.toThrow(/rate limit/)
+    expect(asked).toBe(1)
   })
 })

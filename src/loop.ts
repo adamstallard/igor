@@ -343,14 +343,25 @@ export async function planCycle(
 
   const limit = options.limit ?? 10
   const quiet = await loadDeferrals(deps.destination)
+  const window = stopWindow(now, role.cooldownMinutes)
+  // Both gates read an item through one fetch, reaching back as far as either of them asks
+  // about for that item. Where they disagree about an item the tracker will not answer for —
+  // the stop gate ends the cycle, the deferral gate works the item — the stop gate wins,
+  // because it reads first and an item it could not read never reaches the other. What that
+  // costs is a cycle of latency on a read that would have failed only the second time.
+  const comments = oneFetchPerItem(deps.tracker, (c) => {
+    const entry = quiet.items[c.id]
+    // A record whose fingerprint no longer matches is void, and a void record is not a window.
+    return entry !== undefined && entry.fingerprint === fingerprint(c) ? earliest(entry.at, window) : window
+  })
   // Both filters run before the limit is applied, so an item nobody has answered and an item
   // somebody stopped do not consume triage slots — and both are told the limit, so they stop
   // looking once the cycle has enough work. The stop gate goes first because its answer is the
   // one a person is owed: an item that is both stopped and unanswered reports the stop.
   const awake = await dropStopped(
-    deps.tracker, survivors, role.cooldownMinutes, options.identity ?? '', report, now, limit,
+    comments, survivors, role.cooldownMinutes, options.identity ?? '', report, now, limit,
   )
-  const considered = await dropDeferred(deps.tracker, awake, quiet, options.identity ?? '', report, limit)
+  const considered = await dropDeferred(comments, awake, quiet, options.identity ?? '', report, limit)
   if (considered.length > 0) {
     const batch = await (options.triage ?? triageBatch)(
       considered,
@@ -387,18 +398,86 @@ export async function planCycle(
 }
 
 /**
+ * The seam the whole cycle reads comments through. A cycle passes one that fetches per item
+ * once; a caller with a single question can pass the tracker itself.
+ */
+export type CommentSource = Pick<Tracker, 'commentsSince'>
+
+/** The older of two moments. An undatable one loses, since it cannot be shown to be older. */
+function earliest(a: string, b: string): string {
+  const x = Date.parse(a)
+  const y = Date.parse(b)
+  if (Number.isNaN(x)) return b
+  if (Number.isNaN(y)) return a
+  return x <= y ? a : b
+}
+
+/** Whether what was fetched from `cached` can answer a request reaching back to `since`. */
+function covers(cached: string, since: string): boolean {
+  if (cached === since) return true
+  const from = Date.parse(cached)
+  const asked = Date.parse(since)
+  return !Number.isNaN(from) && !Number.isNaN(asked) && from <= asked
+}
+
+/**
+ * Trims a wider payload to the window a consumer asked for.
+ *
+ * An undatable comment stays in: a stop nobody can date holds its item, so dropping it here
+ * would lift a stop by arithmetic.
+ */
+function notBefore(comments: readonly Comment[], since: string): Comment[] {
+  const floor = Date.parse(since)
+  if (Number.isNaN(floor)) return [...comments]
+  return comments.filter((c) => {
+    const at = Date.parse(c.at)
+    return Number.isNaN(at) || at >= floor
+  })
+}
+
+/**
+ * One comment fetch per item, shared by every gate that asks about it.
+ *
+ * `lookback` gives the earliest moment any of them will ask about for *that* item: the stop
+ * window, or its deferral when that is older. Per item and not one width for the cycle — a
+ * deferral reaches back thirty days where a stop window is an hour, and `commentsSince` is
+ * paginated, so the widest window any one item needs is several requests on every other item.
+ *
+ * Each consumer gets its own window back out of the shared payload, so a comment older than
+ * what it asked about cannot answer its question. A request reaching back further than what
+ * was fetched is fetched again rather than served short: handing back a truncated list is how
+ * a deferral outlives the reply that lifted it.
+ *
+ * A failed read is kept as the failure, so a second consumer sees the same error rather than
+ * retrying against a tracker that is most likely rate-limiting.
+ */
+export function oneFetchPerItem(tracker: CommentSource, lookback: (c: Candidate) => string): CommentSource {
+  const held = new Map<string, { since: string; payload: Promise<Comment[]> }>()
+  return {
+    commentsSince: async (candidate, since) => {
+      const have = held.get(candidate.id)
+      if (have !== undefined && covers(have.since, since)) return notBefore(await have.payload, since)
+      const from = earliest(lookback(candidate), since)
+      const payload = tracker.commentsSince(candidate, from)
+      held.set(candidate.id, { since: from, payload })
+      return notBefore(await payload, since)
+    },
+  }
+}
+
+/**
  * Drops survivors handed back earlier that nothing has answered since.
  *
- * The tracker is asked only about items that already have a record and still match their
- * fingerprint, so the extra request is paid for the few items in that state rather than per
- * candidate — and not at all once the cycle has the `wanted` items it can act on, since
- * everything past that is dropped by the caller regardless.
+ * Comments are read only for items that already have a record and still match their
+ * fingerprint, and not at all once the cycle has the `wanted` items it can act on, since
+ * everything past that is dropped by the caller regardless. In a cycle the answer is already
+ * in hand, because the read the stop gate took reaches back to this item's deferral.
  *
- * A tracker that will not answer means the item is reconsidered: the record is a cache, and
+ * A source that will not answer means the item is reconsidered: the record is a cache, and
  * failing toward the work is the right direction for one.
  */
 export async function dropDeferred(
-  tracker: Tracker,
+  tracker: CommentSource,
   survivors: readonly Candidate[],
   deferrals: DeferralState,
   identity: string,
@@ -430,6 +509,11 @@ export async function dropDeferred(
   return kept
 }
 
+/** How far back a stop is worth looking for: a stop older than the cooldown lifts by itself. */
+function stopWindow(now: number, cooldownMinutes: number): string {
+  return new Date(now - cooldownMinutes * 60000).toISOString()
+}
+
 /** Unparseable sorts oldest, which holds a stop rather than lifting it. */
 function instant(iso: string): number {
   const t = Date.parse(iso)
@@ -455,7 +539,7 @@ function latestStop(spoken: readonly Comment[], identity: string): Comment | und
  * works immediately.
  *
  * The stop is read off the item every cycle rather than remembered, so nothing an Igor can
- * lose sits between a person writing **stop** and the Igor honouring it. One comment fetch per
+ * lose sits between a person writing **stop** and the Igor honouring it. One comment read per
  * item examined, over the cooldown window alone — a stop older than that lets the item back
  * regardless — and the `wanted` break ends the scan once the cycle has as much work as it can
  * triage.
@@ -467,7 +551,7 @@ function latestStop(spoken: readonly Comment[], identity: string): Comment | und
  * something a person put down.
  */
 export async function dropStopped(
-  tracker: Tracker,
+  tracker: CommentSource,
   survivors: readonly Candidate[],
   cooldownMinutes: number,
   identity: string,
@@ -475,7 +559,7 @@ export async function dropStopped(
   now: number,
   wanted = Infinity,
 ): Promise<Candidate[]> {
-  const window = new Date(now - cooldownMinutes * 60000).toISOString()
+  const window = stopWindow(now, cooldownMinutes)
   const kept: Candidate[] = []
   for (let i = 0; i < survivors.length; i += 1) {
     const candidate = survivors[i]!

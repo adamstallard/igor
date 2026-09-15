@@ -18,6 +18,7 @@ vi.mock('../src/state.js', () => ({
 
 const { planCycle } = await import('../src/loop.js')
 const { sourceKey, STATE_PATH } = await import('../src/discovery.js')
+const { defer, NO_DEFERRALS, STATE_PATH: DEFERRALS_PATH } = await import('../src/deferred.js')
 const { triageBatch } = await import('../src/triage.js')
 
 const NOW = Date.parse('2026-09-14T12:00:00Z')
@@ -111,5 +112,65 @@ describe('a cycle that could not read the tracker', () => {
     await planCycle(deps(items, none), role(), { now: NOW, identity: 'igor-bot', triage })
     const key = sourceKey({ tracker: 'github', repo: 'o/r', query: 'is:issue' })
     expect(stored.get(STATE_PATH)).toEqual({ watermarks: { [key]: { lastSeen: ago(40) } } })
+  })
+})
+
+describe('one comment fetch per candidate', () => {
+  const said = (author: string, minutes: number, body: string) => ({ author, at: ago(minutes), body })
+
+  /** Filters on `since` the way a tracker does, so the window each read asks for is the one under test. */
+  function watching(items: Candidate[], spoken: Record<string, { author: string; at: string; body: string }[]> = {}) {
+    const reads: { id: string; since: string }[] = []
+    const tracker = {
+      name: 'github',
+      search: async () => items,
+      commentsSince: async (c: Candidate, since: string) => {
+        reads.push({ id: c.id, since })
+        return (spoken[c.id] ?? []).filter((m) => Date.parse(m.at) >= Date.parse(since))
+      },
+    } as unknown as Tracker
+    return { d: { tracker, codeHost: {}, trees: {}, destination: 'o/state' } as never, reads }
+  }
+
+  it('reads an item that is both awake and deferred once', async () => {
+    // The stop gate and the deferral gate ask different questions of the same comments.
+    stored.clear()
+    const c = candidate(7, 40)
+    stored.set(DEFERRALS_PATH, defer(NO_DEFERRALS, c, 'could not reproduce', NOW - 3 * 24 * 60 * 60000))
+    const { d, reads } = watching([c])
+
+    const report = await planCycle(d, role(), { now: NOW, identity: 'igor-bot', triage })
+    expect(report.skippedDeferred).toBe(1)
+    expect(reads).toHaveLength(1)
+    // At the deferral, which is older than the cooldown window, not at both in turn.
+    expect(reads[0]?.since).toBe(ago(3 * 24 * 60))
+  })
+
+  it('lifts a deferral on a reply older than the stop window', async () => {
+    // The windows do not contain each other. Reading the deferral over the cooldown window
+    // would hide the answer, and the Igor would ignore an answered question for good.
+    stored.clear()
+    const c = candidate(7, 40)
+    stored.set(DEFERRALS_PATH, defer(NO_DEFERRALS, c, 'could not reproduce', NOW - 5 * 24 * 60 * 60000))
+    const { d, reads } = watching([c], { 'github:o/r#7': [said('alice', 3 * 24 * 60, 'here is the repro')] })
+
+    const report = await planCycle(d, role(), { now: NOW, identity: 'igor-bot', triage })
+    expect(report.skippedDeferred).toBe(0)
+    expect(report.toClaim).toHaveLength(1)
+    expect(reads).toHaveLength(1)
+  })
+
+  it('keeps the cooldown window for an item whose deferral no longer stands', async () => {
+    // A record the item has outgrown is not a reason to pull days of comments for it.
+    stored.clear()
+    const c = candidate(7, 40)
+    const stale = defer(NO_DEFERRALS, candidate(7, 40), 'could not reproduce', NOW - 3 * 24 * 60 * 60000)
+    stale.items[c.id]!.fingerprint = 'nolongermatching'
+    stored.set(DEFERRALS_PATH, stale)
+    const { d, reads } = watching([c])
+
+    const report = await planCycle(d, role(), { now: NOW, identity: 'igor-bot', triage })
+    expect(report.toClaim).toHaveLength(1)
+    expect(reads).toEqual([{ id: c.id, since: ago(60) }])
   })
 })
