@@ -362,3 +362,88 @@ rather than a prediction of what the implementation will achieve.
   whether repository content leaves the environment.
 - Should lore eventually live in its own repository rather than a path inside the operating
   team's repo? Deferred until there is a second consumer.
+
+## Sources, ranked by evidence rather than by volume
+
+The useful axis is **evidence of consequence** crossed with **anchor specificity**: can you tell
+who asserted something, about what, and whether it turned out to be right.
+
+**A named expert, a specific artifact, and an outcome.**
+
+1. **Reverted commits and their replacements.** "We did X, it broke, we did Y." The outcome is
+   in the history and unarguable. `git log --grep='^Revert'` finds them in one pass and each
+   body names what it reverts; the reverted diff is what was tried, and the commits after it
+   touching the same files are what replaced it. Highest evidence in a repository and almost
+   nobody mines it.
+2. **Incident postmortems**, where an org writes them — already generalised into lessons by
+   somebody motivated. Low volume, high value, and usually outside git, which is the catch.
+3. **Review threads with real back-and-forth.** Not a bare correction but one where the author
+   pushed back and the reviewer explained. The explanation is the lore. Cheap to isolate from
+   data already fetched: three or more comments, two or more distinct authors.
+
+**Named and anchored, with the outcome inferred.**
+
+4. **Review comments generally** — what this change mines. Measured composition: 46%
+   feature-specific prose, 18% acknowledgements, 14% questions.
+5. **Long-lived comments explaining why.** The signal is not age but *survival under churn*: a
+   comment old because nobody looked is worthless, one that outlived repeated rewrites beneath
+   it is a tested belief. `git blame -L` on the comment gives its introduction (measured at
+   ~10ms a range), `git log --follow` gives the churn around it, and the ratio is the signal.
+   Shortlist on content first — *because*, *otherwise*, *do not*, *we tried* — since `git log
+   -L` is a line-history walk and too slow to sweep with.
+6. **Fix commit messages**, where the message says why rather than what.
+
+**High volume, weak anchoring.**
+
+7. Issue discussions — anchored, but mostly negotiation.
+8. Chat corrections — no artifact anchor, and a correction is hard to tell from banter.
+9. ADRs and RFCs — curated, which is a weakness here: they record intent rather than what
+   happened, and go stale without anyone noticing.
+
+**And one nobody else has: an Igor's own handoffs and stop receipts.** An Igor that hands back
+the same shape of item repeatedly is producing labelled negative examples about its own lane,
+and a stop is a person saying "not this", unambiguously, with a receipt. Already structured,
+already on the state branch, free.
+
+### The order is backwards, and that is worth saying plainly
+
+This change mines source 4 — the hardest and weakest of the top six. Its own gate established
+why: stick detection is free but far weaker than the design assumed, most of the corpus is not
+generalisable, and the load-bearing filter was never tested. Reverts are one grep with an
+outcome attached; comment survival is milliseconds a candidate.
+
+Nothing is wrong with mining review comments. The ordering should simply follow evidence per
+item rather than familiarity, and the first thing to do is not another source at all: prove one
+end to end — mine, review, watch entries fire on real work — because adding sources before any
+source is known to yield useful lore multiplies untested work, which is the mistake the gate at
+group 2 exists to prevent one level down.
+
+### The bottom tier is a trigger, not a source
+
+Chat should not be mined. A correction there is a *hypothesis* — one person, one moment, no
+anchor — and its value is that it says what to go looking for. Someone asserts a rule; that
+becomes a search of the higher tiers for corroboration. Find three review comments and a revert,
+and the entry's provenance is entirely high-tier, citing artifacts rather than the remark that
+prompted the search.
+
+This dissolves both of chat's problems. Noise stops mattering, because a false trigger is a
+search that finds nothing — precision comes from the evidence stage rather than the trigger
+stage. And the missing anchor is supplied by whatever corroborates.
+
+It is also demand-driven, which matters more than it sounds: sweeping a repository produces
+mostly chaff, while searching in response to what a team is arguing about today targets exactly
+what they need written down. `directed-interaction` already reasons this way about questions —
+a question lore cannot answer is a retrieval miss and therefore a consolidation signal. This is
+the same mechanism pointed at corrections.
+
+The two halves compose, and `support` was built for it. The remark itself becomes a candidate
+with one authorship provenance item, `{author, at}` and no url, which `lore-store` already
+specifies. Corroboration then adds an item per artifact, each with a url, and support rises from
+one to four — which is what the store means by a lesson with five citations being a different
+thing from a single observation.
+
+Two gates it needs from the start: **authority**, the same write-access rule that governs
+instructions, so a stranger's assertion cannot launch a mining run; and **a check for an
+existing entry**, because the common outcome is corroborating a rule already in the store, which
+should raise its support rather than propose a duplicate — the more valuable result, and it
+spends no reviewer attention at all.
