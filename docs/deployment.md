@@ -98,12 +98,21 @@ Four steps, once a colleague has sent you a token ([`seats.md`](seats.md) is wha
 
    ```sh
    umask 077 && mkdir -p ~/.config/igor
-   printf 'export IGOR_SEAT_ADAM=%s\n' 'paste-the-token-here' > ~/.config/igor/env
+   read -rs TOKEN                        # paste it here: no echo, and no shell history
+   printf 'export IGOR_SEAT_ADAM=%s\n' "$TOKEN" > ~/.config/igor/env && unset TOKEN
    echo '[ -f ~/.config/igor/env ] && . ~/.config/igor/env' >> ~/.zshrc
    ```
 
-   Not `~/.zshrc` directly: a profile is usually world-readable and ends up in dotfile
+   Not the token on the command line: zsh does not skip space-prefixed commands by default,
+   so it would sit in `~/.zsh_history` in plain text long after the file was locked down.
+
+   Not `~/.zshrc` directly either: a profile is usually world-readable and ends up in dotfile
    backups and screen shares. A `0600` file it sources is the same convenience without that.
+
+   This exports the token into every shell you open, which also means every process you run
+   from one inherits it — a package manager's install scripts included. Scoping it to the
+   `igor` invocation instead is [Keeping the token out of your
+   shells](#keeping-the-token-out-of-your-shells) below.
 
 3. **Pick it up.** Under systemd, `sudo systemctl restart igor@maintenance`. From a shell,
    open a new one — a token exported into one shell is invisible to every other.
@@ -116,6 +125,41 @@ environment, so an ambient login or a keychain can answer for a seat that has no
 all — while a worker's environment is written out rather than inherited and has no such
 fallback. `budget` says so explicitly where it applies, and the cure is a `token_env` that is
 set.
+
+### Keeping the token out of your shells
+
+Exporting from your profile puts the token in the environment of every process you start, not
+just `igor` — a package manager's install scripts, every CLI, anything that reads its own
+environment and sends it somewhere. On a machine that runs `npm install` that is the exposure
+worth caring about, rather than the `0600` file.
+
+Igor reads the variable at the moment it runs and stores nothing, so the variable only has to
+exist for that one process. Keep the secret in a store and inject it:
+
+```sh
+# once — prompts for the value twice and echoes neither, so it stays off the command line
+security add-generic-password -a "$USER" -s igor-seat-adam -w
+
+# in your profile, instead of the export
+igor() {
+  IGOR_SEAT_ADAM="$(security find-generic-password -a "$USER" -s igor-seat-adam -w)" \
+    command igor "$@"
+}
+```
+
+Then delete `~/.config/igor/env` and the line sourcing it. `pass`, `gopass` and `op read`
+substitute for `security find-generic-password` unchanged; a vault the team already shares is
+the better choice for somebody else's seat, since it is where they handed the token over.
+
+This does not remove the token from the `igor` process or the worker it spawns, which is where
+it has to be. It removes it from everything else you run.
+
+**On a server this is the wrong shape and `LoadCredential=` is the right one** — systemd
+decrypts a secret into a tmpfs file readable only by that unit, encrypted at rest and TPM-bound
+where there is one, with nothing in an environment at all. Igor cannot read it yet, because
+systemd supplies a path and Igor reads a variable name: [#29](https://github.com/adamstallard/igor/issues/29).
+Until then `EnvironmentFile=` with the file `0600` and owned by the service user is the
+arrangement, and the service user running nothing else is what stands in for the isolation.
 
 ### When a seat token expires
 

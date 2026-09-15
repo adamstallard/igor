@@ -172,13 +172,19 @@ repository.
    so being signed in to `claude` yourself is not enough:
 
    ```sh
-   claude setup-token                              # prints a token; approve in the browser
+   claude setup-token                    # prints a token; approve in the browser
    umask 077 && mkdir -p ~/.config/igor
-   printf 'export IGOR_SEAT_ME=%s\n' 'the-token' > ~/.config/igor/env
+   read -rs TOKEN                        # paste it here: no echo, and no shell history
+   printf 'export IGOR_SEAT_ME=%s\n' "$TOKEN" > ~/.config/igor/env && unset TOKEN
    echo '[ -f ~/.config/igor/env ] && . ~/.config/igor/env' >> ~/.zshrc
    ```
 
-   Then open a new shell. Under a service this is an `EnvironmentFile=` instead —
+   `read -rs` rather than the token on the command line, which would otherwise land in your
+   shell history in plain text. Then open a new shell.
+
+   That leaves the token in every shell you open, and so in every process you start from one.
+   [Keeping the token out of your shells](docs/deployment.md#keeping-the-token-out-of-your-shells)
+   scopes it to `igor` alone, which is worth doing once this is more than a trial. Under a service this is an `EnvironmentFile=` instead —
    [`deployment.md`](docs/deployment.md#adding-a-seat-somebody-has-given-you) has that, the
    naming convention for several seats, and why not `~/.zshrc` directly. Where the
    subscription is somebody else's, [`docs/seats.md`](docs/seats.md) is the page to send them.
