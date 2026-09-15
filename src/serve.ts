@@ -2,6 +2,7 @@ import type { Candidate } from './adapter.js'
 import type { CycleDeps, CycleOptions, CycleReport, ItemRun } from './loop.js'
 import { planCycle, runItem } from './loop.js'
 import type { Gate } from './budget.js'
+import { windsDownOnSignal } from './execute.js'
 import { noteHandoff, shouldDefer } from './deferred.js'
 import type { Role } from './role.js'
 
@@ -131,6 +132,9 @@ export function untilSignalled(
     process.on(s as NodeJS.Signals, h)
   },
 ): Promise<void> {
+  // The worker is detached, so nothing else signals it. Saying so here keeps it running while
+  // the loop winds down, rather than being killed the moment the signal lands.
+  windsDownOnSignal()
   return new Promise((resolve) => {
     for (const signal of ['SIGINT', 'SIGTERM']) on(signal, () => resolve())
   })

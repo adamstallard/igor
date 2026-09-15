@@ -687,3 +687,72 @@ describe('a worker killed for a limit still says what it changed', () => {
     expect(seen).toEqual([])
   })
 })
+
+/** A worker that spawns a tool subprocess, the shape every real kill lands on. */
+function withGrandchild(markers: { started: string; late: string }, delayMs: number): string {
+  const fs = "require('node:fs')"
+  const grandchild =
+    `${fs}.writeFileSync(${JSON.stringify(markers.started)}, 'x');` +
+    `setTimeout(() => ${fs}.writeFileSync(${JSON.stringify(markers.late)}, 'x'), ${delayMs})`
+  return `import('node:child_process').then(({ spawn }) => {
+            spawn(process.execPath, ['-e', ${JSON.stringify(grandchild)}], { stdio: 'ignore' })
+            emit({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 'a', name: 'Bash' }] } })
+            setInterval(() => {}, 10_000)
+          })`
+}
+
+const settle = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+describe('a kill reaches what the worker spawned', () => {
+  it('kills the tool subprocess with the worker on the watchdog path', async () => {
+    const dir = tempDir('igor-test-tree-')
+    const markers = { started: join(dir, 'started'), late: join(dir, 'late') }
+
+    await expect(runStub(withGrandchild(markers, 1_200), { ...busy, toolMs: 500 })).rejects.toThrow(
+      'while a tool ran and was killed',
+    )
+    await settle(2_000)
+
+    // The first marker proves the subprocess was running when the kill landed. Without it, the
+    // second one's absence would also be satisfied by a grandchild that never started.
+    expect(existsSync(markers.started)).toBe(true)
+    expect(existsSync(markers.late)).toBe(false)
+  })
+
+  it('kills the tool subprocess when the run is aborted', async () => {
+    const dir = tempDir('igor-test-tree-')
+    const markers = { started: join(dir, 'started'), late: join(dir, 'late') }
+    const stop = new AbortController()
+
+    const run = claudeWorker(stubCommand(withGrandchild(markers, 1_200)))({
+      cwd: tempDir('igor-test-cwd-'),
+      system: 'be useful',
+      prompt: 'work this item',
+      model: 'claude-sonnet-5',
+      limits: busy,
+      signal: stop.signal,
+    })
+    await settle(500)
+    stop.abort()
+    await run
+    await settle(1_500)
+
+    expect(existsSync(markers.started)).toBe(true)
+    expect(existsSync(markers.late)).toBe(false)
+  })
+
+  it('does not fail cleanup when the worker has already exited', async () => {
+    const stop = new AbortController()
+    const out = await claudeWorker(stubCommand(`emit({ type: 'result', result: 'done', total_cost_usd: 0 })`))({
+      cwd: tempDir('igor-test-cwd-'),
+      system: 'be useful',
+      prompt: 'work this item',
+      model: 'claude-sonnet-5',
+      limits: busy,
+      signal: stop.signal,
+    })
+    expect(out.result).toBe('done')
+    // A process group that is already gone must not make cleanup throw.
+    expect(() => stop.abort()).not.toThrow()
+  })
+})
