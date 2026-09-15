@@ -1,7 +1,11 @@
 ## 1. Being addressed
 
 - [ ] 1.1 A `mentions:` source, so a mention reaches triage through the existing machinery
-- [ ] 1.2 Carry provenance on a candidate: requested by whom, and their words
+- [ ] 1.2 Carry provenance on a candidate: requested by whom, and their words, truncated the
+      way a stop receipt is
+- [ ] 1.2a Read the mention from the comments the cycle already fetched rather than fetching
+      again — `dropStopped` pulls them for every survivor — and fall back to a fetch only when
+      the mention predates that window
 - [ ] 1.3 Requests are their own source and are considered first
 - [ ] 1.4 Tests: mentioned outside the query reaches triage; a request is screened like any
       other candidate
