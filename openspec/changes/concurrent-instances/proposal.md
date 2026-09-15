@@ -117,6 +117,18 @@ Explicitly out of scope:
 - **Per-process budget.** Seats are shared and the gate is checked before each item, so
   concurrency spends faster without spending differently.
 
+  The tracker's rate limit is not like that, and is worth knowing before scaling ranks.
+  Measured on a personal account: `core` (REST) allows 5,000 requests an hour, `graphql`
+  5,000 points, and `search` 30 a minute — three separate budgets, and the limit is per
+  *account*. Discovery runs on `graphql` so it does not compete; claims, comment reads and
+  every state read and write land in `core`.
+
+  One machine account per Igor therefore buys each Igor its own 5,000 an hour, which is a
+  capacity argument for per-Igor accounts on top of identity. But processes of one Igor share
+  an account, so N ranks divide one budget rather than multiplying it. Nothing here bounds
+  that, and nothing needs to yet; it is the ceiling on how far ranks scale, and it is reached
+  by request count rather than by spend.
+
 ## Capabilities
 
 ### Modified Capabilities
