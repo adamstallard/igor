@@ -25,3 +25,29 @@ experts:
 # A role declares extends, seat, sources, lane, instructions, completion, allow, commands,
 # budget_share and reviewers. `commands` is what its worker may run — declare none and the
 # worker can edit files and nothing else, so it cannot test its own change. See the README.
+
+# Whose Claude subscription pays for the reasoning. Without a seat an Igor can triage but
+# cannot work — and a seat without `token_env` reads fine while paying for nothing, because a
+# worker's environment is written out rather than inherited and cannot reach a keychain.
+#
+# A seat belongs to a subscription, not to an Igor: several Igors draw on one through a pool,
+# and one Igor may draw on several. Name them for whose capacity they are.
+budget:
+  seats:
+    # Bought for the fleet. No owner, so no reserve — it exists to be spent.
+    - id: fleet-1
+      dedicated: true
+      token_env: IGOR_SEAT_FLEET_1
+
+    # A person's own subscription, lent to the fleet. `reserve` is their floor: at 0.5 an Igor
+    # stops at half the window and leaves the rest to them. See docs/seats.md.
+    - id: adam
+      owner: adam@example.com
+      reserve: 0.5
+      token_env: IGOR_SEAT_ADAM
+
+  # Order is the allocation mechanism: an Igor takes the first seat with headroom, so listing
+  # dedicated capacity first means a person's is only ever reached once it is spent.
+  pools:
+    - id: engineering
+      seats: [fleet-1, adam]

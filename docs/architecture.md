@@ -1185,8 +1185,8 @@ role's `budget_share` is a **ceiling** on what it may draw from its pool.
 
 ```yaml
 seats:
-  - id: igor-1
-    token_env: IGOR_SEAT_1
+  - id: fleet-1
+    token_env: IGOR_SEAT_FLEET_1
     dedicated: true          # nobody works here; reserve is 0
   - id: adam
     owner: adam@example.com
@@ -1195,7 +1195,7 @@ seats:
 
 pools:
   - id: engineering
-    seats: [igor-1, igor-2, igor-3, adam, kapo, hudson]
+    seats: [fleet-1, fleet-2, fleet-3, adam, kapo, hudson]
 ```
 
 **Pool order is the whole allocation mechanism.** An Igor takes the first seat in its pool with

@@ -235,12 +235,12 @@ up to date, and no way to read one seat and charge another.
 ```
 $ igor budget
 seat             window    used  reserve  headroom  resets
-igor-1           session    17%       0%       83%  Sep 13 at 8pm (America/Los_Angeles)
-igor-1           week       12%       0%       88%  Sep 18 at 4pm (America/Los_Angeles)
+fleet-1           session    17%       0%       83%  Sep 13 at 8pm (America/Los_Angeles)
+fleet-1           week       12%       0%       88%  Sep 18 at 4pm (America/Los_Angeles)
                  wk:Fable    0%
 adam             session    17%      50%       33%  Sep 13 at 8pm (America/Los_Angeles)
 
-pool engineering: igor-1 has 83% of the session left
+pool engineering: fleet-1 has 83% of the session left
 ```
 
 - **used** — how much of that window is gone, read live.
@@ -256,10 +256,10 @@ pool engineering: igor-1 has 83% of the session left
 ```yaml
 budget:
   seats:
-    - {id: igor-1, dedicated: true, token_env: IGOR_SEAT_1}
+    - {id: fleet-1, dedicated: true, token_env: IGOR_SEAT_FLEET_1}
     - {id: adam, owner: adam@example.com, reserve: 0.5, token_env: IGOR_SEAT_ADAM}
   pools:
-    - {id: engineering, seats: [igor-1, adam]}
+    - {id: engineering, seats: [fleet-1, adam]}
 ```
 
 `token_env` names the environment variable holding that seat's token, from
