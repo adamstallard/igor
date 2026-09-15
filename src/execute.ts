@@ -109,12 +109,142 @@ export interface WorkerEvent extends WorkerOutput {
   [field: string]: unknown
 }
 
+/**
+ * When a worker is killed. Silence means two different things and gets two windows: waiting on
+ * a tool it dispatched, where a build or a test run is legitimately long, and waiting on the
+ * model, where nothing legitimate is.
+ */
+export interface Limits {
+  /** Killed after this long with a dispatched tool still outstanding. */
+  toolMs: number
+  /** Killed after this long waiting on the model's next turn. */
+  modelMs: number
+  /** Killed after this long overall, whatever the stream is doing. */
+  ceilingMs: number
+}
+
+/**
+ * Silence with a tool outstanding. Three times the longest a shell command may be given, which
+ * also leaves room for a subagent or a fetch that nothing here bounds.
+ */
+export const TOOL_SILENCE_MS = 30 * 60 * 1000
+
+/**
+ * Silence waiting on the model. Measured gaps between a tool result and the next turn run under
+ * three seconds, so anything near this is retries and backoff rather than work.
+ */
+export const MODEL_SILENCE_MS = 5 * 60 * 1000
+
+/**
+ * The backstop, for a worker that emits steadily and never finishes. Past the seat's five-hour
+ * rate-limit window, so a run that reaches it is not waiting on anything that will resolve.
+ */
+export const ABSOLUTE_CEILING_MS = 6 * 60 * 60 * 1000
+
+export const DEFAULT_LIMITS: Limits = {
+  toolMs: TOOL_SILENCE_MS,
+  modelMs: MODEL_SILENCE_MS,
+  ceilingMs: ABSOLUTE_CEILING_MS,
+}
+
+function duration(ms: number): string {
+  if (ms >= 3_600_000) return `${+(ms / 3_600_000).toFixed(1)}h`
+  if (ms >= 60_000) return `${Math.round(ms / 60_000)}m`
+  return `${Math.round(ms / 1000)}s`
+}
+
+interface Block {
+  type?: string
+  id?: string
+  tool_use_id?: string
+}
+
+function isProse(block: Block): boolean {
+  return block.type === 'text' || block.type === 'thinking'
+}
+
+/** A subagent's own events name the call that spawned them; the run's own turn sends null. */
+function inSidechain(event: WorkerEvent): boolean {
+  return event.parent_tool_use_id !== undefined && event.parent_tool_use_id !== null
+}
+
+function blocksOf(event: WorkerEvent): Block[] {
+  const content = (event.message as { content?: unknown } | undefined)?.content
+  return Array.isArray(content) ? (content as Block[]) : []
+}
+
+export interface Watchdog {
+  /** Call for each event off the stream: it is both the tick and what says which window applies. */
+  progress: (event: WorkerEvent) => void
+  cancel: () => void
+}
+
+/**
+ * Kills on whichever limit breaches first, and says which. The three are different diagnoses
+ * for whoever reads the handoff: a tool that never returned, a model that never answered, and
+ * work one pass cannot finish.
+ *
+ * Which window applies is read from outstanding tool calls rather than from the last event's
+ * type, because tools dispatched together return one at a time — a result arriving while a
+ * sibling still runs must not shorten the window under it.
+ */
+export function watchWorker(limits: Limits, kill: (why: ExecutionError) => void): Watchdog {
+  const outstanding = new Set<string>()
+  let spent = false
+
+  const stop = () => {
+    spent = true
+    clearTimeout(idle)
+    clearTimeout(ceiling)
+  }
+
+  const fire = (why: string) => {
+    if (spent) return
+    stop()
+    kill(new ExecutionError(why))
+  }
+
+  const silence = () => {
+    const onTool = outstanding.size > 0
+    const ms = onTool ? limits.toolMs : limits.modelMs
+    const why = onTool
+      ? `worker produced nothing for ${duration(ms)} while a tool ran and was killed`
+      : `worker produced nothing for ${duration(ms)} and was killed`
+    return setTimeout(() => fire(why), ms)
+  }
+
+  let idle = silence()
+  const ceiling = setTimeout(
+    () => fire(`worker ran ${duration(limits.ceilingMs)} without finishing and was killed`),
+    limits.ceilingMs,
+  )
+
+  return {
+    progress: (event) => {
+      if (spent) return
+      const blocks = blocksOf(event)
+      // A turn cannot resume until every tool it dispatched has come back, so prose at the top
+      // level is proof that none is still running — without which one unmatched id would hold
+      // the long window open for good. A subagent narrates inside its own branch while the
+      // call that spawned it runs, so its events prove nothing about the turn above.
+      if (!inSidechain(event) && blocks.some(isProse)) outstanding.clear()
+      for (const block of blocks) {
+        if (block.type === 'tool_use' && block.id !== undefined) outstanding.add(block.id)
+        if (block.type === 'tool_result' && block.tool_use_id !== undefined) outstanding.delete(block.tool_use_id)
+      }
+      clearTimeout(idle)
+      idle = silence()
+    },
+    cancel: stop,
+  }
+}
+
 export interface WorkerInput {
   cwd: string
   system: string
   prompt: string
   model: string
-  timeoutMs: number
+  limits: Limits
   /** Called as each event arrives, so the caller can act on a run while it is still running. */
   onEvent?: (event: WorkerEvent) => void
   /** Aborting kills the worker; the run settles with whatever it had rather than failing. */
@@ -124,94 +254,104 @@ export interface WorkerInput {
 /** Injected in tests so the suite never spawns a subprocess or touches the network. */
 export type WorkerRunner = (input: WorkerInput) => Promise<WorkerOutput>
 
-export const headlessClaude: WorkerRunner = ({ cwd, system, prompt, model, timeoutMs, onEvent, signal }) => {
-  return new Promise<WorkerOutput>((resolve, reject) => {
-    if (signal?.aborted) return resolve({})
-    const child = spawn(
-      'claude',
-      [
-        '-p',
-        prompt,
-        '--model',
-        model,
-        // Streamed rather than buffered, so the caller hears from the run while it runs. The
-        // terminal `result` event carries what the buffered blob used to, and the CLI refuses
-        // stream-json under -p unless --verbose comes with it.
-        '--output-format',
-        'stream-json',
-        '--verbose',
-        '--system-prompt',
-        system,
-        // Scoped to this tree rather than bypassing checks wholesale. The tree is disposable
-        // and contains only the repository, so edits inside it are the whole point.
-        '--permission-mode',
-        'acceptEdits',
-        '--add-dir',
-        cwd,
-      ],
-      { cwd, stdio: ['ignore', 'pipe', 'pipe'] },
-    )
-    // A StringDecoder, so a multi-byte character split across chunks is not decoded to two
-    // replacement characters and its line lost to the JSON parse.
-    child.stdout.setEncoding('utf8')
+/** The command is a parameter so a test can drive a real stream without the real CLI. */
+export function claudeWorker(command = 'claude'): WorkerRunner {
+  return ({ cwd, system, prompt, model, limits, onEvent, signal }) =>
+    new Promise<WorkerOutput>((resolve, reject) => {
+      if (signal?.aborted) return resolve({})
+      const child = spawn(
+        command,
+        [
+          '-p',
+          prompt,
+          '--model',
+          model,
+          // Streamed rather than buffered, so the caller hears from the run while it runs. The
+          // terminal `result` event carries what the buffered blob used to, and the CLI refuses
+          // stream-json under -p unless --verbose comes with it.
+          '--output-format',
+          'stream-json',
+          '--verbose',
+          '--system-prompt',
+          system,
+          // Scoped to this tree rather than bypassing checks wholesale. The tree is disposable
+          // and contains only the repository, so edits inside it are the whole point.
+          '--permission-mode',
+          'acceptEdits',
+          '--add-dir',
+          cwd,
+        ],
+        { cwd, stdio: ['ignore', 'pipe', 'pipe'] },
+      )
+      // A StringDecoder, so a multi-byte character split across chunks is not decoded to two
+      // replacement characters and its line lost to the JSON parse.
+      child.stdout.setEncoding('utf8')
 
-    let pending = ''
-    let err = ''
-    let final: WorkerOutput | undefined
-    let killed = false
+      let pending = ''
+      let err = ''
+      let final: WorkerOutput | undefined
+      let killed = false
 
-    const timer = setTimeout(() => {
-      child.kill('SIGKILL')
-      reject(new ExecutionError(`worker exceeded ${Math.round(timeoutMs / 1000)}s and was killed`))
-    }, timeoutMs)
-    signal?.addEventListener(
-      'abort',
-      () => {
-        killed = true
+      const watch = watchWorker(limits, (why) => {
         child.kill('SIGKILL')
-        clearTimeout(timer)
-        resolve(final ?? {})
-      },
-      { once: true },
-    )
+        // A run that already produced its result is finished, whatever its process is doing.
+        // Killing a lingering one must not also throw away the work and the cost it reported.
+        if (final !== undefined) return resolve(final)
+        reject(why)
+      })
+      signal?.addEventListener(
+        'abort',
+        () => {
+          killed = true
+          child.kill('SIGKILL')
+          watch.cancel()
+          resolve(final ?? {})
+        },
+        { once: true },
+      )
 
-    const consume = (line: string) => {
-      if (line.trim() === '') return
-      let event: WorkerEvent
-      try {
-        event = JSON.parse(line) as WorkerEvent
-      } catch {
-        // A line the stream never promised is not worth losing a run over.
-        return
+      const consume = (line: string) => {
+        if (line.trim() === '') return
+        let event: WorkerEvent
+        try {
+          event = JSON.parse(line) as WorkerEvent
+        } catch {
+          // A line the stream never promised is not worth losing a run over, and it is not
+          // progress either: a worker still spewing noise has still stopped working.
+          return
+        }
+        // Every event is progress, whatever its type, and says which window applies next.
+        watch.progress(event)
+        if (event.type === 'result') final = event
+        onEvent?.(event)
       }
-      if (event.type === 'result') final = event
-      onEvent?.(event)
-    }
 
-    child.stdout.on('data', (chunk) => {
-      // Chunk boundaries fall wherever they like, so a partial line waits for the rest of it.
-      pending += chunk
-      const lines = pending.split('\n')
-      pending = lines.pop() ?? ''
-      for (const line of lines) consume(line)
+      child.stdout.on('data', (chunk) => {
+        // Chunk boundaries fall wherever they like, so a partial line waits for the rest of it.
+        pending += chunk
+        const lines = pending.split('\n')
+        pending = lines.pop() ?? ''
+        for (const line of lines) consume(line)
+      })
+      child.stderr.on('data', (c) => (err += c))
+      child.on('error', (e) => {
+        watch.cancel()
+        reject(e)
+      })
+      child.on('close', (code) => {
+        consume(pending)
+        watch.cancel()
+        if (killed) return resolve(final ?? {})
+        if (code !== 0) return reject(new ExecutionError(err.trim() || `worker exited ${code}`))
+        if (final === undefined) {
+          return reject(new ExecutionError(`worker produced no result: ${(err.trim() || pending).slice(0, 200)}`))
+        }
+        resolve(final)
+      })
     })
-    child.stderr.on('data', (c) => (err += c))
-    child.on('error', (e) => {
-      clearTimeout(timer)
-      reject(e)
-    })
-    child.on('close', (code) => {
-      consume(pending)
-      clearTimeout(timer)
-      if (killed) return resolve(final ?? {})
-      if (code !== 0) return reject(new ExecutionError(err.trim() || `worker exited ${code}`))
-      if (final === undefined) {
-        return reject(new ExecutionError(`worker produced no result: ${(err.trim() || pending).slice(0, 200)}`))
-      }
-      resolve(final)
-    })
-  })
 }
+
+export const headlessClaude: WorkerRunner = claudeWorker()
 
 /**
  * What a person reads. Kept short on purpose.
@@ -244,7 +384,8 @@ export interface ExecuteOptions {
   /** Rendered lore for the trusted channel. Empty when the store is empty or over budget. */
   lore?: string
   model?: string
-  timeoutMs?: number
+  /** A seam for tests; each limit defaults and callers are trusted with what they pass. */
+  limits?: Partial<Limits>
   /**
    * The claim's status, asked at checkpoints while the worker runs and again before anything
    * is decided. Reports the status rather than a boolean because a stop and a loss want
@@ -256,8 +397,6 @@ export interface ExecuteOptions {
   onPublish?: () => void
   branchPrefix?: string
 }
-
-export const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000
 
 /** How long a stop can go unanswered mid-run — short enough that whoever posted it is still watching. */
 const CHECKPOINT_INTERVAL_MS = 30_000
@@ -325,16 +464,19 @@ export async function execute(
         system: workerSystemPrompt(role, role.allow, options.lore ?? ''),
         prompt: workerPrompt(candidate, linkage),
         model,
-        timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+        limits: { ...DEFAULT_LIMITS, ...options.limits },
         onEvent,
         signal: stop.signal,
       })
     } catch (error) {
       // A worker killed at a checkpoint is a stop however it exited, not a failure.
       if (!stopped) {
+        // The tree is read even here. A worker can be killed hours into real editing, and the
+        // record of a failure that says it changed nothing is a record of the wrong failure.
+        const changed = await tree.changes().catch(() => [])
         return {
           outcome: 'failed' as const,
-          changed: [],
+          changed,
           refusals,
           transcript: '',
           costUsd: 0,

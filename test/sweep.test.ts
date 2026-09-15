@@ -3,7 +3,7 @@ import {
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { DEFAULT_TIMEOUT_MS } from '../src/execute.js'
+import { ABSOLUTE_CEILING_MS } from '../src/execute.js'
 import { TREE_PREFIX } from '../src/worktree.js'
 import { SWEEP_AFTER_MS, isTreeName, nameRuleFor, sweepAbandonedTrees, sweepable } from '../src/sweep.js'
 import { wire } from '../src/wiring.js'
@@ -90,8 +90,8 @@ describe('the age rule', () => {
     expect(sweepable('igor-test-tree-abc123', 0, now, SWEEP_AFTER_MS)).toBe(false)
   })
 
-  it('leaves room for a worker that ran to its timeout', () => {
-    expect(SWEEP_AFTER_MS).toBeGreaterThan(DEFAULT_TIMEOUT_MS)
+  it('leaves room for a worker that ran to the ceiling', () => {
+    expect(SWEEP_AFTER_MS).toBeGreaterThan(ABSOLUTE_CEILING_MS)
   })
 })
 
@@ -101,7 +101,7 @@ describe('sweeping a directory', () => {
     const old = [tree(dir, 'igor-tree-aaaaaa'), tree(dir, 'igor-tree-bbbbbb')]
     const { out, said } = recorder()
 
-    const result = await sweepAbandonedTrees(out, { root: dir, now: Date.now() + 5 * HOUR })
+    const result = await sweepAbandonedTrees(out, { root: dir, now: Date.now() + SWEEP_AFTER_MS + HOUR })
 
     expect(result).toMatchObject({ removed: 2, failed: 0 })
     for (const path of old) expect(existsSync(path)).toBe(false)
@@ -132,7 +132,7 @@ describe('sweeping a directory', () => {
     writeFileSync(join(dir, 'igor-tree-ffffff'), 'a file, not a tree')
     const { out } = recorder()
 
-    const result = await sweepAbandonedTrees(out, { root: dir, now: Date.now() + 5 * HOUR })
+    const result = await sweepAbandonedTrees(out, { root: dir, now: Date.now() + SWEEP_AFTER_MS + HOUR })
 
     expect(result.removed).toBe(0)
     for (const path of keep) expect(existsSync(path)).toBe(true)
@@ -147,7 +147,7 @@ describe('sweeping a directory', () => {
     symlinkSync(elsewhere, link)
     const { out } = recorder()
 
-    const result = await sweepAbandonedTrees(out, { root: dir, now: Date.now() + 5 * HOUR })
+    const result = await sweepAbandonedTrees(out, { root: dir, now: Date.now() + SWEEP_AFTER_MS + HOUR })
 
     expect(result).toMatchObject({ removed: 0, failed: 0 })
     expect(existsSync(precious)).toBe(true)
@@ -180,7 +180,7 @@ describe('sweeping a directory', () => {
     const { out, warned } = recorder()
 
     try {
-      const result = await sweepAbandonedTrees(out, { root: dir, now: Date.now() + 5 * HOUR })
+      const result = await sweepAbandonedTrees(out, { root: dir, now: Date.now() + SWEEP_AFTER_MS + HOUR })
 
       expect(result).toMatchObject({ removed: 1, failed: 1 })
       expect(existsSync(ordinary)).toBe(false)
@@ -210,7 +210,7 @@ describe('the wiring both commands build from', () => {
     const abandoned = tree(dir, 'igor-tree-eeeeee')
     const { out, said } = recorder()
 
-    const wiring = await wire(config, role, 'o/r', out, { root: dir, now: Date.now() + 5 * HOUR })
+    const wiring = await wire(config, role, 'o/r', out, { root: dir, now: Date.now() + SWEEP_AFTER_MS + HOUR })
 
     expect(existsSync(abandoned)).toBe(false)
     expect(said.some((l) => l.includes('swept 1 abandoned tree'))).toBe(true)

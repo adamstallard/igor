@@ -16,8 +16,8 @@ services:
       - igor-trees:/tmp
     env_file: .env
     restart: unless-stopped
-    # Long enough to finish the item in hand. A container killed mid-item leaves a claim
-    # with no explanation.
+    # How long shutdown waits, not a promise the item in hand finishes. A container killed
+    # mid-item leaves a claim with no explanation. See docs/deployment.md.
     stop_grace_period: 15m
     stop_signal: SIGTERM
 
