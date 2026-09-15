@@ -2,7 +2,9 @@ import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { resolveRole, explainRole, listRoles, RoleError, DEFAULTS } from '../src/role.js'
+import { resolveRole, loadRole, explainRole, listRoles, RoleError, DEFAULTS } from '../src/role.js'
+import type { OrgBudget } from '../src/budget.js'
+import type { Config } from '../src/config.js'
 
 function store(roles: Record<string, string>): string {
   const dir = mkdtempSync(join(tmpdir(), 'igor-roles-'))
@@ -246,6 +248,60 @@ describe('completion must be permitted', () => {
   it('requires unassign to be permitted even when defaulted', () => {
     const dir = store({ org: 'allow: [comment]\n' })
     expect(() => resolveRole(dir, 'org')).toThrow(/completes with "unassign"/)
+  })
+})
+
+const BUDGET: OrgBudget = {
+  seats: [
+    { id: 'igor-1', dedicated: true, reserve: 0 },
+    { id: 'adam', owner: 'adam@example.com', reserve: 0.5 },
+  ],
+  pools: [{ id: 'eng', seats: ['igor-1', 'adam'] }],
+}
+
+function config(dir: string, budget: OrgBudget = BUDGET): Config {
+  return { destination: dir, reviewers: [], experts: [], budget }
+}
+
+describe('a seat a role names must be declared', () => {
+  it('rejects a seat no organization configuration declares', () => {
+    const dir = store({ org: ORG, fe: 'seat: igor-2\n' })
+    expect(() => loadRole(config(dir), 'fe')).toThrow(/role "fe" names seat "igor-2", which is not declared/)
+  })
+
+  it('says what is declared, so the typo is visible against it', () => {
+    const dir = store({ org: ORG, fe: 'seat: igor-2\n' })
+    expect(() => loadRole(config(dir), 'fe')).toThrow(/Declared seats: igor-1, adam; pools: eng/)
+  })
+
+  it('rejects an undeclared pool the same way', () => {
+    const dir = store({ org: ORG, fe: 'seat: pool:backend\n' })
+    expect(() => loadRole(config(dir), 'fe')).toThrow(/names seat "pool:backend", which is not declared/)
+  })
+
+  it('names the level an inherited seat came from, since that is the file to fix', () => {
+    const dir = store({ org: `${ORG}seat: igor-2\n`, fe: 'sources: []\n' })
+    expect(() => loadRole(config(dir), 'fe')).toThrow(/inherited from org/)
+  })
+
+  it('accepts a declared seat', () => {
+    const dir = store({ org: ORG, fe: 'seat: adam\n' })
+    expect(loadRole(config(dir), 'fe').role.seat).toBe('adam')
+  })
+
+  it('accepts a declared pool', () => {
+    const dir = store({ org: ORG, fe: 'seat: pool:eng\n' })
+    expect(loadRole(config(dir), 'fe').role.seat).toBe('pool:eng')
+  })
+
+  it('checks nothing when no seats are declared, since budget is then not enforced', () => {
+    const dir = store({ org: ORG, fe: 'seat: igor-2\n' })
+    expect(loadRole(config(dir, { seats: [], pools: [] }), 'fe').role.seat).toBe('igor-2')
+  })
+
+  it('leaves a role that names no seat alone', () => {
+    const dir = store({ org: ORG, fe: 'sources: []\n' })
+    expect(loadRole(config(dir), 'fe').role.seat).toBeUndefined()
   })
 })
 

@@ -231,6 +231,18 @@ describe('the gate the loop consumes', () => {
     const g = budgetGate(org, { name: 'r', seat: 'igor-1' }, [{ seat: org.seats[0]!, usage: usage(10, 10) }], [])
     expect(g.seat).toBe('igor-1')
   })
+
+  it('refuses a name nothing declares rather than substituting the first pool', () => {
+    const g = budgetGate(org, { name: 'r', seat: 'igor-2' }, [{ seat: org.seats[0]!, usage: usage(10, 10) }], [])
+    expect(g.exhausted()).toBe(true)
+    expect(g.seat).toBeUndefined()
+    expect(g.reason).toMatch(/names "igor-2", which is not declared/)
+  })
+
+  it('still falls to the first declared pool for a role that names nothing', () => {
+    const g = budgetGate(org, { name: 'r' }, [{ seat: org.seats[0]!, usage: usage(10, 10) }], [])
+    expect(g.seat).toBe('igor-1')
+  })
 })
 
 describe('reporting', () => {

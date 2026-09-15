@@ -97,6 +97,7 @@ Everything an Igor did is on the `igor-state` branch of the lore repository:
 | symptom | cause |
 |---|---|
 | `seat "x" reads its token from Y, which is not set` | the seat has no token; it is skipped rather than substituted |
+| `role "x" names seat "y", which is not declared` | the role spends a seat or `pool:` no `budget` block declares; every command refuses until the name matches one, since a default would charge the wrong seat |
 | `the tracker did not record <account> as holding <item>` | the machine account lacks write access — GitHub accepts the assignment and silently drops it |
 | nothing is ever claimed | run `igor run <role> --plan`; the funnel prints where every candidate was dropped |
 | an item was claimed and nothing happened | there is no such case; every path that holds a claim posts before releasing. If you find one, it is a bug |

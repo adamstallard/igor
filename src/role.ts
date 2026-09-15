@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { parse as parseYaml } from 'yaml'
+import { poolFor, type OrgBudget } from './budget.js'
 import type { Config } from './config.js'
 
 export const ROLES_DIR = 'roles'
@@ -498,6 +499,30 @@ export function rolesFrom(config: Config): string[] {
   return listRoles(config.destination)
 }
 
+/**
+ * Refuses a role whose seat nothing declares. An unresolvable name left to run time can only
+ * be substituted, and the substitute charges a role written for its own seat to whatever pool
+ * is declared first — possibly a person's.
+ *
+ * No seats declared means budget is not enforced, the same condition `budgetGate` reads, so
+ * there is no configuration where one of the two acts and the other does not.
+ */
+function checkSeat({ role, from }: ResolvedRole, budget: OrgBudget): void {
+  if (role.seat === undefined || budget.seats.length === 0) return
+  if (poolFor(budget, role.seat) !== undefined) return
+
+  const level = from['seat']
+  const declared = [
+    `seats: ${budget.seats.map((s) => s.id).join(', ') || '(none)'}`,
+    `pools: ${budget.pools.map((p) => p.id).join(', ') || '(none)'}`,
+  ]
+  throw new RoleError(
+    `role "${role.name}" names seat "${role.seat}"` +
+      (level !== undefined && level !== role.name ? `, inherited from ${level}` : '') +
+      `, which is not declared. Declared ${declared.join('; ')}`,
+  )
+}
+
 export function loadRole(config: Config, name: string): ResolvedRole {
   const available = listRoles(config.destination)
   if (available.length === 0) {
@@ -507,7 +532,9 @@ export function loadRole(config: Config, name: string): ResolvedRole {
         `Start with ${ORG_ROLE}.yaml holding what every role in the org inherits.`,
     )
   }
-  return resolveRole(config.destination, name)
+  const resolved = resolveRole(config.destination, name)
+  checkSeat(resolved, config.budget)
+  return resolved
 }
 
 /** Renders the effective role with the level each value came from — the point of `explain`. */

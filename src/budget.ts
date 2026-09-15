@@ -296,6 +296,19 @@ export function chooseSeat(
   }
 }
 
+/**
+ * What a role's `seat` names: a declared pool, or a declared seat as a pool of one, for an Igor
+ * that must never borrow. Undefined when nothing declares it — the answer that must never be
+ * substituted, since a name resolved to a default spends whatever seat happens to be first.
+ */
+export function poolFor(org: OrgBudget, seat: string): Pool | undefined {
+  const target = seat.replace(/^pool:/, '')
+  return (
+    org.pools.find((p) => p.id === target) ??
+    (org.seats.some((s) => s.id === target) ? { id: target, seats: [target] } : undefined)
+  )
+}
+
 export interface Gate {
   exhausted: () => boolean
   seat?: string
@@ -315,14 +328,18 @@ export function budgetGate(
     return { exhausted: () => false, reason: 'no seats configured, so budget is not enforced' }
   }
 
-  const target = (role.seat ?? '').replace(/^pool:/, '')
-  const pool =
-    org.pools.find((p) => p.id === target) ??
-    // A role may name a single seat instead of a pool, for an Igor that must never borrow.
-    (org.seats.some((s) => s.id === target) ? { id: target, seats: [target] } : org.pools[0])
-
+  // A role that names nothing falls to the first pool declared. A role that names something
+  // must resolve: `loadRole` rejects an undeclared name, and refusing here too keeps a role
+  // built in code from quietly spending a pool it never asked for.
+  const pool = role.seat === undefined ? org.pools[0] : poolFor(org, role.seat)
   if (pool === undefined) {
-    return { exhausted: () => true, reason: `role "${role.name}" names no pool and none is declared` }
+    return {
+      exhausted: () => true,
+      reason:
+        role.seat === undefined
+          ? `role "${role.name}" names no pool and none is declared`
+          : `role "${role.name}" names "${role.seat}", which is not declared`,
+    }
   }
 
   const choice = chooseSeat(pool, readings, records, role)
