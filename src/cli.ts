@@ -30,6 +30,7 @@ import { BudgetError, budgetGate, loadSpend, readAllSeats, renderBudget } from '
 import { wire } from './wiring.js'
 import { readLog } from './state.js'
 import { repoFromCheckout } from './github.js'
+import { staleBuildWarning } from './staleness.js'
 import type { Entry, Status } from './entry.js'
 
 function today(): string {
@@ -486,6 +487,11 @@ program
       process.stdout.write(`\npool ${pool.id}: ${gate.reason}\n`)
     }
   })
+
+// Before anything runs, because stale output looks exactly like current output. Silent in a
+// published package, which has no `src` to be newer than its `dist`.
+const stale = staleBuildWarning()
+if (stale !== undefined) process.stderr.write(`! ${stale}\n`)
 
 try {
   await program.parseAsync()
