@@ -151,6 +151,10 @@ export const headlessClaude: WorkerRunner = ({ cwd, system, prompt, model, timeo
       ],
       { cwd, stdio: ['ignore', 'pipe', 'pipe'] },
     )
+    // A StringDecoder, so a multi-byte character split across chunks is not decoded to two
+    // replacement characters and its line lost to the JSON parse.
+    child.stdout.setEncoding('utf8')
+
     let pending = ''
     let err = ''
     let final: WorkerOutput | undefined
@@ -201,7 +205,9 @@ export const headlessClaude: WorkerRunner = ({ cwd, system, prompt, model, timeo
       clearTimeout(timer)
       if (killed) return resolve(final ?? {})
       if (code !== 0) return reject(new ExecutionError(err.trim() || `worker exited ${code}`))
-      if (final === undefined) return reject(new ExecutionError(`worker produced no result: ${err.trim().slice(0, 200)}`))
+      if (final === undefined) {
+        return reject(new ExecutionError(`worker produced no result: ${(err.trim() || pending).slice(0, 200)}`))
+      }
       resolve(final)
     })
   })
