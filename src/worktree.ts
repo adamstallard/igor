@@ -58,7 +58,8 @@ function run(cmd: string, args: readonly string[], cwd?: string): Promise<string
 /** Statuses git reports that mean the file is gone. */
 const DELETED = new Set(['D', 'AD', 'RD'])
 
-class ClonedTree implements WorkingTree {
+/** Exported so the change-collection rules can be tested against a real repository. */
+export class ClonedTree implements WorkingTree {
   private released = false
 
   constructor(
@@ -69,7 +70,11 @@ class ClonedTree implements WorkingTree {
   async changes(): Promise<ChangedFile[]> {
     // Read from the tree, never from what the worker said it did. A worker that reports a
     // change it did not make, or omits one it did, cannot mislead the artifact this way.
-    const status = await run('git', ['-C', this.path, 'status', '--porcelain', '-z'])
+    // `-uall`, because porcelain otherwise collapses an untracked directory to one entry —
+    // `?? openspec/` rather than the files under it. Reading that path throws EISDIR, the
+    // catch below skips it, and every file a worker created in a new directory is lost from
+    // the artifact without a word. Spec deltas are always new files in new directories.
+    const status = await run('git', ['-C', this.path, 'status', '--porcelain', '-z', '-uall'])
     const entries = status.split('\0').filter((e) => e.length > 0)
     const out: ChangedFile[] = []
 
@@ -85,7 +90,9 @@ class ClonedTree implements WorkingTree {
       try {
         content = await readFile(join(this.path, path), 'utf8')
       } catch {
-        continue // a binary or unreadable file; the caller reports it rather than guessing
+        // A binary or unreadable file; the caller reports it rather than guessing. With
+        // `-uall` a directory never reaches here, which is what this used to swallow.
+        continue
       }
       out.push({ path, content, kind: code.includes('?') || code === 'A' ? 'added' : 'modified' })
     }
