@@ -49,8 +49,18 @@ rather than a fix for one that was.
 
 **Model window: 5 minutes.** Measured gaps between a tool result and the next turn ran under
 three seconds, so this is two orders of magnitude above the signal and still catches a hang
-fast. A run waiting out a rate-limit reset is killed here and hands off, which is the wanted
-behaviour: idling for hours holding a claim is worse than releasing it.
+fast.
+
+One assumption behind it is **unverified**. Every `rate_limit_event` observed carried
+`status: "allowed"`; what the stream does once a seat is actually over its limit was never
+seen. If the CLI blocks silently waiting for the window to reset, a run that hits the limit
+mid-item dies here and is handed off as "produced nothing for 5m" — a diagnosis that blames a
+hung model for a quota event, which is worse than the kill. If it keeps emitting
+`rate_limit_event`s while it waits, the window is never reached and nothing is wrong. Measure
+this against a seat at its limit before trusting the model window's diagnosis.
+
+Killing rather than idling is still the wanted outcome either way: holding a claim for hours
+waiting on a quota is worse than releasing it.
 
 **Absolute ceiling: 6 hours.** Past the seat's five-hour rate-limit window, which the stream
 reports as `rate_limit_event.rate_limit_info.rateLimitType: five_hour`. A worker alive across a
@@ -59,7 +69,9 @@ reachable only by a fault.
 
 **Sweep threshold: the ceiling plus an hour.** A tree outlives its worker by a clone and an
 artifact push, which is a fixed cost and not a share of the run, so the margin is added rather
-than multiplied.
+than multiplied. This is seven hours against the old one, so abandoned debris now survives
+seven times longer — accepted deliberately, because deleting a live sibling's tree corrupts its
+run and the threshold has to clear the longest a tree can legitimately be held.
 
 ## What this contradicts
 
