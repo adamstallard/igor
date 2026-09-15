@@ -111,6 +111,9 @@ separately. A machine account says who acts on the repository; a seat says whose
 for the reasoning (§6.5.1). An Igor may act as `milton` while spending from a pool that includes
 three people's spare capacity, and that is the normal arrangement rather than an edge case.
 
+Provisioning a seat is a different conversation with a different person — the one whose
+allowance it is. [`seats.md`](seats.md) is the page to send them.
+
 ## Revoking
 
 Because the account is per Igor, retiring one is: revoke its token, remove it from the

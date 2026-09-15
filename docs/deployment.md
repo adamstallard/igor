@@ -32,6 +32,10 @@ Three things, in this order. None can be automated, and the first two are the on
    reported unreadable and skipped, deliberately: falling back to whatever login is ambient
    would mean reading one seat's usage and spending another's.
 
+   A seat is usually somebody else's subscription, so this step is a request rather than a
+   task. [`seats.md`](seats.md) is written for them: what the command is, what it grants, what
+   `reserve` protects, and how to hand a token over without pasting it into a channel.
+
 3. **A lore repository**, holding `igor.config.yaml` and `roles/`, checked out where the
    service runs. Igor finds its configuration by walking up from the working directory, the way
    git does, so the working directory *is* the configuration.
