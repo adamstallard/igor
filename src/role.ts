@@ -508,14 +508,25 @@ export function rolesFrom(config: Config): string[] {
  * there is no configuration where one of the two acts and the other does not.
  */
 function checkSeat({ role, from }: ResolvedRole, budget: OrgBudget): void {
-  if (role.seat === undefined || budget.seats.length === 0) return
-  if (poolFor(budget, role.seat) !== undefined) return
+  if (budget.seats.length === 0) return
 
-  const level = from['seat']
   const declared = [
     `seats: ${budget.seats.map((s) => s.id).join(', ') || '(none)'}`,
     `pools: ${budget.pools.map((p) => p.id).join(', ') || '(none)'}`,
   ]
+
+  // Naming nothing reached the same place a typo did: the first pool declared, whatever that
+  // happens to be. Where budget is enforced at all, which seat a role spends from is not
+  // something to arrive at by omission.
+  if (role.seat === undefined) {
+    throw new RoleError(
+      `role "${role.name}" names no seat, and one is required where seats are declared. ` +
+        `Set "seat:" on the role or on a level it inherits from. Declared ${declared.join('; ')}`,
+    )
+  }
+  if (poolFor(budget, role.seat) !== undefined) return
+
+  const level = from['seat']
   throw new RoleError(
     `role "${role.name}" names seat "${role.seat}"` +
       (level !== undefined && level !== role.name ? `, inherited from ${level}` : '') +

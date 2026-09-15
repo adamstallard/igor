@@ -300,9 +300,22 @@ describe('a seat a role names must be declared', () => {
     expect(loadRole(config(dir, { seats: [], pools: [] }), 'fe').role.seat).toBe('igor-2')
   })
 
-  it('leaves a role that names no seat alone', () => {
+  it('rejects a role that names no seat, since omission reached the same default a typo did', () => {
+    // Falling through to the first pool declared is not a decision anybody made about this
+    // role, and it may be a person's seat.
     const dir = store({ org: ORG, fe: 'sources: []\n' })
-    expect(loadRole(config(dir), 'fe').role.seat).toBeUndefined()
+    expect(() => loadRole(config(dir), 'fe')).toThrow(/names no seat/)
+  })
+
+  it('says where to put the seat, since it may belong on a level the role inherits', () => {
+    const dir = store({ org: ORG, fe: 'sources: []\n' })
+    expect(() => loadRole(config(dir), 'fe')).toThrow(/on the role or on a level it inherits/)
+  })
+
+  it('leaves a role without a seat alone where no seats are declared', () => {
+    // No seats means budget is not enforced, which is a legitimate way to run.
+    const dir = store({ org: ORG, fe: 'sources: []\n' })
+    expect(loadRole(config(dir, { seats: [], pools: [] }), 'fe').role.seat).toBeUndefined()
   })
 })
 

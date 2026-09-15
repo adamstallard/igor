@@ -171,8 +171,10 @@ around, because reading one seat and spending another is the mistake worth makin
 
 A role's `seat` names one of these: a seat id, for an Igor that must never borrow, or a pool
 id for one that may. Either may be written `pool:engineering`; the prefix reads better and is
-not what decides which is looked up. A name nothing declares fails at load — an Igor never
-falls back to a pool it did not ask for. Declare no seats at all and budget is not enforced.
+not what decides which is looked up. Where seats are declared, every role must name one —
+by omission or by typo, an Igor would otherwise spend from the first pool declared, which
+nobody chose for it and which may be a person's. Both fail at load. Declare no seats at all
+and budget is not enforced, and roles need not name one.
 
 **Pool order is the allocation mechanism.** An Igor takes the first seat with headroom, so
 listing dedicated seats first means personal capacity is only ever borrowed once the dedicated
