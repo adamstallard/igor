@@ -76,7 +76,8 @@ export interface ItemRun {
   candidate: Candidate
   reason: string
   execution?: ExecutionResult
-  costUsd: number
+  /** Undefined where the worker never reported one, which a killed run never does. */
+  costUsd: number | undefined
   /** Whether a message was left on the item. False here is a bug, not a state. */
   spoke: boolean
   /** Why it was handed back, where it was — a budget handoff says nothing about the item. */
@@ -145,9 +146,11 @@ export async function runItem(
   const execution = await execute(trees, tracker, codeHost, candidate, role, {
     ...options,
     ...(options.lore === undefined ? {} : { lore: options.lore }),
-    // Named rather than left to the spread: the worker authenticating as the seat the gate
-    // chose is the whole point, and a field riding a spread is a field nobody keeps correct.
+    // Named rather than left to the spread, which is a field nobody keeps correct. The worker
+    // authenticating as the seat the gate chose is the whole point, and a pull request points
+    // at its transcript only where the store arrives.
     ...(options.budget?.tokenEnv === undefined ? {} : { seatTokenEnv: options.budget.tokenEnv }),
+    ...(options.store === undefined ? {} : { store: options.store }),
     onPublish: () => step('publishing'),
     claimStatus: async () => (await checkpoint(tracker, claim, identity)).status,
   })

@@ -104,7 +104,9 @@ export async function serve(
         const lore = await options.loreFor(candidate)
         const run = await runItem(deps, candidate, role, identity, { ...options, budget: gate, lore })
         summary.worked += 1
-        summary.costUsd += run.costUsd
+        // A run whose cost never arrived adds nothing here, so this total is a floor. The
+        // ledger records the absence rather than a zero.
+        summary.costUsd += run.costUsd ?? 0
         if (shouldDefer(run.outcome, run.handoff)) {
           await (options.note ?? noteHandoff)(deps.destination, candidate, run.reason).catch(() => undefined)
         }

@@ -1,13 +1,14 @@
 import { mkdtempSync, writeFileSync, existsSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Artifact, ArtifactRequest, Candidate, ClaimVerdict, CodeHost, Tracker } from '../src/adapter.js'
 import type { Role } from '../src/role.js'
 import {
   ABSOLUTE_CEILING_MS, branchFor, claudeWorker, complete, execute, ExecutionError,
-  MODEL_SILENCE_MS, permits, prBody, PR_BODY_LIMIT, stripLinkage, TOOL_SILENCE_MS, watchWorker,
-  workerEnv, workerPrompt, workerSystemPrompt, type WorkerEvent, type WorkerRunner,
+  MODEL_SILENCE_MS, permits, prBody, PR_BODY_LIMIT, recordExecution, stripLinkage,
+  TOOL_SILENCE_MS, watchWorker, workerEnv, workerPrompt, workerSystemPrompt,
+  type WorkerEvent, type WorkerRunner,
 } from '../src/execute.js'
 import { withTree, type ChangedFile, type TreeProvider, type WorkingTree } from '../src/worktree.js'
 import { tempDir } from './tmp.js'
@@ -15,9 +16,22 @@ import { tempDir } from './tmp.js'
 const MINUTE = 60 * 1000
 const HOUR = 60 * MINUTE
 
+/** The state branch, without the network. Only what `recordExecution` writes is captured. */
+const ledger = vi.hoisted(() => ({ records: [] as Record<string, unknown>[], files: [] as string[] }))
+vi.mock('../src/state.js', async (actual) => ({
+  ...(await actual<typeof import('../src/state.js')>()),
+  appendRecord: async (_destination: string, _path: string, record: Record<string, unknown>) => {
+    ledger.records.push(record)
+  },
+  writeState: async (_destination: string, path: string) => {
+    ledger.files.push(path)
+  },
+}))
+
 const candidate = (over: Partial<Candidate> = {}): Candidate =>
   ({
     id: 'github:o/r#7',
+    tracker: 'github',
     repo: 'o/r',
     native: '7',
     title: 'Timestamps render in UTC instead of local time',
@@ -260,6 +274,147 @@ describe('what a person has to read', () => {
 
   it('is just the linkage when the worker said nothing', () => {
     expect(prBody('Closes #7', '', candidate())).toBe('Closes #7')
+  })
+
+  it('links the transcript on the repository that actually holds it', () => {
+    // The transcript is on the lore store, not on the repository the pull request is on, so a
+    // pointer naming neither sends the reader looking for a branch that is not there.
+    const body = prBody('Closes #7', wordy(), candidate(), { destination: 'acme/lore', isPublic: true })
+    expect(body).toContain('https://github.com/acme/lore/blob/igor-state/transcripts/github/o/r/7.md')
+  })
+
+  it('names no repository where the store is private', () => {
+    // The name is the disclosure the guard exists for, and the link would 404 for an outside
+    // reader besides.
+    const body = prBody('Closes #7', wordy(), candidate(), {
+      destination: 'acme/lore-private',
+      isPublic: false,
+    })
+    expect(body).not.toMatch(/acme|lore-private|https:\/\/github\.com/)
+    // The path is safe either way: it holds the worked repository, which the reader is on.
+    expect(body).toContain('transcripts/github/o/r/7.md')
+  })
+
+  it('discloses nothing where no store is described', () => {
+    const body = prBody('Closes #7', wordy(), candidate())
+    expect(body).not.toMatch(/https:\/\/github\.com/)
+    expect(body).toMatch(/different repository/)
+  })
+})
+
+/** A summary too long to survive `PR_BODY_LIMIT`, which is what puts a pointer in the body. */
+const wordy = () => 'First sentence here. '.repeat(80)
+
+/** A worker that finishes, having said more than a pull request body will hold. */
+const verbose: WorkerRunner = async () => ({ result: wordy(), total_cost_usd: 0.03 })
+
+/** Emits assistant turns carrying usage, then waits to be killed. */
+function spendingWorker(turns: number): WorkerRunner {
+  return async ({ onEvent, signal }) => {
+    for (let turn = 1; turn <= turns; turn++) {
+      await new Promise((r) => setTimeout(r, 1))
+      if (signal?.aborted) return {}
+      onEvent?.({
+        type: 'assistant',
+        message: { usage: { output_tokens: 3, cache_read_input_tokens: turn * 1000 } },
+      } as unknown as WorkerEvent)
+    }
+    for (;;) {
+      await new Promise((r) => setTimeout(r, 1))
+      if (signal?.aborted) return {}
+    }
+  }
+}
+
+/** Runs one item to completion and hands back both what was published and what was recorded. */
+async function run(over: Partial<Role> = {}, options: Parameters<typeof execute>[5] = {}) {
+  const item = candidate()
+  const { provider } = fakeProvider(edited)
+  const { host, seen } = fakeCodeHost()
+  const { t } = fakeTracker()
+  const result = await execute(provider, t, host, item, role(over), {
+    worker: async () => ({ result: 'Fixed it.', total_cost_usd: 0.02 }),
+    ...options,
+  })
+  return { item, result, seen }
+}
+
+describe('the pull request and the ledger point at one transcript', () => {
+  beforeEach(() => {
+    ledger.records.length = 0
+    ledger.files.length = 0
+  })
+
+  it('sends a reader to the file the ledger names', async () => {
+    // The path was derived in two places that knew different things, and only one of them
+    // knew which repository it was on.
+    const store = { destination: 'acme/lore', isPublic: true }
+    const { item, result, seen } = await run({}, { worker: verbose, store })
+    await recordExecution(store.destination, item, role(), result)
+
+    const recorded = ledger.records[0]?.['transcript']
+    expect(typeof recorded).toBe('string')
+    expect(seen[0]?.body).toContain(recorded as string)
+    expect(ledger.files).toEqual([recorded])
+  })
+
+  it('leaves the cost out of the ledger rather than writing a zero', async () => {
+    // Zero is what a run that spent nothing cost. A reader has to be able to tell them apart.
+    const { claimStatus } = claimReads('held', 'held', 'stopped')
+    const { item, result } = await run({}, { worker: spendingWorker(3), claimStatus, checkpointMs: 0 })
+    await recordExecution('acme/lore', item, role(), result)
+
+    const record = ledger.records[0] ?? {}
+    expect('costUsd' in record).toBe(false)
+    expect(record['usage']).toEqual({ assistantTurns: 3, cacheReadTokensPeak: 3000 })
+  })
+
+  it('records the figure where the worker reported one', async () => {
+    const { item, result } = await run()
+    await recordExecution('acme/lore', item, role(), result)
+
+    const record = ledger.records[0] ?? {}
+    expect(record['costUsd']).toBe(0.02)
+    expect('usage' in record).toBe(false)
+  })
+})
+
+describe('a run killed mid-flight is not recorded as free', () => {
+  it('reports no cost where the worker never reported one', async () => {
+    const { claimStatus } = claimReads('held', 'held', 'stopped')
+    const { result } = await run({}, { worker: spendingWorker(3), claimStatus, checkpointMs: 0 })
+
+    expect(result.outcome).toBe('refused')
+    expect(result.costUsd).toBeUndefined()
+    // Turns counted, cache read taken at its peak. Per-event token counts are per turn rather
+    // than a running total, so nothing here is summed.
+    expect(result.usage).toEqual({ assistantTurns: 3, cacheReadTokensPeak: 3000 })
+  })
+
+  it('keeps the reported figure where the run finished', async () => {
+    const { result } = await run()
+    expect(result.costUsd).toBe(0.02)
+    expect(result.usage).toBeUndefined()
+  })
+})
+
+describe('which pull request is preferred is stated rather than inferred', () => {
+  it('prefers a draft where a role permits both', async () => {
+    // Only reversible artifacts are produced: a draft is an offer, unmergeable by accident.
+    const { seen } = await run({ allow: ['pr', 'draft-pr', 'unassign'] })
+    expect(seen[0]?.draft).toBe(true)
+  })
+
+  it('opens a ready pull request where that is all the role permits', async () => {
+    const { seen } = await run({ allow: ['pr', 'unassign'] })
+    expect(seen[0]?.draft).toBe(false)
+  })
+
+  it('publishes nothing where a role permits neither', async () => {
+    const { result, seen } = await run({ allow: ['comment'] })
+    expect(result.outcome).toBe('refused')
+    expect(result.reason).toMatch(/may not open a pull request/)
+    expect(seen).toEqual([])
   })
 })
 
