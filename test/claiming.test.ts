@@ -186,33 +186,34 @@ describe('the stop receipt', () => {
 })
 
 describe('what may follow a stop', () => {
+  const said = (...bodies: string[]) => async () => bodies.map((body) => ({ body, at: '' }))
   const base = {
     candidate: candidate(),
     stoppedAt: new Date(NOW - 30 * 60000).toISOString(),
     cooldownMinutes: 60,
-    since: [],
+    since: said(),
     identity: 'igor-bot',
     now: NOW,
   }
 
-  it('waits out the cooldown and says how long is left', () => {
-    const e = eligibleAfterStop(base)
+  it('waits out the cooldown and says how long is left', async () => {
+    const e = await eligibleAfterStop(base)
     expect(e.eligible).toBe(false)
     expect(e.reason).toContain('30 minutes left')
   })
 
-  it('becomes eligible once the cooldown elapses and nobody took it', () => {
-    expect(eligibleAfterStop({ ...base, cooldownMinutes: 20 }).eligible).toBe(true)
+  it('becomes eligible once the cooldown elapses and nobody took it', async () => {
+    expect((await eligibleAfterStop({ ...base, cooldownMinutes: 20 })).eligible).toBe(true)
   })
 
-  it('stays out when a human assigned themselves', () => {
-    const e = eligibleAfterStop({ ...base, candidate: candidate({ assignees: ['alice'] }), cooldownMinutes: 0 })
+  it('stays out when a human assigned themselves', async () => {
+    const e = await eligibleAfterStop({ ...base, candidate: candidate({ assignees: ['alice'] }), cooldownMinutes: 0 })
     expect(e.eligible).toBe(false)
     expect(e.reason).toContain('alice')
   })
 
-  it('ignores its own name among the assignees', () => {
-    const e = eligibleAfterStop({
+  it('ignores its own name among the assignees', async () => {
+    const e = await eligibleAfterStop({
       ...base,
       candidate: candidate({ assignees: ['igor-bot'] }),
       cooldownMinutes: 0,
@@ -220,21 +221,44 @@ describe('what may follow a stop', () => {
     expect(e.eligible).toBe(true)
   })
 
-  it('short-circuits the cooldown on an explicit go-ahead', () => {
-    const e = eligibleAfterStop({ ...base, since: [{ body: 'go ahead', at: '' }] })
+  it('short-circuits the cooldown on an explicit go-ahead', async () => {
+    const e = await eligibleAfterStop({ ...base, since: said('go ahead') })
     expect(e.eligible).toBe(true)
     expect(e.reason).toMatch(/carry on/)
   })
 
-  it('does not let a go-ahead override a human who took the item', () => {
+  it('keeps waiting when people are talking but nobody said to carry on', async () => {
+    // The difference from a handoff, which any reply lifts: a stop asked for silence, and a
+    // conversation about the item is not permission to rejoin it.
+    const e = await eligibleAfterStop({ ...base, since: said('why is this broken', 'no idea') })
+    expect(e.eligible).toBe(false)
+  })
+
+  it('does not let a go-ahead override a human who took the item', async () => {
     // The person holding it outranks a passing remark; otherwise an Igor could talk its way
     // back onto work somebody else is now doing.
-    const e = eligibleAfterStop({
+    const e = await eligibleAfterStop({
       ...base,
       candidate: candidate({ assignees: ['alice'] }),
-      since: [{ body: 'go ahead', at: '' }],
+      since: said('go ahead'),
     })
     expect(e.eligible).toBe(false)
+  })
+
+  it('reads the comments only inside the cooldown, which is the cost bound', async () => {
+    // A go-ahead can only make an item eligible sooner, so a verdict the item's own fields
+    // already settled needs no request — which is every cycle in the steady state.
+    let asked = 0
+    const counted = async () => {
+      asked += 1
+      return []
+    }
+    await eligibleAfterStop({ ...base, since: counted, cooldownMinutes: 20 })
+    await eligibleAfterStop({ ...base, since: counted, candidate: candidate({ assignees: ['alice'] }) })
+    expect(asked).toBe(0)
+
+    await eligibleAfterStop({ ...base, since: counted })
+    expect(asked).toBe(1)
   })
 })
 

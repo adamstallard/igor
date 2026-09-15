@@ -144,8 +144,11 @@ export interface EligibilityInput {
   candidate: Candidate
   stoppedAt: string
   cooldownMinutes: number
-  /** Anything said on the item since the stop, oldest or newest order does not matter. */
-  since: { body: string; at: string }[]
+  /**
+   * Anything said on the item since the stop, oldest or newest order does not matter. Fetched
+   * on demand because reading it costs a request per item and most verdicts do not need it.
+   */
+  since: () => Promise<{ body: string; at: string }[]>
   identity: string
   now?: number
 }
@@ -161,23 +164,30 @@ export interface Eligibility {
  * There is deliberately no resume verb. A person who wants an Igor to wait says stop; whether
  * it comes back is then a question about the item's state, not about a command someone has to
  * remember to issue.
+ *
+ * The clause order is also the cost bound. A go-ahead can only make an item eligible *sooner*,
+ * so it cannot change a verdict that another holder or an elapsed cooldown already settled —
+ * and those two read fields already in hand. `since` is therefore reached for only inside the
+ * cooldown window, which is zero requests in the steady state. Keep the order if you change
+ * anything here; a caller that duplicated it would be a second copy of the rule.
  */
-export function eligibleAfterStop(input: EligibilityInput): Eligibility {
+export async function eligibleAfterStop(input: EligibilityInput): Promise<Eligibility> {
   const now = input.now ?? Date.now()
   const others = input.candidate.assignees.filter((a) => a !== input.identity)
   if (others.length > 0) {
     return { eligible: false, reason: `${others.join(', ')} took it` }
   }
 
-  const goAhead = input.since.find((m) => isGoAhead(m.body, input.identity))
+  const elapsedMinutes = (now - Date.parse(input.stoppedAt)) / 60000
+  if (elapsedMinutes >= input.cooldownMinutes) {
+    return { eligible: true, reason: 'cooldown elapsed and nobody took it' }
+  }
+
+  const goAhead = (await input.since()).find((m) => isGoAhead(m.body, input.identity))
   if (goAhead) {
     return { eligible: true, reason: 'someone said to carry on' }
   }
 
-  const elapsedMinutes = (now - Date.parse(input.stoppedAt)) / 60000
-  if (elapsedMinutes < input.cooldownMinutes) {
-    const left = Math.ceil(input.cooldownMinutes - elapsedMinutes)
-    return { eligible: false, reason: `cooling down, ${left} minute${left === 1 ? '' : 's'} left` }
-  }
-  return { eligible: true, reason: 'cooldown elapsed and nobody took it' }
+  const left = Math.ceil(input.cooldownMinutes - elapsedMinutes)
+  return { eligible: false, reason: `cooling down, ${left} minute${left === 1 ? '' : 's'} left` }
 }
