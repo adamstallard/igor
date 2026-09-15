@@ -31,6 +31,7 @@ import { wire } from './wiring.js'
 import { readLog } from './state.js'
 import { repoFromCheckout } from './github.js'
 import { staleBuildWarning } from './staleness.js'
+import { provenanceFromCitations, ProvenanceInputError } from './entry.js'
 import type { Entry, Status } from './entry.js'
 
 function today(): string {
@@ -48,7 +49,9 @@ program
   .description('Scaffold an entry and assign its id')
   .requiredOption('--claim <text>', 'the lesson, in a sentence or two')
   .requiredOption('--prose <text>', 'when this applies, in prose')
-  .requiredOption('--author <name>', 'who is asserting this')
+  .requiredOption('--author <name...>', 'who is asserting this; give several to cite a cluster of comments')
+  .option('--url <url...>', 'source url, one per --author positionally; omit for hand-authored citations')
+  .option('--at <date...>', 'ISO date, one per --author positionally; defaults to today when omitted')
   .option('--scope <scope>', 'global | role:<name> | project:<name>', 'global')
   .option('--path <glob...>', 'path predicate; repeatable')
   .option('--status <status>', 'provisional | active | deprecated', 'provisional')
@@ -67,7 +70,12 @@ program
         ...(opts.path ? { paths: opts.path as string[] } : {}),
         prose: opts.prose,
       },
-      provenance: [{ author: opts.author, at: today() }],
+      provenance: provenanceFromCitations(
+        opts.author as string[],
+        opts.url as string[] | undefined,
+        opts.at as string[] | undefined,
+        today(),
+      ),
       supersedes: [],
       body: opts.body ?? '',
     }
@@ -503,7 +511,8 @@ try {
     error instanceof GitHubError ||
     error instanceof RoleError ||
     error instanceof TriageError ||
-    error instanceof BudgetError
+    error instanceof BudgetError ||
+    error instanceof ProvenanceInputError
   ) {
     process.stderr.write(`${error.message}\n`)
     process.exit(1)
