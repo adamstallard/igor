@@ -251,12 +251,81 @@ export function watchWorker(limits: Limits, kill: (why: ExecutionError) => void)
   }
 }
 
+/**
+ * Forwarded when the host sets them. None is a credential: each is how this host reaches the
+ * network, and dropping one fails as a connection error that looks like anything but a missing
+ * variable. Measured: a worker given a proxy address nothing listens on reports
+ * `API Error: Connection refused`, naming no proxy.
+ */
+const FORWARDED = [
+  'HTTP_PROXY',
+  'HTTPS_PROXY',
+  'NO_PROXY',
+  'http_proxy',
+  'https_proxy',
+  'no_proxy',
+  'NODE_EXTRA_CA_CERTS',
+  'SSL_CERT_FILE',
+  'SSL_CERT_DIR',
+] as const
+
+/** Where an ambient login lives, for the configuration in which no seat names a token. */
+const AMBIENT_TOKENS = ['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY'] as const
+
+/**
+ * What the worker gets, written out rather than inherited.
+ *
+ * The worker has no use for a credential beyond the seat it spends: it edits files in a
+ * disposable tree, and claiming, commenting, branching and publishing all happen afterwards in
+ * the loop with the loop's own tokens. Inheriting the environment hands a worker that an item's
+ * text can steer every token on the machine, one shell command from being read out.
+ *
+ * `PATH` is required — without it nothing in the tree resolves `node`. `HOME` is not, strictly:
+ * a seat token authenticates `claude` on its own, and an operating system supplies a fallback
+ * home. It is passed for the worked repository's toolchain, whose caches would otherwise land
+ * in a directory the service user may not own.
+ */
+export function workerEnv(
+  seatTokenEnv: string | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): NodeJS.ProcessEnv {
+  const out: NodeJS.ProcessEnv = {}
+  for (const name of ['PATH', 'HOME', ...FORWARDED]) {
+    const value = env[name]
+    if (value !== undefined && value !== '') out[name] = value
+  }
+
+  // A seat naming nothing leaves the worker on the ambient login, which is what `readUsage`
+  // does on the reading side and what an org running with no seats declared depends on.
+  if (seatTokenEnv === undefined) {
+    for (const name of AMBIENT_TOKENS) {
+      const value = env[name]
+      if (value !== undefined && value !== '') out[name] = value
+    }
+    return out
+  }
+
+  const token = env[seatTokenEnv]
+  if (token === undefined || token === '') {
+    throw new ExecutionError(
+      `the chosen seat reads its token from ${seatTokenEnv}, which is not set. ` +
+        `Run \`claude setup-token\` signed in as that seat and export it.`,
+    )
+  }
+  out['CLAUDE_CODE_OAUTH_TOKEN'] = token
+  return out
+}
+
 export interface WorkerInput {
   cwd: string
   system: string
   prompt: string
   model: string
   limits: Limits
+  /** Everything the worker's process gets, and never a superset of what this process holds. */
+  env: NodeJS.ProcessEnv
+  /** `--allowed-tools` specifications; empty leaves the worker unable to run commands. */
+  allowedTools?: readonly string[]
   /** Called as each event arrives, so the caller can act on a run while it is still running. */
   onEvent?: (event: WorkerEvent) => void
   /** Aborting kills the worker; the run settles with whatever it had rather than failing. */
@@ -329,7 +398,7 @@ function forwardTermination(): void {
 
 /** The command is a parameter so a test can drive a real stream without the real CLI. */
 export function claudeWorker(command = 'claude'): WorkerRunner {
-  return ({ cwd, system, prompt, model, limits, onEvent, signal }) =>
+  return ({ cwd, system, prompt, model, limits, env, allowedTools = [], onEvent, signal }) =>
     new Promise<WorkerOutput>((resolve, reject) => {
       if (signal?.aborted) return resolve({})
       const child = spawn(
@@ -347,8 +416,13 @@ export function claudeWorker(command = 'claude'): WorkerRunner {
           '--verbose',
           '--system-prompt',
           system,
+          // One argv element per specification, since a specification may contain a space —
+          // `Bash(git commit -m *)` — and the flag is variadic, so it ends at the next one.
+          ...(allowedTools.length > 0 ? ['--allowed-tools', ...allowedTools] : []),
           // Scoped to this tree rather than bypassing checks wholesale. The tree is disposable
-          // and contains only the repository, so edits inside it are the whole point.
+          // and contains only the repository, so edits inside it are the whole point. This is
+          // also what grants editing at all: `--allowed-tools` adds to the mode rather than
+          // replacing it, and without the mode Write is refused however the tools are listed.
           '--permission-mode',
           'acceptEdits',
           '--add-dir',
@@ -356,7 +430,10 @@ export function claudeWorker(command = 'claude'): WorkerRunner {
         ],
         // Its own process group, so one kill reaches the tool subprocesses too. They outlive a
         // kill on the pid alone, still building and still writing to a tree about to be swept.
-        { cwd, stdio: ['ignore', 'pipe', 'pipe'], detached: true },
+        //
+        // The environment is given, never inherited. Passing none here hands the worker every
+        // credential this process holds, and the worker needs none of them.
+        { cwd, env, stdio: ['ignore', 'pipe', 'pipe'], detached: true },
       )
       forwardTermination()
       if (child.pid !== undefined) liveWorkers.add(child.pid)
@@ -468,6 +545,12 @@ export interface ExecuteOptions {
   worker?: WorkerRunner
   /** Rendered lore for the trusted channel. Empty when the store is empty or over budget. */
   lore?: string
+  /**
+   * The variable holding the token the worker authenticates with — the chosen seat's
+   * `token_env`. The name rather than the value, so the credential is only ever in this
+   * process's environment and the worker's, and in no object between them.
+   */
+  seatTokenEnv?: string
   model?: string
   /** A seam for tests; each limit defaults and callers are trusted with what they pass. */
   limits?: Partial<Limits>
@@ -550,6 +633,8 @@ export async function execute(
         prompt: workerPrompt(candidate, linkage),
         model,
         limits: { ...DEFAULT_LIMITS, ...options.limits },
+        env: workerEnv(options.seatTokenEnv),
+        allowedTools: role.commands.map((c) => `Bash(${c})`),
         onEvent,
         signal: stop.signal,
       })

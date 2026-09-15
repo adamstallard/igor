@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Artifact, ArtifactRequest, Candidate, ClaimVerdict, CodeHost, Tracker } from '../src/adapter.js'
 import type { Role } from '../src/role.js'
 import type { TreeProvider, WorkingTree, ChangedFile } from '../src/worktree.js'
@@ -13,7 +13,7 @@ const candidate = (over: Partial<Candidate> = {}): Candidate =>
   ({ id: 'github:o/r#7', repo: 'o/r', native: '7', title: 'A bug', body: '', author: 'reporter', assignees: [], labels: [], paths: [], state: 'open', ...over }) as unknown as Candidate
 
 const role = (over: Partial<Role> = {}): Role =>
-  ({ name: 'triage', reviewers: ['alice'], allow: ['comment', 'draft-pr', 'unassign'], completion: 'unassign', instructions: [], settleSeconds: 0, cooldownMinutes: 60, ...over }) as Role
+  ({ name: 'triage', reviewers: ['alice'], allow: ['comment', 'draft-pr', 'unassign'], commands: [], completion: 'unassign', instructions: [], settleSeconds: 0, cooldownMinutes: 60, ...over }) as Role
 
 function deps(opts: {
   verdicts?: ClaimVerdict[]
@@ -579,5 +579,28 @@ describe('one read, several windows', () => {
     await expect(read.commentsSince(c, '2026-09-14T11:00:00Z')).rejects.toThrow(/rate limit/)
     await expect(read.commentsSince(c, '2026-09-09T12:00:00Z')).rejects.toThrow(/rate limit/)
     expect(asked).toBe(1)
+  })
+})
+
+describe('the seat that is chosen is the seat that pays', () => {
+  afterEach(() => vi.unstubAllEnvs())
+
+  it('gives the worker the token of the seat the gate chose', async () => {
+    vi.stubEnv('IGOR_SEAT_1', 'seat-one-token')
+    vi.stubEnv('IGOR_SEAT_2', 'seat-two-token')
+    const { d } = deps()
+    let seen: NodeJS.ProcessEnv | undefined
+
+    await runItem(d, candidate(), role(), 'igor-bot', {
+      ...noWait,
+      budget: { exhausted: () => false, seat: 'seat-2', tokenEnv: 'IGOR_SEAT_2' },
+      worker: async (input) => {
+        seen = input.env
+        return { result: '' }
+      },
+    })
+
+    expect(seen?.['CLAUDE_CODE_OAUTH_TOKEN']).toBe('seat-two-token')
+    expect(seen?.['IGOR_SEAT_1']).toBeUndefined()
   })
 })

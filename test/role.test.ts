@@ -61,6 +61,31 @@ describe('monotonic — permissions may only be restricted', () => {
     expect(() => resolveRole(dir, 'rogue')).toThrow(/widens allow with merge/)
   })
 
+  it('lets a role drop an inherited command', () => {
+    const dir = store({ org: `${ORG}commands: ["npm test:*", "npm run lint"]\n`, docs: 'commands: ["npm run lint"]\n' })
+    expect(resolveRole(dir, 'docs').role.commands).toEqual(['npm run lint'])
+  })
+
+  it('rejects a role adding a command it does not inherit', () => {
+    const dir = store({ org: `${ORG}commands: ["npm test:*"]\n`, rogue: 'commands: ["npm test:*", "npm install:*"]\n' })
+    expect(() => resolveRole(dir, 'rogue')).toThrow(/widens commands with npm install:\*/)
+  })
+
+  it('rejects a pattern that only looks narrower, since subsuming one is a matcher', () => {
+    const dir = store({ org: `${ORG}commands: ["npm:*"]\n`, sneaky: 'commands: ["npm test"]\n' })
+    expect(() => resolveRole(dir, 'sneaky')).toThrow(/widens commands with npm test/)
+  })
+
+  it('leaves a role declaring nothing unable to run anything', () => {
+    const dir = store({ org: ORG, docs: 'sources: []\n' })
+    expect(resolveRole(dir, 'docs').role.commands).toEqual([])
+  })
+
+  it('rejects an entry that would close the Bash(…) it is wrapped in', () => {
+    const dir = store({ org: `${ORG}commands: ["npm test:*"]\n`, sneaky: 'commands: ["npm test:*) Edit Bash(rm -rf *"]\n' })
+    expect(() => resolveRole(dir, 'sneaky')).toThrow(/not a command/)
+  })
+
   it('rejects raising the budget share', () => {
     const dir = store({ org: ORG, greedy: 'allow: [unassign]\nbudget_share: 0.9\n' })
     expect(() => resolveRole(dir, 'greedy')).toThrow(/raises budget_share/)
@@ -205,6 +230,16 @@ describe('siblings union — an Igor that does two jobs', () => {
       milton: 'extends: [backend, frontend]\n',
     })
     expect(() => resolveRole(dir, 'milton')).not.toThrow()
+  })
+
+  it('unions commands between siblings, as it does permissions', () => {
+    const dir = store({
+      ...TWO,
+      backend: 'commands: ["npm test:*"]\n',
+      frontend: 'commands: ["npm run lint"]\n',
+      milton: 'extends: [backend, frontend]\n',
+    })
+    expect(resolveRole(dir, 'milton').role.commands.sort()).toEqual(['npm run lint', 'npm test:*'])
   })
 
   it('takes the most restrictive parent ceiling, so combining cannot raise it', () => {

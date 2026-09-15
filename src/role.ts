@@ -66,6 +66,8 @@ export interface Role {
   instructions: string[]
   completion: Completion
   allow: Action[]
+  /** Commands the worker may run, as `--allowed-tools` patterns without the `Bash(…)`. */
+  commands: string[]
   budgetShare?: number
   reviewers: string[]
   settleSeconds: number
@@ -276,9 +278,11 @@ function parseAllow(v: unknown, where: string): Action[] | undefined {
 
 interface Capabilities {
   allow?: Action[]
+  commands?: string[]
   lane: Lane
   budgetShare?: number
   allowFrom: string[]
+  commandsFrom: string[]
   laneFrom: string[]
   shareFrom: string[]
 }
@@ -305,9 +309,11 @@ function capabilitiesOf(dir: string, name: string, seen: string[] = []): Capabil
   const inherited = parentsOf(dir, name).map((p) => capabilitiesOf(dir, p, [...seen, name]))
 
   let allow: Action[] | undefined
+  let commands: string[] | undefined
   let lane: Lane | undefined
   let budgetShare: number | undefined
   const allowFrom: string[] = []
+  const commandsFrom: string[] = []
   const laneFrom: string[] = []
   const shareFrom: string[] = []
 
@@ -315,6 +321,10 @@ function capabilitiesOf(dir: string, name: string, seen: string[] = []): Capabil
     if (parent.allow !== undefined) {
       allow = allow === undefined ? parent.allow : [...new Set([...allow, ...parent.allow])]
       allowFrom.push(...parent.allowFrom)
+    }
+    if (parent.commands !== undefined) {
+      commands = commands === undefined ? parent.commands : [...new Set([...commands, ...parent.commands])]
+      commandsFrom.push(...parent.commandsFrom)
     }
     lane = lane === undefined ? parent.lane : unionLane(lane, parent.lane)
     laneFrom.push(...parent.laneFrom)
@@ -341,6 +351,38 @@ function capabilitiesOf(dir: string, name: string, seen: string[] = []): Capabil
     allowFrom.push(name)
   }
 
+  const ownCommands = raw['commands'] === undefined ? undefined : strArray(raw['commands'], `${name}.commands`)
+  if (ownCommands !== undefined) {
+    for (const command of ownCommands) {
+      // Each entry is wrapped in `Bash(…)`, and closing that paren early is the one way out of
+      // it: `Bash(echo:*) Write` grants Write, while a comma or a newline inside the wrapper
+      // stays part of the pattern.
+      if (command.trim() === '' || command.includes(')')) {
+        throw new RoleError(
+          `${name}.commands has ${JSON.stringify(command)}, which is not a command. ` +
+            `Entries are wrapped in Bash(…), so a ")" would let the rest of the entry name ` +
+            `another tool entirely.`,
+        )
+      }
+    }
+    if (commands !== undefined) {
+      // Verbatim membership, not pattern subsumption. Deciding whether `npm run test` is
+      // narrower than an inherited `npm *` is a matcher, and a role that can argue its way to a
+      // command can argue its way to every command.
+      const widened = ownCommands.filter((c) => !commands!.includes(c))
+      if (widened.length > 0) {
+        throw new RoleError(
+          `role "${name}" widens commands with ${widened.join(', ')}, which it does not inherit. ` +
+            `A role may drop an inherited command, never add one, and a narrower pattern counts ` +
+            `as adding: list one its parents already list.`,
+        )
+      }
+    }
+    commands = ownCommands
+    commandsFrom.length = 0
+    commandsFrom.push(name)
+  }
+
   const ownLane = parseLane(raw['lane'], name)
   if (Object.keys(ownLane).length > 0) {
     lane = mergeLane(lane ?? {}, ownLane)
@@ -364,9 +406,11 @@ function capabilitiesOf(dir: string, name: string, seen: string[] = []): Capabil
 
   return {
     ...(allow === undefined ? {} : { allow }),
+    ...(commands === undefined ? {} : { commands }),
     lane: lane ?? {},
     ...(budgetShare === undefined ? {} : { budgetShare }),
     allowFrom: [...new Set(allowFrom)],
+    commandsFrom: [...new Set(commandsFrom)],
     laneFrom: [...new Set(laneFrom)],
     shareFrom: [...new Set(shareFrom)],
   }
@@ -387,6 +431,7 @@ export function resolveRole(dir: string, name: string): ResolvedRole {
   const budgetShare = caps.budgetShare
   const lane = caps.lane
   if (caps.allowFrom.length) from['allow'] = caps.allowFrom.join(', ')
+  if (caps.commandsFrom.length) from['commands'] = caps.commandsFrom.join(', ')
   if (caps.laneFrom.length) from['lane'] = caps.laneFrom.join(', ')
   if (caps.shareFrom.length) from['budget_share'] = caps.shareFrom.join(', ')
 
@@ -476,6 +521,7 @@ export function resolveRole(dir: string, name: string): ResolvedRole {
       instructions,
       completion: effectiveCompletion,
       allow: effectiveAllow,
+      commands: caps.commands ?? [],
       ...(budgetShare === undefined ? {} : { budgetShare }),
       reviewers,
       settleSeconds,
@@ -554,6 +600,7 @@ export function explainRole({ role, from }: ResolvedRole): string {
     `seat:          ${role.seat ?? '(none)'}${at('seat')}`,
     `completion:    ${role.completion}${at('completion')}`,
     `allow:         ${role.allow.join(', ') || '(none)'}${at('allow')}`,
+    `commands:      ${role.commands.join(', ') || '(none)'}${at('commands')}`,
     `budget_share:  ${role.budgetShare ?? '(unset)'}${at('budget_share')}`,
     `reviewers:     ${role.reviewers.join(', ') || '(none)'}${at('reviewers')}`,
     `settle:        ${role.settleSeconds}s${at('settle_seconds')}`,

@@ -25,3 +25,8 @@ scoring:
   # Days for an entry's recency to halve. An entry whose freshest provenance is one
   # half-life old scores 0.5; today's scores 1.0.
   halfLifeDays: 365
+
+# Roles live beside this file, one YAML per role under `roles/`, and the filename is the name.
+# A role declares extends, seat, sources, lane, instructions, completion, allow, commands,
+# budget_share and reviewers. `commands` is what its worker may run — declare none and the
+# worker can edit files and nothing else, so it cannot test its own change. See the README.
