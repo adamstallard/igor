@@ -10,6 +10,7 @@ import {
   renderBudget,
   roleSharePercent,
   seatStatus,
+  type OrgBudget,
   type Seat,
   type SeatUsage,
   type SpendRecord,
@@ -278,5 +279,25 @@ describe('parsing org budget config', () => {
 
   it('treats absent budget config as no seats rather than an error', () => {
     expect(parseOrgBudget(undefined)).toEqual({ seats: [], pools: [] })
+  })
+})
+
+describe('the gate names the variable the chosen seat pays from', () => {
+  it('carries the seat token variable beside the seat id', () => {
+    const org: OrgBudget = {
+      seats: [
+        { id: 'igor-1', tokenEnv: 'IGOR_SEAT_1', reserve: 0 },
+        { id: 'adam', tokenEnv: 'IGOR_SEAT_ADAM', reserve: 0 },
+      ],
+      pools: [{ id: 'eng', seats: ['igor-1', 'adam'] }],
+    }
+    const readings: SeatUsage[] = org.seats.map((seat) => ({ seat, usage: usage(10, 10) }))
+    expect(budgetGate(org, { name: 'triage', seat: 'eng' }, readings, []).tokenEnv).toBe('IGOR_SEAT_1')
+  })
+
+  it('names nothing where the chosen seat declares no variable', () => {
+    const org: OrgBudget = { seats: [{ id: 'igor-1', reserve: 0 }], pools: [{ id: 'eng', seats: ['igor-1'] }] }
+    const gate = budgetGate(org, { name: 'triage', seat: 'eng' }, [{ seat: org.seats[0]!, usage: usage(10, 10) }], [])
+    expect(gate.tokenEnv).toBeUndefined()
   })
 })

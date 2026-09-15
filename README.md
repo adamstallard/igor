@@ -137,6 +137,44 @@ to accept the rest, **close without merging** to defer. You can merge your own p
 GitHub won't let you *approve* your own pull request, but merging is what counts as approval
 here, so a single maintainer is never stuck.
 
+## Roles
+
+A role is a YAML file under `roles/` in your lore repository, and the filename is its name.
+It declares `extends`, `seat`, `sources`, `lane`, `instructions`, `completion`, `allow`,
+`commands`, `budget_share` and `reviewers`. Roles compose, and a role may narrow what it
+inherits but never widen it — `igor role explain <name>` prints the effective merge with the
+level each value came from.
+
+```yaml
+# roles/frontend.yaml
+seat: pool:engineering
+sources:
+  - tracker: github
+    repo: org/web
+    query: "is:issue is:open label:ai"
+allow: [draft-pr, comment, unassign]
+commands:
+  - "npm test:*"
+  - "npx tsc --noEmit"
+reviewers: [sarah]
+```
+
+`commands` is what the worker may run. Declare none and it can edit files and nothing else —
+which means it cannot build, test or type-check its own change, and will tell you so in the
+transcript rather than verifying. The list is read from the role and never from the repository
+being worked: that repository's own settings are a file the worker can edit, and an allowlist a
+worker can widen is not one.
+
+A role may drop a command it inherits and not add one, the same rule `allow` follows. Narrowing
+means an entry its parents already list, spelled the same way: whether `npm test` is narrower
+than an inherited `npm *` is a question only a matcher can answer, and a role that can argue
+its way to one command can argue its way to all of them.
+
+The worker is spawned with an environment written out rather than inherited — a search path, a
+home directory, the host's proxy settings, and the token of the seat it spends. No `GH_TOKEN`
+and no other seat's token, because the worker has no use for either: it edits files in a
+disposable clone, and claiming, commenting and publishing all happen afterwards in the loop.
+
 ## Budgets
 
 An Igor spends a Claude subscription seat. It asks that seat how much is left, through that

@@ -90,7 +90,7 @@ export interface RunOptions extends ExecuteOptions {
   /** Called as each stage begins. A worker can run for minutes; silence is not a status. */
   onStep?: (step: Step) => void
   /** Supplied by the budget layer once it exists; absent means budget is not being enforced. */
-  budget?: { exhausted: () => boolean; seat?: string; resetAt?: string }
+  budget?: { exhausted: () => boolean; seat?: string; tokenEnv?: string; resetAt?: string }
 }
 
 export async function runItem(
@@ -145,6 +145,9 @@ export async function runItem(
   const execution = await execute(trees, tracker, codeHost, candidate, role, {
     ...options,
     ...(options.lore === undefined ? {} : { lore: options.lore }),
+    // Named rather than left to the spread: the worker authenticating as the seat the gate
+    // chose is the whole point, and a field riding a spread is a field nobody keeps correct.
+    ...(options.budget?.tokenEnv === undefined ? {} : { seatTokenEnv: options.budget.tokenEnv }),
     onPublish: () => step('publishing'),
     claimStatus: async () => (await checkpoint(tracker, claim, identity)).status,
   })

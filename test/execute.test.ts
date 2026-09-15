@@ -1,13 +1,13 @@
 import { mkdtempSync, writeFileSync, existsSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Artifact, ArtifactRequest, Candidate, ClaimVerdict, CodeHost, Tracker } from '../src/adapter.js'
 import type { Role } from '../src/role.js'
 import {
   ABSOLUTE_CEILING_MS, branchFor, claudeWorker, complete, execute, ExecutionError,
   MODEL_SILENCE_MS, permits, prBody, PR_BODY_LIMIT, stripLinkage, TOOL_SILENCE_MS, watchWorker,
-  workerPrompt, workerSystemPrompt, type WorkerEvent, type WorkerRunner,
+  workerEnv, workerPrompt, workerSystemPrompt, type WorkerEvent, type WorkerRunner,
 } from '../src/execute.js'
 import { withTree, type ChangedFile, type TreeProvider, type WorkingTree } from '../src/worktree.js'
 import { tempDir } from './tmp.js'
@@ -33,6 +33,7 @@ const role = (over: Partial<Role> = {}): Role =>
   ({
     name: 'triage',
     allow: ['comment', 'draft-pr', 'unassign'],
+    commands: [],
     completion: 'unassign',
     instructions: ['Prefer small diffs.'],
     reviewers: [],
@@ -585,6 +586,9 @@ function stubCommand(body: string): string {
   return path
 }
 
+/** Enough for the stub's `#!/usr/bin/env node` to resolve, and nothing more. */
+const stubPath = (): NodeJS.ProcessEnv => ({ PATH: process.env['PATH'] ?? '' })
+
 function runStub(body: string, limits: { toolMs: number; modelMs: number; ceilingMs: number }) {
   return claudeWorker(stubCommand(body))({
     cwd: tempDir('igor-test-cwd-'),
@@ -592,6 +596,7 @@ function runStub(body: string, limits: { toolMs: number; modelMs: number; ceilin
     prompt: 'work this item',
     model: 'claude-sonnet-5',
     limits,
+    env: stubPath(),
   })
 }
 
@@ -730,6 +735,7 @@ describe('a kill reaches what the worker spawned', () => {
       prompt: 'work this item',
       model: 'claude-sonnet-5',
       limits: busy,
+      env: stubPath(),
       signal: stop.signal,
     })
     await settle(500)
@@ -749,10 +755,101 @@ describe('a kill reaches what the worker spawned', () => {
       prompt: 'work this item',
       model: 'claude-sonnet-5',
       limits: busy,
+      env: stubPath(),
       signal: stop.signal,
     })
     expect(out.result).toBe('done')
     // A process group that is already gone must not make cleanup throw.
     expect(() => stop.abort()).not.toThrow()
+  })
+})
+
+/** Runs the real spawn path through `execute`, with a stub that reports its own process. */
+async function reportingWorker(body: string, options: Parameters<typeof execute>[5] = {}) {
+  const { provider } = fakeProvider([])
+  const { t } = fakeTracker()
+  const { host } = fakeCodeHost()
+  return execute(provider, t, host, candidate(), role(), {
+    ...options,
+    worker: claudeWorker(stubCommand(body)),
+  })
+}
+
+const REPORT_ENV = `emit({ type: 'result', result: JSON.stringify(process.env), total_cost_usd: 0 })`
+const REPORT_ARGV = `emit({ type: 'result', result: JSON.stringify(process.argv.slice(2)), total_cost_usd: 0 })`
+
+describe('the worker is given an environment rather than inheriting one', () => {
+  afterEach(() => vi.unstubAllEnvs())
+
+  it('hands the worker no credential but the seat it spends', async () => {
+    vi.stubEnv('GH_TOKEN', 'gh-secret')
+    vi.stubEnv('IGOR_SEAT_1', 'seat-one-token')
+    vi.stubEnv('IGOR_SEAT_2', 'seat-two-token')
+
+    const run = await reportingWorker(REPORT_ENV, { seatTokenEnv: 'IGOR_SEAT_1' })
+    const env = JSON.parse(run.transcript) as Record<string, string>
+
+    // Absence first, and not as an exact key set: what must not be there is the property, and
+    // the list of what legitimately may be will grow.
+    expect(env['GH_TOKEN']).toBeUndefined()
+    expect(env['IGOR_SEAT_1']).toBeUndefined()
+    expect(env['IGOR_SEAT_2']).toBeUndefined()
+    expect(Object.keys(env).filter((k) => /token|secret|key/i.test(k))).toEqual(['CLAUDE_CODE_OAUTH_TOKEN'])
+    expect(env['CLAUDE_CODE_OAUTH_TOKEN']).toBe('seat-one-token')
+  })
+
+  it('passes what a toolchain needs to reach the network', () => {
+    const env = workerEnv(undefined, {
+      PATH: '/usr/bin',
+      HOME: '/home/igor',
+      HTTPS_PROXY: 'http://proxy:3128',
+      NO_PROXY: 'localhost',
+      NODE_EXTRA_CA_CERTS: '/etc/ssl/corp.pem',
+      GH_TOKEN: 'gh-secret',
+    })
+    expect(env).toEqual({
+      PATH: '/usr/bin',
+      HOME: '/home/igor',
+      HTTPS_PROXY: 'http://proxy:3128',
+      NO_PROXY: 'localhost',
+      NODE_EXTRA_CA_CERTS: '/etc/ssl/corp.pem',
+    })
+  })
+
+  it('refuses a seat whose token variable is not set, rather than spawning without one', () => {
+    expect(() => workerEnv('IGOR_SEAT_9', { PATH: '/usr/bin' })).toThrow(/IGOR_SEAT_9/)
+  })
+
+  it('leaves the worker on the ambient login where no seat names a token', () => {
+    const env = workerEnv(undefined, { PATH: '/usr/bin', CLAUDE_CODE_OAUTH_TOKEN: 'ambient' })
+    expect(env['CLAUDE_CODE_OAUTH_TOKEN']).toBe('ambient')
+  })
+
+  it("records the failure on the item when the seat's token is missing", async () => {
+    const run = await reportingWorker(REPORT_ENV, { seatTokenEnv: 'IGOR_SEAT_ABSENT' })
+    expect(run.outcome).toBe('failed')
+    expect(run.reason).toMatch(/IGOR_SEAT_ABSENT/)
+  })
+})
+
+describe('a worker may run only the commands its role declares', () => {
+  it('passes each declared command as its own allowed tool', async () => {
+    const { provider } = fakeProvider([])
+    const { t } = fakeTracker()
+    const { host } = fakeCodeHost()
+    const run = await execute(
+      provider, t, host, candidate(), role({ commands: ['npm test:*', 'git diff'] }),
+      { worker: claudeWorker(stubCommand(REPORT_ARGV)) },
+    )
+    const argv = JSON.parse(run.transcript) as string[]
+    const at = argv.indexOf('--allowed-tools')
+    expect(argv.slice(at, at + 3)).toEqual(['--allowed-tools', 'Bash(npm test:*)', 'Bash(git diff)'])
+    // Editing comes from the mode, so the allowlist never has to carry Edit or Write.
+    expect(argv).toContain('acceptEdits')
+  })
+
+  it('passes no allowlist at all where a role declares none', async () => {
+    const run = await reportingWorker(REPORT_ARGV)
+    expect(JSON.parse(run.transcript) as string[]).not.toContain('--allowed-tools')
   })
 })

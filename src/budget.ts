@@ -312,6 +312,11 @@ export function poolFor(org: OrgBudget, seat: string): Pool | undefined {
 export interface Gate {
   exhausted: () => boolean
   seat?: string
+  /**
+   * The chosen seat's `token_env`. The name, so the seat that is billed is the seat that pays
+   * without a credential travelling through everything a gate is passed to.
+   */
+  tokenEnv?: string
   resetAt?: string
   reason: string
 }
@@ -353,7 +358,12 @@ export function budgetGate(
       reason: choice.reason,
     }
   }
-  return { exhausted: () => false, seat: choice.seat.id, reason: choice.reason }
+  return {
+    exhausted: () => false,
+    seat: choice.seat.id,
+    ...(choice.seat.tokenEnv === undefined ? {} : { tokenEnv: choice.seat.tokenEnv }),
+    reason: choice.reason,
+  }
 }
 
 export function renderBudget(readings: readonly SeatUsage[]): string {

@@ -744,10 +744,21 @@ instructions: |                         # APPEND — org's plus this role's
 completion: unassign                    # OVERRIDE — unassign | close | assign
 
 allow: [draft-pr, comment]              # MONOTONIC — subset of inherited
+commands:                               # MONOTONIC — subset of inherited
+  - "npm test:*"                        # what the worker may run, so it can check itself
+  - "npx tsc --noEmit"
 budget_share: 0.4                       # MONOTONIC — at most inherited
 
 reviewers: [sarah, miguel]              # who reviews changes to this role
 ```
+
+`commands` is what lets a worker run anything at all: without it the worker can edit files and
+nothing else, so it cannot build, test or type-check, and says so in its transcript instead of
+verifying. It is deliberately **not** read from the repository being worked, whose own
+`.claude/settings.json` is a file the worker can edit — an allowlist a worker can widen is not
+one. Narrowing means an entry the parent already lists, verbatim: deciding whether `npm test`
+is narrower than an inherited `npm *` is a matcher, and the same reasoning that gets one command
+past the check gets every command past it.
 
 **Legibility is a standing constraint, not a finishing touch.** People read these, and so do
 models writing them — a flat obvious schema is easier to generate correctly than a nested one
@@ -1109,6 +1120,23 @@ contributing-factors heading, so it most likely qualifies that breakdown rather 
 headline percentages. If it also qualifies them, the figures understate real consumption — and
 that errs toward overspending, which is the direction that matters. Worth confirming before
 relying on the numbers for a seat used from more than one machine.
+
+### 6.3.2 The worker's environment is written out, not inherited — **built**
+
+The seat the gate chooses is the seat the worker authenticates with: its `token_env` reaches
+the spawn, so the seat that is billed and the seat that is drawn down are the same one. Reading
+usage already worked this way; spending did not, and the two agreed only while one seat was
+declared.
+
+The worker is given a search path, a home directory, the host's proxy and certificate settings,
+and that one token. Nothing else — no `GH_TOKEN`, no other seat's. It needs none of them: it
+edits files in a disposable tree, and claiming, commenting, branching and publishing all happen
+afterwards in the loop with the loop's own credentials. An inherited environment is a set of
+credentials the worker cannot use and an injected item can ask it to print.
+
+This lands with the command allowlist (§5.0.3) and not before it. Until a worker can run
+commands, the credentials it inherits are unreachable; granting the commands without fixing the
+environment is what makes them reachable.
 
 ### 6.4 Graceful handoff — **built**
 
