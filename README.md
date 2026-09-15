@@ -61,6 +61,12 @@ requires an Igor to think to ask. Neither is built — retrieval lands with the 
 
 ## Installing
 
+What follows gets one Igor running on your own machine, on your own Claude subscription —
+enough to watch it work and decide whether you want it. A fleet working for a team belongs on
+a server, which is the better long-term arrangement and a different document:
+[`docs/deployment.md`](docs/deployment.md). Nothing here is wasted when you move, because the
+configuration is the same and only where the credentials live changes.
+
 Igor is not on npm yet, so it is built from a clone and linked onto your path:
 
 ```bash
@@ -98,29 +104,9 @@ The state branch lives here too, so it has to be a repository the Igor can push 
    runs the tool until an entry scores differently depending on whose machine computed it.
    Nothing in the file is secret: `token_env` names a variable rather than holding a token.
 
-3. **Declare a seat, and set its token in the environment.** The config names a variable, and
-   Igor reads the token out of that variable in its own environment — there is no file it
-   looks in and no login it falls back to. So the token has to be set in the shell you run
-   `igor` from, or in the unit that starts it.
-   [`deployment.md`](docs/deployment.md#adding-a-seat-somebody-has-given-you) has both, and
-   the naming convention for several seats. A seat whose variable is unset reads fine and
-   cannot pay for anything. [`docs/seats.md`](docs/seats.md) is the page to send whoever's
-   subscription it is.
-
-4. **Write `roles/org.yaml` and one role.** The org file holds what every role inherits — the
+3. **Write `roles/org.yaml` and one role.** The org file holds what every role inherits — the
    action space, the completion behaviour, the lane exclusions, standing instructions. A role
    names its `sources` and narrows whatever it needs to. See [Roles](#roles).
-
-5. **Check it.**
-
-   ```sh
-   igor role explain <role>   # the effective merge, and which file each value came from
-   igor budget                # every seat, read live
-   igor run <role> --plan     # what it would claim, claiming nothing
-   ```
-
-   `--plan` claims nothing and posts nothing. It is not free: triage is a model call, measured
-   around four cents for a nine-candidate cycle.
 
 `entries/` and the state branch are created when first needed; neither wants making by hand.
 
@@ -145,6 +131,73 @@ workflow's own push is blocked by the same rule it exists to work around.
 Neither is worth doing on a single-writer repository — both answer the same question, which is
 what happens when someone other than the tool's owner merges, so add them together when that
 becomes possible.
+
+None of this needs a credential — authoring lore, proposing it and reviewing it work on a clone
+and a `git` push. Credentials are what [Running an Igor](#running-an-igor) adds.
+
+## Running an Igor
+
+A lore repository needs no credentials. An Igor needs two, and neither belongs in the
+repository.
+
+1. **Give the Igor an account of its own.** A claim only says who has your issue if the Igor
+   is somebody — run one as yourself and every claim says *you* took the work. So: a machine
+   account per Igor, with write access to the repositories it works, and not a GitHub App —
+   an App's bot user cannot be an issue assignee, so claiming degrades to a comment.
+   [`docs/machine-accounts.md`](docs/machine-accounts.md) has the steps and the traps, both of
+   which fail by being accepted and silently dropped rather than by erroring.
+
+2. **Declare a seat and set its token.** A seat is a Claude subscription — trying this out,
+   it is yours. In `igor.config.yaml`:
+
+   ```yaml
+   budget:
+     seats:
+       - {id: me, owner: you@example.com, reserve: 0.5, token_env: IGOR_SEAT_ME}
+   ```
+
+   Then `seat: me` on the role. Once any seat is declared every role must name one, and a role
+   that does not fails at load rather than defaulting to a seat nobody chose for it. `reserve:
+   0.5` keeps half your window for you. [Budgets](#budgets) covers pools and shares.
+
+   `token_env` is the *name* of a variable, which is why the config stays safe to commit. Igor
+   reads the token out of that variable in its own environment — there is no file it looks in,
+   so being signed in to `claude` yourself is not enough:
+
+   ```sh
+   claude setup-token                              # prints a token; approve in the browser
+   umask 077 && mkdir -p ~/.config/igor
+   printf 'export IGOR_SEAT_ME=%s\n' 'the-token' > ~/.config/igor/env
+   echo '[ -f ~/.config/igor/env ] && . ~/.config/igor/env' >> ~/.zshrc
+   ```
+
+   Then open a new shell. Under a service this is an `EnvironmentFile=` instead —
+   [`deployment.md`](docs/deployment.md#adding-a-seat-somebody-has-given-you) has that, the
+   naming convention for several seats, and why not `~/.zshrc` directly. Where the
+   subscription is somebody else's, [`docs/seats.md`](docs/seats.md) is the page to send them.
+
+3. **Check it.**
+
+   ```sh
+   igor role explain <role>   # the effective merge, and which file each value came from
+   igor budget                # every seat, read live
+   igor run <role> --plan     # what it would claim, claiming nothing
+   ```
+
+   `--plan` claims nothing and posts nothing. It is not free: triage is a model call, measured
+   around four cents for a nine-candidate cycle.
+
+4. **Leave it running.** Everything above is a command you run once; finding your own work is
+   a loop.
+
+   ```sh
+   igor serve <role>    # poll on the role's interval until stopped
+   ```
+
+   From a terminal that lasts as long as the terminal does — enough to watch it work, not
+   enough to rely on. [`docs/deployment.md`](docs/deployment.md) is the rest: systemd, Docker
+   and launchd, what the host needs on its path, where credentials go, and what the failures
+   look like.
 
 ## Creating an entry
 
@@ -235,29 +288,6 @@ The worker is spawned with an environment written out rather than inherited — 
 home directory, the host's proxy settings, and the token of the seat it spends. No `GH_TOKEN`
 and no other seat's token, because the worker has no use for either: it edits files in a
 disposable clone, and claiming, commenting and publishing all happen afterwards in the loop.
-
-## Running an Igor
-
-Two things the setup above does not cover, because neither belongs in the lore repository.
-
-**An Igor needs an account of its own.** A claim only says who has your issue if the Igor is
-somebody — run one as yourself and every claim says *you* took the work. So: a machine account
-per Igor, with write access to the repositories it works, and not a GitHub App — an App's bot
-user cannot be an issue assignee, so claiming degrades to a comment.
-[`docs/machine-accounts.md`](docs/machine-accounts.md) has the steps and the traps, both of
-which fail by being accepted and silently dropped rather than by erroring.
-
-**An Igor has to be running when the work appears.** Everything above is a command you run
-once; finding your own work is a loop.
-
-```sh
-igor serve <role>    # poll on the role's interval until stopped
-```
-
-From a terminal that lasts as long as the terminal does — enough to watch it work, not enough
-to rely on. [`docs/deployment.md`](docs/deployment.md) is the rest: systemd, Docker
-and launchd, what the host needs on its path, where credentials go, and what the failures look
-like.
 
 ## Budgets
 
