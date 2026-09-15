@@ -2,9 +2,12 @@ import { mkdtempSync, writeFileSync, existsSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import type { Artifact, ArtifactRequest, Candidate, CodeHost, Tracker } from '../src/adapter.js'
+import type { Artifact, ArtifactRequest, Candidate, ClaimVerdict, CodeHost, Tracker } from '../src/adapter.js'
 import type { Role } from '../src/role.js'
-import { branchFor, complete, permits, prBody, PR_BODY_LIMIT, stripLinkage, workerPrompt, workerSystemPrompt } from '../src/execute.js'
+import {
+  branchFor, complete, execute, permits, prBody, PR_BODY_LIMIT, stripLinkage, workerPrompt,
+  workerSystemPrompt, type WorkerRunner,
+} from '../src/execute.js'
 import { withTree, type ChangedFile, type TreeProvider, type WorkingTree } from '../src/worktree.js'
 
 const candidate = (over: Partial<Candidate> = {}): Candidate =>
@@ -251,5 +254,109 @@ describe('what a person has to read', () => {
 
   it('is just the linkage when the worker said nothing', () => {
     expect(prBody('Closes #7', '', candidate())).toBe('Closes #7')
+  })
+})
+
+/** A worker that emits a run's worth of events before it finishes, and dies when aborted. */
+function streamingWorker(events: number) {
+  const ran = { events: 0, aborted: false }
+  const worker: WorkerRunner = async ({ onEvent, signal }) => {
+    for (let i = 0; i < events; i++) {
+      await new Promise((r) => setTimeout(r, 1))
+      if (signal?.aborted) {
+        ran.aborted = true
+        return {}
+      }
+      ran.events++
+      onEvent?.({ type: 'assistant' })
+    }
+    await new Promise((r) => setTimeout(r, 1))
+    if (signal?.aborted) {
+      ran.aborted = true
+      return {}
+    }
+    return { result: 'Fixed it.', total_cost_usd: 0.02 }
+  }
+  return { worker, ran }
+}
+
+/** Walks a sequence of claim reads and then stays on the last answer. */
+function claimReads(...sequence: ClaimVerdict['status'][]) {
+  const asked: ClaimVerdict['status'][] = []
+  const claimStatus = async (): Promise<ClaimVerdict['status']> => {
+    const status = sequence[Math.min(asked.length, sequence.length - 1)]!
+    asked.push(status)
+    return status
+  }
+  return { claimStatus, asked }
+}
+
+const edited: ChangedFile[] = [{ path: 'src/a.ts', content: 'fixed', kind: 'modified' }]
+
+describe('a stop is answered while the worker runs', () => {
+  it('kills the worker at a checkpoint rather than at the end of the task', async () => {
+    // A fifteen-minute run that re-reads the claim only when it finishes answers a stop
+    // fifteen minutes late, which is far longer than whoever posted it will wait.
+    const { provider } = fakeProvider(edited)
+    const { host, seen } = fakeCodeHost()
+    const { t } = fakeTracker()
+    const { worker, ran } = streamingWorker(8)
+    const { claimStatus } = claimReads('held', 'held', 'stopped')
+
+    const r = await execute(provider, t, host, candidate(), role(), { worker, claimStatus, checkpointMs: 0 })
+
+    expect(r.outcome).toBe('refused')
+    expect(r.reason).toMatch(/stopped mid-execution/)
+    expect(seen).toEqual([])
+    expect(ran.aborted).toBe(true)
+    expect(ran.events).toBeLessThan(8)
+  })
+
+  it('answers a stop on a run that changed nothing', async () => {
+    // Nothing to publish is not nothing to say: this owes a receipt, and returning
+    // "nothing to do" without reading the claim posts a handoff instead.
+    const { provider } = fakeProvider([])
+    const { host } = fakeCodeHost()
+    const { t } = fakeTracker()
+    const { claimStatus } = claimReads('stopped')
+
+    const r = await execute(provider, t, host, candidate(), role(), {
+      worker: async () => ({ result: 'I looked and found nothing to change.', total_cost_usd: 0.01 }),
+      claimStatus,
+    })
+
+    expect(r.outcome).toBe('refused')
+    expect(r.reason).toMatch(/stopped mid-execution/)
+  })
+
+  it('lets a run someone else took over finish, so the draft survives', async () => {
+    // Killing on a loss would destroy exactly the work the draft is there to hand over.
+    const { provider } = fakeProvider(edited)
+    const { host, seen } = fakeCodeHost()
+    const { t } = fakeTracker()
+    const { worker, ran } = streamingWorker(4)
+    const { claimStatus } = claimReads('lost')
+
+    const r = await execute(provider, t, host, candidate(), role(), { worker, claimStatus, checkpointMs: 0 })
+
+    expect(r.outcome).toBe('refused')
+    expect(r.reason).toMatch(/lost mid-execution/)
+    expect(ran.aborted).toBe(false)
+    expect(ran.events).toBe(4)
+    expect(seen[0]?.draft).toBe(true)
+  })
+
+  it('does not re-read the claim on every event', async () => {
+    // The cost of checkpointing is bounded by the interval, not by how chatty the worker is.
+    const { provider } = fakeProvider(edited)
+    const { host } = fakeCodeHost()
+    const { t } = fakeTracker()
+    const { worker } = streamingWorker(6)
+    const { claimStatus, asked } = claimReads('held')
+
+    const r = await execute(provider, t, host, candidate(), role(), { worker, claimStatus })
+
+    expect(r.outcome).toBe('produced')
+    expect(asked.length).toBe(1)
   })
 })

@@ -130,6 +130,18 @@ describe('a stop gets a receipt, not a handoff', () => {
     expect(released).toContain('igor-bot')
   })
 
+  it('on a stop during a run that changed nothing', async () => {
+    // Nothing to publish is no excuse for skipping the claim read: a stop answered with a
+    // handoff names reviewers at whoever just said stop, and then holds the item down as
+    // handed back and unanswered.
+    const { d, posts, released } = deps({ changes: [], verdicts: [{ status: 'held' }, { status: 'stopped', by: 'bob' }] })
+    const r = await runItem(d, candidate(), role(), 'igor-bot', { ...noWait, worker: idleWorker })
+    expect(r.outcome).toBe('stopped')
+    expect(posts.at(-1)).toMatch(/stopped at bob's request/)
+    expect(posts.at(-1)).not.toMatch(/Still to do/)
+    expect(released).toContain('igor-bot')
+  })
+
   it('leaves the stop time out where the surface gave none, rather than inventing one', async () => {
     // The caller reads an absent time as now, which is the closest honest answer.
     const { d } = deps({ verdicts: [{ status: 'stopped', by: 'bob' }] })
