@@ -353,7 +353,7 @@ program
       say: (line: string) => process.stdout.write(`  ${line}\n`),
       warn: (line: string) => process.stderr.write(`  ! ${line}\n`),
     }
-    const { gate: gateFor, loreFor, record } = await wire(config, role, destination, out)
+    const { gate: gateFor, loreFor, record, store } = await wire(config, role, destination, out)
 
     const work = async (item: Candidate) => {
       const gate = await gateFor()
@@ -362,6 +362,7 @@ program
       const run = await runItem(deps, item, role, identity, {
         budget: gate,
         lore,
+        store,
         onStep: (step) => process.stdout.write(`  ${step}…\n`),
       })
       process.stdout.write(`  ${run.outcome}: ${run.reason}\n`)
@@ -370,7 +371,8 @@ program
       }
       if (run.execution) {
         await record(item, run.execution, gate.seat)
-        process.stdout.write(`  cost $${run.execution.costUsd.toFixed(4)}\n`)
+        const spent = run.execution.costUsd
+        process.stdout.write(spent === undefined ? '  cost not reported\n' : `  cost $${spent.toFixed(4)}\n`)
         if (run.execution.artifact) process.stdout.write(`  ${run.execution.artifact.url}\n`)
       }
       if (!run.spoke && run.outcome !== 'refused' && run.outcome !== 'lost') {
@@ -448,7 +450,7 @@ program
 
     const stamp = () => new Date().toISOString().slice(11, 19)
     const say = (line: string) => process.stdout.write(`${stamp()} ${line}\n`)
-    const { gate, loreFor, record } = await wire(config, role, destination, {
+    const { gate, loreFor, record, store } = await wire(config, role, destination, {
       say: (line) => say(`  ${line}`),
       warn: (line) => say(`  ! ${line}`),
     })
@@ -459,6 +461,7 @@ program
       until: untilSignalled(),
       gate,
       loreFor,
+      store,
       onEvent: (e) => {
         switch (e.kind) {
           case 'planned':

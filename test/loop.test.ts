@@ -10,7 +10,7 @@ import { defer, NO_DEFERRALS } from '../src/deferred.js'
 import { tempDir } from './tmp.js'
 
 const candidate = (over: Partial<Candidate> = {}): Candidate =>
-  ({ id: 'github:o/r#7', repo: 'o/r', native: '7', title: 'A bug', body: '', author: 'reporter', assignees: [], labels: [], paths: [], state: 'open', ...over }) as unknown as Candidate
+  ({ id: 'github:o/r#7', tracker: 'github', repo: 'o/r', native: '7', title: 'A bug', body: '', author: 'reporter', assignees: [], labels: [], paths: [], state: 'open', ...over }) as unknown as Candidate
 
 const role = (over: Partial<Role> = {}): Role =>
   ({ name: 'triage', reviewers: ['alice'], allow: ['comment', 'draft-pr', 'unassign'], commands: [], completion: 'unassign', instructions: [], settleSeconds: 0, cooldownMinutes: 60, ...over }) as Role
@@ -158,6 +158,20 @@ describe('paths that owe nothing', () => {
     const r = await runItem(d, candidate(), role(), 'igor-bot', noWait)
     expect(r.outcome).toBe('lost')
     expect(r.spoke).toBe(false)
+  })
+})
+
+describe('what the run is given reaches the worker and the artifact', () => {
+  it('hands the store down, so the pull request points at the transcript', async () => {
+    // Nothing else in a run notices a store that never arrived: the body simply names no
+    // repository, which is also what a private store looks like.
+    const { d, produced } = deps({ changes: [{ path: 'src/a.ts', content: 'fixed', kind: 'modified' }] })
+    await runItem(d, candidate(), role(), 'igor-bot', {
+      ...noWait,
+      worker: async () => ({ result: 'Rewrote the parser. '.repeat(60), total_cost_usd: 0.02 }),
+      store: { destination: 'acme/lore', isPublic: true },
+    })
+    expect(produced[0]?.body).toContain('https://github.com/acme/lore/blob/igor-state/')
   })
 })
 

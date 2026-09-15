@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import type { Artifact, Candidate, ClaimVerdict, CodeHost, Tracker } from './adapter.js'
 import type { Action, Role } from './role.js'
 import { withTree, type ChangedFile, type TreeProvider, type WorkingTree } from './worktree.js'
-import { appendRecord, writeState } from './state.js'
+import { appendRecord, STATE_BRANCH, writeState } from './state.js'
 
 /**
  * Doing the work, once an item is claimed.
@@ -24,13 +24,31 @@ export interface Refusal {
   why: string
 }
 
+/**
+ * What the stream said about a run whose cost never arrived. Nothing here may be summed: an
+ * event's `output_tokens` covers its own turn, and summing them measured 9 against a terminal
+ * event's actual 429. Only `cache_read_input_tokens` grows monotonically.
+ */
+export interface WorkerUsage {
+  /** Assistant turns seen. Each is at least one billed call, so any count above zero is spend. */
+  assistantTurns: number
+  /** The largest cached prefix any one turn read — a lower bound on how far the run got. */
+  cacheReadTokensPeak: number
+}
+
 export interface ExecutionResult {
   outcome: 'produced' | 'nothing-to-do' | 'refused' | 'failed'
   artifact?: Artifact
   changed: ChangedFile[]
   refusals: Refusal[]
   transcript: string
-  costUsd: number
+  /**
+   * What the worker reported. Undefined where it never reported one — a run killed before its
+   * terminal event spent real money, and zero would read as a run that was free.
+   */
+  costUsd: number | undefined
+  /** Only where `costUsd` is undefined: what the stream did say before it was cut off. */
+  usage?: WorkerUsage
   reason: string
 }
 
@@ -178,6 +196,14 @@ function isProse(block: Block): boolean {
 /** A subagent's own events name the call that spawned them; the run's own turn sends null. */
 function inSidechain(event: WorkerEvent): boolean {
   return event.parent_tool_use_id !== undefined && event.parent_tool_use_id !== null
+}
+
+/** Usage rides on the assistant event's message, alongside the rest of the turn. */
+function usageOf(event: WorkerEvent): Record<string, unknown> | undefined {
+  const message = event['message']
+  if (typeof message !== 'object' || message === null) return undefined
+  const usage = (message as { usage?: unknown }).usage
+  return typeof usage === 'object' && usage !== null ? (usage as Record<string, unknown>) : undefined
 }
 
 function blocksOf(event: WorkerEvent): Block[] {
@@ -524,7 +550,42 @@ export const headlessClaude: WorkerRunner = claudeWorker()
  */
 export const PR_BODY_LIMIT = 700
 
-export function prBody(linkage: string, transcript: string, candidate: Candidate): string {
+/** Where an item's transcript is written under the state branch. Derived here and nowhere else. */
+export function transcriptPath(candidate: Candidate): string {
+  return `transcripts/${candidate.tracker}/${candidate.repo}/${candidate.native}.md`
+}
+
+/** The lore store transcripts are written to — a different repository from the one being worked. */
+export interface TranscriptStore {
+  /** `owner/repo` of the destination. */
+  destination: string
+  /** Whether it may be named in a pull request anyone can read. */
+  isPublic: boolean
+}
+
+/**
+ * Where to read the rest. A private store is never named: the link would 404 for an outside
+ * reader and the repository's name is itself the disclosure the guard exists for. The path is
+ * safe either way — it holds the worked repository, which the reader is already looking at.
+ */
+function transcriptPointer(candidate: Candidate, store?: TranscriptStore): string {
+  const path = transcriptPath(candidate)
+  if (store?.isPublic === true) {
+    const url = `https://github.com/${store.destination}/blob/${STATE_BRANCH}/${path}`
+    return `_Full transcript: [\`${path}\`](${url})._`
+  }
+  return (
+    `_Full transcript: \`${path}\` on the \`${STATE_BRANCH}\` branch of this Igor's lore store, ` +
+    `which is a different repository._`
+  )
+}
+
+export function prBody(
+  linkage: string,
+  transcript: string,
+  candidate: Candidate,
+  store?: TranscriptStore,
+): string {
   const summary = stripLinkage(transcript, linkage)
   if (summary.length <= PR_BODY_LIMIT) {
     return summary === '' ? linkage : `${linkage}\n\n${summary}`
@@ -533,11 +594,7 @@ export function prBody(linkage: string, transcript: string, candidate: Candidate
   const cut = summary.slice(0, PR_BODY_LIMIT)
   const atSentence = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('.\n'))
   const kept = atSentence > PR_BODY_LIMIT / 2 ? cut.slice(0, atSentence + 1) : cut.trimEnd()
-  return (
-    `${linkage}\n\n${kept}\n\n` +
-    `_Full transcript: \`transcripts/${candidate.tracker}/${candidate.repo}/${candidate.native}.md\` ` +
-    `on the \`igor-state\` branch._`
-  )
+  return `${linkage}\n\n${kept}\n\n${transcriptPointer(candidate, store)}`
 }
 
 export interface ExecuteOptions {
@@ -554,6 +611,11 @@ export interface ExecuteOptions {
   model?: string
   /** A seam for tests; each limit defaults and callers are trusted with what they pass. */
   limits?: Partial<Limits>
+  /**
+   * Where the transcript will be written, so the pull request can point at it. Absent leaves
+   * the pointer naming no repository, which is also what a private store gets.
+   */
+  store?: TranscriptStore
   /**
    * The claim's status, asked at checkpoints while the worker runs and again before anything
    * is decided. Reports the status rather than a boolean because a stop and a loss want
@@ -602,9 +664,25 @@ export async function execute(
     let checking = false
     let lastCheck = Date.now()
 
+    const observed: WorkerUsage = { assistantTurns: 0, cacheReadTokensPeak: 0 }
+    // What a killed run can still be shown to have done. Counted ahead of the checkpoint's
+    // early return, which would otherwise drop it on every run with no claim to re-read.
+    const observe = (event: WorkerEvent) => {
+      if (event.type !== 'assistant') return
+      observed.assistantTurns++
+      const read = usageOf(event)?.['cache_read_input_tokens']
+      if (typeof read === 'number' && read > observed.cacheReadTokensPeak) {
+        observed.cacheReadTokensPeak = read
+      }
+    }
+    /** An unreported cost is left out rather than called zero, and what was seen stands in. */
+    const spend = (reported?: number) =>
+      reported === undefined ? { costUsd: undefined, usage: { ...observed } } : { costUsd: reported }
+
     // Event arrival is the tick, throttled so a chatty worker costs no more tracker reads than
     // a quiet one, and never two at once. A read that fails is not a stop.
-    const onEvent = () => {
+    const onEvent = (event: WorkerEvent) => {
+      observe(event)
       if (stopped || checking || options.claimStatus === undefined) return
       const now = Date.now()
       if (now - lastCheck < checkpointMs) return
@@ -649,7 +727,7 @@ export async function execute(
           changed,
           refusals,
           transcript: '',
-          costUsd: 0,
+          ...spend(),
           reason: error instanceof Error ? error.message : String(error),
         }
       }
@@ -657,7 +735,7 @@ export async function execute(
     }
 
     const transcript = worker.result ?? ''
-    const costUsd = worker.total_cost_usd ?? 0
+    const cost = spend(worker.total_cost_usd)
     const changed = await tree.changes()
 
     // Read before anything is decided, not merely before publishing: a stop during a run that
@@ -669,7 +747,7 @@ export async function execute(
         changed,
         refusals: [...refusals, { action: 'draft-pr', why: 'stopped during execution' }],
         transcript,
-        costUsd,
+        ...cost,
         reason: 'stopped mid-execution; nothing was published',
       }
     }
@@ -680,13 +758,16 @@ export async function execute(
         changed,
         refusals,
         transcript,
-        costUsd,
+        ...cost,
         reason: 'the worker made no changes',
       }
     }
 
-    // The action space, enforced where the actions actually happen.
-    const wanted: Action = permits(role, 'draft-pr') ? 'draft-pr' : 'pr'
+    // The action space, enforced where the actions actually happen. The order states the
+    // preference that `allow` only implies: task-execution admits reversible artifacts alone,
+    // and a draft is an offer — nothing announced as ready, unmergeable by accident.
+    const PREFERRED: readonly Action[] = ['draft-pr', 'pr']
+    const wanted: Action = PREFERRED.find((action) => permits(role, action)) ?? 'pr'
     if (!permits(role, wanted)) {
       refusals.push({
         action: wanted,
@@ -697,7 +778,7 @@ export async function execute(
         changed,
         refusals,
         transcript,
-        costUsd,
+        ...cost,
         reason: `the work is done but ${role.name} may not open a pull request, so nothing was published`,
       }
     }
@@ -713,7 +794,7 @@ export async function execute(
         changed,
         refusals,
         transcript,
-        costUsd,
+        ...cost,
         reason: 'the only changes were deletions, which cannot be published yet',
       }
     }
@@ -728,7 +809,7 @@ export async function execute(
       repo: candidate.repo,
       branch: branchFor(role, candidate, options.branchPrefix),
       title: candidate.title,
-      body: prBody(linkage, transcript, candidate),
+      body: prBody(linkage, transcript, candidate, options.store),
       files,
       reviewers: lost ? [] : role.reviewers,
       // Reversible by default: a draft asks for review rather than announcing completion.
@@ -742,7 +823,7 @@ export async function execute(
         changed,
         refusals,
         transcript,
-        costUsd,
+        ...cost,
         reason: `lost mid-execution; left ${artifact.ref} as a draft`,
       }
     }
@@ -753,7 +834,7 @@ export async function execute(
       changed,
       refusals,
       transcript,
-      costUsd,
+      ...cost,
       reason: `opened ${artifact.ref}`,
     }
   })
@@ -798,7 +879,7 @@ export async function recordExecution(
   result: ExecutionResult,
   seat?: string,
 ): Promise<void> {
-  const transcriptPath = `transcripts/${candidate.tracker}/${candidate.repo}/${candidate.native}.md`
+  const path = transcriptPath(candidate)
 
   await appendRecord(
     destination,
@@ -812,8 +893,10 @@ export async function recordExecution(
       ...(result.artifact ? { artifact: result.artifact.ref, url: result.artifact.url } : {}),
       changed: result.changed.map((c) => `${c.kind} ${c.path}`),
       refusals: result.refusals,
-      costUsd: Number(result.costUsd.toFixed(4)),
-      transcript: transcriptPath,
+      // A run that never reported a cost records none: zero would read as a run that was free.
+      ...(result.costUsd === undefined ? {} : { costUsd: Number(result.costUsd.toFixed(4)) }),
+      ...(result.usage === undefined ? {} : { usage: result.usage }),
+      transcript: path,
     },
     `Record ${role.name} on ${candidate.id}`,
   )
@@ -821,7 +904,7 @@ export async function recordExecution(
   if (result.transcript.trim() !== '') {
     await writeState(
       destination,
-      transcriptPath,
+      path,
       {
         item: candidate.id,
         url: candidate.url,

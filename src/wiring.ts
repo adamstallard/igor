@@ -3,7 +3,7 @@ import type { Config } from './config.js'
 import type { Role } from './role.js'
 import type { Gate } from './budget.js'
 import type { Entry } from './entry.js'
-import type { ExecutionResult } from './execute.js'
+import type { ExecutionResult, TranscriptStore } from './execute.js'
 import { budgetGate, loadSpend, readAllSeats } from './budget.js'
 import { overBudgetMessage, recordFiring, renderLore, selectEntries } from './firing.js'
 import { recordExecution } from './execute.js'
@@ -26,6 +26,8 @@ import { sweepAbandonedTrees, type SweepOptions } from './sweep.js'
 
 export interface Wiring {
   gate: () => Promise<Gate>
+  /** Passed to every run, so a pull request can point at the transcript it will write. */
+  store: TranscriptStore
   loreFor: (item: Candidate) => string
   record: (item: Candidate, execution: ExecutionResult, seat?: string) => Promise<void>
 }
@@ -51,6 +53,10 @@ export async function wire(
   await sweepAbandonedTrees(out, sweep).catch(() => undefined)
 
   return {
+    // Named in a pull request only where the store is public. Unknown visibility discloses
+    // nothing, which is the side to be wrong on.
+    store: { destination, isPublic: config.publicStore === true },
+
     gate: async () => {
       const [readings, spend] = await Promise.all([
         readAllSeats(config.budget.seats),
