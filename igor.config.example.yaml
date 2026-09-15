@@ -20,8 +20,3 @@ reviewers:
 # an area should outrank a drive-by.
 experts:
   - alice
-
-scoring:
-  # Days for an entry's recency to halve. An entry whose freshest provenance is one
-  # half-life old scores 0.5; today's scores 1.0.
-  halfLifeDays: 365
