@@ -829,6 +829,8 @@ describe('the worker is given an environment rather than inheriting one', () => 
     const run = await reportingWorker(REPORT_ENV, { seatTokenEnv: 'IGOR_SEAT_ABSENT' })
     expect(run.outcome).toBe('failed')
     expect(run.reason).toMatch(/IGOR_SEAT_ABSENT/)
+    // The stub reports whenever it runs, so silence is how "no worker was spawned" is visible.
+    expect(run.transcript).toBe('')
   })
 })
 

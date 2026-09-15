@@ -137,9 +137,17 @@ commands; it does not name tools. Letting a role write `Edit` or `WebFetch` into
 would make "commands" a lie and would reach past what this change is for — and `Edit` is
 already granted by the permission mode, so nothing is lost.
 
-An entry containing `)` is rejected. The CLI takes a list, so `npm test:*) Edit Bash(rm -rf *`
-wraps to `Bash(npm test:*) Edit Bash(rm -rf *)` and names two more tools — the wrapper is what
-keeps the field about commands, and it only holds if nothing can close it early.
+An entry containing `)` is rejected, and only `)`. Measured, one argv element at a time:
+
+| entry, once wrapped | grants `Write`? |
+|---|---|
+| `Bash(echo:*) Write` | **yes** — the paren closes and the rest is read as another tool |
+| `Bash(echo:*,Edit,Write)` | no |
+| `Bash(echo:*⏎Write)` | no |
+
+So the CLI's splitter is paren-aware and a comma or a newline inside the wrapper is just part of
+the pattern. The wrapper is what keeps the field about commands, and closing it early is the one
+way out of it.
 
 ## Risks
 

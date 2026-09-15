@@ -354,8 +354,9 @@ function capabilitiesOf(dir: string, name: string, seen: string[] = []): Capabil
   const ownCommands = raw['commands'] === undefined ? undefined : strArray(raw['commands'], `${name}.commands`)
   if (ownCommands !== undefined) {
     for (const command of ownCommands) {
-      // Each entry is wrapped in `Bash(…)`, so a ")" closes the wrapper early and whatever
-      // follows it names a tool of its own.
+      // Each entry is wrapped in `Bash(…)`, and closing that paren early is the one way out of
+      // it: `Bash(echo:*) Write` grants Write, while a comma or a newline inside the wrapper
+      // stays part of the pattern.
       if (command.trim() === '' || command.includes(')')) {
         throw new RoleError(
           `${name}.commands has ${JSON.stringify(command)}, which is not a command. ` +
