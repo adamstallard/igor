@@ -176,9 +176,7 @@ async function listPartitions(repo: string, dir: string, branch: string): Promis
  * processes share one account, since the limit is per account rather than per token.
  *
  * Today's partition and the directory listing are always re-read. Both are constant, and it is
- * the per-day term that grows. The legacy unpartitioned file is re-read too: this build never
- * appends to it, but caching it would go stale under a fleet where something older still does,
- * and one constant request is not worth that.
+ * the per-day term that grows.
  */
 const settled = new Map<string, string>()
 
@@ -195,10 +193,7 @@ export async function readLog(
 ): Promise<string> {
   const dir = path.replace(/\.ndjson$/, '')
   const today = new Date(now).toISOString().slice(0, 10)
-  const [whole, names] = await Promise.all([
-    readStateRaw(repo, path, branch),
-    listPartitions(repo, dir, branch),
-  ])
+  const names = await listPartitions(repo, dir, branch)
   const parts = await Promise.all(
     names.map(async (name) => {
       const key = `${repo}\u0000${branch}\u0000${dir}/${name}`
@@ -213,7 +208,7 @@ export async function readLog(
     }),
   )
   // A part whose last line lost its newline must not glue itself onto the next part's first.
-  return [whole, ...parts]
+  return parts
     .filter((part): part is string => part !== undefined && part !== '')
     .map((part) => (part.endsWith('\n') ? part : `${part}\n`))
     .join('')

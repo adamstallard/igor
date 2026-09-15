@@ -136,17 +136,19 @@ describe('reading a log', () => {
     expect(records.map((r) => r.n)).toEqual([1, 2, 3])
   })
 
-  it('still reads a log written before partitioning, ahead of the partitions', async () => {
-    files.set('executions.ndjson', '{"at":"2026-01-01T00:00:00Z","n":0}\n')
+  it('ignores an unpartitioned file, which nothing writes', async () => {
+    // Partitioning landed before anyone ran Igor, so a flat log is debris from a dry run
+    // rather than history. Reading it would cost a request per gate check forever.
+    files.set('executions.ndjson', '{"n":0}\n')
     at('2026-09-15T09:00:00Z')
     await appendRecord('o/r', 'executions.ndjson', { n: 1 }, 'append')
 
     const records = parseNdjson<{ n: number }>(await readLog('o/r', 'executions.ndjson'))
-    expect(records.map((r) => r.n)).toEqual([0, 1])
+    expect(records.map((r) => r.n)).toEqual([1])
   })
 
   it('separates parts whose last line lost its newline', async () => {
-    files.set('executions.ndjson', '{"n":0}')
+    files.set('executions/2026-09-14.ndjson', '{"n":0}')
     files.set('executions/2026-09-15.ndjson', '{"n":1}')
     expect(parseNdjson<{ n: number }>(await readLog('o/r', 'executions.ndjson')).map((r) => r.n)).toEqual([0, 1])
   })
