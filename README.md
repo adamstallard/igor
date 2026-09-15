@@ -80,7 +80,9 @@ npm link          # puts `igor` on your PATH
 `npm unlink -g igor` removes it. Without linking, `npm run igor -- <command>` from the clone
 does the same thing and needs no build.
 
-Every command below assumes `igor` is on your path.
+Every command below assumes `igor` is on your path, and that you are running it inside the
+lore repository it works from. Igor finds its configuration by walking up from the working
+directory, so a command run anywhere else reports no config rather than guessing at one.
 
 ## Setting up a lore repository
 
@@ -224,8 +226,7 @@ repository.
 
 ## Creating an entry
 
-Run these anywhere inside your lore repository; `-c <path>` and `IGOR_CONFIG` override where
-the config is looked for.
+`-c <path>` and `IGOR_CONFIG` override where the config is looked for.
 
 ```sh
 igor create \
