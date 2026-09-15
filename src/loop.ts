@@ -385,11 +385,15 @@ export async function planCycle(
     )
   }
 
-  // Anything the tracker would not answer for holds the mark back, since nothing is going to
-  // touch those items and make them fresh again.
+  // An item dropped before anything examined it holds the mark back. A cooldown ends with the
+  // clock and an outage with the tracker's recovery, so neither touches the item to lift it
+  // above a mark that passed it. Every other skip was a decision, and the edit or the reply
+  // that reverses one lifts the item by itself.
   if (options.sinceDays === undefined && results.length > 0) {
     const unexamined = new Set(
-      report.skipped.filter((s) => s.stage === 'unreadable').map((s) => s.candidate.id),
+      report.skipped
+        .filter((s) => s.stage === 'unreadable' || s.stage === 'stopped')
+        .map((s) => s.candidate.id),
     )
     await saveDiscoveryState(deps.destination, advance(stored, heldBelow(results, unexamined)))
   }

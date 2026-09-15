@@ -174,3 +174,82 @@ describe('one comment fetch per candidate', () => {
     expect(reads).toEqual([{ id: c.id, since: ago(60) }])
   })
 })
+
+describe('an item nobody examined holds the mark below it', () => {
+  const source = (repo: string): Source => ({ tracker: 'github', repo, query: 'is:issue' }) as Source
+  const stop = (minutes: number) => ({ author: 'alice', at: ago(minutes), body: 'stop' })
+
+  /** Serves each source its own items, and each item its own comments, filtered on `since`. */
+  function watching(
+    bySource: Record<string, Candidate[]>,
+    spoken: Record<string, { author: string; at: string; body: string }[]> = {},
+  ) {
+    const tracker = {
+      name: 'github',
+      search: async (s: Source) => bySource[s.repo] ?? [],
+      commentsSince: async (c: Candidate, since: string) =>
+        (spoken[c.id] ?? []).filter((m) => Date.parse(m.at) >= Date.parse(since)),
+    } as unknown as Tracker
+    return { tracker, codeHost: {}, trees: {}, destination: 'o/state' } as never
+  }
+
+  const mark = (repo = 'o/r') =>
+    (stored.get(STATE_PATH) as { watermarks: Record<string, { lastSeen: string }> })
+      .watermarks[sourceKey(source(repo))]?.lastSeen
+
+  it('brings a stopped item back once its cooldown elapses, with nobody touching it', async () => {
+    // The requirement: an item nobody takes after a stop is not permanently removed from the
+    // pool. A mark past the stop receipt removes it, because the cooldown ends with the clock
+    // and nothing then lifts the item above the mark.
+    stored.clear()
+    const held = candidate(7, 50)
+    const items = [held, candidate(8, 10)]
+    const d = watching({ 'o/r': items }, { [held.id]: [stop(50)] })
+
+    const first = await planCycle(d, role(), { now: NOW, identity: 'igor-bot', triage })
+    expect(first.skippedStopped).toBe(1)
+    expect(first.toClaim.map((c) => c.candidate.id)).toEqual(['github:o/r#8'])
+
+    // Same items, same timestamps: only the cooldown has run out.
+    const second = await planCycle(d, role(), { now: NOW + 70 * 60000, identity: 'igor-bot', triage })
+    expect(second.toClaim.map((c) => c.candidate.id)).toContain(held.id)
+    // And the mark is past it again, so the re-triage lasts the cooldown and no longer.
+    expect(mark()).toBe(ago(10))
+  })
+
+  it('lets the mark past an item somebody else holds', async () => {
+    // That item was considered, and whoever has it will move `updatedAt` when they let it go.
+    stored.clear()
+    const taken = { ...candidate(7, 50), assignees: ['alice'] }
+    const d = watching({ 'o/r': [taken, candidate(8, 10)] })
+
+    const report = await planCycle(d, role(), { now: NOW, identity: 'igor-bot', triage })
+    expect(report.skippedUniversal).toBe(1)
+    expect(mark()).toBe(ago(10))
+  })
+
+  it('lets the mark past a deferred item, which an answer lifts by itself', async () => {
+    // A deferral is lifted by a reply or an edit, and both move `updatedAt`. Holding the mark
+    // for one would re-triage everything newer for as long as thirty days.
+    stored.clear()
+    const quiet = candidate(7, 50)
+    stored.set(DEFERRALS_PATH, defer(NO_DEFERRALS, quiet, 'could not reproduce', NOW - 50 * 60000))
+    const d = watching({ 'o/r': [quiet, candidate(8, 10)] })
+
+    const report = await planCycle(d, role(), { now: NOW, identity: 'igor-bot', triage })
+    expect(report.skippedDeferred).toBe(1)
+    expect(mark()).toBe(ago(10))
+  })
+
+  it('holds one source back without touching another', async () => {
+    stored.clear()
+    const held = candidate(7, 50)
+    const elsewhere = { ...candidate(9, 30), id: 'github:o/other#9', repo: 'o/other' }
+    const two = { ...role(), sources: [source('o/r'), source('o/other')] } as Role
+    const d = watching({ 'o/r': [held], 'o/other': [elsewhere] }, { [held.id]: [stop(50)] })
+
+    await planCycle(d, two, { now: NOW, identity: 'igor-bot', triage })
+    expect(mark()).toBe(new Date(NOW - 50 * 60000 - 1).toISOString())
+    expect(mark('o/other')).toBe(ago(30))
+  })
+})
