@@ -65,7 +65,6 @@ export interface Role {
   lane: Lane
   instructions: string[]
   completion: Completion
-  claim?: string
   allow: Action[]
   budgetShare?: number
   reviewers: string[]
@@ -394,7 +393,6 @@ export function resolveRole(dir: string, name: string): ResolvedRole {
   const instructions: string[] = []
   let sources: Source[] = []
   let completion: Completion | undefined
-  let claim: string | undefined
   let seat: string | undefined
   let reviewers: string[] = []
   let settleSeconds: number = DEFAULTS.settleSeconds
@@ -428,7 +426,6 @@ export function resolveRole(dir: string, name: string): ResolvedRole {
     }
 
     for (const [key, assign] of [
-      ['claim', (v: string) => (claim = v)],
       ['seat', (v: string) => (seat = v)],
     ] as const) {
       if (raw[key] !== undefined) {
@@ -478,7 +475,6 @@ export function resolveRole(dir: string, name: string): ResolvedRole {
       lane,
       instructions,
       completion: effectiveCompletion,
-      ...(claim === undefined ? {} : { claim }),
       allow: effectiveAllow,
       ...(budgetShare === undefined ? {} : { budgetShare }),
       reviewers,
@@ -559,7 +555,6 @@ export function explainRole({ role, from }: ResolvedRole): string {
     `completion:    ${role.completion}${at('completion')}`,
     `allow:         ${role.allow.join(', ') || '(none)'}${at('allow')}`,
     `budget_share:  ${role.budgetShare ?? '(unset)'}${at('budget_share')}`,
-    `claim:         ${role.claim ?? '(default)'}${at('claim')}`,
     `reviewers:     ${role.reviewers.join(', ') || '(none)'}${at('reviewers')}`,
     `settle:        ${role.settleSeconds}s${at('settle_seconds')}`,
     `cooldown:      ${role.cooldownMinutes}m${at('cooldown_minutes')}`,

@@ -22,9 +22,12 @@ the filename without extension. A role file MUST NOT carry a redundant `name` fi
 ### Requirement: A role declares sources, lane, behaviour, permissions, and reviewers
 
 A role file SHALL support: `extends`, `seat`, `sources`, `lane`, `instructions`, `completion`,
-`claim`, `allow`, `budget_share`, and `reviewers`. Each `sources` entry MUST name a `tracker`
+`allow`, `budget_share`, and `reviewers`. Each `sources` entry MUST name a `tracker`
 and carry that tracker's own query verbatim. Entries failing validation SHALL be rejected
 rather than loaded.
+
+The claim message is not among them. It carries the stop instruction, which is the only notice
+a reader gets that stopping is possible and permitted, so it is not an org's to replace.
 
 #### Scenario: Well-formed role accepted
 
@@ -41,6 +44,11 @@ rather than loaded.
 
 - **WHEN** a `sources` entry omits `tracker`
 - **THEN** validation fails, because a query cannot be dispatched without knowing who executes it
+
+#### Scenario: Claim wording is not a role setting
+
+- **WHEN** a role file sets `claim`
+- **THEN** it does not become part of the effective role, and `role explain` does not report it
 
 ### Requirement: Tracker queries pass through verbatim
 
@@ -103,7 +111,7 @@ everything reversible, nothing final.
 
 - **Monotonic** for permission-shaped fields (`allow`, `budget_share`, repositories and
   surfaces in reach): a role MAY restrict what it inherits and MUST NOT widen it.
-- **Override** for settings (`completion`, `claim`, poll interval): the most specific level wins.
+- **Override** for settings (`completion`, poll interval): the most specific level wins.
 - **Append** for `instructions` and `lane`: levels accumulate, with lane constraints conjoined.
 
 #### Scenario: Role narrows a permission

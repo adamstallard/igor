@@ -721,7 +721,6 @@ instructions: |                         # APPEND — org's plus this role's
   Prefer the shared query hook over fetch in useEffect.
 
 completion: unassign                    # OVERRIDE — unassign | close | assign
-claim: "Taking this — {{igor}}"         # OVERRIDE
 
 allow: [draft-pr, comment]              # MONOTONIC — subset of inherited
 budget_share: 0.4                       # MONOTONIC — at most inherited
@@ -1008,7 +1007,7 @@ or less permissive than another choice, just different. Merge semantics are per 
   reach, whether it may close or reassign, budget ceiling. The org sets a maximum; a role
   lowers it and can never raise it. This is where differential trust lives and where loosening
   would be self-escalation.
-- **Override** — last level wins. Completion action, claim wording, poll interval. Not
+- **Override** — last level wins. Completion action, poll interval. Not
   permission-shaped, so there is no direction in which to be strict.
 - **Append** — levels accumulate. Standing instructions, and lane predicates conjoined with
   AND. This is the neat one: an org-wide exclusion is structurally impossible for a role to

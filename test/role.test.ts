@@ -319,6 +319,20 @@ describe('a seat a role names must be declared', () => {
   })
 })
 
+describe('claim wording is not a role setting', () => {
+  it('does not carry a claim value into the effective role', () => {
+    // The message it would replace is the only place anyone is told that stopping is possible
+    // and needs no permission, so it is not an org's to rewrite.
+    const dir = store({ org: ORG, fe: 'sources: []\nseat: igor-1\nclaim: "Taking this"\n' })
+    expect('claim' in loadRole(config(dir), 'fe').role).toBe(false)
+  })
+
+  it('does not report it in explain', () => {
+    const dir = store({ org: ORG, fe: 'sources: []\nseat: igor-1\nclaim: "Taking this"\n' })
+    expect(explainRole(loadRole(config(dir), 'fe'))).not.toMatch(/claim:/)
+  })
+})
+
 describe('explain', () => {
   const dir = store({ org: ORG, fe: 'completion: unassign\nlane:\n  labels:\n    includes: [ai]\n' })
   const text = explainRole(resolveRole(dir, 'fe'))
