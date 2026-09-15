@@ -77,20 +77,24 @@ Four steps, once a colleague has sent you a token ([`seats.md`](seats.md) is wha
    `token_env` is the *name* of a variable. Putting the token itself here commits a credential
    to a repository — the single mistake this arrangement exists to prevent.
 
-2. **Put the value where the process will read it**, never in the repository.
+2. **Set that variable in the environment Igor runs with.** A seat that names `token_env` is
+   read through that variable and nothing else — not a file, not your keychain, not whatever
+   login happens to be signed in. Both recipes below are only ways of getting a variable set:
+   one for a service, one for a shell.
 
-   Under systemd, the shared env file `/etc/igor/env`:
+   Under systemd, an `EnvironmentFile=` the unit already names — the shared `/etc/igor/env`:
 
    ```sh
    IGOR_SEAT_ADAM=…
    ```
 
-   Seat tokens belong in the shared file rather than a per-instance one, because a seat is a
-   subscription several Igors may draw from. `GH_TOKEN` is the opposite — it is identity, and
-   belongs in `/etc/igor/<role>.env`.
+   No `export`: systemd parses this file itself rather than sourcing it in a shell, so shell
+   syntax is not available here. Seat tokens belong in the shared file rather than a per-instance
+   one, because a seat is a subscription several Igors may draw from. `GH_TOKEN` is the
+   opposite — it is identity, and belongs in `/etc/igor/<role>.env`.
 
-   Evaluating from a shell rather than a unit, the same rule applies with different plumbing —
-   a file only you can read, sourced by your profile:
+   Running from a shell instead, the variable has to be exported in the shell that starts
+   `igor` — which in practice means a file your profile sources, so every shell has it:
 
    ```sh
    umask 077 && mkdir -p ~/.config/igor

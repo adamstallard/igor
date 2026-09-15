@@ -98,9 +98,10 @@ The state branch lives here too, so it has to be a repository the Igor can push 
    runs the tool until an entry scores differently depending on whose machine computed it.
    Nothing in the file is secret: `token_env` names a variable rather than holding a token.
 
-3. **Declare a seat, and put its token where the process will read it.** The config names a
-   variable; the value belongs anywhere the repository is not — `/etc/igor/env` under a
-   service, or a `0600` file your profile sources from a shell.
+3. **Declare a seat, and set its token in the environment.** The config names a variable, and
+   Igor reads the token out of that variable in its own environment — there is no file it
+   looks in and no login it falls back to. So the token has to be set in the shell you run
+   `igor` from, or in the unit that starts it.
    [`deployment.md`](docs/deployment.md#adding-a-seat-somebody-has-given-you) has both, and
    the naming convention for several seats. A seat whose variable is unset reads fine and
    cannot pay for anything. [`docs/seats.md`](docs/seats.md) is the page to send whoever's
@@ -110,8 +111,7 @@ The state branch lives here too, so it has to be a repository the Igor can push 
    action space, the completion behaviour, the lane exclusions, standing instructions. A role
    names its `sources` and narrows whatever it needs to. See [Roles](#roles).
 
-5. **Check it.** After step 3, not before: `role explain` reads no credential, but the other
-   two do, and against a seat with no token set they report a problem you already know about.
+5. **Check it.**
 
    ```sh
    igor role explain <role>   # the effective merge, and which file each value came from
