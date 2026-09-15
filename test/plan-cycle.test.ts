@@ -179,7 +179,10 @@ describe('an item nobody examined holds the mark below it', () => {
   const source = (repo: string): Source => ({ tracker: 'github', repo, query: 'is:issue' }) as Source
   const stop = (minutes: number) => ({ author: 'alice', at: ago(minutes), body: 'stop' })
 
-  /** Serves each source its own items, and each item its own comments, filtered on `since`. */
+  /**
+   * Serves each source its own items, and each item its own comments, filtered on `since`.
+   * An undatable comment comes back whatever the window, which is how the cycle sees one.
+   */
   function watching(
     bySource: Record<string, Candidate[]>,
     spoken: Record<string, { author: string; at: string; body: string }[]> = {},
@@ -188,7 +191,9 @@ describe('an item nobody examined holds the mark below it', () => {
       name: 'github',
       search: async (s: Source) => bySource[s.repo] ?? [],
       commentsSince: async (c: Candidate, since: string) =>
-        (spoken[c.id] ?? []).filter((m) => Date.parse(m.at) >= Date.parse(since)),
+        (spoken[c.id] ?? []).filter(
+          (m) => Number.isNaN(Date.parse(m.at)) || Date.parse(m.at) >= Date.parse(since),
+        ),
     } as unknown as Tracker
     return { tracker, codeHost: {}, trees: {}, destination: 'o/state' } as never
   }
@@ -239,6 +244,25 @@ describe('an item nobody examined holds the mark below it', () => {
     const report = await planCycle(d, role(), { now: NOW, identity: 'igor-bot', triage })
     expect(report.skippedDeferred).toBe(1)
     expect(mark()).toBe(ago(10))
+  })
+
+  it('lets the mark past a stop nobody can date, which no cooldown will lift', async () => {
+    // Only a go-ahead can lift that stop, and the comment saying it brings the item back on
+    // its own. Waiting for a clock that never runs out would pin the mark for good.
+    stored.clear()
+    const undated = candidate(7, 50)
+    const d = watching(
+      { 'o/r': [undated, candidate(8, 10)] },
+      { [undated.id]: [{ author: 'alice', at: 'whenever', body: 'stop' }] },
+    )
+
+    const first = await planCycle(d, role(), { now: NOW, identity: 'igor-bot', triage })
+    expect(first.skippedStopped).toBe(1)
+    expect(mark()).toBe(ago(10))
+
+    // Days later, and the item newer than it is not being re-triaged every cycle.
+    const second = await planCycle(d, role(), { now: NOW + 7 * 24 * 60 * 60000, identity: 'igor-bot', triage })
+    expect(second.fresh).toBe(0)
   })
 
   it('holds one source back without touching another', async () => {

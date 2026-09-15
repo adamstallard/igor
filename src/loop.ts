@@ -254,8 +254,11 @@ export interface CycleReport {
   /** Dropped unasked because the tracker stopped answering, which is not a stop. */
   skippedUnreadable: number
   triaged: number
-  /** Everything dropped before a model call, with the reason, so a lane can be tuned. */
-  skipped: { candidate: Candidate; reason: string; stage: string }[]
+  /**
+   * Everything dropped before a model call, with the reason, so a lane can be tuned. `held`
+   * marks the ones only the clock will bring back, which the watermark has to wait for.
+   */
+  skipped: { candidate: Candidate; reason: string; stage: string; held?: boolean }[]
   /** Model verdicts, both ways — a skip with a reason is as useful as a claim. */
   verdicts: { candidate: Candidate; outcome: 'proceed' | 'skip'; reason: string }[]
   toClaim: CycleCandidate[]
@@ -391,9 +394,7 @@ export async function planCycle(
   // that reverses one lifts the item by itself.
   if (options.sinceDays === undefined && results.length > 0) {
     const unexamined = new Set(
-      report.skipped
-        .filter((s) => s.stage === 'unreadable' || s.stage === 'stopped')
-        .map((s) => s.candidate.id),
+      report.skipped.filter((s) => s.held === true).map((s) => s.candidate.id),
     )
     await saveDiscoveryState(deps.destination, advance(stored, heldBelow(results, unexamined)))
   }
@@ -576,7 +577,9 @@ export async function dropStopped(
       // answer cannot be claimed on either, so a request apiece would buy nothing — and the
       // likeliest reason it stopped answering is a rate limit these requests are feeding.
       for (const rest of survivors.slice(i)) {
-        report.skipped.push({ candidate: rest, reason: 'the tracker stopped answering', stage: 'unreadable' })
+        report.skipped.push({
+          candidate: rest, reason: 'the tracker stopped answering', stage: 'unreadable', held: true,
+        })
         report.skippedUnreadable += 1
       }
       return kept
@@ -610,7 +613,14 @@ export async function dropStopped(
     if (verdict.eligible) {
       kept.push(candidate)
     } else {
-      report.skipped.push({ candidate, reason: `stopped: ${verdict.reason}`, stage: 'stopped' })
+      // A stop nobody can date has no cooldown to run out, so only a go-ahead lifts it — and
+      // that comment moves the item above the mark by itself. The mark waits on the clock.
+      report.skipped.push({
+        candidate,
+        reason: `stopped: ${verdict.reason}`,
+        stage: 'stopped',
+        held: Number.isFinite(instant(stop.at)),
+      })
       report.skippedStopped += 1
     }
   }
