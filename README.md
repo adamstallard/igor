@@ -90,10 +90,10 @@ The state branch lives here too, so it has to be a repository the Igor can push 
    ```
 
    Set `destination: .`, list `reviewers` and `experts`. Igor finds it by searching upward
-   from wherever it runs, so anywhere in the repository works. Commit it — who reviews and who counts
-   as an expert are shared decisions, and uncommitted they drift between whoever runs the tool
-   until an entry scores differently depending on whose machine computed it. Nothing in the
-   file is secret: `token_env` names a variable rather than holding a token.
+   from wherever it runs, so anywhere in the repository works. Commit it — who reviews and
+   who counts as an expert are shared decisions, and uncommitted they drift between whoever
+   runs the tool until an entry scores differently depending on whose machine computed it.
+   Nothing in the file is secret: `token_env` names a variable rather than holding a token.
 
 3. **Declare a seat.** Without one an Igor can triage but cannot work, and a seat without
    `token_env` reads fine and cannot pay for anything — `igor budget` says so where it applies.
