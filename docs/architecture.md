@@ -1254,8 +1254,8 @@ releases of something changing hourly is churn for nobody's benefit.
 
 ### 6.7 Configuration belongs to the team, not the tool — **built**
 
-A team's configuration — repositories in scope, reviewers, experts, decay half-life — never
-belongs inside a clone of Igor, now that Igor is a shared public tool. It lives in the
+A team's configuration — repositories in scope, reviewers, experts — never belongs inside a
+clone of Igor, now that Igor is a shared public tool. It lives in the
 repository holding that team's lore, committed, with `destination: .`. Uncommitted, the values
 drift between whoever runs the tool until an entry scores differently depending on whose
 machine computed it.

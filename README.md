@@ -82,9 +82,9 @@ npm run build
 
 **The config does not live here.** Igor is a shared public tool; the config describes *your
 team*. Copy `igor.config.example.yaml` into the repository that holds your lore, set
-`destination: .`, and **commit it** — which repositories are in scope, who reviews, who counts
-as an expert and the decay half-life are shared decisions, and uncommitted they drift between
-whoever runs the tool until an entry scores differently depending on whose machine computed it.
+`destination: .`, and **commit it** — which repositories are in scope, who reviews, and who
+counts as an expert are shared decisions, and uncommitted they drift between whoever runs the
+tool until an entry scores differently depending on whose machine computed it.
 
 The tool refuses to start if it finds a config inside its own installation, and otherwise
 searches upward from the current directory the way git does — so running it anywhere inside
