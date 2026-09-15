@@ -18,6 +18,9 @@ import { join } from 'node:path'
 
 export class TreeError extends Error {}
 
+/** Every tree this module makes is named with it, and only these may ever be swept. */
+export const TREE_PREFIX = 'igor-tree-'
+
 export interface ChangedFile {
   path: string
   content: string
@@ -108,7 +111,7 @@ export class CloneProvider implements TreeProvider {
   constructor(private readonly depth = 1) {}
 
   async provision(repo: string, ref?: string): Promise<WorkingTree> {
-    const dir = await mkdtemp(join(tmpdir(), 'igor-tree-'))
+    const dir = await mkdtemp(join(tmpdir(), TREE_PREFIX))
     const args = ['clone', '--depth', String(this.depth), '--quiet']
     if (ref !== undefined) args.push('--branch', ref)
     args.push(`https://github.com/${repo}.git`, dir)

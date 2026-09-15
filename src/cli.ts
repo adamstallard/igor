@@ -325,7 +325,7 @@ program
       say: (line: string) => process.stdout.write(`  ${line}\n`),
       warn: (line: string) => process.stderr.write(`  ! ${line}\n`),
     }
-    const { gate: gateFor, loreFor, record } = wire(config, role, destination, out)
+    const { gate: gateFor, loreFor, record } = await wire(config, role, destination, out)
 
     const work = async (item: Candidate) => {
       const gate = await gateFor()
@@ -423,7 +423,7 @@ program
 
     const stamp = () => new Date().toISOString().slice(11, 19)
     const say = (line: string) => process.stdout.write(`${stamp()} ${line}\n`)
-    const { gate, loreFor, record } = wire(config, role, destination, {
+    const { gate, loreFor, record } = await wire(config, role, destination, {
       say: (line) => say(`  ${line}`),
       warn: (line) => say(`  ! ${line}`),
     })

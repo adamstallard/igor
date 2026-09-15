@@ -1258,6 +1258,14 @@ worktrees cannot check out the same branch — which does not bite, since each t
 branch. Moot for the first Igor, which runs one task at a time; recorded so nobody builds
 clone-per-task and has to unpick it.
 
+**Cleanup is a startup sweep, not an exit hook** — **built**. Release runs from a `finally`, which SIGKILL,
+an OOM kill and a power loss all skip, so a crashed run strands a full checkout and nothing ever
+reclaims it. `wire` removes `igor-tree-*` directories older than four worker timeouts before the
+first cycle. Age is the only safe signal: several processes of one role is the point of §6.7.1,
+so a tree that looks idle may belong to a live sibling, and the threshold sits far above the
+longest a tree can plausibly be in use rather than close to it. A surviving tree is debris, never
+a checkpoint — its worker's context died with its process, so nothing resumes from it.
+
 The **seam** this arrives behind is specified now, in `core-igor-loop`'s `task-execution`:
 execution obtains a disposable working tree through one provisioning function and assumes
 nothing about its shape — not a clone, not a worktree. The shared object store above is then a

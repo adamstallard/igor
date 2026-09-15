@@ -196,7 +196,7 @@ export interface ExecuteOptions {
   branchPrefix?: string
 }
 
-const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000
+export const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000
 
 export function branchFor(role: Role, candidate: Candidate, prefix = 'igor'): string {
   // Trim separators *after* slicing: cutting to length can land on a hyphen, and git rejects
