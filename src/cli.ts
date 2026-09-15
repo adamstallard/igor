@@ -25,11 +25,9 @@ import type { Candidate } from './adapter.js'
 import { laneVerdict, universalSkip } from './predicate.js'
 import { noteHandoff, shouldDefer } from './deferred.js'
 import { CloneProvider } from './worktree.js'
-import { recordExecution } from './execute.js'
-import { overBudgetMessage, recordFiring, renderLore, selectEntries } from './firing.js'
-import { appendRecord } from './state.js'
 import { TriageError } from './triage.js'
 import { BudgetError, budgetGate, loadSpend, readAllSeats, renderBudget } from './budget.js'
+import { wire } from './wiring.js'
 import { readStateRaw } from './state.js'
 import { repoFromCheckout } from './github.js'
 import type { Entry, Status } from './entry.js'
@@ -322,35 +320,15 @@ program
     const destination = await repoFromCheckout(config.destination)
     const deps = { tracker, codeHost: new GitHubCodeHost(), trees: new CloneProvider(), destination }
 
-    const gateFor = async () => {
-      const [readings, spend] = await Promise.all([
-        readAllSeats(config.budget.seats),
-        loadSpend((path) => readStateRaw(destination, path)),
-      ])
-      for (const r of readings) {
-        if (r.error !== undefined) process.stderr.write(`  ! seat "${r.seat.id}": ${r.error}\n`)
-      }
-      return budgetGate(config.budget, role, readings, spend)
+    const out = {
+      say: (line: string) => process.stdout.write(`  ${line}\n`),
+      warn: (line: string) => process.stderr.write(`  ! ${line}\n`),
     }
-
-    // Lore is read fresh each item: the store is a repository someone may have just merged to.
-    const fireLore = (item: Candidate) => {
-      const entries = loadAll(config.destination)
-        .map((l) => l.entry)
-        .filter((e): e is Entry => e !== undefined)
-      const result = selectEntries(entries, role, { experts: config.experts })
-      const over = overBudgetMessage(result)
-      if (over) process.stderr.write(`  ! ${over}\n`)
-      else if (result.fired.length > 0) {
-        process.stdout.write(`  lore: ${result.fired.length} entries, ~${result.estimatedTokens} tokens\n`)
-      }
-      void recordFiring(destination, item.id, role, result, appendRecord).catch(() => undefined)
-      return renderLore(result.fired)
-    }
+    const { gate: gateFor, loreFor, record } = wire(config, role, destination, out)
 
     const work = async (item: Candidate) => {
       const gate = await gateFor()
-      const lore = fireLore(item)
+      const lore = loreFor(item)
       process.stdout.write(`\nworking ${item.id}  "${item.title}"\n  seat: ${gate.seat ?? '(unenforced)'}\n`)
       const run = await runItem(deps, item, role, identity, {
         budget: gate,
@@ -362,7 +340,7 @@ program
         await noteHandoff(destination, item, run.reason).catch(() => undefined)
       }
       if (run.execution) {
-        await recordExecution(destination, item, role, run.execution, gate.seat)
+        await record(item, run.execution, gate.seat)
         process.stdout.write(`  cost $${run.execution.costUsd.toFixed(4)}\n`)
         if (run.execution.artifact) process.stdout.write(`  ${run.execution.artifact.url}\n`)
       }
@@ -440,20 +418,19 @@ program
     const deps = { tracker, codeHost: new GitHubCodeHost(), trees: new CloneProvider(), destination }
 
     const stamp = () => new Date().toISOString().slice(11, 19)
+    const say = (line: string) => process.stdout.write(`${stamp()} ${line}\n`)
+    const { gate, loreFor, record } = wire(config, role, destination, {
+      say: (line) => say(`  ${line}`),
+      warn: (line) => say(`  ! ${line}`),
+    })
     const summary = await serve(deps, role, identity, {
       limit: Number(opts.limit),
       ...(opts.poll === undefined ? {} : { pollMinutes: Number(opts.poll) }),
       ...(opts.cycles === undefined ? {} : { maxCycles: Number(opts.cycles) }),
       until: untilSignalled(),
-      gate: async () => {
-        const [readings, spend] = await Promise.all([
-          readAllSeats(config.budget.seats),
-          loadSpend((path) => readStateRaw(destination, path)),
-        ])
-        return budgetGate(config.budget, role, readings, spend)
-      },
+      gate,
+      loreFor,
       onEvent: (e) => {
-        const say = (line: string) => process.stdout.write(`${stamp()} ${line}\n`)
         switch (e.kind) {
           case 'planned':
             say(
@@ -467,9 +444,7 @@ program
             break
           case 'worked': {
             say(`  ${e.run.outcome}: ${e.run.reason}`)
-            if (e.run.execution) {
-              void recordExecution(destination, e.item, role, e.run.execution).catch(() => undefined)
-            }
+            if (e.run.execution) void record(e.item, e.run.execution, e.seat)
             break
           }
           case 'cycle-failed':

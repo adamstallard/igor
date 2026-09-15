@@ -24,8 +24,13 @@ export interface ServeOptions extends CycleOptions {
   /**
    * Rendered lore for the item about to be worked. Supplied per item rather than per cycle:
    * the store is a repository someone may have merged to while the loop was sleeping.
+   *
+   * Required, not optional. It was optional, and `igor serve` simply never passed it — so the
+   * whole lore-firing capability was absent from the only command that runs continuously,
+   * while the tests that supply it directly stayed green. A caller that wants no lore has to
+   * say so.
    */
-  loreFor?: (item: Candidate) => string | Promise<string>
+  loreFor: (item: Candidate) => string | Promise<string>
   /** Injected in tests, so the wiring is exercised rather than only the rule it applies. */
   note?: typeof noteHandoff
   onEvent?: (event: ServeEvent) => void
@@ -38,7 +43,9 @@ export type ServeEvent =
   | { kind: 'cycle-start'; cycle: number }
   | { kind: 'planned'; cycle: number; report: CycleReport }
   | { kind: 'working'; item: Candidate; seat?: string }
-  | { kind: 'worked'; item: Candidate; run: ItemRun }
+  // Carries the seat because spend is attributed by it: recording an execution without one
+  // detaches it from the role's share, which is computed per seat.
+  | { kind: 'worked'; item: Candidate; run: ItemRun; seat?: string }
   | { kind: 'cycle-failed'; cycle: number; error: Error }
   | { kind: 'sleeping'; minutes: number }
   | { kind: 'stopping'; reason: string }
@@ -93,18 +100,14 @@ export async function serve(
           break
         }
         emit({ kind: 'working', item: candidate, ...(gate.seat === undefined ? {} : { seat: gate.seat }) })
-        const lore = options.loreFor === undefined ? undefined : await options.loreFor(candidate)
-        const run = await runItem(deps, candidate, role, identity, {
-          ...options,
-          budget: gate,
-          ...(lore === undefined ? {} : { lore }),
-        })
+        const lore = await options.loreFor(candidate)
+        const run = await runItem(deps, candidate, role, identity, { ...options, budget: gate, lore })
         summary.worked += 1
         summary.costUsd += run.costUsd
         if (shouldDefer(run.outcome, run.handoff)) {
           await (options.note ?? noteHandoff)(deps.destination, candidate, run.reason).catch(() => undefined)
         }
-        emit({ kind: 'worked', item: candidate, run })
+        emit({ kind: 'worked', item: candidate, run, ...(gate.seat === undefined ? {} : { seat: gate.seat }) })
       }
     } catch (error) {
       // A cycle is allowed to fail. Nothing here is holding a claim — `runItem` owns that, and

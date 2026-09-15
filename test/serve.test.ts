@@ -95,6 +95,9 @@ const approveAll = async (candidates: readonly Candidate[]) => ({
 
 const base = {
   gate: async () => open,
+  // Explicit rather than omitted: `loreFor` is required precisely because omitting it is how
+  // `igor serve` silently ran without lore.
+  loreFor: () => '',
   sleep: async () => {},
   sinceDays: 30,
   triageModel: 'unused',
