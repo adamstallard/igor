@@ -169,8 +169,9 @@ budget:
 reported unreadable and skipped — Igor will not fall back to whatever login happens to be
 around, because reading one seat and spending another is the mistake worth making impossible.
 
-A role's `seat` names one of these: a seat id for an Igor that must never borrow, or
-`pool:engineering` for one that may. A name nothing declares fails at load — an Igor never
+A role's `seat` names one of these: a seat id, for an Igor that must never borrow, or a pool
+id for one that may. Either may be written `pool:engineering`; the prefix reads better and is
+not what decides which is looked up. A name nothing declares fails at load — an Igor never
 falls back to a pool it did not ask for. Declare no seats at all and budget is not enforced.
 
 **Pool order is the allocation mechanism.** An Igor takes the first seat with headroom, so
