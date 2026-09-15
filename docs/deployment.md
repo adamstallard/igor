@@ -41,6 +41,10 @@ Three things, in this order. None can be automated, and the first two are the on
    keychain or an ambient login however you are signed in — the credential has to be a token
    in a variable the seat names. `igor budget` says so against any seat missing one.
 
+   What to do with a token once you have one is
+   [Adding a seat somebody has given you](#adding-a-seat-somebody-has-given-you) below: where
+   the name goes, where the value goes, and how to check it took.
+
 3. **A lore repository**, holding `igor.config.yaml` and `roles/`, checked out where the
    service runs. Igor finds its configuration by walking up from the working directory, the way
    git does, so the working directory *is* the configuration.

@@ -59,8 +59,10 @@ describe('validateFrontmatter', () => {
       expect(fields(valid({ support: 14 }))).toContain('support')
     })
 
-    it('rejects a stored recency field', () => {
-      expect(fields(valid({ recency: 0.82 }))).toContain('recency')
+    it('ignores a field it does not know, rather than refusing the entry', () => {
+      // Only derived fields are refused. An unrecognised key is not an error, which is why
+      // `recency` stopped being listed once nothing derived one.
+      expect(fields(valid({ recency: 0.82 }))).toEqual([])
     })
   })
 

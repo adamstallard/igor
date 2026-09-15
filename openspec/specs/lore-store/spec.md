@@ -120,7 +120,7 @@ Mining is one way to populate lore, not a precondition for it.
 The store SHALL provide commands to create an entry, validate the store, and list its
 contents. `create` SHALL scaffold a well-formed entry and assign its id. `validate` SHALL
 report every invalid entry with its reason rather than stopping at the first. `list` SHALL
-show entries with their derived support and recency.
+show entries with their derived support and the date of their newest evidence.
 
 #### Scenario: Entry created from the CLI
 
@@ -137,8 +137,9 @@ show entries with their derived support and recency.
 #### Scenario: Listing shows derived scores
 
 - **WHEN** entries are listed
-- **THEN** each shows a support count and recency weight computed from provenance
+- **THEN** each shows a support count and the newest provenance date, both computed
 - **AND** neither is read from a stored field
+- **AND** no time-decayed weight is shown, because none is computed
 
 ### Requirement: Configuration belongs to the team's repository, not the tool's
 
