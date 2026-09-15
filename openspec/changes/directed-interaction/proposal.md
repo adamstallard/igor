@@ -31,6 +31,28 @@ to reply to.
   code — all untrusted and delimited as such when passed to the worker. The trusted channel
   is role config and lore. This has to be explicit, because ingesting arbitrary text from
   shared surfaces is the entire premise.
+- **Being mentioned is how an Igor learns it was addressed.** Discovery is a query and
+  comments are re-read only on items already held, so a mention on anything else is invisible.
+  A `mentions:` source fixes that with no new mechanism: it flows through the same watermark,
+  screening and triage as every other candidate, which is what "enters at triage" has to mean.
+- **A mention narrows the action space rather than widening it, and claims nothing.** An Igor
+  asked to look at an item investigates and answers; it does not assign itself, take the work,
+  or publish. That resolves what would otherwise be a collision with the universal skip for an
+  item somebody else holds — reading is not taking, so the rule needs no exception and Alice
+  keeps her issue.
+
+  It also makes mention-handling incapable of escalation. Permissions merge monotonically, so
+  a level may restrict and never widen; if a mention can only narrow, then a successful
+  injection through a comment gains the attacker strictly less than the Igor could already do.
+  That is a stronger guarantee than detecting manipulation, and it needs no permission lookup.
+
+  Not claiming is the point, not an omission. Nobody was told to stand off, so nothing is owed
+  a receipt, nothing blocks, and no marker or settle interval applies. You do not claim an item
+  to read it.
+
+  Where the person who *holds* the item is the one who mentioned the Igor, that is an
+  invitation and the action space may widen back to a draft — deliberately left out of the
+  first version, because it needs the authority check the rest of this change introduces.
 - **A direct request enters at triage as an ordinary candidate.** Same path, same
   guardrails; only provenance differs. Requested work outranks discovered work, because a
   human asking is a far stronger relevance signal than a query match.
