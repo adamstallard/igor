@@ -1259,10 +1259,11 @@ clone-per-task and has to unpick it.
 
 **Cleanup is a startup sweep, not an exit hook** — **built**. Release runs from a `finally`, which SIGKILL,
 an OOM kill and a power loss all skip, so a crashed run strands a full checkout and nothing ever
-reclaims it. `wire` removes `igor-tree-*` directories older than four worker timeouts before the
-first cycle. Age is the only safe signal: several processes of one role is the point of §6.7.1,
-so a tree that looks idle may belong to a live sibling, and the threshold sits far above the
-longest a tree can plausibly be in use rather than close to it. A surviving tree is debris, never
+reclaims it. `wire` removes `igor-tree-*` directories older than the worker's absolute ceiling
+plus an hour before the first cycle. Age is the only safe signal: several processes of one role
+is the point of §6.7.1, so a tree that looks idle may belong to a live sibling, and the
+threshold sits above the longest a tree can be in use — the ceiling, and the clone and push
+either side of the worker — rather than close to it. A surviving tree is debris, never
 a checkpoint — its worker's context died with its process, so nothing resumes from it.
 
 The **seam** this arrives behind is specified now, in `core-igor-loop`'s `task-execution`:

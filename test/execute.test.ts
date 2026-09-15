@@ -1,15 +1,19 @@
 import { mkdtempSync, writeFileSync, existsSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { Artifact, ArtifactRequest, Candidate, ClaimVerdict, CodeHost, Tracker } from '../src/adapter.js'
 import type { Role } from '../src/role.js'
 import {
-  branchFor, complete, execute, permits, prBody, PR_BODY_LIMIT, stripLinkage, workerPrompt,
-  workerSystemPrompt, type WorkerRunner,
+  ABSOLUTE_CEILING_MS, branchFor, claudeWorker, complete, execute, ExecutionError,
+  MODEL_SILENCE_MS, permits, prBody, PR_BODY_LIMIT, stripLinkage, TOOL_SILENCE_MS, watchWorker,
+  workerPrompt, workerSystemPrompt, type WorkerEvent, type WorkerRunner,
 } from '../src/execute.js'
 import { withTree, type ChangedFile, type TreeProvider, type WorkingTree } from '../src/worktree.js'
 import { tempDir } from './tmp.js'
+
+const MINUTE = 60 * 1000
+const HOUR = 60 * MINUTE
 
 const candidate = (over: Partial<Candidate> = {}): Candidate =>
   ({
@@ -359,5 +363,327 @@ describe('a stop is answered while the worker runs', () => {
 
     expect(r.outcome).toBe('produced')
     expect(asked.length).toBe(1)
+  })
+})
+
+describe('a worker is bounded by silence rather than by duration', () => {
+  const limits = { toolMs: 30 * MINUTE, modelMs: 5 * MINUTE, ceilingMs: 6 * HOUR }
+
+  /** Collects what the watchdog killed for, so a test can assert on the diagnosis. */
+  function watched(over: Partial<typeof limits> = {}) {
+    const killed: string[] = []
+    const watch = watchWorker({ ...limits, ...over }, (why) => killed.push(why.message))
+    return { watch, killed }
+  }
+
+  // The stream sends parent_tool_use_id as null on every event that carries content, never
+  // absent, so the fixtures say null too.
+  const dispatch = (id: string): WorkerEvent =>
+    ({
+      type: 'assistant',
+      parent_tool_use_id: null,
+      message: { content: [{ type: 'tool_use', id, name: 'Bash' }] },
+    }) as unknown as WorkerEvent
+  const returns = (id: string): WorkerEvent =>
+    ({
+      type: 'user',
+      parent_tool_use_id: null,
+      message: { content: [{ type: 'tool_result', tool_use_id: id }] },
+    }) as unknown as WorkerEvent
+  const thinking = {
+    type: 'assistant',
+    parent_tool_use_id: null,
+    message: { content: [{ type: 'thinking' }] },
+  } as unknown as WorkerEvent
+
+  it('leaves a worker alone for as long as it keeps producing events', () => {
+    // The case the wall clock got wrong: a productive run is long, and its length says nothing
+    // about whether it is stuck.
+    vi.useFakeTimers()
+    try {
+      const { watch, killed } = watched()
+      for (let turn = 0; turn < 60; turn++) {
+        vi.advanceTimersByTime(limits.modelMs - MINUTE)
+        watch.progress(thinking)
+      }
+      expect(killed).toEqual([])
+      watch.cancel()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('kills a worker whose model has gone quiet, and says that is what happened', () => {
+    vi.useFakeTimers()
+    try {
+      const { watch, killed } = watched()
+      watch.progress(returns('a'))
+      vi.advanceTimersByTime(limits.modelMs)
+      expect(killed).toEqual(['worker produced nothing for 5m and was killed'])
+      watch.cancel()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('gives a worker blocked on a tool the longer window, and names the tool when it expires', () => {
+    // A single Bash call running a long test suite emits nothing while it runs, and killing
+    // that is exactly wrong.
+    vi.useFakeTimers()
+    try {
+      const { watch, killed } = watched()
+      watch.progress(dispatch('a'))
+      vi.advanceTimersByTime(limits.toolMs - MINUTE)
+      expect(killed).toEqual([])
+      vi.advanceTimersByTime(MINUTE)
+      expect(killed).toEqual(['worker produced nothing for 30m while a tool ran and was killed'])
+      watch.cancel()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('goes back to the short window once the tool returns', () => {
+    vi.useFakeTimers()
+    try {
+      const { watch, killed } = watched()
+      watch.progress(dispatch('a'))
+      watch.progress(returns('a'))
+      vi.advanceTimersByTime(limits.modelMs)
+      expect(killed).toEqual(['worker produced nothing for 5m and was killed'])
+      watch.cancel()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps the long window while a sibling tool is still running', () => {
+    // Tools dispatched together return one at a time, so the first result back must not
+    // shorten the window under the one still going.
+    vi.useFakeTimers()
+    try {
+      const { watch, killed } = watched()
+      watch.progress(dispatch('a'))
+      watch.progress(dispatch('b'))
+      watch.progress(returns('a'))
+      vi.advanceTimersByTime(limits.modelMs * 2)
+      expect(killed).toEqual([])
+      vi.advanceTimersByTime(limits.toolMs)
+      expect(killed).toEqual(['worker produced nothing for 30m while a tool ran and was killed'])
+      watch.cancel()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not let a subagent narrating drop the tools of the turn that spawned it', () => {
+    // A Task subagent's first event is prose inside its own branch, while the Task that
+    // dispatched it — the longest-running tool there is — is still outstanding.
+    vi.useFakeTimers()
+    try {
+      const { watch, killed } = watched()
+      watch.progress(dispatch('build'))
+      watch.progress(dispatch('task'))
+      watch.progress({
+        type: 'user',
+        parent_tool_use_id: 'task',
+        message: { content: [{ type: 'text' }] },
+      } as unknown as WorkerEvent)
+      vi.advanceTimersByTime(limits.modelMs * 2)
+      expect(killed).toEqual([])
+      watch.cancel()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('clears outstanding tools when the turn itself resumes', () => {
+    // Prose at the top level is proof every tool came back, which is what rescues a run from
+    // one unmatched id holding the long window open for good.
+    vi.useFakeTimers()
+    try {
+      const { watch, killed } = watched()
+      watch.progress(dispatch('stranded'))
+      watch.progress(thinking)
+      vi.advanceTimersByTime(limits.modelMs)
+      expect(killed).toEqual(['worker produced nothing for 5m and was killed'])
+      watch.cancel()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('is not sensitive to block order within one event', () => {
+    vi.useFakeTimers()
+    try {
+      const { watch, killed } = watched()
+      watch.progress({
+        type: 'assistant',
+        parent_tool_use_id: null,
+        message: { content: [{ type: 'tool_use', id: 'a', name: 'Bash' }, { type: 'text' }] },
+      } as unknown as WorkerEvent)
+      vi.advanceTimersByTime(limits.modelMs * 2)
+      expect(killed).toEqual([])
+      watch.cancel()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('kills a worker that never finishes however live it looks, and says that instead', () => {
+    // A worker emitting steadily forever satisfies both windows and still never ends.
+    vi.useFakeTimers()
+    try {
+      const { watch, killed } = watched()
+      for (let turn = 0; turn < 6 * 60; turn++) {
+        vi.advanceTimersByTime(MINUTE)
+        watch.progress(thinking)
+      }
+      expect(killed).toEqual(['worker ran 6h without finishing and was killed'])
+      watch.cancel()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('reports one limit and not both', () => {
+    vi.useFakeTimers()
+    try {
+      const { watch, killed } = watched()
+      vi.advanceTimersByTime(limits.ceilingMs * 2)
+      expect(killed).toHaveLength(1)
+      expect(killed[0]).toMatch(/produced nothing/)
+      watch.cancel()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('stops watching a run that has ended', () => {
+    vi.useFakeTimers()
+    try {
+      const { watch, killed } = watched()
+      watch.cancel()
+      vi.advanceTimersByTime(limits.ceilingMs * 2)
+      expect(killed).toEqual([])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('bounds a hung model sooner than a running tool, and both sooner than the run', () => {
+    expect(MODEL_SILENCE_MS).toBeLessThan(TOOL_SILENCE_MS)
+    expect(TOOL_SILENCE_MS).toBeLessThan(ABSOLUTE_CEILING_MS)
+  })
+})
+
+/** Stands in for the CLI, so the spawn path runs without the real binary or the network. */
+function stubCommand(body: string): string {
+  const path = join(tempDir('igor-test-stub-'), 'stub')
+  const preamble = "const emit = (e) => process.stdout.write(JSON.stringify(e) + '\\n')"
+  writeFileSync(path, `#!/usr/bin/env node\n${preamble}\n${body}\n`, { mode: 0o755 })
+  return path
+}
+
+function runStub(body: string, limits: { toolMs: number; modelMs: number; ceilingMs: number }) {
+  return claudeWorker(stubCommand(body))({
+    cwd: tempDir('igor-test-cwd-'),
+    system: 'be useful',
+    prompt: 'work this item',
+    model: 'claude-sonnet-5',
+    limits,
+  })
+}
+
+const busy = { toolMs: 60_000, modelMs: 60_000, ceilingMs: 60_000 }
+
+describe('the watchdog is wired to the worker stream', () => {
+  it('lets a steadily-emitting worker run well past the window', async () => {
+    // Twelve turns at 200ms is 2.4s of work under a 1.5s window. A wall clock kills this.
+    const out = await runStub(
+      `let turns = 0
+       const t = setInterval(() => {
+         emit({ type: 'assistant', message: { content: [{ type: 'thinking' }] } })
+         if (++turns === 12) {
+           clearInterval(t)
+           emit({ type: 'result', result: 'done', total_cost_usd: 0.01 })
+         }
+       }, 200)`,
+      { ...busy, modelMs: 1_500, toolMs: 1_500 },
+    )
+    expect(out.result).toBe('done')
+    expect(out.total_cost_usd).toBe(0.01)
+  })
+
+  it('kills a worker whose model has gone quiet', async () => {
+    await expect(
+      runStub(`emit({ type: 'system', subtype: 'init' }); setInterval(() => {}, 10_000)`, {
+        ...busy,
+        modelMs: 1_000,
+      }),
+    ).rejects.toThrow('worker produced nothing for 1s and was killed')
+  })
+
+  it('waits out a tool the worker dispatched, then kills on the tool window', async () => {
+    const started = Date.now()
+    await expect(
+      runStub(
+        `emit({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 'a', name: 'Bash' }] } })
+         setInterval(() => {}, 10_000)`,
+        { ...busy, modelMs: 300, toolMs: 2_000 },
+      ),
+    ).rejects.toThrow('worker produced nothing for 2s while a tool ran and was killed')
+    expect(Date.now() - started).toBeGreaterThan(1_500)
+  })
+
+  it('does not count output that is not an event as progress', async () => {
+    // A worker spewing warnings has still stopped working, and must not live forever on them.
+    await expect(
+      runStub(`setInterval(() => process.stdout.write('npm warn deprecated\\n'), 50)`, {
+        ...busy,
+        modelMs: 1_000,
+      }),
+    ).rejects.toThrow('worker produced nothing for 1s and was killed')
+  })
+
+  it('kills a live worker at the ceiling', async () => {
+    await expect(
+      runStub(`setInterval(() => emit({ type: 'assistant' }), 25)`, { ...busy, ceilingMs: 1_000 }),
+    ).rejects.toThrow('worker ran 1s without finishing and was killed')
+  })
+
+  it('keeps the result of a finished run whose process will not exit', async () => {
+    // The run is over once the result lands. A process still holding the pipe open is worth
+    // killing and is not worth the transcript and the cost it already reported.
+    const out = await runStub(
+      `emit({ type: 'result', result: 'I fixed the bug', total_cost_usd: 0.42 })
+       setInterval(() => {}, 10_000)`,
+      { ...busy, modelMs: 700 },
+    )
+    expect(out.result).toBe('I fixed the bug')
+    expect(out.total_cost_usd).toBe(0.42)
+  })
+})
+
+describe('a worker killed for a limit still says what it changed', () => {
+  it('reads the tree on the failure path rather than reporting nothing', async () => {
+    // A kill can now land hours into real editing, so a failure recorded as having changed
+    // nothing is a record of the wrong failure.
+    const { provider } = fakeProvider(edited)
+    const { host, seen } = fakeCodeHost()
+    const { t } = fakeTracker()
+    const killed = 'worker produced nothing for 30m while a tool ran and was killed'
+
+    const r = await execute(provider, t, host, candidate(), role(), {
+      worker: async () => {
+        throw new ExecutionError(killed)
+      },
+    })
+
+    expect(r.outcome).toBe('failed')
+    expect(r.reason).toBe(killed)
+    expect(r.changed).toEqual(edited)
+    // Nothing is published off a kill: the diff is recorded, not offered.
+    expect(seen).toEqual([])
   })
 })

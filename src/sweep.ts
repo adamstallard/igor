@@ -1,7 +1,7 @@
 import { lstat, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { DEFAULT_TIMEOUT_MS } from './execute.js'
+import { ABSOLUTE_CEILING_MS } from './execute.js'
 import { TREE_PREFIX } from './worktree.js'
 import type { Reporter } from './wiring.js'
 
@@ -17,11 +17,12 @@ import type { Reporter } from './wiring.js'
  */
 
 /**
- * Four worker timeouts. A tree outlives its worker only by a clone and an artifact push, so an
- * hour is many times the longest one can plausibly be in use — and deleting a live sibling's
- * tree corrupts a run, while leaving debris another hour costs nothing.
+ * The longest a worker can live, plus the clone and the push either side of it. The margin is
+ * added rather than multiplied because what a tree outlives its worker by is a fixed cost, not
+ * a share of the run. Deleting a live sibling's tree corrupts its run; leaving debris another
+ * hour costs disk.
  */
-export const SWEEP_AFTER_MS = 4 * DEFAULT_TIMEOUT_MS
+export const SWEEP_AFTER_MS = ABSOLUTE_CEILING_MS + 60 * 60 * 1000
 
 /**
  * Exactly what `mkdtemp` appends to the prefix: a non-empty run of alphanumerics. A name with a

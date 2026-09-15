@@ -48,10 +48,12 @@ journalctl -u igor@maintenance -f
 The unit is a template, so the role name is the instance: `igor@maintenance`, `igor@backend`.
 Several Igors run from one unit file.
 
-`TimeoutStopSec=900` is deliberate and should not be lowered casually. An Igor killed mid-item
-leaves a claim on a tracker with no explanation, which is the single failure the whole claim
-protocol exists to prevent. The loop stops taking new items as soon as it is signalled; the
-timeout only covers finishing the one in hand.
+`TimeoutStopSec=900` bounds how long shutdown waits, and is not a promise that the item in hand
+finishes. The loop stops taking new items as soon as it is signalled, but a worker is bounded by
+silence on its stream rather than by the clock and may legitimately run for hours. An Igor
+killed mid-item leaves a claim on a tracker with no explanation, which is the single failure the
+whole claim protocol exists to prevent — so raise this where a long item matters more than a
+prompt shutdown, and do not lower it.
 
 ## Docker
 
