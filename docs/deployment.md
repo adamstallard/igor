@@ -36,6 +36,11 @@ Three things, in this order. None can be automated, and the first two are the on
    task. [`seats.md`](seats.md) is written for them: what the command is, what it grants, what
    `reserve` protects, and how to hand a token over without pasting it into a channel.
 
+   This applies to your own seat too, trying it out on your own machine before any of the
+   above. A worker's environment is written out rather than inherited, so it cannot reach a
+   keychain or an ambient login however you are signed in — the credential has to be a token
+   in a variable the seat names. `igor budget` says so against any seat missing one.
+
 3. **A lore repository**, holding `igor.config.yaml` and `roles/`, checked out where the
    service runs. Igor finds its configuration by walking up from the working directory, the way
    git does, so the working directory *is* the configuration.
@@ -79,8 +84,8 @@ Four steps, once a colleague has sent you a token ([`seats.md`](seats.md) is wha
    subscription several Igors may draw from. `GH_TOKEN` is the opposite — it is identity, and
    belongs in `/etc/igor/<role>.env`.
 
-   Running from a shell instead, which is how most people start, the same rule applies with
-   different plumbing — a file only you can read, sourced by your profile:
+   Evaluating from a shell rather than a unit, the same rule applies with different plumbing —
+   a file only you can read, sourced by your profile:
 
    ```sh
    umask 077 && mkdir -p ~/.config/igor
