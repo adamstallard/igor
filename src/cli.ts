@@ -120,7 +120,7 @@ program
 
 program
   .command('list')
-  .description('Show entries with support and recency derived from provenance')
+  .description('Show entries with support and newest evidence, derived from provenance')
   .option('--scope <scope>', 'filter by scope')
   .action((opts) => {
     const config = loadConfig(program.opts()['config'])

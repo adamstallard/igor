@@ -139,10 +139,9 @@ timestamp). The body holds the reasoning and any exceptions.
 
 **Provenance is the single source of truth for scoring.** Each provenance item carries an
 `author` and an `at` date, plus a `url` when it cites a mined artifact — a hand-authored entry
-records authorship with no link (§3.2.1). That makes support count (how many items), the date
-(decay over their dates), and author-weighting all *derived* rather than stored. Storing
-`support` or `recency` as fields would desync — a recency written in September is wrong by
-November.
+records authorship with no link (§3.2.1). That makes support count (how many items), the date of
+the newest, and author-weighting all *derived* rather than stored. Storing them as fields would
+desync — a support count written in September is wrong the moment somebody adds a citation.
 
 **The id is derived from the claim at creation, then frozen.** A kebab slug keeps diffs and
 supersession pointers legible, but rewording a claim later must not move the id, since other

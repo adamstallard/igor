@@ -4,6 +4,12 @@ export const STATUSES = ['provisional', 'active', 'deprecated'] as const
 export type Status = (typeof STATUSES)[number]
 
 /** Derived at read time, never stored. Rejected if present in frontmatter. */
+/**
+ * Fields an entry may never carry, because they are computed from provenance every time.
+ * `recency` is here although nothing derives one: decay was removed deliberately, and an entry
+ * migrated from a store that had it should be rejected rather than quietly carrying a number
+ * no longer means anything.
+ */
 export const DERIVED_FIELDS = ['support', 'recency'] as const
 
 export interface ProvenanceItem {

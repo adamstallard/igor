@@ -295,7 +295,42 @@ would be worse than admitting it:
 
 ## Setting up a lore repository
 
-Any repository works; it just needs to be somewhere other than this one.
+Any repository works; it just needs to be somewhere other than this one. Igor refuses a config
+found inside its own installation, because Igor is shared and the config describes one team.
+
+The state branch lives here too, so it has to be a repository the Igor can push to.
+
+1. **Create and clone it.** Public or private both work. Public means the `publicStore` guard
+   refuses entries whose provenance cites a private repository, which is the point of it.
+
+2. **Copy the config and commit it.**
+
+   ```sh
+   cp path/to/igor/igor.config.example.yaml igor.config.yaml
+   ```
+
+   Set `destination: .`, list `reviewers` and `experts`. Commit it — who reviews and who counts
+   as an expert are shared decisions, and uncommitted they drift between whoever runs the tool
+   until an entry scores differently depending on whose machine computed it. Nothing in the
+   file is secret: `token_env` names a variable rather than holding a token.
+
+3. **Declare a seat.** Without one an Igor can triage but cannot work, and a seat without
+   `token_env` reads fine and cannot pay for anything — `igor budget` says so where it applies.
+   [`docs/seats.md`](docs/seats.md) is the page to send whoever's subscription it is.
+
+4. **Write `roles/org.yaml` and one role.** The org file holds what every role inherits — the
+   action space, the completion behaviour, the lane exclusions, standing instructions. A role
+   names its `sources` and narrows whatever it needs to. See [Roles](#roles).
+
+5. **Check it before running anything.**
+
+   ```sh
+   igor role explain <role>   # the effective merge, and which file each value came from
+   igor budget                # every seat, read live
+   igor run <role> --plan     # what it would claim, claiming nothing
+   ```
+
+`entries/` and the state branch are created when first needed; neither wants making by hand.
 
 **Branch protection, once more than one person can write to it.** Enable **"require a pull
 request before merging"** — it still lets an author merge their own proposal and only blocks
