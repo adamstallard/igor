@@ -100,17 +100,33 @@ export interface WorkerOutput {
   is_error?: boolean
 }
 
-/** Injected in tests so the suite never spawns a subprocess or touches the network. */
-export type WorkerRunner = (input: {
+/**
+ * One newline-delimited event off the worker's stream. Only the terminal `result` event is
+ * modelled; the rest are ticks, and what they carry — usage, timing — stays open.
+ */
+export interface WorkerEvent extends WorkerOutput {
+  type: string
+  [field: string]: unknown
+}
+
+export interface WorkerInput {
   cwd: string
   system: string
   prompt: string
   model: string
   timeoutMs: number
-}) => Promise<WorkerOutput>
+  /** Called as each event arrives, so the caller can act on a run while it is still running. */
+  onEvent?: (event: WorkerEvent) => void
+  /** Aborting kills the worker; the run settles with whatever it had rather than failing. */
+  signal?: AbortSignal
+}
 
-export const headlessClaude: WorkerRunner = ({ cwd, system, prompt, model, timeoutMs }) => {
+/** Injected in tests so the suite never spawns a subprocess or touches the network. */
+export type WorkerRunner = (input: WorkerInput) => Promise<WorkerOutput>
+
+export const headlessClaude: WorkerRunner = ({ cwd, system, prompt, model, timeoutMs, onEvent, signal }) => {
   return new Promise<WorkerOutput>((resolve, reject) => {
+    if (signal?.aborted) return resolve({})
     const child = spawn(
       'claude',
       [
@@ -118,8 +134,12 @@ export const headlessClaude: WorkerRunner = ({ cwd, system, prompt, model, timeo
         prompt,
         '--model',
         model,
+        // Streamed rather than buffered, so the caller hears from the run while it runs. The
+        // terminal `result` event carries what the buffered blob used to, and the CLI refuses
+        // stream-json under -p unless --verbose comes with it.
         '--output-format',
-        'json',
+        'stream-json',
+        '--verbose',
         '--system-prompt',
         system,
         // Scoped to this tree rather than bypassing checks wholesale. The tree is disposable
@@ -131,26 +151,58 @@ export const headlessClaude: WorkerRunner = ({ cwd, system, prompt, model, timeo
       ],
       { cwd, stdio: ['ignore', 'pipe', 'pipe'] },
     )
-    let out = ''
+    let pending = ''
     let err = ''
+    let final: WorkerOutput | undefined
+    let killed = false
+
     const timer = setTimeout(() => {
       child.kill('SIGKILL')
       reject(new ExecutionError(`worker exceeded ${Math.round(timeoutMs / 1000)}s and was killed`))
     }, timeoutMs)
-    child.stdout.on('data', (c) => (out += c))
+    signal?.addEventListener(
+      'abort',
+      () => {
+        killed = true
+        child.kill('SIGKILL')
+        clearTimeout(timer)
+        resolve(final ?? {})
+      },
+      { once: true },
+    )
+
+    const consume = (line: string) => {
+      if (line.trim() === '') return
+      let event: WorkerEvent
+      try {
+        event = JSON.parse(line) as WorkerEvent
+      } catch {
+        // A line the stream never promised is not worth losing a run over.
+        return
+      }
+      if (event.type === 'result') final = event
+      onEvent?.(event)
+    }
+
+    child.stdout.on('data', (chunk) => {
+      // Chunk boundaries fall wherever they like, so a partial line waits for the rest of it.
+      pending += chunk
+      const lines = pending.split('\n')
+      pending = lines.pop() ?? ''
+      for (const line of lines) consume(line)
+    })
     child.stderr.on('data', (c) => (err += c))
     child.on('error', (e) => {
       clearTimeout(timer)
       reject(e)
     })
     child.on('close', (code) => {
+      consume(pending)
       clearTimeout(timer)
+      if (killed) return resolve(final ?? {})
       if (code !== 0) return reject(new ExecutionError(err.trim() || `worker exited ${code}`))
-      try {
-        resolve(JSON.parse(out) as WorkerOutput)
-      } catch {
-        reject(new ExecutionError(`worker returned unparseable output: ${out.slice(0, 200)}`))
-      }
+      if (final === undefined) return reject(new ExecutionError(`worker produced no result: ${err.trim().slice(0, 200)}`))
+      resolve(final)
     })
   })
 }
@@ -188,15 +240,21 @@ export interface ExecuteOptions {
   model?: string
   timeoutMs?: number
   /**
-   * The claim's status between the worker finishing and anything being published. Reports
-   * the status rather than a boolean because a stop and a loss want opposite answers.
+   * The claim's status, asked at checkpoints while the worker runs and again before anything
+   * is decided. Reports the status rather than a boolean because a stop and a loss want
+   * opposite answers.
    */
   claimStatus?: () => Promise<ClaimVerdict['status']>
+  /** How long between mid-run claim re-reads; zero checks on every worker event. */
+  checkpointMs?: number
   onPublish?: () => void
   branchPrefix?: string
 }
 
 const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000
+
+/** How long a stop can go unanswered mid-run — short enough that whoever posted it is still watching. */
+const CHECKPOINT_INTERVAL_MS = 30_000
 
 export function branchFor(role: Role, candidate: Candidate, prefix = 'igor'): string {
   // Trim separators *after* slicing: cutting to length can land on a hyphen, and git rejects
@@ -225,6 +283,35 @@ export async function execute(
   const linkage = tracker.linkage(candidate)
 
   return withTree(provider, candidate.repo, async (tree: WorkingTree) => {
+    const stop = new AbortController()
+    const checkpointMs = options.checkpointMs ?? CHECKPOINT_INTERVAL_MS
+    let stopped = false
+    let checking = false
+    let lastCheck = Date.now()
+
+    // Event arrival is the tick, throttled so a chatty worker costs no more tracker reads than
+    // a quiet one, and never two at once. A read that fails is not a stop.
+    const onEvent = () => {
+      if (stopped || checking || options.claimStatus === undefined) return
+      const now = Date.now()
+      if (now - lastCheck < checkpointMs) return
+      lastCheck = now
+      checking = true
+      void options
+        .claimStatus()
+        .then((status) => {
+          // Only a stop cuts the run short. A loss is left to finish, because the draft left
+          // for whoever took the item over is exactly what killing the worker would destroy.
+          if (status !== 'stopped') return
+          stopped = true
+          stop.abort()
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          checking = false
+        })
+    }
+
     let worker: WorkerOutput
     try {
       worker = await (options.worker ?? headlessClaude)({
@@ -233,21 +320,41 @@ export async function execute(
         prompt: workerPrompt(candidate, linkage),
         model,
         timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+        onEvent,
+        signal: stop.signal,
       })
     } catch (error) {
-      return {
-        outcome: 'failed' as const,
-        changed: [],
-        refusals,
-        transcript: '',
-        costUsd: 0,
-        reason: error instanceof Error ? error.message : String(error),
+      // A worker killed at a checkpoint is a stop however it exited, not a failure.
+      if (!stopped) {
+        return {
+          outcome: 'failed' as const,
+          changed: [],
+          refusals,
+          transcript: '',
+          costUsd: 0,
+          reason: error instanceof Error ? error.message : String(error),
+        }
       }
+      worker = {}
     }
 
     const transcript = worker.result ?? ''
     const costUsd = worker.total_cost_usd ?? 0
     const changed = await tree.changes()
+
+    // Read before anything is decided, not merely before publishing: a stop during a run that
+    // changed nothing is still a stop, and owes a receipt rather than a handoff.
+    const status = stopped ? 'stopped' : options.claimStatus === undefined ? 'held' : await options.claimStatus()
+    if (status === 'stopped') {
+      return {
+        outcome: 'refused' as const,
+        changed,
+        refusals: [...refusals, { action: 'draft-pr', why: 'stopped during execution' }],
+        transcript,
+        costUsd,
+        reason: 'stopped mid-execution; nothing was published',
+      }
+    }
 
     if (changed.length === 0) {
       return {
@@ -257,20 +364,6 @@ export async function execute(
         transcript,
         costUsd,
         reason: 'the worker made no changes',
-      }
-    }
-
-    // Re-check the claim before publishing anything. The worker may have run for minutes, and
-    // a stop that arrived during it must prevent the artifact rather than merely follow it.
-    const status = options.claimStatus === undefined ? 'held' : await options.claimStatus()
-    if (status === 'stopped') {
-      return {
-        outcome: 'refused' as const,
-        changed,
-        refusals: [...refusals, { action: 'draft-pr', why: 'stopped during execution' }],
-        transcript,
-        costUsd,
-        reason: 'stopped mid-execution; nothing was published',
       }
     }
 
