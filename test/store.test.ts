@@ -15,9 +15,10 @@ import {
 } from '../src/store.js'
 import { resolveConfig, loadConfig, findConfig, igorRoot, ConfigError } from '../src/config.js'
 import type { Entry } from '../src/entry.js'
+import { tempDir } from './tmp.js'
 
 function tempStore(): string {
-  return mkdtempSync(join(tmpdir(), 'igor-lore-'))
+  return tempDir('igor-lore-')
 }
 
 function entry(overrides: Partial<Entry> = {}): Entry {

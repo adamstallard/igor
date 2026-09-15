@@ -8,6 +8,7 @@ import type { CycleDeps } from '../src/loop.js'
 import type { Role } from '../src/role.js'
 import type { TreeProvider, WorkingTree } from '../src/worktree.js'
 import { serve, untilSignalled, type ServeEvent } from '../src/serve.js'
+import { tempDir } from './tmp.js'
 
 const role = (over: Partial<Role> = {}): Role =>
   ({
@@ -68,7 +69,7 @@ function deps(found: Candidate[], opts: { searchThrows?: boolean; verdict?: Clai
   const trees: TreeProvider = {
     name: 'fake',
     provision: async (): Promise<WorkingTree> => ({
-      path: mkdtempSync(join(tmpdir(), 'igor-serve-')),
+      path: tempDir('igor-serve-'),
       repo: 'o/r',
       changes: async () => [],
       release: async () => {},

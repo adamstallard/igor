@@ -10,6 +10,7 @@ import {
   type CycleReport, type ItemDeps,
 } from '../src/loop.js'
 import { defer, NO_DEFERRALS, recordStop } from '../src/deferred.js'
+import { tempDir } from './tmp.js'
 
 const candidate = (over: Partial<Candidate> = {}): Candidate =>
   ({ id: 'github:o/r#7', repo: 'o/r', native: '7', title: 'A bug', body: '', author: 'reporter', assignees: [], labels: [], paths: [], state: 'open', ...over }) as unknown as Candidate
@@ -50,7 +51,7 @@ function deps(opts: {
   const trees: TreeProvider = {
     name: 'fake',
     provision: async (): Promise<WorkingTree> => ({
-      path: mkdtempSync(join(tmpdir(), 'igor-loop-')),
+      path: tempDir('igor-loop-'),
       repo: 'o/r',
       changes: async () => opts.changes ?? [],
       release: async () => {},

@@ -9,6 +9,7 @@ import {
   workerSystemPrompt, type WorkerRunner,
 } from '../src/execute.js'
 import { withTree, type ChangedFile, type TreeProvider, type WorkingTree } from '../src/worktree.js'
+import { tempDir } from './tmp.js'
 
 const candidate = (over: Partial<Candidate> = {}): Candidate =>
   ({
@@ -44,7 +45,7 @@ function fakeProvider(changes: ChangedFile[], opts: { failProvision?: boolean } 
     provision: async () => {
       if (opts.failProvision) throw new Error('cannot clone')
       log.provisioned++
-      const path = mkdtempSync(join(tmpdir(), 'igor-test-tree-'))
+      const path = tempDir('igor-test-tree-')
       log.paths.push(path)
       const tree: WorkingTree = {
         path,

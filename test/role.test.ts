@@ -5,9 +5,10 @@ import { describe, expect, it } from 'vitest'
 import { resolveRole, loadRole, explainRole, listRoles, RoleError, DEFAULTS } from '../src/role.js'
 import type { OrgBudget } from '../src/budget.js'
 import type { Config } from '../src/config.js'
+import { tempDir } from './tmp.js'
 
 function store(roles: Record<string, string>): string {
-  const dir = mkdtempSync(join(tmpdir(), 'igor-roles-'))
+  const dir = tempDir('igor-roles-')
   mkdirSync(join(dir, 'roles'), { recursive: true })
   for (const [name, body] of Object.entries(roles)) {
     writeFileSync(join(dir, 'roles', `${name}.yaml`), body)
@@ -334,7 +335,7 @@ describe('explain', () => {
 describe('listing', () => {
   it('finds roles by filename and returns none when absent', () => {
     expect(listRoles(store({ org: ORG, fe: 'sources: []\n' }))).toEqual(['fe', 'org'])
-    expect(listRoles(mkdtempSync(join(tmpdir(), 'empty-')))).toEqual([])
+    expect(listRoles(tempDir('igor-empty-'))).toEqual([])
   })
 
   it('reports a missing role by path rather than throwing something opaque', () => {
