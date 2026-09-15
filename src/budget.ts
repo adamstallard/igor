@@ -132,6 +132,7 @@ export async function readUsage(
   seat: Seat,
   env: NodeJS.ProcessEnv = process.env,
   run: (env: NodeJS.ProcessEnv) => Promise<string> = runUsage,
+  describe: (env: NodeJS.ProcessEnv) => Promise<AuthContext | undefined> = runAuthStatus,
 ): Promise<Usage> {
   const childEnv = { ...env }
   if (seat.tokenEnv !== undefined) {
@@ -144,7 +145,60 @@ export async function readUsage(
     }
     childEnv['CLAUDE_CODE_OAUTH_TOKEN'] = token
   }
-  return parseUsage(await run(childEnv))
+
+  // Outside the try: a command that failed to run is already its own message, and running it
+  // through the diagnosis below would relabel it as something it is not.
+  const text = await run(childEnv)
+  try {
+    return parseUsage(text)
+  } catch (error) {
+    if (!(error instanceof BudgetError)) throw error
+    const auth = await describe(childEnv)
+    if (auth === undefined || hasSubscription(auth)) throw error
+    throw new BudgetError(
+      `seat "${seat.id}" is authenticated${auth.authMethod === undefined ? '' : ` as ${auth.authMethod}`} ` +
+        `but its credential carries no subscription, and a window is only ever reported against ` +
+        `one. The seat can still spend; it cannot be measured.`,
+    )
+  }
+}
+
+/** The part of `claude auth status` that decides whether a window can exist. */
+export interface AuthContext {
+  authMethod?: string
+  subscriptionType?: string
+}
+
+/**
+ * Whether a credential resolves to a subscription at all.
+ *
+ * Measured: an interactive login reports `authMethod: "claude.ai"` with a `subscriptionType`,
+ * while a `claude setup-token` credential reports `authMethod: "oauth_token"` and no identity
+ * fields whatever. `/usage` reports windows against a subscription, so the second gets a
+ * session cost summary instead and `parseUsage` finds no figures in it.
+ *
+ * Without this the seat is reported unreadable with the text of the cost summary attached,
+ * which reads like a parser that needs fixing rather than a credential that cannot answer.
+ */
+export function hasSubscription(auth: AuthContext): boolean {
+  return typeof auth.subscriptionType === 'string' && auth.subscriptionType !== ''
+}
+
+/** Never rejects: a diagnosis that fails leaves the original error standing, never replaces it. */
+function runAuthStatus(env: NodeJS.ProcessEnv): Promise<AuthContext | undefined> {
+  return new Promise((resolve) => {
+    const child = spawn('claude', ['auth', 'status'], { env, stdio: ['ignore', 'pipe', 'ignore'] })
+    let out = ''
+    child.stdout.on('data', (c) => (out += c))
+    child.on('error', () => resolve(undefined))
+    child.on('close', () => {
+      try {
+        resolve(JSON.parse(out) as AuthContext)
+      } catch {
+        resolve(undefined)
+      }
+    })
+  })
 }
 
 export interface SeatUsage {

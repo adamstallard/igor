@@ -6,6 +6,7 @@ import {
   parseOrgBudget,
   parseUsage,
   readAllSeats,
+  hasSubscription,
   readUsage,
   renderBudget,
   roleSharePercent,
@@ -72,6 +73,20 @@ describe('reading what the provider actually prints', () => {
   })
 })
 
+describe('whether a credential can have a window at all', () => {
+  it('a subscription login can', () => {
+    expect(hasSubscription({ authMethod: 'claude.ai', subscriptionType: 'team' })).toBe(true)
+  })
+
+  it('a setup-token credential cannot, reporting no subscription of any kind', () => {
+    expect(hasSubscription({ authMethod: 'oauth_token' })).toBe(false)
+  })
+
+  it('an empty subscription is no subscription', () => {
+    expect(hasSubscription({ subscriptionType: '' })).toBe(false)
+  })
+})
+
 describe('a seat is read through its own credential', () => {
   it('passes the seat token to the child rather than the ambient login', async () => {
     let seen: string | undefined
@@ -95,6 +110,43 @@ describe('a seat is read through its own credential', () => {
       return REAL
     })
     expect(seen).toBeUndefined()
+  })
+
+  it('names the credential when it carries no subscription, rather than blaming the parser', async () => {
+    // A setup-token credential authenticates and spends, and `/usage` answers it with a cost
+    // summary. Reporting that as unparseable output sends someone to read a regex.
+    const COST = 'Total cost:  $0.0000\nTotal duration (API):  0s'
+    await expect(
+      readUsage(seat({ tokenEnv: 'S' }), { S: 'tok' }, async () => COST, async () => ({
+        authMethod: 'oauth_token',
+      })),
+    ).rejects.toThrow(/carries no subscription/)
+  })
+
+  it('keeps the parse error when the credential does have a subscription', async () => {
+    // Then the output changed shape, which is a different problem and wants its own text.
+    await expect(
+      readUsage(seat(), {}, async () => 'something else entirely', async () => ({
+        authMethod: 'claude.ai',
+        subscriptionType: 'team',
+      })),
+    ).rejects.toThrow(/no usage figures in output/)
+  })
+
+  it('keeps the parse error when the credential cannot be described at all', async () => {
+    // A diagnosis that fails leaves the original standing; it never replaces it with a guess.
+    await expect(
+      readUsage(seat(), {}, async () => 'something else entirely', async () => undefined),
+    ).rejects.toThrow(/no usage figures in output/)
+  })
+
+  it('does not ask about the credential when the reading parsed', async () => {
+    let asked = false
+    await readUsage(seat(), {}, async () => REAL, async () => {
+      asked = true
+      return undefined
+    })
+    expect(asked).toBe(false)
   })
 
   it('one unreadable seat does not blind the others', async () => {
