@@ -1258,7 +1258,7 @@ worktrees cannot check out the same branch — which does not bite, since each t
 branch. Moot for the first Igor, which runs one task at a time; recorded so nobody builds
 clone-per-task and has to unpick it.
 
-**Cleanup is a startup sweep, not an exit hook.** Release runs from a `finally`, which SIGKILL,
+**Cleanup is a startup sweep, not an exit hook** — **built**. Release runs from a `finally`, which SIGKILL,
 an OOM kill and a power loss all skip, so a crashed run strands a full checkout and nothing ever
 reclaims it. `wire` removes `igor-tree-*` directories older than four worker timeouts before the
 first cycle. Age is the only safe signal: several processes of one role is the point of §6.7.1,

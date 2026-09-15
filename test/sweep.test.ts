@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, rmSync, symlinkSync, utimesSync, writeFileSync, existsSync } from 'node:fs'
+import { chmodSync, mkdtempSync, mkdirSync, rmSync, symlinkSync, utimesSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -166,6 +166,27 @@ describe('sweeping a directory', () => {
 
     expect(result.removed).toBe(0)
     expect(existsSync(live)).toBe(true)
+  })
+
+  it('finishes the sweep when one tree cannot be deleted', async () => {
+    const dir = root()
+    const stuck = tree(dir, 'igor-tree-777777')
+    const ordinary = tree(dir, 'igor-tree-888888')
+    const locked = join(stuck, 'locked')
+    mkdirSync(locked)
+    writeFileSync(join(locked, 'held'), 'x')
+    chmodSync(locked, 0o500)
+    const { out, warned } = recorder()
+
+    try {
+      const result = await sweepAbandonedTrees(out, { root: dir, now: Date.now() + 5 * HOUR })
+
+      expect(result).toMatchObject({ removed: 1, failed: 1 })
+      expect(existsSync(ordinary)).toBe(false)
+      expect(warned[0]).toContain('cannot remove abandoned tree')
+    } finally {
+      chmodSync(locked, 0o700)
+    }
   })
 
   it('warns rather than throwing when the directory cannot be read', async () => {
