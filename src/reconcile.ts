@@ -1,8 +1,24 @@
 import { basename } from 'node:path'
 import type { Config } from './config.js'
-import { loadEntry, writeEntry, takenIds, StoreError } from './store.js'
+import {
+  ENTRIES_DIR,
+  loadEntry,
+  parseEntry,
+  rejectedIds,
+  writeEntry,
+  writeRejection,
+  takenIds,
+  StoreError,
+} from './store.js'
 import { BRANCH_PREFIX } from './propose.js'
-import { listOpenedBy, proposedFiles, repoFromCheckout, type PrState } from './github.js'
+import {
+  fileAtRef,
+  landedFiles,
+  listOpenedBy,
+  proposedFiles,
+  repoFromCheckout,
+  type PrState,
+} from './github.js'
 
 export interface Promoted {
   id: string
@@ -19,6 +35,10 @@ export interface Promoted {
 export interface Declined {
   id: string
   pr: number
+  by: string
+  at: string
+  /** The rejection record written for it, which is also how a person undoes the rejection. */
+  record: string
 }
 
 export interface Stale {
@@ -66,6 +86,7 @@ export async function reconcile(
     missingLocally: [],
   }
   const present = takenIds(config.destination)
+  const rejected = rejectedIds(config.destination)
 
   for (const pr of prs) {
     if (pr.state === 'open') {
@@ -86,12 +107,37 @@ export async function reconcile(
       continue
     }
 
-    const proposed = idsFrom(await proposedFiles(repo, pr.number))
-    for (const id of proposed) {
+    const proposal = await proposedFiles(repo, pr.number)
+    const by = pr.mergedBy ?? pr.assignees[0] ?? 'unknown'
+    const at = pr.mergedAt ?? now.toISOString().slice(0, 10)
+    // Only fetched once something is missing locally, which is the uncommon case.
+    let landed: Set<string> | undefined
+    const wasLanded = async (id: string): Promise<boolean> =>
+      (landed ??= new Set(idsFrom(await landedFiles(repo, pr.number)))).has(id)
+
+    for (const id of idsFrom(proposal.files)) {
+      const path = `${ENTRIES_DIR}/${id}.md`
       if (!present.has(id)) {
-        // Either the reviewer deleted it, or the checkout is behind. Both look identical
-        // from here, which is why the caller is told to pull first.
-        result.declined.push({ id, pr: pr.number })
+        // A local absence means the reviewer deleted it, or this checkout is behind. Rejection
+        // is permanent, so the pull request's own diff settles it. Asking the destination's
+        // current state instead would read an entry retired long afterwards as a rejection.
+        if (await wasLanded(id)) {
+          result.missingLocally.push(id)
+          continue
+        }
+        if (rejected.has(id)) continue
+        const text =
+          proposal.commit === undefined ? undefined : await fileAtRef(repo, path, proposal.commit)
+        const entry = text === undefined ? undefined : parseEntry(path, text).entry
+        const record = writeRejection(config.destination, {
+          id,
+          by,
+          at,
+          pr: pr.number,
+          ...(entry === undefined ? {} : { entry }),
+        })
+        rejected.add(id)
+        result.declined.push({ id, pr: pr.number, by, at, record })
         continue
       }
       const loaded = loadEntry(config.destination, id)
@@ -100,8 +146,6 @@ export async function reconcile(
         continue
       }
       if (loaded.entry.status !== 'provisional') continue
-      const by = pr.mergedBy ?? pr.assignees[0] ?? 'unknown'
-      const at = pr.mergedAt ?? now.toISOString().slice(0, 10)
       writeEntry(config.destination, {
         ...loaded.entry,
         status: 'active',

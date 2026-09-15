@@ -22,9 +22,14 @@ the filename without extension. A role file MUST NOT carry a redundant `name` fi
 ### Requirement: A role declares sources, lane, behaviour, permissions, and reviewers
 
 A role file SHALL support: `extends`, `seat`, `sources`, `lane`, `instructions`, `completion`,
-`allow`, `budget_share`, and `reviewers`. Each `sources` entry MUST name a `tracker`
-and carry that tracker's own query verbatim. Entries failing validation SHALL be rejected
-rather than loaded.
+`allow`, `commands`, `budget_share`, and `reviewers`. Each `sources` entry MUST name a
+`tracker` and carry that tracker's own query verbatim. Entries failing validation SHALL be
+rejected rather than loaded.
+
+`commands` names the shell commands a worker may run, and is the only thing that lets one
+run anything at all. It is declared on the role and nowhere else: a worker that can edit
+files can edit a settings file in the repository it is working, so an allowlist read from
+there is one the worker can widen for itself.
 
 The claim message is not among them. It carries the stop instruction, which is the only notice
 a reader gets that stopping is possible and permitted, so it is not an org's to replace.
@@ -39,6 +44,11 @@ a reader gets that stopping is possible and permitted, so it is not an org's to 
 
 - **WHEN** a role declares a `completion` value outside the recognized set
 - **THEN** validation fails naming the field and the permitted values
+
+#### Scenario: Declared commands bound what the worker may run
+
+- **WHEN** a role declares `commands` and an item is executed
+- **THEN** the worker may run those commands and nothing else
 
 #### Scenario: Source without a tracker rejected
 
@@ -109,8 +119,9 @@ granting nothing: `comment`, `review-comment`, `draft-pr`, `pr`, `label`, `assig
 `close`, `merge`, `send`. The safe default an org base should ship with is `[draft-pr, comment]` —
 everything reversible, nothing final.
 
-- **Monotonic** for permission-shaped fields (`allow`, `budget_share`, repositories and
-  surfaces in reach): a role MAY restrict what it inherits and MUST NOT widen it.
+- **Monotonic** for permission-shaped fields (`allow`, `commands`, `budget_share`,
+  repositories and surfaces in reach): a role MAY restrict what it inherits and MUST NOT
+  widen it.
 - **Override** for settings (`completion`, poll interval): the most specific level wins.
 - **Append** for `instructions` and `lane`: levels accumulate, with lane constraints conjoined.
 
@@ -123,6 +134,12 @@ everything reversible, nothing final.
 
 - **WHEN** the org base allows `[comment]` and a role allows `[draft-pr, comment]`
 - **THEN** validation fails, because widening an inherited permission is self-escalation
+
+#### Scenario: Role attempting to widen its commands is rejected
+
+- **WHEN** the org base permits the command `npm test` and a role also declares `npm install`
+- **THEN** validation fails, for the reason widening `allow` fails: a role that can grant
+  itself a command can grant itself every command
 
 #### Scenario: Setting overridden
 

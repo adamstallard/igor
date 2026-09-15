@@ -20,3 +20,8 @@ reviewers:
 # an area should outrank a drive-by.
 experts:
   - alice
+
+# Roles live beside this file, one YAML per role under `roles/`, and the filename is the name.
+# A role declares extends, seat, sources, lane, instructions, completion, allow, commands,
+# budget_share and reviewers. `commands` is what its worker may run — declare none and the
+# worker can edit files and nothing else, so it cannot test its own change. See the README.

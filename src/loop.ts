@@ -90,7 +90,7 @@ export interface RunOptions extends ExecuteOptions {
   /** Called as each stage begins. A worker can run for minutes; silence is not a status. */
   onStep?: (step: Step) => void
   /** Supplied by the budget layer once it exists; absent means budget is not being enforced. */
-  budget?: { exhausted: () => boolean; seat?: string; resetAt?: string }
+  budget?: { exhausted: () => boolean; seat?: string; tokenEnv?: string; resetAt?: string }
 }
 
 export async function runItem(
@@ -145,6 +145,9 @@ export async function runItem(
   const execution = await execute(trees, tracker, codeHost, candidate, role, {
     ...options,
     ...(options.lore === undefined ? {} : { lore: options.lore }),
+    // Named rather than left to the spread: the worker authenticating as the seat the gate
+    // chose is the whole point, and a field riding a spread is a field nobody keeps correct.
+    ...(options.budget?.tokenEnv === undefined ? {} : { seatTokenEnv: options.budget.tokenEnv }),
     onPublish: () => step('publishing'),
     claimStatus: async () => (await checkpoint(tracker, claim, identity)).status,
   })
@@ -254,8 +257,11 @@ export interface CycleReport {
   /** Dropped unasked because the tracker stopped answering, which is not a stop. */
   skippedUnreadable: number
   triaged: number
-  /** Everything dropped before a model call, with the reason, so a lane can be tuned. */
-  skipped: { candidate: Candidate; reason: string; stage: string }[]
+  /**
+   * Everything dropped before a model call, with the reason, so a lane can be tuned. `held`
+   * marks the ones only the clock will bring back, which the watermark has to wait for.
+   */
+  skipped: { candidate: Candidate; reason: string; stage: string; held?: boolean }[]
   /** Model verdicts, both ways — a skip with a reason is as useful as a claim. */
   verdicts: { candidate: Candidate; outcome: 'proceed' | 'skip'; reason: string }[]
   toClaim: CycleCandidate[]
@@ -385,11 +391,13 @@ export async function planCycle(
     )
   }
 
-  // Anything the tracker would not answer for holds the mark back, since nothing is going to
-  // touch those items and make them fresh again.
+  // An item dropped before anything examined it holds the mark back. A cooldown ends with the
+  // clock and an outage with the tracker's recovery, so neither touches the item to lift it
+  // above a mark that passed it. Every other skip was a decision, and the edit or the reply
+  // that reverses one lifts the item by itself.
   if (options.sinceDays === undefined && results.length > 0) {
     const unexamined = new Set(
-      report.skipped.filter((s) => s.stage === 'unreadable').map((s) => s.candidate.id),
+      report.skipped.filter((s) => s.held === true).map((s) => s.candidate.id),
     )
     await saveDiscoveryState(deps.destination, advance(stored, heldBelow(results, unexamined)))
   }
@@ -572,7 +580,9 @@ export async function dropStopped(
       // answer cannot be claimed on either, so a request apiece would buy nothing — and the
       // likeliest reason it stopped answering is a rate limit these requests are feeding.
       for (const rest of survivors.slice(i)) {
-        report.skipped.push({ candidate: rest, reason: 'the tracker stopped answering', stage: 'unreadable' })
+        report.skipped.push({
+          candidate: rest, reason: 'the tracker stopped answering', stage: 'unreadable', held: true,
+        })
         report.skippedUnreadable += 1
       }
       return kept
@@ -606,7 +616,14 @@ export async function dropStopped(
     if (verdict.eligible) {
       kept.push(candidate)
     } else {
-      report.skipped.push({ candidate, reason: `stopped: ${verdict.reason}`, stage: 'stopped' })
+      // A stop nobody can date has no cooldown to run out, so only a go-ahead lifts it — and
+      // that comment moves the item above the mark by itself. The mark waits on the clock.
+      report.skipped.push({
+        candidate,
+        reason: `stopped: ${verdict.reason}`,
+        stage: 'stopped',
+        held: Number.isFinite(instant(stop.at)),
+      })
       report.skippedStopped += 1
     }
   }

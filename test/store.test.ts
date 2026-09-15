@@ -12,6 +12,7 @@ import {
   writeEntry,
   resolveCurrent,
   takenIds,
+  writeRejection,
 } from '../src/store.js'
 import { resolveConfig, loadConfig, findConfig, igorRoot, ConfigError } from '../src/config.js'
 import type { Entry } from '../src/entry.js'
@@ -298,6 +299,15 @@ describe('creating into a candidate directory', () => {
     const candidates = tempStore()
     const slug = slugFromClaim(entry().claim)
     writeEntry(destination, entry({ id: slug }))
+
+    expect(uniqueId(entry().claim, createTarget(destination, candidates).taken)).toBe(`${slug}-2`)
+  })
+
+  it('takes ids against rejections, so new evidence gets its own id rather than a dead one', () => {
+    const destination = tempStore()
+    const candidates = tempStore()
+    const slug = slugFromClaim(entry().claim)
+    writeRejection(destination, { id: slug, by: 'adam', at: '2026-04-01', pr: 7 })
 
     expect(uniqueId(entry().claim, createTarget(destination, candidates).taken)).toBe(`${slug}-2`)
   })

@@ -28,6 +28,12 @@ function normalizeDates(value: unknown): unknown {
 
 export const ENTRIES_DIR = 'entries'
 
+/**
+ * Where a rejected candidate's record goes, beside the entries rather than on the state
+ * branch: it records a person's decision, so it must survive anything a machine can lose.
+ */
+export const REJECTED_DIR = 'rejected'
+
 export interface LoadedEntry {
   entry?: Entry
   file: string
@@ -39,6 +45,18 @@ export class StoreError extends Error {}
 
 function entriesDir(destination: string): string {
   return join(destination, ENTRIES_DIR)
+}
+
+function rejectedDir(destination: string): string {
+  return join(destination, REJECTED_DIR)
+}
+
+function markdownIn(dir: string): string[] {
+  if (!existsSync(dir)) return []
+  return readdirSync(dir)
+    .filter((f) => f.endsWith('.md'))
+    .sort()
+    .map((f) => join(dir, f))
 }
 
 function entryPath(destination: string, id: string): string {
@@ -92,13 +110,13 @@ function parse(file: string, raw: string): LoadedEntry {
   }
 }
 
+/** Parses entry text that never reached disk — a candidate read back out of a pull request. */
+export function parseEntry(file: string, raw: string): LoadedEntry {
+  return parse(file, raw)
+}
+
 export function listFiles(destination: string): string[] {
-  const dir = entriesDir(destination)
-  if (!existsSync(dir)) return []
-  return readdirSync(dir)
-    .filter((f) => f.endsWith('.md'))
-    .sort()
-    .map((f) => join(dir, f))
+  return markdownIn(entriesDir(destination))
 }
 
 /** Loads every entry, valid or not, so validation can report a whole store in one pass. */
@@ -129,6 +147,52 @@ export function takenIds(destination: string): Set<string> {
   return new Set(listFiles(destination).map((f) => basename(f, '.md')))
 }
 
+/**
+ * A candidate a reviewer deleted from a proposal, rather than an entry.
+ *
+ * It is kept so the id is never proposed again, and so a later reader can see what was turned
+ * down: the candidate's own file is gone by the time this is written.
+ */
+export interface Rejection {
+  id: string
+  /** Whoever merged the proposal the deletion came in. */
+  by: string
+  /** ISO date of that merge. */
+  at: string
+  pr: number
+  /** The candidate as proposed, where its text could still be read back. */
+  entry?: Entry
+}
+
+export function serializeRejection(rejection: Rejection): string {
+  const { id, by, at, pr, entry } = rejection
+  const front: Record<string, unknown> = { id, rejected: { by, at, pr } }
+  if (entry !== undefined) {
+    front['claim'] = entry.claim
+    front['scope'] = entry.scope
+    front['conditions'] = entry.conditions
+    front['provenance'] = entry.provenance
+  }
+  const yaml = stringifyYaml(front, { lineWidth: 88 }).trimEnd()
+  // The reversal is written into the record itself: a person holding one file needs no docs.
+  const lead = `Delete this file to un-reject \`${id}\`, which makes it proposable again.`
+  const body = entry?.body.trim() ?? ''
+  return `---\n${yaml}\n---\n\n${lead}\n${body ? `\n${body}\n` : ''}`
+}
+
+export function writeRejection(destination: string, rejection: Rejection): string {
+  const dir = rejectedDir(destination)
+  mkdirSync(dir, { recursive: true })
+  const file = join(dir, `${rejection.id}.md`)
+  writeFileSync(file, serializeRejection(rejection), 'utf8')
+  return file
+}
+
+/** Ids a person has rejected. Removing the file is how a rejection is undone. */
+export function rejectedIds(destination: string): Set<string> {
+  return new Set(markdownIn(rejectedDir(destination)).map((f) => basename(f, '.md')))
+}
+
 export interface CreateTarget {
   dir: string
   taken: Set<string>
@@ -142,18 +206,20 @@ export interface CreateTarget {
  *
  * Ids are taken against the store as well as the target, because `propose` silently drops a
  * candidate whose id is already in the store — a collision left to be found there disappears
- * rather than being reported.
+ * rather than being reported. Rejected ids count as taken for the same reason, and because a
+ * rule raised again on new evidence deserves its own id rather than a dead one's.
  *
  * The directory itself must be there already. `entries/` beneath it is layout the tool owns,
  * but a mistyped path would otherwise be created in full and look like it worked.
  */
 export function createTarget(destination: string, into?: string): CreateTarget {
-  if (into === undefined) return { dir: destination, taken: takenIds(destination) }
+  const inStore = new Set([...takenIds(destination), ...rejectedIds(destination)])
+  if (into === undefined) return { dir: destination, taken: inStore }
   const dir = resolve(into)
   if (!existsSync(dir) || !statSync(dir).isDirectory()) {
     throw new StoreError(`${dir} is not a directory — create it before writing into it`)
   }
-  return { dir, taken: new Set([...takenIds(destination), ...takenIds(dir)]) }
+  return { dir, taken: new Set([...inStore, ...takenIds(dir)]) }
 }
 
 /**
