@@ -7,7 +7,10 @@
  */
 
 /** Deliberate enough not to fire on prose, loose enough that nobody has to learn a syntax. */
-const STOP = /^stop\b/i
+// Not `stop-gap`, which opens a sentence about something else entirely. The word boundary
+// alone matches before a hyphen, and this rule now gates unclaimed items rather than only
+// firing inside a claim the Igor already holds.
+const STOP = /^stop\b(?!-)/i
 const GO_AHEAD = /^(go ahead|go on|resume|carry on|continue|proceed|unblocked|all yours)\b/i
 
 function addressed(text: string, identity: string, verb: RegExp): boolean {

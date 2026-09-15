@@ -1,4 +1,4 @@
-import { gh, ghGraphql } from './gh.js'
+import { gh, ghGraphql, ghPaginated } from './gh.js'
 import { isStop } from './signals.js'
 import {
   AdapterError,
@@ -254,7 +254,7 @@ export class GitHubTracker implements Tracker {
         '--jq',
         '{assignees, state}',
       ]),
-      gh<RawComment[]>([
+      ghPaginated<RawComment>([
         'api',
         `repos/${candidate.repo}/issues/${candidate.native}/comments?since=${encodeURIComponent(since)}&per_page=100`,
       ]),
@@ -264,7 +264,7 @@ export class GitHubTracker implements Tracker {
 
   async commentsSince(candidate: Candidate, since: string): Promise<Comment[]> {
     return commentsFrom(
-      await gh<RawComment[]>([
+      await ghPaginated<RawComment>([
         'api',
         `repos/${candidate.repo}/issues/${candidate.native}/comments?since=${encodeURIComponent(since)}&per_page=100`,
       ]),

@@ -171,6 +171,14 @@ describe('stop is unconditional', () => {
     expect(isStop('@alice stop doing that', 'igor-bot')).toBe(false)
     expect(isStop('this will stop working soon', 'igor-bot')).toBe(false)
   })
+
+  it('does not read a hyphenated word as the verb', () => {
+    // A word boundary matches before a hyphen, so `stop-gap` read as a stop. Harmless while
+    // this only fired inside a claim; it now gates items nobody has claimed.
+    expect(isStop('Stop-gap until the real fix lands', 'igor-bot')).toBe(false)
+    expect(isStop('@igor-bot stop-gap measures are fine', 'igor-bot')).toBe(false)
+    expect(isStop('stop. I will take it from here', 'igor-bot')).toBe(true)
+  })
 })
 
 describe('the stop receipt', () => {

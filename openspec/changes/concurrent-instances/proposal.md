@@ -46,6 +46,32 @@ Watermarks are a cache, so the cost is duplicated triage rather than duplicated 
 protocol resolves the race after it. Preventing the overlap would need coordination this
 design has done without everywhere else.
 
+**Each process has a rank, and rank decides both where it starts and when it may act.**
+
+Rank is a number given to a process when it is started — not discovered, not negotiated, and
+needing no registry: rank 3 waits its turn whether or not a rank 2 exists, and a gap costs only
+the wait. One process per rank is an operator invariant, in the same class as not declaring two
+seats with one id.
+
+*Rank is a starting offset.* Given roughly the same candidate list, rank 1 begins at the first
+item, rank 2 at the second, rank 3 at the third. Where there are at least as many items as
+processes, nothing collides and nothing waits.
+
+*Rank is also a delay, for when there are not.* Rank k waits `(k-1)` settle intervals before
+acting on a contested item, and then **reads before claiming**. Seeing the item already taken,
+it moves on silently. This is the property a shuffle cannot give: a shuffle makes a collision
+less likely, while a lower rank that looks first makes the retraction impossible. The cost of a
+collision was never the wasted request — it was the claim-and-retract comment landing on
+somebody's issue.
+
+The interval is `settleSeconds`, which already means "long enough for a claim to become visible
+to someone else". That is exactly what a lower rank is waiting for, so it is not a second number
+to keep in agreement with the first.
+
+Capacity is therefore consumed in rank order, the same shape as a seat pool taking the first
+with headroom. A persistently thin queue leaves the highest ranks idle, which is the correct
+outcome and a question the decision log should be able to answer.
+
 **Processes attempt candidates in different orders.** Nothing sorts or shuffles today: GitHub's
 search order flows through discovery, screening and triage unchanged, so every process receives
 the same list and every process tries the first item first. N−1 lose it, then N−2 lose the

@@ -37,6 +37,22 @@ export async function gh<T = unknown>(args: readonly string[], input?: string): 
 }
 
 /**
+ * Every page of a list endpoint, flattened.
+ *
+ * `gh api --paginate` concatenates each page's JSON array into one stream, which is not a
+ * document `JSON.parse` accepts. `--slurp` wraps them in an outer array instead, so one parse
+ * yields pages and the flatten yields records.
+ *
+ * Worth the extra requests wherever truncation would be silent and wrong rather than merely
+ * incomplete. GitHub returns issue comments oldest-first, so a single capped page drops the
+ * *newest* — which is where a stop lives.
+ */
+export async function ghPaginated<T>(args: readonly string[]): Promise<T[]> {
+  const pages = await gh<T[][] | null>([...args, '--paginate', '--slurp'])
+  return (pages ?? []).flat()
+}
+
+/**
  * GraphQL is what makes discovery cheap: one request returns issues with their labels,
  * assignees and linked pull requests at a rate-limit cost of 1, where the REST equivalent is a
  * search plus a call per issue to find out whether work is already in flight.
