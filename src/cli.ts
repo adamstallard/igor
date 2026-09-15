@@ -7,6 +7,7 @@ import { uniqueId } from './id.js'
 import { scoreEntry } from './scoring.js'
 import {
   loadAll,
+  rejectedIds,
   takenIds,
   writeEntry,
   serialize,
@@ -14,7 +15,7 @@ import {
   StoreError,
   ENTRIES_DIR,
 } from './store.js'
-import { propose, ProposeError } from './propose.js'
+import { eligibleToPropose, propose, ProposeError } from './propose.js'
 import { reconcile, promoteInPlace } from './reconcile.js'
 import { GitHubError } from './github.js'
 import { explainRole, loadRole, rolesFrom, RoleError } from './role.js'
@@ -178,10 +179,18 @@ program
       }
       throw new ProposeError(`${bad.length} candidate(s) invalid — refusing to propose`)
     }
-    const entries = candidates.map((c) => c.entry!).filter((e) => !takenIds(config.destination).has(e.id))
-    if (entries.length !== candidates.length) {
+    const eligible = eligibleToPropose(
+      candidates.map((c) => c.entry!),
+      takenIds(config.destination),
+      rejectedIds(config.destination),
+    )
+    const entries = eligible.entries
+    if (eligible.inStore.length > 0) {
+      process.stdout.write(`skipping ${eligible.inStore.length} candidate(s) already in the store\n`)
+    }
+    if (eligible.rejected.length > 0) {
       process.stdout.write(
-        `skipping ${candidates.length - entries.length} candidate(s) already in the store\n`,
+        `skipping ${eligible.rejected.length} candidate(s) rejected before: ${eligible.rejected.join(', ')}\n`,
       )
     }
 
@@ -207,7 +216,9 @@ program
       const flag = p.mergerWasNotAssigned ? '  (merged by someone not assigned to review it)' : ''
       process.stdout.write(`promoted  ${p.id}  by ${p.by} on ${p.at}${flag}\n`)
     }
-    for (const d of r.declined) process.stdout.write(`declined  ${d.id}  (pr #${d.pr})\n`)
+    for (const d of r.declined) {
+      process.stdout.write(`declined  ${d.id}  by ${d.by} (pr #${d.pr}) — recorded in ${d.record}\n`)
+    }
     for (const s of r.stale) {
       process.stdout.write(
         `stale     #${s.pr} last active ${s.lastActivity}, assigned ${s.assignees.join(', ') || '(nobody)'} — escalate to ${config.reviewers.join(', ') || '(no store reviewers configured)'}\n  ${s.url}\n`,
@@ -216,16 +227,23 @@ program
     if (r.deferred.length > 0) {
       process.stdout.write(`deferred  ${r.deferred.map((n) => `#${n}`).join(', ')} (closed unmerged)\n`)
     }
-    if (r.promoted.length === 0 && r.declined.length === 0 && r.stale.length === 0) {
-      process.stdout.write('nothing to reconcile\n')
-    }
-    if (r.declined.length > 0) {
+    if (r.missingLocally.length > 0) {
       process.stdout.write(
-        '\nDeclines assume the checkout is current. Pull the destination before trusting them.\n',
+        `behind    ${r.missingLocally.join(', ')} — merged upstream but not here; pull the destination\n`,
       )
     }
-    if (r.promoted.length > 0) {
-      process.stdout.write('\nPromotions edited files locally — commit and push them.\n')
+    if (
+      r.promoted.length === 0 &&
+      r.declined.length === 0 &&
+      r.stale.length === 0 &&
+      r.missingLocally.length === 0
+    ) {
+      process.stdout.write('nothing to reconcile\n')
+    }
+    if (r.promoted.length > 0 || r.declined.length > 0) {
+      process.stdout.write(
+        '\nPromotions and rejection records edited files locally — commit and push them.\n',
+      )
     }
   })
 

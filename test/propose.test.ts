@@ -1,11 +1,15 @@
+import { rmSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
   contributingAuthors,
   dominantAuthor,
+  eligibleToPropose,
   groupByDominant,
   pullRequestBody,
 } from '../src/propose.js'
+import { rejectedIds, takenIds, writeEntry, writeRejection } from '../src/store.js'
 import type { Entry, ProvenanceItem } from '../src/entry.js'
+import { tempDir } from './tmp.js'
 
 function entry(id: string, provenance: ProvenanceItem[], overrides: Partial<Entry> = {}): Entry {
   return {
@@ -116,5 +120,49 @@ describe('pullRequestBody', () => {
   it('names a hand-authored provenance item rather than showing an empty link', () => {
     const handWritten = [entry('x', [{ author: 'adam', at: '2026-09-13' }])]
     expect(pullRequestBody(handWritten, 'adam')).toContain('written by adam')
+  })
+})
+
+describe('eligibleToPropose', () => {
+  const candidate = entry('use-query-hook', [p('sarah', '2026-03-14')])
+
+  function store(): string {
+    return tempDir('igor-propose-')
+  }
+
+  it('holds back a candidate a reviewer rejected, and says why separately', () => {
+    const dir = store()
+    writeRejection(dir, { id: 'use-query-hook', by: 'adam', at: '2026-04-01', pr: 7 })
+
+    const split = eligibleToPropose([candidate], takenIds(dir), rejectedIds(dir))
+
+    expect(split.entries).toEqual([])
+    expect(split.rejected).toEqual(['use-query-hook'])
+    expect(split.inStore).toEqual([])
+  })
+
+  it('proposes it again once a person deletes the rejection record', () => {
+    const dir = store()
+    const record = writeRejection(dir, { id: 'use-query-hook', by: 'adam', at: '2026-04-01', pr: 7 })
+    rmSync(record)
+
+    const split = eligibleToPropose([candidate], takenIds(dir), rejectedIds(dir))
+
+    expect(split.entries.map((e) => e.id)).toEqual(['use-query-hook'])
+    expect(split.rejected).toEqual([])
+  })
+
+  it('keeps the two reasons apart, since one is a decision and the other is nothing to do', () => {
+    const dir = store()
+    const stored = entry('keep-migrations-reversible', [p('sarah', '2026-03-14')])
+    writeEntry(dir, stored)
+    writeRejection(dir, { id: 'use-query-hook', by: 'adam', at: '2026-04-01', pr: 7 })
+    const fresh = entry('index-what-you-query', [p('sarah', '2026-03-14')])
+
+    const split = eligibleToPropose([candidate, stored, fresh], takenIds(dir), rejectedIds(dir))
+
+    expect(split.entries.map((e) => e.id)).toEqual(['index-what-you-query'])
+    expect(split.inStore).toEqual(['keep-migrations-reversible'])
+    expect(split.rejected).toEqual(['use-query-hook'])
   })
 })

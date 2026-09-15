@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { gh, GhError } from './gh.js'
+import { gh, ghPaginated, GhError } from './gh.js'
 
 const run = promisify(execFile)
 
@@ -187,17 +187,52 @@ export async function listOpenedBy(repo: string, branchPrefix: string): Promise<
     }))
 }
 
-/** Files a pull request proposed, read from its first commit rather than from stored state. */
-export async function proposedFiles(repo: string, number: number): Promise<string[]> {
+export interface Proposal {
+  /** The proposing commit. A file the reviewer deleted survives at this ref and nowhere else. */
+  commit?: string
+  files: string[]
+}
+
+/** What a pull request proposed, read from its first commit rather than from stored state. */
+export async function proposedFiles(repo: string, number: number): Promise<Proposal> {
   const commits = (await gh([
     'api', `repos/${repo}/pulls/${number}/commits`, '--jq', '[.[] | .sha]',
   ])) as string[]
   const first = commits[0]
-  if (first === undefined) return []
-  const commit = (await gh([
+  if (first === undefined) return { files: [] }
+  const files = (await gh([
     'api', `repos/${repo}/commits/${first}`, '--jq', '[.files[] | .filename]',
   ])) as string[]
-  return commit
+  return { commit: first, files }
+}
+
+/**
+ * Files a pull request actually landed: its base-to-head diff, which omits one that was added
+ * and then deleted on the branch. That difference from `proposedFiles` is what tells a
+ * reviewer's deletion apart from a checkout that has not pulled yet, and it keeps saying so
+ * however the destination changes afterwards.
+ */
+export async function landedFiles(repo: string, number: number): Promise<string[]> {
+  const files = await ghPaginated<{ filename: string }>([
+    'api', `repos/${repo}/pulls/${number}/files?per_page=100`,
+  ])
+  return files.map((f) => f.filename)
+}
+
+/** A file's text at any ref — a commit, branch or tag. Undefined when it is not there. */
+export async function fileAtRef(
+  repo: string,
+  path: string,
+  ref: string,
+): Promise<string | undefined> {
+  try {
+    const file = (await gh([
+      'api', `repos/${repo}/contents/${path}?ref=${ref}`, '--jq', '{content}',
+    ])) as { content: string }
+    return Buffer.from(file.content, 'base64').toString('utf8')
+  } catch {
+    return undefined
+  }
 }
 
 export async function fileExistsOnBranch(

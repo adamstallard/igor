@@ -44,6 +44,35 @@ export function contributingAuthors(entry: Entry): string[] {
   return [...new Set(entry.provenance.map((p) => p.author))]
 }
 
+export interface Eligibility {
+  /** Candidates that may be proposed. */
+  entries: Entry[]
+  inStore: string[]
+  rejected: string[]
+}
+
+/**
+ * Splits candidates by whether they may be proposed, and why not where they may not.
+ *
+ * A rejected id is held back forever: a reviewer who deleted it said no, and asking again
+ * costs the attention the `provisional` gate exists to spend carefully. The two reasons are
+ * reported apart because they are different news — one is nothing to do, the other is a
+ * decision being honoured.
+ */
+export function eligibleToPropose(
+  candidates: readonly Entry[],
+  taken: ReadonlySet<string>,
+  rejected: ReadonlySet<string>,
+): Eligibility {
+  const result: Eligibility = { entries: [], inStore: [], rejected: [] }
+  for (const entry of candidates) {
+    if (taken.has(entry.id)) result.inStore.push(entry.id)
+    else if (rejected.has(entry.id)) result.rejected.push(entry.id)
+    else result.entries.push(entry)
+  }
+  return result
+}
+
 export function groupByDominant(entries: readonly Entry[]): Map<string, Entry[]> {
   const groups = new Map<string, Entry[]>()
   for (const entry of entries) {
@@ -149,7 +178,9 @@ export async function propose(
   options: { now?: Date } = {},
 ): Promise<ProposalResult[]> {
   if (entries.length === 0) {
-    throw new ProposeError('every candidate is already in the store, so there is nothing to propose')
+    throw new ProposeError(
+      'every candidate is already in the store or was rejected, so there is nothing to propose',
+    )
   }
 
   const repo = await repoFromCheckout(config.destination)

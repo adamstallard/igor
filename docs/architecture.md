@@ -716,6 +716,13 @@ Writing the cache principle down matters more than the location, because it is e
 would quietly stop holding once state is durable and shared — at which point the branch starts
 looking like a database and losing it starts looking like a failure.
 
+**A rejected candidate is not kept there either, for the same reason.** Deleting a candidate
+from a proposal is a person's decision, and losing that record costs them being asked again
+about something they already refused — not a machine re-examining an item. So the record sits
+beside the entries on `main`, versioned and human-readable, and un-rejecting is deleting the
+file, the same gesture that rejected it. The cost is that `reconcile` writes it into the
+checkout for someone to commit, which is what promotion already does.
+
 ### 5.0.3 What a role actually looks like — **built**
 
 Merge semantics (§6.0) describe how fields combine, not what they are called. The shape:
