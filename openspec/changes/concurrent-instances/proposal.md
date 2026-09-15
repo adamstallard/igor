@@ -37,9 +37,22 @@ creation (measured: 5673068718, 5673143226, 5673525664 over an hour), so the id 
 where the timestamp is not. Each adapter exposes its surface's key as an opaque comparable, and
 nothing in the claim path compares times.
 
-**Processes are interchangeable and hold nothing.** A process that dies mid-item leaves a claim
-its siblings will not adopt — the tracker still shows the item held, and the cooldown returns
-it to the pool. Correctness never depends on knowing whether a process is alive.
+**A dead process's claim is recovered by identity, not by waiting.** A sibling can observe only
+how old a claim is, and a worker bounded by silence rather than duration has no maximum age, so
+no age is conclusive. Because only one process runs at a rank, a claim carrying a process's own
+rank was left by a predecessor that is gone: it takes the item back and re-works it. A sibling
+leaves it alone. Correctness still never depends on knowing whether a process is alive — the
+question is whose claim it is, which does not decay.
+
+The cooldown does not cover this. It governs when a stopped or deferred item may be reconsidered,
+not a claim nobody is behind.
+
+**Retiring a rank is recorded, not detected.** A crash is not retirement: the supervisor restarts
+the process and it recovers its own claim. Removing a process is a decision, and the roster — the
+ranks that exist, declared like seats — is where it is recorded, so scaling down releases the
+orphan on the next cycle. An abandonment bound backs it up for the one case the roster cannot
+cover, a rank left declared that no longer runs. That bound governs how long an unattended claim
+may sit, never how long work may run, so it cuts nothing short.
 
 **Discovery may hand the same candidate to several processes**, and that is allowed to happen.
 Watermarks are a cache, so the cost is duplicated triage rather than duplicated work; the claim
