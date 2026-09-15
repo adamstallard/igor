@@ -91,8 +91,9 @@ igor run <role> --plan      # what it would claim right now, claiming nothing
 ```
 
 Everything an Igor did is on the `igor-state` branch of the lore repository:
-`executions.ndjson` for what it worked and what that cost, `discovery.json` for the watermarks,
-`transcripts/` for why it did what it did. Readable with `git show`, no checkout needed.
+`executions/` for what it worked and what that cost, one `.ndjson` file per UTC day,
+`discovery.json` for the watermarks, `transcripts/` for why it did what it did. Readable with
+`git show`, no checkout needed.
 
 ## When something is wrong
 

@@ -139,7 +139,55 @@ export async function writeState(
   return true
 }
 
-/** Appends a timestamped record to a newline-delimited JSON log on the state branch. */
+/**
+ * Where a record stamped `at` belongs. One file per UTC day, so a log stops growing at
+ * midnight and an append re-uploads a day of traffic rather than all of history.
+ */
+export function partitionPath(path: string, at: string): string {
+  return `${path.replace(/\.ndjson$/, '')}/${at.slice(0, 10)}.ndjson`
+}
+
+/** Names of the `.ndjson` files in a directory, sorted. An absent directory reads as empty. */
+async function listPartitions(repo: string, dir: string, branch: string): Promise<string[]> {
+  try {
+    const entries = await ghJson<unknown>(['api', `repos/${repo}/contents/${dir}?ref=${branch}`])
+    if (!Array.isArray(entries)) return []
+    return (entries as { name?: unknown; type?: unknown }[])
+      .filter((e) => e.type === 'file' && typeof e.name === 'string' && e.name.endsWith('.ndjson'))
+      .map((e) => e.name as string)
+      .sort()
+  } catch {
+    return []
+  }
+}
+
+/**
+ * A whole log, oldest first: the unpartitioned file, then every partition in date order.
+ *
+ * The unpartitioned file holds records written before this log was partitioned, so it leads.
+ * Partition names are ISO dates, so sorting them by name orders them by time.
+ */
+export async function readLog(repo: string, path: string, branch = STATE_BRANCH): Promise<string> {
+  const dir = path.replace(/\.ndjson$/, '')
+  const [whole, names] = await Promise.all([
+    readStateRaw(repo, path, branch),
+    listPartitions(repo, dir, branch),
+  ])
+  const parts = await Promise.all(names.map((name) => readStateRaw(repo, `${dir}/${name}`, branch)))
+  // A part whose last line lost its newline must not glue itself onto the next part's first.
+  return [whole, ...parts]
+    .filter((part): part is string => part !== undefined && part !== '')
+    .map((part) => (part.endsWith('\n') ? part : `${part}\n`))
+    .join('')
+}
+
+/**
+ * Appends a timestamped record to a newline-delimited JSON log on the state branch.
+ *
+ * The Contents API has no append, so the day's partition is downloaded and re-uploaded with
+ * the line on the end. Partitioning is what bounds that: the file being rewritten is one
+ * day's, not the log's whole history. Read the log back with `readLog`, never by path.
+ */
 export async function appendRecord(
   repo: string,
   path: string,
@@ -148,25 +196,28 @@ export async function appendRecord(
   branch = STATE_BRANCH,
 ): Promise<void> {
   await ensureStateBranch(repo, branch)
-  const line = `${JSON.stringify({ at: new Date().toISOString(), ...record })}\n`
+  // One clock read: a write straddling midnight must not stamp a record outside its partition.
+  const at = new Date().toISOString()
+  const line = `${JSON.stringify({ at, ...record })}\n`
+  const target = partitionPath(path, at)
 
   let existing = ''
   let sha: string | undefined
   try {
     const file = (await ghJson([
       'api',
-      `repos/${repo}/contents/${path}?ref=${branch}`,
+      `repos/${repo}/contents/${target}?ref=${branch}`,
       '--jq',
       '{content, sha}',
     ])) as { content: string; sha: string }
     existing = Buffer.from(file.content, 'base64').toString('utf8')
     sha = file.sha
   } catch {
-    // First record for this log.
+    // First record of the day for this log.
   }
 
   await ghJson(
-    ['api', `repos/${repo}/contents/${path}`, '--method', 'PUT', '--input', '-'],
+    ['api', `repos/${repo}/contents/${target}`, '--method', 'PUT', '--input', '-'],
     JSON.stringify({
       message,
       branch,

@@ -682,6 +682,12 @@ comment itself lifts the item above the watermark, which is what makes it return
 what keeps the Igor quiet until a reply or an edit answers it, and losing it costs one repeated
 handoff.
 
+**The append-only logs are partitioned by UTC day** — `executions/2026-09-15.ndjson`, and the
+same shape for decisions and firings. The Contents API has no append, so a write downloads the
+file and re-uploads it whole, and on one ever-growing file the bytes sent grow with the square
+of the records. A day's partition bounds that without a second representation: a reader spans
+the partitions in name order, which is date order.
+
 **Stops are not kept there, and the principle holds without an exception.** Whether an item
 carries a stop is asked of the tracker before every claim, over the cooldown window: the stop
 is a person's comment sitting on the item, and the rule that recognises one is the same rule

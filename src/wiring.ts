@@ -7,7 +7,7 @@ import type { ExecutionResult } from './execute.js'
 import { budgetGate, loadSpend, readAllSeats } from './budget.js'
 import { overBudgetMessage, recordFiring, renderLore, selectEntries } from './firing.js'
 import { recordExecution } from './execute.js'
-import { appendRecord, readStateRaw } from './state.js'
+import { appendRecord, readLog } from './state.js'
 import { loadAll } from './store.js'
 import { sweepAbandonedTrees, type SweepOptions } from './sweep.js'
 
@@ -54,7 +54,7 @@ export async function wire(
     gate: async () => {
       const [readings, spend] = await Promise.all([
         readAllSeats(config.budget.seats),
-        loadSpend((path) => readStateRaw(destination, path)),
+        loadSpend((path) => readLog(destination, path)),
       ])
       // An unreadable seat is passed over rather than treated as free, so saying why is the
       // only way anyone learns the fleet slowed down because of a bad token.

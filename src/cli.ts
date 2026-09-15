@@ -28,7 +28,7 @@ import { CloneProvider } from './worktree.js'
 import { TriageError } from './triage.js'
 import { BudgetError, budgetGate, loadSpend, readAllSeats, renderBudget } from './budget.js'
 import { wire } from './wiring.js'
-import { readStateRaw } from './state.js'
+import { readLog } from './state.js'
 import { repoFromCheckout } from './github.js'
 import type { Entry, Status } from './entry.js'
 
@@ -477,7 +477,7 @@ program
     const repo = await repoFromCheckout(config.destination)
     const [readings, spend] = await Promise.all([
       readAllSeats(config.budget.seats),
-      loadSpend((path) => readStateRaw(repo, path)),
+      loadSpend((path) => readLog(repo, path)),
     ])
     process.stdout.write(renderBudget(readings))
 
