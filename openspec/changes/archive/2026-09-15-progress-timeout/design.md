@@ -37,10 +37,16 @@ carrying a `parent_tool_use_id` do not clear.
 
 ## Choosing the numbers
 
-**Tool window: 30 minutes.** Three times the longest a shell command may be given, which also
-leaves room for a subagent or a fetch that nothing here bounds. A tool that is genuinely hung
-resolves itself on its own timeout without this policing it, so the cost of being generous is
-almost entirely theoretical.
+**No real Igor task on a real item has ever been timed.** The measurements below are of the
+stream's shape, not of how long work takes, so only the model window is derived from evidence
+about the thing it bounds. The tool window and the ceiling are reasoned from other bounds and
+are **provisional** until a real task is measured.
+
+**Tool window: 30 minutes — provisional.** Three times the longest a shell command may be
+given, which also leaves room for a subagent or a fetch that nothing here bounds. A tool that is
+genuinely hung resolves itself on its own timeout without this policing it, so the cost of being
+generous is almost entirely theoretical. What is missing is the other side: nobody has measured
+the longest tool call a real item actually provokes.
 
 **Errors do not strand the set.** A tool that fails, one denied by policy and one that exceeds
 its own timeout all return a `tool_result` carrying `is_error: true`; no id was left outstanding
@@ -62,10 +68,25 @@ this against a seat at its limit before trusting the model window's diagnosis.
 Killing rather than idling is still the wanted outcome either way: holding a claim for hours
 waiting on a quota is worse than releasing it.
 
-**Absolute ceiling: 6 hours.** Past the seat's five-hour rate-limit window, which the stream
-reports as `rate_limit_event.rate_limit_info.rateLimitType: five_hour`. A worker alive across a
-whole window and still going is not waiting on anything that will resolve, so the ceiling is
-reachable only by a fault.
+**Absolute ceiling: 6 hours — provisional, and load-bearing for two other things.** Past the
+seat's five-hour rate-limit window, which the stream reports as
+`rate_limit_event.rate_limit_info.rateLimitType: five_hour`. A worker alive across a whole
+window and still going is not waiting on anything that will resolve, so the ceiling is reachable
+only by a fault.
+
+Keeping a ceiling at all is not only about the runaway worker. Two mechanisms have nothing else
+to derive from:
+
+- **The abandoned-tree sweep** must clear the longest a live tree can be held.
+- **Stale-claim recovery.** A process posts a claim carrying its own marker, and a sibling that
+  finds the marker is not its own stands down — correct while that process lives, wrong forever
+  once it dies, because the marker never changes. The only thing a sibling can observe is how
+  old the claim is, and a progress window bounds nothing, since it resets on every event. Drop
+  the ceiling and no claim age is ever conclusive, so the item becomes permanently unclaimable.
+  The alternative is a heartbeat on the claim comment, which is a mechanism nobody has asked
+  for.
+
+So the ceiling is exported as one constant naming both dependents, rather than inlined.
 
 **Sweep threshold: the ceiling plus an hour.** A tree outlives its worker by a clone and an
 artifact push, which is a fixed cost and not a share of the run, so the margin is added rather

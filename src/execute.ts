@@ -126,6 +126,9 @@ export interface Limits {
 /**
  * Silence with a tool outstanding. Three times the longest a shell command may be given, which
  * also leaves room for a subagent or a fetch that nothing here bounds.
+ *
+ * Provisional: no real task on a real item has been timed, so this is reasoned from the tool's
+ * own bound rather than from how long work actually takes.
  */
 export const TOOL_SILENCE_MS = 30 * 60 * 1000
 
@@ -136,8 +139,17 @@ export const TOOL_SILENCE_MS = 30 * 60 * 1000
 export const MODEL_SILENCE_MS = 5 * 60 * 1000
 
 /**
- * The backstop, for a worker that emits steadily and never finishes. Past the seat's five-hour
- * rate-limit window, so a run that reaches it is not waiting on anything that will resolve.
+ * The longest a worker may live. A backstop rather than a limit anyone meets: a worker emitting
+ * steadily satisfies both silence windows and can still never finish. Set past the seat's
+ * five-hour rate-limit window, so a run reaching it is not waiting on anything that resolves.
+ *
+ * **Two things derive from this, and both need it to exist.** `SWEEP_AFTER_MS` reclaims trees a
+ * dead process left behind, and has to clear the longest a live tree can be held. And a sibling
+ * process deciding whether a claim belongs to an Igor that has died can observe only how old
+ * the claim is — a progress window resets on every event and bounds nothing, so without a
+ * ceiling no claim age is ever conclusive and the item is unrecoverable.
+ *
+ * Provisional: anchored to the rate-limit window, not to any measured task.
  */
 export const ABSOLUTE_CEILING_MS = 6 * 60 * 60 * 1000
 
