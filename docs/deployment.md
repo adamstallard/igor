@@ -119,18 +119,24 @@ worth caring about, rather than the `0600` file.
 Igor reads the variable at the moment it runs and stores nothing, so the variable only has to
 exist for that one process. Keep the secret in a store and inject it:
 
-```sh
-# once — prompts for the value twice and echoes neither, so it stays off the command line
-security add-generic-password -a "$USER" -s igor-seat-adam -w
+Once, typed at a prompt. It asks for the value twice and echoes neither, so the token never
+reaches a command line:
 
-# in your profile, instead of the export
+```sh
+security add-generic-password -a "$USER" -s igor-seat-adam -w
+```
+
+Then this, and only this, in your profile:
+
+```sh
 igor() {
   IGOR_SEAT_ADAM="$(security find-generic-password -a "$USER" -s igor-seat-adam -w)" \
     command igor "$@"
 }
 ```
 
-Then delete `~/.config/igor/env` and the line sourcing it. `pass`, `gopass` and `op read`
+Open a new shell, then delete `~/.config/igor/env` and the line sourcing it. The wrapper covers
+`igor` invoked as a command; `npm run igor --` from a clone bypasses it and finds no token. `pass`, `gopass` and `op read`
 substitute for `security find-generic-password` unchanged; a vault the team already shares is
 the better choice for somebody else's seat, since it is where they handed the token over.
 
