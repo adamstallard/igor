@@ -101,13 +101,25 @@ to reply to.
   poor proxy for what it is protecting: three replies on a large repository can cost more than
   ten on a small one, while the budget bounds the resource itself.
 
-- **No replies to bot accounts.** This is what a count would otherwise have caught: a bot with
-  write access that mentions an Igor can start an exchange neither side ends. Igor-to-Igor is
-  already structured, so the residue is other automation, and refusing it by account type is
-  exact where a count is a blunt guess.
-- **No free-form Igor-to-Igor conversation.** Agent exchange is structured — claims,
-  handoffs, stand-downs. Two Igors being polite at each other would burn a week's allowance
-  in an afternoon.
+- **A runaway exchange is the venue's problem, not a rule here.** Where two participants loop,
+  the surface already has the answer — mute, throttle, a role, a moderator — and building a
+  private version of that inside Igor is inventing a mechanism the venue has. Stop also
+  applies: it takes no permission check and no identity test, so an Igor watching another go
+  wrong can halt it exactly as a person can.
+
+  This is uneven across surfaces and worst on the one in use. Discord and Slack moderate
+  participants directly; GitHub offers locking a conversation, which does not restrain a
+  collaborator, and blocking an account, which is nuclear — and an Igor holds write access, so
+  it sits on the wrong side of the only lock that bites. **What bounds a loop on a surface
+  with no usable moderation is open.**
+- **Igors may talk to each other.** A frontend Igor asking a backend Igor what an endpoint
+  returns is worth more than the human relay it replaces, and the rules that govern talking to
+  a person govern it unchanged: write access on the artifact, budget, and stop.
+
+  An earlier draft forbade it on cost, which is the argument already rejected for people — the
+  budget bounds the resource, and a count of exchanges bounds a proxy for it. The asymmetry
+  that is real is that two agents will not get bored of each other, and that is what the
+  paragraph above is about.
 - **Every instruction acted on is auditable**: what it was, who gave it, what changed.
 
 Explicitly out of scope:
