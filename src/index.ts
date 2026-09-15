@@ -22,11 +22,15 @@ export {
   writeEntry,
   listFiles,
   takenIds,
+  rejectedIds,
+  writeRejection,
   supersessionIndex,
   resolveCurrent,
   StoreError,
   ENTRIES_DIR,
+  REJECTED_DIR,
   type LoadedEntry,
+  type Rejection,
 } from './store.js'
 
 export {
@@ -42,6 +46,7 @@ export {
 
 export {
   propose,
+  eligibleToPropose,
   pullRequestBody,
   dominantAuthor,
   contributingAuthors,
@@ -50,6 +55,7 @@ export {
   ProposeError,
   BRANCH_PREFIX,
   type ProposalResult,
+  type Eligibility,
 } from './propose.js'
 
 export { reconcile, type Reconciliation } from './reconcile.js'

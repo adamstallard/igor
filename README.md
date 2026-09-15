@@ -137,6 +137,11 @@ to accept the rest, **close without merging** to defer. You can merge your own p
 GitHub won't let you *approve* your own pull request, but merging is what counts as approval
 here, so a single maintainer is never stuck.
 
+A deletion is permanent: the next `reconcile` writes `rejected/<id>.md` into the store, keeping
+the candidate's claim and provenance so a later reader can see what was turned down, and
+nothing proposes that id again while the record stands. **Delete that file to un-reject** — a
+rejection is undone the same way it was made, by removing a file in a pull request.
+
 ## Budgets
 
 An Igor spends a Claude subscription seat. It asks that seat how much is left, through that
