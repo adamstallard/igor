@@ -67,7 +67,7 @@ pull requests that never merged, rather than recording them as not having stuck.
 reports an unanchorable comment as still-anchored rather than as unknown, so scoring it would
 manufacture negative evidence.
 
-#### Scenario: Comment predating line anchoring
+#### Scenario: Comment the host cannot anchor
 
 - **WHEN** a review comment carries no original line anchor
 - **THEN** it is excluded from the corpus

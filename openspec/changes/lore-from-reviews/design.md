@@ -276,11 +276,23 @@ more.
 
 ### The corpus gate this forces
 
-GitHub does not compute outdated-ness for comments predating line anchoring, and it does not
-say so: it reports `false`. Outdated rate was **0/310 for 2013 and 0/317 for 2014**, against
-58–64% from 2020 on. Scored naively, every pre-2015 comment reads as "did not stick" — the
-signal fails silently in the direction that looks like evidence. Mining therefore skips
+Some comments cannot be anchored at all, and GitHub does not say so: it reports `outdated:
+false` rather than unknown. All 600 comments with a null `original_line` were outdated 0% of
+the time — **0/310 for 2013 and 0/317 for 2014** — against 58–64% from 2020 on. Scored
+naively, every one reads as "did not stick", so the signal fails silently in exactly the
+direction that looks like evidence.
+
+In this corpus the unanchorable set is exactly the old set: all 600 fall in 2013–2014 and no
+comment before 2015 carries an `original_line`. That is consistent with the field arriving
+with line anchoring, but the sample is bimodal — oldest 300 and newest 300 per repository,
+nothing between 2015 and 2018 — so the cutoff is unlocated and age is a correlate here, not a
+verified cause. The gate is therefore the absent anchor itself, not a date: mining skips
 comments with no `original_line`, and skips unmerged pull requests, rather than scoring them.
+
+The signal is free on either listing endpoint. Across six pull requests containing outdated
+comments, `repos/{owner}/{repo}/pulls/{n}/comments` and the repo-wide
+`repos/{owner}/{repo}/pulls/comments` agreed on line-nullity and anchor for all 38 shared
+comments, so mining pages whichever suits it without changing the 10-calls-per-1,000 figure.
 
 ### What the change rests on now
 
