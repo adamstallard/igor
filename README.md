@@ -73,26 +73,72 @@ does the same thing and needs no build.
 
 Every command below assumes `igor` is on your path.
 
-## Getting started
+## Setting up a lore repository
+
+Any repository works; it just needs to be somewhere other than this one. Igor refuses a config
+found inside its own installation, because Igor is shared and the config describes one team.
+
+The state branch lives here too, so it has to be a repository the Igor can push to.
+
+1. **Create and clone it.** Public or private both work. Public means the `publicStore` guard
+   refuses entries whose provenance cites a private repository, which is the point of it.
+
+2. **Copy the config and commit it.**
+
+   ```sh
+   cp path/to/igor/igor.config.example.yaml igor.config.yaml
+   ```
+
+   Set `destination: .`, list `reviewers` and `experts`. Igor finds it by searching upward
+   from wherever it runs, so anywhere in the repository works. Commit it — who reviews and who counts
+   as an expert are shared decisions, and uncommitted they drift between whoever runs the tool
+   until an entry scores differently depending on whose machine computed it. Nothing in the
+   file is secret: `token_env` names a variable rather than holding a token.
+
+3. **Declare a seat.** Without one an Igor can triage but cannot work, and a seat without
+   `token_env` reads fine and cannot pay for anything — `igor budget` says so where it applies.
+   [`docs/seats.md`](docs/seats.md) is the page to send whoever's subscription it is.
+
+4. **Write `roles/org.yaml` and one role.** The org file holds what every role inherits — the
+   action space, the completion behaviour, the lane exclusions, standing instructions. A role
+   names its `sources` and narrows whatever it needs to. See [Roles](#roles).
+
+5. **Check it before running anything.**
+
+   ```sh
+   igor role explain <role>   # the effective merge, and which file each value came from
+   igor budget                # every seat, read live
+   igor run <role> --plan     # what it would claim, claiming nothing
+   ```
+
+`entries/` and the state branch are created when first needed; neither wants making by hand.
+
+**Branch protection, once more than one person can write to it.** Enable **"require a pull
+request before merging"** — it still lets an author merge their own proposal and only blocks
+direct pushes to `main`. Do **not** enable **"require approvals"**: GitHub refuses to let
+anyone approve their own pull request, so that setting hard-blocks a solo maintainer with no
+workaround.
+
+**Merge-triggered promotion, at the same time.** Without it, promotion depends on someone
+having igor installed and remembering to run `reconcile` — so a teammate can merge lore that
+then silently never fires.
 
 ```sh
-npm install
-npm run build
+igor init-workflow
 ```
 
-**The config does not live here.** Igor is a shared public tool; the config describes *your
-team*. Copy `igor.config.example.yaml` into the repository that holds your lore, set
-`destination: .`, and **commit it** — which repositories are in scope, who reviews, and who
-counts as an expert are shared decisions, and uncommitted they drift between whoever runs the
-tool until an entry scores differently depending on whose machine computed it.
+That writes `.github/workflows/promote-on-merge.yml` into the destination. Commit it. **If the
+branch is protected, add the GitHub Actions actor to the ruleset's bypass list**, or the
+workflow's own push is blocked by the same rule it exists to work around.
 
-The tool refuses to start if it finds a config inside its own installation, and otherwise
-searches upward from the current directory the way git does — so running it anywhere inside
-your lore repository just works. `-c <path>` and `IGOR_CONFIG` override.
+Neither is worth doing on a single-writer repository — both answer the same question, which is
+what happens when someone other than the tool's owner merges, so add them together when that
+becomes possible.
 
-One caveat for a public lore repository: the `publicStore` guard rejects privately-sourced
-*provenance*, but a config that merely lists private repositories in scope would publish those
-names.
+## Creating an entry
+
+Run these anywhere inside your lore repository — Igor searches upward for its config the way
+git does, so the working directory is the configuration. `-c <path>` and `IGOR_CONFIG` override.
 
 ```sh
 igor create \
@@ -292,67 +338,6 @@ would be worse than admitting it:
 | cooldown | 60m | someone finding a stopped item comes back too soon, or too late |
 | poll | 10m | latency mattering, or rate limits biting |
 | cold-start look-back | 7d | a first run finding nothing, or too much |
-
-## Setting up a lore repository
-
-Any repository works; it just needs to be somewhere other than this one. Igor refuses a config
-found inside its own installation, because Igor is shared and the config describes one team.
-
-The state branch lives here too, so it has to be a repository the Igor can push to.
-
-1. **Create and clone it.** Public or private both work. Public means the `publicStore` guard
-   refuses entries whose provenance cites a private repository, which is the point of it.
-
-2. **Copy the config and commit it.**
-
-   ```sh
-   cp path/to/igor/igor.config.example.yaml igor.config.yaml
-   ```
-
-   Set `destination: .`, list `reviewers` and `experts`. Commit it — who reviews and who counts
-   as an expert are shared decisions, and uncommitted they drift between whoever runs the tool
-   until an entry scores differently depending on whose machine computed it. Nothing in the
-   file is secret: `token_env` names a variable rather than holding a token.
-
-3. **Declare a seat.** Without one an Igor can triage but cannot work, and a seat without
-   `token_env` reads fine and cannot pay for anything — `igor budget` says so where it applies.
-   [`docs/seats.md`](docs/seats.md) is the page to send whoever's subscription it is.
-
-4. **Write `roles/org.yaml` and one role.** The org file holds what every role inherits — the
-   action space, the completion behaviour, the lane exclusions, standing instructions. A role
-   names its `sources` and narrows whatever it needs to. See [Roles](#roles).
-
-5. **Check it before running anything.**
-
-   ```sh
-   igor role explain <role>   # the effective merge, and which file each value came from
-   igor budget                # every seat, read live
-   igor run <role> --plan     # what it would claim, claiming nothing
-   ```
-
-`entries/` and the state branch are created when first needed; neither wants making by hand.
-
-**Branch protection, once more than one person can write to it.** Enable **"require a pull
-request before merging"** — it still lets an author merge their own proposal and only blocks
-direct pushes to `main`. Do **not** enable **"require approvals"**: GitHub refuses to let
-anyone approve their own pull request, so that setting hard-blocks a solo maintainer with no
-workaround.
-
-**Merge-triggered promotion, at the same time.** Without it, promotion depends on someone
-having igor installed and remembering to run `reconcile` — so a teammate can merge lore that
-then silently never fires.
-
-```sh
-igor init-workflow
-```
-
-That writes `.github/workflows/promote-on-merge.yml` into the destination. Commit it. **If the
-branch is protected, add the GitHub Actions actor to the ruleset's bypass list**, or the
-workflow's own push is blocked by the same rule it exists to work around.
-
-Neither is worth doing on a single-writer repository — both answer the same question, which is
-what happens when someone other than the tool's owner merges, so add them together when that
-becomes possible.
 
 ## Status
 
