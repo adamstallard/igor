@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync, existsSync, mkdirSync } from 'node:fs'
+import { chmodSync, mkdtempSync, writeFileSync, existsSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -110,6 +110,33 @@ function fakeTracker() {
   }
   return { t, released }
 }
+
+describe('a worker that fails with something to say', () => {
+  it('reports what the stream said rather than the exit code', async () => {
+    // An expired credential reports `Not logged in` in its own terminal event and writes
+    // nothing to stderr, so rejecting on the exit code alone loses the only explanation.
+    const script = tempDir('igor-failing-worker-')
+    const bin = join(script, 'claude')
+    writeFileSync(
+      bin,
+      '#!/bin/sh\n' +
+        `echo '{"type":"result","subtype":"success","is_error":true,"result":"Not logged in · Please run /login"}'\n` +
+        'exit 1\n',
+    )
+    chmodSync(bin, 0o755)
+    await expect(
+      claudeWorker(bin)({
+        cwd: script,
+        system: 's',
+        prompt: 'p',
+        model: 'm',
+        limits: { toolMs: 10_000, modelMs: 10_000, ceilingMs: 10_000 },
+        allowedTools: [],
+        env: {},
+      }),
+    ).rejects.toThrow(/Not logged in/)
+  })
+})
 
 describe('the working-tree seam', () => {
   it('releases the tree when the work succeeds', async () => {

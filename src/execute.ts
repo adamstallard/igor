@@ -530,7 +530,14 @@ export function claudeWorker(command = 'claude'): WorkerRunner {
         consume(pending)
         watch.cancel()
         if (killed) return resolve(final ?? {})
-        if (code !== 0) return reject(new ExecutionError(err.trim() || `worker exited ${code}`))
+        // A failing run often says why in its own terminal event and then exits non-zero —
+        // an expired credential reports `Not logged in · Please run /login` there and nothing
+        // on stderr. Rejecting on the exit code alone throws away the explanation already in
+        // hand, leaving "worker exited 1" for a cause the stream stated plainly.
+        if (code !== 0) {
+          const said = final?.is_error === true ? final.result?.trim() : undefined
+          return reject(new ExecutionError(said || err.trim() || `worker exited ${code}`))
+        }
         if (final === undefined) {
           return reject(new ExecutionError(`worker produced no result: ${(err.trim() || pending).slice(0, 200)}`))
         }
