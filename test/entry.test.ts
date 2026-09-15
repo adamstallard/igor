@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { validateFrontmatter } from '../src/entry.js'
+import { ProvenanceInputError, provenanceFromCitations, validateFrontmatter } from '../src/entry.js'
 
 function valid(overrides: Record<string, unknown> = {}) {
   return {
@@ -109,5 +109,54 @@ describe('validateFrontmatter', () => {
       const entry = valid({ conditions: { prose: 'When touching auth.' } })
       expect(validateFrontmatter(entry)).toEqual([])
     })
+  })
+})
+
+describe('provenanceFromCitations', () => {
+  it('builds a single dated-today item, matching the old single-author behaviour', () => {
+    expect(provenanceFromCitations(['adam'], undefined, undefined, '2026-09-13')).toEqual([
+      { author: 'adam', at: '2026-09-13' },
+    ])
+  })
+
+  it('builds one item per author, citing a whole cluster', () => {
+    const items = provenanceFromCitations(['sarah', 'jose'], undefined, undefined, '2026-09-13')
+    expect(items).toEqual([
+      { author: 'sarah', at: '2026-09-13' },
+      { author: 'jose', at: '2026-09-13' },
+    ])
+  })
+
+  it('pairs url and at to each author positionally', () => {
+    const items = provenanceFromCitations(
+      ['sarah', 'jose'],
+      ['https://example.invalid/pr/1', 'https://example.invalid/pr/2'],
+      ['2026-03-14', '2026-03-20'],
+      '2026-09-13',
+    )
+    expect(items).toEqual([
+      { author: 'sarah', url: 'https://example.invalid/pr/1', at: '2026-03-14' },
+      { author: 'jose', url: 'https://example.invalid/pr/2', at: '2026-03-20' },
+    ])
+  })
+
+  it('accepts --at with no --url, citing each date with no url', () => {
+    const items = provenanceFromCitations(['sarah', 'jose'], undefined, ['2026-03-14', '2026-03-20'], '2026-09-13')
+    expect(items).toEqual([
+      { author: 'sarah', at: '2026-03-14' },
+      { author: 'jose', at: '2026-03-20' },
+    ])
+  })
+
+  it('rejects a url count that does not match the author count', () => {
+    expect(() =>
+      provenanceFromCitations(['sarah', 'jose'], ['https://example.invalid/pr/1'], undefined, '2026-09-13'),
+    ).toThrow(ProvenanceInputError)
+  })
+
+  it('rejects an at count that does not match the author count', () => {
+    expect(() =>
+      provenanceFromCitations(['sarah', 'jose'], undefined, ['2026-03-14'], '2026-09-13'),
+    ).toThrow(ProvenanceInputError)
   })
 })

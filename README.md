@@ -102,6 +102,15 @@ igor create \
   --body "The hook handles caching, deduping, and cancellation on unmount." \
   --into ../candidates   # a candidate for review, rather than straight into the store
 
+# --author takes several names, to cite a cluster of comments rather than one. --url and --at
+# pair to each author positionally: give one per author or omit them entirely, since a partial
+# list would silently attach a url to the wrong person. --at defaults to today.
+igor create \
+  --claim "..." --prose "..." \
+  --author sarah jose \
+  --url https://example.invalid/pr/1 https://example.invalid/pr/2 \
+  --at 2026-03-14 2026-03-20
+
 igor list       # entries with support and newest evidence, derived from provenance
 igor validate    # reports every invalid entry, exits non-zero if any
 ```
