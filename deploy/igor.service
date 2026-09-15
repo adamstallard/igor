@@ -22,9 +22,15 @@ WorkingDirectory=/srv/igor/lore
 # point at a stable interpreter instead.
 ExecStart=/usr/local/bin/igor serve %i
 
-# Seat tokens and the GitHub token. Keep this file 0600 and owned by the service user —
-# it holds credentials that can act on your repositories.
+# Two files, because the two kinds of credential have different scopes. Seat tokens are
+# shared: a seat is a Claude subscription several Igors may draw from. The surface token is
+# not, because one machine account per Igor is what makes a claim say who has your issue —
+# a shared GH_TOKEN gives every instance the same identity. The per-instance file is optional
+# so a single-Igor install needs only the first.
+# Keep both 0600 and owned by the service user; they hold credentials that act on your
+# repositories.
 EnvironmentFile=/etc/igor/env
+EnvironmentFile=-/etc/igor/%i.env
 
 Restart=always
 RestartSec=30

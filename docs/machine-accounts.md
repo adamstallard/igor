@@ -68,9 +68,35 @@ not two.
    Not admin, not organization-level permissions, not classic tokens with `repo` scope. An Igor
    that cannot administer a repository cannot be tricked into administering one.
 
-7. **Record the token where the runner reads it**, and nowhere else. One token per Igor: a
-   shared token reintroduces the identification problem from the other direction, since the
-   audit trail can no longer say which Igor acted.
+7. **Put the token in `GH_TOKEN`, in this Igor's own environment.** Igor shells out to `gh`,
+   and `gh` takes its identity from that variable — so `GH_TOKEN` *is* who the Igor is. One
+   per Igor: a shared token reintroduces the identification problem from the other direction,
+   because the audit trail can no longer say which Igor acted.
+
+   Under the systemd template that means `/etc/igor/<role>.env`, not the shared
+   `/etc/igor/env`. Seat tokens go in the shared file, because a seat is a subscription
+   several Igors may draw from; identity does not.
+
+## Other surfaces
+
+The steps above are GitHub's. What is surface-independent is most of it — a name that reads as
+a teammate, one account per Igor, a second factor nobody owns personally, and a revocation path.
+What differs is how identity is expressed and what it costs, and that is worth knowing before
+choosing a tracker rather than after.
+
+**Linear** offers application identity, so an Igor need not be a seat-consuming member, and has
+a `delegate` field distinct from `assignee` — which suits a team whose assignee means *who is
+accountable* rather than *who is working*. Free.
+
+**ClickUp** has no bot identity. An Igor is an ordinary member and is billed as one, so
+capacity there is a per-Igor purchase rather than a configuration choice.
+
+**Discord** identifies a bot by its application, and a claim there is a message rather than a
+field — so identity has to be textual, and the claim message carries it. Identity must be
+structural where the claim primitive is structural, and textual where the claim is a message.
+
+Measured rather than assumed, but only from documentation and trial accounts; none has run an
+Igor yet.
 
 ## What this costs
 
