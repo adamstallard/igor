@@ -89,8 +89,15 @@ found inside its own installation, because Igor is shared and the config describ
 
 The state branch lives here too, so it has to be a repository the Igor can push to.
 
-1. **Create and clone it.** Public or private both work. Public means the `publicStore` guard
-   refuses entries whose provenance cites a private repository, which is the point of it.
+1. **Create and clone it.** Call it `lore` where the namespace already says whose it is, and
+   `<team>-lore` otherwise. Nothing in Igor reads the name; the convention is for people.
+
+   One per team or organization rather than per project. A project is something an entry
+   declares — `scope: project:web` — so splitting the store by project would fragment the
+   `global` entries across repositories and leave anything spanning two with nowhere to live.
+
+   Public or private both work. Public means the `publicStore` guard refuses entries whose
+   provenance cites a private repository, which is the point of it.
 
 2. **Copy the config and commit it.**
 
