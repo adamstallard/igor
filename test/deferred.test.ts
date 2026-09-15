@@ -5,7 +5,6 @@ import {
   fingerprint,
   NO_DEFERRALS,
   prune,
-  recordStop,
   shouldDefer,
   stillDeferred,
   type Deferral,
@@ -124,29 +123,6 @@ describe('recording a handoff', () => {
   })
 })
 
-describe('recording a stop', () => {
-  it('stamps when the stop was issued, not when the run noticed', () => {
-    // A run can take minutes to reach its checkpoint, and measuring the cooldown from there
-    // would quietly extend every stop by however long the worker was busy.
-    const issued = '2026-09-14T11:40:00Z'
-    const state = recordStop(NO_DEFERRALS, candidate(), 'stopped by bob', issued, NOW)
-    expect(state.stops['github:o/r#7']).toEqual({ at: issued, reason: 'stopped by bob' })
-  })
-
-  it('keeps a handoff record for the same item, since the two suppress for different reasons', () => {
-    // One record per item would let whichever happened last erase the other, and an item that
-    // was stopped and later handed back is still both.
-    const both = recordStop(defer(NO_DEFERRALS, candidate(), 'no repro', NOW), candidate(), 'stop', '2026-09-14T11:00:00Z', NOW)
-    expect(both.items['github:o/r#7']?.reason).toBe('no repro')
-    expect(both.stops['github:o/r#7']?.reason).toBe('stop')
-  })
-
-  it('carries no fingerprint, because editing an item is not permission to resume', () => {
-    const state = recordStop(NO_DEFERRALS, candidate(), 'stop', '2026-09-14T11:00:00Z', NOW)
-    expect(state.stops['github:o/r#7']).not.toHaveProperty('fingerprint')
-  })
-})
-
 describe('pruning', () => {
   const aged = (id: string, daysAgo: number): [string, Deferral] => [
     id,
@@ -156,11 +132,6 @@ describe('pruning', () => {
   it('drops entries past thirty days, so a quiet Igor’s record shrinks', () => {
     const state = { ...NO_DEFERRALS, items: Object.fromEntries([aged('a', 5), aged('b', 31)]) }
     expect(Object.keys(prune(state, NOW).items)).toEqual(['a'])
-  })
-
-  it('ages stops out on the same rule, so a stop is never a permanent removal', () => {
-    const state = { items: {}, stops: Object.fromEntries([aged('a', 5), aged('b', 31)]) }
-    expect(Object.keys(prune(state, NOW).stops)).toEqual(['a'])
   })
 
   it('caps the record and keeps the newest', () => {
