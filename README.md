@@ -169,22 +169,32 @@ repository.
 
    `token_env` is the *name* of a variable, which is why the config stays safe to commit. Igor
    reads the token out of that variable in its own environment — there is no file it looks in,
-   so being signed in to `claude` yourself is not enough:
+   so being signed in to `claude` yourself is not enough. It reads it at the moment it runs and
+   keeps nothing, so the variable only has to exist for that one process:
 
    ```sh
-   claude setup-token                    # prints a token; approve in the browser
-   umask 077 && mkdir -p ~/.config/igor
-   read -rs TOKEN                        # paste it here: no echo, and no shell history
-   printf 'export IGOR_SEAT_ME=%s\n' "$TOKEN" > ~/.config/igor/env && unset TOKEN
-   echo '[ -f ~/.config/igor/env ] && . ~/.config/igor/env' >> ~/.zshrc
+   claude setup-token                                            # approve in the browser
+   security add-generic-password -a "$USER" -s igor-seat-me -w   # prompts twice, echoes neither
    ```
 
-   `read -rs` rather than the token on the command line, which would otherwise land in your
-   shell history in plain text. Then open a new shell.
+   ```sh
+   # in ~/.zshrc, in place of exporting anything
+   igor() {
+     IGOR_SEAT_ME="$(security find-generic-password -a "$USER" -s igor-seat-me -w)" \
+       command igor "$@"
+   }
+   ```
 
-   That leaves the token in every shell you open, and so in every process you start from one.
-   [Keeping the token out of your shells](docs/deployment.md#keeping-the-token-out-of-your-shells)
-   scopes it to `igor` alone, which is worth doing once this is more than a trial. Under a service this is an `EnvironmentFile=` instead —
+   `secret-tool`, `pass` and `op read` substitute for `security` where there is no macOS
+   keychain. Exporting the token from a profile instead is the obvious thing and the wrong one:
+   it puts a year-long credential in the environment of every process you start, a package
+   manager's install scripts included. [Keeping the token out of your
+   shells](docs/deployment.md#keeping-the-token-out-of-your-shells) has that comparison and the
+   fallback for a machine with no secret store at all.
+
+   A shell function is not inherited by a service, so leaving `igor serve` running under
+   launchd or systemd still puts the token in that unit's environment —
+   [#29](https://github.com/adamstallard/igor/issues/29) is what would close the gap. Under a service this is an `EnvironmentFile=` instead —
    [`deployment.md`](docs/deployment.md#adding-a-seat-somebody-has-given-you) has that, the
    naming convention for several seats, and why not `~/.zshrc` directly. Where the
    subscription is somebody else's, [`docs/seats.md`](docs/seats.md) is the page to send them.

@@ -93,26 +93,9 @@ Four steps, once a colleague has sent you a token ([`seats.md`](seats.md) is wha
    one, because a seat is a subscription several Igors may draw from. `GH_TOKEN` is the
    opposite — it is identity, and belongs in `/etc/igor/<role>.env`.
 
-   Running from a shell instead, the variable has to be exported in the shell that starts
-   `igor` — which in practice means a file your profile sources, so every shell has it:
-
-   ```sh
-   umask 077 && mkdir -p ~/.config/igor
-   read -rs TOKEN                        # paste it here: no echo, and no shell history
-   printf 'export IGOR_SEAT_ADAM=%s\n' "$TOKEN" > ~/.config/igor/env && unset TOKEN
-   echo '[ -f ~/.config/igor/env ] && . ~/.config/igor/env' >> ~/.zshrc
-   ```
-
-   Not the token on the command line: zsh does not skip space-prefixed commands by default,
-   so it would sit in `~/.zsh_history` in plain text long after the file was locked down.
-
-   Not `~/.zshrc` directly either: a profile is usually world-readable and ends up in dotfile
-   backups and screen shares. A `0600` file it sources is the same convenience without that.
-
-   This exports the token into every shell you open, which also means every process you run
-   from one inherits it — a package manager's install scripts included. Scoping it to the
-   `igor` invocation instead is [Keeping the token out of your
-   shells](#keeping-the-token-out-of-your-shells) below.
+   Running from a shell instead, the variable has to be set in the shell that starts `igor` —
+   which should mean a wrapper reading it from a secret store, not an export:
+   [Keeping the token out of your shells](#keeping-the-token-out-of-your-shells) below.
 
 3. **Pick it up.** Under systemd, `sudo systemctl restart igor@maintenance`. From a shell,
    open a new one — a token exported into one shell is invisible to every other.
@@ -153,6 +136,22 @@ the better choice for somebody else's seat, since it is where they handed the to
 
 This does not remove the token from the `igor` process or the worker it spawns, which is where
 it has to be. It removes it from everything else you run.
+
+**With no secret store at all**, a `0600` file the profile sources is the fallback. Not the
+profile itself, which is usually world-readable and ends up in dotfile backups and screen
+shares:
+
+```sh
+umask 077 && mkdir -p ~/.config/igor
+read -rs TOKEN                        # paste it here: no echo, and no shell history
+printf 'export IGOR_SEAT_ADAM=%s\n' "$TOKEN" > ~/.config/igor/env && unset TOKEN
+echo '[ -f ~/.config/igor/env ] && . ~/.config/igor/env' >> ~/.zshrc
+```
+
+Not the token on a command line either: zsh skips space-prefixed commands only when
+`HIST_IGNORE_SPACE` is set, which is not the default, so it would sit in the history file in
+plain text long after the env file was locked down. This is a fallback and not an alternative —
+it still exports into every shell, which is the thing this section is about.
 
 **On a server this is the wrong shape and `LoadCredential=` is the right one** — systemd
 decrypts a secret into a tmpfs file readable only by that unit, encrypted at rest and TPM-bound
