@@ -384,6 +384,16 @@ export function renderBudget(readings: readonly SeatUsage[]): string {
     for (const m of r.usage.perModel) {
       lines.push(`${''.padEnd(16)} ${`wk:${m.model}`.padEnd(8)} ${`${m.percentUsed}%`.padStart(5)}`)
     }
+    // Reading a seat inherits this process's environment, so a keychain or an ambient login
+    // answers for it — and a worker's does not, being written out rather than inherited. A
+    // seat with no `token_env` therefore reports healthy here and cannot pay for a single
+    // item, which is the one misconfiguration this command would otherwise conceal.
+    if (r.seat.tokenEnv === undefined) {
+      lines.push(
+        `${''.padEnd(16)} !  readable here but cannot pay: no token_env, and a worker ` +
+          `inherits nothing. See docs/seats.md.`,
+      )
+    }
   }
   return `${lines.join('\n')}\n`
 }

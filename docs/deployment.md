@@ -52,6 +52,48 @@ journalctl -u igor@maintenance -f
 The unit is a template, so the role name is the instance: `igor@maintenance`, `igor@backend`.
 Several Igors run from one unit file.
 
+### Adding a seat somebody has given you
+
+Four steps, once a colleague has sent you a token ([`seats.md`](seats.md) is what to send them):
+
+1. **Declare the seat** in `igor.config.yaml`, which is committed. The token is not:
+
+   ```yaml
+   budget:
+     seats:
+       - {id: adam, owner: adam@example.com, reserve: 0.5, token_env: IGOR_SEAT_ADAM}
+   ```
+
+   `token_env` is the *name* of a variable. Putting the token itself here commits a credential
+   to a repository — the single mistake this arrangement exists to prevent.
+
+2. **Put the value in the shared env file**, `/etc/igor/env`, as `IGOR_SEAT_ADAM=…`. Seat tokens
+   belong there rather than in a per-instance file because a seat is a subscription several
+   Igors may draw from; `GH_TOKEN` is the opposite and belongs in `/etc/igor/<role>.env`.
+
+3. **Restart** the instances that draw on it: `sudo systemctl restart igor@maintenance`.
+
+4. **Check `igor budget`.** The seat should print its windows. A seat whose variable is unset
+   reports unreadable and is skipped, never substituted with whatever login is ambient.
+
+`igor budget` reading a seat is necessary and not sufficient. Reading inherits this process's
+environment, so an ambient login or a keychain can answer for a seat that has no `token_env` at
+all — while a worker's environment is written out rather than inherited and has no such
+fallback. `budget` says so explicitly where it applies, and the cure is a `token_env` that is
+set.
+
+### When a seat token expires
+
+A `claude setup-token` credential lasts **one year**, and the lifetime cannot be configured.
+Nothing warns beforehand.
+
+What you get instead is a clear failure: the seat reports unreadable in `igor budget`, and a
+worker's handoff carries the message the CLI actually gave rather than an exit code. Rotating
+is the same command the colleague ran the first time, and step 2 again.
+
+A calendar reminder eleven months out is cruder than it should be and is currently the only
+way to be told in advance.
+
 `TimeoutStopSec=900` bounds how long shutdown waits, and is not a promise that the item in hand
 finishes. The loop stops taking new items as soon as it is signalled, but a worker is bounded by
 silence on its stream rather than by the clock and may legitimately run for hours. An Igor

@@ -72,6 +72,10 @@ Treat the token itself as a credential you can rotate: if you want it dead rathe
 unused, revoke it from your Anthropic account and generate a fresh one for whatever still
 needs it.
 
+It will need rotating anyway. A `setup-token` credential lasts **one year** and the lifetime is
+not configurable, so at some point you will be asked to run the same command again. Nothing
+warns in advance; what happens is that the Igor stops and says it is not logged in.
+
 ## Several people, one fleet
 
 Each person runs the command themselves and hands over their own token. Nobody needs anybody
