@@ -262,10 +262,11 @@ budget:
     - {id: engineering, seats: [fleet-1, adam]}
 ```
 
-`token_env` names the environment variable holding that seat's token, from
-`claude setup-token` run while signed in as it. A seat naming a variable that is not set is
-reported unreadable and skipped — Igor will not fall back to whatever login happens to be
-around, because reading one seat and spending another is the mistake worth making impossible.
+A seat is a Claude subscription, not an Igor: several Igors draw on one through a pool and one
+may draw on several. `token_env` names the environment variable holding that seat's token —
+the name, never the value, so the config is safe to commit. Obtaining a token and installing
+it is [`docs/deployment.md`](docs/deployment.md#adding-a-seat-somebody-has-given-you), and
+[`docs/seats.md`](docs/seats.md) is the page to send whoever's subscription it is.
 
 A role's `seat` names one of these: a seat id, for an Igor that must never borrow, or a pool
 id for one that may. Either may be written `pool:engineering`; the prefix reads better and is
