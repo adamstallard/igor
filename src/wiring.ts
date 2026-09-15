@@ -9,6 +9,7 @@ import { overBudgetMessage, recordFiring, renderLore, selectEntries } from './fi
 import { recordExecution } from './execute.js'
 import { appendRecord, readStateRaw } from './state.js'
 import { loadAll } from './store.js'
+import { sweepAbandonedTrees, type SweepOptions } from './sweep.js'
 
 /**
  * What `run` and `serve` both need, built once.
@@ -18,6 +19,9 @@ import { loadAll } from './store.js'
  * `budget_share` ceiling, since the seat is the join key the share is computed over. Each gap
  * was a key missing from an options object, invisible to a suite that tests the seam and not
  * the caller.
+ *
+ * Startup housekeeping belongs here for the same reason: a step each command has to remember
+ * is a step one of them will forget.
  */
 
 export interface Wiring {
@@ -35,7 +39,17 @@ export interface Reporter {
 
 export const QUIET: Reporter = { say: () => {}, warn: () => {} }
 
-export function wire(config: Config, role: Role, destination: string, out: Reporter = QUIET): Wiring {
+export async function wire(
+  config: Config,
+  role: Role,
+  destination: string,
+  out: Reporter = QUIET,
+  sweep: SweepOptions = {},
+): Promise<Wiring> {
+  // Before the first cycle, because exit is the path that does not run. Housekeeping never
+  // stops a cycle, so nothing here is allowed to throw.
+  await sweepAbandonedTrees(out, sweep).catch(() => undefined)
+
   return {
     gate: async () => {
       const [readings, spend] = await Promise.all([
