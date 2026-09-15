@@ -152,17 +152,16 @@ Explicitly out of scope:
 
 ### New Capabilities
 
-- `directed-interaction`: Replying when addressed; answering about current work and about
-  lore; accepting direct requests as triage-stage candidates that outrank discovered work;
-  authorization bounded by the speaker's existing authority over the artifact, with
-  unauthenticated stop; treating ingested content as data; per-thread, per-requester and
-  budget-fraction caps; structured-only agent-to-agent exchange; and an audit trail.
+- `directed-interaction`: learning it was addressed through a mentions source; replying to
+  people with write access on the artifact and to no one else; a mention narrowing the action
+  space and claiming nothing; treating everything ingested as data; bounding conversation by
+  budget rather than by a count; asking rather than guessing; and recording who asked.
 
 ### Modified Capabilities
 
-- `work-triage`: Gains a second entry point. A directly requested candidate arrives at
-  triage rather than from discovery, carries its requester as provenance, and is ordered
-  ahead of discovered work.
+- `work-triage`: gains a second entry point. A requested candidate arrives from a mention
+  rather than from discovery, carries its requester, and is ordered ahead of discovered work
+  by being its own source listed first.
 
 ## Impact
 
