@@ -37,6 +37,9 @@ Igors poll rather than wait for triggers. Each cycle:
 5. **Report** — status updates back to the same surfaces, including a graceful handoff if
    the Igor runs out of budget mid-task.
 
+[`docs/architecture.md`](docs/architecture.md) is the long form: why team memory rather than
+per-agent memory, how recognition is meant to work, and what was considered and rejected.
+
 ## Lore
 
 Lore is not a wiki and not a vector index over everything. It is a curated set of lessons,
@@ -145,8 +148,8 @@ becomes possible.
 
 ## Creating an entry
 
-Run these anywhere inside your lore repository — Igor searches upward for its config the way
-git does, so the working directory is the configuration. `-c <path>` and `IGOR_CONFIG` override.
+Run these anywhere inside your lore repository; `-c <path>` and `IGOR_CONFIG` override where
+the config is looked for.
 
 ```sh
 igor create \
@@ -187,9 +190,8 @@ igor reconcile                            # promote merged, report the rest
 ```
 
 In a proposal pull request: **delete** a file to reject it, **edit** one to amend it, **merge**
-to accept the rest, **close without merging** to defer. You can merge your own proposal —
-GitHub won't let you *approve* your own pull request, but merging is what counts as approval
-here, so a single maintainer is never stuck.
+to accept the rest, **close without merging** to defer. Merging is what counts as approval
+here, so a single maintainer is never stuck reviewing their own proposal.
 
 A deletion is permanent: the next `reconcile` writes `rejected/<id>.md` into the store, keeping
 the candidate's claim and provenance so a later reader can see what was turned down, and
@@ -233,6 +235,29 @@ The worker is spawned with an environment written out rather than inherited — 
 home directory, the host's proxy settings, and the token of the seat it spends. No `GH_TOKEN`
 and no other seat's token, because the worker has no use for either: it edits files in a
 disposable clone, and claiming, commenting and publishing all happen afterwards in the loop.
+
+## Running an Igor
+
+Two things the setup above does not cover, because neither belongs in the lore repository.
+
+**An Igor needs an account of its own.** A claim only says who has your issue if the Igor is
+somebody — run one as yourself and every claim says *you* took the work. So: a machine account
+per Igor, with write access to the repositories it works, and not a GitHub App — an App's bot
+user cannot be an issue assignee, so claiming degrades to a comment.
+[`docs/machine-accounts.md`](docs/machine-accounts.md) has the steps and the traps, both of
+which fail by being accepted and silently dropped rather than by erroring.
+
+**An Igor has to be running when the work appears.** Everything above is a command you run
+once; finding your own work is a loop.
+
+```sh
+igor serve <role>    # poll on the role's interval until stopped
+```
+
+From a terminal that lasts as long as the terminal does — enough to watch it work, not enough
+to rely on. [`docs/deployment.md`](docs/deployment.md) is the rest: systemd, Docker
+and launchd, what the host needs on its path, where credentials go, and what the failures look
+like.
 
 ## Budgets
 
