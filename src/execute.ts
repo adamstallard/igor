@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process'
+import { spawn, type ChildProcess } from 'node:child_process'
 import type { Artifact, Candidate, ClaimVerdict, CodeHost, Tracker } from './adapter.js'
 import type { Action, Role } from './role.js'
 import { withTree, type ChangedFile, type TreeProvider, type WorkingTree } from './worktree.js'
@@ -266,6 +266,67 @@ export interface WorkerInput {
 /** Injected in tests so the suite never spawns a subprocess or touches the network. */
 export type WorkerRunner = (input: WorkerInput) => Promise<WorkerOutput>
 
+/**
+ * Group leaders of the workers running now. A kill has to reach the group rather than the pid:
+ * the worker's tool subprocesses are what hold the working tree, and they are not the worker.
+ */
+const liveWorkers = new Set<number>()
+
+let installed = false
+let windsDown = false
+
+/**
+ * Declares that this process shuts down gracefully, so a signal is not the end of it and the
+ * worker in hand is left to finish. Whatever is still running is caught on the way out.
+ */
+export function windsDownOnSignal(): void {
+  windsDown = true
+}
+
+/** SIGKILL to the worker's whole process group, tool subprocesses and all. */
+function killTree(child: ChildProcess): void {
+  const pid = child.pid
+  if (pid === undefined) return
+  liveWorkers.delete(pid)
+  try {
+    process.kill(-pid, 'SIGKILL')
+  } catch {
+    // Ordinarily the group is already gone, because the worker exited on its own; cleanup owes
+    // no error for that. Signalling the pid covers the rest, where the group refused the kill.
+    child.kill('SIGKILL')
+  }
+}
+
+function killLiveWorkers(): void {
+  for (const pid of liveWorkers) {
+    try {
+      process.kill(-pid, 'SIGKILL')
+    } catch {
+      // Already gone.
+    }
+  }
+  liveWorkers.clear()
+}
+
+/**
+ * A detached worker sits outside every group that would otherwise be signalled — the terminal's
+ * foreground group above all — so Igor owes it the termination it no longer receives. Installed
+ * on the first spawn rather than on import, since installing a handler suppresses the default
+ * one and no importer asked for that.
+ */
+function forwardTermination(): void {
+  if (installed) return
+  installed = true
+  process.on('exit', killLiveWorkers)
+  for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+    process.on(signal, () => {
+      if (windsDown) return
+      killLiveWorkers()
+      process.exit(signal === 'SIGINT' ? 130 : 143)
+    })
+  }
+}
+
 /** The command is a parameter so a test can drive a real stream without the real CLI. */
 export function claudeWorker(command = 'claude'): WorkerRunner {
   return ({ cwd, system, prompt, model, limits, onEvent, signal }) =>
@@ -293,8 +354,12 @@ export function claudeWorker(command = 'claude'): WorkerRunner {
           '--add-dir',
           cwd,
         ],
-        { cwd, stdio: ['ignore', 'pipe', 'pipe'] },
+        // Its own process group, so one kill reaches the tool subprocesses too. They outlive a
+        // kill on the pid alone, still building and still writing to a tree about to be swept.
+        { cwd, stdio: ['ignore', 'pipe', 'pipe'], detached: true },
       )
+      forwardTermination()
+      if (child.pid !== undefined) liveWorkers.add(child.pid)
       // A StringDecoder, so a multi-byte character split across chunks is not decoded to two
       // replacement characters and its line lost to the JSON parse.
       child.stdout.setEncoding('utf8')
@@ -305,7 +370,7 @@ export function claudeWorker(command = 'claude'): WorkerRunner {
       let killed = false
 
       const watch = watchWorker(limits, (why) => {
-        child.kill('SIGKILL')
+        killTree(child)
         // A run that already produced its result is finished, whatever its process is doing.
         // Killing a lingering one must not also throw away the work and the cost it reported.
         if (final !== undefined) return resolve(final)
@@ -315,7 +380,7 @@ export function claudeWorker(command = 'claude'): WorkerRunner {
         'abort',
         () => {
           killed = true
-          child.kill('SIGKILL')
+          killTree(child)
           watch.cancel()
           resolve(final ?? {})
         },
@@ -346,11 +411,19 @@ export function claudeWorker(command = 'claude'): WorkerRunner {
         for (const line of lines) consume(line)
       })
       child.stderr.on('data', (c) => (err += c))
+      // Forgotten the moment it is gone: a pid left in the set is a pid the operating system
+      // may hand to something else, and the next group kill would reach that instead.
+      const forget = () => {
+        if (child.pid !== undefined) liveWorkers.delete(child.pid)
+      }
+
       child.on('error', (e) => {
+        forget()
         watch.cancel()
         reject(e)
       })
       child.on('close', (code) => {
+        forget()
         consume(pending)
         watch.cancel()
         if (killed) return resolve(final ?? {})
