@@ -20,6 +20,7 @@ import { reconcile, promoteInPlace } from './reconcile.js'
 import { GitHubError } from './github.js'
 import { explainRole, loadRole, rolesFrom, RoleError } from './role.js'
 import { planCycle, runItem, type CycleReport } from './loop.js'
+import { renderProgress } from './execute.js'
 import { serve, untilSignalled } from './serve.js'
 import { GitHubTracker, GitHubCodeHost } from './github-adapter.js'
 import type { Candidate } from './adapter.js'
@@ -359,12 +360,30 @@ program
       const gate = await gateFor()
       const lore = loreFor(item)
       process.stdout.write(`\nworking ${item.id}  "${item.title}"\n  seat: ${gate.seat ?? '(unenforced)'}\n`)
+      // A terminal redraws one line; a log gets a line every few minutes, because the gap this
+      // closes is telling a wedged Igor from a working one in `journalctl`, and \r there writes
+      // a new record per redraw rather than overwriting anything.
+      const live = process.stdout.isTTY === true
+      let drawn = false
       const run = await runItem(deps, item, role, identity, {
         budget: gate,
         lore,
         store,
-        onStep: (step) => process.stdout.write(`  ${step}…\n`),
+        progressMs: live ? 1_000 : 300_000,
+        onProgress: (progress) => {
+          const line = renderProgress(progress)
+          drawn = true
+          process.stdout.write(live ? `\r  ${line}\u001b[K` : `  ${line}\n`)
+        },
+        // The working step prints nothing where progress will overwrite it a second later.
+        onStep: (step) => {
+          if (step === 'working' && live) return
+          if (drawn && live) process.stdout.write('\n')
+          drawn = false
+          process.stdout.write(`  ${step}…\n`)
+        },
       })
+      if (drawn && live) process.stdout.write('\n')
       process.stdout.write(`  ${run.outcome}: ${run.reason}\n`)
       if (shouldDefer(run.outcome, run.handoff)) {
         await noteHandoff(destination, item, run.reason).catch(() => undefined)

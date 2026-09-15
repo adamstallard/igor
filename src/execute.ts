@@ -187,6 +187,8 @@ interface Block {
   type?: string
   id?: string
   tool_use_id?: string
+  name?: string
+  input?: Record<string, unknown>
 }
 
 function isProse(block: Block): boolean {
@@ -209,6 +211,62 @@ function usageOf(event: WorkerEvent): Record<string, unknown> | undefined {
 function blocksOf(event: WorkerEvent): Block[] {
   const content = (event.message as { content?: unknown } | undefined)?.content
   return Array.isArray(content) ? (content as Block[]) : []
+}
+
+/**
+ * What a person watching wants to know, which is not what the watchdog wants to know.
+ *
+ * The same events answer both. The watchdog asks only whether anything arrived, because a
+ * worker that has stopped is the failure it exists to catch. Somebody at a terminal is asking
+ * the opposite question — it is clearly alive, but is it reading, editing or checking its work
+ * — and no count of tokens or turns answers that.
+ */
+export interface Progress {
+  /** Named for what it is doing rather than which tool it called. */
+  doing: string
+  elapsedMs: number
+  /** Distinct paths opened, written or edited. */
+  filesTouched: number
+  edits: number
+}
+
+const TESTING =
+  /^\s*(npx\s+)?(npm\s+(run\s+)?(test|typecheck)|vitest|tsc\b|jest|pytest|cargo\s+test|go\s+test)/
+
+const DOING: Record<string, string> = {
+  Read: 'reading',
+  Edit: 'editing',
+  Write: 'writing',
+  NotebookEdit: 'editing',
+  Grep: 'searching',
+  Glob: 'searching',
+  WebFetch: 'reading the web',
+  WebSearch: 'searching the web',
+  Task: 'delegating',
+}
+
+/**
+ * A tool call in words. Bash is the one worth reading closely, because it is most of what a
+ * worker does and the only place "verifying its own change" is distinguishable from "looking
+ * around" — measured at 93 bash calls in one run against 34 reads.
+ */
+export function describeTool(name: string, input: Record<string, unknown> = {}): string {
+  if (name !== 'Bash') return DOING[name] ?? name.toLowerCase()
+  const command = typeof input['command'] === 'string' ? input['command'] : ''
+  if (TESTING.test(command)) return 'running tests'
+  const first = command.trim().split(/\s+/)[0]
+  return first === undefined || first === '' ? 'running a command' : `running ${first}`
+}
+
+/** Rendered here so the shape is testable without a terminal. */
+export function renderProgress(progress: Progress): string {
+  const parts: string[] = []
+  if (progress.filesTouched > 0) parts.push(`explored ${progress.filesTouched} files`)
+  if (progress.edits > 0) parts.push(`${progress.edits} edits`)
+  parts.push(progress.doing)
+  const minutes = Math.floor(progress.elapsedMs / 60_000)
+  const elapsed = minutes < 1 ? `${Math.floor(progress.elapsedMs / 1000)}s` : `${minutes}m`
+  return `working…  ${parts.join(' · ')}   [${elapsed}]`
 }
 
 export interface Watchdog {
@@ -607,6 +665,10 @@ export function prBody(
 export interface ExecuteOptions {
   /** Defaults to headless Claude. */
   worker?: WorkerRunner
+  /** Throttled account of what the worker is doing, for somebody watching it work. */
+  onProgress?: (progress: Progress) => void
+  /** How often `onProgress` may fire. A terminal wants a second; a log wants minutes. */
+  progressMs?: number
   /** Rendered lore for the trusted channel. Empty when the store is empty or over budget. */
   lore?: string
   /**
@@ -637,6 +699,9 @@ export interface ExecuteOptions {
 
 /** How long a stop can go unanswered mid-run — short enough that whoever posted it is still watching. */
 const CHECKPOINT_INTERVAL_MS = 30_000
+
+/** A terminal redraw, not a log line. Callers wanting a log rate pass their own. */
+const PROGRESS_INTERVAL_MS = 1_000
 
 export function branchFor(role: Role, candidate: Candidate, prefix = 'igor'): string {
   // Trim separators *after* slicing: cutting to length can land on a hyphen, and git rejects
@@ -672,6 +737,29 @@ export async function execute(
     let lastCheck = Date.now()
 
     const observed: WorkerUsage = { assistantTurns: 0, cacheReadTokensPeak: 0 }
+
+    // Counted whether or not anyone is watching: cheap, and it keeps the two paths from
+    // diverging in what they would have reported.
+    const startedAt = Date.now()
+    const touched = new Set<string>()
+    let edits = 0
+    let doing = 'starting'
+    let lastProgress = 0
+    const progressMs = options.progressMs ?? PROGRESS_INTERVAL_MS
+    const watchProgress = (event: WorkerEvent) => {
+      for (const block of blocksOf(event)) {
+        if (block.type !== 'tool_use' || block.name === undefined) continue
+        doing = describeTool(block.name, block.input ?? {})
+        const path = (block.input ?? {})['file_path']
+        if (typeof path === 'string') touched.add(path)
+        if (block.name === 'Edit' || block.name === 'Write' || block.name === 'NotebookEdit') edits++
+      }
+      if (options.onProgress === undefined) return
+      const now = Date.now()
+      if (now - lastProgress < progressMs) return
+      lastProgress = now
+      options.onProgress({ doing, elapsedMs: now - startedAt, filesTouched: touched.size, edits })
+    }
     // What a killed run can still be shown to have done. Counted ahead of the checkpoint's
     // early return, which would otherwise drop it on every run with no claim to re-read.
     const observe = (event: WorkerEvent) => {
@@ -690,6 +778,7 @@ export async function execute(
     // a quiet one, and never two at once. A read that fails is not a stop.
     const onEvent = (event: WorkerEvent) => {
       observe(event)
+      watchProgress(event)
       if (stopped || checking || options.claimStatus === undefined) return
       const now = Date.now()
       if (now - lastCheck < checkpointMs) return

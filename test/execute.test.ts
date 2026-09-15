@@ -5,10 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Artifact, ArtifactRequest, Candidate, ClaimVerdict, CodeHost, Tracker } from '../src/adapter.js'
 import type { Role } from '../src/role.js'
 import {
-  ABSOLUTE_CEILING_MS, branchFor, claudeWorker, complete, execute, ExecutionError,
-  MODEL_SILENCE_MS, permits, prBody, PR_BODY_LIMIT, recordExecution, stripLinkage,
+  ABSOLUTE_CEILING_MS, branchFor, claudeWorker, complete, describeTool, execute, ExecutionError,
+  MODEL_SILENCE_MS, permits, prBody, PR_BODY_LIMIT, recordExecution, renderProgress, stripLinkage,
   TOOL_SILENCE_MS, watchWorker, workerEnv, workerPrompt, workerSystemPrompt,
-  type WorkerEvent, type WorkerRunner,
+  type Progress, type WorkerEvent, type WorkerRunner,
 } from '../src/execute.js'
 import { withTree, type ChangedFile, type TreeProvider, type WorkingTree } from '../src/worktree.js'
 import { tempDir } from './tmp.js'
@@ -1035,5 +1035,101 @@ describe('a worker may run only the commands its role declares', () => {
   it('passes no allowlist at all where a role declares none', async () => {
     const run = await reportingWorker(REPORT_ARGV)
     expect(JSON.parse(run.transcript) as string[]).not.toContain('--allowed-tools')
+  })
+})
+
+
+describe('what a tool call is called, for somebody watching', () => {
+  it('distinguishes verifying from looking around, which is the whole point', () => {
+    expect(describeTool('Bash', { command: 'npm test -- --run' })).toBe('running tests')
+    expect(describeTool('Bash', { command: '  npx vitest run test/x.ts' })).toBe('running tests')
+    expect(describeTool('Bash', { command: 'npx tsc --noEmit' })).toBe('running tests')
+    expect(describeTool('Bash', { command: 'grep -rn foo src' })).toBe('running grep')
+  })
+
+  it('names the tool in words rather than echoing it', () => {
+    expect(describeTool('Read')).toBe('reading')
+    expect(describeTool('Edit')).toBe('editing')
+    expect(describeTool('Grep')).toBe('searching')
+  })
+
+  it('says something for a tool it has never heard of', () => {
+    // A new tool must not render a blank line where the activity should be.
+    expect(describeTool('Superpower')).toBe('superpower')
+    expect(describeTool('Bash', {})).toBe('running a command')
+  })
+})
+
+describe('the line somebody watching reads', () => {
+  const base: Progress = { doing: 'reading', elapsedMs: 0, filesTouched: 0, edits: 0 }
+
+  it('reads as a sentence about the work', () => {
+    expect(renderProgress({ doing: 'running tests', elapsedMs: 14 * 60_000, filesTouched: 41, edits: 36 })).toBe(
+      'working…  explored 41 files · 36 edits · running tests   [14m]',
+    )
+  })
+
+  it('leaves out counts that would all read zero at the start', () => {
+    expect(renderProgress({ ...base, doing: 'starting', elapsedMs: 900 })).toBe('working…  starting   [0s]')
+  })
+
+  it('counts in seconds below a minute, because a minute is a long time to doubt it', () => {
+    expect(renderProgress({ ...base, elapsedMs: 42_000 })).toContain('[42s]')
+    expect(renderProgress({ ...base, elapsedMs: 61_000 })).toContain('[1m]')
+  })
+})
+
+describe('progress reported while the worker runs', () => {
+  /** Emits tool calls the way a real worker does: a use, then its result. */
+  function toolWorker(calls: readonly { name: string; input?: Record<string, unknown> }[]): WorkerRunner {
+    return async ({ onEvent }) => {
+      for (const call of calls) {
+        onEvent?.({
+          type: 'assistant',
+          message: { content: [{ type: 'tool_use', id: call.name, name: call.name, input: call.input ?? {} }] },
+        } as unknown as WorkerEvent)
+      }
+      return { result: 'Done.', total_cost_usd: 0.01 }
+    }
+  }
+
+  it('counts distinct files rather than touches, and edits rather than reads', async () => {
+    const seen: Progress[] = []
+    await run(
+      {},
+      {
+        progressMs: 0,
+        onProgress: (p) => seen.push(p),
+        worker: toolWorker([
+          { name: 'Read', input: { file_path: 'a.ts' } },
+          { name: 'Read', input: { file_path: 'a.ts' } },
+          { name: 'Edit', input: { file_path: 'b.ts' } },
+          { name: 'Bash', input: { command: 'npm test' } },
+        ]),
+      },
+    )
+    const last = seen.at(-1)
+    expect(last?.filesTouched).toBe(2)
+    expect(last?.edits).toBe(1)
+    expect(last?.doing).toBe('running tests')
+  })
+
+  it('stays quiet between intervals, so a chatty worker does not flood a log', async () => {
+    const seen: Progress[] = []
+    await run(
+      {},
+      {
+        progressMs: 60_000,
+        onProgress: (p) => seen.push(p),
+        worker: toolWorker(Array.from({ length: 20 }, () => ({ name: 'Read', input: { file_path: 'a.ts' } }))),
+      },
+    )
+    expect(seen.length).toBe(1)
+  })
+
+  it('costs nothing when nobody is watching', async () => {
+    // Counting happens regardless; the absent callback must not throw on the way past.
+    const { result } = await run({}, { worker: toolWorker([{ name: 'Read', input: { file_path: 'a.ts' } }]) })
+    expect(result.outcome).toBe('produced')
   })
 })
