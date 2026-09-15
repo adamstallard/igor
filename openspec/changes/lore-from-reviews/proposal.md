@@ -25,9 +25,13 @@ entry whose provenance cites pull request comments rather than an author writing
   defaulting to everything the credential can reach.
 - **Review comments are mined and filtered.** Pull review comments for repos in scope, then
   keep the ones that carry signal:
-  - **Did the correction stick?** Compare the comment's line range against later commits in
-    the same pull request. A comment followed by a change to those lines landed. One that
-    was argued down or ignored is a rejected opinion, not a lesson.
+  - **Did the correction stick?** Read GitHub's own outdated marker — `line: null` on the
+    comment, free in the payload already fetched. Measured across 2,009 comments in four
+    repositories, this is a weak signal that mostly works in the negative: a comment still
+    anchored at the end of a merged pull request was probably not acted on. It downweights a
+    cluster rather than gating a comment, and never promotes one by itself. Comments GitHub
+    cannot anchor at all — anything before line anchoring existed — are skipped rather than
+    scored, because the API reports them as `false` rather than unknown.
   - **Who wrote it?** Weight by author, so a designated expert's corrections outrank a
     drive-by.
   - **Nit or substance?** Filter on length, presence of stated reasoning, and whether the
@@ -63,8 +67,9 @@ Explicitly out of scope:
 ### New Capabilities
 
 - `review-mining`: Mining configuration — repositories in scope and the embedding provider —
-  plus extracting review comments, detecting whether a correction stuck, excluding bots, and
-  scoring by author and substance.
+  plus extracting review comments, restricting the corpus to comments whose stick signal is
+  computable, recording whether a correction stuck, excluding bots, and scoring by author and
+  substance.
 - `lore-consolidation`: Clustering related corrections, drafting candidate entries, deriving
   predicates from source paths, deduplicating against existing entries, and routing
   candidates with a scope label.
