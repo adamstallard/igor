@@ -688,6 +688,13 @@ file and re-uploads it whole, and on one ever-growing file the bytes sent grow w
 of the records. A day's partition bounds that without a second representation: a reader spans
 the partitions in name order, which is date order.
 
+That trades bytes for requests, so a past day is read once per process and held. The budget
+gate reads the whole spend log and `serve` gates once per item, so an uncached read costs a
+request per day of history on every item — sixty gates an hour against a 5,000/hour REST
+budget reaches the limit in roughly eighty days, and sooner where several processes share one
+machine account, since that limit is per account. Today's partition and the directory listing
+are always re-read: both are constant, and it was the per-day term that grew.
+
 **Stops are not kept there, and the principle holds without an exception.** Whether an item
 carries a stop is asked of the tracker before every claim, over the cooldown window: the stop
 is a person's comment sitting on the item, and the rule that recognises one is the same rule

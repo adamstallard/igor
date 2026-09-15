@@ -167,13 +167,51 @@ async function listPartitions(repo: string, dir: string, branch: string): Promis
  * The unpartitioned file holds records written before this log was partitioned, so it leads.
  * Partition names are ISO dates, so sorting them by name orders them by time.
  */
-export async function readLog(repo: string, path: string, branch = STATE_BRANCH): Promise<string> {
+/**
+ * A past day's partition never changes, so it is read once per process.
+ *
+ * `loadSpend` reads the whole log on every budget gate, and `serve` gates once per item — so
+ * an uncached read costs a request per day of history, every item. Sixty gates an hour against
+ * a 5,000/hour REST budget reaches the limit in about eighty days, and sooner where several
+ * processes share one account, since the limit is per account rather than per token.
+ *
+ * Today's partition and the directory listing are always re-read. Both are constant, and it is
+ * the per-day term that grows. The legacy unpartitioned file is re-read too: this build never
+ * appends to it, but caching it would go stale under a fleet where something older still does,
+ * and one constant request is not worth that.
+ */
+const settled = new Map<string, string>()
+
+/** Tests share a process, so a fake repository's contents must not outlive its test. */
+export function forgetSettledPartitions(): void {
+  settled.clear()
+}
+
+export async function readLog(
+  repo: string,
+  path: string,
+  branch = STATE_BRANCH,
+  now: number = Date.now(),
+): Promise<string> {
   const dir = path.replace(/\.ndjson$/, '')
+  const today = new Date(now).toISOString().slice(0, 10)
   const [whole, names] = await Promise.all([
     readStateRaw(repo, path, branch),
     listPartitions(repo, dir, branch),
   ])
-  const parts = await Promise.all(names.map((name) => readStateRaw(repo, `${dir}/${name}`, branch)))
+  const parts = await Promise.all(
+    names.map(async (name) => {
+      const key = `${repo}\u0000${branch}\u0000${dir}/${name}`
+      const settledDay = name.replace(/\.ndjson$/, '') < today
+      if (settledDay) {
+        const hit = settled.get(key)
+        if (hit !== undefined) return hit
+      }
+      const body = await readStateRaw(repo, `${dir}/${name}`, branch)
+      if (settledDay && body !== undefined) settled.set(key, body)
+      return body
+    }),
+  )
   // A part whose last line lost its newline must not glue itself onto the next part's first.
   return [whole, ...parts]
     .filter((part): part is string => part !== undefined && part !== '')

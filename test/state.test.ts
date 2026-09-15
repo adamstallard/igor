@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
  */
 const files = new Map<string, string>()
 const puts: { path: string; content: string; sha?: string }[] = []
+const reads: string[] = []
 
 class FakeGhError extends Error {}
 
@@ -14,6 +15,7 @@ function shaOf(path: string): string {
 }
 
 function read(path: string, jq: string | undefined): unknown {
+  reads.push(path)
   const content = files.get(path)
   if (content !== undefined) {
     const encoded = Buffer.from(content, 'utf8').toString('base64')
@@ -48,7 +50,7 @@ vi.mock('../src/gh.js', () => ({
   },
 }))
 
-const { appendRecord, partitionPath, readLog } = await import('../src/state.js')
+const { appendRecord, forgetSettledPartitions, partitionPath, readLog } = await import('../src/state.js')
 const { parseNdjson } = await import('../src/budget.js')
 
 function at(iso: string): void {
@@ -58,6 +60,8 @@ function at(iso: string): void {
 beforeEach(() => {
   files.clear()
   puts.length = 0
+  reads.length = 0
+  forgetSettledPartitions()
   vi.useFakeTimers()
   return () => vi.useRealTimers()
 })
@@ -149,5 +153,52 @@ describe('reading a log', () => {
 
   it('is empty when the log has never been written', async () => {
     expect(await readLog('o/r', 'decisions.ndjson')).toBe('')
+  })
+})
+
+describe('re-reading a log', () => {
+  const NOW = Date.parse('2026-09-15T12:00:00.000Z')
+
+  beforeEach(() => {
+    files.set('decisions/2026-09-13.ndjson', '{"day":13}\n')
+    files.set('decisions/2026-09-14.ndjson', '{"day":14}\n')
+    files.set('decisions/2026-09-15.ndjson', '{"day":15}\n')
+  })
+
+  it('reads a past day once however often the log is read', async () => {
+    // loadSpend runs on every budget gate and serve gates once per item, so an uncached read
+    // costs a request per day of history on every item worked.
+    await readLog('o/r', 'decisions.ndjson', 'igor-state', NOW)
+    reads.length = 0
+    await readLog('o/r', 'decisions.ndjson', 'igor-state', NOW)
+    expect(reads).not.toContain('decisions/2026-09-13.ndjson')
+    expect(reads).not.toContain('decisions/2026-09-14.ndjson')
+  })
+
+  it('always re-reads today, which is still being appended to', async () => {
+    await readLog('o/r', 'decisions.ndjson', 'igor-state', NOW)
+    reads.length = 0
+    await readLog('o/r', 'decisions.ndjson', 'igor-state', NOW)
+    expect(reads).toContain('decisions/2026-09-15.ndjson')
+  })
+
+  it('returns the same content cached as it did uncached', async () => {
+    const first = await readLog('o/r', 'decisions.ndjson', 'igor-state', NOW)
+    expect(await readLog('o/r', 'decisions.ndjson', 'igor-state', NOW)).toBe(first)
+  })
+
+  it('does not serve one repository a partition cached for another', async () => {
+    await readLog('o/r', 'decisions.ndjson', 'igor-state', NOW)
+    files.set('decisions/2026-09-13.ndjson', '{"day":13,"other":true}\n')
+    forgetSettledPartitions()
+    expect(await readLog('o/other', 'decisions.ndjson', 'igor-state', NOW)).toContain('"other":true')
+  })
+
+  it('reads yesterday again once it is no longer today', async () => {
+    // A partition cached while it was still today would freeze at whatever it held then.
+    const yesterday = Date.parse('2026-09-14T12:00:00.000Z')
+    await readLog('o/r', 'decisions.ndjson', 'igor-state', yesterday)
+    files.set('decisions/2026-09-14.ndjson', '{"day":14,"later":true}\n')
+    expect(await readLog('o/r', 'decisions.ndjson', 'igor-state', NOW)).toContain('"later":true')
   })
 })
