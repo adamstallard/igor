@@ -1,6 +1,7 @@
 {
   "name": "igor-lore",
   "version": "0.1.0",
+  "license": "ISC",
   "description": "The lore store: curated team knowledge as markdown in git",
   "type": "module",
   "bin": {
@@ -34,6 +35,5 @@
   },
   "engines": {
     "node": ">=20"
-  },
-  "license": "MIT"
+  }
 }
