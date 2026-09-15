@@ -67,11 +67,32 @@ Four steps, once a colleague has sent you a token ([`seats.md`](seats.md) is wha
    `token_env` is the *name* of a variable. Putting the token itself here commits a credential
    to a repository — the single mistake this arrangement exists to prevent.
 
-2. **Put the value in the shared env file**, `/etc/igor/env`, as `IGOR_SEAT_ADAM=…`. Seat tokens
-   belong there rather than in a per-instance file because a seat is a subscription several
-   Igors may draw from; `GH_TOKEN` is the opposite and belongs in `/etc/igor/<role>.env`.
+2. **Put the value where the process will read it**, never in the repository.
 
-3. **Restart** the instances that draw on it: `sudo systemctl restart igor@maintenance`.
+   Under systemd, the shared env file `/etc/igor/env`:
+
+   ```sh
+   IGOR_SEAT_ADAM=…
+   ```
+
+   Seat tokens belong in the shared file rather than a per-instance one, because a seat is a
+   subscription several Igors may draw from. `GH_TOKEN` is the opposite — it is identity, and
+   belongs in `/etc/igor/<role>.env`.
+
+   Running from a shell instead, which is how most people start, the same rule applies with
+   different plumbing — a file only you can read, sourced by your profile:
+
+   ```sh
+   umask 077 && mkdir -p ~/.config/igor
+   printf 'export IGOR_SEAT_ADAM=%s\n' 'paste-the-token-here' > ~/.config/igor/env
+   echo '[ -f ~/.config/igor/env ] && . ~/.config/igor/env' >> ~/.zshrc
+   ```
+
+   Not `~/.zshrc` directly: a profile is usually world-readable and ends up in dotfile
+   backups and screen shares. A `0600` file it sources is the same convenience without that.
+
+3. **Pick it up.** Under systemd, `sudo systemctl restart igor@maintenance`. From a shell,
+   open a new one — a token exported into one shell is invisible to every other.
 
 4. **Check `igor budget`.** The seat should print its windows. A seat whose variable is unset
    reports unreadable and is skipped, never substituted with whatever login is ambient.
