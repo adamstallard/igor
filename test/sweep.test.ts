@@ -1,10 +1,11 @@
-import { chmodSync, mkdtempSync, mkdirSync, rmSync, symlinkSync, utimesSync, writeFileSync, existsSync } from 'node:fs'
+import {
+  chmodSync, mkdtempSync, mkdirSync, rmSync, symlinkSync, utimesSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { DEFAULT_TIMEOUT_MS } from '../src/execute.js'
 import { TREE_PREFIX } from '../src/worktree.js'
-import { SWEEP_AFTER_MS, isTreeName, sweepAbandonedTrees, sweepable } from '../src/sweep.js'
+import { SWEEP_AFTER_MS, isTreeName, nameRuleFor, sweepAbandonedTrees, sweepable } from '../src/sweep.js'
 import { wire } from '../src/wiring.js'
 import type { Config } from '../src/config.js'
 import type { Role } from '../src/role.js'
@@ -214,5 +215,20 @@ describe('the wiring both commands build from', () => {
     expect(existsSync(abandoned)).toBe(false)
     expect(said.some((l) => l.includes('swept 1 abandoned tree'))).toBe(true)
     expect(typeof wiring.gate).toBe('function')
+  })
+})
+
+describe('the name rule is built, not hardcoded', () => {
+  it('matches what mkdtemp produces for the real prefix', () => {
+    expect(nameRuleFor('igor-tree-').test('igor-tree-AbC123')).toBe(true)
+    expect(nameRuleFor('igor-tree-').test('igor-tree-a/b')).toBe(false)
+  })
+
+  it('escapes the prefix, so a later one cannot silently widen what is deleted', () => {
+    // This rule decides what gets rm -rf'd. Interpolated raw, a dot in the prefix becomes
+    // "any character" and the sweep starts matching directories nobody named.
+    const rule = nameRuleFor('igor.tree-')
+    expect(rule.test('igor.tree-abc')).toBe(true)
+    expect(rule.test('igorXtree-abc')).toBe(false)
   })
 })

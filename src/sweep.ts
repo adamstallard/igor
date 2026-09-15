@@ -26,8 +26,16 @@ export const SWEEP_AFTER_MS = 4 * DEFAULT_TIMEOUT_MS
 /**
  * Exactly what `mkdtemp` appends to the prefix: a non-empty run of alphanumerics. A name with a
  * separator, a dot, or no suffix at all was not made here.
+ *
+ * The prefix is escaped rather than interpolated raw. It holds no metacharacter today, but this
+ * rule decides what gets deleted, and a later prefix containing `.` or `+` would widen it
+ * silently — an unescaped `igor.tree-` matches `igorXtree-abc`.
  */
-const TREE_NAME = new RegExp(`^${TREE_PREFIX}[A-Za-z0-9]+$`)
+export function nameRuleFor(prefix: string): RegExp {
+  return new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[A-Za-z0-9]+$`)
+}
+
+const TREE_NAME = nameRuleFor(TREE_PREFIX)
 
 /** The only names a sweep may touch. */
 export function isTreeName(name: string): boolean {
