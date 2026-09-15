@@ -7,6 +7,7 @@ import {
   discoverSource,
   EMPTY_STATE,
   freshCandidates,
+  heldBelow,
   nextWatermark,
   sourceKey,
   type DiscoveryState,
@@ -117,6 +118,33 @@ describe('watermark', () => {
     const candidates = [at('2026-09-11T00:00:00Z')]
     const w = nextWatermark(candidates, previous, NOW)
     expect(freshCandidates(candidates, w, NOW)).toEqual([])
+  })
+})
+
+describe('a mark stops short of what nobody looked at', () => {
+  const result = (candidates: Candidate[], lastSeen: string) =>
+    ({ source, key: sourceKey(source), candidates, returned: candidates.length, fresh: candidates,
+      watermark: { lastSeen }, coldStart: false, at: '' })
+
+  it('pulls the mark just below the oldest unexamined item', () => {
+    // Nothing is going to touch that item, so a mark past it drops it from the pool for good.
+    const items = [at('2026-09-11T00:00:00Z'), at('2026-09-12T00:00:00Z')]
+    const held = heldBelow([result(items, '2026-09-12T00:00:00Z')], new Set([items[1]!.id]))
+    expect(held[0]?.watermark.lastSeen).toBe('2026-09-11T23:59:59.999Z')
+    expect(freshCandidates(items, held[0]?.watermark, NOW)).toEqual([items[1]])
+  })
+
+  it('keeps the mark past everything that was examined', () => {
+    // Refusing to move at all would buy the model call again for an answer already given.
+    const items = [at('2026-09-11T00:00:00Z'), at('2026-09-12T00:00:00Z')]
+    const held = heldBelow([result(items, '2026-09-12T00:00:00Z')], new Set([items[1]!.id]))
+    expect(freshCandidates(items, held[0]?.watermark, NOW)).not.toContain(items[0])
+  })
+
+  it('leaves a source alone when the unexamined item is not one of its own', () => {
+    const items = [at('2026-09-11T00:00:00Z')]
+    const held = heldBelow([result(items, '2026-09-11T00:00:00Z')], new Set(['github:o/other#1']))
+    expect(held[0]?.watermark.lastSeen).toBe('2026-09-11T00:00:00Z')
   })
 })
 

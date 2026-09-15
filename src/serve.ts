@@ -2,7 +2,7 @@ import type { Candidate } from './adapter.js'
 import type { CycleDeps, CycleOptions, CycleReport, ItemRun } from './loop.js'
 import { planCycle, runItem } from './loop.js'
 import type { Gate } from './budget.js'
-import { noteHandoff, noteStop, shouldDefer } from './deferred.js'
+import { noteHandoff, shouldDefer } from './deferred.js'
 import type { Role } from './role.js'
 
 /**
@@ -33,7 +33,6 @@ export interface ServeOptions extends CycleOptions {
   loreFor: (item: Candidate) => string | Promise<string>
   /** Injected in tests, so the wiring is exercised rather than only the rule it applies. */
   note?: typeof noteHandoff
-  recordStop?: typeof noteStop
   onEvent?: (event: ServeEvent) => void
   sleep?: (ms: number) => Promise<void>
   /** Resolves when the process should wind down. */
@@ -107,11 +106,6 @@ export async function serve(
         summary.costUsd += run.costUsd
         if (shouldDefer(run.outcome, run.handoff)) {
           await (options.note ?? noteHandoff)(deps.destination, candidate, run.reason).catch(() => undefined)
-        }
-        if (run.outcome === 'stopped') {
-          await (options.recordStop ?? noteStop)(
-            deps.destination, candidate, run.reason, run.stoppedAt,
-          ).catch(() => undefined)
         }
         emit({ kind: 'worked', item: candidate, run, ...(gate.seat === undefined ? {} : { seat: gate.seat }) })
       }

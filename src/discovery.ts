@@ -147,6 +147,32 @@ export async function discover(
   return { results, failures }
 }
 
+/**
+ * Pulls each source's mark back below the oldest item nobody managed to look at.
+ *
+ * Not the same as refusing to move it. Everything older than that item was considered, and
+ * making the next cycle reconsider it would cost the model call again for the same answer —
+ * while letting the mark pass the item nothing looked at would drop it from the pool, since
+ * nothing is going to touch it and make it fresh again.
+ */
+export function heldBelow(
+  results: readonly SourceResult[],
+  unexamined: ReadonlySet<string>,
+): SourceResult[] {
+  if (unexamined.size === 0) return [...results]
+  return results.map((result) => {
+    let oldest: number | undefined
+    for (const candidate of result.candidates) {
+      if (!unexamined.has(candidate.id)) continue
+      const at = instant(candidate.updatedAt)
+      if (oldest === undefined || at < oldest) oldest = at
+    }
+    if (oldest === undefined || !Number.isFinite(oldest)) return result
+    if (instant(result.watermark.lastSeen) < oldest) return result
+    return { ...result, watermark: { lastSeen: new Date(oldest - 1).toISOString() } }
+  })
+}
+
 /** Folds results into the state to persist. Unchanged sources keep their previous entry. */
 export function advance(state: DiscoveryState, results: readonly SourceResult[]): DiscoveryState {
   const watermarks = { ...state.watermarks }

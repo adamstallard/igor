@@ -9,7 +9,7 @@ import {
   declineReason, dropDeferred, dropStopped, recordDecisions, runItem,
   type CycleReport, type ItemDeps,
 } from '../src/loop.js'
-import { defer, NO_DEFERRALS, recordStop } from '../src/deferred.js'
+import { defer, NO_DEFERRALS } from '../src/deferred.js'
 import { tempDir } from './tmp.js'
 
 const candidate = (over: Partial<Candidate> = {}): Candidate =>
@@ -143,12 +143,6 @@ describe('a stop gets a receipt, not a handoff', () => {
     expect(released).toContain('igor-bot')
   })
 
-  it('leaves the stop time out where the surface gave none, rather than inventing one', async () => {
-    // The caller reads an absent time as now, which is the closest honest answer.
-    const { d } = deps({ verdicts: [{ status: 'stopped', by: 'bob' }] })
-    const r = await runItem(d, candidate(), role(), 'igor-bot', noWait)
-    expect(r.stoppedAt).toBeUndefined()
-  })
 })
 
 describe('paths that owe nothing', () => {
@@ -326,96 +320,116 @@ describe('items handed back earlier', () => {
 
 describe('items somebody stopped', () => {
   const NOW = Date.parse('2026-09-14T12:00:00Z')
-  const STOPPED_AT = new Date(NOW - 30 * 60000).toISOString()
+  const ago = (minutes: number) => new Date(NOW - minutes * 60000).toISOString()
   const item = (n: number, over: Partial<Candidate> = {}) =>
     candidate({ id: `github:o/r#${n}`, native: String(n), ...over })
+  const said = (author: string, minutes: number, body: string) => ({ author, at: ago(minutes), body })
 
+  /** Filters on `since` the way a tracker does, so the window under test is the real one. */
   function tracker(spoken: Record<string, { author: string; at: string; body: string }[]> = {}, throws = false) {
     let asked = 0
     const t = {
-      commentsSince: async (c: Candidate) => {
+      commentsSince: async (c: Candidate, since: string) => {
         asked += 1
         if (throws) throw new Error('tracker unreachable')
-        return spoken[c.id] ?? []
+        return (spoken[c.id] ?? []).filter((m) => Date.parse(m.at) >= Date.parse(since))
       },
     } as unknown as Tracker
     return { t, asked: () => asked }
   }
 
-  const record = (c: Candidate, reason = 'stopped by bob') => recordStop(NO_DEFERRALS, c, reason, STOPPED_AT, NOW)
-  const blank = () => ({ skipped: [] as CycleReport['skipped'], skippedStopped: 0 })
+  const blank = () => ({ skipped: [] as CycleReport['skipped'], skippedStopped: 0, skippedUnreadable: 0 })
 
-  it('holds an item back for the rest of its cooldown', async () => {
-    // Without this the stop lasts one cycle: the stop comment itself lifts the item above the
-    // watermark, and nothing downstream remembers it was stopped.
+  it('holds an item back on a stop sitting on it, with nothing remembered anywhere', async () => {
+    // The rule is read off the tracker every cycle. No record of the stop exists, so an Igor
+    // that lost its state — or never had it — still honours what a person put down.
     const c = item(7)
     const report = blank()
-    expect(await dropStopped(tracker().t, [c], record(c), 60, 'igor-bot', report, NOW)).toEqual([])
+    const spoke = tracker({ 'github:o/r#7': [said('bob', 30, 'stop')] })
+    expect(await dropStopped(spoke.t, [c], 60, 'igor-bot', report, NOW)).toEqual([])
     expect(report.skippedStopped).toBe(1)
     expect(report.skipped[0]?.reason).toContain('30 minutes left')
     expect(report.skipped[0]?.stage).toBe('stopped')
   })
 
-  it('lets it back once the cooldown has elapsed, without asking anyone', async () => {
+  it('lets it back once the cooldown has elapsed', async () => {
+    // The scan covers the cooldown and nothing earlier, so an older stop never comes back.
     const c = item(7)
-    const asker = tracker()
-    expect(await dropStopped(asker.t, [c], record(c), 20, 'igor-bot', blank(), NOW)).toEqual([c])
-    expect(asker.asked()).toBe(0)
+    const spoke = tracker({ 'github:o/r#7': [said('bob', 90, 'stop')] })
+    expect(await dropStopped(spoke.t, [c], 60, 'igor-bot', blank(), NOW)).toEqual([c])
   })
 
   it('lets it back early on a go-ahead', async () => {
     const c = item(7)
-    const spoke = tracker({ 'github:o/r#7': [{ author: 'alice', at: '', body: 'go ahead' }] })
-    expect(await dropStopped(spoke.t, [c], record(c), 60, 'igor-bot', blank(), NOW)).toEqual([c])
+    const spoke = tracker({ 'github:o/r#7': [said('bob', 30, 'stop'), said('alice', 10, 'go ahead')] })
+    expect(await dropStopped(spoke.t, [c], 60, 'igor-bot', blank(), NOW)).toEqual([c])
   })
 
   it('does not hear a go-ahead in its own receipt', async () => {
     // The receipt is the Igor talking to itself, and a stop is the wrong place to rely on a
     // phrase never happening to match.
     const c = item(7)
-    const own = tracker({ 'github:o/r#7': [{ author: 'igor-bot', at: '', body: 'carry on' }] })
-    expect(await dropStopped(own.t, [c], record(c), 60, 'igor-bot', blank(), NOW)).toEqual([])
+    const own = tracker({ 'github:o/r#7': [said('bob', 30, 'stop'), said('igor-bot', 10, 'carry on')] })
+    expect(await dropStopped(own.t, [c], 60, 'igor-bot', blank(), NOW)).toEqual([])
+  })
+
+  it('does not let a go-ahead from before the stop lift it', async () => {
+    // The window is the cooldown, so comments predating the stop are in hand — and somebody
+    // who said carry on and then said stop meant the stop.
+    const c = item(7)
+    const spoke = tracker({
+      'github:o/r#7': [said('bob', 50, 'stop'), said('alice', 40, 'go ahead'), said('bob', 20, 'stop')],
+    })
+    const report = blank()
+    expect(await dropStopped(spoke.t, [c], 60, 'igor-bot', report, NOW)).toEqual([])
+    // Measured from the last stop, not the first.
+    expect(report.skipped[0]?.reason).toContain('40 minutes left')
   })
 
   it('does not let a stop lift itself', async () => {
-    // The stop comment is inside the window it bounds, and one comment can be both: "stop" at
-    // the front matches isStop, and what follows the address matches isGoAhead. Reading it as
-    // permission would undo the stop on the very next cycle.
+    // One comment can be both: "stop" at the front matches isStop, and what follows the
+    // address matches isGoAhead. Reading it as permission would undo the stop at once.
     const c = item(7)
     const both = tracker({
-      'github:o/r#7': [{ author: 'bob', at: STOPPED_AT, body: 'stop @igor-bot — continue once I have looked' }],
+      'github:o/r#7': [said('bob', 30, 'stop @igor-bot — continue once I have looked')],
     })
-    expect(await dropStopped(both.t, [c], record(c), 60, 'igor-bot', blank(), NOW)).toEqual([])
+    expect(await dropStopped(both.t, [c], 60, 'igor-bot', blank(), NOW)).toEqual([])
   })
 
   it('keeps waiting when the tracker will not say, unlike a handoff record', async () => {
-    // Failing toward the work is right for a record whose loss costs a repeated question, and
-    // wrong for one whose loss costs re-claiming something a person stopped.
+    // A failed read cannot tell "no stop" from "cannot say", and a cycle of latency costs less
+    // than claiming something a person put down.
     const c = item(7)
-    expect(await dropStopped(tracker({}, true).t, [c], record(c), 60, 'igor-bot', blank(), NOW)).toEqual([])
+    const report = blank()
+    expect(await dropStopped(tracker({}, true).t, [c], 60, 'igor-bot', report, NOW)).toEqual([])
+    expect(report.skipped[0]?.reason).toContain('stopped answering')
   })
 
-  it('asks only about items that were stopped', async () => {
-    const c = item(7)
-    const asker = tracker()
-    await dropStopped(asker.t, [c, item(8), item(9)], record(c), 60, 'igor-bot', blank(), NOW)
+  it('stops asking the moment a read fails, instead of one failing request per item', async () => {
+    // A tracker that cannot be read cannot be claimed on either, and an outage is precisely
+    // when a request per survivor is worst: the reads that fail are what keeps it failing.
+    const many = Array.from({ length: 20 }, (_, n) => item(n))
+    const asker = tracker({}, true)
+    const report = blank()
+    expect(await dropStopped(asker.t, many, 60, 'igor-bot', report, NOW, 3)).toEqual([])
     expect(asker.asked()).toBe(1)
+    // Reported as an outage, not as twenty people stopping twenty items.
+    expect(report.skippedUnreadable).toBe(20)
+    expect(report.skippedStopped).toBe(0)
+    expect(report.skipped.map((s) => s.stage)).toEqual(Array(20).fill('unreadable'))
   })
 
-  it('passes everything through when nothing was ever stopped', async () => {
+  it('passes everything through when nothing was stopped', async () => {
     const all = [item(7), item(8)]
-    expect(await dropStopped(tracker().t, all, NO_DEFERRALS, 60, 'igor-bot', blank(), NOW)).toEqual(all)
+    expect(await dropStopped(tracker().t, all, 60, 'igor-bot', blank(), NOW)).toEqual(all)
   })
 
   it('stops once the cycle has the items it wanted', async () => {
-    const fresh = Array.from({ length: 5 }, (_, n) => item(n))
-    const stopped = item(9)
+    // One fetch per item examined, so the triage limit is also the cost bound.
+    const fresh = Array.from({ length: 6 }, (_, n) => item(n))
     const asker = tracker()
-    const kept = await dropStopped(
-      asker.t, [...fresh, stopped], record(stopped), 60, 'igor-bot', blank(), NOW, 3,
-    )
-    expect(kept).toHaveLength(3)
-    expect(asker.asked()).toBe(0)
+    expect(await dropStopped(asker.t, fresh, 60, 'igor-bot', blank(), NOW, 3)).toHaveLength(3)
+    expect(asker.asked()).toBe(3)
   })
 })
 
@@ -453,13 +467,6 @@ describe('standing down after the settle window', () => {
     expect(posts.at(-1)).toMatch(/alice has it now/)
     expect(posts.at(-1)).toContain('https://example.test/9')
     expect(r.spoke).toBe(true)
-  })
-
-  it('carries when the stop was issued, which is what the cooldown is measured from', async () => {
-    // Not when the run noticed: a worker can be minutes into an item before it checkpoints.
-    const { d } = then({ status: 'stopped', by: 'bob', at: '2026-09-14T11:40:00Z' })
-    const r = await runItem(d, candidate(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
-    expect(r.stoppedAt).toBe('2026-09-14T11:40:00Z')
   })
 
   it('publishes nothing on a stop, which is the case the re-check was built for', async () => {

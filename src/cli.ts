@@ -23,7 +23,7 @@ import { serve, untilSignalled } from './serve.js'
 import { GitHubTracker, GitHubCodeHost } from './github-adapter.js'
 import type { Candidate } from './adapter.js'
 import { laneVerdict, universalSkip } from './predicate.js'
-import { noteHandoff, noteStop, shouldDefer } from './deferred.js'
+import { noteHandoff, shouldDefer } from './deferred.js'
 import { CloneProvider } from './worktree.js'
 import { TriageError } from './triage.js'
 import { BudgetError, budgetGate, loadSpend, readAllSeats, renderBudget } from './budget.js'
@@ -285,6 +285,7 @@ function renderCycle(report: CycleReport, verbose: boolean): string {
       `${report.skippedUniversal} closed, busy or held, ${report.skippedLane} out of lane, ` +
       (report.skippedDeferred > 0 ? `${report.skippedDeferred} awaiting an answer, ` : '') +
       (report.skippedStopped > 0 ? `${report.skippedStopped} stopped, ` : '') +
+      (report.skippedUnreadable > 0 ? `${report.skippedUnreadable} unreadable, ` : '') +
       `${report.triaged} triaged ($${report.triageCostUsd.toFixed(4)})`,
   )
   if (verbose && report.skipped.length > 0) {
@@ -339,9 +340,6 @@ program
       process.stdout.write(`  ${run.outcome}: ${run.reason}\n`)
       if (shouldDefer(run.outcome, run.handoff)) {
         await noteHandoff(destination, item, run.reason).catch(() => undefined)
-      }
-      if (run.outcome === 'stopped') {
-        await noteStop(destination, item, run.reason, run.stoppedAt).catch(() => undefined)
       }
       if (run.execution) {
         await record(item, run.execution, gate.seat)
