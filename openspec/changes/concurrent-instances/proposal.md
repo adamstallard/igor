@@ -29,6 +29,14 @@ That is the mechanism already committed to for surfaces with no holder field: st
 plus a settle interval. Nothing new is introduced, and no coordinator, lease service or
 inbound endpoint appears.
 
+**Ordering is the surface's own sequence key, never a timestamp.** GitHub returns comment
+times to the second — `2026-09-15T01:11:12Z` — and sibling processes on one poll interval wake
+together and claim inside the same second, so "earliest" is a tie exactly where the tiebreak is
+needed. Simultaneity is the normal case here, not a rare race. Comment ids ascend strictly with
+creation (measured: 5673068718, 5673143226, 5673525664 over an hour), so the id is a total order
+where the timestamp is not. Each adapter exposes its surface's key as an opaque comparable, and
+nothing in the claim path compares times.
+
 **Processes are interchangeable and hold nothing.** A process that dies mid-item leaves a claim
 its siblings will not adopt — the tracker still shows the item held, and the cooldown returns
 it to the pool. Correctness never depends on knowing whether a process is alive.
