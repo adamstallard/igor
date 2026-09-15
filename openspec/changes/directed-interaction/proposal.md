@@ -86,11 +86,24 @@ to reply to.
   and less pressing than it looked, since a comment already delivers the common case.
 - **A direct request enters at triage as an ordinary candidate.** Same path, same
   guardrails; only provenance differs. Requested work outranks discovered work, because a
-  human asking is a far stronger relevance signal than a query match.
+  person asking is a far stronger relevance signal than a query match — which is source
+  ordering rather than a priority mechanism: requests are their own source, listed first.
+
+  This composes with rank offsets without anything new. Requests are a separate list, so the
+  highest rank starts at the first request; a process already working an item is not planning
+  a cycle, so "unless they are busy" needs no concept of busy.
 - **Out-of-lane requests are declined with a route**, not a bare refusal — "not my lane,
   `igor-backend` covers it" — which also makes the fleet legible to people who have no idea
   which Igor does what.
-- **Ambiguity gets exactly one clarifying question**, then a hand-back rather than a guess.
+- **Ambiguity is asked about rather than guessed at, and nothing counts the questions.** A
+  question costs a comment; acting on a bad guess costs a wrong pull request and somebody's
+  time reading it. The bias belongs on the side of asking, and budget bounds it as it bounds
+  everything else.
+
+  This is the existing hand-back phrased as a question rather than a new path: an item the
+  worker cannot act on already produces a message carrying its own account of why. The
+  deferral record already supplies the waiting — a handed-back item stays quiet until somebody
+  replies or edits it, and a reply is what lifts it.
 - **Conversation is bounded by budget, not by a count of exchanges.** A fraction of cycle
   budget for talking, so talking cannot starve work.
 
@@ -120,7 +133,15 @@ to reply to.
   budget bounds the resource, and a count of exchanges bounds a proxy for it. The asymmetry
   that is real is that two agents will not get bored of each other, and that is what the
   paragraph above is about.
-- **Every instruction acted on is auditable**: what it was, who gave it, what changed.
+- **A requested item records who asked and what they said.** The decision log already carries
+  the item, the stage, the outcome and triage's reason, and the execution record adds the seat,
+  the cost, what changed and what was refused. For a discovered item that is complete, because
+  the provenance is the query. For a requested one it is not: the person and their words are
+  missing, and the record reads only "triage said proceed".
+
+  A field on the record, not a second mechanism. The reason is sharper than audit in the
+  abstract — it is what distinguishes a request from an injection after the fact, and "who told
+  it to" is the first question anybody asks about an Igor that did something odd.
 
 Explicitly out of scope:
 
