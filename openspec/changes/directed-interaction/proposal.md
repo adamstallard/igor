@@ -23,6 +23,27 @@ to reply to.
   merge to a repository carries no weight instructing an Igor working in it. Injection by an
   outsider therefore gains them nothing they could not already do directly, which is a
   stronger guarantee than trying to detect manipulation.
+
+  Authority is write access on the repository holding the artifact, not membership of the
+  organization: the org is too coarse, and would let someone with read access to one
+  repository direct work in it.
+
+  Read it from `user.permissions.push`, never from the coarse `permission` string. Measured
+  against the live endpoint: the response carries `permission`, a `user.permissions` map of
+  `{admin, maintain, push, triage, pull}`, and `user.role_name`. The string reports `admin`
+  for an admin and `write` for a maintainer, so comparing it to `"write"` excludes the people
+  with the most authority. GitHub does support fine-grained custom repository roles and names
+  them in `role_name`, but every one of them still resolves to those booleans, so no mapping
+  from a role name to Igor's semantics is needed.
+
+- **An Igor does not talk to strangers.** Answering anyone who can comment on a public
+  repository is a different product, and it is a seat anybody can drain by asking questions.
+
+  A mention from someone without write is not a refused instruction; it is not a signal. It
+  grants nothing and takes nothing away, so the item still stands or falls on its own through
+  ordinary discovery — a stranger pointing at a genuinely in-lane issue still gets it worked,
+  because the issue qualifies and not because they asked. No reply, no checkout, no worker
+  run, and nothing anyone can aim.
 - **Stop is the deliberate exception: unauthenticated, open to anyone.** A stop fails safe —
   worst case an Igor stands down and a human does the work. Everything that expands what an
   Igor does requires authority; the one thing that contracts it is open to all, so anyone
