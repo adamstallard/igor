@@ -426,6 +426,9 @@ program
       identity,
       limit: Number(opts.limit),
       ...(opts.since === undefined ? {} : { sinceDays: Number(opts.since) }),
+      // The seat triage spends from and records against is the same one a worker would choose —
+      // read lazily, so a cycle with nothing to triage never pays for a seat's usage reading.
+      gate: gateFor,
     })
     process.stdout.write(`${renderCycle(report, opts.plan === true)}\n`)
 

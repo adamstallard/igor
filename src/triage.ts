@@ -83,7 +83,12 @@ interface HeadlessResult {
   is_error?: boolean
 }
 
-function runClaude(system: string, prompt: string, model: string): Promise<HeadlessResult> {
+function runClaude(
+  system: string,
+  prompt: string,
+  model: string,
+  env?: NodeJS.ProcessEnv,
+): Promise<HeadlessResult> {
   return new Promise((resolve, reject) => {
     const child = spawn(
       'claude',
@@ -102,7 +107,9 @@ function runClaude(system: string, prompt: string, model: string): Promise<Headl
         '',
         '--exclude-dynamic-system-prompt-sections',
       ],
-      { stdio: ['ignore', 'pipe', 'pipe'] },
+      // Written out by the caller rather than inherited, same as the worker: triage spends
+      // whichever seat the budget gate chose, not whatever login is ambient on the machine.
+      { stdio: ['ignore', 'pipe', 'pipe'], ...(env === undefined ? {} : { env }) },
     )
     let out = ''
     let err = ''
@@ -136,8 +143,9 @@ export async function triageOne(
   candidate: Candidate,
   system: string,
   model: string = TRIAGE_MODEL,
+  env?: NodeJS.ProcessEnv,
 ): Promise<TriageResult> {
-  const response = await runClaude(system, itemPrompt(candidate), model)
+  const response = await runClaude(system, itemPrompt(candidate), model, env)
   const cost = response.total_cost_usd ?? 0
   if (response.is_error || typeof response.result !== 'string') {
     throw new TriageError(`triage failed for ${candidate.id}`)
@@ -163,6 +171,7 @@ export async function triageBatch(
   candidates: readonly Candidate[],
   system: string,
   model: string = TRIAGE_MODEL,
+  env?: NodeJS.ProcessEnv,
 ): Promise<TriageBatch> {
   const results: { candidate: Candidate; verdict: Verdict }[] = []
   const failures: { candidate: Candidate; error: Error }[] = []
@@ -170,7 +179,7 @@ export async function triageBatch(
 
   for (const candidate of candidates) {
     try {
-      const one = await triageOne(candidate, system, model)
+      const one = await triageOne(candidate, system, model, env)
       costUsd += one.costUsd
       results.push({ candidate, verdict: one.verdict })
     } catch (error) {

@@ -84,6 +84,8 @@ export async function serve(
     try {
       // Identity comes from the argument, never from the options: the two disagreeing would
       // mean the loop screening holders as one Igor and claiming as another.
+      // `options.gate` rides along in the spread — `planCycle` reads it itself, only where
+      // there is something to triage, so triage spends the seat a worker would have chosen.
       const report = await planCycle(deps, role, { ...options, identity })
       summary.costUsd += report.triageCostUsd
       emit({ kind: 'planned', cycle, report })

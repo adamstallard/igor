@@ -1,6 +1,7 @@
 import type { Candidate, CodeHost, Comment, Tracker } from './adapter.js'
+import type { Gate } from './budget.js'
 import { checkpoint, eligibleAfterStop, stopReceipt, takeClaim, type ClaimOptions } from './claiming.js'
-import { complete, execute, type ExecuteOptions, type ExecutionResult } from './execute.js'
+import { complete, execute, workerEnv, type ExecuteOptions, type ExecutionResult } from './execute.js'
 import { handOffFrom, type HandoffReason } from './handoff.js'
 import type { Role } from './role.js'
 import type { TreeProvider } from './worktree.js'
@@ -291,6 +292,8 @@ export interface CycleReport {
   verdicts: { candidate: Candidate; outcome: 'proceed' | 'skip'; reason: string }[]
   toClaim: CycleCandidate[]
   triageCostUsd: number
+  /** The seat the cost above was drawn from. Undefined where budget is unenforced or exhausted. */
+  triageSeat?: string
   failures: string[]
   coldStart: boolean
 }
@@ -304,6 +307,12 @@ export interface CycleOptions extends RunOptions {
   now?: number
   /** Injected in tests so a cycle can be exercised without a model call. */
   triage?: typeof triageBatch
+  /**
+   * The seat a worker would draw from, read lazily: a cycle with nothing to triage never pays
+   * for a seat's usage reading. `serve` passes its own per-item gate here unchanged, so triage
+   * spends and is recorded against the same seat a worker would have chosen.
+   */
+  gate?: () => Promise<Gate>
   /**
    * Who the Igor is on the tracker. Absent means every holder reads as somebody else, which
    * is what a preview that does not know who would run should assume.
@@ -394,19 +403,33 @@ export async function planCycle(
   )
   const considered = await dropDeferred(comments, awake, quiet, options.identity ?? '', report, limit)
   if (considered.length > 0) {
-    const batch = await (options.triage ?? triageBatch)(
-      considered,
-      systemPrompt(role.name, role.instructions),
-      options.triageModel ?? TRIAGE_MODEL,
-    )
-    report.triaged = batch.results.length
-    report.triageCostUsd = batch.costUsd
-    for (const { candidate, verdict } of batch.results) {
-      report.verdicts.push({ candidate, outcome: verdict.outcome, reason: verdict.reason })
-      if (verdict.outcome === 'proceed') report.toClaim.push({ candidate, reason: verdict.reason })
+    // Resolved only now — a cycle with nothing to triage never reads a seat's usage for it.
+    // The same seat a worker would draw from, written out the same way — never whatever login
+    // happens to be ambient, and never a superset of what the chosen seat allows.
+    const gate = options.budget ?? (options.gate === undefined ? undefined : await options.gate())
+    let env: NodeJS.ProcessEnv | undefined
+    try {
+      env = await workerEnv(gate?.token)
+    } catch (error) {
+      report.failures.push(`triage: ${error instanceof Error ? error.message : String(error)}`)
     }
-    for (const { candidate, error } of batch.failures) {
-      report.failures.push(`${candidate.native}: ${error.message.slice(0, 80)}`)
+    if (env !== undefined) {
+      const batch = await (options.triage ?? triageBatch)(
+        considered,
+        systemPrompt(role.name, role.instructions),
+        options.triageModel ?? TRIAGE_MODEL,
+        env,
+      )
+      report.triaged = batch.results.length
+      report.triageCostUsd = batch.costUsd
+      if (gate?.seat !== undefined) report.triageSeat = gate.seat
+      for (const { candidate, verdict } of batch.results) {
+        report.verdicts.push({ candidate, outcome: verdict.outcome, reason: verdict.reason })
+        if (verdict.outcome === 'proceed') report.toClaim.push({ candidate, reason: verdict.reason })
+      }
+      for (const { candidate, error } of batch.failures) {
+        report.failures.push(`${candidate.native}: ${error.message.slice(0, 80)}`)
+      }
     }
   }
 
@@ -690,6 +713,7 @@ export async function recordDecisions(
       triaged: report.triaged,
       claimed: report.toClaim.length,
       triageCostUsd: Number(report.triageCostUsd.toFixed(4)),
+      ...(report.triageSeat === undefined ? {} : { seat: report.triageSeat }),
       decisions: [
         ...report.skipped.map((s) => ({ item: s.candidate.id, stage: s.stage, outcome: 'skip', reason: s.reason })),
         ...report.verdicts.map((v) => ({ item: v.candidate.id, stage: 'model', outcome: v.outcome, reason: v.reason })),
