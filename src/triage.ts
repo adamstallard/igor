@@ -77,11 +77,22 @@ export function itemPrompt(candidate: Candidate, bodyLimit = 4000): string {
   ].join('\n')
 }
 
-interface HeadlessResult {
+export interface HeadlessResult {
   result?: string
   total_cost_usd?: number
   is_error?: boolean
 }
+
+/**
+ * The subprocess seam. Injected so that what a triage call hands the child — the chosen seat's
+ * token, and nothing else the machine is holding — can be asserted without spawning anything.
+ */
+export type TriageRunner = (
+  system: string,
+  prompt: string,
+  model: string,
+  env?: NodeJS.ProcessEnv,
+) => Promise<HeadlessResult>
 
 function runClaude(
   system: string,
@@ -144,8 +155,9 @@ export async function triageOne(
   system: string,
   model: string = TRIAGE_MODEL,
   env?: NodeJS.ProcessEnv,
+  run: TriageRunner = runClaude,
 ): Promise<TriageResult> {
-  const response = await runClaude(system, itemPrompt(candidate), model, env)
+  const response = await run(system, itemPrompt(candidate), model, env)
   const cost = response.total_cost_usd ?? 0
   if (response.is_error || typeof response.result !== 'string') {
     throw new TriageError(`triage failed for ${candidate.id}`)
@@ -172,6 +184,7 @@ export async function triageBatch(
   system: string,
   model: string = TRIAGE_MODEL,
   env?: NodeJS.ProcessEnv,
+  run: TriageRunner = runClaude,
 ): Promise<TriageBatch> {
   const results: { candidate: Candidate; verdict: Verdict }[] = []
   const failures: { candidate: Candidate; error: Error }[] = []
@@ -179,7 +192,7 @@ export async function triageBatch(
 
   for (const candidate of candidates) {
     try {
-      const one = await triageOne(candidate, system, model, env)
+      const one = await triageOne(candidate, system, model, env, run)
       costUsd += one.costUsd
       results.push({ candidate, verdict: one.verdict })
     } catch (error) {
