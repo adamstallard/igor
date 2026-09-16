@@ -275,6 +275,11 @@ SHALL be the spend recorded for that seat within the instance the observation be
 bounded by the observation's reset time and the window's fixed cadence — and not spend over all
 recorded history.
 
+Instances tile the timeline: each ends exactly where the next begins, and no moment belongs to
+neither. One observed reset therefore fixes every boundary before and after it by subtraction,
+which is what lets spend be assigned to an instance at all. The session window runs five hours
+and the weekly window seven days.
+
 Where a seat has consumers Igor cannot see, the quotient is lower than the seat's true capacity,
 because the numerator counts only Igor's share of a denominator that everybody moved. That error
 is deliberate and is in the safe direction: a capacity estimated low yields a bound on Igor that
