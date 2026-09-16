@@ -49,6 +49,10 @@ export interface ExecutionResult {
   costUsd: number | undefined
   /** Only where `costUsd` is undefined: what the stream did say before it was cut off. */
   usage?: WorkerUsage
+  /** Per model, where the worker reported it. Absent from a run killed before its terminal event. */
+  models?: ModelSpend[]
+  /** Why the model stopped, as the provider put it. */
+  stopReason?: string
   reason: string
 }
 
@@ -116,6 +120,48 @@ export interface WorkerOutput {
   result?: string
   total_cost_usd?: number
   is_error?: boolean
+  /** Per-model token counts and cost, keyed by the dated model id. */
+  modelUsage?: Record<string, unknown>
+  stop_reason?: string
+}
+
+/**
+ * What one model cost a run, in the unit the limit is actually denominated in.
+ *
+ * `total_cost_usd` is the same figures summed at list prices — `costBasis: "list"` in the
+ * envelope says so. That sum is fine for comparing runs and useless for a per-model weekly
+ * limit, which is a separate cap the aggregate cannot see. Keeping both costs nothing: the
+ * envelope carries them and they were being discarded.
+ */
+export interface ModelSpend {
+  /** The canonical name rather than the dated id, so a month of records groups. */
+  model: string
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheCreationTokens: number
+  costUsd: number
+}
+
+/** Tolerant by design: an unfamiliar shape records nothing rather than failing a finished run. */
+export function spendByModel(modelUsage: Record<string, unknown> | undefined): ModelSpend[] {
+  if (modelUsage === undefined || modelUsage === null) return []
+  const out: ModelSpend[] = []
+  for (const [id, raw] of Object.entries(modelUsage)) {
+    if (typeof raw !== 'object' || raw === null) continue
+    const entry = raw as Record<string, unknown>
+    const num = (key: string) => (typeof entry[key] === 'number' ? (entry[key] as number) : 0)
+    out.push({
+      model: typeof entry['canonicalModel'] === 'string' ? entry['canonicalModel'] : id,
+      inputTokens: num('inputTokens'),
+      outputTokens: num('outputTokens'),
+      cacheReadTokens: num('cacheReadInputTokens'),
+      cacheCreationTokens: num('cacheCreationInputTokens'),
+      costUsd: num('costUSD'),
+    })
+  }
+  // Dearest first, because the question asked of these records is always which model spent it.
+  return out.sort((a, b) => b.costUsd - a.costUsd)
 }
 
 /**
@@ -771,8 +817,16 @@ export async function execute(
       }
     }
     /** An unreported cost is left out rather than called zero, and what was seen stands in. */
-    const spend = (reported?: number) =>
-      reported === undefined ? { costUsd: undefined, usage: { ...observed } } : { costUsd: reported }
+    const spend = (output: WorkerOutput = {}) => {
+      const models = spendByModel(output.modelUsage)
+      return {
+        ...(output.total_cost_usd === undefined
+          ? { costUsd: undefined, usage: { ...observed } }
+          : { costUsd: output.total_cost_usd }),
+        ...(models.length === 0 ? {} : { models }),
+        ...(output.stop_reason === undefined ? {} : { stopReason: output.stop_reason }),
+      }
+    }
 
     // Event arrival is the tick, throttled so a chatty worker costs no more tracker reads than
     // a quiet one, and never two at once. A read that fails is not a stop.
@@ -831,7 +885,7 @@ export async function execute(
     }
 
     const transcript = worker.result ?? ''
-    const cost = spend(worker.total_cost_usd)
+    const cost = spend(worker)
     const changed = await tree.changes()
 
     // Read before anything is decided, not merely before publishing: a stop during a run that
@@ -992,6 +1046,12 @@ export async function recordExecution(
       // A run that never reported a cost records none: zero would read as a run that was free.
       ...(result.costUsd === undefined ? {} : { costUsd: Number(result.costUsd.toFixed(4)) }),
       ...(result.usage === undefined ? {} : { usage: result.usage }),
+      // Rounded further than the dollar figure because these are the calibration input, and a
+      // ratio fitted to five decimal places of an estimate is false precision.
+      ...(result.models === undefined
+        ? {}
+        : { models: result.models.map((m) => ({ ...m, costUsd: Number(m.costUsd.toFixed(4)) })) }),
+      ...(result.stopReason === undefined ? {} : { stopReason: result.stopReason }),
       transcript: path,
     },
     `Record ${role.name} on ${candidate.id}`,

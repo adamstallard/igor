@@ -6,7 +6,7 @@ import type { Artifact, ArtifactRequest, Candidate, ClaimVerdict, CodeHost, Trac
 import type { Role } from '../src/role.js'
 import {
   ABSOLUTE_CEILING_MS, branchFor, claudeWorker, complete, describeTool, execute, ExecutionError,
-  MODEL_SILENCE_MS, permits, prBody, PR_BODY_LIMIT, recordExecution, renderProgress, stripLinkage,
+  MODEL_SILENCE_MS, permits, prBody, PR_BODY_LIMIT, recordExecution, renderProgress, spendByModel, stripLinkage,
   TOOL_SILENCE_MS, watchWorker, workerEnv, workerPrompt, workerSystemPrompt,
   type Progress, type WorkerEvent, type WorkerRunner,
 } from '../src/execute.js'
@@ -1131,5 +1131,64 @@ describe('progress reported while the worker runs', () => {
     // Counting happens regardless; the absent callback must not throw on the way past.
     const { result } = await run({}, { worker: toolWorker([{ name: 'Read', input: { file_path: 'a.ts' } }]) })
     expect(result.outcome).toBe('produced')
+  })
+})
+
+
+describe('what each model cost, kept because the aggregate cannot answer it', () => {
+  /** Exactly the shape `claude -p --output-format json` returns under `modelUsage`. */
+  const REAL = {
+    'claude-haiku-4-5-20251001': {
+      inputTokens: 906, outputTokens: 75, cacheReadInputTokens: 14454, cacheCreationInputTokens: 9092,
+      costUSD: 0.0209104, canonicalModel: 'claude-haiku-4-5', costBasis: 'list', contextWindow: 200000,
+    },
+  }
+
+  it('reads the envelope the provider actually sends', () => {
+    expect(spendByModel(REAL)).toEqual([
+      {
+        model: 'claude-haiku-4-5',
+        inputTokens: 906,
+        outputTokens: 75,
+        cacheReadTokens: 14454,
+        cacheCreationTokens: 9092,
+        costUsd: 0.0209104,
+      },
+    ])
+  })
+
+  it('names the canonical model, so a month of records groups', () => {
+    // The key is dated and moves with each release; the canonical name does not.
+    expect(spendByModel(REAL)[0]?.model).toBe('claude-haiku-4-5')
+  })
+
+  it('falls back to the key where no canonical name is given', () => {
+    expect(spendByModel({ 'some-model': { costUSD: 1 } })[0]?.model).toBe('some-model')
+  })
+
+  it('puts the dearest model first, which is the question these records get asked', () => {
+    const models = spendByModel({ cheap: { costUSD: 0.01 }, dear: { costUSD: 9 }, middling: { costUSD: 1 } })
+    expect(models.map((m) => m.model)).toEqual(['dear', 'middling', 'cheap'])
+  })
+
+  it('records nothing rather than failing a finished run on a shape it does not know', () => {
+    expect(spendByModel(undefined)).toEqual([])
+    expect(spendByModel({ broken: null as unknown as Record<string, unknown> })).toEqual([])
+    expect(spendByModel({ partial: {} })[0]).toMatchObject({ inputTokens: 0, costUsd: 0 })
+  })
+
+  it('reaches the result of a real run', async () => {
+    const { result } = await run(
+      {},
+      { worker: async () => ({ result: 'Done.', total_cost_usd: 0.02, modelUsage: REAL, stop_reason: 'end_turn' }) },
+    )
+    expect(result.models?.[0]?.model).toBe('claude-haiku-4-5')
+    expect(result.stopReason).toBe('end_turn')
+  })
+
+  it('is absent, not zero, from a run that never reported one', async () => {
+    const { result } = await run({}, { worker: async () => ({ result: 'Done.', total_cost_usd: 0.02 }) })
+    expect(result.models).toBeUndefined()
+    expect(result.stopReason).toBeUndefined()
   })
 })
