@@ -16,6 +16,31 @@ therefore happens on a machine where a person is signed in — the lender's own.
 is the design rather than a caveat on it: the lender's laptop is the sensor, and everything else
 here follows from a sensor that belongs to somebody else and is not always switched on.
 
+## Who needs this, which is not everybody
+
+**A seat only Igors use needs none of it.** When Igor is the sole consumer its record is
+complete, so the seat's own refusal is an exact reading: at the moment it is turned away the
+window is full and Igor spent all of it, and `capacity = recorded spend ÷ 1.0` has nothing
+missing from the numerator. A dedicated seat therefore learns its own capacity the first time
+it runs out, at a cost of one item, once. Nobody signs in as it, nothing is installed on it,
+and no operator sets anything up — which matters, because a seat bought for a fleet has no
+interactive login to run this under even if somebody wanted to.
+
+**A shared seat cannot do that**, and the failure is quiet. The same refusal divides Igor's
+spend alone by a window the owner also drew on, so the capacity comes out *below* the truth —
+safe, in that Igor then reserves more than asked, and permanently wrong, because every later
+refusal omits the same thing. A seat shared with a person is the case that needs a reading
+taken where the whole window is visible, and that is the only place this command belongs.
+
+So the operational split is clean, and worth stating before the install procedure rather than
+after it: **buy seats for the fleet and there is nothing to install anywhere; borrow one and
+its owner installs one thing.**
+
+Capacity may well be a property of the plan rather than of the account, in which case one
+reading could stand in for every seat on that tier and spare a dedicated seat even its one
+wasted item. Nothing here assumes that. Two seats on one plan will eventually have derived
+capacities to compare, and that is when it becomes a fact rather than an inference.
+
 ## What Changes
 
 **`igor observe` takes one reading and appends what it finds.** One invocation, no arguments

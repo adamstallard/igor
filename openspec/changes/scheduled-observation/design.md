@@ -57,6 +57,11 @@ has to show. The person who needs to know is the operator, not the lender.
 
 ## Installing it
 
+**On the machine of somebody whose seat an Igor shares, and nowhere else.** A seat only Igors
+use derives its capacity from its own first refusal, needs no reading, and has no interactive
+login to take one under — installing this against a dedicated seat is not merely unnecessary,
+it cannot work. See the proposal for why the two cases differ.
+
 Every block below is a single paste. Replace `/opt/igor` with wherever `igor` is installed and
 `you` with the account name.
 
