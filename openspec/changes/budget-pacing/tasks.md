@@ -20,12 +20,18 @@
 
 ## 4. The reserve
 
-- [ ] 4.1 Narrow the reserve only late in a window and only where the owner is behind their own
-      pace; never to nothing
-- [ ] 4.2 Tests for each boundary, including an owner who does everything on the last day
+- [ ] 4.1 Decay the reserve toward the reset: on elapsed time where there is no recent
+      observation, on the owner's consumption — `percentUsed − (Igor spend ÷ capacity)` — where
+      there is; never early, never to nothing, and always less far on the clock alone
+- [ ] 4.2 Cap the relaxation at `min(relaxed budget, throughput × time remaining)`, so the
+      owner's remainder is not lowered for capacity nobody could have spent
+- [ ] 4.3 The session reserve decays; the weekly one no further, and by default not at all
+- [ ] 4.4 Tests for each boundary: an owner who does everything on the last day, a window with
+      no observation, a relaxation larger than the remaining throughput, and the two windows
+      treated differently on the same facts
 
 ## 5. Constants
 
-- [ ] 5.1 Target utilisation, tolerance and decay threshold are configurable, with defaults
-      marked provisional in the code until a seat has run a full week
+- [ ] 5.1 Target utilisation, tolerance and the reserve decay's shape are configurable, with
+      defaults marked provisional in the code until a seat has run a full week
 - [ ] 5.2 Record what the defaults were reasoned from, since nothing has measured them

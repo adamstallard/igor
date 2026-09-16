@@ -61,15 +61,45 @@ oscillates between overshooting and idling without spending any less.
 - **WHEN** recorded spend exceeds the pace line by less than the tolerance
 - **THEN** work proceeds
 
-### Requirement: A reserve protects projected need, not a fixed fraction
+### Requirement: A reserve decays toward the reset, on the clock or on the owner's consumption
 
-Late in a window, where the seat's owner is measurably behind their own pace, the reserved
-fraction MAY narrow. It SHALL NOT narrow early in a window, and SHALL NOT narrow to nothing.
+The reserved fraction of a window SHALL narrow as that window's reset approaches. Where a recent
+observation of the seat exists, it SHALL narrow by what the owner has actually consumed; where
+none does, it SHALL narrow on elapsed time alone and SHALL narrow less far for it. It SHALL NOT
+narrow early in a window, and SHALL NOT narrow to nothing.
 
-A fixed fraction of the window is the wrong quantity. On the last day of a quiet week it holds
-back capacity for somebody who has not wanted it, which is the waste this is meant to prevent
-— and holding it early, or entirely, is what protects somebody who does all their work on the
-last day.
+These are one rule in two information states, not two mechanisms. Capacity unspent when a window
+resets is lost whatever the reason, so holding the full fraction to the last minute guarantees
+waste; the clock is free, exact and always available, and is therefore the floor of the
+behaviour. An observation replaces the assumption clock decay has to make — that the owner might
+still want all of it — with what the owner did. Specifying one rule rather than two means a seat
+whose owner never schedules a reading still gets the conservative half, instead of there being a
+cliff between a calibrated seat and an uncalibrated one.
+
+The owner's consumption is not read directly and need not be. It is
+`percentUsed − (Igor's recorded spend ÷ capacity)` — the observed fullness of the window, less
+the part Igor is accountable for — and every term is recorded.
+
+The two windows have opposite risk profiles, so the session reserve SHALL decay and the weekly
+one SHALL decay no further, if at all. A session window turns over several times a day: its
+waste recurs, and relaxing too far costs a wait until the next reset. A weekly window turns over
+once: its waste is a single event, and relaxing too far costs somebody the day they had planned
+to work.
+
+Relaxing the bound on Igor lowers what remains to the owner. That is arithmetic and not an edge
+case, which is why a floor beneath the floor SHALL survive however late the window is and
+however quiet the owner has been.
+
+What relaxing recovers is bounded by throughput, not by the relaxed figure, so the bound SHALL
+NOT be relaxed past `min(relaxed budget, throughput × time remaining)`. Throughput is measured
+from recorded cost per completed item, which `executions/` already holds, and is not a constant
+to be chosen. Releasing 30% of a window in its final hour buys nothing if that is ten items'
+worth and the Igor can finish two.
+Decay that ignores this trades the owner's floor for capacity nobody was going to use.
+
+No curve, rate or threshold is fixed here. They want fitting against recorded observations, as
+the dead band does, and a constant chosen before there is data to choose it from is a guess
+carrying a number's authority.
 
 #### Scenario: A quiet owner late in the window
 
@@ -85,3 +115,20 @@ last day.
 
 - **WHEN** an owner has used none of their reserve and the window is almost over
 - **THEN** some of it remains unavailable to the Igor
+
+#### Scenario: Without an observation the clock still decays the reserve
+
+- **WHEN** a session window is near its reset and no recent observation of the seat exists
+- **THEN** the reserve narrows on elapsed time alone
+- **AND** it narrows less far than it would against an observation showing the owner idle
+
+#### Scenario: The weekly reserve is not traded for the same gain
+
+- **WHEN** both windows are near their resets and the owner is equally quiet against each
+- **THEN** the session reserve narrows further than the weekly one
+
+#### Scenario: Relaxation beyond reach is not granted
+
+- **WHEN** decay would release more budget than the Igor could spend before the reset
+- **THEN** the bound is relaxed only as far as remains reachable
+- **AND** the rest stays with the owner
