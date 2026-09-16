@@ -18,6 +18,7 @@
   ],
   "scripts": {
     "build": "tsc",
+    "prepack": "rm -rf dist && npm run build",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json",
