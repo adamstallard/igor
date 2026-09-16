@@ -29,9 +29,16 @@ something else entirely when it is missing.
 - **THEN** that seat's token is in the worker's environment
 - **AND** no other seat's token is
 
-#### Scenario: A seat whose token source cannot be read fails loudly
+#### Scenario: A seat whose token variable is unset fails loudly
 
-- **WHEN** the chosen seat names a token source that cannot be resolved
+- **WHEN** the chosen seat names a token variable that is not set
+- **THEN** execution fails naming the variable
+- **AND** no worker is spawned
+
+#### Scenario: A seat whose file or command yields no token fails loudly
+
+- **WHEN** the chosen seat names a file that cannot be read or is empty, or a command that
+  fails, prints nothing, or is killed at its timeout
 - **THEN** execution fails naming what was tried and why
 - **AND** no worker is spawned
 
