@@ -217,6 +217,23 @@ export async function runItem(
       }
     }
 
+    case 'budget': {
+      // Exhaustion found mid-run and exhaustion found before starting are one condition seen
+      // at two moments, so they converge on one handoff — and on one kind, which is what keeps
+      // the item out of the deferral record: nothing about it caused this, so it comes back
+      // when capacity does.
+      const reason: HandoffReason = {
+        kind: 'budget',
+        ...(options.budget?.seat === undefined ? {} : { seat: options.budget.seat }),
+        ...(execution.resetsAt === undefined ? {} : { resetAt: execution.resetsAt }),
+      }
+      const out = await handOffFrom(tracker, candidate, role, identity, claim.claimedAt, reason, execution)
+      return {
+        outcome: 'handed-off', candidate, reason: execution.reason, execution,
+        costUsd: execution.costUsd, spoke: out.posted, handoff: 'budget',
+      }
+    }
+
     case 'failed':
     case 'nothing-to-do': {
       // "Nothing to do" still owes an explanation. The Igor claimed the item, so releasing it

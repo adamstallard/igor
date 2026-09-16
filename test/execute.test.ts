@@ -7,7 +7,7 @@ import type { Role } from '../src/role.js'
 import {
   ABSOLUTE_CEILING_MS, branchFor, claudeWorker, complete, describeTool, execute, ExecutionError,
   MODEL_SILENCE_MS, permits, prBody, PR_BODY_LIMIT, recordExecution, renderProgress, spendByModel, stripLinkage,
-  TOOL_SILENCE_MS, watchWorker, workerEnv, workerPrompt, workerSystemPrompt,
+  TOOL_SILENCE_MS, usageLimit, watchWorker, workerEnv, workerPrompt, workerSystemPrompt,
   type Progress, type WorkerEvent, type WorkerRunner,
 } from '../src/execute.js'
 import { withTree, type ChangedFile, type TreeProvider, type WorkingTree } from '../src/worktree.js'
@@ -1190,5 +1190,187 @@ describe('what each model cost, kept because the aggregate cannot answer it', ()
     const { result } = await run({}, { worker: async () => ({ result: 'Done.', total_cost_usd: 0.02 }) })
     expect(result.models).toBeUndefined()
     expect(result.stopReason).toBeUndefined()
+  })
+})
+
+/** Relative, so no test here starts failing on the day a hardcoded reset time goes past. */
+const RESET_SECONDS = Math.floor(Date.now() / 1000) + 3600
+const RESET_ISO = new Date(RESET_SECONDS * 1000).toISOString()
+
+describe('a seat with no capacity left is not a crash', () => {
+  it('recognises the condition wherever the envelope carries it', () => {
+    expect(usageLimit({ api_error_status: 429 })).toEqual({})
+    expect(usageLimit({ api_error_status: '429' })).toEqual({})
+    expect(usageLimit({ stop_reason: 'usage_limit' })).toEqual({})
+    expect(usageLimit({ terminal_reason: 'rate-limit' })).toEqual({})
+    expect(usageLimit({ rate_limit_info: { status: 'rejected' } })).toEqual({})
+    expect(usageLimit({ is_error: true, result: 'Claude AI usage limit reached' })).toEqual({})
+  })
+
+  it('takes a run the provider calls successful at its word', () => {
+    // The empty-tree path asks this of every healthy run that changed nothing, so a limit the
+    // run retried past and finished around must not speak over the worker's own account.
+    expect(usageLimit({ is_error: false, api_error_status: 429 })).toBeUndefined()
+    expect(usageLimit({ is_error: false, rate_limit_info: { status: 'rejected' } })).toBeUndefined()
+    expect(usageLimit({ is_error: false, stop_reason: 'usage_limit' })).toBeUndefined()
+  })
+
+  it('drops a reset time that has already been and gone', () => {
+    // Rendered as "back at … (now)", a stale time tells the reader capacity is available on
+    // the very message releasing the item. Saying nothing is the honest answer.
+    const past = Math.floor(Date.now() / 1000) - 600
+    expect(usageLimit({ is_error: true, result: `Claude AI usage limit reached|${past}` })).toEqual({})
+  })
+
+  it('reports an ordinary failure as one where the envelope is ambiguous', () => {
+    // A crash announced as "out of budget" buries a bug under a reason nobody questions, so
+    // every carrier that stops short of naming the seat's capacity has to fall through.
+    expect(usageLimit(undefined)).toBeUndefined()
+    expect(usageLimit({})).toBeUndefined()
+    expect(usageLimit({ api_error_status: null, is_error: true, result: 'Not logged in' })).toBeUndefined()
+    expect(usageLimit({ api_error_status: 500, is_error: true, result: 'API Error: 500' })).toBeUndefined()
+    expect(usageLimit({ stop_reason: 'max_tokens' })).toBeUndefined()
+    // Observed on every real one so far: the provider saying nothing is wrong.
+    expect(usageLimit({ rate_limit_info: { status: 'allowed' } })).toBeUndefined()
+    // A finished run that worked on throttling wrote the words itself.
+    expect(usageLimit({ is_error: false, result: 'Added handling for a 429 rate limit.' })).toBeUndefined()
+    // The same words on a run that did error, but about something other than this seat.
+    expect(usageLimit({ is_error: true, result: 'GitHub API rate limit exceeded for user' })).toBeUndefined()
+  })
+
+  it('takes a reset time only where the provider gave one', () => {
+    expect(usageLimit({ api_error_status: 429 })?.resetsAt).toBeUndefined()
+    expect(usageLimit({ is_error: true, result: `Claude AI usage limit reached|${RESET_SECONDS}` })).toEqual({
+      resetsAt: RESET_ISO,
+    })
+    expect(usageLimit({ is_error: true, result: `usage limit reached|${RESET_SECONDS}000` })).toEqual({
+      resetsAt: RESET_ISO,
+    })
+    expect(usageLimit({ api_error_status: 429, rate_limit_info: { resets_at: RESET_ISO } })).toEqual({
+      resetsAt: RESET_ISO,
+    })
+    expect(usageLimit({ api_error_status: 429, rate_limit_info: { resetsAt: RESET_SECONDS } })).toEqual({
+      resetsAt: RESET_ISO,
+    })
+    expect(usageLimit({ is_error: true, result: `usage limit: resets at ${RESET_ISO}` })).toEqual({
+      resetsAt: RESET_ISO,
+    })
+  })
+
+  it('still reports the stop where the reset time is unreadable', () => {
+    // `new Date(NaN).toISOString()` throws, and a throw on the failure path would turn the
+    // budget stop being diagnosed into an unhandled error.
+    for (const info of [{ resetsAt: 'sometime tomorrow' }, { resetsAt: 0 }, { resetsAt: {} }, { resetsAt: 1e17 }]) {
+      expect(usageLimit({ api_error_status: 429, rate_limit_info: info })).toEqual({})
+    }
+  })
+
+  it('hands off on the reset time the failing envelope carried', async () => {
+    const { provider } = fakeProvider(edited)
+    const { host, seen } = fakeCodeHost()
+    const { t } = fakeTracker()
+
+    const r = await execute(provider, t, host, candidate(), role(), {
+      worker: async () => {
+        throw new ExecutionError('worker exited 1', {
+          is_error: true,
+          result: `Claude AI usage limit reached|${RESET_SECONDS}`,
+          total_cost_usd: 0.4,
+        })
+      },
+    })
+
+    expect(r.outcome).toBe('budget')
+    expect(r.resetsAt).toBe(RESET_ISO)
+    expect(r.reason).toContain(RESET_ISO)
+    // What the seat spent before it ran out is in the envelope and is real money.
+    expect(r.costUsd).toBe(0.4)
+    // The edits are recorded, as on any other path that publishes nothing.
+    expect(r.changed).toEqual(edited)
+    expect(seen).toEqual([])
+  })
+
+  it('says so plainly where the reset time was not reported', async () => {
+    const { provider } = fakeProvider([])
+    const { host } = fakeCodeHost()
+    const { t } = fakeTracker()
+
+    const r = await execute(provider, t, host, candidate(), role(), {
+      worker: async () => {
+        throw new ExecutionError('worker exited 1', { is_error: true, result: 'API Error: 429' })
+      },
+    })
+
+    expect(r.outcome).toBe('budget')
+    expect(r.resetsAt).toBeUndefined()
+    expect(r.reason).toMatch(/did not report when it returns/)
+  })
+
+  it('separates an exhausted seat from a worker that looked and found nothing', async () => {
+    const { provider } = fakeProvider([])
+    const { host } = fakeCodeHost()
+    const { t } = fakeTracker()
+
+    const r = await execute(provider, t, host, candidate(), role(), {
+      worker: async () => ({ is_error: true, result: 'Claude AI usage limit reached', api_error_status: 429 }),
+    })
+
+    expect(r.outcome).toBe('budget')
+  })
+
+  it('leaves a finished run that changed nothing as the worker described it', async () => {
+    const { provider } = fakeProvider([])
+    const { host } = fakeCodeHost()
+    const { t } = fakeTracker()
+
+    const r = await execute(provider, t, host, candidate(), role(), {
+      worker: async () => ({
+        is_error: false,
+        api_error_status: 429,
+        result: 'I looked and there is nothing to change.',
+      }),
+    })
+
+    expect(r.outcome).toBe('nothing-to-do')
+  })
+
+  it('publishes work the limit arrived after', async () => {
+    // An envelope can carry a limit the run retried past. Discarding a finished diff over it
+    // is the worse mistake of the two, so only a run that produced nothing is reclassified.
+    const { result, seen } = await run(
+      {},
+      { worker: async () => ({ result: 'Fixed it.', total_cost_usd: 0.02, api_error_status: 429 }) },
+    )
+    expect(result.outcome).toBe('produced')
+    expect(seen.length).toBe(1)
+  })
+
+  it('carries the terminal envelope out with the exit code', async () => {
+    // The worker's own account of why it stopped is otherwise dropped at the reject, leaving
+    // "worker exited 1" for a condition the stream stated. Spawned rather than faked, because
+    // that reject is the seam under test.
+    const script = tempDir('igor-limited-worker-')
+    const bin = join(script, 'claude')
+    writeFileSync(
+      bin,
+      '#!/bin/sh\n' +
+        `echo '{"type":"result","subtype":"error","is_error":true,"api_error_status":429,` +
+        `"result":"Claude AI usage limit reached|${RESET_SECONDS}"}'\n` +
+        'exit 1\n',
+    )
+    chmodSync(bin, 0o755)
+
+    const failed = await claudeWorker(bin)({
+      cwd: script,
+      system: 's',
+      prompt: 'p',
+      model: 'm',
+      limits: { toolMs: 10_000, modelMs: 10_000, ceilingMs: 10_000 },
+      allowedTools: [],
+      env: {},
+    }).catch((e: unknown) => e)
+
+    expect(failed).toBeInstanceOf(ExecutionError)
+    expect(usageLimit((failed as ExecutionError).output)).toEqual({ resetsAt: RESET_ISO })
   })
 })

@@ -6,7 +6,8 @@ import {
   declineReason, dropDeferred, dropStopped, oneFetchPerItem, recordDecisions, runItem,
   type CommentSource, type CycleReport, type ItemDeps,
 } from '../src/loop.js'
-import { defer, NO_DEFERRALS } from '../src/deferred.js'
+import { defer, NO_DEFERRALS, shouldDefer } from '../src/deferred.js'
+import { ExecutionError } from '../src/execute.js'
 import { tempDir } from './tmp.js'
 
 const candidate = (over: Partial<Candidate> = {}): Candidate =>
@@ -79,6 +80,49 @@ describe('an Igor never goes silent on something it claimed', () => {
     expect(r.handoff).toBe('budget')
     expect(posts.at(-1)).toMatch(/budget.*igor-1/s)
     expect(released).toEqual(['igor-bot'])
+  })
+
+  it('hands off on budget when the seat runs out mid-run, not on failure', async () => {
+    // The seat dying part-way through and the gate catching it beforehand are one condition,
+    // so they owe the same message: when capacity returns, rather than a crash nobody can act
+    // on. Left as a failure this reads "worker exited 1" and defers the item for good.
+    const resets = Math.floor(Date.now() / 1000) + 2 * 3600
+    const wallClock = `${new Date(resets * 1000).toISOString().slice(0, 16).replace('T', ' ')} UTC`
+    const { d, posts, released } = deps({ changes: [] })
+    const r = await runItem(d, candidate(), role(), 'igor-bot', {
+      ...noWait,
+      budget: { exhausted: () => false, seat: 'igor-1' },
+      worker: async () => {
+        throw new ExecutionError('worker exited 1', {
+          is_error: true,
+          result: `Claude AI usage limit reached|${resets}`,
+        })
+      },
+    })
+
+    expect(r.outcome).toBe('handed-off')
+    expect(r.handoff).toBe('budget')
+    expect(posts.at(-1)).toContain(wallClock)
+    expect(posts.at(-1)).not.toMatch(/will not retry/)
+    expect(released).toEqual(['igor-bot'])
+    // Nothing about the item caused this, so it must come back when the capacity does.
+    expect(shouldDefer(r.outcome, r.handoff)).toBe(false)
+  })
+
+  it('says the reset time was not reported rather than inventing one', async () => {
+    const { d, posts } = deps({ changes: [] })
+    const r = await runItem(d, candidate(), role(), 'igor-bot', {
+      ...noWait,
+      // The gate's own reset time is the soonest across the pool, which is not necessarily
+      // this seat's, so an envelope that named none leaves the handoff saying so.
+      budget: { exhausted: () => false, seat: 'igor-1', resetAt: new Date(Date.now() + 7200_000).toISOString() },
+      worker: async () => {
+        throw new ExecutionError('worker exited 1', { is_error: true, result: 'API Error: 429' })
+      },
+    })
+
+    expect(r.handoff).toBe('budget')
+    expect(posts.at(-1)).toMatch(/when it returns is not known/)
   })
 
   it('hands off rather than retrying when the worker cannot run', async () => {

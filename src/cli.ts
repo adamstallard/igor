@@ -444,8 +444,9 @@ program
     const cap = opts.maxItems === undefined ? report.toClaim.length : Number(opts.maxItems)
     for (const c of report.toClaim.slice(0, cap)) {
       const run = await work(c.candidate)
-      // A closed budget stops the cycle rather than being rediscovered per item.
-      if (run.outcome === 'handed-off' && /budget/.test(run.reason)) {
+      // A closed budget stops the cycle rather than being rediscovered per item. Read off the
+      // handoff kind rather than the prose, which is written for whoever reads the item.
+      if (run.outcome === 'handed-off' && run.handoff === 'budget') {
         process.stdout.write('\nstopping this cycle: the budget is spent\n')
         break
       }

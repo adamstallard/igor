@@ -68,6 +68,11 @@ describe('composed from state, never from a model', () => {
     expect(remaining[0]).toMatch(/never started/)
   })
 
+  it('leaves nothing unsaid when a seat ran out part-way through', () => {
+    const { remaining } = stepsFrom(CLAIMED, result({ outcome: 'budget', artifact: undefined }), NOW)
+    expect(remaining.join(' ')).toMatch(/never published/)
+  })
+
   it('is honest that unpublished edits are gone with the working copy', () => {
     const { remaining } = stepsFrom(CLAIMED, result({ outcome: 'failed', artifact: undefined }), NOW)
     expect(remaining.join(' ')).toMatch(/never published.*gone with the working copy/)

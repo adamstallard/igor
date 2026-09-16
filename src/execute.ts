@@ -16,7 +16,19 @@ import { appendRecord, STATE_BRANCH, writeState } from './state.js'
 
 export const EXECUTION_MODEL = 'claude-sonnet-5'
 
-export class ExecutionError extends Error {}
+export class ExecutionError extends Error {
+  /**
+   * The worker's terminal event, where it produced one before exiting non-zero. The exit code
+   * alone cannot tell a crash from a seat with no capacity left, and the envelope that can say
+   * which is otherwise dropped at the reject.
+   */
+  constructor(
+    message: string,
+    readonly output?: WorkerOutput,
+  ) {
+    super(message)
+  }
+}
 
 /** Refusals are recorded rather than thrown: the point is that the run continues without them. */
 export interface Refusal {
@@ -37,7 +49,8 @@ export interface WorkerUsage {
 }
 
 export interface ExecutionResult {
-  outcome: 'produced' | 'nothing-to-do' | 'refused' | 'failed'
+  /** `budget` is a seat with nothing left to spend: not the item's fault, and not a failure. */
+  outcome: 'produced' | 'nothing-to-do' | 'refused' | 'failed' | 'budget'
   artifact?: Artifact
   changed: ChangedFile[]
   refusals: Refusal[]
@@ -53,6 +66,8 @@ export interface ExecutionResult {
   models?: ModelSpend[]
   /** Why the model stopped, as the provider put it. */
   stopReason?: string
+  /** Only on a budget stop, and only where the provider named one. */
+  resetsAt?: string
   reason: string
 }
 
@@ -123,6 +138,12 @@ export interface WorkerOutput {
   /** Per-model token counts and cost, keyed by the dated model id. */
   modelUsage?: Record<string, unknown>
   stop_reason?: string
+  /** The status of the call that failed the run; null where no call failed. */
+  api_error_status?: number | string | null
+  /** Why the run ended, as against why the model's last turn did. */
+  terminal_reason?: string
+  /** The seat's limit state, in whatever shape the envelope repeats it from the stream. */
+  rate_limit_info?: unknown
 }
 
 /**
@@ -162,6 +183,98 @@ export function spendByModel(modelUsage: Record<string, unknown> | undefined): M
   }
   // Dearest first, because the question asked of these records is always which model spent it.
   return out.sort((a, b) => b.costUsd - a.costUsd)
+}
+
+/** Fields whose vocabulary is the provider's own, so naming a limit in one is unambiguous. */
+const LIMIT_FIELD = /(?:usage|rate)[ _-]?limit/i
+
+/**
+ * What a failed run's own text has to say to count as the seat rather than as anything else.
+ * Bare "rate limit" is deliberately absent: a run that died on some other service's throttling
+ * says that too, and the seat's capacity is not what it is talking about.
+ */
+const LIMIT_TEXT = [/usage limit/i, /rate_limit_error/i, /\b429\b/, /quota (?:exceeded|exhausted)/i]
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : undefined
+}
+
+/** Ten digits is seconds and thirteen is milliseconds; anything else is not a time. */
+function fromEpoch(value: number): string | undefined {
+  if (!Number.isFinite(value) || value <= 0) return undefined
+  const ms = value < 1e11 ? value * 1000 : value
+  return ms < 1e15 ? new Date(ms).toISOString() : undefined
+}
+
+/**
+ * Tolerant, and above all non-throwing: `new Date(NaN).toISOString()` raises, and a throw here
+ * would turn the budget stop this is diagnosing into an unhandled error on the failure path.
+ */
+function asIso(value: unknown): string | undefined {
+  if (typeof value === 'number') return fromEpoch(value)
+  if (typeof value !== 'string') return undefined
+  const text = value.trim()
+  if (text === '') return undefined
+  if (/^\d+$/.test(text)) return fromEpoch(Number(text))
+  const t = Date.parse(text)
+  return Number.isFinite(t) ? new Date(t).toISOString() : undefined
+}
+
+function resetFrom(envelope: WorkerOutput, info: Record<string, unknown> | undefined): string | undefined {
+  for (const key of ['resetsAt', 'resets_at', 'resetAt', 'reset_at']) {
+    const iso = asIso(info?.[key])
+    if (iso !== undefined) return iso
+  }
+  const text = envelope.result ?? ''
+  // The shape the CLI is believed to print: `Claude AI usage limit reached|1780000000`.
+  const piped = /usage limit reached\s*\|\s*(\d{10,13})/i.exec(text)
+  if (piped?.[1] !== undefined) return fromEpoch(Number(piped[1]))
+  const stamped = /(?:resets?|until|again)\D{0,12}(\d{4}-\d{2}-\d{2}T[\d:]{5,8}(?:\.\d+)?Z?)/i.exec(text)
+  return stamped?.[1] === undefined ? undefined : asIso(stamped[1])
+}
+
+/**
+ * Whether the terminal envelope is a seat with no capacity left, and when it comes back.
+ *
+ * **These patterns are unverified against a live usage-limit error.** Nobody has captured one
+ * from this provider, so which field carries it is a guess spread across the plausible
+ * carriers; correct them here and nowhere else once one is seen.
+ *
+ * Wrong in the safe direction on purpose. An ambiguous envelope reads as an ordinary failure,
+ * because a crash announced as "out of budget" buries a bug under a reason nobody will
+ * question, while a budget stop announced as a crash costs one re-run. So nothing counts on a
+ * run the provider reports as successful, and `rate_limit_info` counts only where it says the
+ * call was refused — every instance of it yet observed carried `status: "allowed"`, which is
+ * the provider reporting that nothing is wrong.
+ */
+export function usageLimit(
+  envelope: WorkerOutput | undefined,
+  now: number = Date.now(),
+): { resetsAt?: string } | undefined {
+  // A finished run is not an exhausted seat, whatever status it repeats: a limit the run hit,
+  // retried past and finished around is history rather than the reason it stopped.
+  if (envelope === undefined || envelope.is_error === false) return undefined
+  const info = asRecord(envelope.rate_limit_info)
+  const status = info?.['status']
+  const refused = typeof status === 'string' && /reject|block|exhaust|limit|denied/i.test(status)
+  const hit =
+    Number(envelope.api_error_status) === 429 ||
+    LIMIT_FIELD.test(envelope.stop_reason ?? '') ||
+    LIMIT_FIELD.test(envelope.terminal_reason ?? '') ||
+    refused ||
+    LIMIT_TEXT.some((pattern) => pattern.test(envelope.result ?? ''))
+  if (!hit) return undefined
+  // A time already gone reads as "capacity is back" on a message releasing the item, which is
+  // worse than naming no time at all: the envelope can be repeating a limit from hours ago.
+  const resetsAt = resetFrom(envelope, info)
+  return resetsAt === undefined || Date.parse(resetsAt) <= now ? {} : { resetsAt }
+}
+
+/** Recorded verbatim in the ledger, so it has to explain itself with nothing beside it. */
+function outOfCapacity(resetsAt: string | undefined): string {
+  return resetsAt === undefined
+    ? 'the seat ran out of capacity, and the provider did not report when it returns'
+    : `the seat ran out of capacity; it returns at ${resetsAt}`
 }
 
 /**
@@ -640,7 +753,7 @@ export function claudeWorker(command = 'claude'): WorkerRunner {
         // hand, leaving "worker exited 1" for a cause the stream stated plainly.
         if (code !== 0) {
           const said = final?.is_error === true ? final.result?.trim() : undefined
-          return reject(new ExecutionError(said || err.trim() || `worker exited ${code}`))
+          return reject(new ExecutionError(said || err.trim() || `worker exited ${code}`, final))
         }
         if (final === undefined) {
           return reject(new ExecutionError(`worker produced no result: ${(err.trim() || pending).slice(0, 200)}`))
@@ -872,6 +985,22 @@ export async function execute(
         // The tree is read even here. A worker can be killed hours into real editing, and the
         // record of a failure that says it changed nothing is a record of the wrong failure.
         const changed = await tree.changes().catch(() => [])
+        // A seat that ran out says so in its terminal event and then exits non-zero like any
+        // other fault. Reported as a failure it leaves a claim behind with no account of when
+        // the Igor could come back, which is the one thing the reader needs.
+        const envelope = error instanceof ExecutionError ? error.output : undefined
+        const limit = usageLimit(envelope)
+        if (limit !== undefined) {
+          return {
+            outcome: 'budget' as const,
+            changed,
+            refusals,
+            transcript: '',
+            ...spend(envelope),
+            ...(limit.resetsAt === undefined ? {} : { resetsAt: limit.resetsAt }),
+            reason: outOfCapacity(limit.resetsAt),
+          }
+        }
         return {
           outcome: 'failed' as const,
           changed,
@@ -903,6 +1032,22 @@ export async function execute(
     }
 
     if (changed.length === 0) {
+      // An exhausted seat leaves the same empty tree as a worker that looked and found nothing,
+      // and the two owe opposite messages. Asked only of a run that produced nothing: an
+      // envelope can carry a limit the run then retried past, and work that reached the tree
+      // must be published rather than thrown away over it.
+      const limit = usageLimit(worker)
+      if (limit !== undefined) {
+        return {
+          outcome: 'budget' as const,
+          changed,
+          refusals,
+          transcript,
+          ...cost,
+          ...(limit.resetsAt === undefined ? {} : { resetsAt: limit.resetsAt }),
+          reason: outOfCapacity(limit.resetsAt),
+        }
+      }
       return {
         outcome: 'nothing-to-do' as const,
         changed,

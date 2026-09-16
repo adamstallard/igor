@@ -101,6 +101,9 @@ export function stepsFrom(
       break
     case 'refused':
     case 'failed':
+    // A budget stop is nobody's fault and everything is still to do, which is the same two
+    // sentences: what reached the tree is gone with it, and the rest was never attempted.
+    case 'budget':
       remaining.push(
         edits > 0
           ? 'the edits were made but never published, so they are gone with the working copy'
