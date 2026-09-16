@@ -42,18 +42,17 @@
 - [ ] 5.2 Never observed, unreadable credential, and spent are three distinct reported states
 - [ ] 5.3 Test that an operator can tell the three apart from the report alone
 
-## 6. Cutting what cannot be satisfied
+## 6. Reconciling the sibling change
 
-- [ ] 6.1 Remove "A reserve protects projected need, not a fixed fraction" from
-      `openspec/changes/budget-pacing`, recording that it requires observing the owner and that
-      no surface exposes that to a seat
+- [ ] 6.1 Rewrite `budget-pacing`'s reserve requirement as one rule in two information states —
+      decay on the clock without a recent observation, decay on the owner's consumption with one
+      — so that it stands whether or not `scheduled-observation` has landed
 - [ ] 6.2 Reconcile the rest of `budget-pacing` with capacity coming from a division:
       `elapsed` still comes from a reset time, but `percentUsed` no longer comes from a reading
 
 ## 7. Getting the first observation
 
-- [ ] 7.1 Issue for `igor calibrate`: the owner runs a reading on their own machine and it
-      lands as an observation. The reading and its parsing already exist; the interface and the
-      service-user constraint do not
+- [ ] 7.1 `scheduled-observation` carries the command that takes a reading on the owner's
+      machine and the schedule it runs on; nothing here defines either
 - [ ] 7.2 Issue for constants — target utilisation, dead band, staleness — to be fitted once a
       week of observations exists, rather than to the two items measured so far

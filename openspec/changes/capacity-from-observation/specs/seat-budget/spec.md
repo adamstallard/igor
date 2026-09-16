@@ -55,10 +55,11 @@ at exhaustion, so that a person sharing the seat retains capacity.
 
 Bounding Igor's own spend guarantees the owner's floor by construction: whatever the owner does
 with the rest of the window, the fraction Igors can have taken from it is capped, and no
-observation of the owner is required. This matters because the owner cannot be observed. The
-subscription behind a seat is shared with that person's Claude on web, desktop and mobile, not
-only with Claude Code, so the consumer Igor cannot see is larger than the seat suggests — and a
-floor that depended on watching them would be wrong in exactly the cases it exists for.
+observation of the owner is required. That independence is the point — the floor holds while
+observations are stale, sparse or absent, which is the normal condition. The subscription behind
+a seat is shared with that person's Claude on web, desktop and mobile, not only with Claude
+Code, so the consumer Igor sees least of is the largest one, and a floor whose enforcement
+waited on a current reading of them would lapse exactly when readings stopped arriving.
 
 Every Igor drawing on a seat writes its executions to the same state branch, so the sum is
 recoverable from one record and Igors sharing a seat with each other stay within one bound. A

@@ -69,21 +69,23 @@ stake. A seat with a reserve waits for an observation.
 
 Explicitly out of scope:
 
-- **The adaptive reserve** — `budget-pacing`'s "A reserve protects projected need, not a fixed
-  fraction". It narrows the reserve where the owner is measurably behind their own pace, which
-  requires seeing the owner's consumption. No surface exposes that to a seat: the credential
-  carries no subscription identity, there is no `usage` subcommand, and the owner's other
-  clients are outside Claude Code entirely. This should be **cut rather than deferred**. A
-  deferred requirement implies a blocked implementation; this one is blocked on a fact about
-  the provider that nothing in this repository can change, and leaving it open invites somebody
-  to satisfy it from a guess. The waste it targeted is real and wants a different mechanism.
+- **The adaptive reserve** — `budget-pacing`'s reserve decay. It narrows the reserve where the
+  owner is measurably behind their own pace, which needs the owner's consumption. That is
+  arithmetic over terms this change already defines:
+  `percentUsed − (Igor's recorded spend ÷ capacity)` is the owner's share of a window, and every
+  term on the right is an observation or an execution record. The observation comes from the
+  owner's interactive login, which is the same source this change's whole capacity derivation
+  depends on — not from the seat, which is why the seat credential's blindness does not bear on
+  it. What it additionally needs is observations arriving often enough to still describe the
+  present, and `scheduled-observation` is what produces those. Deferred to that change, not cut.
 - **Choosing constants** — target utilisation, dead bands, staleness thresholds. The two items
   measured so far are 10× apart, $1.19 and $11.18; anything fitted to that is fitted to
   anecdote. These want a week of recorded observations, which this change is what produces.
-- **`igor calibrate`'s interface.** Only the note that the reading half already exists:
-  `claude -p '/usage'` returns the percentages headlessly under an interactive login, and
-  `parseUsage` parses exactly that text. What it cannot do is run under a service user, so
-  whatever the command looks like, it runs on the owner's machine.
+- **The command that takes a reading, and the schedule it runs on.** `scheduled-observation`
+  covers both. Noted here only because the reading half already exists: `claude -p '/usage'`
+  returns the percentages headlessly under an interactive login, and `parseUsage` parses exactly
+  that text. What it cannot do is run under a service user, so wherever the command lands, it
+  runs on a machine where a person is signed in.
 - **Deriving a bound against a per-model window.** The weekly cap on a single model is a
   separate limit, and "Limits the provider reports but the loop does not enforce are still
   shown" stays in force: it is reported, not acted on. An observation names the model it
@@ -112,8 +114,9 @@ Explicitly out of scope:
   inverts what `docs/seats.md` describes. That document promises a lender "half is always
   yours, on the worst day the fleet has"; the promise is now kept by construction, but only
   once their seat has been observed, and not at all before.
-- Requires a reading taken on the owner's machine before a reserved seat can be used, which is
-  a manual step where there was previously meant to be none.
+- Requires a reading taken on the owner's machine before a reserved seat can be used, where
+  there was meant to be nothing to run at all. `scheduled-observation` makes that recurring
+  rather than manual; without it somebody runs it by hand, once, and the figure ages.
 - Adds a reason for passing over a seat — never observed — that is neither exhaustion nor an
   unreadable credential, and an operator reading the budget report has to be able to tell the
   three apart.
