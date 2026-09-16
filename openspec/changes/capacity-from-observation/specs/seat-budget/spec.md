@@ -280,6 +280,12 @@ because the numerator counts only Igor's share of a denominator that everybody m
 is deliberate and is in the safe direction: a capacity estimated low yields a bound on Igor that
 is tighter than intended, which cannot overrun anybody's floor.
 
+It is a property of one observation, not a ceiling on what can be known. A seat read repeatedly
+is also read across intervals its owner happened to sit out, and those yield the capacity
+outright. Which observations to combine, and how, wants a season of them to decide; what must
+not be concluded is that a shared seat is stuck with an underestimate, because a seat
+permanently under-used is the waste that lending was meant to avoid.
+
 An observation with no recorded spend in its instance SHALL yield no capacity figure. Dividing
 by an unrelated numerator produces a number, and nothing about that number is true.
 
