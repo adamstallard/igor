@@ -4,6 +4,11 @@
 
 Changes go through OpenSpec: proposal, design, specs, tasks, implement, archive.
 
+**A `design.md` where the *how* is a choice.** A proposal states what must be true; a design
+states how, and earns a file only where the requirements do not imply it — a mechanism with
+alternatives worth rejecting in writing, or a procedure somebody will follow step by step. A
+change that is all *what* has none, and several here rightly do not.
+
 **Archive when every *requirement* is met, not when every task is ticked.** Requirements live
 in the spec deltas and define what the change must be true of. Tasks are a plan for getting
 there, and a plan can be wrong.
@@ -21,7 +26,8 @@ design, and an Igor can eventually pick up its own backlog.
 
 **Record what a measurement actually said**, including when it contradicts what the design
 assumed. `docs/architecture.md` holds the decisions, and a change's `design.md` holds what its
-implementation contradicted.
+implementation contradicted — including in a change already archived, which is read before the
+code by whoever next touches that area.
 
 **A comment describes the code as it is now.** No history, no narration of what changed. Where
 a past mistake is worth preventing, write it as a warning in the present tense. See the
