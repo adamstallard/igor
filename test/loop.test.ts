@@ -308,6 +308,22 @@ describe('what triage decided is written down, skips included', () => {
     })
     expect(calls).toBe(0)
   })
+
+  it('names the seat triage spent from, so the cost is attributable', async () => {
+    let written: Record<string, unknown> | undefined
+    await recordDecisions('o/lore', role(), { ...report, triageSeat: 'seat-2' } as never, async (_r, _p, rec) => {
+      written = rec
+    })
+    expect(written!['seat']).toBe('seat-2')
+  })
+
+  it('names no seat where none was chosen, rather than a false attribution', async () => {
+    let written: Record<string, unknown> | undefined
+    await recordDecisions('o/lore', role(), report as never, async (_r, _p, rec) => {
+      written = rec
+    })
+    expect(written!['seat']).toBeUndefined()
+  })
 })
 
 describe('items handed back earlier', () => {

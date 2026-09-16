@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Candidate, Source, Tracker } from '../src/adapter.js'
 import type { Role } from '../src/role.js'
 
@@ -172,6 +172,66 @@ describe('one comment fetch per candidate', () => {
     const report = await planCycle(d, role(), { now: NOW, identity: 'igor-bot', triage })
     expect(report.toClaim).toHaveLength(1)
     expect(reads).toEqual([{ id: c.id, since: ago(60) }])
+  })
+})
+
+describe('triage spends the seat the gate chose, not whatever is ambient', () => {
+  afterEach(() => vi.unstubAllEnvs())
+
+  it('gives triage the token of the chosen seat', async () => {
+    vi.stubEnv('IGOR_SEAT_1', 'ambient-token')
+    vi.stubEnv('IGOR_SEAT_2', 'seat-two-token')
+    stored.clear()
+    const items = [candidate(7, 40)]
+    let seenEnv: NodeJS.ProcessEnv | undefined
+    const watch: typeof triageBatch = async (cs, system, model, env) => {
+      seenEnv = env
+      return triage(cs, system, model)
+    }
+
+    await planCycle(deps(items, none), role(), {
+      now: NOW,
+      identity: 'igor-bot',
+      triage: watch,
+      gate: async () => ({
+        exhausted: () => false,
+        seat: 'seat-2',
+        token: { tokenEnv: 'IGOR_SEAT_2' },
+        reason: 'chosen',
+      }),
+    })
+
+    expect(seenEnv?.['CLAUDE_CODE_OAUTH_TOKEN']).toBe('seat-two-token')
+    expect(seenEnv?.['IGOR_SEAT_1']).toBeUndefined()
+  })
+
+  it('records which seat triage spent from, so the cost is attributable', async () => {
+    stored.clear()
+    const items = [candidate(7, 40)]
+
+    const report = await planCycle(deps(items, none), role(), {
+      now: NOW,
+      identity: 'igor-bot',
+      triage,
+      gate: async () => ({ exhausted: () => false, seat: 'seat-2', reason: 'chosen' }),
+    })
+
+    expect(report.triageSeat).toBe('seat-2')
+  })
+
+  it('never calls the gate when a cycle has nothing to triage', async () => {
+    stored.clear()
+    let calls = 0
+    await planCycle(deps([], none), role(), {
+      now: NOW,
+      identity: 'igor-bot',
+      triage,
+      gate: async () => {
+        calls += 1
+        return { exhausted: () => false, seat: 'seat-2', reason: 'chosen' }
+      },
+    })
+    expect(calls).toBe(0)
   })
 })
 

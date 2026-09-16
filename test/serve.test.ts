@@ -207,17 +207,23 @@ describe('the budget stops the cycle, not the process', () => {
   it('re-checks the budget before each item, not once per cycle', async () => {
     // An item can take minutes. A budget that closes during the first must stop the second.
     let calls = 0
+    let spent = false
     const { d } = deps([issue(1), issue(2), issue(3)])
     const s = await serve(d, role(), 'igor-bot', {
       ...base,
       maxCycles: 1,
       gate: async () => {
         calls += 1
-        return calls > 1 ? shut : open
+        return spent ? shut : open
+      },
+      worker: async () => {
+        spent = true
+        return { result: 'no change needed', total_cost_usd: 0 }
       },
     })
     expect(s.worked).toBe(1)
-    expect(calls).toBe(2)
+    // Once for the seat triage spends from, then once before each item it reached.
+    expect(calls).toBe(3)
   })
 
   it('says the budget is why it stopped', async () => {
@@ -238,10 +244,12 @@ describe('the budget stops the cycle, not the process', () => {
       maxCycles: 1,
       until,
       onEvent,
-      gate: async () => {
+      // Asked to stop while the first item is being worked, which is the moment the loop has
+      // to notice: the item in hand finishes and the next one never starts.
+      worker: async () => {
         stop()
         await Promise.resolve()
-        return open
+        return { result: 'no change needed', total_cost_usd: 0 }
       },
     })
     expect(s.worked).toBe(1)
