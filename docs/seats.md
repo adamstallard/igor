@@ -8,8 +8,10 @@ For the person being asked. If you are setting up the server, see
 An Igor reasons by making Claude calls, and those calls have to be paid for by somebody's
 subscription. That is what a **seat** is: your Claude subscription, lent to the fleet.
 
-You are not giving up your own use of Claude. An Igor stops at a floor you set and leaves the
-rest to you.
+The intent is that you are not giving up your own use of Claude: an Igor stops at a floor you
+set and leaves the rest to you. Read
+[What is not enforced yet](#what-is-not-enforced-yet) before you decide, because that floor is
+not in place today.
 
 ## The command
 
@@ -40,13 +42,34 @@ seats:
     token_env: IGOR_SEAT_ADAM
 ```
 
-**`reserve` is the number that matters to you.** At `0.5`, an Igor stops when half your window
-is gone and will not start another task until the window resets — so half is always yours, on
-the worst day the fleet has. The check runs before every single item, not once a day, and a
-seat with no headroom is passed over rather than squeezed.
+**`reserve` is the number that matters to you.** At `0.5` an Igor may spend half your window
+and no more, so half is always yours on the worst day the fleet has.
 
 If you want a bigger floor, say so before you hand the token over. It is one line and nobody
 has to argue about it afterwards.
+
+**It is worth knowing what "your window" covers.** Claude Code draws on the same allowance as
+Claude on the web, your desktop app and your phone. A lent seat is not a share of some separate
+coding budget; it comes out of everything you do with Claude.
+
+### What is not enforced yet
+
+**Nothing holds an Igor to that number today.** A seat's remaining window is reported only to
+an interactive login, and the credential you are being asked for is not one — so an Igor cannot
+see how much of your allowance is left.
+
+Two consequences, and you should hear both before deciding:
+
+- A seat declared the way it is written above is **reported unreadable and skipped**, so an
+  Igor given one does no work at all.
+- A seat left out of the configuration entirely **has no ceiling**. One item has been measured
+  at eleven dollars' worth.
+
+The floor is buildable and being built: an Igor measures exactly what it spends, so it can be
+held to a share of a known allowance without ever seeing the rest of yours. Until it is, lend a
+seat only where you would be relaxed about the whole window going, and ask what the fleet
+actually spent rather than assuming it stopped. Tracking as
+[igor#30](https://github.com/adamstallard/igor/issues/30).
 
 ## Handing it over
 
@@ -81,4 +104,5 @@ warns in advance; what happens is that the Igor stops and says it is not logged 
 Each person runs the command themselves and hands over their own token. Nobody needs anybody
 else's. The operator lists the seats in a pool, and an Igor takes the first with headroom — so
 listing dedicated seats before personal ones means a colleague's allowance is only ever reached
-once the dedicated capacity is spent.
+once the dedicated capacity is spent. That ordering depends on headroom being readable, so it
+waits on the same issue as the floor.
