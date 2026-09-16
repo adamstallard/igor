@@ -28,17 +28,19 @@ Three things, in this order. None can be automated, and the first two are the on
    traps.
 
 2. **A seat token per seat**, from `claude setup-token` run while signed in *as that seat*.
-   Name it in `igor.config.yaml` under `token_env`. A seat naming a variable that is unset is
-   reported unreadable and skipped, deliberately: falling back to whatever login is ambient
-   would mean reading one seat's usage and spending another's.
+   Name where it lives in `igor.config.yaml`: `token_env` for a variable, `token_file` for a
+   path, or `token_command` for something to run and take stdout — exactly one per seat. A
+   seat naming a source that cannot be read is reported unreadable and skipped, deliberately:
+   falling back to whatever login is ambient would mean reading one seat's usage and spending
+   another's.
 
    A seat is usually somebody else's subscription, so this step is a request rather than a
    task. [`seats.md`](seats.md) is written for them: what the command is, what it grants, what
    `reserve` protects, and how to hand a token over without pasting it into a channel.
 
    This applies to your own seat too, trying it out on your own machine before any of the
-   above: however you are signed in, the credential has to be a token in a variable the seat
-   names — a worker reaches no keychain and no ambient login.
+   above: however you are signed in, the credential has to come from whichever of the three a
+   worker is told to read — it never falls back to a keychain or an ambient login on its own.
    [Adding a seat somebody has given you](#adding-a-seat-somebody-has-given-you) is below.
 
    What to do with a token once you have one is
@@ -104,10 +106,10 @@ Four steps, once a colleague has sent you a token ([`seats.md`](seats.md) is wha
    reports unreadable and is skipped, never substituted with whatever login is ambient.
 
 `igor budget` reading a seat is necessary and not sufficient. Reading inherits this process's
-environment, so an ambient login or a keychain can answer for a seat that has no `token_env` at
-all — while a worker's environment is written out rather than inherited and has no such
-fallback. `budget` says so explicitly where it applies, and the cure is a `token_env` that is
-set.
+environment, so an ambient login or a keychain can answer for a seat that names no token source
+at all — while a worker's environment is written out rather than inherited and has no such
+fallback. `budget` says so explicitly where it applies, and the cure is a token source that
+resolves.
 
 ### Keeping the token out of your shells
 
@@ -159,12 +161,16 @@ Not the token on a command line either: zsh skips space-prefixed commands only w
 plain text long after the env file was locked down. This is a fallback and not an alternative —
 it still exports into every shell, which is the thing this section is about.
 
-**On a server this is the wrong shape and `LoadCredential=` is the right one** — systemd
-decrypts a secret into a tmpfs file readable only by that unit, encrypted at rest and TPM-bound
-where there is one, with nothing in an environment at all. Igor cannot read it yet, because
-systemd supplies a path and Igor reads a variable name: [#29](https://github.com/adamstallard/igor/issues/29).
-Until then `EnvironmentFile=` with the file `0600` and owned by the service user is the
-arrangement, and the service user running nothing else is what stands in for the isolation.
+**On a server this is the wrong shape, and `LoadCredential=` is the way out of it** — encrypt
+the token with `systemd-creds encrypt`, name it in the unit with `LoadCredential=`, and point
+the seat's `token_file` at wherever the unit's `$CREDENTIALS_DIRECTORY` puts it (systemd
+documents that path per unit in `systemd.exec(5)`). Nothing lands in the unit's own
+environment, so it is not inherited by anything the unit spawns and not in a crash dump —
+which `EnvironmentFile=` cannot say. `token_command` covers a secret store the same way, in
+place of a file: `security find-generic-password`, `pass show`, `op read`, run and its stdout
+taken as the token, with no wrapper needed. `EnvironmentFile=` with the file `0600` and owned
+by the service user remains the arrangement for `token_env`, and the service user running
+nothing else is what stands in for the isolation there.
 
 ### When a seat token expires
 

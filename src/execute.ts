@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import type { Artifact, Candidate, ClaimVerdict, CodeHost, Tracker } from './adapter.js'
+import { resolveToken, type TokenSource } from './budget.js'
 import type { Action, Role } from './role.js'
 import { withTree, type ChangedFile, type TreeProvider, type WorkingTree } from './worktree.js'
 import { appendRecord, STATE_BRANCH, writeState } from './state.js'
@@ -528,19 +529,26 @@ const AMBIENT_TOKENS = ['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY'] as const
  * home. It is passed for the worked repository's toolchain, whose caches would otherwise land
  * in a directory the service user may not own.
  */
-export function workerEnv(
-  seatTokenEnv: string | undefined,
+export async function workerEnv(
+  seatToken: TokenSource = {},
   env: NodeJS.ProcessEnv = process.env,
-): NodeJS.ProcessEnv {
+): Promise<NodeJS.ProcessEnv> {
   const out: NodeJS.ProcessEnv = {}
   for (const name of ['PATH', 'HOME', ...FORWARDED]) {
     const value = env[name]
     if (value !== undefined && value !== '') out[name] = value
   }
 
+  let token: string | undefined
+  try {
+    token = await resolveToken(seatToken, env)
+  } catch (e) {
+    throw new ExecutionError(`the chosen seat ${(e as Error).message}`)
+  }
+
   // A seat naming nothing leaves the worker on the ambient login, which is what `readUsage`
   // does on the reading side and what an org running with no seats declared depends on.
-  if (seatTokenEnv === undefined) {
+  if (token === undefined) {
     for (const name of AMBIENT_TOKENS) {
       const value = env[name]
       if (value !== undefined && value !== '') out[name] = value
@@ -548,13 +556,6 @@ export function workerEnv(
     return out
   }
 
-  const token = env[seatTokenEnv]
-  if (token === undefined || token === '') {
-    throw new ExecutionError(
-      `the chosen seat reads its token from ${seatTokenEnv}, which is not set. ` +
-        `Run \`claude setup-token\` signed in as that seat and export it.`,
-    )
-  }
   out['CLAUDE_CODE_OAUTH_TOKEN'] = token
   return out
 }
@@ -831,11 +832,11 @@ export interface ExecuteOptions {
   /** Rendered lore for the trusted channel. Empty when the store is empty or over budget. */
   lore?: string
   /**
-   * The variable holding the token the worker authenticates with — the chosen seat's
-   * `token_env`. The name rather than the value, so the credential is only ever in this
-   * process's environment and the worker's, and in no object between them.
+   * How the worker authenticates: the chosen seat's token source. A name, a path, or a
+   * command, never the value, so the credential is only ever in this process's environment and
+   * the worker's, and in no object between them.
    */
-  seatTokenEnv?: string
+  seatToken?: TokenSource
   model?: string
   /** A seam for tests; each limit defaults and callers are trusted with what they pass. */
   limits?: Partial<Limits>
@@ -968,13 +969,14 @@ export async function execute(
 
     let worker: WorkerOutput
     try {
+      const env = await workerEnv(options.seatToken)
       worker = await (options.worker ?? headlessClaude)({
         cwd: tree.path,
         system: workerSystemPrompt(role, role.allow, options.lore ?? ''),
         prompt: workerPrompt(candidate, linkage),
         model,
         limits: { ...DEFAULT_LIMITS, ...options.limits },
-        env: workerEnv(options.seatTokenEnv),
+        env,
         allowedTools: role.commands.map((c) => `Bash(${c})`),
         onEvent,
         signal: stop.signal,

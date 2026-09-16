@@ -27,8 +27,9 @@ experts:
 # worker can edit files and nothing else, so it cannot test its own change. See the README.
 
 # Whose Claude subscription pays for the reasoning. Without a seat an Igor can triage but
-# cannot work — and a seat without `token_env` reads fine while paying for nothing, because a
-# worker's environment is written out rather than inherited and cannot reach a keychain.
+# cannot work — and a seat naming no token source (token_env, token_file, or token_command)
+# reads fine while paying for nothing, because a worker's environment is written out rather
+# than inherited and cannot reach a keychain.
 #
 # A seat belongs to a subscription, not to an Igor: several Igors draw on one through a pool,
 # and one Igor may draw on several. Name them for whose capacity they are.

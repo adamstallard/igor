@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process'
+import { readFile } from 'node:fs/promises'
 
 /**
  * Seats, pools, and what an Igor is allowed to spend.
@@ -17,16 +18,103 @@ export class BudgetError extends Error {}
 
 export const EXECUTIONS_PATH = 'executions.ndjson'
 
-export interface Seat {
+/**
+ * Where a seat's token comes from — a name, a path, or a command, never the value, so nothing
+ * carrying this ever holds the credential itself. At most one is ever set: `parseOrgBudget`
+ * rejects a seat naming more than one, and none named means "read through whatever login is
+ * ambient," unchanged from before these existed.
+ */
+export interface TokenSource {
+  /** Environment variable holding the token, from `claude setup-token`. */
+  tokenEnv?: string
+  /** Path to a file holding the token — a decrypted `LoadCredential=`, for instance. */
+  tokenFile?: string
+  /** Command whose stdout is the token — `pass show ...`, `op read ...`, and the like. */
+  tokenCommand?: string
+}
+
+export interface Seat extends TokenSource {
   id: string
   /** Who can read this seat's usage, and whose capacity the reserve protects. */
   owner?: string
-  /** Environment variable holding this seat's OAuth token, from `claude setup-token`. */
-  tokenEnv?: string
   /** Nobody works on a dedicated seat, so its reserve is zero. */
   dedicated?: boolean
   /** Fraction of the limit Igors must not consume. */
   reserve: number
+}
+
+/**
+ * How long a `token_command` may run before it is treated as failed. Provisional: no real
+ * secret-store command has been timed. Long enough for a network round trip to a vault, short
+ * enough that a command left waiting on an interactive prompt — `pass`/`gpg` with no TTY under
+ * a service, `op read` wanting a fresh sign-in — fails rather than hanging `igor budget` or a
+ * worker spawn forever.
+ */
+export const TOKEN_COMMAND_TIMEOUT_MS = 10_000
+
+/** Runs a `token_command` and takes its trimmed stdout — what `pass`, `op read`, and
+ *  `security find-generic-password` need, without a wrapper. */
+function runTokenCommand(command: string, timeoutMs: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, { shell: true, stdio: ['ignore', 'pipe', 'pipe'], timeout: timeoutMs })
+    let out = ''
+    let err = ''
+    child.stdout.on('data', (c) => (out += c))
+    child.stderr.on('data', (c) => (err += c))
+    child.on('error', reject)
+    child.on('close', (code, signal) => {
+      // A signal here is `timeout` reaching for `killSignal`: nothing else in this function
+      // sends the child one.
+      if (signal !== null) return reject(new Error(`timed out after ${timeoutMs / 1000}s`))
+      if (code !== 0) return reject(new Error(err.trim() || `exited ${code}`))
+      resolve(out.trim())
+    })
+  })
+}
+
+/**
+ * Reads the token a source names, whichever of the three it is. Undefined when it names none.
+ *
+ * Throws a message meant to follow a subject a caller supplies — `seat "x"` or `the chosen
+ * seat` — so `readUsage` and `workerEnv` keep their own wording around one resolution.
+ */
+export async function resolveToken(
+  source: TokenSource,
+  env: NodeJS.ProcessEnv,
+  commandTimeoutMs = TOKEN_COMMAND_TIMEOUT_MS,
+): Promise<string | undefined> {
+  if (source.tokenEnv !== undefined) {
+    const token = env[source.tokenEnv]
+    if (token === undefined || token === '') {
+      throw new Error(
+        `reads its token from ${source.tokenEnv}, which is not set. ` +
+          `Run \`claude setup-token\` signed in as that seat and export it.`,
+      )
+    }
+    return token
+  }
+  if (source.tokenFile !== undefined) {
+    let text: string
+    try {
+      text = await readFile(source.tokenFile, 'utf8')
+    } catch (e) {
+      throw new Error(`reads its token from ${source.tokenFile}, which could not be read: ${(e as Error).message}`)
+    }
+    const token = text.trim()
+    if (token === '') throw new Error(`reads its token from ${source.tokenFile}, which is empty`)
+    return token
+  }
+  if (source.tokenCommand !== undefined) {
+    let token: string
+    try {
+      token = await runTokenCommand(source.tokenCommand, commandTimeoutMs)
+    } catch (e) {
+      throw new Error(`reads its token by running \`${source.tokenCommand}\`, which failed: ${(e as Error).message}`)
+    }
+    if (token === '') throw new Error(`reads its token by running \`${source.tokenCommand}\`, which printed nothing`)
+    return token
+  }
+  return undefined
 }
 
 /** Ordered. The order is the allocation mechanism: dedicated capacity drains first. */
@@ -124,9 +212,9 @@ function runUsage(env: NodeJS.ProcessEnv): Promise<string> {
 /**
  * Asks the seat's own credential.
  *
- * A seat naming a `token_env` whose variable is unset is an error, never a fall-through to
- * whatever login happens to be ambient. Reading one seat and recording it as another is
- * exactly the mistake asking-per-seat exists to make impossible.
+ * A seat naming a token source it cannot read is an error, never a fall-through to whatever
+ * login happens to be ambient. Reading one seat and recording it as another is exactly the
+ * mistake asking-per-seat exists to make impossible.
  */
 export async function readUsage(
   seat: Seat,
@@ -135,16 +223,13 @@ export async function readUsage(
   describe: (env: NodeJS.ProcessEnv) => Promise<AuthContext | undefined> = runAuthStatus,
 ): Promise<Usage> {
   const childEnv = { ...env }
-  if (seat.tokenEnv !== undefined) {
-    const token = env[seat.tokenEnv]
-    if (token === undefined || token === '') {
-      throw new BudgetError(
-        `seat "${seat.id}" reads its token from ${seat.tokenEnv}, which is not set. ` +
-          `Run \`claude setup-token\` signed in as that seat and export it.`,
-      )
-    }
-    childEnv['CLAUDE_CODE_OAUTH_TOKEN'] = token
+  let token: string | undefined
+  try {
+    token = await resolveToken(seat, env)
+  } catch (e) {
+    throw new BudgetError(`seat "${seat.id}" ${(e as Error).message}`)
   }
+  if (token !== undefined) childEnv['CLAUDE_CODE_OAUTH_TOKEN'] = token
 
   // Outside the try: a command that failed to run is already its own message, and running it
   // through the diagnosis below would relabel it as something it is not.
@@ -367,10 +452,11 @@ export interface Gate {
   exhausted: () => boolean
   seat?: string
   /**
-   * The chosen seat's `token_env`. The name, so the seat that is billed is the seat that pays
-   * without a credential travelling through everything a gate is passed to.
+   * The chosen seat's token source — a name, a path, or a command, never the value — so the
+   * seat that is billed is the seat that pays without a credential travelling through
+   * everything a gate is passed to.
    */
-  tokenEnv?: string
+  token?: TokenSource
   resetAt?: string
   reason: string
 }
@@ -415,7 +501,11 @@ export function budgetGate(
   return {
     exhausted: () => false,
     seat: choice.seat.id,
-    ...(choice.seat.tokenEnv === undefined ? {} : { tokenEnv: choice.seat.tokenEnv }),
+    token: {
+      ...(choice.seat.tokenEnv === undefined ? {} : { tokenEnv: choice.seat.tokenEnv }),
+      ...(choice.seat.tokenFile === undefined ? {} : { tokenFile: choice.seat.tokenFile }),
+      ...(choice.seat.tokenCommand === undefined ? {} : { tokenCommand: choice.seat.tokenCommand }),
+    },
     reason: choice.reason,
   }
 }
@@ -440,11 +530,11 @@ export function renderBudget(readings: readonly SeatUsage[]): string {
     }
     // Reading a seat inherits this process's environment, so a keychain or an ambient login
     // answers for it — and a worker's does not, being written out rather than inherited. A
-    // seat with no `token_env` therefore reports healthy here and cannot pay for a single
+    // seat with no token source therefore reports healthy here and cannot pay for a single
     // item, which is the one misconfiguration this command would otherwise conceal.
-    if (r.seat.tokenEnv === undefined) {
+    if (r.seat.tokenEnv === undefined && r.seat.tokenFile === undefined && r.seat.tokenCommand === undefined) {
       lines.push(
-        `${''.padEnd(16)} !  readable here but cannot pay: no token_env, and a worker ` +
+        `${''.padEnd(16)} !  readable here but cannot pay: no token source, and a worker ` +
           `inherits nothing. See docs/seats.md.`,
       )
     }
@@ -488,10 +578,18 @@ export function parseOrgBudget(raw: unknown): OrgBudget {
     if (dedicated && typeof reserveRaw === 'number' && reserveRaw > 0) {
       throw new BudgetError(`seat "${s['id']}" is dedicated, so nobody is there to reserve capacity for`)
     }
+    const tokenEnv = typeof s['token_env'] === 'string' ? s['token_env'] : undefined
+    const tokenFile = typeof s['token_file'] === 'string' ? s['token_file'] : undefined
+    const tokenCommand = typeof s['token_command'] === 'string' ? s['token_command'] : undefined
+    if ([tokenEnv, tokenFile, tokenCommand].filter((v) => v !== undefined).length > 1) {
+      throw new BudgetError(`seat "${s['id']}" may name only one of token_env, token_file, token_command`)
+    }
     seats.push({
       id: s['id'],
       ...(typeof s['owner'] === 'string' ? { owner: s['owner'] } : {}),
-      ...(typeof s['token_env'] === 'string' ? { tokenEnv: s['token_env'] } : {}),
+      ...(tokenEnv === undefined ? {} : { tokenEnv }),
+      ...(tokenFile === undefined ? {} : { tokenFile }),
+      ...(tokenCommand === undefined ? {} : { tokenCommand }),
       ...(dedicated ? { dedicated } : {}),
       reserve: dedicated ? 0 : ((reserveRaw as number) ?? 0),
     })

@@ -1,4 +1,7 @@
+import { writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { tempDir } from './tmp.js'
 import {
   budgetGate,
   BudgetError,
@@ -9,6 +12,7 @@ import {
   hasSubscription,
   readUsage,
   renderBudget,
+  resolveToken,
   roleSharePercent,
   seatStatus,
   type OrgBudget,
@@ -110,6 +114,47 @@ describe('a seat is read through its own credential', () => {
       return REAL
     })
     expect(seen).toBeUndefined()
+  })
+
+  it('reads the token from a file when the seat names token_file', async () => {
+    const path = join(tempDir('igor-test-token-'), 'token')
+    writeFileSync(path, 'tok-from-file\n')
+    let seen: string | undefined
+    await readUsage(seat({ tokenFile: path }), {}, async (env) => {
+      seen = env['CLAUDE_CODE_OAUTH_TOKEN']
+      return REAL
+    })
+    expect(seen).toBe('tok-from-file')
+  })
+
+  it('refuses when token_file cannot be read', async () => {
+    await expect(
+      readUsage(seat({ tokenFile: '/nonexistent/igor-token' }), {}, async () => REAL),
+    ).rejects.toThrow(/could not be read/)
+  })
+
+  it('runs token_command and takes its trimmed stdout', async () => {
+    let seen: string | undefined
+    await readUsage(seat({ tokenCommand: 'printf tok-from-cmd' }), {}, async (env) => {
+      seen = env['CLAUDE_CODE_OAUTH_TOKEN']
+      return REAL
+    })
+    expect(seen).toBe('tok-from-cmd')
+  })
+
+  it('refuses when token_command fails', async () => {
+    await expect(readUsage(seat({ tokenCommand: 'exit 1' }), {}, async () => REAL)).rejects.toThrow(/failed/)
+  })
+
+  it('refuses when token_command prints nothing', async () => {
+    await expect(readUsage(seat({ tokenCommand: 'true' }), {}, async () => REAL)).rejects.toThrow(/printed nothing/)
+  })
+
+  it('refuses a token_command that hangs, rather than waiting on it forever', async () => {
+    // A short timeout stands in for the real one, so the test does not wait 10s on a command
+    // that is never going to answer — `pass`/`op` blocked on an interactive prompt is exactly
+    // this shape.
+    await expect(resolveToken({ tokenCommand: 'sleep 0.2' }, {}, 50)).rejects.toThrow(/timed out/)
   })
 
   it('names the credential when it carries no subscription, rather than blaming the parser', async () => {
@@ -321,6 +366,23 @@ describe('parsing org budget config', () => {
     expect(b.seats[1]?.tokenEnv).toBe('T')
   })
 
+  it('reads token_file and token_command alongside token_env', () => {
+    const b = parseOrgBudget({
+      seats: [
+        { id: 'file', reserve: 0, token_file: '/run/secrets/igor-file' },
+        { id: 'cmd', reserve: 0, token_command: 'pass show igor/seat' },
+      ],
+    })
+    expect(b.seats[0]?.tokenFile).toBe('/run/secrets/igor-file')
+    expect(b.seats[1]?.tokenCommand).toBe('pass show igor/seat')
+  })
+
+  it('rejects a seat naming more than one token source', () => {
+    expect(() =>
+      parseOrgBudget({ seats: [{ id: 'x', reserve: 0, token_env: 'T', token_file: '/f' }] }),
+    ).toThrow(/only one of token_env, token_file, token_command/)
+  })
+
   it('rejects a pool naming a seat that does not exist', () => {
     expect(() => parseOrgBudget({ seats: [], pools: [{ id: 'eng', seats: ['ghost'] }] })).toThrow(/not declared/)
   })
@@ -334,7 +396,7 @@ describe('parsing org budget config', () => {
   })
 })
 
-describe('the gate names the variable the chosen seat pays from', () => {
+describe('the gate names the source the chosen seat pays from', () => {
   it('carries the seat token variable beside the seat id', () => {
     const org: OrgBudget = {
       seats: [
@@ -344,12 +406,23 @@ describe('the gate names the variable the chosen seat pays from', () => {
       pools: [{ id: 'eng', seats: ['igor-1', 'adam'] }],
     }
     const readings: SeatUsage[] = org.seats.map((seat) => ({ seat, usage: usage(10, 10) }))
-    expect(budgetGate(org, { name: 'triage', seat: 'eng' }, readings, []).tokenEnv).toBe('IGOR_SEAT_1')
+    expect(budgetGate(org, { name: 'triage', seat: 'eng' }, readings, []).token?.tokenEnv).toBe('IGOR_SEAT_1')
   })
 
-  it('names nothing where the chosen seat declares no variable', () => {
+  it('carries a token_file or token_command just as well', () => {
+    const org: OrgBudget = {
+      seats: [{ id: 'igor-1', tokenFile: '/run/secrets/igor', reserve: 0 }],
+      pools: [{ id: 'eng', seats: ['igor-1'] }],
+    }
+    const gate = budgetGate(org, { name: 'triage', seat: 'eng' }, [{ seat: org.seats[0]!, usage: usage(10, 10) }], [])
+    expect(gate.token).toEqual({ tokenFile: '/run/secrets/igor' })
+  })
+
+  it('names nothing where the chosen seat declares no source', () => {
     const org: OrgBudget = { seats: [{ id: 'igor-1', reserve: 0 }], pools: [{ id: 'eng', seats: ['igor-1'] }] }
     const gate = budgetGate(org, { name: 'triage', seat: 'eng' }, [{ seat: org.seats[0]!, usage: usage(10, 10) }], [])
-    expect(gate.tokenEnv).toBeUndefined()
+    expect(gate.token?.tokenEnv).toBeUndefined()
+    expect(gate.token?.tokenFile).toBeUndefined()
+    expect(gate.token?.tokenCommand).toBeUndefined()
   })
 })

@@ -651,7 +651,7 @@ describe('the seat that is chosen is the seat that pays', () => {
 
     await runItem(d, candidate(), role(), 'igor-bot', {
       ...noWait,
-      budget: { exhausted: () => false, seat: 'seat-2', tokenEnv: 'IGOR_SEAT_2' },
+      budget: { exhausted: () => false, seat: 'seat-2', token: { tokenEnv: 'IGOR_SEAT_2' } },
       worker: async (input) => {
         seen = input.env
         return { result: '' }
