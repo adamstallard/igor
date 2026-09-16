@@ -199,6 +199,12 @@ One record type, because the two sources say the same thing. A limit error is a 
 exactly 100% with a reset time attached, and treating it as a second kind of fact would mean
 two mechanisms deciding the same question from the same information.
 
+An observation of a window scoped to one model SHALL record that model. The weekly limit on a
+single model is a separate cap from the all-models one, so recording a refusal against it as an
+unqualified `week` would assert that the whole window was full when it was not — a wrong figure
+where none was needed. No bound is derived against a per-model window here; the model is
+recorded so that the figure is true and so that the derivation, when it comes, has the rows.
+
 The reset SHALL be recorded as an instant that can be compared against the present. The
 provider reports it as a human phrase — a date, a time, and a zone — which cannot be compared
 without being resolved first. An observation whose reset cannot be resolved SHALL be recorded
@@ -215,6 +221,12 @@ a window that has been invented is worse than none.
 - **WHEN** the provider refuses a run because a window is exhausted
 - **THEN** an observation is recorded at 100% for that window, with the reset the provider
   stated and source `limit`
+
+#### Scenario: A per-model window is recorded as one
+
+- **WHEN** an observation concerns a limit scoped to a single model
+- **THEN** the record names that model
+- **AND** it is not recorded as the all-models window
 
 #### Scenario: A reset that cannot be resolved is not invented
 

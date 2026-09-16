@@ -1,7 +1,7 @@
 ## 1. The observation record
 
-- [ ] 1.1 One record type — seat, window, `percentUsed`, `at`, `resetsAt`, `source` — written by
-      both a reading and a limit error
+- [ ] 1.1 One record type — seat, window, `percentUsed`, `at`, `resetsAt`, `source`, and the
+      model where the window is scoped to one — written by both a reading and a limit error
 - [ ] 1.2 Resolve the provider's reset phrase ("Sep 18 at 4pm (America/Los_Angeles)") to a
       comparable instant; an unresolvable one records the phrase and yields no instant
 - [ ] 1.3 Append to `capacity.ndjson`, day-partitioned by `appendRecord`, never rewritten

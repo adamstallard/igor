@@ -84,6 +84,12 @@ Explicitly out of scope:
   `claude -p '/usage'` returns the percentages headlessly under an interactive login, and
   `parseUsage` parses exactly that text. What it cannot do is run under a service user, so
   whatever the command looks like, it runs on the owner's machine.
+- **Deriving a bound against a per-model window.** The weekly cap on a single model is a
+  separate limit, and "Limits the provider reports but the loop does not enforce are still
+  shown" stays in force: it is reported, not acted on. An observation names the model it
+  concerns, so a refusal on that cap is recorded truthfully rather than as the all-models
+  window, but nothing divides against it yet. `executions/` has recorded per-model spend since
+  `e0a20ed`, so the numerator will be there when it does.
 - **Detecting a limit error.** Recognising a provider refusal and handing off as budget rather
   than failing is separate work against the in-force "A budget handoff states when capacity
   returns". This change covers what is done with that observation, not how it is noticed.
