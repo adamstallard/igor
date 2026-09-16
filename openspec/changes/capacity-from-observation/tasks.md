@@ -1,11 +1,11 @@
 ## 1. The observation record
 
-- [ ] 1.1 One record type — seat, window, `percentUsed`, `at`, `resetsAt`, `source`, and the
+- [x] 1.1 One record type — seat, window, `percentUsed`, `at`, `resetsAt`, `source`, and the
       model where the window is scoped to one — written by both a reading and a limit error
-- [ ] 1.2 Resolve the provider's reset phrase ("Sep 18 at 4pm (America/Los_Angeles)") to a
+- [x] 1.2 Resolve the provider's reset phrase ("Sep 18 at 4pm (America/Los_Angeles)") to a
       comparable instant; an unresolvable one records the phrase and yields no instant
-- [ ] 1.3 Append to `capacity.ndjson`, day-partitioned by `appendRecord`, never rewritten
-- [ ] 1.4 Tests: both sources produce one shape, an unresolvable reset neither expires nor
+- [x] 1.3 Append to `capacity.ndjson`, day-partitioned by `appendRecord`, never rewritten
+- [x] 1.4 Tests: both sources produce one shape, an unresolvable reset neither expires nor
       derives, a second observation appends rather than replaces
 
 ## 2. Is this seat spent
@@ -23,17 +23,14 @@
       happens
 - [ ] 3.3 An observation with no spend in its instance yields nothing, rather than a number
 - [ ] 3.4 An observation implying a lower capacity than the current estimate lowers it
-- [ ] 3.5 A `capacity` declared on a seat is the estimate until an observation exists, and is
-      then superseded outright rather than combined
-- [ ] 3.6 Tests: the division, instance bounding, the monotone correction after a limit error,
+- [ ] 3.5 Tests: the division, instance bounding, the monotone correction after a limit error,
       and that a co-consumer makes the estimate low rather than high
 
 ## 4. The bound
 
 - [ ] 4.1 The gate compares summed Igor spend for the window against
       `(1 − reserve) × capacity`, across every Igor and role on the seat
-- [ ] 4.2 A seat with a reserve and neither an observation nor a declared capacity is passed
-      over, with that reason
+- [ ] 4.2 A seat with a reserve and no capacity figure is passed over, with that reason
 - [ ] 4.3 A seat with no reserve and no capacity figure is usable
 - [ ] 4.4 Tests: the bound holds with the owner unobserved, two Igors share one bound, a
       reserved uncalibrated seat is never the pool's fallback
