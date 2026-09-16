@@ -92,8 +92,20 @@ person is the only consumer that keeps no books.
 
 Remaining capacity SHALL be established from the seat itself — read directly where the seat's
 credential yields a reading, and otherwise derived from recorded observations of that seat and
-recorded spend against it. The system MUST NOT require a person to submit a usage figure, and
-MUST NOT accept a capacity declared in configuration in place of one that was observed.
+recorded spend against it. The system MUST NOT require a person to submit a usage figure.
+
+A capacity MAY be declared in configuration as a starting estimate, and SHALL be superseded by
+any observation of that seat rather than averaged with one. It exists so a seat with a reserve
+can be drawn on before it has been observed, which is otherwise impossible: a reserve needs a
+capacity, a capacity needs spend inside an observed window, and a seat carrying a reserve is
+not spent from. A declared figure is reported as declared until an observation replaces it, so
+nobody mistakes an assumption for a measurement.
+
+What must never be configured is a *usage figure*. Capacity is a property of the plan and
+changes rarely; how full the window is right now changes by the minute and is the thing a
+person cannot supply usefully. Even capacity is not fixed — the provider has moved the weekly
+allowance for every subscriber at least once, without any plan changing — so a declared figure
+is a starting point with a shelf life and not a constant.
 
 A reading is available only to a credential the provider can resolve a subscription for. The
 credential a seat holds is a `setup-token` one, which carries no subscription identity, so the
@@ -108,7 +120,19 @@ measure is otherwise a seat with no ceiling at all.
 - **THEN** the seat's usage is read directly where its credential yields a reading
 - **AND** otherwise capacity is derived from recorded observations of that seat and recorded
   spend against it
-- **AND** no human supplies a figure either way
+- **AND** no human supplies how full the window is, in either case
+
+#### Scenario: A declared capacity gets a reserved seat started
+
+- **WHEN** a seat declares both a reserve and a capacity, and has no observation
+- **THEN** the declared capacity bounds it and it may be spent from
+- **AND** the figure is reported as declared rather than observed
+
+#### Scenario: An observation supersedes what was declared
+
+- **WHEN** a seat with a declared capacity is observed
+- **THEN** the observed capacity is used and the declared one is not combined with it
+- **AND** later observations supersede earlier ones in the same way
 
 #### Scenario: A seat is read through its own credential
 
@@ -365,18 +389,19 @@ A second store for the first question would be a second thing to keep true.
 - **THEN** the seat is no longer treated as spent
 - **AND** nothing had to be run to clear it
 
-### Requirement: A seat whose capacity has never been observed protects no floor
+### Requirement: A seat with no capacity figure at all protects no floor
 
-A seat declaring a non-zero reserve and having no capacity observation SHALL be passed over,
-with that as the stated reason, rather than spent from against an assumed capacity. A seat
-declaring no reserve MAY be spent from with no observation, bounded reactively: its first limit
-error is its first calibration point.
+A seat declaring a non-zero reserve and having neither an observation nor a declared capacity
+SHALL be passed over, with that as the stated reason, rather than spent from against a
+denominator nobody supplied. A seat declaring no reserve MAY be spent from with neither,
+bounded reactively: its first limit error is its first calibration point.
 
 A reserve is a fraction of capacity, so without a capacity figure it expresses no quantity at
-all. Spending somebody's subscription against a guessed denominator is worse than declining to
-use their seat, because the failure is invisible to them until their own work is refused. Where
-nobody's floor is at stake, the same ignorance costs only a failed run, which is the calibration
-the seat needed.
+all. Spending somebody's subscription against a denominator nobody chose is worse than declining
+to use their seat, because the failure is invisible to them until their own work is refused. A
+declared figure is not that: somebody named it, it is reported as declared, and the first
+observation replaces it. Where nobody's floor is at stake, the same ignorance costs only a
+failed run, which is the calibration the seat needed.
 
 The unlock is a reading, and the reading half already exists: the provider returns window
 percentages headlessly to an interactive login, and those percentages already parse. What it
@@ -385,9 +410,10 @@ credential.
 
 #### Scenario: A reserved seat is not spent from on a guess
 
-- **WHEN** a seat declares a reserve and has no observation for the window
+- **WHEN** a seat declares a reserve and has neither an observation for the window nor a
+  declared capacity
 - **THEN** it is passed over
-- **AND** the reason given is that its capacity has never been observed
+- **AND** the reason given is that no capacity figure exists for it
 
 #### Scenario: A dedicated seat runs uncalibrated
 
