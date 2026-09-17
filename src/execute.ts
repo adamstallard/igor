@@ -85,8 +85,10 @@ export function permits(role: Role, action: Action): boolean {
  */
 export function describeCommand(pattern: string): string {
   // An entry that is not one line of plain text is one `Bash(…)` will never match, so saying it
-  // may be run is the wasted refused turn this exists to save.
-  if (pattern !== pattern.trim() || /\s/.test(pattern.replace(/ /g, ''))) return pattern
+  // may be run is the wasted refused turn this exists to save. Format and control characters
+  // count: a soft hyphen inside `npx tsc` renders as a line no reader can tell from a correct
+  // one, which is the only way this can state a permission that does not exist.
+  if (pattern !== pattern.trim() || /[\s\p{Cc}\p{Cf}]/u.test(pattern.replace(/ /g, ''))) return pattern
   const prefix = pattern.endsWith(':*') ? pattern.slice(0, -2) : undefined
   // A `*` anywhere but that trailing `:*` is a shape with no settled meaning, so it goes raw.
   if (prefix !== undefined) return prefix === '' || prefix.includes('*') ? pattern : `${prefix} — with any arguments`
