@@ -467,6 +467,47 @@ describe('a run killed mid-flight is not recorded as free', () => {
     expect(result.costUsd).toBe(0.02)
     expect(result.usage).toBeUndefined()
   })
+
+  it('keeps the figure a failing envelope carried', async () => {
+    // Cost recorded against a seat is the numerator a capacity is derived from, so a failure
+    // that dropped its own is a fleet-wide budget quietly shrinking.
+    const { result } = await run(
+      {},
+      {
+        worker: async () => {
+          throw new ExecutionError('API Error: 500', {
+            is_error: true,
+            api_error_status: 500,
+            result: 'API Error: 500',
+            total_cost_usd: 0.4,
+          })
+        },
+      },
+    )
+
+    expect(result.outcome).toBe('failed')
+    expect(result.costUsd).toBe(0.4)
+    expect(result.usage).toBeUndefined()
+  })
+
+  it('reports no cost where a failure carried no envelope', async () => {
+    const { result } = await run(
+      {},
+      {
+        worker: async ({ onEvent }) => {
+          onEvent?.({
+            type: 'assistant',
+            message: { usage: { cache_read_input_tokens: 1000 } },
+          } as unknown as WorkerEvent)
+          throw new ExecutionError('worker exited 1')
+        },
+      },
+    )
+
+    expect(result.outcome).toBe('failed')
+    expect(result.costUsd).toBeUndefined()
+    expect(result.usage).toEqual({ assistantTurns: 1, cacheReadTokensPeak: 1000 })
+  })
 })
 
 describe('which pull request is preferred is stated rather than inferred', () => {

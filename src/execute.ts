@@ -1150,7 +1150,7 @@ export async function execute(
           changed,
           refusals,
           transcript: '',
-          ...spend(),
+          ...spend(envelope),
           ...trace(envelope),
           ...evidence(envelope),
           reason: error instanceof Error ? error.message : String(error),
