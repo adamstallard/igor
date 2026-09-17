@@ -2,8 +2,9 @@
 
 - [ ] 1.1 The template runs `reconcile` instead of `promote`, with no change-detection step:
       a merge whose only content is a deletion must still reconcile
-- [ ] 1.2 `permissions` gains `pull-requests: read`, and the run step gets `GH_TOKEN` —
-      reconciliation shells `gh api`, which promotion never did
+- [ ] 1.2 `permissions` gains `pull-requests: read`, and the run step sets
+      `GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}` — reconciliation shells `gh api`, which promotion
+      never did, and `permissions` scopes that token without exporting it
 - [ ] 1.3 The commit step stages and tests `rejected/` alongside `entries/`; `writeRejection`
       writes there and the current template would leave a rejection record uncommitted
 - [ ] 1.4 `templates/promote-on-merge.yml` becomes `templates/reconcile-on-merge.yml`, and
