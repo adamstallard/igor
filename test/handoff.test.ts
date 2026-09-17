@@ -160,6 +160,20 @@ describe('a failure handoff', () => {
     expect(text).toMatch(/will not retry/i)
   })
 
+  it('promises no retry only where the item is what it is waiting on', () => {
+    // An item nothing suppresses comes back next poll, so the sentence has to say so — and
+    // name what would have to change, since a reply on the item would not.
+    const refused = composeHandoff(role(), candidate(), {
+      reason: { kind: 'failure', detail: 'worker exited 1', cure: 'role:triage:commands' },
+      done: ['claimed this 12 minutes ago'],
+      remaining: ['all of it'],
+      suggested: [],
+    }, NOW)
+    expect(refused).not.toMatch(/will not retry/i)
+    expect(refused).toContain('role:triage:commands')
+    expect(refused).toMatch(/comes back to this/)
+  })
+
   it('links partial work so the next party resumes rather than restarts', () => {
     expect(text).toContain('https://example.test/9')
     expect(text).toMatch(/rather than starting over/)

@@ -330,6 +330,28 @@ describe('the loop records what it handed back', () => {
     expect(n.items).toEqual([])
   })
 
+  it('records nothing when a refused command caused the handoff', async () => {
+    // A misconfigured allowlist parks every item the Igor touches, each then needing a person
+    // to answer it — where the cure is one change to the role and nothing to do with the item.
+    const { d } = deps([issue(1)])
+    const n = noted()
+    const { events, onEvent } = collect()
+    await serve(d, role(), 'igor-bot', {
+      ...base,
+      maxCycles: 1,
+      note: n.note,
+      onEvent,
+      worker: async () => ({
+        result: 'no change needed',
+        total_cost_usd: 0,
+        permission_denials: [{ tool_name: 'Bash', tool_input: { command: 'npm test' } }],
+      }),
+    })
+    const worked = events.find((e) => e.kind === 'worked')
+    expect(worked?.kind === 'worked' && worked.run.cure).toBe('role:triage:commands')
+    expect(n.items).toEqual([])
+  })
+
   it('keeps going when the record cannot be written', async () => {
     const { d } = deps([issue(1)])
     const s = await serve(d, role(), 'igor-bot', {

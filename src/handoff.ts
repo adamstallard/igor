@@ -26,7 +26,9 @@ import type { Role } from './role.js'
  */
 export type HandoffReason =
   | { kind: 'budget'; seat?: string; resetAt?: string }
-  | { kind: 'failure'; detail: string }
+  // Set where the run met a refused command. Nothing suppresses an item handed back with one,
+  // so a sentence promising no retry does not belong on it.
+  | { kind: 'failure'; detail: string; cure?: string }
   // Looking carefully and finding nothing is a result, not a breakdown, and reads as one.
   | { kind: 'nothing-to-do'; detail: string }
 
@@ -131,7 +133,11 @@ export function composeHandoff(role: Role, candidate: Candidate, handoff: Handof
           : ', and when it returns is not known')
       : handoff.reason.kind === 'nothing-to-do'
         ? handoff.reason.detail
-        : `it hit something it could not get past: ${handoff.reason.detail}. It will not retry`
+        : `it hit something it could not get past: ${handoff.reason.detail}. ` +
+          (handoff.reason.cure === undefined
+            ? 'It will not retry'
+            : `Nothing about this item caused that — \`${handoff.reason.cure}\` is what would ` +
+              'change it — so it comes back to this rather than waiting for a reply')
 
   const who =
     handoff.suggested.length > 0 ? `${handoff.suggested.join(' or ')} could pick this up.` : ''
