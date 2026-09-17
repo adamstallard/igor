@@ -391,6 +391,22 @@ describe('parsing org budget config', () => {
     expect(() => parseOrgBudget({ seats: [{ id: 'x', dedicated: true, reserve: 0.5 }] })).toThrow(/nobody is there/)
   })
 
+  it('reads a declared capacity as a starting estimate', () => {
+    const b = parseOrgBudget({ seats: [{ id: 'adam', reserve: 0.5, capacity: 250 }] })
+    expect(b.seats[0]?.capacity).toBe(250)
+  })
+
+  it('leaves capacity unset on a seat that declares none', () => {
+    const b = parseOrgBudget({ seats: [{ id: 'adam', reserve: 0.5 }] })
+    expect(b.seats[0]).toStrictEqual({ id: 'adam', reserve: 0.5 })
+  })
+
+  it('rejects a declared capacity that is not a positive number of dollars', () => {
+    expect(() => parseOrgBudget({ seats: [{ id: 'x', capacity: 0 }] })).toThrow(/\.capacity must be/)
+    expect(() => parseOrgBudget({ seats: [{ id: 'x', capacity: -1 }] })).toThrow(/\.capacity must be/)
+    expect(() => parseOrgBudget({ seats: [{ id: 'x', capacity: '250' }] })).toThrow(/\.capacity must be/)
+  })
+
   it('treats absent budget config as no seats rather than an error', () => {
     expect(parseOrgBudget(undefined)).toEqual({ seats: [], pools: [] })
   })

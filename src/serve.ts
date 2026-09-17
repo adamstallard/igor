@@ -109,7 +109,7 @@ export async function serve(
         // A run whose cost never arrived adds nothing here, so this total is a floor. The
         // ledger records the absence rather than a zero.
         summary.costUsd += run.costUsd ?? 0
-        if (shouldDefer(run.outcome, run.handoff)) {
+        if (shouldDefer(run.outcome, run.handoff, run.cure)) {
           await (options.note ?? noteHandoff)(deps.destination, candidate, run.reason).catch(() => undefined)
         }
         emit({ kind: 'worked', item: candidate, run, ...(gate.seat === undefined ? {} : { seat: gate.seat }) })

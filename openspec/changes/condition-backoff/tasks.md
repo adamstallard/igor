@@ -1,8 +1,8 @@
 ## 1. Not suppressing what was never about the item
 
-- [ ] 1.1 `shouldDefer` exempts a handoff carrying a cure key, on the same grounds it exempts
+- [x] 1.1 `shouldDefer` exempts a handoff carrying a cure key, on the same grounds it exempts
       budget, and keeps deferring one that carries none (#43)
-- [ ] 1.2 Tests: a refused command does not defer, a failure with no key still does, budget
+- [x] 1.2 Tests: a refused command does not defer, a failure with no key still does, budget
       still does not
 
 ## 2. The condition record

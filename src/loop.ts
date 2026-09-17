@@ -83,6 +83,12 @@ export interface ItemRun {
   spoke: boolean
   /** Why it was handed back, where it was — a budget handoff says nothing about the item. */
   handoff?: HandoffReason['kind']
+  /**
+   * The configuration a refusal named, on a handoff a refused command could have produced. A
+   * handoff carrying it is taken as the Igor's own doing rather than the item's, so the item
+   * is not suppressed over it.
+   */
+  cure?: string
 }
 
 export type Step = 'claiming' | 'settling' | 'working' | 'publishing' | 'completing'
@@ -247,14 +253,20 @@ export async function runItem(
       // not a failure in the sense of something breaking, so it should not read as one.
       // The worker's own account of why it declined is the most useful sentence available,
       // and it is otherwise only in the transcript, which nobody reading the item will open.
+      //
+      // Read here and not above: a refused command leaves the run broken or the tree empty,
+      // and never the dead end above, which is the role's `allow` list or a change the code
+      // host will not take. Every Bash refusal in a run names the same role, so the first key
+      // is the only one there is.
+      const cure = execution.denials?.find((d) => d.cure !== undefined)?.cure
       const reason: HandoffReason =
         execution.outcome === 'nothing-to-do'
           ? { kind: 'nothing-to-do', detail: declineReason(execution.transcript) }
-          : { kind: 'failure', detail: execution.reason }
+          : { kind: 'failure', detail: execution.reason, ...(cure === undefined ? {} : { cure }) }
       const out = await handOffFrom(tracker, candidate, role, identity, claim.claimedAt, reason, execution)
       return {
         outcome: 'handed-off', candidate, reason: execution.reason, execution,
-        costUsd: execution.costUsd, spoke: out.posted, handoff: reason.kind,
+        costUsd: execution.costUsd, spoke: out.posted, handoff: reason.kind, ...(cure === undefined ? {} : { cure }),
       }
     }
   }

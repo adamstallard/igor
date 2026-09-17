@@ -42,6 +42,13 @@ budget:
 
     # A person's own subscription, lent to the fleet. `reserve` is their floor: at 0.5 an Igor
     # stops at half the window and leaves the rest to them. See docs/seats.md.
+    #
+    # `capacity` is an optional starting estimate, in dollars of list-price spend a window
+    # holds. A reserve is a fraction of capacity, so a reserved seat with no capacity figure at
+    # all is passed over rather than guessed at; a declared one gets it started. The first
+    # observation of the seat replaces it outright, and until then it is reported as declared.
+    # It is one figure for a seat whose session and weekly windows hold very different amounts,
+    # so leaving it out and waiting for an observation is the safer course.
     - id: adam
       owner: adam@example.com
       reserve: 0.5

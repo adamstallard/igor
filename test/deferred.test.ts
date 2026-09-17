@@ -153,6 +153,13 @@ describe('which outcomes are about the item', () => {
     expect(shouldDefer('handed-off', 'budget')).toBe(false)
   })
 
+  it('does not record a handoff the Igor’s own configuration caused', () => {
+    // The cure key names a role's command list, which no comment on the item could change —
+    // and the next item would meet the same wall.
+    expect(shouldDefer('handed-off', 'failure', 'role:generalist:commands')).toBe(false)
+    expect(shouldDefer('handed-off', 'nothing-to-do', 'role:generalist:commands')).toBe(false)
+  })
+
   it('records nothing for an outcome that was not a handoff', () => {
     for (const outcome of ['produced', 'stopped', 'lost', 'refused']) {
       expect(shouldDefer(outcome, undefined)).toBe(false)
