@@ -163,10 +163,13 @@ function runClaude(
       // whichever seat the budget gate chose, not whatever login is ambient on the machine.
       { stdio: ['ignore', 'pipe', 'pipe'], ...(env === undefined ? {} : { env }) },
     )
-    // A StringDecoder, so a multi-byte character split across chunks arrives whole. Decoded per
-    // chunk it becomes replacement characters, and the envelope still parses — a failing call's
-    // reason text is corrupted silently rather than lost loudly.
+    // A StringDecoder on each pipe, so a multi-byte character split across chunks arrives whole.
+    // Decoded per chunk it becomes replacement characters and nothing fails: the envelope still
+    // parses, and stderr is read as text either way. A failing call's reason comes from whichever
+    // pipe spoke, so decoding one and not the other corrupts it silently rather than losing it
+    // loudly.
     child.stdout.setEncoding('utf8')
+    child.stderr.setEncoding('utf8')
 
     let out = ''
     let err = ''
