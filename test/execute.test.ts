@@ -241,6 +241,10 @@ describe('rendering a command pattern for the worker', () => {
     expect(describeCommand('npm * install')).toBe('npm * install')
     expect(describeCommand('git log:*:*')).toBe('git log:*:*')
     expect(describeCommand(' :*')).toBe(' :*')
+    // A soft hyphen or zero width space renders as a command that reads correctly and matches
+    // nothing, which is the one way this can state a permission that does not exist.
+    expect(describeCommand('npx\u00ad tsc --noEmit')).toBe('npx\u00ad tsc --noEmit')
+    expect(describeCommand('npm\u200brun build:*')).toBe('npm\u200brun build:*')
   })
 
   it('keeps a multi-line entry inside the list rather than letting it read as an instruction', () => {
