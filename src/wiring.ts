@@ -48,9 +48,21 @@ export async function wire(
   out: Reporter = QUIET,
   sweep: SweepOptions = {},
 ): Promise<Wiring> {
-  // Before the first cycle, because exit is the path that does not run. Housekeeping never
-  // stops a cycle, so nothing here is allowed to throw.
-  await sweepAbandonedTrees(out, sweep).catch(() => undefined)
+  /**
+   * Housekeeping never stops a cycle, so each of these is caught. Not stopping and saying
+   * nothing are separate choices, though: an unwritable state branch is indistinguishable from
+   * an Igor with nothing to do, and the spend on the records it drops is never counted again.
+   */
+  const warnOnly = (what: string) => (error: unknown) => {
+    try {
+      out.warn(`${what}: ${error instanceof Error ? error.message : String(error)}`)
+    } catch {
+      // A reporter that cannot write is not a reason to stop, and there is nowhere to say so.
+    }
+  }
+
+  // Before the first cycle, because exit is the path that does not run.
+  await sweepAbandonedTrees(out, sweep).catch(warnOnly('could not sweep abandoned trees'))
 
   return {
     // Named in a pull request only where the store is public. Unknown visibility discloses
@@ -82,7 +94,9 @@ export async function wire(
       else if (result.fired.length > 0) {
         out.say(`lore: ${result.fired.length} entries, ~${result.estimatedTokens} tokens`)
       }
-      void recordFiring(destination, item.id, role, result, appendRecord).catch(() => undefined)
+      void recordFiring(destination, item.id, role, result, appendRecord).catch(
+        warnOnly(`could not record the lore fired on ${item.id}`),
+      )
       return renderLore(result.fired)
     },
 
@@ -97,7 +111,9 @@ export async function wire(
         said.add(line)
         out.warn(line)
       }
-      await recordExecution(destination, item, role, execution, seat).catch(() => undefined)
+      await recordExecution(destination, item, role, execution, seat).catch(
+        warnOnly(`could not record the run of ${item.id}`),
+      )
     },
   }
 }

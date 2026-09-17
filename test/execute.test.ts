@@ -1133,6 +1133,133 @@ describe('a worker may run only the commands its role declares', () => {
   })
 })
 
+/**
+ * Driven through the real worker rather than a hand-built `ExecutionResult`, because the gap
+ * this closes is between what the stream is parsed as and what the record assumes it holds.
+ */
+describe('an envelope the stream never promised cannot destroy the record of the run', () => {
+  const NULL_COST = `emit({ type: 'assistant', message: { content: [{ type: 'text' }], usage: { cache_read_input_tokens: 2048 } } })
+emit({ type: 'result', result: 'Looked, found nothing to change.', total_cost_usd: null })`
+
+  beforeEach(() => {
+    ledger.records.length = 0
+    ledger.files.length = 0
+  })
+
+  it('records the run a worker reported a null cost on', async () => {
+    const item = candidate()
+    const result = await reportingWorker(NULL_COST)
+    await recordExecution('acme/lore', item, role(), result)
+
+    // The outcome, the reason and the pointer to the transcript are what a dropped record
+    // costs, and none of them has anything to do with the cost.
+    expect(ledger.records[0]).toMatchObject({
+      item: item.id,
+      outcome: result.outcome,
+      reason: result.reason,
+      transcript: `transcripts/github/o/r/7.md`,
+    })
+  })
+
+  it('treats the null as a cost the worker never reported, not as a free run', async () => {
+    const result = await reportingWorker(NULL_COST)
+    await recordExecution('acme/lore', candidate(), role(), result)
+
+    const record = ledger.records[0] ?? {}
+    expect('costUsd' in record).toBe(false)
+    expect(record['usage']).toEqual({ assistantTurns: 1, cacheReadTokensPeak: 2048 })
+  })
+})
+
+/**
+ * `result` is the one envelope field every reader treats as prose. A run that published a pull
+ * request naming its transcript, or that owes a receipt for finding nothing, reads it long
+ * before the ledger does — so a shape that is not prose escapes `execute` itself, leaving an
+ * item claimed with nothing said on it.
+ */
+describe('a transcript the envelope did not send as text', () => {
+  const OBJECT_RESULT = `emit({ type: 'result', result: { text: 'I fixed it.' }, total_cost_usd: 0.02 })`
+
+  beforeEach(() => {
+    ledger.records.length = 0
+    ledger.files.length = 0
+  })
+
+  it('finishes the run that changed something rather than throwing out of it', async () => {
+    const { provider } = fakeProvider(edited)
+    const { host } = fakeCodeHost()
+    const { t } = fakeTracker()
+    const item = candidate()
+
+    const result = await execute(provider, t, host, item, role(), {
+      worker: claudeWorker(stubCommand(OBJECT_RESULT)),
+    })
+    await recordExecution('acme/lore', item, role(), result)
+
+    expect(result.outcome).toBe('produced')
+    expect(result.transcript).toBe('')
+    expect(ledger.records[0]).toMatchObject({ item: item.id, outcome: 'produced', costUsd: 0.02 })
+  })
+
+  it('hands the rest of the cycle a transcript it can read', async () => {
+    // Everything downstream splits, trims and replaces on this. An empty one is the same value
+    // a run that never reported a result already yields, and every reader of it is built for.
+    const result = await reportingWorker(OBJECT_RESULT)
+
+    expect(result.outcome).toBe('nothing-to-do')
+    expect(typeof result.transcript).toBe('string')
+  })
+
+  it('still explains a non-zero exit the envelope only described in an object', async () => {
+    // The reject carries whatever the terminal event said, so reading it has to survive the
+    // event saying it in a shape that is not a string — a worker whose promise never settles
+    // is one nothing above it can fail, hand off, or record.
+    const failing = `emit({ type: 'result', is_error: true, result: { text: 'Not logged in' } })
+setTimeout(() => process.exit(1), 10)`
+    const result = await reportingWorker(failing)
+
+    expect(result.outcome).toBe('failed')
+    expect(result.reason).toBe('worker exited 1')
+  })
+})
+
+/**
+ * A line off the stream is read for progress before anything asks what it is. That read happens
+ * inside the `data` listener, where a throw is nobody's rejection: the run's promise never
+ * settles, the tree is never released, and the item stays claimed with nothing said on it.
+ */
+describe('what the stream sends, read before anything checks its shape', () => {
+  it('skips it and keeps the terminal event that arrived in the same chunk', async () => {
+    // One chunk, because the loop over a chunk's lines abandons the rest on a throw — and the
+    // rest is where the cost is.
+    const body = `process.stdout.write('null\\n' + JSON.stringify({ type: 'result', result: 'Looked.', total_cost_usd: 0.02 }) + '\\n')`
+    const result = await reportingWorker(body)
+
+    expect(result.outcome).toBe('nothing-to-do')
+    expect(result.costUsd).toBe(0.02)
+  })
+
+  it('reads the turn around a content block that is not a block', async () => {
+    const body = `emit({ type: 'assistant', message: { content: [null, { type: 'tool_use', name: 'Read', input: { file_path: 'src/a.ts' } }] } })
+emit({ type: 'result', result: 'Looked.', total_cost_usd: 0.02 })`
+    const seen: Progress[] = []
+    const result = await reportingWorker(body, { onProgress: (p) => seen.push(p), progressMs: 0 })
+
+    expect(result.costUsd).toBe(0.02)
+    // The block beside the null one still counted, rather than the turn being abandoned at it.
+    expect(seen.at(-1)?.filesTouched).toBe(1)
+  })
+
+  it('carries on past a tool call whose name is not a name', async () => {
+    const turn = `JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 'a1', name: 123 }] } })`
+    const done = `JSON.stringify({ type: 'result', result: 'Looked.', total_cost_usd: 0.02 })`
+    const result = await reportingWorker(`process.stdout.write(${turn} + '\\n' + ${done} + '\\n')`)
+
+    expect(result.outcome).toBe('nothing-to-do')
+    expect(result.costUsd).toBe(0.02)
+  })
+})
+
 
 describe('what a tool call is called, for somebody watching', () => {
   it('distinguishes verifying from looking around, which is the whole point', () => {
@@ -1667,5 +1794,94 @@ describe('what the sandbox refused, and the configuration that would permit it',
     expect(result.outcome).toBe('produced')
     expect(result.apiErrorStatus).toBeUndefined()
     expect(result.terminalReason).toBeUndefined()
+  })
+})
+
+describe('the configurations one run can prove wrong', () => {
+  beforeEach(() => {
+    ledger.records.length = 0
+    ledger.files.length = 0
+  })
+
+  it('names the seat whose token it could not read, where the worker never starts', async () => {
+    // Nothing runs, so there are no denials to read and no envelope to classify — and this is
+    // the shape #22 arrived in. The key is known here because this is where the seat's token
+    // source is resolved, rather than inferred from `worker exited 1` afterwards.
+    const { result } = await run(
+      {},
+      {
+        seat: 'team-seat',
+        seatToken: { tokenEnv: 'IGOR_SEAT_UNSET_48' },
+        worker: async () => { throw new Error('the worker must never be reached') },
+      },
+    )
+    expect(result.outcome).toBe('failed')
+    expect(result.reason).toContain('IGOR_SEAT_UNSET_48')
+    expect(result.cures).toEqual(['seat:team-seat:token'])
+  })
+
+  it('leaves a seat it was never told the name of unnamed rather than guessing', async () => {
+    // The gate hands out the id and the token source together, so this is not a path a run
+    // takes; a key with no seat in it would point a reader at nothing.
+    const { result } = await run({}, { seatToken: { tokenEnv: 'IGOR_SEAT_UNSET_48' } })
+    expect(result.outcome).toBe('failed')
+    expect(result.cures).toBeUndefined()
+  })
+
+  it('names the role’s allow list where the action space is the dead end', async () => {
+    // A fact about the role: the work is done and nothing about this item stopped it being
+    // published, so the next item meets the same wall.
+    const { result } = await run({ allow: ['comment', 'unassign'] })
+    expect(result.outcome).toBe('refused')
+    expect(result.cures).toEqual(['role:triage:allow'])
+  })
+
+  it('keeps both where one run was refused an action and denied a command', async () => {
+    // The reason the field is a list. Taking either alone leaves the other uncorrected, and
+    // the run after the fix stops on a wall nothing in the record named.
+    const { item, result } = await run(
+      { allow: ['comment', 'unassign'] },
+      {
+        worker: async () => ({
+          result: 'Fixed it.',
+          total_cost_usd: 0.02,
+          permission_denials: [{ tool_name: 'Bash', tool_input: { command: 'npm test' } }],
+        }),
+      },
+    )
+    expect(result.cures).toEqual(['role:triage:commands', 'role:triage:allow'])
+
+    // And both reach the record, which is what a condition would later be counted from.
+    await recordExecution('acme/lore', item, role({ allow: ['comment', 'unassign'] }), result)
+    expect(ledger.records[0]?.['cures']).toEqual(['role:triage:commands', 'role:triage:allow'])
+  })
+
+  it('mints nothing for a failure whose cause it does not know', async () => {
+    // A crash is not a configuration. Naming a cure here would unpark every item an Igor
+    // touched on the strength of a guess.
+    const { result } = await run({}, { worker: async () => { throw new Error('claude: command not found') } })
+    expect(result.outcome).toBe('failed')
+    expect(result.cures).toBeUndefined()
+    expect(ledger.records[0]?.['cures']).toBeUndefined()
+  })
+
+  it('records one key per wall, however many times the worker hit it', async () => {
+    // Six refusals of the same command are one thing to fix. The denials keep every attempt,
+    // because the count is the difference between a stray call and a blocked run.
+    const { result } = await run(
+      {},
+      {
+        worker: async () => ({
+          result: 'Fixed it.',
+          total_cost_usd: 0.02,
+          permission_denials: Array.from({ length: 6 }, () => ({
+            tool_name: 'Bash',
+            tool_input: { command: 'npm test' },
+          })),
+        }),
+      },
+    )
+    expect(result.denials).toHaveLength(6)
+    expect(result.cures).toEqual(['role:triage:commands'])
   })
 })

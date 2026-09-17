@@ -391,6 +391,44 @@ describe('parsing org budget config', () => {
     expect(() => parseOrgBudget({ seats: [{ id: 'x', dedicated: true, reserve: 0.5 }] })).toThrow(/nobody is there/)
   })
 
+  it('reads a declared capacity per window as a starting estimate', () => {
+    const b = parseOrgBudget({ seats: [{ id: 'adam', reserve: 0.5, capacity: { session: 12, week: 250 } }] })
+    expect(b.seats[0]?.capacity).toStrictEqual({ session: 12, week: 250 })
+  })
+
+  it('takes a seat declaring one window and not the other', () => {
+    const b = parseOrgBudget({ seats: [{ id: 'adam', reserve: 0.5, capacity: { week: 250 } }] })
+    expect(b.seats[0]).toStrictEqual({ id: 'adam', reserve: 0.5, capacity: { week: 250 } })
+  })
+
+  it('leaves capacity unset on a seat that declares none', () => {
+    const b = parseOrgBudget({ seats: [{ id: 'adam', reserve: 0.5 }] })
+    expect(b.seats[0]).toStrictEqual({ id: 'adam', reserve: 0.5 })
+  })
+
+  it('rejects a capacity that names no window, rather than spending it as both', () => {
+    expect(() => parseOrgBudget({ seats: [{ id: 'x', capacity: 250 }] })).toThrow(
+      /seat "x"\.capacity must name a window: session, week/,
+    )
+    // `capacity:` with nothing under it, which YAML reads as null.
+    expect(() => parseOrgBudget({ seats: [{ id: 'x', capacity: null }] })).toThrow(/must name a window/)
+    expect(() => parseOrgBudget({ seats: [{ id: 'x', capacity: {} }] })).toThrow(/seat "x"\.capacity names no window/)
+  })
+
+  it('rejects a capacity naming something that is not a window', () => {
+    expect(() => parseOrgBudget({ seats: [{ id: 'x', capacity: { weekly: 250 } }] })).toThrow(
+      /seat "x"\.capacity names "weekly", which is not a window/,
+    )
+  })
+
+  it('rejects a declared capacity that is not a positive number of dollars', () => {
+    expect(() => parseOrgBudget({ seats: [{ id: 'x', capacity: { session: 0 } }] })).toThrow(
+      /seat "x"\.capacity\.session must be a positive number of dollars/,
+    )
+    expect(() => parseOrgBudget({ seats: [{ id: 'x', capacity: { week: -1 } }] })).toThrow(/\.capacity\.week must be/)
+    expect(() => parseOrgBudget({ seats: [{ id: 'x', capacity: { week: '250' } }] })).toThrow(/\.capacity\.week must be/)
+  })
+
   it('treats absent budget config as no seats rather than an error', () => {
     expect(parseOrgBudget(undefined)).toEqual({ seats: [], pools: [] })
   })

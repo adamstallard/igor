@@ -385,7 +385,7 @@ program
       })
       if (drawn && live) process.stdout.write('\n')
       process.stdout.write(`  ${run.outcome}: ${run.reason}\n`)
-      if (shouldDefer(run.outcome, run.handoff, run.cure)) {
+      if (shouldDefer(run.outcome, run.handoff, run.cures)) {
         await noteHandoff(destination, item, run.reason).catch(() => undefined)
       }
       if (run.execution) {

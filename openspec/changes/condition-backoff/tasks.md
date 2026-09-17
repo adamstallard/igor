@@ -4,6 +4,12 @@
       budget, and keeps deferring one that carries none (#43)
 - [x] 1.2 Tests: a refused command does not defer, a failure with no key still does, budget
       still does not
+- [x] 1.3 A key minted at every site that enforces one of this Igor's own configurations — the
+      seat's token source and the role's action space alongside the sandbox allowlist — and
+      `cure` widened to a list, so a run that proved two wrong records both (#48)
+- [x] 1.4 Tests: one run carrying two keys keeps both, a worker that cannot start for an unset
+      seat token names the seat, an action-space refusal names the role's `allow`, and a crash
+      whose cause is unknown still mints none and still defers
 
 ## 2. The condition record
 

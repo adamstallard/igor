@@ -28,7 +28,13 @@ const item = { id: 'github:o/r#7', repo: 'o/r', url: 'https://example.test/7' } 
 function reporter() {
   const said: string[] = []
   const warned: string[] = []
-  return { out: { say: (l: string) => said.push(l), warn: (l: string) => warned.push(l) }, said, warned }
+  return {
+    out: { say: (l: string) => said.push(l), warn: (l: string) => warned.push(l) },
+    said,
+    warned,
+    /** The state branch is unwritable here throughout, so its own warning rides along. */
+    denials: () => warned.filter((l) => l.startsWith('sandbox denied')),
+  }
 }
 
 function ran(denials?: Denial[]): ExecutionResult {
@@ -50,45 +56,66 @@ describe('a command the sandbox refused reaches the operator', () => {
     await wire(config, role, 'o/r', out, { root: tempDir('igor-wiring-test-') })
 
   it('says the command and the cure key', async () => {
-    const { out, warned } = reporter()
+    const { out, denials } = reporter()
 
     await (await wiring(out)).record(item, ran([denied('npm install')]))
 
-    expect(warned).toEqual(['sandbox denied npm install — cure key role:generalist:commands'])
+    expect(denials()).toEqual(['sandbox denied npm install — cure key role:generalist:commands'])
   })
 
   it('says it once however many times the worker tried', async () => {
     // Six identical refusals are one thing to fix, and six lines read as six problems.
-    const { out, warned } = reporter()
+    const { out, denials } = reporter()
 
     await (await wiring(out)).record(item, ran(Array.from({ length: 6 }, () => denied('npm install'))))
 
-    expect(warned).toHaveLength(1)
+    expect(denials()).toHaveLength(1)
   })
 
   it('says both where two commands were refused under one cure', async () => {
     // Widening the list takes both strings, so collapsing on the key hides the second.
-    const { out, warned } = reporter()
+    const { out, denials } = reporter()
 
     await (await wiring(out)).record(item, ran([denied('npm install'), denied('npx vitest run')]))
 
-    expect(warned).toHaveLength(2)
-    expect(warned[1]).toContain('npx vitest run')
+    expect(denials()).toHaveLength(2)
+    expect(denials()[1]).toContain('npx vitest run')
   })
 
   it('names the tool where no role setting would have permitted it', async () => {
-    const { out, warned } = reporter()
+    const { out, denials } = reporter()
 
     await (await wiring(out)).record(item, ran([{ tool: 'WebFetch' }]))
 
-    expect(warned).toEqual(['sandbox denied WebFetch'])
+    expect(denials()).toEqual(['sandbox denied WebFetch'])
   })
 
   it('stays quiet about a run nothing was refused on', async () => {
+    const { out, denials } = reporter()
+
+    await (await wiring(out)).record(item, ran())
+
+    expect(denials()).toEqual([])
+  })
+})
+
+describe('a run that could not be recorded is said out loud', () => {
+  const wiring = async (out: ReturnType<typeof reporter>['out']) =>
+    await wire(config, role, 'o/r', out, { root: tempDir('igor-wiring-test-') })
+
+  it('names the item and what the state branch said', async () => {
+    // The record is the numerator a seat's capacity is derived from, so one dropped in silence
+    // is spend that happened, was never counted, and reads back as capacity nobody has.
     const { out, warned } = reporter()
 
     await (await wiring(out)).record(item, ran())
 
-    expect(warned).toEqual([])
+    expect(warned).toEqual(['could not record the run of github:o/r#7: no state branch'])
+  })
+
+  it('still lets the item finish, because housekeeping never stops a cycle', async () => {
+    const { out } = reporter()
+
+    await expect((await wiring(out)).record(item, ran())).resolves.toBeUndefined()
   })
 })

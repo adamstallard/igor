@@ -156,8 +156,15 @@ describe('which outcomes are about the item', () => {
   it('does not record a handoff the Igor’s own configuration caused', () => {
     // The cure key names a role's command list, which no comment on the item could change —
     // and the next item would meet the same wall.
-    expect(shouldDefer('handed-off', 'failure', 'role:generalist:commands')).toBe(false)
-    expect(shouldDefer('handed-off', 'nothing-to-do', 'role:generalist:commands')).toBe(false)
+    expect(shouldDefer('handed-off', 'failure', ['role:generalist:commands'])).toBe(false)
+    expect(shouldDefer('handed-off', 'nothing-to-do', ['role:generalist:commands'])).toBe(false)
+  })
+
+  it('does not record one that named several, and treats an empty list as none', () => {
+    // A run can be refused an action and denied a command at once. Either key alone is reason
+    // enough not to park the item, and a list with nothing in it is a handoff naming nothing.
+    expect(shouldDefer('handed-off', 'failure', ['role:generalist:allow', 'seat:team:token'])).toBe(false)
+    expect(shouldDefer('handed-off', 'failure', [])).toBe(true)
   })
 
   it('records nothing for an outcome that was not a handoff', () => {
