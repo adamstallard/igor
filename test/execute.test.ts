@@ -1133,6 +1133,133 @@ describe('a worker may run only the commands its role declares', () => {
   })
 })
 
+/**
+ * Driven through the real worker rather than a hand-built `ExecutionResult`, because the gap
+ * this closes is between what the stream is parsed as and what the record assumes it holds.
+ */
+describe('an envelope the stream never promised cannot destroy the record of the run', () => {
+  const NULL_COST = `emit({ type: 'assistant', message: { content: [{ type: 'text' }], usage: { cache_read_input_tokens: 2048 } } })
+emit({ type: 'result', result: 'Looked, found nothing to change.', total_cost_usd: null })`
+
+  beforeEach(() => {
+    ledger.records.length = 0
+    ledger.files.length = 0
+  })
+
+  it('records the run a worker reported a null cost on', async () => {
+    const item = candidate()
+    const result = await reportingWorker(NULL_COST)
+    await recordExecution('acme/lore', item, role(), result)
+
+    // The outcome, the reason and the pointer to the transcript are what a dropped record
+    // costs, and none of them has anything to do with the cost.
+    expect(ledger.records[0]).toMatchObject({
+      item: item.id,
+      outcome: result.outcome,
+      reason: result.reason,
+      transcript: `transcripts/github/o/r/7.md`,
+    })
+  })
+
+  it('treats the null as a cost the worker never reported, not as a free run', async () => {
+    const result = await reportingWorker(NULL_COST)
+    await recordExecution('acme/lore', candidate(), role(), result)
+
+    const record = ledger.records[0] ?? {}
+    expect('costUsd' in record).toBe(false)
+    expect(record['usage']).toEqual({ assistantTurns: 1, cacheReadTokensPeak: 2048 })
+  })
+})
+
+/**
+ * `result` is the one envelope field every reader treats as prose. A run that published a pull
+ * request naming its transcript, or that owes a receipt for finding nothing, reads it long
+ * before the ledger does — so a shape that is not prose escapes `execute` itself, leaving an
+ * item claimed with nothing said on it.
+ */
+describe('a transcript the envelope did not send as text', () => {
+  const OBJECT_RESULT = `emit({ type: 'result', result: { text: 'I fixed it.' }, total_cost_usd: 0.02 })`
+
+  beforeEach(() => {
+    ledger.records.length = 0
+    ledger.files.length = 0
+  })
+
+  it('finishes the run that changed something rather than throwing out of it', async () => {
+    const { provider } = fakeProvider(edited)
+    const { host } = fakeCodeHost()
+    const { t } = fakeTracker()
+    const item = candidate()
+
+    const result = await execute(provider, t, host, item, role(), {
+      worker: claudeWorker(stubCommand(OBJECT_RESULT)),
+    })
+    await recordExecution('acme/lore', item, role(), result)
+
+    expect(result.outcome).toBe('produced')
+    expect(result.transcript).toBe('')
+    expect(ledger.records[0]).toMatchObject({ item: item.id, outcome: 'produced', costUsd: 0.02 })
+  })
+
+  it('hands the rest of the cycle a transcript it can read', async () => {
+    // Everything downstream splits, trims and replaces on this. An empty one is the same value
+    // a run that never reported a result already yields, and every reader of it is built for.
+    const result = await reportingWorker(OBJECT_RESULT)
+
+    expect(result.outcome).toBe('nothing-to-do')
+    expect(typeof result.transcript).toBe('string')
+  })
+
+  it('still explains a non-zero exit the envelope only described in an object', async () => {
+    // The reject carries whatever the terminal event said, so reading it has to survive the
+    // event saying it in a shape that is not a string — a worker whose promise never settles
+    // is one nothing above it can fail, hand off, or record.
+    const failing = `emit({ type: 'result', is_error: true, result: { text: 'Not logged in' } })
+setTimeout(() => process.exit(1), 10)`
+    const result = await reportingWorker(failing)
+
+    expect(result.outcome).toBe('failed')
+    expect(result.reason).toBe('worker exited 1')
+  })
+})
+
+/**
+ * A line off the stream is read for progress before anything asks what it is. That read happens
+ * inside the `data` listener, where a throw is nobody's rejection: the run's promise never
+ * settles, the tree is never released, and the item stays claimed with nothing said on it.
+ */
+describe('what the stream sends, read before anything checks its shape', () => {
+  it('skips it and keeps the terminal event that arrived in the same chunk', async () => {
+    // One chunk, because the loop over a chunk's lines abandons the rest on a throw — and the
+    // rest is where the cost is.
+    const body = `process.stdout.write('null\\n' + JSON.stringify({ type: 'result', result: 'Looked.', total_cost_usd: 0.02 }) + '\\n')`
+    const result = await reportingWorker(body)
+
+    expect(result.outcome).toBe('nothing-to-do')
+    expect(result.costUsd).toBe(0.02)
+  })
+
+  it('reads the turn around a content block that is not a block', async () => {
+    const body = `emit({ type: 'assistant', message: { content: [null, { type: 'tool_use', name: 'Read', input: { file_path: 'src/a.ts' } }] } })
+emit({ type: 'result', result: 'Looked.', total_cost_usd: 0.02 })`
+    const seen: Progress[] = []
+    const result = await reportingWorker(body, { onProgress: (p) => seen.push(p), progressMs: 0 })
+
+    expect(result.costUsd).toBe(0.02)
+    // The block beside the null one still counted, rather than the turn being abandoned at it.
+    expect(seen.at(-1)?.filesTouched).toBe(1)
+  })
+
+  it('carries on past a tool call whose name is not a name', async () => {
+    const turn = `JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 'a1', name: 123 }] } })`
+    const done = `JSON.stringify({ type: 'result', result: 'Looked.', total_cost_usd: 0.02 })`
+    const result = await reportingWorker(`process.stdout.write(${turn} + '\\n' + ${done} + '\\n')`)
+
+    expect(result.outcome).toBe('nothing-to-do')
+    expect(result.costUsd).toBe(0.02)
+  })
+})
+
 
 describe('what a tool call is called, for somebody watching', () => {
   it('distinguishes verifying from looking around, which is the whole point', () => {

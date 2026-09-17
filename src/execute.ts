@@ -176,7 +176,8 @@ export function workerPrompt(candidate: Candidate, linkage: string): string {
 
 export interface WorkerOutput {
   result?: string
-  total_cost_usd?: number
+  /** Null, not merely absent, on a run the envelope declines to price. */
+  total_cost_usd?: number | null
   is_error?: boolean
   /** Per-model token counts and cost, keyed by the dated model id. */
   modelUsage?: Record<string, unknown>
@@ -484,7 +485,10 @@ function usageOf(event: WorkerEvent): Record<string, unknown> | undefined {
 
 function blocksOf(event: WorkerEvent): Block[] {
   const content = (event.message as { content?: unknown } | undefined)?.content
-  return Array.isArray(content) ? (content as Block[]) : []
+  if (!Array.isArray(content)) return []
+  // Both readers reach straight for `block.type`, from a stream listener where a throw is
+  // nobody's rejection.
+  return content.filter((block): block is Block => typeof block === 'object' && block !== null)
 }
 
 /**
@@ -832,6 +836,9 @@ export function claudeWorker(command = 'claude'): WorkerRunner {
           // progress either: a worker still spewing noise has still stopped working.
           return
         }
+        // Valid JSON is not an event. Read as one it throws inside the `data` listener, which
+        // settles nothing and abandons the rest of the chunk — where the terminal event is.
+        if (typeof event !== 'object' || event === null) return
         // Every event is progress, whatever its type, and says which window applies next.
         watch.progress(event)
         if (event.type === 'result') final = event
@@ -867,7 +874,10 @@ export function claudeWorker(command = 'claude'): WorkerRunner {
         // on stderr. Rejecting on the exit code alone throws away the explanation already in
         // hand, leaving "worker exited 1" for a cause the stream stated plainly.
         if (code !== 0) {
-          const said = final?.is_error === true ? final.result?.trim() : undefined
+          // The text beside `is_error` is not guaranteed to be text, and a worker promise that
+          // neither resolves nor rejects is one nothing above it can fail, hand off, or record.
+          const said =
+            final?.is_error === true && typeof final.result === 'string' ? final.result.trim() : undefined
           return reject(new ExecutionError(said || err.trim() || `worker exited ${code}`, final))
         }
         if (final === undefined) {
@@ -1023,7 +1033,7 @@ export async function execute(
     const progressMs = options.progressMs ?? PROGRESS_INTERVAL_MS
     const watchProgress = (event: WorkerEvent) => {
       for (const block of blocksOf(event)) {
-        if (block.type !== 'tool_use' || block.name === undefined) continue
+        if (block.type !== 'tool_use' || typeof block.name !== 'string') continue
         doing = describeTool(block.name, block.input ?? {})
         const path = (block.input ?? {})['file_path']
         if (typeof path === 'string') touched.add(path)
@@ -1051,10 +1061,14 @@ export async function execute(
     /** An unreported cost is left out rather than called zero, and what was seen stands in. */
     const spend = (output: WorkerOutput = {}) => {
       const models = spendByModel(output.modelUsage)
+      // Anything but a finite number is the envelope declining to say. It arrives unvalidated,
+      // and a shape the record's arithmetic does not expect costs the whole record, not the cost.
+      const raw = output.total_cost_usd
+      const cost = typeof raw === 'number' && Number.isFinite(raw) ? raw : undefined
       return {
-        ...(output.total_cost_usd === undefined
+        ...(cost === undefined
           ? { costUsd: undefined, usage: { ...observed } }
-          : { costUsd: output.total_cost_usd }),
+          : { costUsd: cost }),
         ...(models.length === 0 ? {} : { models }),
         ...(output.stop_reason === undefined ? {} : { stopReason: output.stop_reason }),
       }
@@ -1159,7 +1173,9 @@ export async function execute(
       worker = {}
     }
 
-    const transcript = worker.result ?? ''
+    // Every reader downstream splits, trims or replaces this. A shape that is not prose is no
+    // transcript, and must not be what escapes the run with the item still claimed.
+    const transcript = typeof worker.result === 'string' ? worker.result : ''
     // A refused command and a session log are worth the same to a reader whatever the run went
     // on to do, so they ride with the cost into every outcome below.
     const kept = { ...spend(worker), ...trace(worker) }
