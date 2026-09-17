@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import type { Artifact, Candidate, ClaimVerdict, CodeHost, Tracker } from './adapter.js'
-import { resolveToken, type TokenSource } from './budget.js'
+import { resolveToken, type TokenSource, type Window } from './budget.js'
+import { recordObservation, WINDOW_LENGTH } from './capacity.js'
 import type { Action, Role } from './role.js'
 import { withTree, type ChangedFile, type TreeProvider, type WorkingTree } from './worktree.js'
 import { appendRecord, STATE_BRANCH, writeState } from './state.js'
@@ -346,6 +347,14 @@ function asIso(value: unknown): string | undefined {
   return Number.isFinite(t) ? new Date(t).toISOString() : undefined
 }
 
+/**
+ * Deliberately not `resolveReset`, though `capacity.ts` exports it and it reads the very phrase
+ * the provider is believed to print. It answers with the first such occurrence at or after the
+ * moment it is given, so a reset already gone comes back a year out — straight past the
+ * staleness guard in `usageLimit`, which compares against that same moment — and cutting the
+ * phrase out of `envelope.result` takes any date the worker happened to quote from the item.
+ * Wiring it in wants a horizon no real reset exceeds and a pattern anchored on reset wording.
+ */
 function resetFrom(envelope: WorkerOutput, info: Record<string, unknown> | undefined): string | undefined {
   for (const key of ['resetsAt', 'resets_at', 'resetAt', 'reset_at']) {
     const iso = asIso(info?.[key])
@@ -401,6 +410,28 @@ function outOfCapacity(resetsAt: string | undefined): string {
   return resetsAt === undefined
     ? 'the seat ran out of capacity, and the provider did not report when it returns'
     : `the seat ran out of capacity; it returns at ${resetsAt}`
+}
+
+/**
+ * Which window a refusal exhausted. The envelope does not say, and the two are separate caps.
+ *
+ * A reset further off than a session is long cannot be a session reset, so `week` there is
+ * deduction. Nothing else is: a reset inside five hours fits either window, and a refusal
+ * naming no reset fits both on no evidence. Both read as `session`, which is the safe
+ * direction — a weekly refusal labelled so divides one session's spend by 1.0 and lowers the
+ * capacity estimate, the direction `capacity-from-observation` §3 already accepts from a
+ * co-consumer.
+ *
+ * Nothing reads the window off the worker's own prose. `LIMIT_TEXT` leaves bare "rate limit"
+ * out for the reason that applies doubly to "weekly": a failed run's `result` is model output,
+ * and an item about a weekly report answers to it. Add a pattern here, and nowhere else, once
+ * a live refusal has been captured and the wording is known rather than guessed.
+ */
+export function limitWindow(resetsAt: string | undefined, now: number = Date.now()): Window {
+  if (resetsAt === undefined) return 'session'
+  const at = Date.parse(resetsAt)
+  if (!Number.isFinite(at)) return 'session'
+  return at - now > WINDOW_LENGTH.session.total({ unit: 'millisecond' }) ? 'week' : 'session'
 }
 
 /**
@@ -1434,5 +1465,29 @@ export async function recordExecution(
       },
       `Transcript for ${candidate.id}`,
     )
+  }
+
+  // A refusal is an observation at 100%, and on a seat bought for a fleet it is the only one
+  // obtainable: every other route needs a person signed in on that seat, and nobody signs in
+  // as this one. Written from here because this runs once per run, and only for a run that
+  // reached the provider — the budget check that stops an Igor before it spends produces no
+  // execution at all, so Igor's own bound cannot be recorded as the provider's refusal. A run
+  // naming no seat is attributable to none, and an observation owes one.
+  //
+  // Last of the three writes, because each is a separate call to a state branch over the
+  // network and the first to throw takes the rest with it. The next refusal supersedes this
+  // row; nothing supersedes the transcript ahead of it, which is this run's only account.
+  if (result.outcome === 'budget' && seat !== undefined) {
+    await recordObservation(destination, {
+      at: new Date().toISOString(),
+      seat,
+      window: limitWindow(result.resetsAt),
+      percentUsed: 100,
+      // Absent where the provider named no return, or named one already past. That the seat
+      // refused is worth recording without it; `capacity-from-observation` §1 has such a row
+      // derive nothing rather than have it invent a position in a window.
+      ...(result.resetsAt === undefined ? {} : { resetsAt: result.resetsAt }),
+      source: 'limit',
+    })
   }
 }
