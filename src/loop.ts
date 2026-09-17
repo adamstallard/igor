@@ -304,6 +304,8 @@ export interface CycleReport {
   verdicts: { candidate: Candidate; outcome: 'proceed' | 'skip'; reason: string }[]
   toClaim: CycleCandidate[]
   triageCostUsd: number
+  /** Triage calls whose envelope stated no usable cost, making the figure above a floor. */
+  triageCostUnreported: number
   /** The seat the cost above was drawn from. Undefined where budget is unenforced or exhausted. */
   triageSeat?: string
   failures: string[]
@@ -359,6 +361,7 @@ export async function planCycle(
     verdicts: [],
     toClaim: [],
     triageCostUsd: 0,
+    triageCostUnreported: 0,
     failures: [],
     coldStart: false,
   }
@@ -434,6 +437,7 @@ export async function planCycle(
       )
       report.triaged = batch.results.length
       report.triageCostUsd = batch.costUsd
+      report.triageCostUnreported = batch.costUnreported
       if (gate?.seat !== undefined) report.triageSeat = gate.seat
       for (const { candidate, verdict } of batch.results) {
         report.verdicts.push({ candidate, outcome: verdict.outcome, reason: verdict.reason })
@@ -461,7 +465,13 @@ export async function planCycle(
     )
     await saveDiscoveryState(deps.destination, advance(stored, heldBelow(results, unexamined)))
   }
-  await recordDecisions(deps.destination, role, report).catch(() => undefined)
+  // Not worth failing a cycle over, but a write that vanishes silently leaves nobody able to
+  // say afterwards what this cycle decided — so it is reported like any other cycle failure.
+  await recordDecisions(deps.destination, role, report).catch((error: unknown) => {
+    report.failures.push(
+      `could not record decisions: ${error instanceof Error ? error.message : String(error)}`,
+    )
+  })
   return report
 }
 
@@ -725,6 +735,7 @@ export async function recordDecisions(
       triaged: report.triaged,
       claimed: report.toClaim.length,
       triageCostUsd: Number(report.triageCostUsd.toFixed(4)),
+      ...(report.triageCostUnreported > 0 ? { triageCostUnreported: report.triageCostUnreported } : {}),
       ...(report.triageSeat === undefined ? {} : { seat: report.triageSeat }),
       decisions: [
         ...report.skipped.map((s) => ({ item: s.candidate.id, stage: s.stage, outcome: 'skip', reason: s.reason })),

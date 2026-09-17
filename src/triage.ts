@@ -27,11 +27,6 @@ export const TRIAGE_MODEL = 'claude-haiku-4-5-20251001'
 
 export class TriageError extends Error {}
 
-export interface TriageResult {
-  verdict: Verdict
-  costUsd: number
-}
-
 /**
  * The trusted channel. Ingested content never reaches here — it arrives in the user message,
  * fenced, and this says so explicitly so that instruction-shaped text in an item is read as
@@ -77,10 +72,45 @@ export function itemPrompt(candidate: Candidate, bodyLimit = 4000): string {
   ].join('\n')
 }
 
-export interface HeadlessResult {
+/**
+ * A triage call as everything above the boundary sees it. Only `parseEnvelope` builds one, so
+ * no reader past that point has to ask again what shape a field arrived in.
+ */
+export interface TriageResponse {
+  /** The model's answer, where the envelope carried one as text. */
   result?: string
-  total_cost_usd?: number
-  is_error?: boolean
+  /** Undefined where the envelope declined to say. Never a zero standing in for silence. */
+  costUsd?: number
+  isError: boolean
+}
+
+/**
+ * Where an envelope stops being untrusted text.
+ *
+ * The CLI's JSON is not a contract — a cost has arrived as a string — and a wrong-typed field
+ * admitted here is arithmetic nobody checks again: `0 + "0.02"` is `"00.02"`, and a cycle's
+ * whole cost becomes concatenated garbage. So each field is either the type it claims or
+ * absent, and an envelope that is not an object is rejected rather than read through.
+ */
+export function parseEnvelope(out: string): TriageResponse {
+  let raw: unknown
+  try {
+    raw = JSON.parse(out)
+  } catch {
+    throw new TriageError(`claude returned unparseable output: ${out.slice(0, 200)}`)
+  }
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+    throw new TriageError(`claude returned no envelope object: ${out.slice(0, 200)}`)
+  }
+  const envelope = raw as Record<string, unknown>
+  const cost = envelope['total_cost_usd']
+  return {
+    ...(typeof envelope['result'] === 'string' ? { result: envelope['result'] } : {}),
+    ...(typeof cost === 'number' && Number.isFinite(cost) ? { costUsd: cost } : {}),
+    // Truthy, which is what the reader below this already did with the raw flag: a value in a
+    // shape this does not recognise is a reason to distrust the envelope it came in.
+    isError: Boolean(envelope['is_error']),
+  }
 }
 
 /**
@@ -92,14 +122,14 @@ export type TriageRunner = (
   prompt: string,
   model: string,
   env?: NodeJS.ProcessEnv,
-) => Promise<HeadlessResult>
+) => Promise<TriageResponse>
 
 function runClaude(
   system: string,
   prompt: string,
   model: string,
   env?: NodeJS.ProcessEnv,
-): Promise<HeadlessResult> {
+): Promise<TriageResponse> {
   return new Promise((resolve, reject) => {
     const child = spawn(
       'claude',
@@ -130,9 +160,9 @@ function runClaude(
     child.on('close', (code) => {
       if (code !== 0) return reject(new TriageError(err.trim() || `claude exited ${code}`))
       try {
-        resolve(JSON.parse(out) as HeadlessResult)
-      } catch {
-        reject(new TriageError(`claude returned unparseable output: ${out.slice(0, 200)}`))
+        resolve(parseEnvelope(out))
+      } catch (error) {
+        reject(error instanceof Error ? error : new Error(String(error)))
       }
     })
   })
@@ -150,28 +180,25 @@ export function parseVerdict(text: string): { inLane: boolean; reason: string } 
   return { inLane: raw['in_lane'], reason: reason === '' ? '(no reason given)' : reason }
 }
 
-export async function triageOne(
-  candidate: Candidate,
-  system: string,
-  model: string = TRIAGE_MODEL,
-  env?: NodeJS.ProcessEnv,
-  run: TriageRunner = runClaude,
-): Promise<TriageResult> {
-  const response = await run(system, itemPrompt(candidate), model, env)
-  const cost = response.total_cost_usd ?? 0
-  if (response.is_error || typeof response.result !== 'string') {
+/** The verdict a normalized response carries, or the reason it carries none. */
+function verdictOf(candidate: Candidate, response: TriageResponse): Verdict {
+  if (response.isError || response.result === undefined) {
     throw new TriageError(`triage failed for ${candidate.id}`)
   }
   const { inLane, reason } = parseVerdict(response.result)
-  return {
-    verdict: { outcome: inLane ? 'proceed' : 'skip', stage: 'model', reason },
-    costUsd: cost,
-  }
+  return { outcome: inLane ? 'proceed' : 'skip', stage: 'model', reason }
 }
 
 export interface TriageBatch {
   results: { candidate: Candidate; verdict: Verdict }[]
+  /** Summed over the calls that reported one. A floor while `costUnreported` is above zero. */
   costUsd: number
+  /**
+   * Calls that came back with an envelope stating no usable cost, which is what tells a cheap
+   * cycle from an unaccounted one. A call that produced no envelope at all is a failure only:
+   * it is named in `failures`, and there is no figure it could be uncertain about.
+   */
+  costUnreported: number
   failures: { candidate: Candidate; error: Error }[]
 }
 
@@ -189,15 +216,21 @@ export async function triageBatch(
   const results: { candidate: Candidate; verdict: Verdict }[] = []
   const failures: { candidate: Candidate; error: Error }[] = []
   let costUsd = 0
+  let costUnreported = 0
 
   for (const candidate of candidates) {
     try {
-      const one = await triageOne(candidate, system, model, env, run)
-      costUsd += one.costUsd
-      results.push({ candidate, verdict: one.verdict })
+      const response = await run(system, itemPrompt(candidate), model, env)
+      // Counted off the envelope before the verdict can throw: an errored call is billed like
+      // any other, and dropping its cost understates the cycle by real money. The envelope is
+      // also the only evidence of spend there is — what a call that produced none cost is a
+      // question with no answer to record, rather than a zero or an uncertainty.
+      if (response.costUsd === undefined) costUnreported += 1
+      else costUsd += response.costUsd
+      results.push({ candidate, verdict: verdictOf(candidate, response) })
     } catch (error) {
       failures.push({ candidate, error: error instanceof Error ? error : new Error(String(error)) })
     }
   }
-  return { results, costUsd, failures }
+  return { results, costUsd, costUnreported, failures }
 }
