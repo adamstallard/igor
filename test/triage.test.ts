@@ -270,6 +270,16 @@ describe('what a real child says it cost', () => {
     expect(message === said).toBe(true)
   })
 
+  it('decodes a split character on stderr too, which reaches the same message', async () => {
+    // Both pipes feed one failure message: the envelope's reason, or stderr where that is blank.
+    // Decoding one and not the other corrupts the same text depending on which side said it.
+    const said = `rate limit reached ${'—'.repeat(100_000)} retry after the window resets`
+    const batch = await triageBatch([candidate()], 'system', 'model', fakeClaude('', 1, said))
+    const message = batch.failures[0]?.error.message ?? ''
+    expect(message.includes('\uFFFD')).toBe(false)
+    expect(message === said).toBe(true)
+  })
+
   it('falls back to stderr where a failing child stated nothing on stdout', async () => {
     const batch = await triageBatch([candidate()], 'system', 'model', fakeClaude('', 1, 'error: unknown option'))
     expect(batch.failures[0]?.error.message).toBe('error: unknown option')

@@ -849,8 +849,10 @@ export function claudeWorker(command = 'claude'): WorkerRunner {
       forwardTermination()
       if (child.pid !== undefined) liveWorkers.add(child.pid)
       // A StringDecoder, so a multi-byte character split across chunks is not decoded to two
-      // replacement characters and its line lost to the JSON parse.
+      // replacement characters and its line lost to the JSON parse. The same split on stderr
+      // costs no line, only the legibility of the message a non-zero exit is explained by.
       child.stdout.setEncoding('utf8')
+      child.stderr.setEncoding('utf8')
 
       let pending = ''
       let err = ''

@@ -44,6 +44,11 @@ export interface TreeProvider {
 function run(cmd: string, args: readonly string[], cwd?: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] })
+    // Text, not raw chunks: a multi-byte character the pipe splits in two decodes to replacement
+    // characters, so a path git listed or the reason it refused comes back wrong and nothing
+    // raises.
+    child.stdout.setEncoding('utf8')
+    child.stderr.setEncoding('utf8')
     let out = ''
     let err = ''
     child.stdout.on('data', (c) => (out += c))

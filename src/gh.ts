@@ -13,6 +13,12 @@ export class GhError extends Error {}
 export function ghRaw(args: readonly string[], input?: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn('gh', args, { stdio: ['pipe', 'pipe', 'pipe'] })
+    // A StringDecoder on each pipe, so a multi-byte character split across chunks arrives whole.
+    // One search page carries every matching issue's title and body, far past the pipe buffer,
+    // and a replacement character is legal inside a JSON string: the payload still parses and
+    // the text inside it is silently wrong.
+    child.stdout.setEncoding('utf8')
+    child.stderr.setEncoding('utf8')
     let stdout = ''
     let stderr = ''
     child.stdout.on('data', (chunk) => (stdout += chunk))

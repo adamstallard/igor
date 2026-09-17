@@ -71,6 +71,10 @@ export const TOKEN_COMMAND_TIMEOUT_MS = 10_000
 function runTokenCommand(command: string, timeoutMs: number): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, { shell: true, stdio: ['ignore', 'pipe', 'pipe'], timeout: timeoutMs })
+    // Text, not raw chunks: a multi-byte character the pipe splits in two decodes to replacement
+    // characters, and a secret or a failure message comes back wrong without anything failing.
+    child.stdout.setEncoding('utf8')
+    child.stderr.setEncoding('utf8')
     let out = ''
     let err = ''
     child.stdout.on('data', (c) => (out += c))
@@ -207,6 +211,8 @@ function runUsage(env: NodeJS.ProcessEnv): Promise<string> {
       env,
       stdio: ['ignore', 'pipe', 'pipe'],
     })
+    child.stdout.setEncoding('utf8')
+    child.stderr.setEncoding('utf8')
     let out = ''
     let err = ''
     child.stdout.on('data', (c) => (out += c))
@@ -287,6 +293,7 @@ export function hasSubscription(auth: AuthContext): boolean {
 function runAuthStatus(env: NodeJS.ProcessEnv): Promise<AuthContext | undefined> {
   return new Promise((resolve) => {
     const child = spawn('claude', ['auth', 'status'], { env, stdio: ['ignore', 'pipe', 'ignore'] })
+    child.stdout.setEncoding('utf8')
     let out = ''
     child.stdout.on('data', (c) => (out += c))
     child.on('error', () => resolve(undefined))
