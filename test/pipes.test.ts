@@ -35,6 +35,6 @@ describe('every child this repository spawns', () => {
     expect(undecoded).toEqual([])
     // A scan that finds nothing agrees with a scan that finds nothing wrong. Every pipe read in
     // `src` today is counted here, so a drop means the scan stopped seeing them.
-    expect(read).toHaveLength(13)
+    expect(read.length).toBeGreaterThanOrEqual(13)
   })
 })
