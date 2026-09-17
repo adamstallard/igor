@@ -23,7 +23,12 @@
 
 - [x] 2.1 A pull request is a proposal when it touches an entry file under the store's entry
       path; `p.head.ref.startsWith(BRANCH_PREFIX)` stops deciding it
-- [x] 2.2 The merged path tests the files `proposedFiles` already fetches — no call added
+- [x] 2.2 The merged path tests the files `proposedFiles` already fetches — no call added.
+      Done, with one call added after all: `proposedFiles` now folds in the base-to-head diff,
+      because reading only the proposing commit made recognition depend on the order someone
+      committed in and so never saw a hand-made pull request whose entry came second. It was
+      already fetched on the rejection path, so the merged path pays what it paid whenever
+      anything was missing locally, and one more when nothing was
 - [x] 2.3 The open path fetches files only for a pull request already past the quiet window,
       so an untouched backlog of open pull requests costs nothing
 - [x] 2.4 `BRANCH_PREFIX` stays and stays exported: `propose` still names branches with it, and
