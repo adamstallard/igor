@@ -306,6 +306,9 @@ transcript rather than verifying. The list is read from the role and never from 
 being worked: that repository's own settings are a file the worker can edit, and an allowlist a
 worker can widen is not one.
 
+The list is also stated in the worker's system prompt, so it knows what it may run instead of
+discovering it by being refused. Patterns it cannot state plainly are shown as written.
+
 A role may drop a command it inherits and not add one, the same rule `allow` follows. Narrowing
 means an entry its parents already list, spelled the same way: whether `npm test` is narrower
 than an inherited `npm *` is a question only a matcher can answer, and a role that can argue
