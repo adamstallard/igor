@@ -59,11 +59,28 @@ stays as a convention for people reading a branch list and stops being load-bear
 
 Where the content test runs is the actual choice. Putting it in `listOpenedBy` is rejected: the
 list endpoint returns no file list — `RawPr` consumes exactly the fields a page carries — so
-filtering there costs a fetch per pull request the repository has ever had. `proposedFiles`
-already runs for every merged pull request in the reconcile loop, so on the merged path the
-test is free; only an open pull request past the quiet window needs a fetch it does not already
-make, and there are few of those by construction. The unbounded paging underneath all of this
-is [#46](https://github.com/adamstallard/igor/issues/46) and is not touched here.
+filtering there costs a fetch for every pull request, including the open ones nothing will
+report on. It runs instead inside the reconcile loop, per branch of it:
+
+| the pull request | what the test costs |
+| --- | --- |
+| merged | nothing. `proposedFiles` runs on this path already |
+| open, inside the quiet window | nothing. The window is tested first and the loop moves on |
+| open, past the quiet window | one `proposedFiles`. Few, by construction |
+| closed unmerged | one `proposedFiles` |
+
+Tested on the proposing commit in every branch, so one rule decides it: a proposal whose every
+candidate the reviewer deleted has an empty landed diff and is still a proposal.
+
+**The aggregate does go up, and the earlier claim that it does not was wrong.** Dropping the
+prefix is not only a change to what the filter tests — it changes how many pull requests reach
+the filter. `proposedFiles` used to run once per merged *lore proposal*; it now runs once per
+merged pull request of any kind, plus once per closed-unmerged one. On a lore-only destination
+those are nearly the same set, but the merge-triggered job pays it on every merge and it grows
+with history. It is the same shape as the paging in
+[#46](https://github.com/adamstallard/igor/issues/46), unbounded for the same reason, and it is
+fixed there or not at all: a window that hid old pull requests from the content test would hide
+them from reconciliation, which is the blind spot being closed.
 
 **The last blind spot closes by policy, not by mechanism.** An entry committed straight to the
 default branch has no pull request to sweep, and no amount of watching commits fixes that
@@ -82,13 +99,15 @@ and it records them as the approver, which is true. Nothing wires it to an event
 
 Explicitly out of scope:
 
-- **Where a quiet-proposal report is read.** Reconciliation running in a workflow writes its
-  escalation list to a job log nobody opens. The report is correct and unread; which surface an
-  escalation belongs on is the same question `condition-backoff` leaves open for a stopped
-  scope, and it is answered for both at once or not usefully at all.
+- **Where a quiet-proposal report is read** — [#50](https://github.com/adamstallard/igor/issues/50).
+  Reconciliation running in a workflow writes its escalation list to a job log nobody opens.
+  The report is correct and unread; which surface an escalation belongs on is the same question
+  `condition-backoff` leaves open for a stopped scope, and it is answered for both at once or
+  not usefully at all.
 - **Unbounded pull request paging** — [#46](https://github.com/adamstallard/igor/issues/46).
   Every reconcile pages the destination's entire pull request history and filters in memory.
-  This change adds no pages; it changes what the filter tests.
+  This change adds no pages. It does add per-pull-request fetches, because more pull requests
+  now reach the filter — see the table above; both are bounded by the same fix.
 - **Enforcing the pull request requirement from inside Igor.** Branch protection is the
   enforcement, and it lives on the destination where the writes happen. A check in the tool
   would sit downstream of the commit it was meant to prevent.
