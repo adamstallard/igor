@@ -7,13 +7,17 @@ import type { Role } from '../src/role.js'
  * the question here is whether a cycle that could not consider its items moves it.
  */
 const stored = new Map<string, unknown>()
+/** Flipped by the one test that asks what a cycle does when its decisions cannot be written. */
+const branch = vi.hoisted(() => ({ writable: true }))
 vi.mock('../src/state.js', () => ({
   readState: async (_repo: string, path: string) => stored.get(path),
   writeState: async (_repo: string, path: string, value: unknown) => {
     stored.set(path, value)
     return true
   },
-  appendRecord: async () => undefined,
+  appendRecord: async () => {
+    if (!branch.writable) throw new Error('state branch is unreachable')
+  },
 }))
 
 const { planCycle } = await import('../src/loop.js')
@@ -62,6 +66,7 @@ const triage: typeof triageBatch = async (cs: readonly Candidate[]) => ({
   })),
   failures: [],
   costUsd: 0,
+  costUnreported: 0,
 })
 
 describe('a cycle that could not read the tracker', () => {
@@ -335,5 +340,26 @@ describe('an item nobody examined holds the mark below it', () => {
     await planCycle(d, two, { now: NOW, identity: 'igor-bot', triage })
     expect(mark()).toBe(new Date(NOW - 50 * 60000 - 1).toISOString())
     expect(mark('o/other')).toBe(ago(30))
+  })
+})
+
+describe('a cycle whose decisions could not be recorded', () => {
+  afterEach(() => {
+    branch.writable = true
+  })
+
+  it('reports the loss rather than swallowing it', async () => {
+    // The record is what answers, afterwards, what the lane rejected and what the model cost.
+    // Losing it quietly leaves a cycle that looks healthy and has no account of itself.
+    stored.clear()
+    branch.writable = false
+
+    const report = await planCycle(deps([candidate(7, 40)], none), role(), {
+      now: NOW, identity: 'igor-bot', triage,
+    })
+
+    expect(report.toClaim).toHaveLength(1)
+    expect(report.failures.join(' ')).toMatch(/could not record decisions/)
+    expect(report.failures.join(' ')).toContain('state branch is unreachable')
   })
 })

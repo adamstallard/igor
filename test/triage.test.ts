@@ -3,7 +3,9 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Candidate } from '../src/adapter.js'
 import { workerEnv } from '../src/execute.js'
-import { itemPrompt, parseVerdict, systemPrompt, triageBatch, TriageError, type TriageRunner } from '../src/triage.js'
+import {
+  itemPrompt, parseEnvelope, parseVerdict, systemPrompt, triageBatch, TriageError, type TriageRunner,
+} from '../src/triage.js'
 import { tempDir } from './tmp.js'
 
 const candidate = (over: Partial<Candidate> = {}): Candidate =>
@@ -103,7 +105,7 @@ describe('what the model call is spawned with', () => {
     const seen: (NodeJS.ProcessEnv | undefined)[] = []
     const run: TriageRunner = async (_system, _prompt, _model, env) => {
       seen.push(env)
-      return { result: '{"in_lane": true, "reason": "in lane"}', total_cost_usd: 0 }
+      return { result: '{"in_lane": true, "reason": "in lane"}', costUsd: 0, isError: false }
     }
     return { seen, run }
   }
@@ -129,6 +131,154 @@ describe('what the model call is spawned with', () => {
     await triageBatch([candidate(), candidate({ id: 'github:o/r#2' })], 'system', 'model', await chosen(), run)
     expect(seen).toHaveLength(2)
     expect(seen[1]).toEqual(seen[0])
+  })
+})
+
+describe('parsing an envelope', () => {
+  it('keeps a cost that arrived as a finite number', () => {
+    const out = JSON.stringify({ result: '{"in_lane": true}', total_cost_usd: 0.016 })
+    expect(parseEnvelope(out)).toEqual({ result: '{"in_lane": true}', costUsd: 0.016, isError: false })
+  })
+
+  it('drops a cost that is any other shape, rather than passing it on', () => {
+    // A string here is the bug: `0 + "0.02"` is `"00.02"`, and one call ruins a cycle's total.
+    expect(parseEnvelope('{"total_cost_usd": "0.02"}').costUsd).toBeUndefined()
+    expect(parseEnvelope('{"total_cost_usd": null}').costUsd).toBeUndefined()
+    expect(parseEnvelope('{"total_cost_usd": {"amount": 1}}').costUsd).toBeUndefined()
+    expect(parseEnvelope('{}').costUsd).toBeUndefined()
+  })
+
+  it('drops a result that is not text', () => {
+    expect(parseEnvelope('{"result": {"text": "in lane"}}').result).toBeUndefined()
+  })
+
+  it('rejects an envelope that is not an object at all', () => {
+    // Read through instead, these misreport as an ordinary triage failure on the item.
+    for (const out of ['[]', 'null', '42', '"oops"', 'not json at all', '']) {
+      expect(() => parseEnvelope(out)).toThrow(TriageError)
+    }
+  })
+
+  it('treats any is_error flag as an error, and its absence as none', () => {
+    expect(parseEnvelope('{"is_error": true}').isError).toBe(true)
+    expect(parseEnvelope('{"is_error": "yes"}').isError).toBe(true)
+    expect(parseEnvelope('{"is_error": false}').isError).toBe(false)
+    expect(parseEnvelope('{}').isError).toBe(false)
+  })
+})
+
+describe('what a real child says it cost', () => {
+  afterEach(() => vi.unstubAllEnvs())
+
+  const envelope = (over: Record<string, unknown> = {}): string =>
+    JSON.stringify({ result: '{"in_lane": true, "reason": "in lane"}', ...over })
+
+  /**
+   * A stub `claude` on the path, so the envelope is parsed from real bytes off a real pipe.
+   * `execvp` resolves against the parent's PATH, so that is what has to be bent at the fake.
+   */
+  function fakeClaude(stdout: string, exit = 0, stderr = ''): NodeJS.ProcessEnv {
+    const bin = tempDir('igor-fake-claude-')
+    const script = ['#!/bin/sh', "cat <<'JSON'", stdout, 'JSON']
+    if (stderr !== '') script.push("cat >&2 <<'ERR'", stderr, 'ERR')
+    script.push(`exit ${exit}`, '')
+    writeFileSync(join(bin, 'claude'), script.join('\n'))
+    chmodSync(join(bin, 'claude'), 0o755)
+    vi.stubEnv('PATH', `${bin}:/usr/bin:/bin`)
+    return { PATH: `${bin}:/usr/bin:/bin` }
+  }
+
+  it('adds up a cost the envelope reported as a number', async () => {
+    const batch = await triageBatch([candidate()], 'system', 'model', fakeClaude(envelope({ total_cost_usd: 0.02 })))
+    expect(batch.results[0]?.verdict.outcome).toBe('proceed')
+    expect(batch.costUsd).toBe(0.02)
+    expect(batch.costUnreported).toBe(0)
+  })
+
+  it('does not concatenate a cost that arrived as a string', async () => {
+    // The verdict is still good; only the cost is unusable, and `0 + "0.02"` would carry
+    // `"00.02"` all the way into the cycle record as this cycle's spend.
+    const batch = await triageBatch([candidate()], 'system', 'model', fakeClaude(envelope({ total_cost_usd: '0.02' })))
+    expect(batch.results[0]?.verdict.outcome).toBe('proceed')
+    expect(batch.costUsd).toBe(0)
+    expect(batch.costUnreported).toBe(1)
+  })
+
+  it('counts a call that ran and was billed, even where its verdict was not JSON', async () => {
+    // `parseVerdict` tolerates prose around the object, so near-JSON reaches `JSON.parse` and
+    // raises a SyntaxError rather than a TriageError. The child still ran and was still
+    // billed — unaccounted, not free.
+    const nearJson = JSON.stringify({
+      result: 'Here is my answer: {in_lane: true, reason: "concrete defect"}',
+      total_cost_usd: '0.0163',
+    })
+    const batch = await triageBatch([candidate()], 'system', 'model', fakeClaude(nearJson))
+    expect(batch.results).toEqual([])
+    expect(batch.failures).toHaveLength(1)
+    expect(batch.costUsd).toBe(0)
+    expect(batch.costUnreported).toBe(1)
+  })
+
+  it('banks a reported cost even where the verdict that follows it throws', async () => {
+    // The cost is read before `verdictOf` runs. Read after, a malformed verdict would take the
+    // envelope's own figure down with it — which is the loss this whole seam exists to stop.
+    const billed = JSON.stringify({
+      result: 'Here is my answer: {in_lane: true, reason: "concrete defect"}',
+      total_cost_usd: 0.0163,
+    })
+    const batch = await triageBatch([candidate()], 'system', 'model', fakeClaude(billed))
+    expect(batch.results).toEqual([])
+    expect(batch.failures).toHaveLength(1)
+    expect(batch.costUsd).toBe(0.0163)
+    expect(batch.costUnreported).toBe(0)
+  })
+
+  it('says what a failing child said, rather than only its exit code', async () => {
+    // An expired credential states `api_error` in its own envelope and puts nothing on stderr,
+    // so the exit code alone leaves "claude exited 1" for a cause the output named plainly.
+    const said = JSON.stringify({ result: 'Not logged in · Please run /login', is_error: true, total_cost_usd: 0 })
+    const batch = await triageBatch([candidate()], 'system', 'model', fakeClaude(said, 1))
+    expect(batch.failures[0]?.error.message).toBe('Not logged in · Please run /login')
+    // The envelope stated a usable cost, so this is a call that cost $0 rather than one whose
+    // cost is unknown — the same reading the success path gives the same envelope.
+    expect(batch.costUsd).toBe(0)
+    expect(batch.costUnreported).toBe(0)
+  })
+
+  it('keeps a cost the child stated before it exited non-zero', async () => {
+    const billed = JSON.stringify({ result: 'rate limit reached', is_error: true, total_cost_usd: 0.0163 })
+    const batch = await triageBatch([candidate()], 'system', 'model', fakeClaude(billed, 1))
+    expect(batch.failures).toHaveLength(1)
+    expect(batch.costUsd).toBe(0.0163)
+    expect(batch.costUnreported).toBe(0)
+  })
+
+  it('falls back to stderr where a failing child stated nothing on stdout', async () => {
+    const batch = await triageBatch([candidate()], 'system', 'model', fakeClaude('', 1, 'error: unknown option'))
+    expect(batch.failures[0]?.error.message).toBe('error: unknown option')
+    expect(batch.costUsd).toBe(0)
+    expect(batch.costUnreported).toBe(0)
+  })
+
+  it('claims no unaccounted spend for a call that never started', async () => {
+    // A `claude` missing from the seat's PATH spends nothing at all, so $0.0000 is the exact
+    // total. Counted as a cost that went unreported it points the reader at money never spent
+    // — and the call is already visible in `failures`, which is where it belongs.
+    const empty = tempDir('igor-no-claude-')
+    vi.stubEnv('PATH', empty)
+    const batch = await triageBatch([candidate()], 'system', 'model', { PATH: empty })
+    expect(batch.failures).toHaveLength(1)
+    expect(batch.costUsd).toBe(0)
+    expect(batch.costUnreported).toBe(0)
+  })
+
+  it('fails the item when the envelope is not an object, and says why', async () => {
+    const batch = await triageBatch([candidate()], 'system', 'model', fakeClaude('[]'))
+    expect(batch.results).toEqual([])
+    expect(batch.failures[0]?.error).toBeInstanceOf(TriageError)
+    expect(batch.failures[0]?.error.message).toMatch(/envelope/)
+    // No envelope, so no figure to be uncertain about. The failure beside it says what happened.
+    expect(batch.costUnreported).toBe(0)
   })
 })
 

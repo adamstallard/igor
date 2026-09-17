@@ -318,6 +318,14 @@ role
     process.stdout.write(`${explainRole(loadRole(config, name))}\n`)
   })
 
+/** A floor reads as one: a cycle that spent money it cannot account for must not look cheap. */
+function triageSpend(report: CycleReport): string {
+  const amount = `$${report.triageCostUsd.toFixed(4)}`
+  return report.triageCostUnreported > 0
+    ? `at least ${amount}; ${report.triageCostUnreported} call(s) reported no cost`
+    : amount
+}
+
 function renderCycle(report: CycleReport, verbose: boolean): string {
   const out: string[] = []
   for (const f of report.failures) out.push(`  ! ${f}`)
@@ -327,7 +335,7 @@ function renderCycle(report: CycleReport, verbose: boolean): string {
       (report.skippedDeferred > 0 ? `${report.skippedDeferred} awaiting an answer, ` : '') +
       (report.skippedStopped > 0 ? `${report.skippedStopped} stopped, ` : '') +
       (report.skippedUnreadable > 0 ? `${report.skippedUnreadable} unreadable, ` : '') +
-      `${report.triaged} triaged ($${report.triageCostUsd.toFixed(4)})`,
+      `${report.triaged} triaged (${triageSpend(report)})`,
   )
   if (verbose && report.skipped.length > 0) {
     out.push('', `skipped before any model call (${report.skipped.length}):`)
@@ -503,7 +511,7 @@ program
           case 'planned':
             say(
               `cycle ${e.cycle}: ${e.report.fresh} fresh, ${e.report.triaged} triaged, ` +
-                `${e.report.toClaim.length} to claim ($${e.report.triageCostUsd.toFixed(4)})`,
+                `${e.report.toClaim.length} to claim (${triageSpend(e.report)})`,
             )
             for (const f of e.report.failures) say(`  ! ${f}`)
             break

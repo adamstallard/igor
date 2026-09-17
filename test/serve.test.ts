@@ -92,6 +92,7 @@ const approveAll = async (candidates: readonly Candidate[]) => ({
     verdict: { outcome: 'proceed' as const, stage: 'model' as const, reason: 'in lane' },
   })),
   costUsd: 0,
+  costUnreported: 0,
   failures: [],
 })
 
