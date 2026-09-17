@@ -50,7 +50,7 @@ jobs:
       - uses: actions/setup-node@v4
         if: steps.changed.outputs.files != ''
         with:
-          node-version: '22'
+          node-version: '26'
 
       # Runs from the repository root so the committed igor.config.yaml is found by the
       # usual upward search. Igor is a shared tool — a team's config never goes inside it.

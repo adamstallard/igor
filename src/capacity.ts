@@ -48,25 +48,37 @@ function isKnownZone(zone: string): boolean {
   }
 }
 
-/** The zone's UTC offset, in minutes east of UTC, around the given instant. */
-function offsetMinutes(zone: string, nearMs: number): number {
-  const part = new Intl.DateTimeFormat('en-US', { timeZone: zone, timeZoneName: 'longOffset' })
-    .formatToParts(new Date(nearMs))
-    .find((p) => p.type === 'timeZoneName')
-  const m = /GMT([+-])(\d{2}):(\d{2})/.exec(part?.value ?? 'GMT+00:00')
-  if (m === null) return 0
-  return (m[1] === '-' ? -1 : 1) * (Number(m[2]) * 60 + Number(m[3]))
-}
-
-/** The UTC instant that `year`-`month`-`day` `hour`:`minute` names in `zone`. */
-function zonedToUtc(year: number, month: number, day: number, hour: number, minute: number, zone: string): number {
-  const naive = Date.UTC(year, month - 1, day, hour, minute)
-  return naive - offsetMinutes(zone, naive) * 60_000
+/**
+ * The instant `year`-`month`-`day` `hour`:`minute` names in `zone`, or `undefined` when no
+ * single instant answers to it: a day the month does not have, an hour a spring-forward
+ * skipped, or an hour a fall-back ran twice.
+ *
+ * Both halves of a transition are refused rather than settled by a policy. The provider picked
+ * one of the two instants such a phrase names and did not say which, so resolving it would put
+ * the window an hour from where it may be, and `capacity-from-observation` §1 would rather keep
+ * the phrase and derive nothing than invent a position.
+ */
+function zonedToInstant(
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute: number,
+  zone: string,
+): Temporal.Instant | undefined {
+  try {
+    return Temporal.PlainDateTime.from({ year, month, day, hour, minute }, { overflow: 'reject' })
+      .toZonedDateTime(zone, { disambiguation: 'reject' })
+      .toInstant()
+  } catch {
+    return undefined
+  }
 }
 
 /**
  * Resolves a reset phrase like `"Sep 18 at 4pm (America/Los_Angeles)"` to an ISO instant, or
- * `undefined` when the phrase does not match that shape or names a zone `Intl` does not know.
+ * `undefined` when the phrase does not match that shape, names a zone `Intl` does not know, or
+ * names a wall time no single instant answers to.
  *
  * The phrase carries no year. Per `capacity-from-observation` §1, a reset is always in the
  * future relative to `at`, so this takes the first occurrence of that month/day/time at or
@@ -100,11 +112,17 @@ export function resolveReset(phrase: string, at: string): string | undefined {
 
   const atMs = Date.parse(at)
   if (Number.isNaN(atMs)) return undefined
+  const atInstant = Temporal.Instant.fromEpochMilliseconds(atMs)
 
-  const zonedYear = Number(new Intl.DateTimeFormat('en-US', { timeZone: zone, year: 'numeric' }).format(new Date(atMs)))
+  const zonedYear = atInstant.toZonedDateTimeISO(zone).year
   for (const year of [zonedYear, zonedYear + 1]) {
-    const candidate = zonedToUtc(year, month, day, hour, minute, zone)
-    if (candidate >= atMs) return new Date(candidate).toISOString()
+    const candidate = zonedToInstant(year, month, day, hour, minute, zone)
+    // A candidate naming no single instant ends the search rather than deferring to the next
+    // year's, which is a date the provider cannot have meant by a reset.
+    if (candidate === undefined) return undefined
+    if (Temporal.Instant.compare(candidate, atInstant) >= 0) {
+      return candidate.toString({ fractionalSecondDigits: 3 })
+    }
   }
   // Unreachable: next year's occurrence is always at or after `at`.
   return undefined

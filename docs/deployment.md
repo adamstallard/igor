@@ -16,7 +16,10 @@ Igor shells out rather than reimplementing, so four things must be on the path:
 | `git` | cloning a working tree per task |
 | `gh` | the tracker and the code host |
 | `claude` | triage, execution, and reading a seat's usage |
-| `node` 18+ | Igor itself |
+| `node` 26+ | Igor itself |
+
+The floor is 26 rather than something older because Igor resolves provider reset phrases with
+`Temporal`, which 26 is the first release to ship unflagged.
 
 ## Before it can run
 

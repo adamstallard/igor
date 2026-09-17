@@ -134,6 +134,32 @@ describe('resolving a reset phrase', () => {
     expect(resolveReset('Jan 2 at 9am (UTC)', '2026-12-30T00:00:00.000Z')).toBe('2027-01-02T09:00:00.000Z')
   })
 
+  // 6:30am is a reset time this account really sees, and these are the two days a year the
+  // zone's offset changes underneath it.
+  it('resolves a 6:30am reset on the day the clocks spring forward', () => {
+    expect(resolveReset('Mar 8 at 6:30am (America/Los_Angeles)', '2026-03-01T00:00:00.000Z')).toBe(
+      '2026-03-08T13:30:00.000Z',
+    )
+  })
+
+  it('resolves a 6:30am reset on the day the clocks fall back', () => {
+    expect(resolveReset('Nov 1 at 6:30am (America/Los_Angeles)', '2026-10-25T00:00:00.000Z')).toBe(
+      '2026-11-01T14:30:00.000Z',
+    )
+  })
+
+  it('is unresolvable for an hour a spring-forward skipped', () => {
+    expect(resolveReset('Mar 8 at 2:30am (America/Los_Angeles)', '2026-03-01T00:00:00.000Z')).toBeUndefined()
+  })
+
+  it('is unresolvable for an hour a fall-back ran twice', () => {
+    expect(resolveReset('Nov 1 at 1:30am (America/Los_Angeles)', '2026-10-25T00:00:00.000Z')).toBeUndefined()
+  })
+
+  it('is unresolvable for a day the month does not have, rather than the next month', () => {
+    expect(resolveReset('Feb 30 at 9am (UTC)', '2026-02-01T00:00:00.000Z')).toBeUndefined()
+  })
+
   it('is unresolvable for a zone Intl does not know', () => {
     expect(resolveReset('Sep 13 at 8pm (Mars/Standard)', BEFORE)).toBeUndefined()
   })
