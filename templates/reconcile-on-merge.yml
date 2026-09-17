@@ -1,0 +1,77 @@
+# Reconciles lore on every merge: promotes what merged, records what a reviewer deleted, and
+# reports proposals that have gone quiet.
+#
+# Without this, reconciliation depends on someone having igor installed and remembering to run
+# `igor-lore reconcile` — so a teammate could merge lore that then silently never fires,
+# because only active entries fire.
+#
+# It runs on every push to the default branch, with no file-diff gate: a merge whose only
+# content is a reviewer's deletion adds no entry file, and a gate on changed files skips
+# exactly the merge that has a rejection to record.
+#
+# If the default branch is protected, add the GitHub Actions actor to the ruleset's bypass
+# list, or this workflow's own push is blocked by the same rule it exists to work around.
+name: Reconcile merged lore
+
+on:
+  push:
+    branches: [main]
+
+# Scopes the automatic token. Reading pull requests is what reconciliation does that promotion
+# never did; `gh` picks the token up from GH_TOKEN in the run step's environment.
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: reconcile-lore
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the lore store
+        uses: actions/checkout@v4
+
+      - name: Check out igor
+        uses: actions/checkout@v4
+        with:
+          # Pin to a tag once igor is released; main is fine while it is moving.
+          repository: adamstallard/igor
+          ref: main
+          path: .igor
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '26'
+
+      # Runs from the repository root so the committed igor.config.yaml is found by the
+      # usual upward search. Igor is a shared tool — a team's config never goes inside it.
+      - name: Reconcile
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          npm --prefix .igor ci --silent
+          .igor/node_modules/.bin/tsx .igor/src/cli.ts reconcile
+
+      - name: Commit what reconciliation wrote
+        run: |
+          rm -rf .igor
+          # A rejection record is a new file, which `git diff` cannot see. Stage first, then
+          # ask the index whether anything changed.
+          for dir in entries rejected; do
+            if [ -d "$dir" ]; then git add -A -- "$dir"; fi
+          done
+          if git diff --cached --quiet; then
+            echo "nothing to reconcile"
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Reconcile merged lore
+
+          Promotions are approved by merging; rejections are the reviewer deleting a file.
+          Reconciled automatically so that lore takes effect without anyone needing igor
+          installed.'
+          git push
