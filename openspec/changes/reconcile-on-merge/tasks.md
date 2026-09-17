@@ -1,16 +1,21 @@
 ## 1. The destination workflow
 
-- [ ] 1.1 `templates/promote-on-merge.yml` runs `reconcile` instead of `promote`, with no
-      change-detection step: a merge whose only content is a deletion must still reconcile
+- [ ] 1.1 The template runs `reconcile` instead of `promote`, with no change-detection step:
+      a merge whose only content is a deletion must still reconcile
 - [ ] 1.2 `permissions` gains `pull-requests: read`, and the run step gets `GH_TOKEN` —
       reconciliation shells `gh api`, which promotion never did
 - [ ] 1.3 The commit step stages and tests `rejected/` alongside `entries/`; `writeRejection`
       writes there and the current template would leave a rejection record uncommitted
-- [ ] 1.4 The template keeps the path `.github/workflows/promote-on-merge.yml`; only its `name:`
-      changes. `init-workflow` guards one target path, so a new filename would write a second
-      workflow beside the old one — and the old one still fires on push and still runs
-      `promote`, which is the two-promoter state this change exists to end
-- [ ] 1.5 The `concurrency` group still serializes: two merges close together must not both
+- [ ] 1.4 `templates/promote-on-merge.yml` becomes `templates/reconcile-on-merge.yml`, and
+      `init-workflow` writes `.github/workflows/reconcile-on-merge.yml`. Its `name:`, its
+      `concurrency` group and the message of the commit it makes follow: a file named for
+      promotion that runs reconciliation is a small untruth that outlives whoever knows why
+- [ ] 1.5 `init-workflow` states in its output that one job promotes lore on push and any other
+      must go, as a property of the design. It MUST NOT test for `promote-on-merge.yml` by
+      name: there is one destination, its owner edits it by hand, and a named check is
+      migration code for users who do not exist that would keep the dead filename in the tool
+      forever
+- [ ] 1.6 The `concurrency` group still serializes: two merges close together must not both
       promote and race on the push
 
 ## 2. Recognizing a proposal by content

@@ -35,6 +35,9 @@ along with it, which the merge-triggered path never had.
 The change-detection step is deleted rather than rewired. Reconciliation is a sweep with no
 `--only`, and the all-rejected merge above is exactly the case a file-diff gate skips.
 
+The template is renamed to what it does. A file called `promote-on-merge.yml` running
+reconciliation is a small untruth, and it outlives everyone who knows why it is there.
+
 **Widening `--diff-filter` to include `D` is the obvious fix and it is rejected.** Verified in a
 scratch repository, with `entries/keep.md` on the default branch:
 
@@ -107,9 +110,11 @@ Explicitly out of scope:
 - A hand-made pull request adding an entry becomes reviewable lore rather than an entry that
   merges and then sits provisional forever.
 - The destination workflow now needs a token and `pull-requests: read`, where promotion needed
-  neither, and it commits `rejected/` as well as `entries/`. A destination that took the old
-  template keeps running it until it re-runs `init-workflow --force`, which is why the template
-  keeps its path: `init-workflow` guards one filename, so a renamed template would leave the
-  old job in place and firing beside the new one.
+  neither, and it commits `rejected/` as well as `entries/`.
+- `init-workflow` writes a new path, so a destination already holding `promote-on-merge.yml`
+  gains a second job on the same trigger until the old one is deleted. Nothing in the tool
+  deletes it. There is one such destination and its owner edits it by hand; code that migrates
+  absent users would outlast them, and it would keep the retired filename alive inside the tool
+  to do it.
 - Direct commits to a lore destination stop being an expected path, which is a change to what
   `README.md` currently recommends for a single writer rather than an addition to it.
