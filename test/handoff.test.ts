@@ -164,7 +164,7 @@ describe('a failure handoff', () => {
     // An item nothing suppresses comes back next poll, so the sentence has to say so — and
     // name what would have to change, since a reply on the item would not.
     const refused = composeHandoff(role(), candidate(), {
-      reason: { kind: 'failure', detail: 'worker exited 1', cure: 'role:triage:commands' },
+      reason: { kind: 'failure', detail: 'worker exited 1', cures: ['role:triage:commands'] },
       done: ['claimed this 12 minutes ago'],
       remaining: ['all of it'],
       suggested: [],
@@ -172,6 +172,36 @@ describe('a failure handoff', () => {
     expect(refused).not.toMatch(/will not retry/i)
     expect(refused).toContain('role:triage:commands')
     expect(refused).toMatch(/comes back to this/)
+  })
+
+  it('reads as one sentence whether one configuration was wrong or several', () => {
+    // A run refused an action after a command was denied has two things to fix, and a handoff
+    // naming one parks the item behind the other once somebody makes that one change.
+    const both = composeHandoff(role(), candidate(), {
+      reason: {
+        kind: 'failure',
+        detail: 'the work is done but triage may not open a pull request',
+        cures: ['role:triage:commands', 'role:triage:allow'],
+      },
+      done: ['claimed this 12 minutes ago'],
+      remaining: ['all of it'],
+      suggested: [],
+    }, NOW)
+    expect(both).toContain('`role:triage:commands` and `role:triage:allow` are what would change it')
+    expect(both).not.toMatch(/will not retry/i)
+
+    const three = composeHandoff(role(), candidate(), {
+      reason: { kind: 'failure', detail: 'worker exited 1', cures: ['a:1', 'b:2', 'c:3'] },
+      done: [], remaining: ['all of it'], suggested: [],
+    }, NOW)
+    expect(three).toContain('`a:1`, `b:2` and `c:3` are what would change it')
+
+    // An empty list is a handoff that named nothing, and reads exactly as one.
+    const none = composeHandoff(role(), candidate(), {
+      reason: { kind: 'failure', detail: 'worker exited 1', cures: [] },
+      done: [], remaining: ['all of it'], suggested: [],
+    }, NOW)
+    expect(none).toMatch(/will not retry/i)
   })
 
   it('links partial work so the next party resumes rather than restarts', () => {

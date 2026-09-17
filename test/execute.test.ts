@@ -1796,3 +1796,92 @@ describe('what the sandbox refused, and the configuration that would permit it',
     expect(result.terminalReason).toBeUndefined()
   })
 })
+
+describe('the configurations one run can prove wrong', () => {
+  beforeEach(() => {
+    ledger.records.length = 0
+    ledger.files.length = 0
+  })
+
+  it('names the seat whose token it could not read, where the worker never starts', async () => {
+    // Nothing runs, so there are no denials to read and no envelope to classify — and this is
+    // the shape #22 arrived in. The key is known here because this is where the seat's token
+    // source is resolved, rather than inferred from `worker exited 1` afterwards.
+    const { result } = await run(
+      {},
+      {
+        seat: 'team-seat',
+        seatToken: { tokenEnv: 'IGOR_SEAT_UNSET_48' },
+        worker: async () => { throw new Error('the worker must never be reached') },
+      },
+    )
+    expect(result.outcome).toBe('failed')
+    expect(result.reason).toContain('IGOR_SEAT_UNSET_48')
+    expect(result.cures).toEqual(['seat:team-seat:token'])
+  })
+
+  it('leaves a seat it was never told the name of unnamed rather than guessing', async () => {
+    // The gate hands out the id and the token source together, so this is not a path a run
+    // takes; a key with no seat in it would point a reader at nothing.
+    const { result } = await run({}, { seatToken: { tokenEnv: 'IGOR_SEAT_UNSET_48' } })
+    expect(result.outcome).toBe('failed')
+    expect(result.cures).toBeUndefined()
+  })
+
+  it('names the role’s allow list where the action space is the dead end', async () => {
+    // A fact about the role: the work is done and nothing about this item stopped it being
+    // published, so the next item meets the same wall.
+    const { result } = await run({ allow: ['comment', 'unassign'] })
+    expect(result.outcome).toBe('refused')
+    expect(result.cures).toEqual(['role:triage:allow'])
+  })
+
+  it('keeps both where one run was refused an action and denied a command', async () => {
+    // The reason the field is a list. Taking either alone leaves the other uncorrected, and
+    // the run after the fix stops on a wall nothing in the record named.
+    const { item, result } = await run(
+      { allow: ['comment', 'unassign'] },
+      {
+        worker: async () => ({
+          result: 'Fixed it.',
+          total_cost_usd: 0.02,
+          permission_denials: [{ tool_name: 'Bash', tool_input: { command: 'npm test' } }],
+        }),
+      },
+    )
+    expect(result.cures).toEqual(['role:triage:commands', 'role:triage:allow'])
+
+    // And both reach the record, which is what a condition would later be counted from.
+    await recordExecution('acme/lore', item, role({ allow: ['comment', 'unassign'] }), result)
+    expect(ledger.records[0]?.['cures']).toEqual(['role:triage:commands', 'role:triage:allow'])
+  })
+
+  it('mints nothing for a failure whose cause it does not know', async () => {
+    // A crash is not a configuration. Naming a cure here would unpark every item an Igor
+    // touched on the strength of a guess.
+    const { result } = await run({}, { worker: async () => { throw new Error('claude: command not found') } })
+    expect(result.outcome).toBe('failed')
+    expect(result.cures).toBeUndefined()
+    expect(ledger.records[0]?.['cures']).toBeUndefined()
+  })
+
+  it('records one key per wall, however many times the worker hit it', async () => {
+    // Six refusals of the same command are one thing to fix. The denials keep every attempt,
+    // because the count is the difference between a stray call and a blocked run.
+    const { result } = await run(
+      {},
+      {
+        worker: async () => ({
+          result: 'Fixed it.',
+          total_cost_usd: 0.02,
+          permission_denials: Array.from({ length: 6 }, () => ({
+            tool_name: 'Bash',
+            tool_input: { command: 'npm test' },
+          })),
+        }),
+      },
+    )
+    expect(result.denials).toHaveLength(6)
+    expect(result.cures).toEqual(['role:triage:commands'])
+  })
+})

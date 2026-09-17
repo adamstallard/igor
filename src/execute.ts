@@ -22,10 +22,14 @@ export class ExecutionError extends Error {
    * The worker's terminal event, where it produced one before exiting non-zero. The exit code
    * alone cannot tell a crash from a seat with no capacity left, and the envelope that can say
    * which is otherwise dropped at the reject.
+   *
+   * `cure` is set only where the thrower enforces a configuration itself and so knows the key
+   * for certain. A failure whose cause is unknown carries none, and the item defers.
    */
   constructor(
     message: string,
     readonly output?: WorkerOutput,
+    readonly cure?: string,
   ) {
     super(message)
   }
@@ -71,6 +75,12 @@ export interface ExecutionResult {
   resetsAt?: string
   /** What the sandbox stopped the worker doing, whatever the run went on to produce. */
   denials?: Denial[]
+  /**
+   * Every configuration of this Igor's own that the run proved wrong, minted where each is
+   * enforced. A run can earn several — refused an action *and* denied a command — and each is
+   * a separate thing to fix, so all of them are kept.
+   */
+  cures?: string[]
   /** The worker's own log under `~/.claude/projects/`, which outlives the disposable clone. */
   session?: string
   /** Only on a budget stop or a failure: what `usageLimit` classified the envelope on. */
@@ -650,6 +660,7 @@ const AMBIENT_TOKENS = ['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY'] as const
 export async function workerEnv(
   seatToken: TokenSource = {},
   env: NodeJS.ProcessEnv = process.env,
+  seat?: string,
 ): Promise<NodeJS.ProcessEnv> {
   const out: NodeJS.ProcessEnv = {}
   for (const name of ['PATH', 'HOME', ...FORWARDED]) {
@@ -661,7 +672,14 @@ export async function workerEnv(
   try {
     token = await resolveToken(seatToken, env)
   } catch (e) {
-    throw new ExecutionError(`the chosen seat ${(e as Error).message}`)
+    // The seat's token source is Igor's own configuration and this is where it is read, so the
+    // key is known rather than guessed at from an exit code later. `output` is explicitly
+    // absent: there is no envelope, and one invented here would be read as a capacity stop.
+    throw new ExecutionError(
+      `the chosen seat ${(e as Error).message}`,
+      undefined,
+      seat === undefined ? undefined : `seat:${seat}:token`,
+    )
   }
 
   // A seat naming nothing leaves the worker on the ambient login, which is what `readUsage`
@@ -961,6 +979,11 @@ export interface ExecuteOptions {
    * the worker's, and in no object between them.
    */
   seatToken?: TokenSource
+  /**
+   * The chosen seat's id, for the cure key an unreadable token mints. The gate hands out the
+   * id and the token source together, so a token that can fail always arrives with a name.
+   */
+  seat?: string
   model?: string
   /** A seam for tests; each limit defaults and callers are trusted with what they pass. */
   limits?: Partial<Limits>
@@ -1011,6 +1034,13 @@ export async function execute(
 ): Promise<ExecutionResult> {
   const model = options.model ?? EXECUTION_MODEL
   const refusals: Refusal[] = []
+  /**
+   * Keys added only by the code that enforces the constraint each one names — never derived
+   * from a message, an exit code or a guess. A set because one wall hit six times is one thing
+   * to fix, and spread last into a result so a key minted late is not dropped by a snapshot.
+   */
+  const minted = new Set<string>()
+  const cured = () => (minted.size === 0 ? {} : { cures: [...minted] })
   const linkage = tracker.linkage(candidate)
 
   return withTree(provider, candidate.repo, async (tree: WorkingTree) => {
@@ -1077,6 +1107,7 @@ export async function execute(
     /** Kept whatever the outcome: both answer questions asked after a run, not during it. */
     const trace = (output: WorkerOutput | undefined) => {
       const denials = denialsFrom(output?.permission_denials, role.name)
+      for (const d of denials) if (d.cure !== undefined) minted.add(d.cure)
       const id = typeof output?.session_id === 'string' && output.session_id !== '' ? output.session_id : session
       return {
         ...(denials.length === 0 ? {} : { denials }),
@@ -1123,7 +1154,7 @@ export async function execute(
 
     let worker: WorkerOutput
     try {
-      const env = await workerEnv(options.seatToken)
+      const env = await workerEnv(options.seatToken, process.env, options.seat)
       worker = await (options.worker ?? headlessClaude)({
         cwd: tree.path,
         system: workerSystemPrompt(role, role.allow, options.lore ?? ''),
@@ -1145,6 +1176,7 @@ export async function execute(
         // other fault. Reported as a failure it leaves a claim behind with no account of when
         // the Igor could come back, which is the one thing the reader needs.
         const envelope = error instanceof ExecutionError ? error.output : undefined
+        if (error instanceof ExecutionError && error.cure !== undefined) minted.add(error.cure)
         const limit = usageLimit(envelope)
         if (limit !== undefined) {
           return {
@@ -1155,6 +1187,7 @@ export async function execute(
             ...spend(envelope),
             ...trace(envelope),
             ...evidence(envelope),
+            ...cured(),
             ...(limit.resetsAt === undefined ? {} : { resetsAt: limit.resetsAt }),
             reason: outOfCapacity(limit.resetsAt),
           }
@@ -1167,6 +1200,7 @@ export async function execute(
           ...spend(envelope),
           ...trace(envelope),
           ...evidence(envelope),
+          ...cured(),
           reason: error instanceof Error ? error.message : String(error),
         }
       }
@@ -1191,6 +1225,7 @@ export async function execute(
         refusals: [...refusals, { action: 'draft-pr', why: 'stopped during execution' }],
         transcript,
         ...kept,
+        ...cured(),
         reason: 'stopped mid-execution; nothing was published',
       }
     }
@@ -1208,6 +1243,7 @@ export async function execute(
           refusals,
           transcript,
           ...kept,
+          ...cured(),
           ...evidence(worker),
           ...(limit.resetsAt === undefined ? {} : { resetsAt: limit.resetsAt }),
           reason: outOfCapacity(limit.resetsAt),
@@ -1219,6 +1255,7 @@ export async function execute(
         refusals,
         transcript,
         ...kept,
+        ...cured(),
         reason: 'the worker made no changes',
       }
     }
@@ -1233,12 +1270,16 @@ export async function execute(
         action: wanted,
         why: `role "${role.name}" permits ${role.allow.join(', ') || 'nothing'}`,
       })
+      // A fact about the role and not about the item: the next item meets it identically, and
+      // widening `allow` is the only thing that changes it. Known here, where it is enforced.
+      minted.add(`role:${role.name}:allow`)
       return {
         outcome: 'refused' as const,
         changed,
         refusals,
         transcript,
         ...kept,
+        ...cured(),
         reason: `the work is done but ${role.name} may not open a pull request, so nothing was published`,
       }
     }
@@ -1255,6 +1296,7 @@ export async function execute(
         refusals,
         transcript,
         ...kept,
+        ...cured(),
         reason: 'the only changes were deletions, which cannot be published yet',
       }
     }
@@ -1284,6 +1326,7 @@ export async function execute(
         refusals,
         transcript,
         ...kept,
+        ...cured(),
         reason: `lost mid-execution; left ${artifact.ref} as a draft`,
       }
     }
@@ -1295,6 +1338,7 @@ export async function execute(
       refusals,
       transcript,
       ...kept,
+      ...cured(),
       reason: `opened ${artifact.ref}`,
     }
   })
@@ -1365,6 +1409,9 @@ export async function recordExecution(
       // Every attempt, not one per cure: a command refused six times is a worker that kept
       // trying, and the count is the difference between a stray call and a blocked run.
       ...(result.denials === undefined ? {} : { denials: result.denials }),
+      // Every key, not the first: a run refused an action after a command was denied has two
+      // configurations wrong, and a record naming one parks the item behind the other.
+      ...(result.cures === undefined ? {} : { cures: result.cures }),
       // The one string that turns grepping a disposable clone's transcript into opening a file.
       ...(result.session === undefined ? {} : { session: result.session }),
       ...(result.apiErrorStatus === undefined ? {} : { apiErrorStatus: result.apiErrorStatus }),
