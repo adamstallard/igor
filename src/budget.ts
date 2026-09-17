@@ -41,13 +41,21 @@ export interface Seat extends TokenSource {
   dedicated?: boolean
   /** Fraction of the limit Igors must not consume. */
   reserve: number
-  /** Starting capacity estimate, in dollars of list-price spend the window holds, superseded
-   *  outright by the first observation of this seat that yields one. It exists so a seat
-   *  carrying a reserve can be drawn on before it has ever been observed, which is otherwise
-   *  impossible: a reserve needs a capacity, a capacity needs spend inside an observed window,
-   *  and a reserved seat is not spent from. */
-  capacity?: number
+  /** Starting capacity estimate, superseded outright by the first observation of this seat and
+   *  window that yields one. It exists so a seat carrying a reserve can be drawn on before it
+   *  has ever been observed, which is otherwise impossible: a reserve needs a capacity, a
+   *  capacity needs spend inside an observed window, and a reserved seat is not spent from. */
+  capacity?: SeatCapacity
 }
+
+/**
+ * Dollars of list-price spend a window holds, for each window a seat declares one for. An
+ * undeclared window is unobserved until it is observed, never the other window's figure scaled
+ * by the cadence ratio: two limits exist because they are not proportional, and were a session
+ * exactly a 168th of a week the weekly limit would forbid nothing the session limit already
+ * forbids.
+ */
+export type SeatCapacity = { [W in Window]?: number }
 
 /**
  * How long a `token_command` may run before it is treated as failed. Provisional: no real
@@ -566,6 +574,45 @@ export async function loadSpend(read: (path: string) => Promise<string | undefin
   return parseNdjson<SpendRecord>((await read(EXECUTIONS_PATH)) ?? '')
 }
 
+/**
+ * Reads the capacities a seat declares.
+ *
+ * A figure that names no window is refused rather than taken for both: spent as a session
+ * capacity, a weekly figure over-states the session bound by the cadence ratio, and a seat
+ * whose owner's floor rests on that bound would never know.
+ */
+function parseSeatCapacity(raw: unknown, seatId: string): SeatCapacity | undefined {
+  if (raw === undefined) return undefined
+  const windows: Window[] = ['session', 'week']
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+    throw new BudgetError(
+      `seat "${seatId}".capacity must name a window: ${windows.join(', ')}, or both, ` +
+        `each a positive number of dollars`,
+    )
+  }
+  const declared = raw as Record<string, unknown>
+  for (const key of Object.keys(declared)) {
+    if (!windows.includes(key as Window)) {
+      throw new BudgetError(`seat "${seatId}".capacity names "${key}", which is not a window: ${windows.join(', ')}`)
+    }
+  }
+  const capacity: SeatCapacity = {}
+  for (const window of windows) {
+    const value = declared[window]
+    if (value === undefined) continue
+    if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+      throw new BudgetError(`seat "${seatId}".capacity.${window} must be a positive number of dollars`)
+    }
+    capacity[window] = value
+  }
+  if (Object.keys(capacity).length === 0) {
+    throw new BudgetError(
+      `seat "${seatId}".capacity names no window: declare ${windows.join(' or ')}, or leave it out`,
+    )
+  }
+  return capacity
+}
+
 export function parseOrgBudget(raw: unknown): OrgBudget {
   if (raw === undefined || raw === null) return { seats: [], pools: [] }
   if (typeof raw !== 'object' || Array.isArray(raw)) throw new BudgetError('budget must be a mapping')
@@ -584,11 +631,7 @@ export function parseOrgBudget(raw: unknown): OrgBudget {
     if (dedicated && typeof reserveRaw === 'number' && reserveRaw > 0) {
       throw new BudgetError(`seat "${s['id']}" is dedicated, so nobody is there to reserve capacity for`)
     }
-    const capacityRaw = s['capacity']
-    const capacityBad = typeof capacityRaw !== 'number' || !Number.isFinite(capacityRaw) || capacityRaw <= 0
-    if (capacityRaw !== undefined && capacityBad) {
-      throw new BudgetError(`seat "${s['id']}".capacity must be a positive number of dollars`)
-    }
+    const capacity = parseSeatCapacity(s['capacity'], s['id'])
     const tokenEnv = typeof s['token_env'] === 'string' ? s['token_env'] : undefined
     const tokenFile = typeof s['token_file'] === 'string' ? s['token_file'] : undefined
     const tokenCommand = typeof s['token_command'] === 'string' ? s['token_command'] : undefined
@@ -602,7 +645,7 @@ export function parseOrgBudget(raw: unknown): OrgBudget {
       ...(tokenFile === undefined ? {} : { tokenFile }),
       ...(tokenCommand === undefined ? {} : { tokenCommand }),
       ...(dedicated ? { dedicated } : {}),
-      ...(capacityRaw === undefined ? {} : { capacity: capacityRaw as number }),
+      ...(capacity === undefined ? {} : { capacity }),
       reserve: dedicated ? 0 : ((reserveRaw as number) ?? 0),
     })
   }
