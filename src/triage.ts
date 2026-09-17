@@ -25,7 +25,18 @@ import type { Verdict } from './predicate.js'
 
 export const TRIAGE_MODEL = 'claude-haiku-4-5-20251001'
 
-export class TriageError extends Error {}
+export class TriageError extends Error {
+  /**
+   * What the call stated before it failed, where it produced an envelope at all. The exit code
+   * alone cannot say what a failing call cost, and the figure is otherwise dropped at the reject.
+   */
+  constructor(
+    message: string,
+    readonly response?: TriageResponse,
+  ) {
+    super(message)
+  }
+}
 
 /**
  * The trusted channel. Ingested content never reaches here — it arrives in the user message,
@@ -158,12 +169,24 @@ function runClaude(
     child.stderr.on('data', (c) => (err += c))
     child.on('error', reject)
     child.on('close', (code) => {
-      if (code !== 0) return reject(new TriageError(err.trim() || `claude exited ${code}`))
-      try {
-        resolve(parseEnvelope(out))
-      } catch (error) {
-        reject(error instanceof Error ? error : new Error(String(error)))
+      if (code === 0) {
+        try {
+          return resolve(parseEnvelope(out))
+        } catch (error) {
+          return reject(error instanceof Error ? error : new Error(String(error)))
+        }
       }
+      // A failing call often states why in its own envelope and then exits non-zero — an
+      // expired credential reports `api_error` there and puts nothing on stderr. Rejecting on
+      // the exit code alone throws away the explanation already in hand, and the cost stated
+      // beside it, leaving "claude exited 1" for a cause the output named.
+      let envelope: TriageResponse | undefined
+      try {
+        envelope = parseEnvelope(out)
+      } catch {
+        // Stdout held no envelope, so stderr and the code are the whole of what was said.
+      }
+      reject(new TriageError(envelope?.result?.trim() || err.trim() || `claude exited ${code}`, envelope))
     })
   })
 }
@@ -232,6 +255,13 @@ export async function triageBatch(
       else costUsd += response.costUsd
       results.push({ candidate, verdict: verdictOf(candidate, response) })
     } catch (error) {
+      // A call that failed can still have stated an envelope, and that envelope is the same
+      // only evidence of spend. Only `runClaude` attaches one, and only where `run` rejected,
+      // so nothing counted above can be counted again here.
+      if (error instanceof TriageError && error.response !== undefined) {
+        if (error.response.costUsd === undefined) costUnreported += 1
+        else costUsd += error.response.costUsd
+      }
       failures.push({ candidate, error: error instanceof Error ? error : new Error(String(error)) })
     }
   }

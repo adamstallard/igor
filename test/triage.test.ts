@@ -177,9 +177,12 @@ describe('what a real child says it cost', () => {
    * A stub `claude` on the path, so the envelope is parsed from real bytes off a real pipe.
    * `execvp` resolves against the parent's PATH, so that is what has to be bent at the fake.
    */
-  function fakeClaude(stdout: string): NodeJS.ProcessEnv {
+  function fakeClaude(stdout: string, exit = 0, stderr = ''): NodeJS.ProcessEnv {
     const bin = tempDir('igor-fake-claude-')
-    writeFileSync(join(bin, 'claude'), ['#!/bin/sh', "cat <<'JSON'", stdout, 'JSON', ''].join('\n'))
+    const script = ['#!/bin/sh', "cat <<'JSON'", stdout, 'JSON']
+    if (stderr !== '') script.push("cat >&2 <<'ERR'", stderr, 'ERR')
+    script.push(`exit ${exit}`, '')
+    writeFileSync(join(bin, 'claude'), script.join('\n'))
     chmodSync(join(bin, 'claude'), 0o755)
     vi.stubEnv('PATH', `${bin}:/usr/bin:/bin`)
     return { PATH: `${bin}:/usr/bin:/bin` }
@@ -227,6 +230,33 @@ describe('what a real child says it cost', () => {
     expect(batch.results).toEqual([])
     expect(batch.failures).toHaveLength(1)
     expect(batch.costUsd).toBe(0.0163)
+    expect(batch.costUnreported).toBe(0)
+  })
+
+  it('says what a failing child said, rather than only its exit code', async () => {
+    // An expired credential states `api_error` in its own envelope and puts nothing on stderr,
+    // so the exit code alone leaves "claude exited 1" for a cause the output named plainly.
+    const said = JSON.stringify({ result: 'Not logged in · Please run /login', is_error: true, total_cost_usd: 0 })
+    const batch = await triageBatch([candidate()], 'system', 'model', fakeClaude(said, 1))
+    expect(batch.failures[0]?.error.message).toBe('Not logged in · Please run /login')
+    // The envelope stated a usable cost, so this is a call that cost $0 rather than one whose
+    // cost is unknown — the same reading the success path gives the same envelope.
+    expect(batch.costUsd).toBe(0)
+    expect(batch.costUnreported).toBe(0)
+  })
+
+  it('keeps a cost the child stated before it exited non-zero', async () => {
+    const billed = JSON.stringify({ result: 'rate limit reached', is_error: true, total_cost_usd: 0.0163 })
+    const batch = await triageBatch([candidate()], 'system', 'model', fakeClaude(billed, 1))
+    expect(batch.failures).toHaveLength(1)
+    expect(batch.costUsd).toBe(0.0163)
+    expect(batch.costUnreported).toBe(0)
+  })
+
+  it('falls back to stderr where a failing child stated nothing on stdout', async () => {
+    const batch = await triageBatch([candidate()], 'system', 'model', fakeClaude('', 1, 'error: unknown option'))
+    expect(batch.failures[0]?.error.message).toBe('error: unknown option')
+    expect(batch.costUsd).toBe(0)
     expect(batch.costUnreported).toBe(0)
   })
 
