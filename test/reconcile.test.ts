@@ -199,11 +199,11 @@ describe('a deleted candidate is recorded as rejected', () => {
   })
 })
 
-describe('a proposal is recognized by what it touches', () => {
+describe('a proposal is recognized by the entry files it adds', () => {
   it('promotes a pull request nothing of ours opened, on whatever branch', async () => {
     const dir = tempDir('igor-reconcile-')
-    // Nothing about the branch reaches `reconcile`: `PrState` carries no ref, because the
-    // list is no longer filtered by one. A hand-made pull request is a proposal on its files.
+    // Nothing about the branch reaches `reconcile`: `PrState` carries no ref, because the list
+    // is not filtered by one. A hand-made pull request is a proposal on the entries it adds.
     proposeOne('use-query-hook')
     writeEntry(dir, entry('use-query-hook'))
 
@@ -212,7 +212,7 @@ describe('a proposal is recognized by what it touches', () => {
     expect(result.promoted.map((p) => p.id)).toEqual(['use-query-hook'])
   })
 
-  it('ignores a merged pull request that touches no entry file', async () => {
+  it('ignores a merged pull request that adds no entry file', async () => {
     const dir = tempDir('igor-reconcile-')
     // A markdown file outside the entry path shares no namespace with an entry: before the
     // path test, `docs/use-query-hook.md` named the entry `use-query-hook`.

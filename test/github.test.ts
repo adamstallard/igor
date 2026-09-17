@@ -103,17 +103,25 @@ describe('what a pull request proposed', () => {
   })
 })
 
-describe('a file the pull request removed', () => {
-  it('is not something it proposed, in either half of the read', async () => {
-    // A pull request that deletes an entry is retiring it. Counting the deletion would make a
-    // retirement look like a proposal, and then like a rejection of the thing being retired.
+describe('a file the pull request did not add', () => {
+  it('is not proposed, but an edited one is still there at head', async () => {
+    // Two questions with two answers. A pull request that deletes an entry is retiring it and
+    // one that edits an entry is changing a claim somebody already approved, so neither is
+    // proposed — counting either would promote that entry under whoever merged. But `landed`
+    // is asked something else, and the caller treats absence from it as a reviewer's deletion
+    // and writes a permanent rejection, so it must keep the file the pull request only edited.
+    const rows = touched(
+      ['entries/retired.md', 'removed'],
+      ['entries/swept.md', 'modified'],
+      'entries/kept.md',
+    )
     commits.set(10, ['shaC'])
-    filesAt.set('shaC', touched(['entries/retired.md', 'removed'], 'entries/kept.md'))
-    landed.set(10, touched(['entries/retired.md', 'removed'], 'entries/kept.md'))
+    filesAt.set('shaC', rows)
+    landed.set(10, rows)
 
     const proposal = await proposedFiles('org/lore', 10)
 
     expect(proposal.files).toEqual(['entries/kept.md'])
-    expect(proposal.landed).toEqual(['entries/kept.md'])
+    expect(proposal.landed).toEqual(['entries/swept.md', 'entries/kept.md'])
   })
 })

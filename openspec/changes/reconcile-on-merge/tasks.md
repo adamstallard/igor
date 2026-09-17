@@ -22,7 +22,18 @@
 ## 2. Recognizing a proposal by content
 
 - [x] 2.1 A pull request is a proposal when it touches an entry file under the store's entry
-      path; `p.head.ref.startsWith(BRANCH_PREFIX)` stops deciding it
+      path; `p.head.ref.startsWith(BRANCH_PREFIX)` stops deciding it.
+      Narrowed afterwards to *adds*, not touches ([#52](https://github.com/adamstallard/igor/issues/52)):
+      touching promoted every provisional entry a formatting sweep reformatted, under whoever
+      merged the sweep, and contradicted this change's own promise that an entry committed
+      directly stays provisional. Both file reads count only the statuses that put a path in
+      the tree the base did not have — `added`, `renamed`, `copied` — and not `added` alone:
+      GitHub reports a deletion paired with a similar addition as a single `renamed` row, and
+      the two reads are diffed against different things, so `added` alone both loses a
+      replacement entry and permanently rejects a live one. The base-to-head diff narrows only
+      where it answers *what did this propose*; where it answers *what is there at head*, which
+      is what tells a reviewer's deletion from a checkout that is behind, it still takes
+      everything but `removed`
 - [x] 2.2 The merged path tests the files `proposedFiles` already fetches — no call added.
       Done, with one call added after all: `proposedFiles` now folds in the base-to-head diff,
       because reading only the proposing commit made recognition depend on the order someone
@@ -34,8 +45,11 @@
 - [x] 2.4 `BRANCH_PREFIX` stays and stays exported: `propose` still names branches with it, and
       it is what an assignee reads in a branch list
 - [x] 2.5 Tests: a hand-made pull request on an arbitrary branch is promoted on merge; a pull
-      request touching no entry file is ignored whatever its branch is called; a proposal whose
-      every candidate was deleted is reconciled and each candidate recorded as rejected
+      request adding no entry file is ignored whatever its branch is called; a proposal whose
+      every candidate was deleted is reconciled and each candidate recorded as rejected; a pull
+      request that only edits an existing entry file promotes nothing and is not reported as
+      quiet. The last two live in `reconcile-over-gh.test.ts` — `reconcile.test.ts` mocks
+      `github.js` wholesale and cannot see a change to how recognition is worked out
 
 ## 3. Promoting in place
 

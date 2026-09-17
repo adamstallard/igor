@@ -239,3 +239,142 @@ describe('an entry that is there and cannot be read', () => {
     expect(result.unreadable[0]?.reason).toMatch(/mapping|yaml/i)
   })
 })
+
+describe('a pull request that edits an entry it did not write', () => {
+  const path = `${ENTRIES_DIR}/use-query-hook.md`
+
+  it('promotes nothing, because editing a file is not proposing the claim in it', async () => {
+    // A formatting sweep, a licence header, a term renamed across `entries/`. Whoever merges it
+    // never read the claim, and `reviewed.by` would name them as having approved it.
+    const dir = store()
+    writeEntry(dir, entry('use-query-hook'))
+    mergedPr(7)
+    commits.set(7, ['sha1'])
+    filesAt.set('sha1', touched([path, 'modified']))
+    landed.set(7, touched([path, 'modified']))
+
+    const result = await reconcile(config(dir))
+
+    expect(result.promoted).toEqual([])
+    expect(result.declined).toEqual([])
+    expect(result.missingLocally).toEqual([])
+    expect(loadEntry(dir, 'use-query-hook').entry?.status).toBe('provisional')
+  })
+
+  it('is not reported as a quiet proposal once it has gone quiet', async () => {
+    // The open path asks the same question, so the narrowing has to reach it too: a sweep
+    // nobody has merged is not a proposal waiting on a reviewer.
+    const dir = store()
+    pulls = [
+      {
+        number: 7,
+        state: 'open',
+        merged_at: null,
+        updated_at: '2026-04-01T10:00:00Z',
+        html_url: 'https://github.com/org/lore/pull/7',
+        assignees: [{ login: 'adam' }],
+        merged_by: null,
+      },
+    ]
+    commits.set(7, ['sha1'])
+    filesAt.set('sha1', touched([path, 'modified']))
+    landed.set(7, touched([path, 'modified']))
+
+    const result = await reconcile(config(dir), { now: new Date('2026-05-01T10:00:00Z') })
+
+    expect(result.stale).toEqual([])
+  })
+})
+
+describe('an entry file that arrives as a rename', () => {
+  const fresh = `${ENTRIES_DIR}/use-query-hook.md`
+  const retired = `${ENTRIES_DIR}/old-fetch-rule.md`
+
+  it('is promoted, because the path it lands at is an id nobody has reviewed', async () => {
+    // Retiring an entry and replacing it in one pull request. GitHub pairs the deletion with
+    // the addition and reports the pair as a single `renamed` row naming the new path — the
+    // retired one gets no row of its own — so the new entry appears as `added` nowhere.
+    // Dropping it leaves a claim that merged and never fires.
+    const dir = store()
+    writeEntry(dir, entry('use-query-hook'))
+    mergedPr(7)
+    commits.set(7, ['sha1'])
+    filesAt.set('sha1', touched([fresh, 'renamed']))
+    landed.set(7, touched([fresh, 'renamed']))
+
+    const result = await reconcile(config(dir))
+
+    expect(result.promoted.map((p) => p.id)).toEqual(['use-query-hook'])
+    expect(result.declined).toEqual([])
+    expect(loadEntry(dir, 'use-query-hook').entry?.status).toBe('active')
+  })
+
+  it('is reported as behind rather than rejected when the two reads disagree', async () => {
+    // The proposing commit is diffed against its own parent and the landed files against the
+    // merge base, so one commit adding the entry and a later one deleting something similar
+    // makes the same file `added` in one read and `renamed` in the other. A predicate that
+    // took only `added` would count it in the first and not the second, and `reconcile` reads
+    // that difference as a reviewer's deletion — a permanent rejection of a live entry.
+    //
+    // The later commit has no fixture because only the first is ever fetched; it exists in the
+    // landed read, as the deletion the rename is paired with.
+    const dir = store()
+    mergedPr(7)
+    commits.set(7, ['sha1', 'sha2'])
+    filesAt.set('sha1', touched(fresh))
+    landed.set(7, touched([fresh, 'renamed']))
+
+    const result = await reconcile(config(dir))
+
+    expect(result.declined).toEqual([])
+    expect(result.missingLocally).toEqual(['use-query-hook'])
+    expect(existsSync(join(dir, REJECTED_DIR))).toBe(false)
+  })
+})
+
+describe('a proposal the reviewer emptied only in part', () => {
+  it('promotes what survived and records only what went', async () => {
+    // The subtraction with a non-empty landed list: `kept` is in both reads, `cut` only in the
+    // proposing commit. Getting the predicate wrong on either side moves a file between these
+    // two outcomes, and one of them is permanent.
+    const dir = store()
+    const kept = `${ENTRIES_DIR}/use-query-hook.md`
+    const cut = `${ENTRIES_DIR}/scratch.md`
+    writeEntry(dir, entry('use-query-hook'))
+    mergedPr(7)
+    commits.set(7, ['sha1'])
+    filesAt.set('sha1', touched(kept, cut))
+    landed.set(7, touched(kept))
+    contentAt.set(`${cut}@sha1`, serialize(entry('scratch')))
+
+    const result = await reconcile(config(dir))
+
+    expect(result.promoted.map((p) => p.id)).toEqual(['use-query-hook'])
+    expect(result.declined.map((d) => d.id)).toEqual(['scratch'])
+    expect(result.missingLocally).toEqual([])
+  })
+})
+
+describe('an entry that reached the default branch while its proposal was open', () => {
+  const path = `${ENTRIES_DIR}/use-query-hook.md`
+
+  it('is reported as behind rather than rejected, because it is there at head', async () => {
+    // The proposing commit adds the entry; the same entry then reaches the default branch
+    // another way — committed directly, which the spec expects and leaves provisional — and
+    // the author merges the default branch in. The merge base now has the file, so the landed
+    // diff calls it `modified`. Recognition is right to pass over a modification, but the
+    // landed read answers a second question — is the path there at head — and to that one the
+    // answer is yes. Getting it wrong writes a permanent rejection of a live entry.
+    const dir = store()
+    mergedPr(7)
+    commits.set(7, ['sha1'])
+    filesAt.set('sha1', touched(path))
+    landed.set(7, touched([path, 'modified']))
+
+    const result = await reconcile(config(dir))
+
+    expect(result.declined).toEqual([])
+    expect(result.missingLocally).toEqual(['use-query-hook'])
+    expect(existsSync(join(dir, REJECTED_DIR))).toBe(false)
+  })
+})

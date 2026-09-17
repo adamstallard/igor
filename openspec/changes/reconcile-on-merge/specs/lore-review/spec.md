@@ -37,9 +37,13 @@ mechanism of its own: a second promoter has a blind spot of its own to maintain,
 disagree about exactly the cases nobody is watching. Promotion by a person's own hand is not an
 event and is covered below.
 
-A pull request SHALL be recognized as a lore proposal by what it touches — an entry file in
-the store — whoever opened it and whatever its branch is called. A proposal is defined by
-proposing an entry, not by which tool made the branch.
+A pull request SHALL be recognized as a lore proposal by the entry files it **adds** to the
+store — every path it puts there that the default branch did not have, including one arriving
+as a rename, since an entry's filename is its id — whoever opened it and whatever its branch is
+called. A proposal is defined by proposing an entry, not by which tool made the branch. A pull
+request that only edits or removes an entry file SHALL NOT be recognized as proposing it:
+editing changes a claim someone already approved and removing retires it, and neither is a
+claim being put up for review.
 
 Reconciliation MUST be idempotent over what it has already settled, because the merge-triggered
 job and a person's local invocation sweep the same pull requests.
@@ -56,7 +60,7 @@ job and a person's local invocation sweep the same pull requests.
 
 #### Scenario: A merge is an invocation
 
-- **WHEN** a pull request touching entry files is merged into the default branch
+- **WHEN** a pull request adding entry files is merged into the default branch
 - **THEN** the destination's merge-triggered job reconciles
 - **AND** the entries it landed become active and every candidate the reviewer deleted is
   recorded as rejected
@@ -66,6 +70,19 @@ job and a person's local invocation sweep the same pull requests.
 - **WHEN** a pull request adding an entry file is merged from a branch with no proposal prefix,
   opened by hand
 - **THEN** it is reconciled as a proposal like any other
+
+#### Scenario: A pull request that only edits entry files
+
+- **WHEN** a pull request that edits existing entry files for an unrelated reason — a formatting
+  sweep, a renamed term — is merged into the default branch
+- **THEN** it is not a proposal, and the entries it edited keep the status they had
+
+#### Scenario: An entry that replaces a retired one
+
+- **WHEN** a merged pull request deletes an entry file and adds a new one close enough to it
+  that the change is reported as a rename
+- **THEN** the new entry is proposed and promoted, because its filename is an id nothing has
+  reviewed
 
 #### Scenario: A merge that lands no entry file
 

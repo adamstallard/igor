@@ -104,8 +104,8 @@ function readEntry(read: () => LoadedEntry): { entry?: Entry; reason: string } {
 }
 
 /**
- * Whether a pull request proposes lore — a question about its files, not its branch name,
- * because anyone may open one by hand.
+ * Whether a pull request proposes lore — a question about the entry files it adds, not its
+ * branch name, because anyone may open one by hand.
  *
  * The diff answers it in one request for every shape but one, so it is asked first. The
  * exception is a proposal whose every candidate the reviewer deleted: its diff is empty and it
@@ -179,6 +179,12 @@ export async function reconcile(
         // A local absence means the reviewer deleted it, or this checkout is behind. Rejection
         // is permanent, so the pull request's own diff settles it. Asking the destination's
         // current state instead would read an entry retired long afterwards as a rejection.
+        //
+        // A draft the author added and deleted themselves lands here too, and accepting that is
+        // deliberate. It is `added` in the proposing commit and absent at head, which is exactly
+        // the file list a reviewer's deletion produces; separating them needs a signal the file
+        // list does not carry. Recording nothing instead would lose reviewer deletions, which
+        // are the gesture this exists for, and a stray record and its id are deletable by hand.
         if (landed.has(id)) {
           result.missingLocally.push(id)
           continue
