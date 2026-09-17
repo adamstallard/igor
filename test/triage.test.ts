@@ -253,6 +253,23 @@ describe('what a real child says it cost', () => {
     expect(batch.costUnreported).toBe(0)
   })
 
+  it('decodes a multi-byte character that the pipe split across two chunks', async () => {
+    // A verdict is capped at 25 words, but a failing call's `result` is not, and it is read as
+    // the failure's message. Past the pipe buffer the text arrives in several chunks, and a
+    // boundary landing inside a three-byte character decodes it to replacement characters —
+    // an envelope that still parses, carrying a reason nobody can read.
+    const said = `rate limit reached ${'—'.repeat(100_000)} retry after the window resets`
+    const batch = await triageBatch(
+      [candidate()],
+      'system',
+      'model',
+      fakeClaude(JSON.stringify({ result: said, is_error: true, total_cost_usd: 0.0163 }), 1),
+    )
+    const message = batch.failures[0]?.error.message ?? ''
+    expect(message.includes('\uFFFD')).toBe(false)
+    expect(message === said).toBe(true)
+  })
+
   it('falls back to stderr where a failing child stated nothing on stdout', async () => {
     const batch = await triageBatch([candidate()], 'system', 'model', fakeClaude('', 1, 'error: unknown option'))
     expect(batch.failures[0]?.error.message).toBe('error: unknown option')
