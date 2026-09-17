@@ -225,6 +225,9 @@ export async function triageBatch(
       // any other, and dropping its cost understates the cycle by real money. The envelope is
       // also the only evidence of spend there is — what a call that produced none cost is a
       // question with no answer to record, rather than a zero or an uncertainty.
+      // Reaching instead for a flag set before the spawn, or for the error's type at the catch,
+      // asserts that a child which started was charged — a fact nothing in this process holds.
+      // Either the envelope states a cost or nothing does.
       if (response.costUsd === undefined) costUnreported += 1
       else costUsd += response.costUsd
       results.push({ candidate, verdict: verdictOf(candidate, response) })
