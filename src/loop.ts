@@ -84,11 +84,12 @@ export interface ItemRun {
   /** Why it was handed back, where it was — a budget handoff says nothing about the item. */
   handoff?: HandoffReason['kind']
   /**
-   * The configuration a refusal named, on a handoff a refused command could have produced. A
-   * handoff carrying it is taken as the Igor's own doing rather than the item's, so the item
-   * is not suppressed over it.
+   * Every configuration of the Igor's own this run proved wrong, in the order the run met
+   * them. A handoff carrying any is taken as the Igor's doing rather than the item's, so the
+   * item is not suppressed over it — and all of them are kept, because a run can be refused
+   * an action and denied a command at once, and each is a separate thing to fix.
    */
-  cure?: string
+  cures: string[]
 }
 
 export type Step = 'claiming' | 'settling' | 'working' | 'publishing' | 'completing'
@@ -128,7 +129,7 @@ export async function runItem(
     // it is presumably taking the work and composing a handoff would only delay the release.
     if (claim.outcome === 'stopped' && claim.verdict) {
       await tracker.report(candidate, stopReceipt(role, claim.verdict)).catch(() => undefined)
-      return { outcome: 'stopped', candidate, reason: claim.reason, costUsd: 0, spoke: true }
+      return { outcome: 'stopped', candidate, reason: claim.reason, costUsd: 0, spoke: true, cures: [] }
     }
     return {
       outcome: claim.outcome === 'lost' ? 'lost' : 'refused',
@@ -136,6 +137,7 @@ export async function runItem(
       reason: claim.reason,
       costUsd: 0,
       spoke: false,
+      cures: [],
     }
   }
 
@@ -150,7 +152,7 @@ export async function runItem(
     const out = await handOffFrom(tracker, candidate, role, identity, claim.claimedAt, reason)
     return {
       outcome: 'handed-off', candidate, reason: 'budget exhausted before starting',
-      costUsd: 0, spoke: out.posted, handoff: 'budget',
+      costUsd: 0, spoke: out.posted, handoff: 'budget', cures: [],
     }
   }
 
@@ -162,6 +164,9 @@ export async function runItem(
     // authenticating as the seat the gate chose is the whole point, and a pull request points
     // at its transcript only where the store arrives.
     ...(options.budget?.token === undefined ? {} : { seatToken: options.budget.token }),
+    // Named alongside the token it goes with: a token source that cannot be read is the seat's
+    // own misconfiguration, and the key that says so needs the seat's name.
+    ...(options.budget?.seat === undefined ? {} : { seat: options.budget.seat }),
     ...(options.store === undefined ? {} : { store: options.store }),
     onPublish: () => step('publishing'),
     claimStatus: async () => (await checkpoint(tracker, claim, identity)).status,
@@ -183,6 +188,7 @@ export async function runItem(
         execution,
         costUsd: execution.costUsd,
         spoke: true,
+        cures: execution.cures ?? [],
       }
     }
 
@@ -201,7 +207,7 @@ export async function runItem(
         await tracker.report(candidate, stopReceipt(role, verdict, artifact)).catch(() => undefined)
         return {
           outcome: 'stopped', candidate, reason: execution.reason, execution,
-          costUsd: execution.costUsd, spoke: true,
+          costUsd: execution.costUsd, spoke: true, cures: execution.cures ?? [],
         }
       }
       if (verdict.status === 'lost') {
@@ -214,18 +220,20 @@ export async function runItem(
         }
         return {
           outcome: 'lost', candidate, reason: execution.reason, execution,
-          costUsd: execution.costUsd, spoke: artifact !== undefined,
+          costUsd: execution.costUsd, spoke: artifact !== undefined, cures: execution.cures ?? [],
         }
       }
       // Still held, so the refusal was the action space rather than the claim: that is a
-      // dead end the Igor cannot get past, which is what a handoff is for.
+      // dead end the Igor cannot get past, which is what a handoff is for. An action space
+      // with nothing in it names a cure of its own, and the run carries any it met on the way.
+      const cures = execution.cures ?? []
       const out = await handOffFrom(
         tracker, candidate, role, identity, claim.claimedAt,
-        { kind: 'failure', detail: execution.reason }, execution,
+        { kind: 'failure', detail: execution.reason, ...(cures.length === 0 ? {} : { cures }) }, execution,
       )
       return {
         outcome: 'handed-off', candidate, reason: execution.reason, execution,
-        costUsd: execution.costUsd, spoke: out.posted, handoff: 'failure',
+        costUsd: execution.costUsd, spoke: out.posted, handoff: 'failure', cures,
       }
     }
 
@@ -242,7 +250,7 @@ export async function runItem(
       const out = await handOffFrom(tracker, candidate, role, identity, claim.claimedAt, reason, execution)
       return {
         outcome: 'handed-off', candidate, reason: execution.reason, execution,
-        costUsd: execution.costUsd, spoke: out.posted, handoff: 'budget',
+        costUsd: execution.costUsd, spoke: out.posted, handoff: 'budget', cures: execution.cures ?? [],
       }
     }
 
@@ -254,19 +262,18 @@ export async function runItem(
       // The worker's own account of why it declined is the most useful sentence available,
       // and it is otherwise only in the transcript, which nobody reading the item will open.
       //
-      // Read here and not above: a refused command leaves the run broken or the tree empty,
-      // and never the dead end above, which is the role's `allow` list or a change the code
-      // host will not take. Every Bash refusal in a run names the same role, so the first key
-      // is the only one there is.
-      const cure = execution.denials?.find((d) => d.cure !== undefined)?.cure
+      // Whatever the run earned, in full: a worker that could not start for an unset seat
+      // token and one the allowlist stopped both hand back here, and a run can carry more
+      // than one key. Taking any single one of them parks the item behind the others.
+      const cures = execution.cures ?? []
       const reason: HandoffReason =
         execution.outcome === 'nothing-to-do'
           ? { kind: 'nothing-to-do', detail: declineReason(execution.transcript) }
-          : { kind: 'failure', detail: execution.reason, ...(cure === undefined ? {} : { cure }) }
+          : { kind: 'failure', detail: execution.reason, ...(cures.length === 0 ? {} : { cures }) }
       const out = await handOffFrom(tracker, candidate, role, identity, claim.claimedAt, reason, execution)
       return {
         outcome: 'handed-off', candidate, reason: execution.reason, execution,
-        costUsd: execution.costUsd, spoke: out.posted, handoff: reason.kind, ...(cure === undefined ? {} : { cure }),
+        costUsd: execution.costUsd, spoke: out.posted, handoff: reason.kind, cures,
       }
     }
   }
@@ -424,7 +431,7 @@ export async function planCycle(
     const gate = options.budget ?? (options.gate === undefined ? undefined : await options.gate())
     let env: NodeJS.ProcessEnv | undefined
     try {
-      env = await workerEnv(gate?.token)
+      env = await workerEnv(gate?.token, process.env, gate?.seat)
     } catch (error) {
       report.failures.push(`triage: ${error instanceof Error ? error.message : String(error)}`)
     }

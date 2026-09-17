@@ -26,9 +26,11 @@ import type { Role } from './role.js'
  */
 export type HandoffReason =
   | { kind: 'budget'; seat?: string; resetAt?: string }
-  // Set where the run met a refused command. Nothing suppresses an item handed back with one,
-  // so a sentence promising no retry does not belong on it.
-  | { kind: 'failure'; detail: string; cure?: string }
+  // Every configuration of the Igor's own the run proved wrong, and often more than one: a
+  // run can be refused an action and have been denied a command, and both have to be fixed.
+  // Nothing suppresses an item handed back carrying any, so a sentence promising no retry
+  // does not belong on it.
+  | { kind: 'failure'; detail: string; cures?: readonly string[] }
   // Looking carefully and finding nothing is a result, not a breakdown, and reads as one.
   | { kind: 'nothing-to-do'; detail: string }
 
@@ -50,6 +52,13 @@ function ago(fromIso: string, now: number): string {
   if (minutes < 60) return `${minutes} minute${minutes === 1 ? '' : 's'} ago`
   const hours = Math.round(minutes / 60)
   return `${hours} hour${hours === 1 ? '' : 's'} ago`
+}
+
+/** Backticked and joined so one key and several read as the same sentence. */
+function keys(cures: readonly string[]): string {
+  const quoted = cures.map((c) => `\`${c}\``)
+  const last = quoted.pop() ?? ''
+  return quoted.length === 0 ? last : `${quoted.join(', ')} and ${last}`
 }
 
 /** A person reads this, so render a wall-clock time rather than a machine timestamp. */
@@ -133,11 +142,14 @@ export function composeHandoff(role: Role, candidate: Candidate, handoff: Handof
           : ', and when it returns is not known')
       : handoff.reason.kind === 'nothing-to-do'
         ? handoff.reason.detail
-        : `it hit something it could not get past: ${handoff.reason.detail}. ` +
-          (handoff.reason.cure === undefined
+        : // Another layer's sentence, and several of them end in a full stop of their own —
+          // the seat's "export it." among them, which the reader then meets as "export it.."
+          `it hit something it could not get past: ${handoff.reason.detail.replace(/\.$/, '')}. ` +
+          (handoff.reason.cures === undefined || handoff.reason.cures.length === 0
             ? 'It will not retry'
-            : `Nothing about this item caused that — \`${handoff.reason.cure}\` is what would ` +
-              'change it — so it comes back to this rather than waiting for a reply')
+            : `Nothing about this item caused that — ${keys(handoff.reason.cures)} ` +
+              `${handoff.reason.cures.length === 1 ? 'is' : 'are'} what would change it — so it ` +
+              'comes back to this rather than waiting for a reply')
 
   const who =
     handoff.suggested.length > 0 ? `${handoff.suggested.join(' or ')} could pick this up.` : ''

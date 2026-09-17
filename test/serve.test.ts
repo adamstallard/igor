@@ -349,7 +349,7 @@ describe('the loop records what it handed back', () => {
       }),
     })
     const worked = events.find((e) => e.kind === 'worked')
-    expect(worked?.kind === 'worked' && worked.run.cure).toBe('role:triage:commands')
+    expect(worked?.kind === 'worked' && worked.run.cures).toEqual(['role:triage:commands'])
     expect(n.items).toEqual([])
   })
 

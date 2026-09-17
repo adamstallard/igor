@@ -101,11 +101,11 @@ capacity` within a window, and reporting is per seat and per window. Deriving on
 capacity from the other's by their cadence ratio would assume the two limits are proportional,
 which is the thing two independent limits exist to deny: were a session exactly a 168th of a
 week, the weekly limit would forbid nothing the session limit already forbids. A seat MAY
-declare one window and not the other; the undeclared one is simply unobserved until it is. It exists so a seat with a reserve
-can be drawn on before it has been observed, which is otherwise impossible: a reserve needs a
-capacity, a capacity needs spend inside an observed window, and a seat carrying a reserve is
-not spent from. A declared figure is reported as declared until an observation replaces it, so
-nobody mistakes an assumption for a measurement.
+declare one window and not the other; the undeclared one is simply unobserved until it is. It
+exists so a seat with a reserve can be drawn on before it has been observed, which is otherwise
+impossible: a reserve needs a capacity, a capacity needs spend inside an observed window, and a
+seat carrying a reserve is not spent from. A declared figure is reported as declared until an
+observation replaces it, so nobody mistakes an assumption for a measurement.
 
 What must never be configured is a *usage figure*. Capacity is a property of the plan and
 changes rarely; how full the window is right now changes by the minute and is the thing a

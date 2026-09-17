@@ -11,7 +11,7 @@ import {
   spendInInstance,
   type Observation,
 } from '../src/capacity.js'
-import type { SpendRecord } from '../src/budget.js'
+import { parseOrgBudget, type SpendRecord } from '../src/budget.js'
 import type { appendRecord } from '../src/state.js'
 
 /** A `write` that captures what it was called with, instead of touching `appendRecord`. */
@@ -465,5 +465,25 @@ describe('a declared capacity', () => {
 
   it('leaves a seat with neither an observation nor a declared figure with no capacity at all', () => {
     expect(capacityFor([], records, 'adam', 'session')).toBeUndefined()
+  })
+
+  it('is superseded only for the window observed, leaving the other window as declared', () => {
+    const { seats } = parseOrgBudget({
+      seats: [{ id: 'adam', reserve: 0.5, capacity: { session: 12, week: 250 } }],
+    })
+    const declared = seats[0]?.capacity
+    const weekly = observed({ window: 'week' })
+    // Six days before the reset: inside the weekly instance, nowhere near a five-hour one.
+    const inWeek = [spend('2026-09-09T21:30:00.000Z', 18)]
+
+    expect(capacityFor([weekly], inWeek, 'adam', 'week', declared?.week)).toEqual({
+      capacityUsd: expect.closeTo(50, 10),
+      basis: 'observed',
+      from: weekly,
+    })
+    expect(capacityFor([weekly], inWeek, 'adam', 'session', declared?.session)).toEqual({
+      capacityUsd: 12,
+      basis: 'declared',
+    })
   })
 })

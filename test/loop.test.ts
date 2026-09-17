@@ -162,8 +162,8 @@ describe('an Igor never goes silent on something it claimed', () => {
       },
     })
     expect(r.handoff).toBe('failure')
-    expect(r.cure).toBe('role:triage:commands')
-    expect(shouldDefer(r.outcome, r.handoff, r.cure)).toBe(false)
+    expect(r.cures).toEqual(['role:triage:commands'])
+    expect(shouldDefer(r.outcome, r.handoff, r.cures)).toBe(false)
     // Nothing suppresses the item, so a promise not to retry would be false by next poll.
     expect(posts.at(-1)).not.toMatch(/will not retry/i)
     expect(posts.at(-1)).toContain('role:triage:commands')
@@ -184,14 +184,15 @@ describe('an Igor never goes silent on something it claimed', () => {
       },
     })
     expect(r.handoff).toBe('failure')
-    expect(r.cure).toBeUndefined()
-    expect(shouldDefer(r.outcome, r.handoff, r.cure)).toBe(true)
+    expect(r.cures).toEqual([])
+    expect(shouldDefer(r.outcome, r.handoff, r.cures)).toBe(true)
   })
 
-  it('keeps the deferral where the dead end was the action space, not a command', async () => {
-    // A role that may not publish is a fact about the Igor too, and no cure key names it —
-    // so the handoff reads as it always did, and an unrelated refusal in the trace of the
-    // same run must not speak for it.
+  it('keeps every cure one run earned, not the first of them', async () => {
+    // A role that may not publish is as much a fact about the Igor as a command its allowlist
+    // refuses, and this run proved both wrong at once. Recording either alone parks the item
+    // behind the other: the handoff names a cure, somebody makes it, and the next run stops
+    // on the one nothing told them about.
     const { d, posts } = deps({ changes: [{ path: 'a.ts', kind: 'modified', content: 'x' }] })
     const r = await runItem(d, candidate(), role({ allow: ['comment', 'unassign'] }), 'igor-bot', {
       ...noWait,
@@ -202,10 +203,44 @@ describe('an Igor never goes silent on something it claimed', () => {
       }),
     })
     expect(r.handoff).toBe('failure')
-    expect(r.cure).toBeUndefined()
-    expect(shouldDefer(r.outcome, r.handoff, r.cure)).toBe(true)
+    // In the order the run met them: the command was refused while it worked, and the action
+    // space only once it had something to publish.
+    expect(r.cures).toEqual(['role:triage:commands', 'role:triage:allow'])
+    expect(shouldDefer(r.outcome, r.handoff, r.cures)).toBe(false)
+    expect(posts.at(-1)).not.toMatch(/will not retry/i)
+    expect(posts.at(-1)).toContain('`role:triage:commands` and `role:triage:allow` are what would change it')
+  })
+
+  it('names the seat whose token could not be read, which is how the worker failed to start', async () => {
+    // Issue #22's own shape: an Igor handed every item back as `worker exited 1` because no
+    // seat token was set, and each stayed parked for a day after the cause was fixed. The key
+    // is minted where the token is read, not guessed at from an exit code afterwards.
+    const { d, posts } = deps()
+    const r = await runItem(d, candidate(), role(), 'igor-bot', {
+      ...noWait,
+      budget: { exhausted: () => false, seat: 'team-seat', token: { tokenEnv: 'IGOR_SEAT_UNSET_48' } },
+      worker: async () => { throw new Error('the worker must never be reached') },
+    })
+    expect(r.handoff).toBe('failure')
+    expect(r.cures).toEqual(['seat:team-seat:token'])
+    expect(shouldDefer(r.outcome, r.handoff, r.cures)).toBe(false)
+    expect(posts.at(-1)).toContain('seat:team-seat:token')
+    expect(posts.at(-1)).not.toMatch(/will not retry/i)
+  })
+
+  it('mints nothing for a worker that failed for reasons of its own', async () => {
+    // The line this change must not cross. A crash nobody can name is not a configuration,
+    // the next item might well go fine, and the item is where the deferral belongs.
+    const { d, posts } = deps()
+    const r = await runItem(d, candidate(), role(), 'igor-bot', {
+      ...noWait,
+      budget: { exhausted: () => false, seat: 'team-seat' },
+      worker: brokenWorker,
+    })
+    expect(r.handoff).toBe('failure')
+    expect(r.cures).toEqual([])
+    expect(shouldDefer(r.outcome, r.handoff, r.cures)).toBe(true)
     expect(posts.at(-1)).toMatch(/will not retry/i)
-    expect(posts.at(-1)).not.toContain('role:triage:commands')
   })
 
   it('defers what the worker decided about the item itself', async () => {
@@ -213,8 +248,8 @@ describe('an Igor never goes silent on something it claimed', () => {
     // otherwise be re-worked every poll interval at full worker cost.
     const { d } = deps({ changes: [] })
     const r = await runItem(d, candidate(), role(), 'igor-bot', { ...noWait, worker: idleWorker })
-    expect(r.cure).toBeUndefined()
-    expect(shouldDefer(r.outcome, r.handoff, r.cure)).toBe(true)
+    expect(r.cures).toEqual([])
+    expect(shouldDefer(r.outcome, r.handoff, r.cures)).toBe(true)
   })
 
   it('every path that held a claim leaves a message behind', async () => {
