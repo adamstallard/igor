@@ -23,8 +23,8 @@
       happens
 - [x] 3.3 An observation with no spend in its instance yields nothing, rather than a number
 - [x] 3.4 An observation implying a lower capacity than the current estimate lowers it
-- [x] 3.5 A `capacity` declared on a seat is the estimate until an observation exists, and is
-      then superseded outright rather than combined
+- [ ] 3.5 A `capacity` declared on a seat, per window, is the estimate until an observation of
+      that window exists, and is then superseded outright rather than combined
 - [x] 3.6 Tests: the division, instance bounding, the monotone correction after a limit error,
       and that a co-consumer makes the estimate low rather than high
 
