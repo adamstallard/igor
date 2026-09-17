@@ -147,6 +147,76 @@ describe('an Igor never goes silent on something it claimed', () => {
     expect(posts.at(-1)).toMatch(/Still to do/)
   })
 
+  it('does not defer an item over a command the allowlist refused', async () => {
+    // The cure key names the role's commands, so the handoff was the Igor's configuration and
+    // not the item: no comment on it would help, and the next item meets the same wall.
+    const { d, posts } = deps({ changes: [] })
+    const r = await runItem(d, candidate(), role(), 'igor-bot', {
+      ...noWait,
+      worker: async () => {
+        throw new ExecutionError('worker exited 1', {
+          is_error: true,
+          result: 'permission denied',
+          permission_denials: [{ tool_name: 'Bash', tool_input: { command: 'npm test' } }],
+        })
+      },
+    })
+    expect(r.handoff).toBe('failure')
+    expect(r.cure).toBe('role:triage:commands')
+    expect(shouldDefer(r.outcome, r.handoff, r.cure)).toBe(false)
+    // Nothing suppresses the item, so a promise not to retry would be false by next poll.
+    expect(posts.at(-1)).not.toMatch(/will not retry/i)
+    expect(posts.at(-1)).toContain('role:triage:commands')
+  })
+
+  it('defers a handoff whose refusal named no configuration', async () => {
+    // Only a refused command is known to be the role's list. Anything else the sandbox stopped
+    // is an incident with no cure to name, and the item is where the deferral belongs.
+    const { d } = deps({ changes: [] })
+    const r = await runItem(d, candidate(), role(), 'igor-bot', {
+      ...noWait,
+      worker: async () => {
+        throw new ExecutionError('worker exited 1', {
+          is_error: true,
+          result: 'permission denied',
+          permission_denials: [{ tool_name: 'WebFetch', tool_input: { url: 'https://example.test' } }],
+        })
+      },
+    })
+    expect(r.handoff).toBe('failure')
+    expect(r.cure).toBeUndefined()
+    expect(shouldDefer(r.outcome, r.handoff, r.cure)).toBe(true)
+  })
+
+  it('keeps the deferral where the dead end was the action space, not a command', async () => {
+    // A role that may not publish is a fact about the Igor too, and no cure key names it —
+    // so the handoff reads as it always did, and an unrelated refusal in the trace of the
+    // same run must not speak for it.
+    const { d, posts } = deps({ changes: [{ path: 'a.ts', kind: 'modified', content: 'x' }] })
+    const r = await runItem(d, candidate(), role({ allow: ['comment', 'unassign'] }), 'igor-bot', {
+      ...noWait,
+      worker: async () => ({
+        result: 'Fixed it.',
+        total_cost_usd: 0.02,
+        permission_denials: [{ tool_name: 'Bash', tool_input: { command: 'npm test' } }],
+      }),
+    })
+    expect(r.handoff).toBe('failure')
+    expect(r.cure).toBeUndefined()
+    expect(shouldDefer(r.outcome, r.handoff, r.cure)).toBe(true)
+    expect(posts.at(-1)).toMatch(/will not retry/i)
+    expect(posts.at(-1)).not.toContain('role:triage:commands')
+  })
+
+  it('defers what the worker decided about the item itself', async () => {
+    // The behaviour the record exists for: nothing refused it, so an unanswered item would
+    // otherwise be re-worked every poll interval at full worker cost.
+    const { d } = deps({ changes: [] })
+    const r = await runItem(d, candidate(), role(), 'igor-bot', { ...noWait, worker: idleWorker })
+    expect(r.cure).toBeUndefined()
+    expect(shouldDefer(r.outcome, r.handoff, r.cure)).toBe(true)
+  })
+
   it('every path that held a claim leaves a message behind', async () => {
     const cases = [
       { name: 'budget', opts: { budget: { exhausted: () => true } } },
