@@ -160,6 +160,26 @@ describe('resolving a reset phrase', () => {
     expect(resolveReset('Feb 30 at 9am (UTC)', '2026-02-01T00:00:00.000Z')).toBeUndefined()
   })
 
+  // Guards Temporal does not supply: `overflow: 'reject'` admits hour 0 and hour 13, which no
+  // 12-hour clock face has.
+  it('is unresolvable for an hour off the 12-hour clock face', () => {
+    expect(resolveReset('Sep 13 at 0am (UTC)', BEFORE)).toBeUndefined()
+    expect(resolveReset('Sep 13 at 0pm (UTC)', BEFORE)).toBeUndefined()
+    expect(resolveReset('Sep 13 at 13am (UTC)', BEFORE)).toBeUndefined()
+    expect(resolveReset('Sep 13 at 13pm (UTC)', BEFORE)).toBeUndefined()
+  })
+
+  it('is unresolvable for a day no month has, or a minute past :59', () => {
+    expect(resolveReset('Sep 0 at 9am (UTC)', BEFORE)).toBeUndefined()
+    expect(resolveReset('Sep 32 at 9am (UTC)', BEFORE)).toBeUndefined()
+    expect(resolveReset('Sep 13 at 8:60pm (UTC)', BEFORE)).toBeUndefined()
+  })
+
+  it('is unresolvable when `at` is not an ISO instant', () => {
+    expect(resolveReset('Sep 13 at 8pm (UTC)', 't1')).toBeUndefined()
+    expect(resolveReset('Sep 13 at 8pm (UTC)', '')).toBeUndefined()
+  })
+
   it('is unresolvable for a zone Intl does not know', () => {
     expect(resolveReset('Sep 13 at 8pm (Mars/Standard)', BEFORE)).toBeUndefined()
   })

@@ -39,46 +39,28 @@ const MONTHS: Record<string, number> = {
 // "Sep 13 at 8pm (America/Los_Angeles)" / "Sep 15 at 2:30pm (America/Los_Angeles)".
 const RESET_RE = /^([A-Za-z]{3}) (\d{1,2}) at (\d{1,2})(?::(\d{2}))? ?(am|pm) ?\(([^)]+)\)$/i
 
-function isKnownZone(zone: string): boolean {
-  try {
-    new Intl.DateTimeFormat('en-US', { timeZone: zone })
-    return true
-  } catch {
-    return false
-  }
+/**
+ * The 24-hour hour a 12-hour reading names, or `undefined` for a reading no clock face has.
+ * Temporal would take `0am` as midnight and `13am` as 13:00, so the 1–12 range is checked here
+ * rather than left to `overflow: 'reject'`.
+ */
+function hour24(hour12: number, ampm: string): number | undefined {
+  if (hour12 < 1 || hour12 > 12) return undefined
+  const pm = ampm.toLowerCase() === 'pm'
+  if (hour12 === 12) return pm ? 12 : 0
+  return pm ? hour12 + 12 : hour12
 }
 
 /**
- * The instant `year`-`month`-`day` `hour`:`minute` names in `zone`, or `undefined` when no
- * single instant answers to it: a day the month does not have, an hour a spring-forward
- * skipped, or an hour a fall-back ran twice.
+ * Resolves a reset phrase like `"Sep 18 at 4pm (America/Los_Angeles)"` to an ISO instant, or
+ * `undefined` when the phrase does not match that shape, names a zone the time-zone database
+ * lacks, or names a wall time no single instant answers to: a day the month does not have, an
+ * hour a spring-forward skipped, or an hour a fall-back ran twice.
  *
  * Both halves of a transition are refused rather than settled by a policy. The provider picked
  * one of the two instants such a phrase names and did not say which, so resolving it would put
  * the window an hour from where it may be, and `capacity-from-observation` §1 would rather keep
  * the phrase and derive nothing than invent a position.
- */
-function zonedToInstant(
-  year: number,
-  month: number,
-  day: number,
-  hour: number,
-  minute: number,
-  zone: string,
-): Temporal.Instant | undefined {
-  try {
-    return Temporal.PlainDateTime.from({ year, month, day, hour, minute }, { overflow: 'reject' })
-      .toZonedDateTime(zone, { disambiguation: 'reject' })
-      .toInstant()
-  } catch {
-    return undefined
-  }
-}
-
-/**
- * Resolves a reset phrase like `"Sep 18 at 4pm (America/Los_Angeles)"` to an ISO instant, or
- * `undefined` when the phrase does not match that shape, names a zone `Intl` does not know, or
- * names a wall time no single instant answers to.
  *
  * The phrase carries no year. Per `capacity-from-observation` §1, a reset is always in the
  * future relative to `at`, so this takes the first occurrence of that month/day/time at or
@@ -99,30 +81,29 @@ export function resolveReset(phrase: string, at: string): string | undefined {
 
   const month = MONTHS[monthStr.toLowerCase()]
   if (month === undefined) return undefined
+  const hour = hour24(Number(hourStr), ampm)
+  if (hour === undefined) return undefined
   const day = Number(dayStr)
-  if (day < 1 || day > 31) return undefined
   const minute = minuteStr === undefined ? 0 : Number(minuteStr)
-  if (minute < 0 || minute > 59) return undefined
-  let hour = Number(hourStr)
-  if (hour < 1 || hour > 12) return undefined
-  if (ampm.toLowerCase() === 'pm' && hour !== 12) hour += 12
-  if (ampm.toLowerCase() === 'am' && hour === 12) hour = 0
 
-  if (!isKnownZone(zone)) return undefined
-
-  const atMs = Date.parse(at)
-  if (Number.isNaN(atMs)) return undefined
-  const atInstant = Temporal.Instant.fromEpochMilliseconds(atMs)
-
-  const zonedYear = atInstant.toZonedDateTimeISO(zone).year
-  for (const year of [zonedYear, zonedYear + 1]) {
-    const candidate = zonedToInstant(year, month, day, hour, minute, zone)
-    // A candidate naming no single instant ends the search rather than deferring to the next
-    // year's, which is a date the provider cannot have meant by a reset.
-    if (candidate === undefined) return undefined
-    if (Temporal.Instant.compare(candidate, atInstant) >= 0) {
-      return candidate.toString({ fractionalSecondDigits: 3 })
+  // Every RangeError from here is Temporal refusing to name an instant — a malformed `at`, a
+  // zone it has no rules for, a day the month lacks, a wall time a transition skipped or
+  // repeated — and each leaves `resetsAt` unset the same way, so one catch serves. A candidate
+  // that fails ends the search rather than deferring to next year's, which is a date the
+  // provider cannot have meant by a reset.
+  try {
+    const atInstant = Temporal.Instant.from(at)
+    const thisYear = atInstant.toZonedDateTimeISO(zone).year
+    for (const year of [thisYear, thisYear + 1]) {
+      const candidate = Temporal.PlainDateTime.from({ year, month, day, hour, minute }, { overflow: 'reject' })
+        .toZonedDateTime(zone, { disambiguation: 'reject' })
+        .toInstant()
+      if (Temporal.Instant.compare(candidate, atInstant) >= 0) {
+        return candidate.toString({ fractionalSecondDigits: 3 })
+      }
     }
+  } catch {
+    return undefined
   }
   // Unreachable: next year's occurrence is always at or after `at`.
   return undefined
