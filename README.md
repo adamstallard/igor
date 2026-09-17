@@ -119,13 +119,19 @@ The state branch lives here too, so it has to be a repository the Igor can push 
 
 `entries/` and the state branch are created when first needed; neither wants making by hand.
 
-**Branch protection, once more than one person can write to it.** Enable **"require a pull
-request before merging"** — it still lets an author merge their own proposal and only blocks
-direct pushes to `main`. Do **not** enable **"require approvals"**: GitHub refuses to let
-anyone approve their own pull request, so that setting hard-blocks a solo maintainer with no
-workaround.
+**Branch protection, from the first commit.** Enable **"require a pull request before
+merging"** — it still lets an author merge their own proposal and only blocks direct pushes to
+`main`. Do **not** enable **"require approvals"**: GitHub refuses to let anyone approve their
+own pull request, so that setting hard-blocks a solo maintainer with no workaround.
 
-**Merge-triggered promotion, at the same time.** Without it, promotion depends on someone
+This is not a courtesy between collaborators, and a single-writer store needs it too.
+Promotion works by reconciling pull requests, so **an entry committed straight to `main` has
+nothing to promote it**: it stays `provisional`, and only `active` entries fire. Nothing
+reports it. You find out when lore you wrote never shows up in a prompt. For one already on
+`main` that way, `igor promote --by <you>` sets it active in place and records you as having
+approved it — a repair, run by hand.
+
+**Merge-triggered reconciliation, at the same time.** Without it, promotion depends on someone
 having igor installed and remembering to run `reconcile` — so a teammate can merge lore that
 then silently never fires.
 
@@ -137,9 +143,9 @@ That writes `.github/workflows/promote-on-merge.yml` into the destination. Commi
 branch is protected, add the GitHub Actions actor to the ruleset's bypass list**, or the
 workflow's own push is blocked by the same rule it exists to work around.
 
-Neither is worth doing on a single-writer repository — both answer the same question, which is
-what happens when someone other than the tool's owner merges, so add them together when that
-becomes possible.
+The job runs the same `reconcile` you would run locally, so it promotes what merged and records
+what a reviewer deleted. Run `reconcile` yourself on a store without the workflow, or to read
+the report of proposals that have gone quiet.
 
 None of this needs a credential — authoring lore, proposing it and reviewing it work on a clone
 and a `git` push. Credentials are what [Running an Igor](#running-an-igor) adds.

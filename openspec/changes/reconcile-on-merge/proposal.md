@@ -71,8 +71,10 @@ single-writer destination that protection and the workflow are "both answering t
 question" and neither is worth enabling — they no longer answer the same question. Protection
 is what makes the promotion path total; the workflow is what promotes.
 
-**Promoting in place survives as a manual repair.** `igor promote` loses its caller but not its
-use: it is how a person fixes an entry already on the default branch without a pull request,
+**Promoting in place survives as a manual repair.** It is the one promotion an event never
+triggers, which is why "no event promotes except through reconciliation" is the rule rather
+than "reconciliation is the only way an entry becomes active". `igor promote` loses its caller
+but not its use: it is how a person fixes an entry already on the default branch without a pull request,
 and it records them as the approver, which is true. Nothing wires it to an event again.
 
 Explicitly out of scope:
@@ -106,6 +108,8 @@ Explicitly out of scope:
   merges and then sits provisional forever.
 - The destination workflow now needs a token and `pull-requests: read`, where promotion needed
   neither, and it commits `rejected/` as well as `entries/`. A destination that took the old
-  template keeps running the old job until it re-runs `init-workflow`.
+  template keeps running it until it re-runs `init-workflow --force`, which is why the template
+  keeps its path: `init-workflow` guards one filename, so a renamed template would leave the
+  old job in place and firing beside the new one.
 - Direct commits to a lore destination stop being an expected path, which is a change to what
   `README.md` currently recommends for a single writer rather than an addition to it.

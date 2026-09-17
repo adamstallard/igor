@@ -31,10 +31,11 @@ There is no daemon, so the tool SHALL reconcile outstanding proposals at invocat
 promoting what merged, recording what was rejected, and reporting pull requests that have gone
 quiet past a configured window so they can be escalated to the store-level `reviewers`.
 
-Reconciliation SHALL be the only path by which an entry becomes active. A merge-triggered job
-in the destination repository is one such invocation and SHALL run reconciliation rather than a
+No event SHALL promote an entry except through reconciliation. A merge-triggered job in the
+destination repository is one such invocation and SHALL run reconciliation rather than a
 mechanism of its own: a second promoter has a blind spot of its own to maintain, and the two
-disagree about exactly the cases nobody is watching.
+disagree about exactly the cases nobody is watching. Promotion by a person's own hand is not an
+event and is covered below.
 
 A pull request SHALL be recognized as a lore proposal by what it touches — an entry file in
 the store — whoever opened it and whatever its branch is called. A proposal is defined by
