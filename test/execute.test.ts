@@ -6,11 +6,12 @@ import type { Artifact, ArtifactRequest, Candidate, ClaimVerdict, CodeHost, Trac
 import type { Role } from '../src/role.js'
 import {
   ABSOLUTE_CEILING_MS, branchFor, claudeWorker, complete, DENIED_COMMAND_LIMIT, denialsFrom, describeTool, execute,
-  ExecutionError, MODEL_SILENCE_MS, permits, prBody, PR_BODY_LIMIT, recordExecution, renderProgress, spendByModel, stripLinkage,
+  ExecutionError, limitWindow, MODEL_SILENCE_MS, permits, prBody, PR_BODY_LIMIT, recordExecution, renderProgress, spendByModel, stripLinkage,
   TOOL_SILENCE_MS, usageLimit, watchWorker, workerEnv, workerPrompt, workerSystemPrompt,
   describeCommand,
-  type Progress, type WorkerEvent, type WorkerRunner,
+  type ExecutionResult, type Progress, type WorkerEvent, type WorkerRunner,
 } from '../src/execute.js'
+import { CAPACITY_PATH } from '../src/capacity.js'
 import { withTree, type ChangedFile, type TreeProvider, type WorkingTree } from '../src/worktree.js'
 import { tempDir } from './tmp.js'
 
@@ -18,10 +19,19 @@ const MINUTE = 60 * 1000
 const HOUR = 60 * MINUTE
 
 /** The state branch, without the network. Only what `recordExecution` writes is captured. */
-const ledger = vi.hoisted(() => ({ records: [] as Record<string, unknown>[], files: [] as string[] }))
+const ledger = vi.hoisted(() => ({
+  records: [] as Record<string, unknown>[],
+  /** Aligned with `records`: a run writes to more than one log. */
+  paths: [] as string[],
+  files: [] as string[],
+  /** The state branch is a repository over the network: set this to make one log unwritable. */
+  unwritable: undefined as string | undefined,
+}))
 vi.mock('../src/state.js', async (actual) => ({
   ...(await actual<typeof import('../src/state.js')>()),
-  appendRecord: async (_destination: string, _path: string, record: Record<string, unknown>) => {
+  appendRecord: async (_destination: string, path: string, record: Record<string, unknown>) => {
+    if (path === ledger.unwritable) throw new Error(`no state branch: ${path}`)
+    ledger.paths.push(path)
     ledger.records.push(record)
   },
   writeState: async (_destination: string, path: string) => {
@@ -1883,5 +1893,141 @@ describe('the configurations one run can prove wrong', () => {
     )
     expect(result.denials).toHaveLength(6)
     expect(result.cures).toEqual(['role:triage:commands'])
+  })
+})
+
+describe('a refusal is an observation, and the only one a dedicated seat can produce', () => {
+  /** Relative to the run, because `recordExecution` classifies the window against the real clock. */
+  const RESET = new Date(Date.now() + HOUR).toISOString()
+  const WEEK_RESET = new Date(Date.now() + 3 * 24 * HOUR).toISOString()
+  const NOW = Date.parse('2026-09-17T17:00:00.000Z')
+
+  beforeEach(() => {
+    ledger.records.length = 0
+    ledger.paths.length = 0
+    ledger.files.length = 0
+    ledger.unwritable = undefined
+  })
+
+  /** Only the capacity log. The execution record rides the same call and is tested elsewhere. */
+  const observations = () => ledger.records.filter((_, i) => ledger.paths[i] === CAPACITY_PATH)
+
+  const stop = (over: Partial<ExecutionResult> = {}): ExecutionResult => ({
+    outcome: 'budget',
+    changed: [],
+    refusals: [],
+    transcript: '',
+    costUsd: 0.42,
+    reason: 'the seat ran out of capacity',
+    ...over,
+  })
+
+  it('records one observation at 100% for the seat the run spent', async () => {
+    const before = Date.now()
+    await recordExecution('acme/lore', candidate(), role(), stop({ resetsAt: RESET }), 'fleet-1')
+
+    expect(observations()).toEqual([
+      {
+        at: expect.any(String),
+        seat: 'fleet-1',
+        window: 'session',
+        percentUsed: 100,
+        resetsAt: RESET,
+        source: 'limit',
+      },
+    ])
+    // The moment the refusal was met, not any parseable instant: `observedSpan` derives nothing
+    // from a reading it believes predates its own window.
+    const at = Date.parse(String(observations()[0]?.['at']))
+    expect(at).toBeGreaterThanOrEqual(before)
+    expect(at).toBeLessThanOrEqual(Date.now())
+  })
+
+  it('takes the window from the reset rather than assuming the shorter one', async () => {
+    // Nothing else proves `limitWindow` is wired into the row: a seat refused for a week and a
+    // seat refused for an hour are the same shape but different caps.
+    await recordExecution('acme/lore', candidate(), role(), stop({ resetsAt: WEEK_RESET }), 'fleet-1')
+
+    expect(observations()[0]).toMatchObject({ window: 'week', resetsAt: WEEK_RESET })
+  })
+
+  it('records the refusal without a reset rather than not at all', async () => {
+    // That the seat refused outlives when it comes back, and `resetsAt` is optional for it.
+    await recordExecution('acme/lore', candidate(), role(), stop(), 'fleet-1')
+
+    expect(observations()).toEqual([
+      { at: expect.any(String), seat: 'fleet-1', window: 'session', percentUsed: 100, source: 'limit' },
+    ])
+    expect(observations()[0]).not.toHaveProperty('resetsAt')
+  })
+
+  it('writes nothing for a failure that was not a refusal', async () => {
+    // A crash records no capacity: 100% of a window nothing said was full would lower the
+    // estimate on the strength of a bug.
+    await recordExecution('acme/lore', candidate(), role(), stop({ outcome: 'failed' }), 'fleet-1')
+    await recordExecution('acme/lore', candidate(), role(), stop({ outcome: 'produced' }), 'fleet-1')
+
+    expect(observations()).toEqual([])
+    expect(ledger.paths).toEqual(['executions.ndjson', 'executions.ndjson'])
+  })
+
+  it('writes nothing where no seat was named, since an observation owes one', async () => {
+    await recordExecution('acme/lore', candidate(), role(), stop({ resetsAt: RESET }))
+
+    expect(observations()).toEqual([])
+  })
+
+  it('records one observation per run, not one per attempt the worker made', async () => {
+    // The distinction the denials get wrong on purpose: six refused commands are six attempts,
+    // and one exhausted seat is one measurement however many turns it took to meet it.
+    const { provider } = fakeProvider([])
+    const { host } = fakeCodeHost()
+    const { t } = fakeTracker()
+    const item = candidate()
+
+    const r = await execute(provider, t, host, item, role(), {
+      worker: async () => {
+        throw new ExecutionError('worker exited 1', {
+          is_error: true,
+          result: 'Claude AI usage limit reached',
+          api_error_status: 429,
+          permission_denials: Array.from({ length: 6 }, () => ({
+            tool_name: 'Bash',
+            tool_input: { command: 'npm test' },
+          })),
+        })
+      },
+    })
+    await recordExecution('acme/lore', item, role(), r, 'fleet-1')
+
+    expect(r.outcome).toBe('budget')
+    expect(r.denials).toHaveLength(6)
+    expect(observations()).toHaveLength(1)
+  })
+
+  it('reads a reset no session could reach as the weekly window', async () => {
+    // Five hours is the whole of a session, so a reset beyond it belongs to the other cap.
+    expect(limitWindow('2026-09-17T21:59:00.000Z', NOW)).toBe('session')
+    expect(limitWindow('2026-09-17T22:01:00.000Z', NOW)).toBe('week')
+    expect(limitWindow('2026-09-24T17:00:00.000Z', NOW)).toBe('week')
+  })
+
+  it('reads an absent or unusable reset as the session, which is the low estimate', async () => {
+    expect(limitWindow(undefined, NOW)).toBe('session')
+    expect(limitWindow('whenever', NOW)).toBe('session')
+  })
+
+  it('leaves the transcript written when the capacity log is the write that fails', async () => {
+    // The observation is the newest of the three writes this makes and the least missed. A
+    // budget stop's transcript is the worker's own account of the refusal, and a state branch
+    // that rejected one write must not be what silently takes the other.
+    ledger.unwritable = CAPACITY_PATH
+
+    await expect(
+      recordExecution('acme/lore', candidate(), role(), stop({ resetsAt: RESET, transcript: 'out of capacity' }), 'fleet-1'),
+    ).rejects.toThrow('no state branch')
+
+    expect(ledger.paths).toEqual(['executions.ndjson'])
+    expect(ledger.files).toEqual(['transcripts/github/o/r/7.md'])
   })
 })
