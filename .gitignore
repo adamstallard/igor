@@ -42,3 +42,6 @@ npm-debug.log*
 # Git worktrees for parallel work. Inside the repo so tooling finds the checkout,
 # never part of it.
 .claude/worktrees/
+
+# JetBrains project files: per-developer, not per-project.
+.idea/
