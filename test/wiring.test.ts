@@ -1,8 +1,11 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Candidate } from '../src/adapter.js'
 import type { Config } from '../src/config.js'
 import type { Denial, ExecutionResult } from '../src/execute.js'
 import type { Role } from '../src/role.js'
+import type { Seat } from '../src/budget.js'
+import { EXECUTIONS_PATH } from '../src/budget.js'
+import { CAPACITY_PATH } from '../src/capacity.js'
 import { wire } from '../src/wiring.js'
 import { tempDir } from './tmp.js'
 
@@ -11,6 +14,8 @@ import { tempDir } from './tmp.js'
  * about a denial that only survives a successful write is a warning nobody gets on the day the
  * state branch is unwritable, which is exactly a day worth diagnosing.
  */
+const logs = vi.hoisted(() => ({ rows: {} as Record<string, string> }))
+
 vi.mock('../src/state.js', async (actual) => ({
   ...(await actual<typeof import('../src/state.js')>()),
   appendRecord: async () => {
@@ -19,6 +24,22 @@ vi.mock('../src/state.js', async (actual) => ({
   writeState: async () => {
     throw new Error('no state branch')
   },
+  readLog: async (_destination: string, path: string) => logs.rows[path] ?? '',
+}))
+
+/**
+ * The #30 condition, without the subprocess that produces it: the seat's token resolves fine
+ * and the provider still reports no window against it, because a `setup-token` credential
+ * carries no subscription. That is the seat the derived bound exists for.
+ */
+vi.mock('../src/budget.js', async (actual) => ({
+  ...(await actual<typeof import('../src/budget.js')>()),
+  readAllSeats: async (seats: readonly import('../src/budget.js').Seat[]) =>
+    seats.map((seat) => ({
+      seat,
+      error: `seat "${seat.id}" is authenticated but its credential carries no subscription`,
+      unmeasured: true,
+    })),
 }))
 
 const config = { destination: '/nowhere', experts: [], budget: { seats: [], pools: [] } } as unknown as Config
@@ -117,5 +138,57 @@ describe('a run that could not be recorded is said out loud', () => {
     const { out } = reporter()
 
     await expect((await wiring(out)).record(item, ran())).resolves.toBeUndefined()
+  })
+})
+
+describe('the gate both commands go through', () => {
+  // `run` and `serve` drifted once because each built this itself. A seat bounded by
+  // observation is only bounded if the rows reach the gate, and the rows only reach it here.
+  const unreadable: Seat = { id: 'adam', owner: 'adam@example.test', reserve: 0.25, tokenEnv: 'IGOR_SEAT_ABSENT' }
+  const budget = { seats: [unreadable], pools: [{ id: 'eng', seats: ['adam'] }] }
+
+  // `wire` reads the clock, so the rows are written around it: an observation an hour old
+  // inside an instance that has not reset, and ten dollars of Igor spend it could have seen.
+  const HOUR = 3_600_000
+  const iso = (offsetMs: number) => new Date(Date.now() + offsetMs).toISOString()
+  const observation = (window: 'session' | 'week', percentUsed: number, resetsIn: number) =>
+    JSON.stringify({ at: iso(-HOUR), seat: 'adam', window, percentUsed, resetsAt: iso(resetsIn), source: 'usage' })
+  const paid = (offsetMs: number, costUsd: number) => JSON.stringify({ seat: 'adam', costUsd, at: iso(offsetMs) })
+
+  beforeEach(() => {
+    logs.rows = {
+      [CAPACITY_PATH]: `${observation('session', 50, 3 * HOUR)}\n${observation('week', 5, 72 * HOUR)}\n`,
+      [EXECUTIONS_PATH]: `${paid(-1.5 * HOUR, 10)}\n`,
+    }
+  })
+
+  const gateFor = async () => {
+    const { out, warned } = reporter()
+    const wiring = await wire({ ...config, budget } as unknown as Config, role, 'o/r', out, {
+      root: tempDir('igor-wiring-test-'),
+    })
+    return { gate: await wiring.gate(), warned }
+  }
+
+  it('bounds a seat it could not read instead of reporting the pool empty', async () => {
+    const { gate } = await gateFor()
+    expect(gate.exhausted()).toBe(false)
+    expect(gate.seat).toBe('adam')
+    expect(gate.token).toEqual({ tokenEnv: 'IGOR_SEAT_ABSENT' })
+  })
+
+  it('still says out loud that the credential could not be read', async () => {
+    // The seat is usable on its derived bound, which is exactly why nobody would notice the
+    // credential is broken unless this line says so.
+    const { warned } = await gateFor()
+    expect(warned.some((l) => l.startsWith('seat "adam":'))).toBe(true)
+  })
+
+  it('reports the pool empty once the recorded spend reaches the bound', async () => {
+    // Capacity $20 from the observation, a quarter of it reserved, so $15 is the whole of it.
+    logs.rows[EXECUTIONS_PATH] += `${paid(-0.5 * HOUR, 6)}\n`
+    const { gate } = await gateFor()
+    expect(gate.exhausted()).toBe(true)
+    expect(gate.reason).toBe('no seat in "eng" has headroom')
   })
 })

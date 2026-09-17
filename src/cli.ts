@@ -29,6 +29,7 @@ import { noteHandoff, shouldDefer } from './deferred.js'
 import { CloneProvider } from './worktree.js'
 import { TriageError } from './triage.js'
 import { BudgetError, budgetGate, loadSpend, readAllSeats, renderBudget } from './budget.js'
+import { boundsForSeats, loadObservations } from './capacity.js'
 import { wire } from './wiring.js'
 import { readLog } from './state.js'
 import { repoFromCheckout } from './github.js'
@@ -536,14 +537,19 @@ program
   .action(async () => {
     const config = loadConfig(program.opts()['config'])
     const repo = await repoFromCheckout(config.destination)
-    const [readings, spend] = await Promise.all([
+    const [readings, spend, observations] = await Promise.all([
       readAllSeats(config.budget.seats),
       loadSpend((path) => readLog(repo, path)),
+      loadObservations((path) => readLog(repo, path)),
     ])
     process.stdout.write(renderBudget(readings))
 
+    // The table above reports a seat live or not at all; the gate below bounds an unreadable
+    // one by observation, so the pool line must be given the same figures the loop gets or it
+    // reports a pool exhausted that an Igor would happily spend.
+    const bounds = boundsForSeats(observations, spend, config.budget.seats)
     for (const pool of config.budget.pools) {
-      const gate = budgetGate(config.budget, { name: '(any role)', seat: `pool:${pool.id}` }, readings, spend)
+      const gate = budgetGate(config.budget, { name: '(any role)', seat: `pool:${pool.id}` }, readings, spend, bounds)
       process.stdout.write(`\npool ${pool.id}: ${gate.reason}\n`)
     }
   })

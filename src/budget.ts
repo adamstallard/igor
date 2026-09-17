@@ -1,20 +1,42 @@
 import { spawn } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
+import type { SeatBound, SeatBounds } from './capacity.js'
 
 /**
  * Seats, pools, and what an Igor is allowed to spend.
  *
- * `claude -p '/usage'` answers "how much of this seat is gone" for free, client-side, in under
- * a second. So the question is asked whenever it matters and the answer is never stored: there
- * is no cap to derive, no reading to age, and no way to read one seat and attribute it to
- * another — the figure comes from that seat's own token.
+ * Two answers to one question, and which one a seat gets depends on its credential.
  *
- * Everything here is therefore in **percent of the limit**, which is the unit the provider
- * exposes. Dollars are recorded too, but for attribution — which Igor spent what, on whose
- * seat — and for apportioning a shared seat between roles. Not for deciding when to stop.
+ * Where `claude -p '/usage'` answers "how much of this seat is gone", it is asked whenever it
+ * matters and the answer is never stored: it costs nothing, it comes from that seat's own
+ * token, and it counts the owner's consumption as well as Igor's. That path works in **percent
+ * of the limit**, the unit the provider exposes.
+ *
+ * A `setup-token` credential resolves no subscription, so the provider reports no percentages
+ * to it at all. Such a seat is bounded in **dollars** instead: Igor spend recorded inside the
+ * current window instance, against a capacity `capacity.ts` derives from an observation taken
+ * elsewhere. That figure is stored, it does age, and the gate takes it as data — see
+ * `SeatBounds`. Dollars still apportion a shared seat between roles, as they always did; they
+ * now also decide when to stop on a seat nothing can read.
  */
 
 export class BudgetError extends Error {}
+
+/**
+ * A seat whose credential authenticates locally and carries no subscription, so no window will
+ * ever be reported against it however often it is asked.
+ *
+ * The one unreadable seat a derived bound applies to. Every other way a reading fails means the
+ * seat could not be asked at all — an unset token, a `claude` that is not on the path — and
+ * bounding one of those puts a seat at the head of a pool that claims an item every cycle and
+ * fails it. Those stay passed over.
+ *
+ * What this does **not** separate is a valid `setup-token` from a revoked one. Neither `/usage`
+ * nor `claude auth status` leaves the machine, so both answer identically for either, and a
+ * rejected token lands here and is spent from until somebody notices. Telling them apart needs
+ * a round trip nothing here makes, or a record of runs that failed on the seat.
+ */
+export class SeatUnmeasurableError extends BudgetError {}
 
 export const EXECUTIONS_PATH = 'executions.ndjson'
 
@@ -254,7 +276,7 @@ export async function readUsage(
     if (!(error instanceof BudgetError)) throw error
     const auth = await describe(childEnv)
     if (auth === undefined || hasSubscription(auth)) throw error
-    throw new BudgetError(
+    throw new SeatUnmeasurableError(
       `seat "${seat.id}" is authenticated${auth.authMethod === undefined ? '' : ` as ${auth.authMethod}`} ` +
         `but its credential carries no subscription, and a window is only ever reported against ` +
         `one. The seat can still spend; it cannot be measured.`,
@@ -304,6 +326,10 @@ export interface SeatUsage {
   seat: Seat
   usage?: Usage
   error?: string
+  /** The credential answered and carries no subscription, so only the measurement is missing
+   *  and a derived bound applies. Unset for every other failure, where the credential itself is
+   *  in doubt and nothing a record says makes the seat safe to spend. */
+  unmeasured?: boolean
 }
 
 /** Tolerates individual failures, so one bad token does not blind the whole report. */
@@ -311,13 +337,18 @@ export async function readAllSeats(
   seats: readonly Seat[],
   env: NodeJS.ProcessEnv = process.env,
   run?: (env: NodeJS.ProcessEnv) => Promise<string>,
+  describe?: (env: NodeJS.ProcessEnv) => Promise<AuthContext | undefined>,
 ): Promise<SeatUsage[]> {
   return Promise.all(
     seats.map(async (seat) => {
       try {
-        return { seat, usage: await readUsage(seat, env, run) }
+        return { seat, usage: await readUsage(seat, env, run, describe) }
       } catch (e) {
-        return { seat, error: e instanceof Error ? e.message : String(e) }
+        return {
+          seat,
+          error: e instanceof Error ? e.message : String(e),
+          ...(e instanceof SeatUnmeasurableError ? { unmeasured: true } : {}),
+        }
       }
     }),
   )
@@ -389,8 +420,52 @@ export interface Choice {
 }
 
 /**
+ * Said of a seat passed over for having no capacity figure, and deliberately not the wording
+ * of the credential error an unreadable seat carries. An operator has to be able to tell
+ * "never observed" from "bad token": the first is a seat waiting on a reading, the second is a
+ * seat waiting on a token, and the two are fixed by different people.
+ */
+export const NO_CAPACITY_FIGURE = 'no capacity figure exists for it'
+
+/**
+ * One window of a seat with no reading, judged against what was derived for it.
+ *
+ * A reserve is a fraction of capacity, so with no capacity figure it expresses no quantity at
+ * all — which is why the same ignorance blocks a reserved seat and permits an unreserved one.
+ * Spending somebody's subscription against a denominator nobody supplied is invisible to them
+ * until their own work is refused; where nobody's floor is at stake it costs a failed run,
+ * which is the calibration the seat was missing.
+ */
+function derivedWindow(
+  seat: Seat,
+  window: Window,
+  bound: SeatBound | undefined,
+): { remainingUsd?: number; blocked?: string } {
+  if (bound === undefined) {
+    if (seat.reserve <= 0) return {}
+    return { blocked: `${NO_CAPACITY_FIGURE}: its ${window} has never been observed and none is declared` }
+  }
+  const allowance = (1 - seat.reserve) * bound.capacityUsd
+  const remainingUsd = allowance - bound.spentUsd
+  if (remainingUsd <= 0) {
+    return {
+      blocked:
+        `Igors have spent $${bound.spentUsd.toFixed(2)} of the ${window}'s $${allowance.toFixed(2)} bound ` +
+        `(${bound.basis} capacity $${bound.capacityUsd.toFixed(2)}, ${seat.reserve * 100}% reserved)`,
+    }
+  }
+  return { remainingUsd }
+}
+
+/**
  * Picks the first seat in the pool with room in **both** windows. The session limit bites
  * first and the weekly one bites longest, so a seat is usable only when neither blocks it.
+ * Each window is judged on its own figures, so a seat calibrated for one window and not the
+ * other is still blocked by the uncalibrated one where it carries a reserve.
+ *
+ * A seat whose usage could be read is judged on that reading, in percent. A seat whose usage
+ * could not is judged on `bounds` instead, in dollars — passed over for being unreadable only
+ * when nothing was derived for it either.
  *
  * `budget_share` is a ceiling on what one role may draw, not capacity set aside for it:
  * several roles may declare the same one, an idle role holds nothing back, and adding an Igor
@@ -401,6 +476,7 @@ export function chooseSeat(
   readings: readonly SeatUsage[],
   records: readonly SpendRecord[],
   role: { name: string; budgetShare?: number },
+  bounds: SeatBounds = new Map(),
 ): Choice {
   const considered: Choice['considered'] = []
 
@@ -411,8 +487,53 @@ export function chooseSeat(
       continue
     }
     if (reading.usage === undefined) {
-      considered.push({ seat: id, why: reading.error ?? 'its usage could not be read' })
-      continue
+      // Only a credential that answered and reported no window is bounded here. Anything else
+      // that stopped the reading leaves the credential in doubt, and a bound says what a seat
+      // may spend without giving it anything to spend with: chosen, it claims an item, fails on
+      // the worker's spawn, and does it again next cycle.
+      if (reading.unmeasured !== true) {
+        considered.push({ seat: id, why: reading.error ?? 'its usage could not be read' })
+        continue
+      }
+
+      const derived = (['session', 'week'] as Window[]).map((window) => ({
+        window,
+        bound: bounds.get(id)?.[window],
+        ...derivedWindow(reading.seat, window, bounds.get(id)?.[window]),
+      }))
+
+      const stopped = derived.find((d) => d.blocked !== undefined)
+      if (stopped) {
+        considered.push({ seat: id, why: stopped.blocked! })
+        continue
+      }
+
+      if (role.budgetShare !== undefined) {
+        const ceiling = role.budgetShare * 100
+        // The share is of Igor's own consumption here, where the live path's percentage
+        // includes the owner's. A window with no capacity figure has no denominator, so the
+        // ceiling is not checkable against it at all.
+        const over = derived.find(
+          (d) =>
+            d.bound !== undefined &&
+            roleSharePercent(records, id, role.name, (d.bound.spentUsd / d.bound.capacityUsd) * 100) >= ceiling,
+        )
+        if (over) {
+          considered.push({ seat: id, why: `role "${role.name}" is at its ${role.budgetShare} ceiling for the ${over.window}` })
+          continue
+        }
+      }
+
+      considered.push({ seat: id, why: 'chosen' })
+      const left = derived.find((d) => d.window === 'session')?.remainingUsd
+      return {
+        seat: reading.seat,
+        reason:
+          left === undefined
+            ? `${id} has no capacity figure and no reserve, so it runs uncalibrated`
+            : `${id} has $${left.toFixed(2)} of its session bound left`,
+        considered,
+      }
     }
     const usage = reading.usage
 
@@ -480,6 +601,7 @@ export function budgetGate(
   role: { name: string; budgetShare?: number; seat?: string },
   readings: readonly SeatUsage[],
   records: readonly SpendRecord[],
+  bounds: SeatBounds = new Map(),
 ): Gate {
   // No seats declared means budget is not being enforced, which is a legitimate configuration
   // and must not read as exhausted.
@@ -501,7 +623,7 @@ export function budgetGate(
     }
   }
 
-  const choice = chooseSeat(pool, readings, records, role)
+  const choice = chooseSeat(pool, readings, records, role, bounds)
   if (choice.seat === undefined) {
     const soonest = readings
       .map((r) => (r.usage === undefined ? undefined : limitFor(r.usage, 'session').resetsAt))

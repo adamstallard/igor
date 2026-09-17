@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest'
 import {
   CAPACITY_PATH,
   WINDOW_LENGTH,
+  boundsForSeats,
   capacityFor,
   capacityFrom,
+  currentInstance,
   instanceBounds,
   loadObservations,
   recordObservation,
@@ -485,5 +487,94 @@ describe('a declared capacity', () => {
       capacityUsd: 12,
       basis: 'declared',
     })
+  })
+})
+
+describe('the instance containing now, stepped from an observed reset', () => {
+  const SESSION = WINDOW_LENGTH['session']
+  const RESET = '2026-09-13T14:00:00.000Z'
+
+  it('gives the observation’s own instance while now is still inside it', () => {
+    expect(currentInstance(RESET, SESSION, '2026-09-13T13:00:00.000Z')).toEqual({
+      start: '2026-09-13T09:00:00.000Z',
+      end: '2026-09-13T14:00:00.000Z',
+    })
+  })
+
+  it('steps whole lengths forward for an observation days behind', () => {
+    // Five hours does not divide a day, so the boundaries walk: three days on, the instance
+    // containing 13:30 runs 12:00 to 17:00 and not 09:00 to 14:00. Reading the observed reset
+    // as a time of day rather than stepping whole lengths gets this wrong every day but the
+    // first, and gets it wrong in the direction of counting spend that has already reset.
+    expect(currentInstance(RESET, SESSION, '2026-09-16T13:30:00.000Z')).toEqual({
+      start: '2026-09-16T12:00:00.000Z',
+      end: '2026-09-16T17:00:00.000Z',
+    })
+  })
+
+  it('puts a moment on a boundary in the instance starting there, not the one ending', () => {
+    // Instances tile: no moment belongs to neither, and none to both.
+    expect(currentInstance(RESET, SESSION, RESET)).toEqual({
+      start: '2026-09-13T14:00:00.000Z',
+      end: '2026-09-13T19:00:00.000Z',
+    })
+  })
+
+  it('steps backwards for an observation whose reset is still ahead', () => {
+    expect(currentInstance(RESET, SESSION, '2026-09-13T08:00:00.000Z')).toEqual({
+      start: '2026-09-13T04:00:00.000Z',
+      end: '2026-09-13T09:00:00.000Z',
+    })
+  })
+
+  it('names no instance for a reset or a moment that is not an instant', () => {
+    expect(currentInstance('Sep 13 at 8pm', SESSION, '2026-09-13T13:00:00.000Z')).toBeUndefined()
+    expect(currentInstance(RESET, SESSION, 'now-ish')).toBeUndefined()
+  })
+})
+
+describe('the bounds the gate is handed', () => {
+  const NOW = '2026-09-13T13:00:00.000Z'
+  const spent = (at: string, usd: number): SpendRecord => ({ seat: 'adam', costUsd: usd, at })
+  const observation: Observation = {
+    at: '2026-09-13T12:00:00.000Z',
+    seat: 'adam',
+    window: 'session',
+    percentUsed: 50,
+    resetsAt: '2026-09-13T14:00:00.000Z',
+    source: 'usage',
+  }
+
+  it('reports the capacity and the current instance’s spend as separate figures', () => {
+    const records = [spent('2026-09-13T11:00:00.000Z', 10), spent('2026-09-13T12:30:00.000Z', 6)]
+    const bound = boundsForSeats([observation], records, [{ id: 'adam' }], NOW).get('adam')?.session
+    expect(bound).toEqual({ capacityUsd: 20, basis: 'observed', spentUsd: 16, from: observation })
+  })
+
+  it('leaves out a window with neither an observation nor a declared figure', () => {
+    const bounds = boundsForSeats([observation], [spent('2026-09-13T11:00:00.000Z', 10)], [{ id: 'adam' }], NOW)
+    expect(bounds.get('adam')?.week).toBeUndefined()
+  })
+
+  it('rolls a declared figure’s window back from now, having no observed reset to tile from', () => {
+    // The case a declared capacity exists for is a seat never observed at all, so there is no
+    // boundary to step from. A length back from now always covers the elapsed part of the real
+    // instance, which over-counts rather than under-counts.
+    const records = [spent('2026-09-13T10:00:00.000Z', 4), spent('2026-09-13T07:00:00.000Z', 99)]
+    const bound = boundsForSeats([], records, [{ id: 'adam', capacity: { session: 30 } }], NOW).get('adam')?.session
+    expect(bound).toEqual({ capacityUsd: 30, basis: 'declared', spentUsd: 4 })
+  })
+
+  it('derives nothing from an observation dated after now', () => {
+    // A row nothing but a person writes, with a mistyped `at`. `observedSpan` answers it with
+    // its whole instance, which would make the capacity's numerator and the bound's sum the
+    // same interval — capacity then tracks spend one for one and the bound never bites.
+    const ahead = { ...observation, at: '2026-10-13T12:00:00.000Z' }
+    const records = [spent('2026-09-13T11:00:00.000Z', 10), spent('2026-09-13T12:30:00.000Z', 6)]
+    expect(boundsForSeats([ahead], records, [{ id: 'adam' }], NOW).get('adam')?.session).toBeUndefined()
+  })
+
+  it('names no seat at all where nothing was derived for either window', () => {
+    expect(boundsForSeats([], [], [{ id: 'adam' }], NOW).has('adam')).toBe(false)
   })
 })

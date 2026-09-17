@@ -10,8 +10,8 @@ subscription. That is what a **seat** is: your Claude subscription, lent to the 
 
 The intent is that you are not giving up your own use of Claude: an Igor stops at a floor you
 set and leaves the rest to you. Read
-[What is not enforced yet](#what-is-not-enforced-yet) before you decide, because that floor is
-not in place today.
+[What the floor rests on](#what-the-floor-rests-on) before you decide, because the floor holds
+only once somebody has measured what your window is worth.
 
 ## The command
 
@@ -52,24 +52,38 @@ has to argue about it afterwards.
 Claude on the web, your desktop app and your phone. A lent seat is not a share of some separate
 coding budget; it comes out of everything you do with Claude.
 
-### What is not enforced yet
+### What the floor rests on
 
-**Nothing holds an Igor to that number today.** A seat's remaining window is reported only to
-an interactive login, and the credential you are being asked for is not one — so an Igor cannot
-see how much of your allowance is left.
+**The floor holds by counting Igor, not by watching you.** An Igor records what every run cost,
+sums it, and stops at `(1 − reserve)` of the window. Nothing in that depends on knowing what you
+have spent, so the number holds whatever else you do with Claude that day.
 
-Two consequences, and you should hear both before deciding:
+What it does depend on is knowing **how many dollars your window is worth**, and that cannot be
+read through the credential you are handing over: a `setup-token` login resolves no subscription,
+so the provider tells it nothing about your limits. The figure has to come from a reading taken
+on your own machine, where you are signed in normally.
 
-- A seat declared the way it is written above is **reported unreadable and skipped**, so an
-  Igor given one does no work at all.
-- A seat left out of the configuration entirely **has no ceiling**. One item has been measured
-  at eleven dollars' worth.
+Until one has been taken, an Igor has a fraction and no quantity, and a fraction of an unknown
+is not a floor. So:
 
-The floor is buildable and being built: an Igor measures exactly what it spends, so it can be
-held to a share of a known allowance without ever seeing the rest of yours. Until it is, lend a
-seat only where you would be relaxed about the whole window going, and ask what the fleet
-actually spent rather than assuming it stopped. Tracking as
-[igor#30](https://github.com/adamstallard/igor/issues/30).
+- A seat with a `reserve` and nothing measured yet is **passed over** — no work is charged to
+  it, rather than work being charged against a guess. It is not that the floor is unenforced;
+  it is that the seat is unused.
+- A seat with **no** reserve is spent from uncalibrated, on purpose: nobody's floor is at stake,
+  and the first time the provider refuses a run, that refusal is the measurement.
+- A seat left out of the configuration entirely **has no ceiling at all**. One item has been
+  measured at eleven dollars' worth.
+
+**Getting a reserved seat started** is therefore a sequence, and it is worth agreeing on before
+you hand anything over: declare the seat with `reserve: 0`, let it run for a while, have a
+reading taken, then add your reserve. Or declare a starting `capacity` in the config if somebody
+knows roughly what the window is worth — it is reported as an assumption until a reading
+replaces it.
+
+Taking that reading on a schedule is still being built
+([igor#30](https://github.com/adamstallard/igor/issues/30)), so today it is a thing somebody
+does by hand. Lend a seat knowing that, and ask what the fleet actually spent rather than
+assuming a number in a file did the work.
 
 ## Handing it over
 
@@ -104,5 +118,5 @@ warns in advance; what happens is that the Igor stops and says it is not logged 
 Each person runs the command themselves and hands over their own token. Nobody needs anybody
 else's. The operator lists the seats in a pool, and an Igor takes the first with headroom — so
 listing dedicated seats before personal ones means a colleague's allowance is only ever reached
-once the dedicated capacity is spent. That ordering depends on headroom being readable, so it
-waits on the same issue as the floor.
+once the dedicated capacity is spent. A personal seat nobody has measured yet is not the
+fallback either: the pool is treated as empty rather than overflowing into it on a guess.

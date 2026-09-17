@@ -318,3 +318,115 @@ export function capacityFor(
   }
   return undefined
 }
+
+/**
+ * The instance of a window containing `now`, stepped from an observed reset by whole window
+ * lengths.
+ *
+ * Two different instances are in play and confusing them is the way to a bound that never
+ * bites. Capacity's numerator is spend inside the *observation's* instance; the bound's sum is
+ * spend inside the *current* one. A three-day-old observation's instance is not the current
+ * one, and summing against it would let spend that has already reset count forever.
+ *
+ * Half-open, like `instanceBounds`: a moment on a boundary belongs to the instance starting
+ * there. `undefined` for a reset or a `now` that is not an instant.
+ */
+export function currentInstance(resetsAt: string, length: Temporal.Duration, now: string): InstanceBounds | undefined {
+  const observed = instanceBounds(resetsAt, length)
+  const at = instantOf(now)
+  if (observed === undefined || at === undefined) return undefined
+  const lengthMs = length.total({ unit: 'milliseconds' })
+  const observedEnd = Temporal.Instant.from(observed.end)
+  // Whole lengths from the observed reset to the reset at or after `now`. Negative where the
+  // observation is in the future of `now`, which steps backwards and is still the right answer.
+  const steps = Math.floor((at.epochMilliseconds - observedEnd.epochMilliseconds) / lengthMs) + 1
+  const start = observedEnd.add({ milliseconds: lengthMs * (steps - 1) })
+  return {
+    start: start.toString({ fractionalSecondDigits: 3 }),
+    end: start.add({ milliseconds: lengthMs }).toString({ fractionalSecondDigits: 3 }),
+  }
+}
+
+/**
+ * What bounds one seat in one window: a capacity figure, and the Igor spend already counted
+ * against it.
+ *
+ * The two arrive as separate fields from separate calls on purpose. Recomputing the capacity
+ * from the same interval the spend is summed over makes the spend cancel out of
+ * `spend ≥ (1 − reserve) × capacity`, leaving a comparison of the observed fraction against
+ * the reserve that no amount of spending ever crosses.
+ */
+export interface SeatBound {
+  capacityUsd: number
+  /** `declared` for a figure somebody named, so an assumption is never reported as a
+   *  measurement. */
+  basis: 'observed' | 'declared'
+  /** Recorded Igor spend inside the current instance of this window, across every role and
+   *  every Igor on the seat — the one shared sum the reserve is a bound on. */
+  spentUsd: number
+  /** The observation the capacity came from. Absent for a declared figure. */
+  from?: Observation
+}
+
+/** Per seat id, per window. A window with no entry has no capacity figure at all. */
+export type SeatBounds = Map<string, Partial<Record<Window, SeatBound>>>
+
+/**
+ * Everything the gate needs to bound the seats it cannot read, computed here and handed over
+ * as data.
+ *
+ * `budget.ts` calls nothing in this module: this one imports `parseNdjson` from it, so an
+ * import back would close a runtime cycle. The gate is left with policy — the reserve, pool
+ * order, and what to say about a seat it passes over.
+ */
+export function boundsForSeats(
+  observations: readonly Observation[],
+  records: readonly SpendRecord[],
+  seats: readonly { id: string; capacity?: { [W in Window]?: number } }[],
+  now: string = Temporal.Now.instant().toString({ fractionalSecondDigits: 3 }),
+): SeatBounds {
+  const bounds: SeatBounds = new Map()
+  const present = instantOf(now)
+  if (present === undefined) return bounds
+
+  // An observation cannot describe a moment that has not happened, and one dated ahead of `now`
+  // is what a hand-written log produces on a mistyped `at`. `observedSpan` answers such a row
+  // with its whole instance, which makes the capacity's numerator and the bound's sum the same
+  // interval: the spend cancels out of `spend ≥ (1 − reserve) × capacity` and no amount of
+  // spending ever crosses it.
+  const vouched = observations.filter((o) => {
+    const at = instantOf(o.at)
+    return at === undefined || Temporal.Instant.compare(at, present) <= 0
+  })
+
+  for (const seat of seats) {
+    const windows: Partial<Record<Window, SeatBound>> = {}
+    for (const window of ['session', 'week'] as Window[]) {
+      const estimate = capacityFor(vouched, records, seat.id, window, seat.capacity?.[window])
+      if (estimate === undefined) continue
+      const length = WINDOW_LENGTH[window]
+      // Why a declared figure gets a rolling window: it has no observed reset behind it, and
+      // the case one exists for is a seat never observed at all, so there is no boundary to
+      // tile from and none may be invented.
+      //
+      // Why rolling back one length is safe: the elapsed part of the true instance began at
+      // most one length ago and so is always inside it, making the sum an over-count rather
+      // than an under-count. The cost is that spend late in one instance keeps counting into
+      // the next until it ages out, which is an argument for observing a seat rather than
+      // declaring at it.
+      const instance =
+        estimate.basis === 'observed' && estimate.from.resetsAt !== undefined
+          ? currentInstance(estimate.from.resetsAt, length, now)
+          : instanceBounds(now, length)
+      if (instance === undefined) continue
+      windows[window] = {
+        capacityUsd: estimate.capacityUsd,
+        basis: estimate.basis,
+        spentUsd: spendInInstance(records, seat.id, instance),
+        ...(estimate.basis === 'observed' ? { from: estimate.from } : {}),
+      }
+    }
+    if (Object.keys(windows).length > 0) bounds.set(seat.id, windows)
+  }
+  return bounds
+}

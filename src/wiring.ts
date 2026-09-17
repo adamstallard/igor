@@ -5,6 +5,7 @@ import type { Gate } from './budget.js'
 import type { Entry } from './entry.js'
 import type { ExecutionResult, TranscriptStore } from './execute.js'
 import { budgetGate, loadSpend, readAllSeats } from './budget.js'
+import { boundsForSeats, loadObservations } from './capacity.js'
 import { overBudgetMessage, recordFiring, renderLore, selectEntries } from './firing.js'
 import { recordExecution } from './execute.js'
 import { appendRecord, readLog } from './state.js'
@@ -70,16 +71,18 @@ export async function wire(
     store: { destination, isPublic: config.publicStore === true },
 
     gate: async () => {
-      const [readings, spend] = await Promise.all([
+      const [readings, spend, observations] = await Promise.all([
         readAllSeats(config.budget.seats),
         loadSpend((path) => readLog(destination, path)),
+        loadObservations((path) => readLog(destination, path)),
       ])
-      // An unreadable seat is passed over rather than treated as free, so saying why is the
-      // only way anyone learns the fleet slowed down because of a bad token.
+      // An unreadable seat is bounded by observation and record rather than skipped, so
+      // nothing further in the cycle mentions the credential. Still worth one line: a seat
+      // read live is judged on the owner's consumption too, and a derived one is not.
       for (const r of readings) {
         if (r.error !== undefined) out.warn(`seat "${r.seat.id}": ${r.error}`)
       }
-      return budgetGate(config.budget, role, readings, spend)
+      return budgetGate(config.budget, role, readings, spend, boundsForSeats(observations, spend, config.budget.seats))
     },
 
     // Read per item rather than per cycle: the store is a repository someone may have merged

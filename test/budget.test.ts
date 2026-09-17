@@ -11,6 +11,7 @@ import {
   readAllSeats,
   hasSubscription,
   readUsage,
+  NO_CAPACITY_FIGURE,
   renderBudget,
   resolveToken,
   roleSharePercent,
@@ -21,6 +22,7 @@ import {
   type SpendRecord,
   type Usage,
 } from '../src/budget.js'
+import { boundsForSeats, type Observation } from '../src/capacity.js'
 
 /** Exactly what `claude -p '/usage'` returns. */
 const REAL = `You are currently using your subscription to power your Claude Code usage
@@ -256,7 +258,10 @@ describe('pool order is the allocation mechanism', () => {
   })
 
   it('skips a seat it could not read rather than assuming it is free', () => {
-    const broken: SeatUsage[] = [{ seat: seat({ id: 'igor-1' }), error: 'token missing' }]
+    // A seat whose credential answered and carries no subscription is bounded by observation
+    // instead — see the derived-bound suite. This one's credential is in doubt, so no record
+    // makes it safe to spend.
+    const broken: SeatUsage[] = [{ seat: seat({ id: 'igor-1', reserve: 0.5 }), error: 'token missing' }]
     const c = chooseSeat({ id: 'eng', seats: ['igor-1'] }, broken, [], role)
     expect(c.seat).toBeUndefined()
     expect(c.considered[0]?.why).toBe('token missing')
@@ -462,5 +467,206 @@ describe('the gate names the source the chosen seat pays from', () => {
     expect(gate.token?.tokenEnv).toBeUndefined()
     expect(gate.token?.tokenFile).toBeUndefined()
     expect(gate.token?.tokenCommand).toBeUndefined()
+  })
+})
+
+describe('a seat nothing can read is bounded by observation and record', () => {
+  // One session instance, 09:00 → 14:00, observed half gone at 12:00. Ten dollars of Igor
+  // spend inside it by then, so the capacity that implies is $20.
+  const RESET = '2026-09-13T14:00:00.000Z'
+  const OBSERVED_AT = '2026-09-13T12:00:00.000Z'
+  const NOW = '2026-09-13T13:00:00.000Z'
+
+  const sessionObs = (over: Partial<Observation> = {}): Observation => ({
+    at: OBSERVED_AT,
+    seat: 'adam',
+    window: 'session',
+    percentUsed: 50,
+    resetsAt: RESET,
+    source: 'usage',
+    ...over,
+  })
+  /** Generous on purpose: these cases are about the session, and a blocked week would hide it. */
+  const weekObs = (seatId = 'adam'): Observation => ({
+    at: OBSERVED_AT,
+    seat: seatId,
+    window: 'week',
+    percentUsed: 5,
+    resetsAt: '2026-09-18T00:00:00.000Z',
+    source: 'usage',
+  })
+  const paid = (at: string, usd: number, role?: string, seatId = 'adam'): SpendRecord => ({
+    seat: seatId,
+    costUsd: usd,
+    at,
+    ...(role === undefined ? {} : { role }),
+  })
+  /** The #30 seat: its credential answers and carries no subscription, so a window will never
+   *  be reported against it. That is every seat in the configuration in use. */
+  const unreadable = (s: Seat): SeatUsage => ({
+    seat: s,
+    error: 'seat "adam" is authenticated as oauth_token but its credential carries no subscription',
+    unmeasured: true,
+  })
+  const choose = (
+    s: Seat,
+    obs: Observation[],
+    records: SpendRecord[],
+    role: { name: string; budgetShare?: number } = { name: 'triage' },
+  ) =>
+    chooseSeat({ id: 'p', seats: [s.id] }, [unreadable(s)], records, role, boundsForSeats(obs, records, [s], NOW))
+
+  it('stops the seat at (1 − reserve) × capacity with the owner never observed', () => {
+    // Capacity $20, reserve a quarter of it, so Igors may have $15 and have taken $16.
+    const s = seat({ reserve: 0.25 })
+    const records = [paid('2026-09-13T11:00:00.000Z', 10), paid('2026-09-13T12:30:00.000Z', 6)]
+    const c = choose(s, [sessionObs(), weekObs()], records)
+    expect(c.seat).toBeUndefined()
+    expect(c.considered[0]?.why).toMatch(/spent \$16\.00 of the session's \$15\.00 bound/)
+  })
+
+  it('leaves the seat usable while the bound has room, and says how much', () => {
+    const s = seat({ reserve: 0.25 })
+    const c = choose(s, [sessionObs(), weekObs()], [paid('2026-09-13T11:00:00.000Z', 10)])
+    expect(c.seat?.id).toBe('adam')
+    expect(c.reason).toBe('adam has $5.00 of its session bound left')
+  })
+
+  it('does not let spend after the observation inflate the capacity it is measured against', () => {
+    // The trap: recompute the capacity over the same interval the bound sums and the spend
+    // cancels out of `spend ≥ (1 − reserve) × capacity`, so no amount of spending ever crosses
+    // it. The numerator stops at the observation; the bound's sum runs to now.
+    const s = seat({ reserve: 0.25 })
+    const before = [paid('2026-09-13T11:00:00.000Z', 10)]
+    const after = [...before, paid('2026-09-13T12:30:00.000Z', 6)]
+    const bounds = boundsForSeats([sessionObs(), weekObs()], after, [s], NOW)
+    expect(bounds.get('adam')?.session?.capacityUsd).toBe(20)
+    expect(bounds.get('adam')?.session?.spentUsd).toBe(16)
+    expect(choose(s, [sessionObs(), weekObs()], before).seat?.id).toBe('adam')
+    expect(choose(s, [sessionObs(), weekObs()], after).seat).toBeUndefined()
+  })
+
+  it('sums two Igors against one bound and gives neither the whole of it', () => {
+    const s = seat({ reserve: 0.25 })
+    const obs = [sessionObs(), weekObs()]
+    const triageOnly = [paid('2026-09-13T11:00:00.000Z', 10, 'triage')]
+    const both = [...triageOnly, paid('2026-09-13T12:30:00.000Z', 6, 'docs')]
+    // $15 is there for either of them while the other has not taken it.
+    expect(choose(s, obs, triageOnly, { name: 'docs' }).seat?.id).toBe('adam')
+    // Once both have spent, the same $15 is gone for both, not $15 each.
+    expect(choose(s, obs, both, { name: 'docs' }).seat).toBeUndefined()
+    expect(choose(s, obs, both, { name: 'triage' }).seat).toBeUndefined()
+  })
+
+  it('counts only the current instance, not spend that has already reset', () => {
+    // $30 in the instance before this one, which ended at 09:00 and bounds nothing now.
+    const s = seat({ reserve: 0.25 })
+    const records = [paid('2026-09-13T08:00:00.000Z', 30), paid('2026-09-13T11:00:00.000Z', 10)]
+    const c = choose(s, [sessionObs(), weekObs()], records)
+    expect(c.seat?.id).toBe('adam')
+  })
+
+  it('does not pass a seat over on the unreadable ground alone', () => {
+    const s = seat({ reserve: 0.25 })
+    const c = choose(s, [sessionObs(), weekObs()], [paid('2026-09-13T11:00:00.000Z', 10)])
+    expect(c.considered[0]?.why).toBe('chosen')
+    expect(c.considered.some((x) => /token/.test(x.why))).toBe(false)
+  })
+
+  it('passes a reserved seat over where no capacity figure exists, in words of its own', () => {
+    const c = choose(seat({ reserve: 0.5 }), [], [])
+    expect(c.seat).toBeUndefined()
+    expect(c.considered[0]?.why).toContain(NO_CAPACITY_FIGURE)
+    // "never observed" and "bad token" are fixed by different people, so they read differently.
+    expect(c.considered[0]?.why).not.toContain('IGOR_SEAT_ADAM')
+    expect(c.considered[0]?.why).not.toBe(unreadable(seat()).error)
+  })
+
+  it('runs a seat with no reserve and no figure at all, uncalibrated', () => {
+    const c = choose(seat({ id: 'adam', dedicated: true, reserve: 0 }), [], [])
+    expect(c.seat?.id).toBe('adam')
+    expect(c.reason).toMatch(/uncalibrated/)
+  })
+
+  it('blocks on a window it cannot bound even when the other one is calibrated', () => {
+    // Two limits exist because they are not proportional: a session figure says nothing about
+    // the week, and a reserve over an unknown week bounds nothing.
+    const s = seat({ reserve: 0.25 })
+    const c = choose(s, [sessionObs()], [paid('2026-09-13T11:00:00.000Z', 10)])
+    expect(c.seat).toBeUndefined()
+    expect(c.considered[0]?.why).toContain('its week has never been observed')
+  })
+
+  it('lets an unreserved seat run on one window and no figure for the other', () => {
+    const s = seat({ id: 'adam', dedicated: true, reserve: 0 })
+    const c = choose(s, [sessionObs()], [paid('2026-09-13T11:00:00.000Z', 10)])
+    expect(c.seat?.id).toBe('adam')
+  })
+
+  it('holds a role to its budget_share on the derived path too', () => {
+    // Nine of the ten dollars are triage's, so triage is at 45% of a $20 capacity where its
+    // ceiling is 40%. Skipping the check here would have made the ceiling readable-seats-only.
+    const s = seat({ reserve: 0 })
+    const records = [paid('2026-09-13T11:00:00.000Z', 9, 'triage'), paid('2026-09-13T11:30:00.000Z', 1, 'docs')]
+    const obs = [sessionObs(), weekObs()]
+    const c = choose(s, obs, records, { name: 'triage', budgetShare: 0.4 })
+    expect(c.considered[0]?.why).toMatch(/at its 0.4 ceiling/)
+    expect(choose(s, obs, records, { name: 'docs', budgetShare: 0.4 }).seat?.id).toBe('adam')
+  })
+
+  it('is never the pool’s fallback once the dedicated seats are spent', () => {
+    const fleet = seat({ id: 'fleet-1', dedicated: true, reserve: 0 })
+    const adam = seat({ reserve: 0.5 })
+    const readings: SeatUsage[] = [{ seat: fleet, usage: usage(100, 100) }, unreadable(adam)]
+    const c = chooseSeat({ id: 'eng', seats: ['fleet-1', 'adam'] }, readings, [], { name: 'triage' })
+    expect(c.seat).toBeUndefined()
+    expect(c.considered[1]?.why).toContain(NO_CAPACITY_FIGURE)
+    const gate = budgetGate({ seats: [fleet, adam], pools: [{ id: 'eng', seats: ['fleet-1', 'adam'] }] },
+      { name: 'triage', seat: 'pool:eng' }, readings, [])
+    expect(gate.exhausted()).toBe(true)
+  })
+
+  it('passes over every seat whose credential is in doubt, bound or no bound', () => {
+    // A bound says what a seat may spend; it does not give it anything to spend with. Chosen,
+    // such a seat claims an item, fails on the worker's spawn, and does the same next cycle.
+    // Only a credential that answered and reported no window gets the derived path.
+    const obs = [sessionObs(), weekObs()]
+    const records = [paid('2026-09-13T11:00:00.000Z', 10)]
+    for (const [why, s] of [
+      ['its token is not set', seat({ reserve: 0 })],
+      ['the provider rejected it', seat({ reserve: 0.25 })],
+    ] as const) {
+      const readings: SeatUsage[] = [{ seat: s, error: why }]
+      const c = chooseSeat({ id: 'p', seats: ['adam'] }, readings, records, { name: 'triage' },
+        boundsForSeats(obs, records, [s], NOW))
+      expect(c.seat, why).toBeUndefined()
+      expect(c.considered[0]?.why).toBe(why)
+    }
+  })
+
+  it('tells a credential that carries no subscription from one that failed', async () => {
+    // The join: only the first is marked, and only the marked one reaches the bounded path.
+    const noSubscription = await readAllSeats(
+      [seat({ id: 'no-sub', reserve: 0 })],
+      {},
+      async () => 'Total cost: $1.23',
+      async () => ({ authMethod: 'oauth_token' }),
+    )
+    expect(noSubscription[0]?.unmeasured).toBe(true)
+
+    const noToken = await readAllSeats([seat({ id: 'no-token', reserve: 0, tokenEnv: 'NOPE' })], {}, async () => REAL)
+    expect(noToken[0]?.error).toMatch(/is not set/)
+    expect(noToken[0]?.unmeasured).toBeUndefined()
+  })
+
+  it('leaves a seat that could be read judged on its reading alone', () => {
+    // The live path is above the branch and the derived figures must not reach it: this seat
+    // is 17% used against a 50% reserve, and no dollar bound says otherwise.
+    const s = seat({ reserve: 0.5 })
+    const records = [paid('2026-09-13T11:00:00.000Z', 10), paid('2026-09-13T12:30:00.000Z', 99)]
+    const bounds = boundsForSeats([sessionObs(), weekObs()], records, [s], NOW)
+    const c = chooseSeat({ id: 'p', seats: ['adam'] }, [{ seat: s, usage: usage(17, 17) }], records, { name: 'triage' }, bounds)
+    expect(c.seat?.id).toBe('adam')
+    expect(c.reason).toBe('adam has 33% of the session left')
   })
 })
