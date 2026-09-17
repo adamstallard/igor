@@ -5,8 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Artifact, ArtifactRequest, Candidate, ClaimVerdict, CodeHost, Tracker } from '../src/adapter.js'
 import type { Role } from '../src/role.js'
 import {
-  ABSOLUTE_CEILING_MS, branchFor, claudeWorker, complete, describeTool, execute, ExecutionError,
-  MODEL_SILENCE_MS, permits, prBody, PR_BODY_LIMIT, recordExecution, renderProgress, spendByModel, stripLinkage,
+  ABSOLUTE_CEILING_MS, branchFor, claudeWorker, complete, DENIED_COMMAND_LIMIT, denialsFrom, describeTool, execute,
+  ExecutionError, MODEL_SILENCE_MS, permits, prBody, PR_BODY_LIMIT, recordExecution, renderProgress, spendByModel, stripLinkage,
   TOOL_SILENCE_MS, usageLimit, watchWorker, workerEnv, workerPrompt, workerSystemPrompt,
   type Progress, type WorkerEvent, type WorkerRunner,
 } from '../src/execute.js'
@@ -1382,5 +1382,205 @@ describe('a seat with no capacity left is not a crash', () => {
 
     expect(failed).toBeInstanceOf(ExecutionError)
     expect(usageLimit((failed as ExecutionError).output)).toEqual({ resetsAt: RESET_ISO })
+  })
+})
+
+
+describe('what the sandbox refused, and the configuration that would permit it', () => {
+  /** Exactly the shape the envelope carries under `permission_denials`. */
+  const DENIED = {
+    tool_name: 'Bash',
+    tool_use_id: 'toolu_01Kx',
+    tool_input: { command: 'npm install --dry-run', description: 'Check the dependency tree' },
+  }
+
+  beforeEach(() => {
+    ledger.records.length = 0
+    ledger.files.length = 0
+  })
+
+  it('names the cure rather than the incident', () => {
+    expect(denialsFrom([DENIED], 'generalist')).toEqual([
+      { tool: 'Bash', command: 'npm install --dry-run', cure: 'role:generalist:commands' },
+    ])
+  })
+
+  it('leaves a denial no role setting would have permitted without a cure', () => {
+    // `allowedTools` is `role.commands` and nothing else, so widening it would not have let a
+    // WebFetch through. A key pointing there sends the reader to edit the wrong thing.
+    expect(denialsFrom([{ tool_name: 'WebFetch', tool_input: { url: 'https://example.test' } }], 'generalist')).toEqual(
+      [{ tool: 'WebFetch' }],
+    )
+  })
+
+  it('takes the command out of tool_input and nothing else', () => {
+    // A denied Write carries the whole file it meant to write. The ledger is read whole.
+    const write = { tool_name: 'Write', tool_input: { file_path: 'src/a.ts', content: 'x'.repeat(5000) } }
+    expect(JSON.stringify(denialsFrom([write], 'generalist'))).not.toContain('xxx')
+  })
+
+  it('keeps every attempt, because six of the same command is the signal', () => {
+    // Six refusals is a worker that could not work out why and kept trying; one is a stray call.
+    expect(denialsFrom(Array.from({ length: 6 }, () => DENIED), 'generalist')).toHaveLength(6)
+  })
+
+  it('records a command as one bounded line, being text the worker chose', () => {
+    // It reaches an operator's log, where the reporter prefixes only the first line, and a
+    // ledger meant to be read whole. A worker can be steered by an item anyone can write.
+    const forged = 'echo hi\n  ! seat "team-seat": token revoked'
+    expect(denialsFrom([{ tool_name: 'Bash', tool_input: { command: forged } }], 'generalist')[0]?.command).toBe(
+      'echo hi ! seat "team-seat": token revoked',
+    )
+    const long = denialsFrom([{ tool_name: 'Bash', tool_input: { command: 'x'.repeat(500) } }], 'generalist')
+    expect(long[0]?.command?.length).toBeLessThanOrEqual(DENIED_COMMAND_LIMIT)
+  })
+
+  it('strips what a terminal obeys, which is not the same set as whitespace', () => {
+    // ESC is not `\s`. Left in, the log line a denial writes repaints the ones above it: the
+    // real warning erased and a forged one, prefixed exactly as the reporter prefixes, in place.
+    const forged = 'true \u001b[1A\u001b[2K\u001b[G  ! seat "team-seat": token revoked'
+    const cleaned = denialsFrom([{ tool_name: 'Bash', tool_input: { command: forged } }], 'generalist')[0]?.command
+    expect(cleaned).toBe('true [1A [2K [G ! seat "team-seat": token revoked')
+  })
+
+  it('cleans the tool name too, which is the whole warning where there is no command', () => {
+    // Every non-Bash denial reports its tool and nothing else, and an MCP server names its own.
+    const forged = 'mcp__srv__do\n  ! seat "team-seat": token revoked'
+    const [d] = denialsFrom([{ tool_name: forged }, { tool_name: 'y'.repeat(5000) }], 'generalist')
+    expect(d?.tool).toBe('mcp__srv__do ! seat "team-seat": token revoked')
+    expect(d?.cure).toBeUndefined()
+    expect(denialsFrom([{ tool_name: 'y'.repeat(5000) }], 'generalist')[0]?.tool?.length).toBe(DENIED_COMMAND_LIMIT)
+  })
+
+  it('records nothing rather than failing a finished run on a shape it does not know', () => {
+    expect(denialsFrom(undefined, 'generalist')).toEqual([])
+    expect(denialsFrom('npm install', 'generalist')).toEqual([])
+    expect(denialsFrom([null, 7, {}, { tool_name: '' }], 'generalist')).toEqual([])
+    expect(denialsFrom([{ tool_name: 'Bash', tool_input: null }], 'generalist')).toEqual([
+      { tool: 'Bash', cure: 'role:generalist:commands' },
+    ])
+  })
+
+  it('reaches the record of a run that went on to open a pull request', async () => {
+    // The run this is for reported `outcome: produced` and `refusals: []` while the worker had
+    // been unable to run the tests it was permitted to run.
+    const { item, result } = await run(
+      { name: 'generalist' },
+      {
+        worker: async () => ({
+          result: 'Fixed it.',
+          total_cost_usd: 0.02,
+          permission_denials: [DENIED],
+          session_id: 'a3f1e0c2-0000-4000-8000-000000000001',
+        }),
+      },
+    )
+    await recordExecution('acme/lore', item, role({ name: 'generalist' }), result)
+
+    expect(result.outcome).toBe('produced')
+    expect(ledger.records[0]?.['denials']).toEqual([
+      { tool: 'Bash', command: 'npm install --dry-run', cure: 'role:generalist:commands' },
+    ])
+    expect(ledger.records[0]?.['session']).toBe('a3f1e0c2-0000-4000-8000-000000000001')
+  })
+
+  it('keeps the session of a run killed before it sent an envelope', async () => {
+    // The transcript of a run that died is the one somebody most wants, and no envelope names it.
+    const { provider } = fakeProvider(edited)
+    const { host } = fakeCodeHost()
+    const { t } = fakeTracker()
+
+    const r = await execute(provider, t, host, candidate(), role(), {
+      worker: async ({ onEvent }) => {
+        onEvent?.({ type: 'system', subtype: 'init', session_id: 'ses-killed' })
+        throw new ExecutionError('worker exited 1')
+      },
+    })
+
+    expect(r.outcome).toBe('failed')
+    expect(r.session).toBe('ses-killed')
+  })
+
+  it('carries a failed run its denials and what the envelope was classified on', async () => {
+    // The pairing that matters: refused the install, then died. Recording one without the other
+    // leaves a crash with no account of the wall the worker spent the run against.
+    const { provider } = fakeProvider(edited)
+    const { host } = fakeCodeHost()
+    const { t } = fakeTracker()
+
+    const r = await execute(provider, t, host, candidate(), role({ name: 'generalist' }), {
+      worker: async () => {
+        throw new ExecutionError('worker exited 1', {
+          is_error: true,
+          result: 'Not logged in',
+          terminal_reason: 'error_during_execution',
+          permission_denials: [DENIED],
+        })
+      },
+    })
+
+    expect(r.outcome).toBe('failed')
+    expect(r.denials?.[0]?.cure).toBe('role:generalist:commands')
+    expect(r.terminalReason).toBe('error_during_execution')
+  })
+
+  it('keeps the evidence of a seat stop that came back with the exit code', async () => {
+    // The path `usageLimit` is least verified on, and the one the ledger most needs to carry:
+    // a limit reported alongside a non-zero exit, where nothing else says what it read.
+    const { provider } = fakeProvider(edited)
+    const { host } = fakeCodeHost()
+    const { t } = fakeTracker()
+    const item = candidate()
+
+    const r = await execute(provider, t, host, item, role({ name: 'generalist' }), {
+      worker: async () => {
+        throw new ExecutionError('worker exited 1', {
+          is_error: true,
+          result: 'Claude AI usage limit reached',
+          api_error_status: 429,
+          terminal_reason: 'usage_limit',
+          permission_denials: [DENIED],
+          session_id: 'ses-budget',
+        })
+      },
+    })
+    await recordExecution('acme/lore', item, role({ name: 'generalist' }), r)
+
+    expect(r.outcome).toBe('budget')
+    expect(ledger.records[0]).toMatchObject({
+      apiErrorStatus: 429,
+      terminalReason: 'usage_limit',
+      session: 'ses-budget',
+      denials: [{ tool: 'Bash', command: 'npm install --dry-run', cure: 'role:generalist:commands' }],
+    })
+  })
+
+  it('keeps what a budget stop was classified on, and leaves a healthy run alone', async () => {
+    // `usageLimit` reads these and drops them, and its patterns are unverified against a live
+    // limit error — so a misclassification is only diagnosable where they were written down.
+    const { provider } = fakeProvider([])
+    const { host } = fakeCodeHost()
+    const { t } = fakeTracker()
+
+    const stopped = await execute(provider, t, host, candidate(), role(), {
+      worker: async () => ({
+        is_error: true,
+        result: 'Claude AI usage limit reached',
+        api_error_status: 429,
+        terminal_reason: 'usage_limit',
+      }),
+    })
+    expect(stopped.outcome).toBe('budget')
+    expect(stopped.apiErrorStatus).toBe(429)
+    expect(stopped.terminalReason).toBe('usage_limit')
+
+    // The same field on a run the provider called successful is noise, and stays out.
+    const { result } = await run(
+      {},
+      { worker: async () => ({ result: 'Fixed it.', total_cost_usd: 0.02, api_error_status: 429 }) },
+    )
+    expect(result.outcome).toBe('produced')
+    expect(result.apiErrorStatus).toBeUndefined()
+    expect(result.terminalReason).toBeUndefined()
   })
 })

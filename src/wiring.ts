@@ -87,6 +87,16 @@ export async function wire(
     },
 
     record: async (item, execution, seat) => {
+      // Ahead of the record and outside its catch: a denial is why a run reports success and
+      // the pull request it opened cannot be trusted, and a state branch nobody can write to
+      // must not be what swallows it. Once per command — six refusals are one thing to fix.
+      const said = new Set<string>()
+      for (const d of execution.denials ?? []) {
+        const line = `sandbox denied ${d.command ?? d.tool}${d.cure === undefined ? '' : ` — cure key ${d.cure}`}`
+        if (said.has(line)) continue
+        said.add(line)
+        out.warn(line)
+      }
       await recordExecution(destination, item, role, execution, seat).catch(() => undefined)
     },
   }

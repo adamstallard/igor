@@ -69,6 +69,14 @@ export interface ExecutionResult {
   stopReason?: string
   /** Only on a budget stop, and only where the provider named one. */
   resetsAt?: string
+  /** What the sandbox stopped the worker doing, whatever the run went on to produce. */
+  denials?: Denial[]
+  /** The worker's own log under `~/.claude/projects/`, which outlives the disposable clone. */
+  session?: string
+  /** Only on a budget stop or a failure: what `usageLimit` classified the envelope on. */
+  apiErrorStatus?: number | string
+  /** Only on a budget stop or a failure. */
+  terminalReason?: string
   reason: string
 }
 
@@ -145,6 +153,10 @@ export interface WorkerOutput {
   terminal_reason?: string
   /** The seat's limit state, in whatever shape the envelope repeats it from the stream. */
   rate_limit_info?: unknown
+  /** Names the worker's own log under `~/.claude/projects/`, which outlives the temp clone. */
+  session_id?: string
+  /** One entry per tool call the sandbox stopped. Read by `denialsFrom`, never kept raw. */
+  permission_denials?: unknown
 }
 
 /**
@@ -184,6 +196,74 @@ export function spendByModel(modelUsage: Record<string, unknown> | undefined): M
   }
   // Dearest first, because the question asked of these records is always which model spent it.
   return out.sort((a, b) => b.costUsd - a.costUsd)
+}
+
+/**
+ * One tool call the sandbox stopped, named with the configuration that would have permitted it.
+ *
+ * The command alone identifies an incident. The cure identifies what to change, which is what
+ * lets one fix answer every Igor that hit the same wall instead of each producing an anecdote
+ * somebody has to read a transcript to understand.
+ */
+export interface Denial {
+  /** As the provider names it: `Bash`, `WebFetch`, and so on. */
+  tool: string
+  /** Where the tool was Bash: the command, on one line and bounded. */
+  command?: string
+  /**
+   * Of the shape `role:<name>:commands`, naming the role that was running — the only scope a
+   * refusal says anything about. Which file declares that role's `commands` is a separate
+   * question, since a role may inherit them and may not widen what it inherits; `role explain`
+   * is what answers it.
+   */
+  cure?: string
+}
+
+/** Enough to recognise a denial by. The cure is the part that has to be exact. */
+export const DENIED_COMMAND_LIMIT = 200
+
+/**
+ * Both strings here are the worker's own text, and a worker can be steered by an item anyone
+ * can write. They reach a log where the reporter prefixes only the first line and a ledger
+ * meant to be read whole, so: one line, bounded, and nothing a terminal acts on.
+ *
+ * `\s` is not that set. ESC is not whitespace, and left in, a denial repaints the lines above
+ * it — the real warning erased, a forged one written with the reporter's own prefix.
+ */
+function oneLine(text: string): string {
+  const flat = text.replace(/[\p{Cc}\p{Cf}\s]+/gu, ' ').trim()
+  return flat.length <= DENIED_COMMAND_LIMIT ? flat : `${flat.slice(0, DENIED_COMMAND_LIMIT - 1)}…`
+}
+
+/**
+ * Only a Bash denial names a cure. `allowedTools` is built from `role.commands` and nothing
+ * else, so the run knows for certain that a refused command is that role's list — and knows
+ * equally that no role setting would have permitted anything else the sandbox stopped.
+ *
+ * Nothing but the command crosses over. A denied `Write` carries the whole file it meant to
+ * write in `tool_input`, and the ledger has to stay small enough to read whole.
+ */
+export function denialsFrom(raw: unknown, roleName: string): Denial[] {
+  if (!Array.isArray(raw)) return []
+  const out: Denial[] = []
+  for (const entry of raw) {
+    const denial = asRecord(entry)
+    const named = denial?.['tool_name']
+    if (typeof named !== 'string') continue
+    // The name is the whole warning wherever there is no command, and an MCP server names its
+    // own tools, so it is no more trusted than the command is. Matched raw: a cure belongs to
+    // Bash itself, not to whatever cleans up looking like it.
+    const tool = oneLine(named)
+    if (tool === '') continue
+    const asked = asRecord(denial?.['tool_input'])?.['command']
+    const command = typeof asked === 'string' ? oneLine(asked) : ''
+    out.push({
+      tool,
+      ...(command === '' ? {} : { command }),
+      ...(named === 'Bash' ? { cure: `role:${roleName}:commands` } : {}),
+    })
+  }
+  return out
 }
 
 /** Fields whose vocabulary is the provider's own, so naming a limit in one is unambiguous. */
@@ -897,6 +977,7 @@ export async function execute(
     let lastCheck = Date.now()
 
     const observed: WorkerUsage = { assistantTurns: 0, cacheReadTokensPeak: 0 }
+    let session: string | undefined
 
     // Counted whether or not anyone is watching: cheap, and it keeps the two paths from
     // diverging in what they would have reported.
@@ -923,6 +1004,9 @@ export async function execute(
     // What a killed run can still be shown to have done. Counted ahead of the checkpoint's
     // early return, which would otherwise drop it on every run with no claim to re-read.
     const observe = (event: WorkerEvent) => {
+      // Taken off any event rather than the envelope alone: a worker killed mid-run never
+      // sends one, and its transcript is the one somebody will most want to read.
+      if (typeof event.session_id === 'string' && event.session_id !== '') session = event.session_id
       if (event.type !== 'assistant') return
       observed.assistantTurns++
       const read = usageOf(event)?.['cache_read_input_tokens']
@@ -941,6 +1025,28 @@ export async function execute(
         ...(output.stop_reason === undefined ? {} : { stopReason: output.stop_reason }),
       }
     }
+
+    /** Kept whatever the outcome: both answer questions asked after a run, not during it. */
+    const trace = (output: WorkerOutput | undefined) => {
+      const denials = denialsFrom(output?.permission_denials, role.name)
+      const id = typeof output?.session_id === 'string' && output.session_id !== '' ? output.session_id : session
+      return {
+        ...(denials.length === 0 ? {} : { denials }),
+        ...(id === undefined ? {} : { session: id }),
+      }
+    }
+
+    /**
+     * The two fields `usageLimit` reads and drops, kept only where it fired or the run failed.
+     * Its patterns are unverified against a live limit error, and a misclassification is only
+     * diagnosable where what it judged on was written down; on a healthy run they are noise.
+     */
+    const evidence = (output: WorkerOutput | undefined) => ({
+      ...(output?.api_error_status === undefined || output.api_error_status === null
+        ? {}
+        : { apiErrorStatus: output.api_error_status }),
+      ...(output?.terminal_reason === undefined ? {} : { terminalReason: output.terminal_reason }),
+    })
 
     // Event arrival is the tick, throttled so a chatty worker costs no more tracker reads than
     // a quiet one, and never two at once. A read that fails is not a stop.
@@ -999,6 +1105,8 @@ export async function execute(
             refusals,
             transcript: '',
             ...spend(envelope),
+            ...trace(envelope),
+            ...evidence(envelope),
             ...(limit.resetsAt === undefined ? {} : { resetsAt: limit.resetsAt }),
             reason: outOfCapacity(limit.resetsAt),
           }
@@ -1009,6 +1117,8 @@ export async function execute(
           refusals,
           transcript: '',
           ...spend(),
+          ...trace(envelope),
+          ...evidence(envelope),
           reason: error instanceof Error ? error.message : String(error),
         }
       }
@@ -1016,7 +1126,9 @@ export async function execute(
     }
 
     const transcript = worker.result ?? ''
-    const cost = spend(worker)
+    // A refused command and a session log are worth the same to a reader whatever the run went
+    // on to do, so they ride with the cost into every outcome below.
+    const kept = { ...spend(worker), ...trace(worker) }
     const changed = await tree.changes()
 
     // Read before anything is decided, not merely before publishing: a stop during a run that
@@ -1028,7 +1140,7 @@ export async function execute(
         changed,
         refusals: [...refusals, { action: 'draft-pr', why: 'stopped during execution' }],
         transcript,
-        ...cost,
+        ...kept,
         reason: 'stopped mid-execution; nothing was published',
       }
     }
@@ -1045,7 +1157,8 @@ export async function execute(
           changed,
           refusals,
           transcript,
-          ...cost,
+          ...kept,
+          ...evidence(worker),
           ...(limit.resetsAt === undefined ? {} : { resetsAt: limit.resetsAt }),
           reason: outOfCapacity(limit.resetsAt),
         }
@@ -1055,7 +1168,7 @@ export async function execute(
         changed,
         refusals,
         transcript,
-        ...cost,
+        ...kept,
         reason: 'the worker made no changes',
       }
     }
@@ -1075,7 +1188,7 @@ export async function execute(
         changed,
         refusals,
         transcript,
-        ...cost,
+        ...kept,
         reason: `the work is done but ${role.name} may not open a pull request, so nothing was published`,
       }
     }
@@ -1091,7 +1204,7 @@ export async function execute(
         changed,
         refusals,
         transcript,
-        ...cost,
+        ...kept,
         reason: 'the only changes were deletions, which cannot be published yet',
       }
     }
@@ -1120,7 +1233,7 @@ export async function execute(
         changed,
         refusals,
         transcript,
-        ...cost,
+        ...kept,
         reason: `lost mid-execution; left ${artifact.ref} as a draft`,
       }
     }
@@ -1131,7 +1244,7 @@ export async function execute(
       changed,
       refusals,
       transcript,
-      ...cost,
+      ...kept,
       reason: `opened ${artifact.ref}`,
     }
   })
@@ -1199,6 +1312,13 @@ export async function recordExecution(
         ? {}
         : { models: result.models.map((m) => ({ ...m, costUsd: Number(m.costUsd.toFixed(4)) })) }),
       ...(result.stopReason === undefined ? {} : { stopReason: result.stopReason }),
+      // Every attempt, not one per cure: a command refused six times is a worker that kept
+      // trying, and the count is the difference between a stray call and a blocked run.
+      ...(result.denials === undefined ? {} : { denials: result.denials }),
+      // The one string that turns grepping a disposable clone's transcript into opening a file.
+      ...(result.session === undefined ? {} : { session: result.session }),
+      ...(result.apiErrorStatus === undefined ? {} : { apiErrorStatus: result.apiErrorStatus }),
+      ...(result.terminalReason === undefined ? {} : { terminalReason: result.terminalReason }),
       transcript: path,
     },
     `Record ${role.name} on ${candidate.id}`,
