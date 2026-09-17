@@ -135,7 +135,9 @@ igor init-workflow
 
 That writes `.github/workflows/promote-on-merge.yml` into the destination. Commit it. **If the
 branch is protected, add the GitHub Actions actor to the ruleset's bypass list**, or the
-workflow's own push is blocked by the same rule it exists to work around.
+workflow's own push is blocked by the same rule it exists to work around. It only promotes —
+`rejected/<id>.md` is still written by `reconcile`, so a destination needs that run against it
+too, or a deleted candidate stays proposable.
 
 Neither is worth doing on a single-writer repository — both answer the same question, which is
 what happens when someone other than the tool's owner merges, so add them together when that

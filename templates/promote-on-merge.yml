@@ -4,6 +4,13 @@
 # `igor-lore reconcile` — so a teammate could merge lore that then silently never fires,
 # because only active entries fire.
 #
+# It only promotes, and it cannot be extended to also record rejections by widening
+# --diff-filter to include D: a candidate the reviewer deletes on the proposal branch never
+# reaches this branch at all, so the diff below never sees it. A deleted entries/*.md file that
+# *does* show up here is one retired or superseded on this branch, a different event — which is
+# why `reconcile` reads the pull request's own diff instead. Installing this workflow is not a
+# substitute for running `reconcile` — without it, a deleted candidate can be proposed again.
+#
 # If the default branch is protected, add the GitHub Actions actor to the ruleset's bypass
 # list, or this workflow's own push is blocked by the same rule it exists to work around.
 name: Promote merged lore
