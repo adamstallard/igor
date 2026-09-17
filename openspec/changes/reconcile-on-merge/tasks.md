@@ -8,26 +8,15 @@
 - [ ] 1.3 The commit step stages and tests `rejected/` alongside `entries/`; `writeRejection`
       writes there and the current template would leave a rejection record uncommitted
 - [ ] 1.4 `templates/promote-on-merge.yml` becomes `templates/reconcile-on-merge.yml`, and
-      `init-workflow` writes `.github/workflows/reconcile-on-merge.yml`. Its `name:` and the
-      message of the commit it makes follow: a file named for promotion that runs
-      reconciliation is a small untruth that outlives whoever knows why. The `concurrency`
-      group does not follow — 1.6
+      `init-workflow` writes `.github/workflows/reconcile-on-merge.yml`. Its `name:`, its
+      `concurrency` group and the message of the commit it makes follow: a file named for
+      promotion that runs reconciliation is a small untruth that outlives whoever knows why
 - [ ] 1.5 `init-workflow` states in its output that one job promotes lore on push and any other
       must go, as a property of the design. It MUST NOT test for `promote-on-merge.yml` by
       name: there is one destination, its owner edits it by hand, and a named check is
       migration code for users who do not exist that would keep the dead filename in the tool
       forever
-- [ ] 1.6 The `concurrency` group keeps the string `promote-lore`, and the template says why in
-      the present tense: the group names the lock on pushes to the destination's default
-      branch, not this workflow. Groups are repository-scoped, so two jobs serialize only by
-      sharing the string — and a destination holding both `promote-on-merge.yml` and
-      `reconcile-on-merge.yml` fires both on one push. Renaming the group to match the file is
-      the tempting way to finish 1.4 and it puts them in different groups, racing.
-
-      Sharing it does not make coexistence correct: the loser checks out the pre-promotion tree
-      and its push is refused as a non-fast-forward. It makes the outcome one promotion and one
-      loud failure rather than two jobs writing the default branch at once. Serialization
-      within the one workflow is the same rule — two merges close together must not both
+- [ ] 1.6 The `concurrency` group still serializes: two merges close together must not both
       promote and race on the push
 
 ## 2. Recognizing a proposal by content
