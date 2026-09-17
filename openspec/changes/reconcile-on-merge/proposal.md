@@ -35,8 +35,11 @@ along with it, which the merge-triggered path never had.
 The change-detection step is deleted rather than rewired. Reconciliation is a sweep with no
 `--only`, and the all-rejected merge above is exactly the case a file-diff gate skips.
 
-The template is renamed to what it does. A file called `promote-on-merge.yml` running
-reconciliation is a small untruth, and it outlives everyone who knows why it is there.
+The template is renamed to what it does: `templates/promote-on-merge.yml` becomes
+`templates/reconcile-on-merge.yml`, and `init-workflow` writes
+`.github/workflows/reconcile-on-merge.yml` into the destination. A file called
+`promote-on-merge.yml` running reconciliation is a small untruth, and it outlives everyone who
+knows why it is there.
 
 **Widening `--diff-filter` to include `D` is the obvious fix and it is rejected.** Verified in a
 scratch repository, with `entries/keep.md` on the default branch:
@@ -52,6 +55,11 @@ rejection. The deletion that `D` does surface is a different event — an entry 
 default branch — which the widened filter would hand to a rejection path as though a reviewer
 had refused it. The widening buys nothing and misreads retirement as rejection, which is worse
 than the gap it was reaching for. Anyone reaching for `D` again should reach for this table.
+
+The same trap waits for file-based recognition, one level down: GitHub's file lists carry a
+removed entry alongside an added one, so a pull request that only retires an entry would look
+like a proposal of it. Both file reads therefore drop `status: removed`. A retirement proposes
+nothing, and reconciliation passes over it.
 
 **A proposal is recognized by what it touches.** A pull request that touches an entry file is a
 lore proposal, whoever opened it and whatever the branch is called; the `lore/propose/` prefix
@@ -69,8 +77,16 @@ report on. It runs instead inside the reconcile loop, per branch of it:
 | open, past the quiet window | one `proposedFiles`. Few, by construction |
 | closed unmerged | one `proposedFiles` |
 
-Tested on the proposing commit in every branch, so one rule decides it: a proposal whose every
-candidate the reviewer deleted has an empty landed diff and is still a proposal.
+One rule decides it everywhere: a pull request proposes an entry when the union of its
+proposing commit and its base-to-head diff touches one. Both halves are needed. The proposing
+commit is the only place a candidate the reviewer deleted still exists, so an all-rejected
+proposal is still a proposal; the diff is the only place an entry added by a *later* commit
+appears, which is the ordinary shape of a pull request opened by hand — and recognizing those
+is the point. Reading only the proposing commit made promotion depend on the order someone
+happened to commit in, which was invisible because the branch prefix used to guarantee one
+commit. `proposedFiles` therefore folds in the landed diff it was already fetching on the
+rejection path, so the merged path pays the same three requests it did whenever anything was
+missing locally, and one more when nothing was.
 
 **The aggregate does go up, and the earlier claim that it does not was wrong.** Dropping the
 prefix is not only a change to what the filter tests — it changes how many pull requests reach
@@ -130,10 +146,21 @@ Explicitly out of scope:
   merges and then sits provisional forever.
 - The destination workflow now needs a token and `pull-requests: read`, where promotion needed
   neither, and it commits `rejected/` as well as `entries/`.
-- `init-workflow` writes a new path, so a destination already holding `promote-on-merge.yml`
-  gains a second job on the same trigger until the old one is deleted. Nothing in the tool
-  deletes it. There is one such destination and its owner edits it by hand; code that migrates
-  absent users would outlast them, and it would keep the retired filename alive inside the tool
-  to do it.
+- `init-workflow` writes `reconcile-on-merge.yml`, so a destination already holding
+  `promote-on-merge.yml` gains a second job on the same trigger until the old one is deleted.
+  Nothing in the tool deletes it. There is one such destination and its owner edits it by
+  hand; code that migrates absent users would outlast them, and it would keep the retired
+  filename alive inside the tool to do it.
 - Direct commits to a lore destination stop being an expected path, which is a change to what
   `README.md` currently recommends for a single writer rather than an addition to it.
+- **A pull request that touches an entry for an unrelated reason is now a proposal of it.** A
+  formatting sweep, a licence header, a renamed term across `entries/` — each promotes every
+  provisional entry it touches and writes `reviewed.by` naming whoever merged, who did not read
+  the claim. This follows from recognizing a proposal by what it touches, and the workflow being
+  replaced had it too: `promote --only <changed entry files>` promoted on any push that touched
+  one. So it is not a regression, but it is now the rule rather than an artefact, and it is in
+  tension with "an entry committed directly stays provisional". Narrowing it — requiring that a
+  pull request *add* an entry file before it counts as proposing it — is a policy call that has
+  not been made. A candidate an author added and removed inside their own pull request is
+  recorded as rejected for the same reason: nothing distinguishes it from a reviewer's deletion,
+  which is the gesture the design assigns that meaning to.

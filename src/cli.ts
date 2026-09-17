@@ -236,11 +236,15 @@ program
         `behind    ${r.missingLocally.join(', ')} — merged upstream but not here; pull the destination\n`,
       )
     }
+    for (const u of r.unreadable) {
+      process.stdout.write(`unreadable ${u.id} — ${u.reason}\n`)
+    }
     if (
       r.promoted.length === 0 &&
       r.declined.length === 0 &&
       r.stale.length === 0 &&
-      r.missingLocally.length === 0
+      r.missingLocally.length === 0 &&
+      r.unreadable.length === 0
     ) {
       process.stdout.write('nothing to reconcile\n')
     }

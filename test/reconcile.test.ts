@@ -16,12 +16,30 @@ const prs: PrState[] = []
 const proposals = new Map<number, { commit?: string; files: string[] }>()
 const landed = new Map<number, string[]>()
 const atCommit = new Map<string, string>()
+/** Per-pull-request fetches, so a test can assert one was never made. */
+const fetched: string[] = []
 
 vi.mock('../src/github.js', () => ({
   repoFromCheckout: async () => 'org/lore',
-  listOpenedBy: async () => prs,
-  proposedFiles: async (_repo: string, number: number) => proposals.get(number) ?? { files: [] },
-  landedFiles: async (_repo: string, number: number) => landed.get(number) ?? [],
+  listPullRequests: async () => prs,
+  proposedFiles: async (_repo: string, number: number) => {
+    fetched.push(`proposed:${number}`)
+    const proposed = proposals.get(number)?.files ?? []
+    const survived = landed.get(number) ?? []
+    return {
+      ...proposals.get(number),
+      files: [...new Set([...proposed, ...survived])],
+      landed: survived,
+    }
+  },
+  proposingCommitFiles: async (_repo: string, number: number) => {
+    fetched.push(`proposing:${number}`)
+    return proposals.get(number) ?? { files: [] }
+  },
+  landedFiles: async (_repo: string, number: number) => {
+    fetched.push(`landed:${number}`)
+    return landed.get(number) ?? []
+  },
   fileAtRef: async (_repo: string, path: string, ref: string) => atCommit.get(`${ref}:${path}`),
 }))
 
@@ -62,11 +80,27 @@ function proposeOne(id: string, number = 7): void {
   })
 }
 
+/** An open pull request, last touched `daysAgo` before the clock the tests reconcile against. */
+function openPr(number: number, daysAgo: number): void {
+  const at = new Date(Date.parse(NOW) - daysAgo * 86_400_000).toISOString().slice(0, 10)
+  prs.push({
+    number,
+    state: 'open',
+    merged: false,
+    updatedAt: at,
+    assignees: ['sarah'],
+    url: `https://github.com/org/lore/pull/${number}`,
+  })
+}
+
+const NOW = '2026-04-20'
+
 beforeEach(() => {
   prs.length = 0
   proposals.clear()
   landed.clear()
   atCommit.clear()
+  fetched.length = 0
 })
 
 describe('a deleted candidate is recorded as rejected', () => {
@@ -162,5 +196,133 @@ describe('a deleted candidate is recorded as rejected', () => {
     rmSync(join(dir, REJECTED_DIR, 'use-query-hook.md'))
 
     expect(rejectedIds(dir)).toEqual(new Set())
+  })
+})
+
+describe('a proposal is recognized by what it touches', () => {
+  it('promotes a pull request nothing of ours opened, on whatever branch', async () => {
+    const dir = tempDir('igor-reconcile-')
+    // Nothing about the branch reaches `reconcile`: `PrState` carries no ref, because the
+    // list is no longer filtered by one. A hand-made pull request is a proposal on its files.
+    proposeOne('use-query-hook')
+    writeEntry(dir, entry('use-query-hook'))
+
+    const result = await reconcile(config(dir))
+
+    expect(result.promoted.map((p) => p.id)).toEqual(['use-query-hook'])
+  })
+
+  it('ignores a merged pull request that touches no entry file', async () => {
+    const dir = tempDir('igor-reconcile-')
+    // A markdown file outside the entry path shares no namespace with an entry: before the
+    // path test, `docs/use-query-hook.md` named the entry `use-query-hook`.
+    writeEntry(dir, entry('use-query-hook'))
+    proposals.set(7, { commit: 'c0ffee', files: ['README.md', 'docs/use-query-hook.md'] })
+    prs.push({
+      number: 7,
+      state: 'closed',
+      merged: true,
+      mergedBy: 'adam',
+      mergedAt: '2026-04-01',
+      updatedAt: '2026-04-01',
+      assignees: ['adam'],
+      url: 'https://github.com/org/lore/pull/7',
+    })
+
+    const result = await reconcile(config(dir))
+
+    expect(result.promoted).toEqual([])
+    expect(result.declined).toEqual([])
+    expect(result.missingLocally).toEqual([])
+    expect(rejectedIds(dir)).toEqual(new Set())
+  })
+
+  it('does not report a pull request closed unmerged that proposed no entry', async () => {
+    const dir = tempDir('igor-reconcile-')
+    proposals.set(7, { commit: 'c0ffee', files: ['src/cli.ts'] })
+    prs.push({
+      number: 7,
+      state: 'closed',
+      merged: false,
+      updatedAt: '2026-04-01',
+      assignees: [],
+      url: 'https://github.com/org/lore/pull/7',
+    })
+
+    expect((await reconcile(config(dir))).deferred).toEqual([])
+  })
+
+  it('reconciles a merge that landed no entry file at all, rejecting every candidate', async () => {
+    const dir = tempDir('igor-reconcile-')
+    const ids = ['use-query-hook', 'keep-migrations-reversible']
+    proposals.set(7, { commit: 'c0ffee', files: ids.map((id) => `${ENTRIES_DIR}/${id}.md`) })
+    for (const id of ids) {
+      atCommit.set(`c0ffee:${ENTRIES_DIR}/${id}.md`, serialize(entry(id)))
+    }
+    // The reviewer deleted both, so the merge adds and modifies nothing under `entries/`.
+    landed.set(7, [])
+    prs.push({
+      number: 7,
+      state: 'closed',
+      merged: true,
+      mergedBy: 'adam',
+      mergedAt: '2026-04-01',
+      updatedAt: '2026-04-01',
+      assignees: ['adam'],
+      url: 'https://github.com/org/lore/pull/7',
+    })
+
+    const result = await reconcile(config(dir))
+
+    expect(result.declined.map((d) => d.id).sort()).toEqual([
+      'keep-migrations-reversible',
+      'use-query-hook',
+    ])
+    expect(result.promoted).toEqual([])
+    expect(rejectedIds(dir)).toEqual(
+      new Set(['keep-migrations-reversible', 'use-query-hook']),
+    )
+  })
+})
+
+describe('an open pull request costs a fetch only once it is quiet', () => {
+  it('fetches nothing for a backlog of open pull requests inside the window', async () => {
+    const dir = tempDir('igor-reconcile-')
+    for (let n = 1; n <= 20; n += 1) openPr(n, 1)
+
+    const result = await reconcile(config(dir), { now: new Date(NOW), staleAfterDays: 7 })
+
+    expect(fetched).toEqual([])
+    expect(result.stale).toEqual([])
+  })
+
+  it('fetches for the quiet one only, and drops it if it proposed no entry', async () => {
+    const dir = tempDir('igor-reconcile-')
+    for (let n = 1; n <= 20; n += 1) openPr(n, 1)
+    openPr(99, 30)
+    openPr(98, 30)
+    const proposed = `${ENTRIES_DIR}/use-query-hook.md`
+    proposals.set(99, { commit: 'c0ffee', files: [proposed] })
+    landed.set(99, [proposed])
+    proposals.set(98, { commit: 'deadbe', files: ['docs/architecture.md'] })
+    landed.set(98, ['docs/architecture.md'])
+
+    const result = await reconcile(config(dir), { now: new Date(NOW), staleAfterDays: 7 })
+
+    // #99's diff settles it in one request. #98's diff shows no entry file, which could still
+    // mean a proposal the reviewer emptied, so its proposing commit is asked too.
+    expect(fetched).toEqual(['landed:99', 'landed:98', 'proposing:98'])
+    expect(result.stale.map((s) => s.pr)).toEqual([99])
+  })
+
+  it('still reports a quiet proposal whose every candidate the reviewer has deleted', async () => {
+    const dir = tempDir('igor-reconcile-')
+    openPr(97, 30)
+    proposals.set(97, { commit: 'c0ffee', files: [`${ENTRIES_DIR}/use-query-hook.md`] })
+    landed.set(97, [])
+
+    const result = await reconcile(config(dir), { now: new Date(NOW), staleAfterDays: 7 })
+
+    expect(result.stale.map((s) => s.pr)).toEqual([97])
   })
 })
