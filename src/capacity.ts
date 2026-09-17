@@ -1,5 +1,5 @@
 import { appendRecord } from './state.js'
-import { parseNdjson, type Window } from './budget.js'
+import { parseNdjson, type SpendRecord, type Window } from './budget.js'
 
 /**
  * How full a window was, and when it resets — one shape whether the figure came from a
@@ -129,4 +129,192 @@ export async function recordObservation(
 /** Mirrors `loadSpend`: the whole observation log, oldest first. */
 export async function loadObservations(read: (path: string) => Promise<string | undefined>): Promise<Observation[]> {
   return parseNdjson<Observation>((await read(CAPACITY_PATH)) ?? '')
+}
+
+/**
+ * How long each window runs, per `capacity-from-observation` §3.
+ *
+ * Session is measured rather than guessed: two readings one afternoon reset at 2:30pm and then
+ * at 7:30pm (`scheduled-observation/design.md`). Week is the plain reading of "Current week",
+ * which nothing has measured yet. Both are built in, not configurable — `scheduled-observation`
+ * §4 derives a length from the gap between two observed resets and supersedes this.
+ *
+ * Expressed in hours because a cadence fixed in exact time is what lets one observed reset fix
+ * every boundary either side of it, and because `Temporal.Instant` arithmetic refuses date
+ * units for exactly that reason: a "day" is a calendar quantity and two of them are 23 hours
+ * long each year.
+ */
+export const WINDOW_LENGTH: Record<Window, Temporal.Duration> = {
+  session: Temporal.Duration.from({ hours: 5 }),
+  week: Temporal.Duration.from({ hours: 7 * 24 }),
+}
+
+export interface InstanceBounds {
+  /** ISO instant the instance began. Counted. */
+  start: string
+  /** ISO instant the instance resets. Not counted: it is the next instance's `start`. */
+  end: string
+}
+
+/**
+ * The window instance an observation belongs to: it ends at that observation's resolved reset
+ * and began one window length earlier. `undefined` for a reset that is not an instant, which is
+ * how an observation whose phrase never resolved derives nothing.
+ *
+ * Instances tile the timeline, so the interval is half-open: a moment on a boundary belongs to
+ * the instance starting there and not to the one ending there, and no moment belongs to neither.
+ */
+export function instanceBounds(resetsAt: string, length: Temporal.Duration): InstanceBounds | undefined {
+  let end: Temporal.Instant
+  try {
+    end = Temporal.Instant.from(resetsAt)
+  } catch {
+    return undefined
+  }
+  return {
+    start: end.subtract(length).toString({ fractionalSecondDigits: 3 }),
+    end: end.toString({ fractionalSecondDigits: 3 }),
+  }
+}
+
+/**
+ * Recorded Igor spend for one seat inside one window instance — the numerator of the division,
+ * and not spend over all recorded history. `spendByRole` sums with no time filter at all, so it
+ * answers a different question and cannot stand in here.
+ *
+ * A row with no cost, or a cost or instant the log cannot be trusted for, is skipped rather than
+ * poisoning a figure a bound will later be computed from.
+ */
+export function spendInInstance(records: readonly SpendRecord[], seat: string, bounds: InstanceBounds): number {
+  const start = Temporal.Instant.from(bounds.start)
+  const end = Temporal.Instant.from(bounds.end)
+  let total = 0
+  for (const record of records) {
+    if (record.seat !== seat) continue
+    const cost = record.costUsd
+    if (cost === undefined || !Number.isFinite(cost)) continue
+    let at: Temporal.Instant
+    try {
+      at = Temporal.Instant.from(record.at)
+    } catch {
+      continue
+    }
+    if (Temporal.Instant.compare(at, start) < 0 || Temporal.Instant.compare(at, end) >= 0) continue
+    total += cost
+  }
+  return total
+}
+
+/**
+ * The capacity one observation implies: spend inside its instance over the fraction that
+ * instance was consumed. The only place the division happens.
+ *
+ * `undefined` rather than a number where the instance holds no recorded spend, or where the
+ * fraction is not a positive one. Dividing by an unrelated numerator produces a number, and
+ * nothing about that number is true.
+ *
+ * A fraction above 100 is left uncapped. It can only lower the quotient, and low is the
+ * direction that cannot overrun anybody's floor.
+ */
+export function capacityFrom(spendInInstanceUsd: number, percentUsed: number): number | undefined {
+  if (!Number.isFinite(percentUsed) || percentUsed <= 0) return undefined
+  if (!Number.isFinite(spendInInstanceUsd) || spendInInstanceUsd <= 0) return undefined
+  return spendInInstanceUsd / (percentUsed / 100)
+}
+
+/** Where a capacity figure came from, so an assumption is never reported as a measurement. */
+export type CapacityEstimate =
+  | { capacityUsd: number; basis: 'observed'; from: Observation }
+  | { capacityUsd: number; basis: 'declared' }
+
+/** `undefined` for an instant no comparison can be made against, so such a row is left out of
+ *  the ordering rather than ordered arbitrarily. */
+function instantOf(iso: string): Temporal.Instant | undefined {
+  try {
+    return Temporal.Instant.from(iso)
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * The part of an observation's instance the observation vouches for: from the instance start to
+ * the moment the reading was taken.
+ *
+ * `percentUsed` is a snapshot at `at`, so spend recorded after it consumed none of that
+ * fraction. Counting it would raise the estimate as Igor spends against it, and the bound
+ * derived from the estimate would grow faster than the spend it exists to stop — a seat that
+ * never stops rather than one that stops early.
+ *
+ * `undefined` where the reading precedes its own instance, which `resolveReset` permits: it
+ * promises a reset at or after the reading, never one within a window of it.
+ */
+function observedSpan(observation: Observation, length: Temporal.Duration): InstanceBounds | undefined {
+  if (observation.resetsAt === undefined) return undefined
+  const instance = instanceBounds(observation.resetsAt, length)
+  if (instance === undefined) return undefined
+  const at = instantOf(observation.at)
+  if (at === undefined) return undefined
+  if (Temporal.Instant.compare(at, Temporal.Instant.from(instance.start)) <= 0) return undefined
+  // Compared as instants: `at` comes from the log and may carry an offset, where text order and
+  // instant order disagree.
+  if (Temporal.Instant.compare(at, Temporal.Instant.from(instance.end)) >= 0) return instance
+  return { start: instance.start, end: at.toString({ fractionalSecondDigits: 3 }) }
+}
+
+/**
+ * A seat's capacity for a window: the figure implied by the most recent observation that yields
+ * one, or the declared starting estimate until such an observation exists.
+ *
+ * Newest-wins is what makes the estimate self-correcting. A limit error is by construction the
+ * newest observation at the moment it is written, so a refusal lowers whatever estimate
+ * permitted the run, with nobody re-running a reading. Which observations to combine when there
+ * are several is deliberately not decided here: `capacity-from-observation` §3 wants a season of
+ * them first, and warns specifically against concluding that a shared seat is stuck with an
+ * underestimate.
+ *
+ * The numerator is the spend the observation could have seen — inside its instance and no later
+ * than the reading itself, per `observedSpan`.
+ *
+ * A declared figure is superseded outright rather than averaged — but only by an observation
+ * that yields a figure. One whose reset never resolved "contributes neither an expiry nor a
+ * capacity derivation", and erasing a declared figure would be contributing something.
+ *
+ * Observations scoped to a single model are skipped: a per-model limit is a separate cap from
+ * the all-models one, and no bound is derived against it in this change.
+ *
+ * Where the seat has consumers Igor cannot see, the figure comes out below true capacity,
+ * because the numerator counts only Igor's share of a denominator everybody moved. That is the
+ * safe direction and is not corrected for.
+ */
+export function capacityFor(
+  observations: readonly Observation[],
+  records: readonly SpendRecord[],
+  seat: string,
+  window: Window,
+  declaredUsd?: number,
+): CapacityEstimate | undefined {
+  const ordered = observations
+    .filter((o) => o.seat === seat && o.window === window && o.model === undefined)
+    .flatMap((o) => {
+      const at = instantOf(o.at)
+      return at === undefined ? [] : [{ o, at }]
+    })
+    // Reversing before a stable sort makes the row written last win a tie on `at`, which is the
+    // append-only log's own answer to which of two simultaneous observations is the later.
+    .reverse()
+  ordered.sort((a, b) => Temporal.Instant.compare(b.at, a.at))
+
+  for (const { o } of ordered) {
+    const span = observedSpan(o, WINDOW_LENGTH[window])
+    if (span === undefined) continue
+    const capacityUsd = capacityFrom(spendInInstance(records, seat, span), o.percentUsed)
+    if (capacityUsd === undefined) continue
+    return { capacityUsd, basis: 'observed', from: o }
+  }
+
+  if (declaredUsd !== undefined && Number.isFinite(declaredUsd) && declaredUsd > 0) {
+    return { capacityUsd: declaredUsd, basis: 'declared' }
+  }
+  return undefined
 }

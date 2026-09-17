@@ -41,6 +41,12 @@ export interface Seat extends TokenSource {
   dedicated?: boolean
   /** Fraction of the limit Igors must not consume. */
   reserve: number
+  /** Starting capacity estimate, in dollars of list-price spend the window holds, superseded
+   *  outright by the first observation of this seat that yields one. It exists so a seat
+   *  carrying a reserve can be drawn on before it has ever been observed, which is otherwise
+   *  impossible: a reserve needs a capacity, a capacity needs spend inside an observed window,
+   *  and a reserved seat is not spent from. */
+  capacity?: number
 }
 
 /**
@@ -578,6 +584,11 @@ export function parseOrgBudget(raw: unknown): OrgBudget {
     if (dedicated && typeof reserveRaw === 'number' && reserveRaw > 0) {
       throw new BudgetError(`seat "${s['id']}" is dedicated, so nobody is there to reserve capacity for`)
     }
+    const capacityRaw = s['capacity']
+    const capacityBad = typeof capacityRaw !== 'number' || !Number.isFinite(capacityRaw) || capacityRaw <= 0
+    if (capacityRaw !== undefined && capacityBad) {
+      throw new BudgetError(`seat "${s['id']}".capacity must be a positive number of dollars`)
+    }
     const tokenEnv = typeof s['token_env'] === 'string' ? s['token_env'] : undefined
     const tokenFile = typeof s['token_file'] === 'string' ? s['token_file'] : undefined
     const tokenCommand = typeof s['token_command'] === 'string' ? s['token_command'] : undefined
@@ -591,6 +602,7 @@ export function parseOrgBudget(raw: unknown): OrgBudget {
       ...(tokenFile === undefined ? {} : { tokenFile }),
       ...(tokenCommand === undefined ? {} : { tokenCommand }),
       ...(dedicated ? { dedicated } : {}),
+      ...(capacityRaw === undefined ? {} : { capacity: capacityRaw as number }),
       reserve: dedicated ? 0 : ((reserveRaw as number) ?? 0),
     })
   }

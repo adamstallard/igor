@@ -1,5 +1,17 @@
 import { describe, expect, it } from 'vitest'
-import { CAPACITY_PATH, loadObservations, recordObservation, resolveReset, type Observation } from '../src/capacity.js'
+import {
+  CAPACITY_PATH,
+  WINDOW_LENGTH,
+  capacityFor,
+  capacityFrom,
+  instanceBounds,
+  loadObservations,
+  recordObservation,
+  resolveReset,
+  spendInInstance,
+  type Observation,
+} from '../src/capacity.js'
+import type { SpendRecord } from '../src/budget.js'
 import type { appendRecord } from '../src/state.js'
 
 /** A `write` that captures what it was called with, instead of touching `appendRecord`. */
@@ -187,5 +199,271 @@ describe('resolving a reset phrase', () => {
   it('is unresolvable for junk input', () => {
     expect(resolveReset('sometime next week, probably', BEFORE)).toBeUndefined()
     expect(resolveReset('', BEFORE)).toBeUndefined()
+  })
+})
+
+// One session instance: 16:30 → 21:30 on 15 Sep, the reset measured in
+// `scheduled-observation/design.md`.
+const INSTANCE_START = '2026-09-15T16:30:00.000Z'
+const INSTANCE_END = '2026-09-15T21:30:00.000Z'
+
+function spend(at: string, costUsd: number, seat = 'adam'): SpendRecord {
+  return { at, seat, role: 'triage', costUsd }
+}
+
+function observed(fields: Partial<Observation> = {}): Observation {
+  return {
+    at: '2026-09-15T20:00:00.000Z',
+    seat: 'adam',
+    window: 'session',
+    percentUsed: 36,
+    resetsAt: INSTANCE_END,
+    source: 'usage',
+    ...fields,
+  }
+}
+
+describe('window instance boundaries', () => {
+  it('bounds the session instance by its reset and the five-hour cadence', () => {
+    expect(instanceBounds(INSTANCE_END, WINDOW_LENGTH.session)).toEqual({
+      start: INSTANCE_START,
+      end: INSTANCE_END,
+    })
+  })
+
+  it('bounds the weekly instance by seven days', () => {
+    expect(instanceBounds(INSTANCE_END, WINDOW_LENGTH.week)).toEqual({
+      start: '2026-09-08T21:30:00.000Z',
+      end: INSTANCE_END,
+    })
+  })
+
+  it('subtracts exact time rather than calendar days across a daylight-saving transition', () => {
+    // US Pacific falls back on 2026-11-01, so the seven days before this reset are 169 hours of
+    // local wall clock. Counting them as calendar days would put the boundary at 20:30Z — an
+    // hour of spend into the instance before, or out of this one.
+    expect(instanceBounds('2026-11-03T21:30:00.000Z', WINDOW_LENGTH.week)?.start).toBe(
+      '2026-10-27T21:30:00.000Z',
+    )
+    // Spring forward, the other direction: 2026-03-08.
+    expect(instanceBounds('2026-03-10T21:30:00.000Z', WINDOW_LENGTH.week)?.start).toBe(
+      '2026-03-03T21:30:00.000Z',
+    )
+  })
+
+  it('has no instance for a reset that is not an instant', () => {
+    expect(instanceBounds('Sep 15 at 2:30pm (America/Los_Angeles)', WINDOW_LENGTH.session)).toBeUndefined()
+  })
+})
+
+describe('spend inside one instance', () => {
+  const bounds = { start: INSTANCE_START, end: INSTANCE_END }
+
+  it('counts the instant the instance begins and not the instant it resets', () => {
+    const records: SpendRecord[] = [
+      // Instances tile, so the boundary belongs to the instance starting there.
+      spend(INSTANCE_START, 3),
+      spend('2026-09-15T19:00:00.000Z', 15),
+      spend(INSTANCE_END, 400),
+      spend('2026-09-15T16:29:59.999Z', 400),
+    ]
+    expect(spendInInstance(records, 'adam', bounds)).toBe(18)
+  })
+
+  it('counts only the seat asked about', () => {
+    const records = [spend('2026-09-15T19:00:00.000Z', 18), spend('2026-09-15T19:00:00.000Z', 400, 'fleet-1')]
+    expect(spendInInstance(records, 'adam', bounds)).toBe(18)
+  })
+
+  it('skips a row with no cost or an unreadable instant', () => {
+    const records: SpendRecord[] = [
+      spend('2026-09-15T19:00:00.000Z', 18),
+      { at: '2026-09-15T19:30:00.000Z', seat: 'adam' },
+      { at: 'whenever', seat: 'adam', costUsd: 400 },
+    ]
+    expect(spendInInstance(records, 'adam', bounds)).toBe(18)
+  })
+})
+
+describe('the division', () => {
+  it('divides spend in the instance by the fraction consumed', () => {
+    expect(capacityFrom(18, 36)).toBeCloseTo(50, 10)
+  })
+
+  it('derives nothing from a fraction that is not positive', () => {
+    expect(capacityFrom(18, 0)).toBeUndefined()
+    expect(capacityFrom(18, -5)).toBeUndefined()
+    expect(capacityFrom(18, Number.NaN)).toBeUndefined()
+  })
+
+  it('derives nothing from an instance holding no spend', () => {
+    expect(capacityFrom(0, 36)).toBeUndefined()
+  })
+})
+
+describe('a seat capacity estimate', () => {
+  it('divides only the spend inside the observation own instance', () => {
+    const records = [
+      spend('2026-09-15T14:00:00.000Z', 400), // the instance before
+      spend('2026-09-15T19:00:00.000Z', 18),
+      spend('2026-09-15T22:00:00.000Z', 400), // the instance after
+    ]
+    const estimate = capacityFor([observed()], records, 'adam', 'session')
+    expect(estimate?.capacityUsd).toBeCloseTo(50, 10)
+    expect(estimate?.basis).toBe('observed')
+  })
+
+  it('names the observation it derived from', () => {
+    const observation = observed()
+    const estimate = capacityFor([observation], [spend('2026-09-15T19:00:00.000Z', 18)], 'adam', 'session')
+    expect(estimate).toEqual({ capacityUsd: expect.closeTo(50, 10), basis: 'observed', from: observation })
+  })
+
+  it('derives nothing when the instance holds no recorded spend', () => {
+    const records = [spend('2026-09-15T14:00:00.000Z', 400)]
+    expect(capacityFor([observed()], records, 'adam', 'session')).toBeUndefined()
+  })
+
+  it('derives nothing from an observation whose reset never resolved', () => {
+    const unresolved = observed({ resetsPhrase: 'sometime next week, probably' })
+    delete unresolved.resetsAt
+    expect(capacityFor([unresolved], [spend('2026-09-15T19:00:00.000Z', 18)], 'adam', 'session')).toBeUndefined()
+  })
+
+  it('ignores another seat and another window', () => {
+    const records = [spend('2026-09-15T19:00:00.000Z', 18)]
+    expect(capacityFor([observed({ seat: 'fleet-1' })], records, 'adam', 'session')).toBeUndefined()
+    expect(capacityFor([observed({ window: 'week' })], records, 'adam', 'session')).toBeUndefined()
+  })
+
+  it('counts only the spend the observation could have seen', () => {
+    // A reading taken a third of the way into its instance says nothing about the two thirds
+    // after it. Counting those would make an estimate rise as Igor spends against it, and the
+    // bound derived from it grow faster than the spend it is there to stop.
+    const records = [spend('2026-09-15T19:00:00.000Z', 18), spend('2026-09-15T21:00:00.000Z', 180)]
+    expect(capacityFor([observed()], records, 'adam', 'session')?.capacityUsd).toBeCloseTo(50, 10)
+  })
+
+  it('compares the observation instant against the instance, not its text', () => {
+    // 23:00+05:00 is 18:00Z — inside the instance, and lexicographically past its 22:00Z end.
+    const reset = '2026-09-15T22:00:00.000Z'
+    const offset = observed({ at: '2026-09-15T23:00:00.000+05:00', resetsAt: reset })
+    const records = [spend('2026-09-15T17:30:00.000Z', 18), spend('2026-09-15T19:00:00.000Z', 180)]
+    expect(capacityFor([offset], records, 'adam', 'session')?.capacityUsd).toBeCloseTo(50, 10)
+  })
+
+  it('derives nothing from an observation taken before its own instance began', () => {
+    // `resolveReset` only promises a reset at or after the reading, never one within a window
+    // of it, so a phrase naming a distant reset leaves every dollar in the instance unobserved.
+    const distant = observed({ at: '2026-09-15T10:00:00.000Z' })
+    expect(capacityFor([distant], [spend('2026-09-15T19:00:00.000Z', 18)], 'adam', 'session')).toBeUndefined()
+  })
+
+  it('measures a weekly observation against the seven-day cadence', () => {
+    // Six days before the reset: inside the weekly instance, nowhere near a five-hour one.
+    const records = [spend('2026-09-09T21:30:00.000Z', 18)]
+    const weekly = observed({ window: 'week' })
+    expect(capacityFor([weekly], records, 'adam', 'week')?.capacityUsd).toBeCloseTo(50, 10)
+  })
+
+  it('takes the row written last when two observations share an instant', () => {
+    const records = [spend('2026-09-15T19:00:00.000Z', 18)]
+    const earlierRow = observed({ percentUsed: 18 })
+    const laterRow = observed({ percentUsed: 36 })
+    expect(capacityFor([earlierRow, laterRow], records, 'adam', 'session')?.capacityUsd).toBeCloseTo(50, 10)
+    expect(capacityFor([laterRow, earlierRow], records, 'adam', 'session')?.capacityUsd).toBeCloseTo(100, 10)
+  })
+
+  it('ignores an observation scoped to one model', () => {
+    const records = [spend('2026-09-15T19:00:00.000Z', 18)]
+    const perModel = observed({ at: '2026-09-15T21:00:00.000Z', percentUsed: 100, source: 'limit', model: 'opus' })
+    const estimate = capacityFor([observed(), perModel], records, 'adam', 'session')
+    expect(estimate?.capacityUsd).toBeCloseTo(50, 10)
+    expect(estimate?.basis === 'observed' && estimate.from).toEqual(observed())
+  })
+})
+
+describe('a limit error lowers the estimate that permitted it', () => {
+  const records = [
+    spend('2026-09-15T19:00:00.000Z', 18),
+    // The next session instance: 21:30 → 02:30.
+    spend('2026-09-15T23:00:00.000Z', 30),
+  ]
+  const refusal = observed({
+    at: '2026-09-16T01:00:00.000Z',
+    percentUsed: 100,
+    resetsAt: '2026-09-16T02:30:00.000Z',
+    source: 'limit',
+  })
+
+  it('estimates from the reading before the refusal', () => {
+    expect(capacityFor([observed()], records, 'adam', 'session')?.capacityUsd).toBeCloseTo(50, 10)
+  })
+
+  it('lowers the estimate to what the refusal implies', () => {
+    const before = capacityFor([observed()], records, 'adam', 'session')
+    const after = capacityFor([observed(), refusal], records, 'adam', 'session')
+    expect(after?.capacityUsd).toBe(30)
+    expect(after?.capacityUsd).toBeLessThan(before?.capacityUsd ?? 0)
+    expect(after?.basis === 'observed' && after.from).toEqual(refusal)
+  })
+
+  it('holds the figure the refusal implied when later spend lands in the same instance', () => {
+    // Another Igor's run was already in flight when the refusal was written, and `appendRecord`
+    // stamps a run at completion. Those dollars are not part of the 100% the provider reported.
+    const inFlight = [...records, spend('2026-09-16T01:15:00.000Z', 5)]
+    expect(capacityFor([refusal], inFlight, 'adam', 'session')?.capacityUsd).toBe(30)
+  })
+
+  it('takes the later observation whichever order the rows are read in', () => {
+    expect(capacityFor([refusal, observed()], records, 'adam', 'session')?.capacityUsd).toBe(30)
+  })
+
+  it('falls back to an older observation when the newest derives nothing', () => {
+    // The refusal's own instance holds no spend, so it yields no figure and the reading stands.
+    const onlyEarlier = [spend('2026-09-15T19:00:00.000Z', 18)]
+    const estimate = capacityFor([observed(), refusal], onlyEarlier, 'adam', 'session')
+    expect(estimate?.capacityUsd).toBeCloseTo(50, 10)
+  })
+})
+
+describe('a co-consumer makes the estimate low, not high', () => {
+  it('yields a smaller figure the more of the window somebody else moved', () => {
+    // The same $18 of Igor spend in the same instance. At 18% consumed Igor moved the window
+    // alone; at 36% the seat owner moved as much again, and the same spend now stands for half
+    // as much of the window.
+    const records = [spend('2026-09-15T19:00:00.000Z', 18)]
+    const alone = capacityFor([observed({ percentUsed: 18 })], records, 'adam', 'session')
+    const shared = capacityFor([observed({ percentUsed: 36 })], records, 'adam', 'session')
+    expect(alone?.capacityUsd).toBeCloseTo(100, 10)
+    expect(shared?.capacityUsd).toBeCloseTo(50, 10)
+    expect(shared?.capacityUsd).toBeLessThan(alone?.capacityUsd ?? 0)
+  })
+})
+
+describe('a declared capacity', () => {
+  const records = [spend('2026-09-15T19:00:00.000Z', 18)]
+
+  it('stands, reported as declared, while the seat has no observation', () => {
+    expect(capacityFor([], records, 'adam', 'session', 250)).toEqual({ capacityUsd: 250, basis: 'declared' })
+  })
+
+  it('is superseded outright by an observation rather than averaged with it', () => {
+    const estimate = capacityFor([observed()], records, 'adam', 'session', 250)
+    expect(estimate?.capacityUsd).toBeCloseTo(50, 10)
+    expect(estimate?.basis).toBe('observed')
+  })
+
+  it('survives an observation that yields no figure of its own', () => {
+    const unresolved = observed({ resetsPhrase: 'sometime next week, probably' })
+    delete unresolved.resetsAt
+    expect(capacityFor([unresolved], records, 'adam', 'session', 250)).toEqual({
+      capacityUsd: 250,
+      basis: 'declared',
+    })
+  })
+
+  it('leaves a seat with neither an observation nor a declared figure with no capacity at all', () => {
+    expect(capacityFor([], records, 'adam', 'session')).toBeUndefined()
   })
 })

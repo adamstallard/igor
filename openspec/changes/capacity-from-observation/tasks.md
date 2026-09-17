@@ -17,20 +17,23 @@
 
 ## 3. What is this seat's capacity
 
-- [ ] 3.1 Window instance boundaries from `resetsAt` and the window's cadence, so the numerator
+- [x] 3.1 Window instance boundaries from `resetsAt` and the window's cadence, so the numerator
       is the spend inside one instance
-- [ ] 3.2 `capacityFrom(spendInInstance, percentUsed)` — pure, and the only place the division
+- [x] 3.2 `capacityFrom(spendInInstance, percentUsed)` — pure, and the only place the division
       happens
-- [ ] 3.3 An observation with no spend in its instance yields nothing, rather than a number
-- [ ] 3.4 An observation implying a lower capacity than the current estimate lowers it
-- [ ] 3.5 Tests: the division, instance bounding, the monotone correction after a limit error,
+- [x] 3.3 An observation with no spend in its instance yields nothing, rather than a number
+- [x] 3.4 An observation implying a lower capacity than the current estimate lowers it
+- [x] 3.5 A `capacity` declared on a seat is the estimate until an observation exists, and is
+      then superseded outright rather than combined
+- [x] 3.6 Tests: the division, instance bounding, the monotone correction after a limit error,
       and that a co-consumer makes the estimate low rather than high
 
 ## 4. The bound
 
 - [ ] 4.1 The gate compares summed Igor spend for the window against
       `(1 − reserve) × capacity`, across every Igor and role on the seat
-- [ ] 4.2 A seat with a reserve and no capacity figure is passed over, with that reason
+- [ ] 4.2 A seat with a reserve and neither an observation nor a declared capacity is passed
+      over, with that reason
 - [ ] 4.3 A seat with no reserve and no capacity figure is usable
 - [ ] 4.4 Tests: the bound holds with the owner unobserved, two Igors share one bound, a
       reserved uncalibrated seat is never the pool's fallback
