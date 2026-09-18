@@ -91,7 +91,7 @@ job and a person's local invocation sweep the same pull requests.
 - **THEN** reconciliation still runs on that merge
 - **AND** each deleted candidate is recorded as rejected
 
-#### Scenario: Reconciling what is already settled changes nothing
+#### Scenario: Already promoted by repository automation
 
 - **WHEN** entries were already set active before reconciliation runs — by the merge-triggered
   job, or by an earlier invocation

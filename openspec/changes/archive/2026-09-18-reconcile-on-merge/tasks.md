@@ -79,5 +79,9 @@
 - [x] 5.1 Issue for where a quiet-proposal escalation is read when reconciliation runs in a job
       log — the same question a stopped scope raises in `condition-backoff`, and answered for
       both at once. [#50](https://github.com/adamstallard/igor/issues/50)
-- [ ] 5.2 On archive, `Already promoted by repository automation` is gone by intent: it is
-      rewritten as `Reconciling what is already settled changes nothing`, not dropped
+- [x] 5.2 The scenario keeps the name `Already promoted by repository automation`. A better
+      one was written and reverted: `openspec archive` refuses a MODIFIED block that drops a
+      scenario the in-force spec still carries, and a rename reads to it as a drop — it
+      aborts rather than losing the scenario. Added scenarios land; renamed ones cannot. The
+      widened WHEN and the added AND carry the change instead, which is where the substance
+      was
