@@ -348,7 +348,7 @@ function asIso(value: unknown): string | undefined {
 }
 
 /**
- * Deliberately not `resolveReset`, though `capacity.ts` exports it and it reads the very phrase
+ * Deliberately not `resolveReset`, though `reset.ts` exports it and it reads the very phrase
  * the provider is believed to print. It answers with the first such occurrence at or after the
  * moment it is given, so a reset already gone comes back a year out — straight past the
  * staleness guard in `usageLimit`, which compares against that same moment — and cutting the
