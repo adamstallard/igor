@@ -630,8 +630,7 @@ export function poolFor(org: OrgBudget, seat: string): Pool | undefined {
 }
 
 /**
- * When the pool's unreadable seats next have room, for a handoff that would otherwise say
- * nothing about when Igor is back.
+ * When the pool's unreadable seats next have room, as an instant a handoff can state.
  *
  * Per seat, the **latest** of its blocked windows: a seat shut out of the session until 15:00
  * and out of the week until Friday is back on Friday, and stating 15:00 would be a return
@@ -682,8 +681,9 @@ export interface Gate {
    */
   token?: TokenSource
   resetAt?: string
-  /** `resetAt` is the latest the seat can still be shut, not a return the provider stated —
-   *  true where a refusal named no reset and the window's cadence is all that bounds it. */
+  /** `resetAt` is not a return the provider stated: a cadence ceiling where a refusal named
+   *  none, or the earlier of two shut windows where two provider phrases cannot be ordered. It
+   *  can be late or early, so the handoff hedges the hour rather than bounding it. */
   resetApproximate?: boolean
   reason: string
 }
@@ -728,25 +728,36 @@ export function budgetGate(
       const reading = readings.find((r) => r.seat.id === id)
       const usage = reading?.usage
       if (reading === undefined || usage === undefined) return []
+      const shut = (['week', 'session'] as Window[]).filter(
+        (w) => seatStatus(reading.seat, usage, w).headroomPercent <= 0,
+      )
+      if (shut.length === 0) return []
+      const resets = shut.map((w) => limitFor(usage, w).resetsAt)
+      // The week is answered for first below, so a shut week with no reset takes the seat off
+      // the clock entirely, as it already does on the derived path. Falling through to the
+      // session's would state the hour one window opens while the week still holds the seat,
+      // which is early by up to a week. A shut session with no reset is no such problem: the
+      // week's stated hour is either the later of the two or under a session-length early.
+      if (resets[0] === undefined) return []
       // Where both windows are shut the seat returns on the later, which the week almost
       // always is. Why "almost" is settled by preference rather than comparison: these are
       // provider phrases, and ordering them needs `resolveReset` from `capacity.ts`, which
       // imports from here. The week is wrong only inside the last session of one, so it errs
       // by under five hours where naming the session errs by up to a week, the same direction.
-      const shut = (['week', 'session'] as Window[]).filter(
-        (w) => seatStatus(reading.seat, usage, w).headroomPercent <= 0,
-      )
-      return shut.flatMap((w) => {
-        const resetsAt = limitFor(usage, w).resetsAt
-        return resetsAt === undefined ? [] : [resetsAt]
-      })
+      // A preference is not a reading, which is what `estimated` marks here.
+      return [{ resetAt: resets[0]!, estimated: shut.length > 1 }]
     })[0]
+    // A live reading answers for its own seat and a derived figure for a seat nothing could
+    // read, and the pool is back on the earlier of the two. They cannot be ordered: one is a
+    // provider phrase, and resolving it needs `resolveReset` from `capacity.ts`, which imports
+    // from here. So the reading wins where there is one, and a pool-mate back sooner goes
+    // unstated — see the change's `design.md`.
     const derived = live === undefined ? derivedReset(pool, readings, bounds) : undefined
-    const soonest = live ?? derived?.resetAt
+    const soonest = live ?? derived
     return {
       exhausted: () => true,
-      ...(soonest === undefined ? {} : { resetAt: soonest }),
-      ...(derived?.estimated === true ? { resetApproximate: true } : {}),
+      ...(soonest === undefined ? {} : { resetAt: soonest.resetAt }),
+      ...(soonest?.estimated === true ? { resetApproximate: true } : {}),
       reason: choice.reason,
     }
   }

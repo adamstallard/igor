@@ -128,14 +128,15 @@ describe('a budget handoff says when capacity returns', () => {
     expect(text).toContain('igor-1')
   })
 
-  it('says "by" where the time is the latest it can still be shut, not a stated return', () => {
-    // A refusal that named no reset still bounds itself: the window resets within one cadence.
-    // Stating that as the hour it comes back would promise something the provider never said.
+  it('hedges the time where it is not a return the provider stated', () => {
+    // A refusal that named no reset bounds itself by the cadence; a week preferred over a
+    // session nothing can order it against is a figure that may be early. Neither is an hour
+    // the provider gave, and the sentence promises neither the hour nor a side of it.
     const text = composeHandoff(role(), candidate(), {
       reason: { kind: 'budget', seat: 'igor-1', resetAt, resetApproximate: true },
       done: [], remaining: [], suggested: [],
     }, NOW)
-    expect(text).toContain('back by 2026-09-13 15:00 UTC')
+    expect(text).toContain('back around 2026-09-13 15:00 UTC')
     expect(text).not.toContain('back at')
   })
 

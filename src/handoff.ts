@@ -29,8 +29,8 @@ export type HandoffReason =
       kind: 'budget'
       seat?: string
       resetAt?: string
-      /** `resetAt` is the latest it can still be shut rather than a return the provider
-       *  stated, so the sentence says "back by" and does not promise the hour. */
+      /** `resetAt` is not a return the provider stated, so the sentence says "back around"
+       *  and promises neither the hour nor a side of it. */
       resetApproximate?: boolean
     }
   // Every configuration of the Igor's own the run proved wrong, and often more than one: a
@@ -145,7 +145,7 @@ export function composeHandoff(role: Role, candidate: Candidate, handoff: Handof
     handoff.reason.kind === 'budget'
       ? `the budget${handoff.reason.seat ? ` on seat \`${handoff.reason.seat}\`` : ''} is used up` +
         (handoff.reason.resetAt
-          ? `, back ${handoff.reason.resetApproximate === true ? 'by' : 'at'} ` +
+          ? `, back ${handoff.reason.resetApproximate === true ? 'around' : 'at'} ` +
             `${clock(handoff.reason.resetAt)}${until(handoff.reason.resetAt, now)}`
           : ', and when it returns is not known')
       : handoff.reason.kind === 'nothing-to-do'

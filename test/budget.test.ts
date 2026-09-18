@@ -322,12 +322,19 @@ describe('the gate the loop consumes', () => {
   })
 
   it('carries the reset time through, so a handoff can say when capacity returns', () => {
+    // Both windows are shut, so the seat waits on the later, and the week carries the reset it
+    // waits on. A week with none leaves the return off the clock rather than borrowing the
+    // session's, which is a different case and is tested with the rest of the live path.
     const full: SeatUsage[] = [
-      { seat: org.seats[0]!, usage: { session: { percentUsed: 100, resetsAt: '8pm' }, week: { percentUsed: 100 }, perModel: [] } },
+      { seat: org.seats[0]!, usage: {
+        session: { percentUsed: 100, resetsAt: '8pm' },
+        week: { percentUsed: 100, resetsAt: 'Friday 9am' },
+        perModel: [],
+      } },
     ]
     const g = budgetGate(org, { name: 'r', seat: 'pool:eng' }, full, [])
     expect(g.exhausted()).toBe(true)
-    expect(g.resetAt).toBe('8pm')
+    expect(g.resetAt).toBe('Friday 9am')
   })
 
   it('honours a role pinned to one seat rather than a pool', () => {
@@ -948,6 +955,106 @@ describe('a seat the provider refused is spent until it resets', () => {
       boundsForSeats([refusal(), weekObs()], [], [adam], NOW),
     )
     expect(g.resetAt).toBe(RESET)
+  })
+
+  it('says nothing where the window that shut a readable seat named no reset', () => {
+    // The week is shut and gave no reset; the session's is an hour away and is not this seat's
+    // return. Stating it promises a seat back within the hour that the week holds for days.
+    const s = seat()
+    const g = budgetGate(
+      { seats: [s], pools: [{ id: 'p', seats: ['adam'] }] },
+      { name: 'triage', seat: 'pool:p' },
+      [{ seat: s, usage: {
+        session: { percentUsed: 100, resetsAt: 'Sep 13 at 2pm (America/Los_Angeles)' },
+        week: { percentUsed: 100 },
+        perModel: [],
+      } }],
+      [],
+    )
+    expect(g.exhausted()).toBe(true)
+    expect(g.resetAt).toBeUndefined()
+  })
+
+  it('hedges the hour where the week was preferred over a session nothing can order it against', () => {
+    // Both windows are shut and the week is taken on preference, not on a comparison. Inside
+    // the last session of a week the session is the later of the two, so the stated hour can
+    // be early — a figure to hedge rather than a return to promise.
+    const s = seat()
+    const g = budgetGate(
+      { seats: [s], pools: [{ id: 'p', seats: ['adam'] }] },
+      { name: 'triage', seat: 'pool:p' },
+      [{ seat: s, usage: {
+        session: { percentUsed: 100, resetsAt: 'Sep 13 at 8pm (America/Los_Angeles)' },
+        week: { percentUsed: 100, resetsAt: 'Sep 13 at 5pm (America/Los_Angeles)' },
+        perModel: [],
+      } }],
+      [],
+    )
+    expect(g.resetAt).toBe('Sep 13 at 5pm (America/Los_Angeles)')
+    expect(g.resetApproximate).toBe(true)
+  })
+
+  it('states a stated hour flatly where one window shut the seat on its own', () => {
+    const s = seat()
+    const g = budgetGate(
+      { seats: [s], pools: [{ id: 'p', seats: ['adam'] }] },
+      { name: 'triage', seat: 'pool:p' },
+      [{ seat: s, usage: {
+        session: { percentUsed: 100, resetsAt: 'Sep 13 at 8pm (America/Los_Angeles)' },
+        week: { percentUsed: 10 },
+        perModel: [],
+      } }],
+      [],
+    )
+    expect(g.resetAt).toBe('Sep 13 at 8pm (America/Los_Angeles)')
+    expect(g.resetApproximate).toBeUndefined()
+  })
+
+  it('answers with the reading, even where a derived pool-mate is back sooner', () => {
+    // A provider phrase and a derived instant cannot be ordered without `resolveReset`, which
+    // lives in `capacity.ts` and cannot be imported back. So the seat that could be read
+    // answers, and the pool-mate back within the hour goes unstated. Preferring the derived
+    // instant instead only moves which input gets the wrong answer, since no live phrase this
+    // provider prints is comparable.
+    const readable = seat({ id: 'sam', owner: 'sam' })
+    const refused = seat()
+    const readings: SeatUsage[] = [
+      { seat: readable, usage: {
+        session: { percentUsed: 10 },
+        week: { percentUsed: 100, resetsAt: 'Sep 18 at 9am (America/Los_Angeles)' },
+        perModel: [],
+      } },
+      unreadable(refused),
+    ]
+    const g = budgetGate(
+      { seats: [readable, refused], pools: [{ id: 'p', seats: ['sam', 'adam'] }] },
+      { name: 'triage', seat: 'pool:p' },
+      readings,
+      [],
+      boundsForSeats([refusal(), weekObs()], [], [refused], NOW),
+    )
+    expect(g.exhausted()).toBe(true)
+    expect(g.resetAt).toBe('Sep 18 at 9am (America/Los_Angeles)')
+  })
+
+  it('states a shut week’s hour though the session that also shut the seat named none', () => {
+    // The seat returns on the later of its two shut windows. The week's is stated; the
+    // session's is unknown but at most a cadence out, so the week is either the later of the
+    // two or under five hours early — the same error the week preference already carries, and
+    // hedged the same way. Dropping it answers "not known" for an hour the reading gave.
+    const s = seat()
+    const g = budgetGate(
+      { seats: [s], pools: [{ id: 'p', seats: ['adam'] }] },
+      { name: 'triage', seat: 'pool:p' },
+      [{ seat: s, usage: {
+        session: { percentUsed: 100 },
+        week: { percentUsed: 100, resetsAt: 'Sep 18 at 4pm (America/Los_Angeles)' },
+        perModel: [],
+      } }],
+      [],
+    )
+    expect(g.resetAt).toBe('Sep 18 at 4pm (America/Los_Angeles)')
+    expect(g.resetApproximate).toBe(true)
   })
 
   it('leaves a seat that could be read judged on its reading, refusal or no refusal', () => {

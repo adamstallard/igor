@@ -72,6 +72,36 @@ than instants. Ordering two of them needs `resolveReset`, and `capacity.ts` impo
 comparing. The week is the later of the two except inside the last session of one, so that
 preference is early by under five hours where naming the session is early by up to a week.
 
+That preference is not a reading, so it sets `resetApproximate` — which therefore means "not a
+return the provider stated" rather than "the latest it can still be shut". The flag now covers
+a figure that can be late and one that can be early, and `composeHandoff` says "back around"
+instead of "back by", which claimed a side the flag no longer promises.
+
+**Across seats the cycle blocks the same comparison, and preferring the derived instant was
+tried and reverted.** A seat shut until Friday does answer for a pool-mate back within the
+hour, which is wrong; but the fix cannot be a precedence rule. `Temporal.Instant.from` throws
+on every phrase the provider prints, so "prefer the comparable instant" resolves in production
+to "the derived figure always wins" — the same one-directional error pointed the other way,
+and one that reads as an ordering to whoever next touches it. Measured on the mirror input, a
+readable seat shut until Friday alongside a pool-mate back in an hour and the reverse: each
+rule states a return the pool does not keep on exactly the inputs the other gets right.
+
+So the reading answers where there is one, as before. Ordering the two needs the phrase
+resolved, which needs `resolveReset` out of `capacity.ts` and into a module both files import.
+That is a larger change than a precedence rule and it is not taken here.
+
+**A shut *week* the reading named no reset for takes its seat out of the answer.** Falling
+through to the session's reset states the hour one window opens while the week still holds the
+seat, which is early by up to a week. A shut session with no reset is not the same case: the
+week is answered for first, and its stated hour is either the later of the two or under a
+session-length early — the error the week preference already carries, hedged the same way — so
+the seat keeps answering.
+
+The derived path drops a seat on *any* blocked window with no instant, which reads like the
+same rule and is not. There a missing figure is a rolling bound with no boundary, so nothing
+bounds the return at all; here a shut session is bounded by its cadence whether the provider
+named an hour or not.
+
 ## Where the instance sits is the provider's news, not the spend log's
 
 `capacityFor` answers how big the window is by walking the observations newest-first and taking
