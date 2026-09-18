@@ -173,7 +173,38 @@ One thing this deliberately does not do:
 
   What remains is the magnitude half: a newer, lower reading becomes divisible once something is
   spent inside its span, and newest-wins then raises the estimate. That one is untouched by
-  tiling and is still the design as written.
+  tiling, and it is accepted rather than outstanding — see below.
+
+## Monotonicity and newest-wins cannot both hold, and newest-wins keeps the ground
+
+Two properties were both wanted and are in direct conflict:
+
+- **Never release a seat sooner for having spent more on it.** Spending is not news about how
+  big the window is, so it should not be able to buy headroom.
+- **The newest observation wins.** An estimate that cannot revise upward is an estimate that can
+  never recover from one bad early reading.
+
+They collide on one path: a newer, lower reading becomes *divisible* only once some spend lands
+inside its span, so recording spend is what makes that reading count, and newest-wins then
+raises the estimate from it. The spend did not change the window; it changed which row was
+usable to measure it.
+
+**The conflict is kept, on the newest-wins side.** Making the estimate monotone downward would
+deliver the invariant exactly — the bound would never loosen except at a reset — and would
+permanently under-use a seat whose first observation happened to be unrepresentative, with no
+route back. That forecloses the self-correction the whole derivation exists for, and which a
+refusal recorded at 100% is specifically there to feed. The exposure the other way is a seat
+released somewhat early, in a direction the next observation corrects.
+
+**What was tried and rejected:** monotone-downward estimates (above); and treating the
+divisibility change as the fault rather than the symptom, which fails because a row that cannot
+divide genuinely cannot size a window — refusing to use it once it can is refusing the
+measurement, not the spend.
+
+**Where this stops applying:** it is an argument about the *magnitude*, not the *boundary*. A
+change that lets spend move where the instance sits is a fault, not this tension, and
+`resetAnchor` exists to keep those separate. If a future change makes capacity derivable without
+needing spend inside the span, the conflict dissolves and this entry is spent.
 
 ## A position and a divisor are different news, and one row can be only one of them
 
