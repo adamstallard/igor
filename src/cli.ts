@@ -37,6 +37,9 @@ import { staleBuildWarning } from './staleness.js'
 import { provenanceFromCitations, ProvenanceInputError } from './entry.js'
 import type { Entry, Status } from './entry.js'
 
+/** The destination's single on-push job, named for what it runs. */
+const WORKFLOW_FILE = 'reconcile-on-merge.yml'
+
 function today(): string {
   return new Date().toISOString().slice(0, 10)
 }
@@ -234,11 +237,15 @@ program
         `behind    ${r.missingLocally.join(', ')} — merged upstream but not here; pull the destination\n`,
       )
     }
+    for (const u of r.unreadable) {
+      process.stdout.write(`unreadable ${u.id} — ${u.reason}\n`)
+    }
     if (
       r.promoted.length === 0 &&
       r.declined.length === 0 &&
       r.stale.length === 0 &&
-      r.missingLocally.length === 0
+      r.missingLocally.length === 0 &&
+      r.unreadable.length === 0
     ) {
       process.stdout.write('nothing to reconcile\n')
     }
@@ -251,28 +258,34 @@ program
 
 program
   .command('init-workflow')
-  .description('Write the merge-triggered promotion workflow into the destination')
+  .description('Write the merge-triggered reconciliation workflow into the destination')
   .option('--force', 'overwrite an existing workflow')
   .action((opts) => {
     const config = loadConfig(program.opts()['config'])
-    const source = join(igorRoot(), 'templates', 'promote-on-merge.yml')
-    const target = join(config.destination, '.github', 'workflows', 'promote-on-merge.yml')
+    const source = join(igorRoot(), 'templates', WORKFLOW_FILE)
+    const target = join(config.destination, '.github', 'workflows', WORKFLOW_FILE)
     if (existsSync(target) && !opts.force) {
       throw new StoreError(`${target} already exists — pass --force to overwrite`)
     }
     mkdirSync(dirname(target), { recursive: true })
     copyFileSync(source, target)
     process.stdout.write(
-      `${target}\n\nCommit and push it. If the default branch is protected, add the GitHub\n` +
-        `Actions actor to the ruleset's bypass list, or this workflow's own push is blocked\n` +
-        `by the same rule it exists to work around.\n`,
+      `${target}\n\nCommit and push it. Exactly one job may promote lore on push: two of them\n` +
+        `race on the same commit and disagree about what a reviewer deleted, so delete any\n` +
+        `other workflow in .github/workflows that promotes or reconciles lore.\n\n` +
+        `If the default branch is protected, add the GitHub Actions actor to the ruleset's\n` +
+        `bypass list, or this workflow's own push is blocked by the same rule it exists to\n` +
+        `work around.\n`,
     )
   })
 
 program
   .command('promote')
-  .description('Set provisional entries active in place — for a merge-triggered workflow')
-  .requiredOption('--by <login>', 'who approved, normally whoever merged')
+  .description(
+    'Set provisional entries active in place — a manual repair for an entry already on the ' +
+      'default branch without a pull request; reconcile promotes everything else',
+  )
+  .requiredOption('--by <login>', 'who approved — you, since you are making the judgment')
   .option('--at <date>', 'ISO date of approval', new Date().toISOString().slice(0, 10))
   .option('--only <path...>', 'limit to these entry paths; without it, every provisional entry')
   .action((opts) => {

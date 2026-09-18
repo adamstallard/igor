@@ -201,10 +201,18 @@ approval to merge is what keeps a single maintainer from being stuck — they op
 their own proposal, and `reviewed.by` records them honestly. A merger who was not an assigned
 reviewer is flagged rather than recorded as though they had been asked.
 
-Promotion then happens one of two ways. Where the destination runs the merge-triggered workflow
-(§6.7), entries are active the moment they merge. Otherwise `reconcile` promotes at the next
-invocation — there is no daemon — and also reports rejections and pull requests that have gone
-quiet past a window, for escalation to the store-level `reviewers`.
+Promotion then happens one way — `reconcile` — invoked either by the destination's
+merge-triggered workflow or by a person. It promotes what merged, records what a reviewer
+deleted, and reports pull requests that have gone quiet past a window, for escalation to the
+store-level `reviewers`. There is no daemon, so it runs at invocation: where the workflow is
+installed that is every merge, and where it is not, whenever someone next uses the tool.
+
+A second promoter was retired rather than kept beside it. A merge-triggered job diffing the
+push for changed entry files cannot see a rejection at all — the deletion happens on the
+proposal branch, so it is in no diff of the push — and a merge whose every candidate was
+deleted changes no entry file, so a file-diff gate skips the very merge that has something to
+record. Which pull request is a proposal is therefore decided on the files it proposes, not on
+its branch name, so one opened by hand is reconciled like any other.
 
 None of this is mining-specific. A hand-authored candidate takes the identical path, which is
 why it lives in `lore-store` rather than `lore-from-reviews`.
@@ -266,15 +274,17 @@ behave identically before and after approval, and unreviewed lore would quietly 
 behaviour — the failure the review gate exists to prevent.
 
 The cost is a transient, and how small depends on the destination. Where the destination runs
-the merge-triggered promotion workflow (§6.7), an entry is active the moment it merges and
-there is no window at all. Where it does not, `reconcile` promotes at the start of the next
-invocation — there is no daemon — so a merged entry stays provisional for one cycle. That
-window is minutes while anything is running, and while nothing is running nothing is firing
-either.
+the merge-triggered workflow, reconciliation runs on the merge itself and the window is one CI
+job. Where it does not, `reconcile` promotes at the start of the next invocation — there is no
+daemon — so a merged entry stays provisional for one cycle. That window is minutes while
+anything is running, and while nothing is running nothing is firing either.
 
 Consequence: an entry created and committed straight to main, without going through `propose`,
-never fires — and would otherwise say nothing about why. `create` therefore reports that the
-entry is provisional and names `propose` as the next step.
+never fires — reconciliation sweeps pull requests, and that entry has none. This is why "require
+a pull request before merging" is recommended to every destination including a single-writer
+one: it is what makes the promotion path total. `create` reports that the entry is provisional
+and names `propose` as the next step, and `promote --by <you>` repairs one that reached main
+without a pull request, recording whoever ran it as the approver.
 
 
 Firing is **unbidden**. The worker never issues a query or elects to search; matching
