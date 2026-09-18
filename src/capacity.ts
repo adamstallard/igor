@@ -263,6 +263,50 @@ function observedSpan(observation: Observation, length: Temporal.Duration): Inst
 }
 
 /**
+ * The all-models observations of one seat's window, newest first.
+ *
+ * Reversing before a stable sort makes the row written last win a tie on `at`, which is the
+ * append-only log's own answer to which of two simultaneous observations is the later. A row
+ * whose `at` is not an instant is left out rather than ordered arbitrarily, and one scoped to a
+ * single model because that cap is a separate window nothing here derives against.
+ */
+function newestFirst(observations: readonly Observation[], seat: string, window: Window): Observation[] {
+  const ordered = observations
+    .filter((o) => o.seat === seat && o.window === window && o.model === undefined)
+    .flatMap((o) => {
+      const at = instantOf(o.at)
+      return at === undefined ? [] : [{ o, at }]
+    })
+    .reverse()
+  ordered.sort((a, b) => Temporal.Instant.compare(b.at, a.at))
+  return ordered.map(({ o }) => o)
+}
+
+/**
+ * Where the window sits: the reset from the most recent observation that resolved one, whatever
+ * that observation measured.
+ *
+ * Never the row `capacityFor` divides by. Which row divides depends on where spend happened to
+ * land, so anchoring on it makes the boundary a function of the spend log — the hour a handoff
+ * states then swings on an unrelated dollar, and recording more spend can release a seat
+ * earlier than recording less. A row that divides supplies a magnitude; a row with a resolved
+ * reset supplies a position, and they are not the same news.
+ *
+ * `undefined` where nothing resolved one, which leaves the window with nothing to tile from.
+ */
+function resetAnchor(
+  observations: readonly Observation[],
+  seat: string,
+  window: Window,
+): string | undefined {
+  for (const o of newestFirst(observations, seat, window)) {
+    if (o.resetsAt === undefined || instantOf(o.resetsAt) === undefined) continue
+    return o.resetsAt
+  }
+  return undefined
+}
+
+/**
  * A seat's capacity for a window: the figure implied by the most recent observation that yields
  * one, or the declared starting estimate until such an observation exists.
  *
@@ -294,18 +338,7 @@ export function capacityFor(
   window: Window,
   declaredUsd?: number,
 ): CapacityEstimate | undefined {
-  const ordered = observations
-    .filter((o) => o.seat === seat && o.window === window && o.model === undefined)
-    .flatMap((o) => {
-      const at = instantOf(o.at)
-      return at === undefined ? [] : [{ o, at }]
-    })
-    // Reversing before a stable sort makes the row written last win a tie on `at`, which is the
-    // append-only log's own answer to which of two simultaneous observations is the later.
-    .reverse()
-  ordered.sort((a, b) => Temporal.Instant.compare(b.at, a.at))
-
-  for (const { o } of ordered) {
+  for (const o of newestFirst(observations, seat, window)) {
     const span = observedSpan(o, WINDOW_LENGTH[window])
     if (span === undefined) continue
     const capacityUsd = capacityFrom(spendInInstance(records, seat, span), o.percentUsed)
@@ -499,25 +532,26 @@ export function boundsForSeats(
         continue
       }
       const length = WINDOW_LENGTH[window]
-      // Why a declared figure gets a rolling window: it has no observed reset behind it, and
-      // the case one exists for is a seat never observed at all, so there is no boundary to
-      // tile from and none may be invented.
+      // The boundary comes from `resetAnchor` rather than from the row the magnitude came
+      // from, so that no spend record can move it.
+      //
+      // Why a declared figure gets a rolling window even where an anchor exists: it has no
+      // observed reset behind it, and the case one exists for is a seat never observed at all,
+      // so there is no boundary to tile from and none may be invented.
       //
       // Why rolling back one length is safe: the elapsed part of the true instance began at
       // most one length ago and so is always inside it, making the sum an over-count rather
       // than an under-count. The cost is that spend late in one instance keeps counting into
       // the next until it ages out, which is an argument for observing a seat rather than
       // declaring at it.
-      const instance =
-        estimate.basis === 'observed' && estimate.from.resetsAt !== undefined
-          ? currentInstance(estimate.from.resetsAt, length, now)
-          : instanceBounds(now, length)
+      const anchor = estimate.basis === 'observed' ? resetAnchor(vouched, seat.id, window) : undefined
+      const instance = anchor === undefined ? instanceBounds(now, length) : currentInstance(anchor, length, now)
       if (instance === undefined) {
         if (shutOnly !== undefined) windows[window] = shutOnly
         continue
       }
       // A rolling window's end is `now`, not a reset, so only a tiled instance names one.
-      const tiled = estimate.basis === 'observed' && estimate.from.resetsAt !== undefined ? instance.end : undefined
+      const tiled = anchor === undefined ? undefined : instance.end
       windows[window] = {
         capacity: {
           capacityUsd: estimate.capacityUsd,

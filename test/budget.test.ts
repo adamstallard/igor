@@ -857,17 +857,44 @@ describe('a seat the provider refused is spent until it resets', () => {
     expect(g.resetAt).toBe('Sep 20 at 9am (America/Los_Angeles)')
   })
 
+  // The boundary the bound sums inside is tiled from the reset the provider last named, and
+  // never from whichever row the spend log happens to make divisible.
+  describe('the instance is anchored by the provider, not by the spend log', () => {
+    const placed = refusal({ at: '2026-09-13T09:00:00.000Z', resetsAt: '2026-09-13T13:40:00.000Z' })
+    const later = refusal({ at: '2026-09-13T13:35:00.000Z', resetsAt: '2026-09-13T15:00:00.000Z' })
+    const obs = [placed, later]
+    const base = [paid('2026-09-13T08:45:00.000Z', 10), paid('2026-09-13T13:45:00.000Z', 30)]
+    // One dollar, 95 minutes before the last reading, in an instance nobody is asking about.
+    const andOneMore = [...base, paid('2026-09-13T13:00:00.000Z', 1)]
+
+    it('states the same return whether or not an unrelated dollar landed earlier', () => {
+      const at14 = '2026-09-13T14:00:00.000Z'
+      expect(gate(seat(), obs, base, at14).resetAt).toBe('2026-09-13T15:00:00.000Z')
+      expect(gate(seat(), obs, andOneMore, at14).resetAt).toBe('2026-09-13T15:00:00.000Z')
+    })
+
+    it('never brings the seat back sooner for having spent more on it', () => {
+      // A bound spending relaxes is not a bound. More spend may hold a seat longer; it may
+      // never hand it back earlier.
+      for (const records of [base, andOneMore]) {
+        expect(choose(seat(), obs, records, '2026-09-13T14:59:59.999Z').seat).toBeUndefined()
+        expect(choose(seat(), obs, records, '2026-09-13T15:00:01.000Z').seat?.id).toBe('adam')
+      }
+    })
+  })
+
   it('does not promise the refusal’s hour where the sum is still over its bound then', () => {
-    // A run already in flight when the seat was last passed lands after the refusal, so the
-    // instance the sum is taken over outlives the refusal. The window is open when the later
+    // The refusal holding the seat named no reset, so it is held for a cadence — to 15:00 —
+    // while the instance the sum is taken over runs to 18:40. The window is open when the later
     // of the two clears, and stating the earlier one is a return the seat does not keep.
-    const first = refusal({ at: '2026-09-13T09:00:00.000Z', resetsAt: '2026-09-13T13:40:00.000Z' })
-    const second = refusal({ at: '2026-09-13T13:35:00.000Z', resetsAt: '2026-09-13T15:00:00.000Z' })
+    const placed = refusal({ at: '2026-09-13T09:00:00.000Z', resetsAt: '2026-09-13T13:40:00.000Z' })
+    const { resetsAt, ...unplaced } = refusal({ at: '2026-09-13T10:00:00.000Z' })
+    // A run already in flight when the seat was last passed lands after both observations.
     const records = [paid('2026-09-13T08:45:00.000Z', 10), paid('2026-09-13T13:45:00.000Z', 30)]
     const at14 = '2026-09-13T14:00:00.000Z'
-    expect(gate(seat(), [first, second], records, at14).resetAt).toBe('2026-09-13T18:40:00.000Z')
+    expect(gate(seat(), [placed, unplaced], records, at14).resetAt).toBe('2026-09-13T18:40:00.000Z')
     // The seat really is still shut at the hour the refusal expires, which is what makes it one.
-    expect(choose(seat(), [first, second], records, '2026-09-13T15:00:01.000Z').seat).toBeUndefined()
+    expect(choose(seat(), [placed, unplaced], records, '2026-09-13T15:00:01.000Z').seat).toBeUndefined()
   })
 
   it('says nothing rather than promise an hour a rolling bound cannot keep', () => {

@@ -72,6 +72,41 @@ than instants. Ordering two of them needs `resolveReset`, and `capacity.ts` impo
 comparing. The week is the later of the two except inside the last session of one, so that
 preference is early by under five hours where naming the session is early by up to a week.
 
+## Where the instance sits is the provider's news, not the spend log's
+
+`capacityFor` answers how big the window is by walking the observations newest-first and taking
+the first that divides. Tiling the current instance from *that* row's reset made the boundary a
+function of the spend log, because which row divides depends on where spend happens to have
+landed. Two readings of the same fixture, differing only by one dollar recorded 95 minutes
+earlier:
+
+    records $10 at 08:45              -> stated return 18:40
+    records $10 at 08:45, $1 at 13:00 -> stated return 15:00
+
+The dollar is not evidence about where the window sits. It made a newer refusal divisible, the
+newer refusal's reset became the anchor, and the tiling moved with it — so recording more spend
+released the seat 3h40m earlier. A bound that spending relaxes is not a bound.
+
+So the anchor is separated from the magnitude: `resetAnchor` returns the reset from the most
+recent observation that resolved one, whatever that observation measured, and `capacityFor`
+keeps answering only for the size. A row that divides supplies a quantity; a row with a resolved
+reset supplies a position, and the newest position is the least stale news about it.
+
+Two things this deliberately does not do:
+
+- **A declared figure still gets a rolling window, even where an anchor exists.** Tiling it
+  would be better arithmetic and it overturns the recorded reason above — a declared figure is
+  for a seat never observed at all — so it is a decision rather than a correction, and it is
+  left alone here.
+- **More spend can still release a seat, by two paths that leave the boundary where it is.** A
+  newer, lower reading becomes divisible once something is spent inside its span, and
+  newest-wins then raises the capacity estimate. And the first divisible row flips the basis
+  from declared to observed, which swaps the rolling window for a tiled one starting later,
+  counting less of the same spend. Both reproduce with this change reverted, and both are the
+  design as written: the estimate self-correcting, and an observed boundary beating a rolling
+  approximation of one. What is fixed here is the third path, where the spend moved the
+  *boundary* — and only that one was ever a fault.
+
 ## A refusal that named no reset still expires, which §1 does not allow for
 
 §1 says an observation whose reset cannot be resolved "SHALL contribute neither an expiry nor a

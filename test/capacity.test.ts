@@ -670,17 +670,47 @@ describe('a refusal shuts the window it names', () => {
     expect(after?.capacity).toEqual({ capacityUsd: 10, basis: 'observed', spentUsd: 0, from: refusal() })
   })
 
+  it('tiles from the newest resolved reset, whichever row supplies the magnitude', () => {
+    // The boundary is where the provider last said it was. Which row divides depends on where
+    // spend happens to have landed, so letting it choose the boundary makes the instance a
+    // function of the spend log — and every figure taken against it move with an unrelated
+    // dollar.
+    const older = refusal({ at: '2026-09-13T09:00:00.000Z', resetsAt: '2026-09-13T13:30:00.000Z' })
+    const newer = refusal({ at: '2026-09-13T12:00:00.000Z', resetsAt: '2026-09-13T14:00:00.000Z' })
+    const obs = [older, newer]
+    // Only the older row divides: nothing was spent inside the newer one's span.
+    const divideOlder = [{ seat: 'adam', costUsd: 10, at: '2026-09-13T08:45:00.000Z' }]
+    // One more dollar, 95 minutes later, and the newer row divides too.
+    const divideBoth = [...divideOlder, { seat: 'adam', costUsd: 1, at: '2026-09-13T10:20:00.000Z' }]
+    const endOf = (records: SpendRecord[]) =>
+      boundsForSeats(obs, records, [{ id: 'adam' }], NOW).get('adam')?.session?.resetsAt
+    expect(endOf(divideOlder)).toBe('2026-09-13T14:00:00.000Z')
+    expect(endOf(divideBoth)).toBe('2026-09-13T14:00:00.000Z')
+  })
+
+  it('leaves a row that resolved no reset out of the anchoring, not out of the log', () => {
+    // A phrase that never resolved places nothing, so the boundary stays where the last
+    // resolved one put it — and the row still holds the window shut on its own cadence.
+    const placed = refusal({ at: '2026-09-13T09:00:00.000Z', resetsAt: '2026-09-13T13:30:00.000Z' })
+    const { resetsAt, ...unplaced } = refusal({ resetsPhrase: 'whenever' })
+    const records = [{ seat: 'adam', costUsd: 10, at: '2026-09-13T08:45:00.000Z' }]
+    const bound = boundsForSeats([placed, unplaced], records, [{ id: 'adam' }], NOW).get('adam')?.session
+    expect(bound?.resetsAt).toBe('2026-09-13T13:30:00.000Z')
+    expect(bound?.spent?.estimated).toBe(true)
+  })
+
   it('names the end of the instance its spend was summed inside, not the refusal’s expiry', () => {
     // Two clocks, and not the same clock: the sum clears when its instance does, the refusal
     // clears when the provider said. A handoff states whichever of them is blocking, so the
     // bound keeps them apart instead of handing over the later one.
-    const older = refusal({ at: '2026-09-13T09:00:00.000Z', resetsAt: '2026-09-13T13:30:00.000Z' })
-    // Inside the older observation's span and outside the newer one's, so the newer derives no
-    // figure and the capacity comes from an instance running 08:30 → 13:30.
+    const placed = refusal({ at: '2026-09-13T09:00:00.000Z', resetsAt: '2026-09-13T13:30:00.000Z' })
+    // The later refusal named no reset, so it places no boundary and the instance is tiled from
+    // the one that did: 08:30 → 13:30. Its own hold runs a cadence past it, to 17:00.
+    const { resetsAt, ...unplaced } = refusal()
     const records = [{ seat: 'adam', costUsd: 10, at: '2026-09-13T08:45:00.000Z' }]
-    const bound = boundsForSeats([older, refusal()], records, [{ id: 'adam' }], NOW).get('adam')?.session
+    const bound = boundsForSeats([placed, unplaced], records, [{ id: 'adam' }], NOW).get('adam')?.session
     expect(bound?.capacity?.spentUsd).toBe(10)
     expect(bound?.resetsAt).toBe('2026-09-13T13:30:00.000Z')
-    expect(bound?.spent?.resetsAt).toBe('2026-09-13T14:00:00.000Z')
+    expect(bound?.spent?.resetsAt).toBe('2026-09-13T17:00:00.000Z')
   })
 })
