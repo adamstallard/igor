@@ -239,8 +239,16 @@ recorded so that the figure is true and so that the derivation, when it comes, h
 The reset SHALL be recorded as an instant that can be compared against the present. The
 provider reports it as a human phrase — a date, a time, and a zone — which cannot be compared
 without being resolved first. An observation whose reset cannot be resolved SHALL be recorded
-anyway and SHALL contribute neither an expiry nor a capacity derivation, because a position in
-a window that has been invented is worse than none.
+anyway and SHALL place no window boundary and yield no capacity derivation, because a position
+in a window that has been invented is worse than none. It SHALL still expire, one window length
+after it was taken.
+
+The two are not the same claim. A derivation has to know *where* the instance sits, and an
+unresolved reset says nothing about that. An expiry only has to know how long the fact stays
+relevant, and the cadence bounds that without placing anything: a window resets at most one
+length after any moment inside it, so the seat is held for at least as long as it is really
+shut. That error cannot overrun anybody's floor, where a row that never expired would be a seat
+nobody could use again.
 
 #### Scenario: A reading becomes an observation
 
@@ -263,7 +271,8 @@ a window that has been invented is worse than none.
 
 - **WHEN** an observation's reset time cannot be resolved to a comparable instant
 - **THEN** the observation is still recorded
-- **AND** it neither expires nor yields a capacity figure
+- **AND** it yields no capacity figure and places no window boundary
+- **AND** it stops bearing on the present one window length after it was taken
 
 ### Requirement: Observations are appended to their own log and never rewritten
 

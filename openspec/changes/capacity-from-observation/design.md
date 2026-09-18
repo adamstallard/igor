@@ -137,21 +137,24 @@ Two things this deliberately does not do:
   approximation of one. What is fixed here is the third path, where the spend moved the
   *boundary* — and only that one was ever a fault.
 
-## A refusal that named no reset still expires, which §1 does not allow for
+## An unresolved reset expires on the cadence, because both other readings strand something
 
-§1 says an observation whose reset cannot be resolved "SHALL contribute neither an expiry nor a
-capacity derivation, because a position in a window that has been invented is worse than none".
-`spentFor` gives such a row an expiry anyway: one window length after the refusal. §2 is
-implemented in knowing tension with that sentence, and the sentence has not been amended.
+§1 asks an observation whose reset cannot be resolved to place no boundary and yield no
+derivation, and to stop bearing on the present one window length after it was taken. The
+cadence expiry is there because the two simpler rules both fail, in opposite directions:
 
-The reason for the deviation is that the two halves of §1's rule are not alike. A capacity
-derivation needs to know *where* the instance sits, and a reset that did not resolve says
-nothing about that — inventing one moves the boundary and every figure taken against it. An
-expiry only needs to know how long the fact stays relevant, and the cadence bounds that without
-placing anything: a window resets at most one length after any moment inside it, so the seat is
-held for at least as long as it is really shut. The error is in the direction that cannot
-overrun anybody's floor, where a row that never expired would be a seat nobody could use again.
+- **A row that never expires** holds the window shut forever. Nothing sweeps the log, so the
+  refusal is still saying "spent" a month later and the seat is one nobody can use again.
+- **A row that counts for nothing** leaves the common case unfixed. A refusal records no cost
+  on the run it refused, so there is nothing in the instance to divide, no capacity figure, and
+  no arithmetic to stop the seat — which is then chosen, told it is uncalibrated, and refused
+  again.
 
-That is an argument for amending §1's second clause rather than for ignoring it, and it is not
-settled. A refusal with no resolved reset is the common case until the envelope is captured and
+What makes the middle answer available is that a position and a duration are not the same
+thing to know. Placing an instance needs the reset itself; bounding how long the fact stays
+relevant needs only the cadence, and a window resets at most one length after any moment inside
+it. The seat is held for at least as long as it is really shut, which is the direction that
+cannot overrun anybody's floor.
+
+A refusal with no resolved reset is the common case until the envelope is captured and
 `resolveReset` is wired in, so this is the rule most of the record runs on today, not an edge.
