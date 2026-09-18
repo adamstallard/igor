@@ -71,3 +71,22 @@ than instants. Ordering two of them needs `resolveReset`, and `capacity.ts` impo
 `budget.ts`, so the live path prefers the week where both windows are shut rather than
 comparing. The week is the later of the two except inside the last session of one, so that
 preference is early by under five hours where naming the session is early by up to a week.
+
+## A refusal that named no reset still expires, which §1 does not allow for
+
+§1 says an observation whose reset cannot be resolved "SHALL contribute neither an expiry nor a
+capacity derivation, because a position in a window that has been invented is worse than none".
+`spentFor` gives such a row an expiry anyway: one window length after the refusal. §2 is
+implemented in knowing tension with that sentence, and the sentence has not been amended.
+
+The reason for the deviation is that the two halves of §1's rule are not alike. A capacity
+derivation needs to know *where* the instance sits, and a reset that did not resolve says
+nothing about that — inventing one moves the boundary and every figure taken against it. An
+expiry only needs to know how long the fact stays relevant, and the cadence bounds that without
+placing anything: a window resets at most one length after any moment inside it, so the seat is
+held for at least as long as it is really shut. The error is in the direction that cannot
+overrun anybody's floor, where a row that never expired would be a seat nobody could use again.
+
+That is an argument for amending §1's second clause rather than for ignoring it, and it is not
+settled. A refusal with no resolved reset is the common case until the envelope is captured and
+`resolveReset` is wired in, so this is the rule most of the record runs on today, not an edge.
