@@ -447,21 +447,58 @@ function derivedWindow(
   seat: Seat,
   window: Window,
   bound: SeatBound | undefined,
-): { remainingUsd?: number; blocked?: string } {
-  if (bound === undefined) {
+): { remainingUsd?: number; blocked?: string; resetAt?: string; estimated?: boolean } {
+  // Two independent reasons to stop, per `capacity-from-observation` §2, so the arithmetic is
+  // settled before the refusal answers. A refusal is not an estimate to be weighed against a
+  // capacity figure: one on the first run of an instance leaves no spend to divide and derives
+  // no capacity at all, and a later reading of the window would otherwise supersede it on
+  // recency alone. It is also not always the only thing holding the seat, and the hour a
+  // handoff states has to outlast everything that is.
+  const capacity = bound?.capacity
+  const allowance = capacity === undefined ? undefined : (1 - seat.reserve) * capacity.capacityUsd
+  const overBound = capacity !== undefined && allowance !== undefined && allowance - capacity.spentUsd <= 0
+  const overWhy =
+    capacity === undefined || allowance === undefined
+      ? ''
+      : `Igors have spent $${capacity.spentUsd.toFixed(2)} of the ${window}'s $${allowance.toFixed(2)} bound ` +
+        `(${capacity.basis} capacity $${capacity.capacityUsd.toFixed(2)}, ${seat.reserve * 100}% reserved)`
+
+  const spent = bound?.spent
+  if (spent !== undefined) {
+    const { from, resetsAt, estimated } = spent
+    const spentWhy =
+      `its ${window} was ${from.percentUsed}% used when observed at ${from.at}, and ` +
+      (estimated
+        ? `the provider named no reset, so it stands until ${resetsAt} at the latest`
+        : `does not reset until ${resetsAt}`)
+    if (!overBound) return { blocked: spentWhy, resetAt: resetsAt, estimated }
+
+    // Both hold, so the seat is back only once the later clears, and the sentence names both
+    // rather than leave a reason the stated hour does not account for. A rolling window has no
+    // boundary at all, which makes when its sum clears unknown rather than merely later — and
+    // the refusal's hour is a confident answer to a question nothing here can settle.
+    const both = `${spentWhy}; ${overWhy}`
+    if (bound?.resetsAt === undefined) return { blocked: both }
+    return Date.parse(bound.resetsAt) > Date.parse(resetsAt)
+      ? { blocked: both, resetAt: bound.resetsAt, estimated: false }
+      : { blocked: both, resetAt: resetsAt, estimated }
+  }
+
+  if (capacity === undefined || allowance === undefined) {
+    // A third state rather than an arithmetic verdict, and subordinate to a refusal: the
+    // division is undefined without a figure, so this seat waits on a reading, not on a clock.
     if (seat.reserve <= 0) return {}
     return { blocked: `${NO_CAPACITY_FIGURE}: its ${window} has never been observed and none is declared` }
   }
-  const allowance = (1 - seat.reserve) * bound.capacityUsd
-  const remainingUsd = allowance - bound.spentUsd
-  if (remainingUsd <= 0) {
+  if (overBound) {
     return {
-      blocked:
-        `Igors have spent $${bound.spentUsd.toFixed(2)} of the ${window}'s $${allowance.toFixed(2)} bound ` +
-        `(${bound.basis} capacity $${bound.capacityUsd.toFixed(2)}, ${seat.reserve * 100}% reserved)`,
+      blocked: overWhy,
+      // The sum clears when its instance does, and a tiled boundary is an observed figure
+      // rather than an estimate. A rolling window names none.
+      ...(bound?.resetsAt === undefined ? {} : { resetAt: bound.resetsAt }),
     }
   }
-  return { remainingUsd }
+  return { remainingUsd: allowance - capacity.spentUsd }
 }
 
 /**
@@ -520,11 +557,13 @@ export function chooseSeat(
         // The share is of Igor's own consumption here, where the live path's percentage
         // includes the owner's. A window with no capacity figure has no denominator, so the
         // ceiling is not checkable against it at all.
-        const over = derived.find(
-          (d) =>
-            d.bound !== undefined &&
-            roleSharePercent(records, id, role.name, (d.bound.spentUsd / d.bound.capacityUsd) * 100) >= ceiling,
-        )
+        const over = derived.find((d) => {
+          const capacity = d.bound?.capacity
+          return (
+            capacity !== undefined &&
+            roleSharePercent(records, id, role.name, (capacity.spentUsd / capacity.capacityUsd) * 100) >= ceiling
+          )
+        })
         if (over) {
           considered.push({ seat: id, why: `role "${role.name}" is at its ${role.budgetShare} ceiling for the ${over.window}` })
           continue
@@ -590,6 +629,49 @@ export function poolFor(org: OrgBudget, seat: string): Pool | undefined {
   )
 }
 
+/**
+ * When the pool's unreadable seats next have room, for a handoff that would otherwise say
+ * nothing about when Igor is back.
+ *
+ * Per seat, the **latest** of its blocked windows: a seat shut out of the session until 15:00
+ * and out of the week until Friday is back on Friday, and stating 15:00 would be a return
+ * nobody keeps. Across the pool, the **earliest** of those, because the first seat back is the
+ * first Igor back.
+ *
+ * A seat whose return is not on a clock contributes nothing rather than a guess — one passed
+ * over for an unreadable credential, for having no capacity figure at all, or for a role's own
+ * ceiling. Where no seat contributes, the handoff says when capacity returns is not known,
+ * which is the truth.
+ */
+function derivedReset(
+  pool: Pool,
+  readings: readonly SeatUsage[],
+  bounds: SeatBounds,
+): { resetAt: string; estimated: boolean } | undefined {
+  let soonest: { resetAt: string; estimated: boolean } | undefined
+  for (const id of pool.seats) {
+    const reading = readings.find((r) => r.seat.id === id)
+    if (reading === undefined || reading.usage !== undefined || reading.unmeasured !== true) continue
+
+    let latest: { resetAt: string; estimated: boolean } | undefined
+    let onTheClock = true
+    for (const window of ['session', 'week'] as Window[]) {
+      const outcome = derivedWindow(reading.seat, window, bounds.get(id)?.[window])
+      if (outcome.blocked === undefined) continue
+      if (outcome.resetAt === undefined) {
+        onTheClock = false
+        break
+      }
+      if (latest === undefined || Date.parse(outcome.resetAt) > Date.parse(latest.resetAt)) {
+        latest = { resetAt: outcome.resetAt, estimated: outcome.estimated === true }
+      }
+    }
+    if (!onTheClock || latest === undefined) continue
+    if (soonest === undefined || Date.parse(latest.resetAt) < Date.parse(soonest.resetAt)) soonest = latest
+  }
+  return soonest
+}
+
 export interface Gate {
   exhausted: () => boolean
   seat?: string
@@ -600,6 +682,9 @@ export interface Gate {
    */
   token?: TokenSource
   resetAt?: string
+  /** `resetAt` is the latest the seat can still be shut, not a return the provider stated —
+   *  true where a refusal named no reset and the window's cadence is all that bounds it. */
+  resetApproximate?: boolean
   reason: string
 }
 
@@ -632,12 +717,36 @@ export function budgetGate(
 
   const choice = chooseSeat(pool, readings, records, role, bounds)
   if (choice.seat === undefined) {
-    const soonest = readings
-      .map((r) => (r.usage === undefined ? undefined : limitFor(r.usage, 'session').resetsAt))
-      .find((x): x is string => x !== undefined)
+    // A seat that could be read answers for itself, in the provider's own words. Only where
+    // none did does the figure come from `bounds`, which is the whole pool on the #30
+    // credential and was until now the case that handed off saying nothing.
+    //
+    // Only a seat its own reading shut may answer, on the test `chooseSeat` uses: one passed
+    // over for a role's `budget_share` ceiling is not waiting on a reset — no hour clears a
+    // share of Igor's own spend — and it would displace the instant a refused pool-mate is.
+    const live = pool.seats.flatMap((id) => {
+      const reading = readings.find((r) => r.seat.id === id)
+      const usage = reading?.usage
+      if (reading === undefined || usage === undefined) return []
+      // Where both windows are shut the seat returns on the later, which the week almost
+      // always is. Why "almost" is settled by preference rather than comparison: these are
+      // provider phrases, and ordering them needs `resolveReset` from `capacity.ts`, which
+      // imports from here. The week is wrong only inside the last session of one, so it errs
+      // by under five hours where naming the session errs by up to a week, the same direction.
+      const shut = (['week', 'session'] as Window[]).filter(
+        (w) => seatStatus(reading.seat, usage, w).headroomPercent <= 0,
+      )
+      return shut.flatMap((w) => {
+        const resetsAt = limitFor(usage, w).resetsAt
+        return resetsAt === undefined ? [] : [resetsAt]
+      })
+    })[0]
+    const derived = live === undefined ? derivedReset(pool, readings, bounds) : undefined
+    const soonest = live ?? derived?.resetAt
     return {
       exhausted: () => true,
       ...(soonest === undefined ? {} : { resetAt: soonest }),
+      ...(derived?.estimated === true ? { resetApproximate: true } : {}),
       reason: choice.reason,
     }
   }

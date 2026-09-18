@@ -104,6 +104,7 @@ export interface RunOptions extends ExecuteOptions {
     seat?: string
     token?: { tokenEnv?: string; tokenFile?: string; tokenCommand?: string }
     resetAt?: string
+    resetApproximate?: boolean
   }
 }
 
@@ -148,6 +149,7 @@ export async function runItem(
       kind: 'budget',
       ...(options.budget.seat === undefined ? {} : { seat: options.budget.seat }),
       ...(options.budget.resetAt === undefined ? {} : { resetAt: options.budget.resetAt }),
+      ...(options.budget.resetApproximate === true ? { resetApproximate: true } : {}),
     }
     const out = await handOffFrom(tracker, candidate, role, identity, claim.claimedAt, reason)
     return {

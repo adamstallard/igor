@@ -10,10 +10,10 @@
 
 ## 2. Is this seat spent
 
-- [ ] 2.1 A seat with an unexpired observation at 100% for a window has no headroom in it
-- [ ] 2.2 The reset from that observation is what the budget handoff states
-- [ ] 2.3 Expiry is time passing, not a sweep: nothing deletes rows
-- [ ] 2.4 Tests, including a row that expires between two cycles
+- [x] 2.1 A seat with an unexpired observation at 100% for a window has no headroom in it
+- [x] 2.2 The reset from that observation is what the budget handoff states
+- [x] 2.3 Expiry is time passing, not a sweep: nothing deletes rows
+- [x] 2.4 Tests, including a row that expires between two cycles
 
 ## 3. What is this seat's capacity
 

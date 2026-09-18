@@ -11,6 +11,7 @@ import {
   recordObservation,
   resolveReset,
   spendInInstance,
+  spentFor,
   type Observation,
 } from '../src/capacity.js'
 import { parseOrgBudget, type SpendRecord } from '../src/budget.js'
@@ -548,7 +549,10 @@ describe('the bounds the gate is handed', () => {
   it('reports the capacity and the current instance’s spend as separate figures', () => {
     const records = [spent('2026-09-13T11:00:00.000Z', 10), spent('2026-09-13T12:30:00.000Z', 6)]
     const bound = boundsForSeats([observation], records, [{ id: 'adam' }], NOW).get('adam')?.session
-    expect(bound).toEqual({ capacityUsd: 20, basis: 'observed', spentUsd: 16, from: observation })
+    expect(bound).toEqual({
+      capacity: { capacityUsd: 20, basis: 'observed', spentUsd: 16, from: observation },
+      resetsAt: '2026-09-13T14:00:00.000Z',
+    })
   })
 
   it('leaves out a window with neither an observation nor a declared figure', () => {
@@ -562,7 +566,8 @@ describe('the bounds the gate is handed', () => {
     // instance, which over-counts rather than under-counts.
     const records = [spent('2026-09-13T10:00:00.000Z', 4), spent('2026-09-13T07:00:00.000Z', 99)]
     const bound = boundsForSeats([], records, [{ id: 'adam', capacity: { session: 30 } }], NOW).get('adam')?.session
-    expect(bound).toEqual({ capacityUsd: 30, basis: 'declared', spentUsd: 4 })
+    // No `resetsAt`: a declared figure's window rolls back from now and names no return.
+    expect(bound).toEqual({ capacity: { capacityUsd: 30, basis: 'declared', spentUsd: 4 } })
   })
 
   it('derives nothing from an observation dated after now', () => {
@@ -576,5 +581,106 @@ describe('the bounds the gate is handed', () => {
 
   it('names no seat at all where nothing was derived for either window', () => {
     expect(boundsForSeats([], [], [{ id: 'adam' }], NOW).has('adam')).toBe(false)
+  })
+})
+
+describe('a refusal shuts the window it names', () => {
+  const NOW = '2026-09-13T13:00:00.000Z'
+  const refusal = (over: Partial<Observation> = {}): Observation => ({
+    at: '2026-09-13T12:00:00.000Z',
+    seat: 'adam',
+    window: 'session',
+    percentUsed: 100,
+    resetsAt: '2026-09-13T14:00:00.000Z',
+    source: 'limit',
+    ...over,
+  })
+
+  it('holds the window shut until the reset the provider named', () => {
+    expect(spentFor([refusal()], 'adam', 'session', NOW)).toEqual({
+      from: refusal(),
+      resetsAt: '2026-09-13T14:00:00.000Z',
+      estimated: false,
+    })
+  })
+
+  it('opens it on the reset itself, which belongs to the instance starting there', () => {
+    // Half-open, as every other boundary in this module is. A moment on the boundary is in the
+    // new instance, and the new instance has not been refused anything.
+    expect(spentFor([refusal()], 'adam', 'session', '2026-09-13T14:00:00.000Z')).toBeUndefined()
+    expect(spentFor([refusal()], 'adam', 'session', '2026-09-13T13:59:59.999Z')).toBeDefined()
+  })
+
+  it('holds a refusal that named no reset for one window length and no longer', () => {
+    // The window resets at most one cadence after the refusal, so the ceiling is knowable even
+    // where the return is not. The alternative to a ceiling is a row that never expires, which
+    // is a seat nobody can use again.
+    const { resetsAt, ...rest } = refusal()
+    expect(spentFor([rest], 'adam', 'session', NOW)).toEqual({
+      from: rest,
+      resetsAt: '2026-09-13T17:00:00.000Z',
+      estimated: true,
+    })
+    expect(spentFor([rest], 'adam', 'session', '2026-09-13T17:00:00.000Z')).toBeUndefined()
+  })
+
+  it('reads at 100% or over, and leaves anything under it to the arithmetic', () => {
+    expect(spentFor([refusal({ percentUsed: 105 })], 'adam', 'session', NOW)).toBeDefined()
+    expect(spentFor([refusal({ percentUsed: 99.9 })], 'adam', 'session', NOW)).toBeUndefined()
+  })
+
+  it('answers for the seat and window asked about and no other', () => {
+    expect(spentFor([refusal()], 'adam', 'week', NOW)).toBeUndefined()
+    expect(spentFor([refusal()], 'sam', 'session', NOW)).toBeUndefined()
+  })
+
+  it('leaves a per-model cap alone, which this change reports rather than acts on', () => {
+    expect(spentFor([refusal({ model: 'opus' })], 'adam', 'session', NOW)).toBeUndefined()
+  })
+
+  it('ignores a row dated after now, which is a mistyped `at` and not news', () => {
+    expect(spentFor([refusal({ at: '2026-10-13T12:00:00.000Z' })], 'adam', 'session', NOW)).toBeUndefined()
+  })
+
+  it('takes the last of the unexpired rows to expire, not the first', () => {
+    const later = refusal({ at: '2026-09-13T12:30:00.000Z', resetsAt: '2026-09-13T16:00:00.000Z' })
+    expect(spentFor([later, refusal()], 'adam', 'session', NOW)?.resetsAt).toBe('2026-09-13T16:00:00.000Z')
+    expect(spentFor([refusal(), later], 'adam', 'session', NOW)?.resetsAt).toBe('2026-09-13T16:00:00.000Z')
+  })
+
+  it('shuts a window it derives no capacity for at all', () => {
+    // The refused run recorded no cost, so there is nothing in the instance to divide. This is
+    // the case the derived bound cannot reach, and the seat it would otherwise run uncalibrated.
+    const bound = boundsForSeats([refusal()], [], [{ id: 'adam' }], NOW).get('adam')?.session
+    expect(bound?.capacity).toBeUndefined()
+    expect(bound?.spent?.from).toEqual(refusal())
+    // Nothing was summed, so no instance ended; the refusal's own clock is the only one here.
+    expect(bound?.resetsAt).toBeUndefined()
+    expect(bound?.spent?.resetsAt).toBe('2026-09-13T14:00:00.000Z')
+  })
+
+  it('stops shutting the window without anything being deleted, and still divides', () => {
+    // Expiry is a comparison made here, at read time. The row is the same row an hour later;
+    // only `now` moved. It no longer says the seat is spent and still says what it cost.
+    const records = [{ seat: 'adam', costUsd: 10, at: '2026-09-13T11:00:00.000Z' }]
+    const before = boundsForSeats([refusal()], records, [{ id: 'adam' }], NOW).get('adam')?.session
+    const after = boundsForSeats([refusal()], records, [{ id: 'adam' }], '2026-09-13T15:00:00.000Z').get('adam')?.session
+    expect(before?.spent).toBeDefined()
+    expect(after?.spent).toBeUndefined()
+    expect(after?.capacity).toEqual({ capacityUsd: 10, basis: 'observed', spentUsd: 0, from: refusal() })
+  })
+
+  it('names the end of the instance its spend was summed inside, not the refusal’s expiry', () => {
+    // Two clocks, and not the same clock: the sum clears when its instance does, the refusal
+    // clears when the provider said. A handoff states whichever of them is blocking, so the
+    // bound keeps them apart instead of handing over the later one.
+    const older = refusal({ at: '2026-09-13T09:00:00.000Z', resetsAt: '2026-09-13T13:30:00.000Z' })
+    // Inside the older observation's span and outside the newer one's, so the newer derives no
+    // figure and the capacity comes from an instance running 08:30 → 13:30.
+    const records = [{ seat: 'adam', costUsd: 10, at: '2026-09-13T08:45:00.000Z' }]
+    const bound = boundsForSeats([older, refusal()], records, [{ id: 'adam' }], NOW).get('adam')?.session
+    expect(bound?.capacity?.spentUsd).toBe(10)
+    expect(bound?.resetsAt).toBe('2026-09-13T13:30:00.000Z')
+    expect(bound?.spent?.resetsAt).toBe('2026-09-13T14:00:00.000Z')
   })
 })

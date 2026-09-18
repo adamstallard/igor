@@ -48,3 +48,26 @@ Nothing reads the figure yet, so this costs nothing today. It becomes reachable 
 (task 4.1), and reshaping the field is cheapest before that depends on it. Left as it stands here
 rather than amended in passing: the shape is the requirement's, and amending a requirement is not
 this issue's to do.
+
+## The reset a handoff states belongs to whatever is blocking
+
+Two things hold a window shut and they expire on different clocks. A refusal expires at its own
+`resetsAt`; a sum that has reached `(1 − reserve) × capacity` clears when the instance it was
+summed inside rolls over. Reporting the later of the two unconditionally, from the figures
+`boundsForSeats` hands over, is wrong and was tried. In the ordinary case the capacity comes
+from the very row that shut the seat, so the two coincide; where they diverge it is because the
+capacity came from an older observation whose instance has been tiled forward past the live
+refusal, and the handoff then named an hour three and a half hours after the seat was released.
+
+The later of the two is right only where the arithmetic is itself blocking. So the comparison
+belongs in `derivedWindow`, the one place that knows which of them is holding the seat, and not
+in the figures handed to it. Where the capacity is declared rather than observed there is no
+boundary to tile from at all, and the answer is that the return is unknown rather than the
+refusal's hour — a rolling window's sum clears at a moment nothing here can name, and an
+invented position in a window is worse than none.
+
+A seat whose usage could be read answers in the provider's own words, which are phrases rather
+than instants. Ordering two of them needs `resolveReset`, and `capacity.ts` imports from
+`budget.ts`, so the live path prefers the week where both windows are shut rather than
+comparing. The week is the later of the two except inside the last session of one, so that
+preference is early by under five hours where naming the session is early by up to a week.

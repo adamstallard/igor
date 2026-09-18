@@ -540,8 +540,8 @@ describe('a seat nothing can read is bounded by observation and record', () => {
     const before = [paid('2026-09-13T11:00:00.000Z', 10)]
     const after = [...before, paid('2026-09-13T12:30:00.000Z', 6)]
     const bounds = boundsForSeats([sessionObs(), weekObs()], after, [s], NOW)
-    expect(bounds.get('adam')?.session?.capacityUsd).toBe(20)
-    expect(bounds.get('adam')?.session?.spentUsd).toBe(16)
+    expect(bounds.get('adam')?.session?.capacity?.capacityUsd).toBe(20)
+    expect(bounds.get('adam')?.session?.capacity?.spentUsd).toBe(16)
     expect(choose(s, [sessionObs(), weekObs()], before).seat?.id).toBe('adam')
     expect(choose(s, [sessionObs(), weekObs()], after).seat).toBeUndefined()
   })
@@ -668,5 +668,266 @@ describe('a seat nothing can read is bounded by observation and record', () => {
     const c = chooseSeat({ id: 'p', seats: ['adam'] }, [{ seat: s, usage: usage(17, 17) }], records, { name: 'triage' }, bounds)
     expect(c.seat?.id).toBe('adam')
     expect(c.reason).toBe('adam has 33% of the session left')
+  })
+})
+
+describe('a seat the provider refused is spent until it resets', () => {
+  const REFUSED_AT = '2026-09-13T12:00:00.000Z'
+  const RESET = '2026-09-13T14:00:00.000Z'
+  const NOW = '2026-09-13T13:00:00.000Z'
+
+  const seat = (over: Partial<Seat> = {}): Seat => ({ id: 'adam', owner: 'adam', reserve: 0, ...over })
+  const unreadable = (s: Seat): SeatUsage => ({ seat: s, error: 'its credential carries no subscription', unmeasured: true })
+  const paid = (at: string, usd: number): SpendRecord => ({ seat: 'adam', costUsd: usd, at })
+  const refusal = (over: Partial<Observation> = {}): Observation => ({
+    at: REFUSED_AT, seat: 'adam', window: 'session', percentUsed: 100, resetsAt: RESET, source: 'limit', ...over,
+  })
+  const weekObs = (): Observation => ({
+    at: REFUSED_AT, seat: 'adam', window: 'week', percentUsed: 5, resetsAt: '2026-09-18T00:00:00.000Z', source: 'usage',
+  })
+  const choose = (s: Seat, obs: Observation[], records: SpendRecord[], now = NOW) =>
+    chooseSeat({ id: 'p', seats: [s.id] }, [unreadable(s)], records, { name: 'triage' },
+      boundsForSeats(obs, records, [s], now))
+  const gate = (s: Seat, obs: Observation[], records: SpendRecord[], now = NOW) =>
+    budgetGate({ seats: [s], pools: [{ id: 'p', seats: [s.id] }] }, { name: 'triage', seat: 'pool:p' },
+      [unreadable(s)], records, boundsForSeats(obs, records, [s], now))
+
+  it('passes over a seat refused a minute ago, with nothing in the instance to divide', () => {
+    // The refused run recorded no cost, so the derived arithmetic has no capacity to compare
+    // against and the seat reads as one nobody has ever measured. Without the scan it is
+    // chosen, told it is uncalibrated, and refused again.
+    const c = choose(seat(), [refusal(), weekObs()], [])
+    expect(c.seat).toBeUndefined()
+    expect(c.considered[0]?.why).toContain('its session was 100% used when observed at')
+    expect(c.considered[0]?.why).toContain(RESET)
+  })
+
+  it('tells a reserved seat that was refused from one never observed at all', () => {
+    // Both were passed over; only one of them is waiting on a reading.
+    const c = choose(seat({ reserve: 0.25 }), [refusal(), weekObs()], [])
+    expect(c.considered[0]?.why).not.toContain(NO_CAPACITY_FIGURE)
+    expect(c.considered[0]?.why).toContain('100% used when observed')
+  })
+
+  it('is not talked round by a later reading of the same unrefreshed window', () => {
+    // Newest-wins settles which capacity figure to believe. It does not settle whether the
+    // provider refused, which is not an estimate and did not stop being true.
+    const later: Observation = {
+      at: '2026-09-13T12:01:00.000Z', seat: 'adam', window: 'session', percentUsed: 50, resetsAt: RESET, source: 'usage',
+    }
+    const c = choose(seat(), [refusal(), later, weekObs()], [paid('2026-09-13T11:00:00.000Z', 10)])
+    expect(c.seat).toBeUndefined()
+  })
+
+  it('holds a refusal that named no reset for one window length, then lets the seat run', () => {
+    const noReset = (): Observation => {
+      const { resetsAt, ...rest } = refusal()
+      return rest
+    }
+    expect(choose(seat(), [noReset(), weekObs()], []).seat).toBeUndefined()
+    expect(choose(seat(), [noReset(), weekObs()], [], '2026-09-13T17:00:00.000Z').seat?.id).toBe('adam')
+  })
+
+  it('lets the seat run again on the next cycle, with nothing having been run to clear it', () => {
+    // One log, two cycles, and only `now` differs between them. An expiry computed anywhere
+    // but at the moment of the comparison survives the first of these and fails the second.
+    const obs = [refusal(), weekObs()]
+    expect(choose(seat(), obs, [], '2026-09-13T13:59:59.999Z').seat).toBeUndefined()
+    expect(choose(seat(), obs, [], RESET).seat?.id).toBe('adam')
+  })
+
+  it('states the reset recorded with the observation when it hands off', () => {
+    const g = gate(seat(), [refusal(), weekObs()], [])
+    expect(g.exhausted()).toBe(true)
+    expect(g.resetAt).toBe(RESET)
+    expect(g.resetApproximate).toBeUndefined()
+  })
+
+  it('states the cadence ceiling, marked as one, where the provider named no reset', () => {
+    const { resetsAt, ...noReset } = refusal()
+    const g = gate(seat(), [noReset, weekObs()], [])
+    expect(g.resetAt).toBe('2026-09-13T17:00:00.000Z')
+    expect(g.resetApproximate).toBe(true)
+  })
+
+  it('states the later reset where both windows are shut, not the first one to open', () => {
+    // A seat back in the session at 14:00 and in the week on Friday is back on Friday.
+    const weekRefusal: Observation = { ...refusal(), window: 'week', resetsAt: '2026-09-18T00:00:00.000Z' }
+    expect(gate(seat(), [refusal(), weekRefusal], []).resetAt).toBe('2026-09-18T00:00:00.000Z')
+  })
+
+  it('states the earliest of the seats, since the first seat back is the first Igor back', () => {
+    const adam = seat()
+    const sam = seat({ id: 'sam', owner: 'sam' })
+    const samRefusal: Observation = { ...refusal(), seat: 'sam', resetsAt: '2026-09-13T13:30:00.000Z' }
+    const g = budgetGate(
+      { seats: [adam, sam], pools: [{ id: 'p', seats: ['adam', 'sam'] }] },
+      { name: 'triage', seat: 'pool:p' },
+      [unreadable(adam), unreadable(sam)],
+      [],
+      boundsForSeats([refusal(), weekObs(), samRefusal], [], [adam, sam], NOW),
+    )
+    expect(g.exhausted()).toBe(true)
+    expect(g.resetAt).toBe('2026-09-13T13:30:00.000Z')
+  })
+
+  it('states the current instance’s reset for a seat stopped by the derived bound', () => {
+    // Nothing refused this seat: it reached `(1 − reserve) × capacity`. The reset was already
+    // computed and was reaching nobody, so the handoff said only that it had stopped.
+    const s = seat({ reserve: 0.25 })
+    const observed: Observation = { ...refusal(), percentUsed: 50, source: 'usage' }
+    const records = [paid('2026-09-13T11:00:00.000Z', 10), paid('2026-09-13T12:30:00.000Z', 6)]
+    expect(choose(s, [observed, weekObs()], records).considered[0]?.why).toMatch(
+      /spent \$16\.00 of the session's \$15\.00 bound/,
+    )
+    const g = gate(s, [observed, weekObs()], records)
+    expect(g.exhausted()).toBe(true)
+    expect(g.resetAt).toBe(RESET)
+    expect(g.resetApproximate).toBeUndefined()
+  })
+
+  it('says nothing about a return for a seat that is not waiting on one', () => {
+    // A seat with no capacity figure is waiting on a reading, not on a clock, and a handoff
+    // that named an hour would be inventing one.
+    const g = gate(seat({ reserve: 0.5 }), [], [])
+    expect(g.exhausted()).toBe(true)
+    expect(g.resetAt).toBeUndefined()
+  })
+
+  it('states the reset of what is actually blocking, not of a later instance', () => {
+    // Two refusals in a row, the first with nothing spent after it: the capacity still comes
+    // from the older one, whose instance has been stepped forward past the live refusal's
+    // reset. The seat is released when the refusal expires, so that is the hour to state.
+    const first = refusal({ at: '2026-09-13T09:00:00.000Z', resetsAt: '2026-09-13T13:30:00.000Z' })
+    const second = refusal({ at: '2026-09-13T13:35:00.000Z', resetsAt: '2026-09-13T15:00:00.000Z' })
+    const records = [paid('2026-09-13T08:45:00.000Z', 10)]
+    const at14 = '2026-09-13T14:00:00.000Z'
+    expect(gate(seat(), [first, second, weekObs()], records, at14).resetAt).toBe('2026-09-13T15:00:00.000Z')
+    // And the seat really is back then, which is what makes the later hour a false promise.
+    expect(choose(seat(), [first, second, weekObs()], records, '2026-09-13T15:00:01.000Z').seat?.id).toBe('adam')
+  })
+
+  it('keeps a cadence ceiling marked as one when an older instance reaches further out', () => {
+    const first = refusal({ at: '2026-09-13T09:00:00.000Z', resetsAt: '2026-09-13T13:30:00.000Z' })
+    const { resetsAt, ...second } = refusal({ at: '2026-09-13T12:00:00.000Z' })
+    const records = [paid('2026-09-13T08:45:00.000Z', 10)]
+    const g = gate(seat(), [first, second, weekObs()], records, '2026-09-13T14:00:00.000Z')
+    expect(g.resetAt).toBe('2026-09-13T17:00:00.000Z')
+    expect(g.resetApproximate).toBe(true)
+  })
+
+  it('does not let a readable seat that is not out of headroom answer for the pool', () => {
+    // A seat passed over for a role's own ceiling is not waiting on a reset, and its reading's
+    // reset phrase is not an answer to when the pool is back. The instant the refused seat is
+    // waiting on was in `bounds` and was being thrown away.
+    const fleet = seat({ id: 'fleet-1', owner: 'fleet' })
+    const adam = seat()
+    const readings: SeatUsage[] = [
+      unreadable(fleet),
+      { seat: adam, usage: { session: { percentUsed: 10, resetsAt: 'Sep 13 at 8pm (America/Los_Angeles)' }, week: { percentUsed: 10 }, perModel: [] } },
+    ]
+    const fleetRefusal: Observation = { ...refusal(), seat: 'fleet-1', at: '2026-09-13T11:00:00.000Z', resetsAt: '2026-09-13T12:00:00.000Z' }
+    const now = '2026-09-13T11:30:00.000Z'
+    const g = budgetGate(
+      { seats: [fleet, adam], pools: [{ id: 'p', seats: ['fleet-1', 'adam'] }] },
+      { name: 'triage', seat: 'pool:p', budgetShare: 0.05 },
+      readings,
+      [{ seat: 'adam', costUsd: 5, at: '2026-09-13T11:00:00.000Z', role: 'triage' }],
+      boundsForSeats([fleetRefusal], [], [fleet, adam], now),
+    )
+    expect(g.exhausted()).toBe(true)
+    expect(g.resetAt).toBe('2026-09-13T12:00:00.000Z')
+  })
+
+  it('states the reset of the window that shut a readable seat, not always the session’s', () => {
+    // Late in the week the session is fine and the week is gone. Both resets are in the same
+    // reading; naming the session's puts the return days early.
+    const s = seat({ reserve: 0.2 })
+    const g = budgetGate(
+      { seats: [s], pools: [{ id: 'p', seats: ['adam'] }] },
+      { name: 'triage', seat: 'pool:p' },
+      [{ seat: s, usage: {
+        session: { percentUsed: 10, resetsAt: 'Sep 13 at 8pm (America/Los_Angeles)' },
+        week: { percentUsed: 80, resetsAt: 'Sep 20 at 9am (America/Los_Angeles)' },
+        perModel: [],
+      } }],
+      [],
+    )
+    expect(g.exhausted()).toBe(true)
+    expect(g.resetAt).toBe('Sep 20 at 9am (America/Los_Angeles)')
+  })
+
+  it('does not promise the refusal’s hour where the sum is still over its bound then', () => {
+    // A run already in flight when the seat was last passed lands after the refusal, so the
+    // instance the sum is taken over outlives the refusal. The window is open when the later
+    // of the two clears, and stating the earlier one is a return the seat does not keep.
+    const first = refusal({ at: '2026-09-13T09:00:00.000Z', resetsAt: '2026-09-13T13:40:00.000Z' })
+    const second = refusal({ at: '2026-09-13T13:35:00.000Z', resetsAt: '2026-09-13T15:00:00.000Z' })
+    const records = [paid('2026-09-13T08:45:00.000Z', 10), paid('2026-09-13T13:45:00.000Z', 30)]
+    const at14 = '2026-09-13T14:00:00.000Z'
+    expect(gate(seat(), [first, second], records, at14).resetAt).toBe('2026-09-13T18:40:00.000Z')
+    // The seat really is still shut at the hour the refusal expires, which is what makes it one.
+    expect(choose(seat(), [first, second], records, '2026-09-13T15:00:01.000Z').seat).toBeUndefined()
+  })
+
+  it('says nothing rather than promise an hour a rolling bound cannot keep', () => {
+    // A declared figure has no observed boundary, so nothing says when its sum clears. The
+    // refusal's own hour is not an answer for a seat the arithmetic will still be holding.
+    const s = seat({ capacity: { session: 10 } })
+    const obs = [refusal({ at: '2026-09-13T12:00:00.000Z', resetsAt: '2026-09-13T13:30:00.000Z' })]
+    const records = [paid('2026-09-13T12:50:00.000Z', 12)]
+    const g = gate(s, obs, records, '2026-09-13T13:00:00.000Z')
+    expect(g.exhausted()).toBe(true)
+    expect(g.resetAt).toBeUndefined()
+  })
+
+  it('leaves the seat whose return nothing knows out of the earliest-reset race', () => {
+    // Earliest across the pool is what makes an unknowable return dangerous: contributed as the
+    // refusal's own hour it wins the race, and the pool is then promised the one seat whose
+    // hour means nothing over a pool-mate whose hour is real.
+    const rolling = seat({ capacity: { session: 10 } })
+    const clocked = seat({ id: 'sam', owner: 'sam' })
+    const records = [paid('2026-09-13T12:50:00.000Z', 12)]
+    const g = budgetGate(
+      { seats: [rolling, clocked], pools: [{ id: 'p', seats: ['adam', 'sam'] }] },
+      { name: 'triage', seat: 'pool:p' },
+      [unreadable(rolling), unreadable(clocked)],
+      records,
+      boundsForSeats(
+        [refusal({ resetsAt: '2026-09-13T13:30:00.000Z' }), refusal({ seat: 'sam', resetsAt: RESET })],
+        records,
+        [rolling, clocked],
+        '2026-09-13T13:00:00.000Z',
+      ),
+    )
+    expect(g.exhausted()).toBe(true)
+    expect(g.resetAt).toBe(RESET)
+  })
+
+  it('does not answer for this pool with a seat outside it', () => {
+    // The reset belongs to whichever seat carries it, and a readable seat elsewhere in the
+    // configuration says nothing about when this pool is back.
+    const adam = seat()
+    const other = seat({ id: 'fleet-1', owner: 'fleet' })
+    const readings: SeatUsage[] = [
+      unreadable(adam),
+      { seat: other, usage: { session: { percentUsed: 100, resetsAt: '8pm' }, week: { percentUsed: 100 }, perModel: [] } },
+    ]
+    const g = budgetGate(
+      { seats: [adam, other], pools: [{ id: 'p', seats: ['adam'] }] },
+      { name: 'triage', seat: 'pool:p' },
+      readings,
+      [],
+      boundsForSeats([refusal(), weekObs()], [], [adam], NOW),
+    )
+    expect(g.resetAt).toBe(RESET)
+  })
+
+  it('leaves a seat that could be read judged on its reading, refusal or no refusal', () => {
+    // The live figure is this cycle's; the observation is a snapshot of some earlier one.
+    const s = seat()
+    const bounds = boundsForSeats([refusal(), weekObs()], [], [s], NOW)
+    const c = chooseSeat({ id: 'p', seats: ['adam'] }, [{ seat: s, usage: usage(17, 17) }], [], { name: 'triage' }, bounds)
+    expect(c.seat?.id).toBe('adam')
   })
 })
