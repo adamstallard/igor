@@ -147,13 +147,15 @@ recent observation that resolved one, whatever that observation measured, and `c
 keeps answering only for the size. A row that divides supplies a quantity; a row with a resolved
 reset supplies a position, and the newest position is the least stale news about it.
 
-Two things this deliberately does not do:
+A declared figure is tiled too, wherever an anchor exists. The reason first recorded for
+leaving it rolling — that a declared figure is for a seat never observed at all — describes the
+case where nothing has named a reset, which the rolling window still covers. It does not argue
+against using a position that does exist: an anchor says where the window sits, and that is as
+true of a size someone declared as of one that was measured.
 
-- **A declared figure still gets a rolling window, even where an anchor exists.** Tiling it
-  would be better arithmetic and it overturns the recorded reason above — a declared figure is
-  for a seat never observed at all — so it is a decision rather than a correction, and it is
-  left alone here.
-- **More spend can still release a seat, by two paths that leave the boundary where it is.** A
+One thing this deliberately does not do:
+
+- **More spend can still release a seat, by paths that leave the boundary where it is.** A
   newer, lower reading becomes divisible once something is spent inside its span, and
   newest-wins then raises the capacity estimate. And the first divisible row flips the basis
   from declared to observed, which swaps the rolling window for a tiled one starting later,
@@ -161,6 +163,35 @@ Two things this deliberately does not do:
   design as written: the estimate self-correcting, and an observed boundary beating a rolling
   approximation of one. What is fixed here is the third path, where the spend moved the
   *boundary* — and only that one was ever a fault.
+
+  **The basis-flip half of this is gone, measured rather than argued.** It was written when a
+  declared figure got a rolling window and an observed one a tiled window, so the flip changed
+  the window's *shape*. Both are tiled from the same anchor now, so the interval no longer moves
+  when the basis flips and only the magnitude does. A grid of 4 anchors x 3 `at` x 2
+  `percentUsed` x 4 extra-record positions, comparing `chooseSeat` with records against records
+  plus a dollar, found 0 violations of "never brings the seat back sooner for having spent more".
+
+  What remains is the magnitude half: a newer, lower reading becomes divisible once something is
+  spent inside its span, and newest-wins then raises the estimate. That one is untouched by
+  tiling and is still the design as written.
+
+## A position and a divisor are different news, and one row can be only one of them
+
+`observedSpan` refuses a row where `at <= resetsAt - len` — the reading precedes the instance it
+would describe, so its `percentUsed` cannot divide that instance. `resetAnchor` accepts the same
+row, because it asks only whether a reset parsed.
+
+That looks like an inconsistency and is not. A row supplies a magnitude only if its percentage
+describes the instance being sized; it supplies a position if the provider stated a reset at all,
+whatever the row measured. Where the two disagree the seat keeps its declared magnitude and takes
+the observed boundary, which is the intended pairing.
+
+The consequence is visible and correct: a seat carrying spend from before a stated reset is
+released by it, where a rolling window would have kept counting that spend and held the seat.
+The rolling sum was the documented over-count, not the truth being lost. This is only wrong if a
+reset is fabricated rather than provider-stated — and a fabricated reset poisoned the observed
+basis identically before declared figures took this path, so that exposure is not introduced
+here. The only writer of observations stores a provider-supplied instant.
 
 ## An unresolved reset expires on the cadence, because both other readings strand something
 

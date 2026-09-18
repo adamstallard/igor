@@ -905,12 +905,13 @@ describe('a seat the provider refused is spent until it resets', () => {
   })
 
   it('says nothing rather than promise an hour a rolling bound cannot keep', () => {
-    // A declared figure has no observed boundary, so nothing says when its sum clears. The
-    // refusal's own hour is not an answer for a seat the arithmetic will still be holding.
+    // Nothing this seat has been observed for named a reset, so there is no boundary to tile
+    // from and its sum clears at a moment nothing here can name. The refusal's own hour — a
+    // cadence ceiling — is not an answer for a seat the arithmetic will still be holding.
     const s = seat({ capacity: { session: 10 } })
-    const obs = [refusal({ at: '2026-09-13T12:00:00.000Z', resetsAt: '2026-09-13T13:30:00.000Z' })]
+    const { resetsAt, ...unplaced } = refusal({ at: '2026-09-13T12:00:00.000Z' })
     const records = [paid('2026-09-13T12:50:00.000Z', 12)]
-    const g = gate(s, obs, records, '2026-09-13T13:00:00.000Z')
+    const g = gate(s, [unplaced], records, '2026-09-13T13:00:00.000Z')
     expect(g.exhausted()).toBe(true)
     expect(g.resetAt).toBeUndefined()
   })
@@ -922,17 +923,20 @@ describe('a seat the provider refused is spent until it resets', () => {
     const rolling = seat({ capacity: { session: 10 } })
     const clocked = seat({ id: 'sam', owner: 'sam' })
     const records = [paid('2026-09-13T12:50:00.000Z', 12)]
+    // Nothing has ever named a reset for `adam`, so its bound has no boundary to clear at.
+    const { resetsAt, ...unplaced } = refusal()
     const g = budgetGate(
       { seats: [rolling, clocked], pools: [{ id: 'p', seats: ['adam', 'sam'] }] },
       { name: 'triage', seat: 'pool:p' },
       [unreadable(rolling), unreadable(clocked)],
       records,
       boundsForSeats(
-        [refusal({ resetsAt: '2026-09-13T13:30:00.000Z' }), refusal({ seat: 'sam', resetsAt: RESET })],
+        [unplaced, refusal({ seat: 'sam', resetsAt: RESET })],
         records,
         [rolling, clocked],
         '2026-09-13T13:00:00.000Z',
       ),
+      '2026-09-13T13:00:00.000Z',
     )
     expect(g.exhausted()).toBe(true)
     expect(g.resetAt).toBe(RESET)

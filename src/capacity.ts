@@ -450,16 +450,16 @@ export function boundsForSeats(
       // The boundary comes from `resetAnchor` rather than from the row the magnitude came
       // from, so that no spend record can move it.
       //
-      // Why a declared figure gets a rolling window even where an anchor exists: it has no
-      // observed reset behind it, and the case one exists for is a seat never observed at all,
-      // so there is no boundary to tile from and none may be invented.
+      // A declared figure is tiled too where an anchor exists. The anchor is a position, and a
+      // position is as true of a window whose size was declared as of one that was measured;
+      // the rolling window below is for the case where nothing has ever named a reset.
       //
-      // Why rolling back one length is safe: the elapsed part of the true instance began at
+      // Why rolling back one length is safe, where that is all there is: the elapsed part of the true instance began at
       // most one length ago and so is always inside it, making the sum an over-count rather
       // than an under-count. The cost is that spend late in one instance keeps counting into
       // the next until it ages out, which is an argument for observing a seat rather than
       // declaring at it.
-      const anchor = estimate.basis === 'observed' ? resetAnchor(vouched, seat.id, window) : undefined
+      const anchor = resetAnchor(vouched, seat.id, window)
       const instance = anchor === undefined ? instanceBounds(now, length) : currentInstance(anchor, length, now)
       if (instance === undefined) {
         if (shutOnly !== undefined) windows[window] = shutOnly
