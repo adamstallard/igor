@@ -93,3 +93,41 @@ export function resolveReset(phrase: string, at: string): string | undefined {
   // Unreachable: next year's occurrence is always at or after `at`.
   return undefined
 }
+
+/**
+ * How far before the present a reset phrase is read from, where the caller does not know when
+ * the reading was taken.
+ *
+ * A week, because a provider states a reset no further ahead than the longest window it
+ * reports. Occurrences of a phrase are a year apart, so any horizon well short of half a year
+ * places it unambiguously; a week is the smallest one that covers every reset a reading can
+ * carry.
+ *
+ * That bound is the precondition, not a detail. Shifting back moves which year `resolveReset`
+ * tries first, so a phrase naming a date months ahead, read in the first week of January, can
+ * fail to resolve where the unshifted call would have placed it. Widen this only alongside
+ * whatever starts printing resets that far out.
+ */
+export const RESET_HORIZON = Temporal.Duration.from({ hours: 7 * 24 })
+
+/**
+ * Resolves a reset phrase for a caller holding the present rather than the reading's own
+ * moment — the gate, which is handed readings with no timestamp on them.
+ *
+ * `resolveReset` answers with the first occurrence at or after the moment it is given, so
+ * giving it the present sends a reset that passed a minute ago a full year out. That is not a
+ * late answer but a wrong one: the seat it belongs to is back *now*, and a year is the largest
+ * error the phrase can express. Reading from `RESET_HORIZON` back keeps a reset just gone in
+ * the past where it belongs, and moves no reset that is still ahead.
+ *
+ * `undefined` for a phrase that does not resolve and for a `now` that is not an instant.
+ */
+export function resolveRecentReset(phrase: string, now: string): string | undefined {
+  let present: Temporal.Instant
+  try {
+    present = Temporal.Instant.from(now)
+  } catch {
+    return undefined
+  }
+  return resolveReset(phrase, present.subtract(RESET_HORIZON).toString({ fractionalSecondDigits: 3 }))
+}

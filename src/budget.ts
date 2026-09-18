@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
 import type { SeatBound, SeatBounds } from './capacity.js'
+import { resolveRecentReset } from './reset.js'
 
 /**
  * Seats, pools, and what an Igor is allowed to spend.
@@ -671,6 +672,52 @@ function derivedReset(
   return soonest
 }
 
+/**
+ * The instant a reset names, whether it arrived as an ISO instant derived here or as the phrase
+ * a provider printed. `undefined` for a reset neither reading places, which is left out of an
+ * ordering rather than ordered arbitrarily.
+ *
+ * A phrase carries no year and a reading carries no timestamp, so it is read from the horizon
+ * `resolveRecentReset` applies rather than from `now`: a reading is taken before the gate runs,
+ * and the hour it names can already have gone by.
+ */
+function resetInstant(resetAt: string, now: string): Temporal.Instant | undefined {
+  try {
+    return Temporal.Instant.from(resetAt)
+  } catch {
+    const resolved = resolveRecentReset(resetAt, now)
+    if (resolved === undefined) return undefined
+    try {
+      return Temporal.Instant.from(resolved)
+    } catch {
+      return undefined
+    }
+  }
+}
+
+/**
+ * The earliest return among a pool's candidates, stated in whatever words it arrived in.
+ *
+ * A candidate `resetInstant` cannot place sits the race out rather than being ordered on its
+ * text: `"Friday 9am"` sorts before `"Sep 18 at 4pm (America/Los_Angeles)"` as a string and
+ * after it as a moment. Where none can be placed the first candidate answers, which is the
+ * readable seats in pool order and then the derived figure — an unplaceable phrase is still the
+ * provider's own answer for that seat, and dropping it says "not known" about an hour somebody
+ * printed.
+ */
+function earliestReturn(
+  candidates: readonly { resetAt: string; estimated: boolean }[],
+  now: string,
+): { resetAt: string; estimated: boolean } | undefined {
+  let best: { candidate: { resetAt: string; estimated: boolean }; at: Temporal.Instant } | undefined
+  for (const candidate of candidates) {
+    const at = resetInstant(candidate.resetAt, now)
+    if (at === undefined) continue
+    if (best === undefined || Temporal.Instant.compare(at, best.at) < 0) best = { candidate, at }
+  }
+  return best?.candidate ?? candidates[0]
+}
+
 export interface Gate {
   exhausted: () => boolean
   seat?: string
@@ -682,8 +729,9 @@ export interface Gate {
   token?: TokenSource
   resetAt?: string
   /** `resetAt` is not a return the provider stated: a cadence ceiling where a refusal named
-   *  none, or the earlier of two shut windows where two provider phrases cannot be ordered. It
-   *  can be late or early, so the handoff hedges the hour rather than bounding it. */
+   *  none, or the week where both of a readable seat's windows are shut and the week is
+   *  preferred over the session. It can be late or early, so the handoff hedges the hour
+   *  rather than bounding it. */
   resetApproximate?: boolean
   reason: string
 }
@@ -694,6 +742,7 @@ export function budgetGate(
   readings: readonly SeatUsage[],
   records: readonly SpendRecord[],
   bounds: SeatBounds = new Map(),
+  now: string = Temporal.Now.instant().toString({ fractionalSecondDigits: 3 }),
 ): Gate {
   // No seats declared means budget is not being enforced, which is a legitimate configuration
   // and must not read as exhausted.
@@ -740,20 +789,18 @@ export function budgetGate(
       // week's stated hour is either the later of the two or under a session-length early.
       if (resets[0] === undefined) return []
       // Where both windows are shut the seat returns on the later, which the week almost
-      // always is. Why "almost" is settled by preference rather than comparison: these are
-      // provider phrases, and ordering them needs `resolveReset` from `capacity.ts`, which
-      // imports from here. The week is wrong only inside the last session of one, so it errs
-      // by under five hours where naming the session errs by up to a week, the same direction.
-      // A preference is not a reading, which is what `estimated` marks here.
+      // always is. The week is taken by preference rather than by comparing the two hours: it
+      // is wrong only inside the last session of one, so it errs by under five hours where
+      // naming the session errs by up to a week, the same direction. A preference is not a
+      // reading, which is what `estimated` marks here.
       return [{ resetAt: resets[0]!, estimated: shut.length > 1 }]
-    })[0]
-    // A live reading answers for its own seat and a derived figure for a seat nothing could
-    // read, and the pool is back on the earlier of the two. They cannot be ordered: one is a
-    // provider phrase, and resolving it needs `resolveReset` from `capacity.ts`, which imports
-    // from here. So the reading wins where there is one, and a pool-mate back sooner goes
-    // unstated — see the change's `design.md`.
-    const derived = live === undefined ? derivedReset(pool, readings, bounds) : undefined
-    const soonest = live ?? derived
+    })
+    // Every seat's return in one race, however it was arrived at, because the first seat back
+    // is the first Igor back. A reading answers for its own seat in the provider's words and a
+    // derived figure for a seat nothing could read; `resetInstant` places both on one clock, so
+    // neither wins by being the kind of figure it is.
+    const derived = derivedReset(pool, readings, bounds)
+    const soonest = earliestReturn([...live, ...(derived === undefined ? [] : [derived])], now)
     return {
       exhausted: () => true,
       ...(soonest === undefined ? {} : { resetAt: soonest.resetAt }),

@@ -697,7 +697,7 @@ describe('a seat the provider refused is spent until it resets', () => {
       boundsForSeats(obs, records, [s], now))
   const gate = (s: Seat, obs: Observation[], records: SpendRecord[], now = NOW) =>
     budgetGate({ seats: [s], pools: [{ id: 'p', seats: [s.id] }] }, { name: 'triage', seat: 'pool:p' },
-      [unreadable(s)], records, boundsForSeats(obs, records, [s], now))
+      [unreadable(s)], records, boundsForSeats(obs, records, [s], now), now)
 
   it('passes over a seat refused a minute ago, with nothing in the instance to divide', () => {
     // The refused run recorded no cost, so the derived arithmetic has no capacity to compare
@@ -1010,31 +1010,75 @@ describe('a seat the provider refused is spent until it resets', () => {
     expect(g.resetApproximate).toBeUndefined()
   })
 
-  it('answers with the reading, even where a derived pool-mate is back sooner', () => {
-    // A provider phrase and a derived instant cannot be ordered without `resolveReset`, which
-    // lives in `capacity.ts` and cannot be imported back. So the seat that could be read
-    // answers, and the pool-mate back within the hour goes unstated. Preferring the derived
-    // instant instead only moves which input gets the wrong answer, since no live phrase this
-    // provider prints is comparable.
-    const readable = seat({ id: 'sam', owner: 'sam' })
+  // The first seat back is the first Igor back, whichever seat it is and however its hour was
+  // arrived at. Pinned in both directions: a rule that always prefers one kind of figure states
+  // a return the pool does not keep on exactly the inputs the other kind gets right.
+  describe('the pool is back on the earliest hour any of its seats has', () => {
     const refused = seat()
-    const readings: SeatUsage[] = [
-      { seat: readable, usage: {
-        session: { percentUsed: 10 },
-        week: { percentUsed: 100, resetsAt: 'Sep 18 at 9am (America/Los_Angeles)' },
-        perModel: [],
-      } },
-      unreadable(refused),
-    ]
-    const g = budgetGate(
-      { seats: [readable, refused], pools: [{ id: 'p', seats: ['sam', 'adam'] }] },
-      { name: 'triage', seat: 'pool:p' },
-      readings,
-      [],
-      boundsForSeats([refusal(), weekObs()], [], [refused], NOW),
-    )
-    expect(g.exhausted()).toBe(true)
-    expect(g.resetAt).toBe('Sep 18 at 9am (America/Los_Angeles)')
+    const readable = seat({ id: 'sam', owner: 'sam' })
+    const bothShut = (weekReset: string) =>
+      budgetGate(
+        { seats: [readable, refused], pools: [{ id: 'p', seats: ['sam', 'adam'] }] },
+        { name: 'triage', seat: 'pool:p' },
+        [
+          { seat: readable, usage: {
+            session: { percentUsed: 10 },
+            week: { percentUsed: 100, resetsAt: weekReset },
+            perModel: [],
+          } },
+          unreadable(refused),
+        ],
+        [],
+        boundsForSeats([refusal(), weekObs()], [], [refused], NOW),
+        NOW,
+      )
+
+    it('states the derived pool-mate’s hour where the reading is days out', () => {
+      // The reading is this cycle's truth about `sam`, and says nothing about `adam`, who is
+      // back within the hour. Answering `sam`'s Friday leaves the pool idle for five days.
+      const g = bothShut('Sep 18 at 9am (America/Los_Angeles)')
+      expect(g.exhausted()).toBe(true)
+      expect(g.resetAt).toBe(RESET)
+    })
+
+    it('states the reading’s own words where the reading is the earlier', () => {
+      // Resolved only to be ordered. What the handoff says is the phrase the provider printed,
+      // not this module's rendering of the instant behind it.
+      const g = bothShut('Sep 13 at 6:30am (America/Los_Angeles)')
+      expect(g.resetAt).toBe('Sep 13 at 6:30am (America/Los_Angeles)')
+    })
+
+    it('takes the seat whose stated hour has just gone by over one still hours out', () => {
+      // A reading is a snapshot taken before the gate runs, so the hour it names can already
+      // have passed — that seat is back now and is the pool's answer. Reading the phrase from
+      // `now` forward makes it next year's date instead, and the seat that is back loses every
+      // race it should win.
+      const back = seat({ id: 'sam', owner: 'sam' })
+      const out = seat()
+      const shutWeek = (s: Seat, resetsAt: string): SeatUsage => ({
+        seat: s,
+        usage: { session: { percentUsed: 10 }, week: { percentUsed: 100, resetsAt }, perModel: [] },
+      })
+      const g = budgetGate(
+        { seats: [back, out], pools: [{ id: 'p', seats: ['sam', 'adam'] }] },
+        { name: 'triage', seat: 'pool:p' },
+        // 5:30am Pacific is 12:30Z, half an hour before `now`; 9am the next day is 16:00Z.
+        [shutWeek(back, 'Sep 13 at 5:30am (America/Los_Angeles)'), shutWeek(out, 'Sep 14 at 9am (America/Los_Angeles)')],
+        [],
+        new Map(),
+        NOW,
+      )
+      expect(g.exhausted()).toBe(true)
+      expect(g.resetAt).toBe('Sep 13 at 5:30am (America/Los_Angeles)')
+    })
+
+    it('leaves a phrase nothing can place out of the race rather than ordering it on its text', () => {
+      // `"next Friday morning"` sorts before every ISO instant as a string and is not a moment
+      // at all. A placeable hour about another seat beats it: the handoff can say how long that
+      // one is, where the phrase renders bare.
+      const g = bothShut('next Friday morning')
+      expect(g.resetAt).toBe(RESET)
+    })
   })
 
   it('states a shut week’s hour though the session that also shut the seat named none', () => {

@@ -67,28 +67,53 @@ refusal's hour — a rolling window's sum clears at a moment nothing here can na
 invented position in a window is worse than none.
 
 A seat whose usage could be read answers in the provider's own words, which are phrases rather
-than instants. Ordering two of them needs `resolveReset`, and `capacity.ts` imports from
-`budget.ts`, so the live path prefers the week where both windows are shut rather than
-comparing. The week is the later of the two except inside the last session of one, so that
-preference is early by under five hours where naming the session is early by up to a week.
+than instants. Where both of its windows are shut the live path takes the week by preference
+rather than by comparing the two hours. The week is the later of the two except inside the last
+session of one, so that preference is early by under five hours where naming the session is
+early by up to a week. It is a policy and not a limit on what can be ordered — `resolveReset`
+would place both — and it is left as it stands rather than decided in passing.
 
 That preference is not a reading, so it sets `resetApproximate` — which therefore means "not a
 return the provider stated" rather than "the latest it can still be shut". The flag now covers
 a figure that can be late and one that can be early, and `composeHandoff` says "back around"
 instead of "back by", which claimed a side the flag no longer promises.
 
-**Across seats the cycle blocks the same comparison, and preferring the derived instant was
-tried and reverted.** A seat shut until Friday does answer for a pool-mate back within the
-hour, which is wrong; but the fix cannot be a precedence rule. `Temporal.Instant.from` throws
-on every phrase the provider prints, so "prefer the comparable instant" resolves in production
-to "the derived figure always wins" — the same one-directional error pointed the other way,
-and one that reads as an ordering to whoever next touches it. Measured on the mirror input, a
-readable seat shut until Friday alongside a pool-mate back in an hour and the reverse: each
-rule states a return the pool does not keep on exactly the inputs the other gets right.
+**Across seats every hour races, because the first seat back is the first Igor back.** A
+reading and a derived figure are ordered on one clock: `resetInstant` takes an ISO instant as
+it stands and resolves a phrase against the moment the readings were taken for, and the
+earliest wins. What the handoff states is still the phrase the provider printed — resolving it
+orders it, and does not reword it.
 
-So the reading answers where there is one, as before. Ordering the two needs the phrase
-resolved, which needs `resolveReset` out of `capacity.ts` and into a module both files import.
-That is a larger change than a precedence rule and it is not taken here.
+**A precedence rule was tried here first, and is rejected.** "Prefer the comparable instant"
+is a rule about which *kind* of figure an hour is rather than about the hour, and
+`Temporal.Instant.from` throws on every phrase the provider prints, so in production it
+resolves to "the derived figure always wins" — the same one-directional error pointed the
+other way. Measured on the mirror input, a readable seat shut until Friday alongside a
+pool-mate back in an hour and the reverse: every one-directional rule states a return the pool
+does not keep on exactly the inputs the other gets right, which is why both directions are
+pinned. The fix is to resolve the phrase, not to prefer around it, and that is what moving
+`resolveReset` into `reset.ts` — imported by `capacity.ts` and `budget.ts` alike, importing
+neither — makes available.
+
+**A phrase is read from a week back, not from the present.** `resolveReset` answers with the
+first occurrence of a month/day/time at or after the moment it is given, which is right for
+`capacity.ts`, where that moment is the observation's own `at`. The gate has no such moment: a
+reading carries no timestamp, and by the time the gate runs the hour the provider printed may
+already have gone by. Resolved from the present, a reset a minute past comes back a year out —
+not a late answer but the largest wrong one the phrase can express, and it loses every race the
+seat should win. `resolveRecentReset` subtracts `RESET_HORIZON` first, which leaves a reset just
+gone in the past and moves no reset still ahead. Measured over four years of daily `now` values
+in three zones, spanning both DST transitions, a leap day and every year boundary: 56,940 cases,
+no phrase placed differently from the unshifted call except the ones the shift exists for. The
+same trap is already written down against `execute.ts`'s `resetFrom`, which declines to use
+`resolveReset` for exactly this reason — this is the horizon that comment says such a caller
+needs.
+
+A phrase `resetInstant` cannot place sits the race out rather than being ordered on its text:
+`"Friday 9am"` sorts before `"Sep 18 at 4pm (America/Los_Angeles)"` as a string and after it as
+a moment. Where nothing in the pool can be placed the first candidate answers, readable seats
+before derived ones — an unplaceable phrase is still the provider's own answer for that seat,
+and dropping it says "not known" about an hour somebody printed.
 
 **A shut *week* the reading named no reset for takes its seat out of the answer.** Falling
 through to the session's reset states the hour one window opens while the week still holds the
