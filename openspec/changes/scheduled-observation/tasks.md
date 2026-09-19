@@ -1,12 +1,12 @@
 ## 1. The command
 
-- [ ] 1.1 `igor observe` — take one reading, append an observation per window it reports, exit
+- [x] 1.1 `igor observe` — take one reading, append an observation per window it reports, exit
       non-zero if it could not read
-- [ ] 1.2 Reuse `parseUsage` and the observation record `capacity-from-observation` defines;
+- [x] 1.2 Reuse `parseUsage` and the observation record `capacity-from-observation` defines;
       define no shape and no log of its own
-- [ ] 1.3 A reading that yields no figures records nothing, and never carries a previous figure
+- [x] 1.3 A reading that yields no figures records nothing, and never carries a previous figure
       forward
-- [ ] 1.4 Tests: one reading appends one row per window, a second appends rather than replaces,
+- [x] 1.4 Tests: one reading appends one row per window, a second appends rather than replaces,
       a failed reading writes nothing
 
 ## 2. Refusing a credential that cannot answer

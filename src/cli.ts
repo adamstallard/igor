@@ -29,7 +29,7 @@ import { noteHandoff, shouldDefer } from './deferred.js'
 import { CloneProvider } from './worktree.js'
 import { TriageError } from './triage.js'
 import { BudgetError, budgetGate, loadSpend, readAllSeats, renderBudget } from './budget.js'
-import { boundsForSeats, loadObservations } from './capacity.js'
+import { boundsForSeats, loadObservations, observeSeat, seatToObserve } from './capacity.js'
 import { wire } from './wiring.js'
 import { readLog } from './state.js'
 import { repoFromCheckout } from './github.js'
@@ -564,6 +564,26 @@ program
     for (const pool of config.budget.pools) {
       const gate = budgetGate(config.budget, { name: '(any role)', seat: `pool:${pool.id}` }, readings, spend, bounds)
       process.stdout.write(`\npool ${pool.id}: ${gate.reason}\n`)
+    }
+  })
+
+program
+  .command('observe')
+  .description("Take one usage reading under your own login and record it against a seat")
+  .argument('[seat]', 'the declared seat id the reading is of; optional where exactly one is declared')
+  .action(async (id: string | undefined) => {
+    const config = loadConfig(program.opts()['config'])
+    const seat = seatToObserve(config.budget.seats, id)
+    const repo = await repoFromCheckout(config.destination)
+    const observations = await observeSeat(seat, repo)
+    if (observations.length === 0) {
+      process.stdout.write(`the reading for seat "${seat.id}" named no window; nothing recorded\n`)
+      return
+    }
+    for (const o of observations) {
+      const scope = o.model === undefined ? o.window : `${o.window} (${o.model})`
+      const resets = o.resetsAt ?? o.resetsPhrase ?? 'not stated'
+      process.stdout.write(`${seat.id} ${scope}: ${o.percentUsed}% used, resets ${resets}\n`)
     }
   })
 

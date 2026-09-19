@@ -1,5 +1,15 @@
 import { appendRecord } from './state.js'
-import { parseNdjson, type SpendRecord, type Window } from './budget.js'
+import { resolveReset } from './reset.js'
+import {
+  BudgetError,
+  parseNdjson,
+  readUsage,
+  type AuthContext,
+  type Limit,
+  type Seat,
+  type SpendRecord,
+  type Window,
+} from './budget.js'
 
 /**
  * How full a window was, and when it resets — one shape whether the figure came from a
@@ -22,7 +32,7 @@ export interface Observation {
 }
 
 /** Re-exported so the observation's own module answers for the phrase it stores. */
-export { resolveReset } from './reset.js'
+export { resolveReset }
 
 export const CAPACITY_PATH = 'capacity.ndjson'
 
@@ -481,4 +491,110 @@ export function boundsForSeats(
     if (Object.keys(windows).length > 0) bounds.set(seat.id, windows)
   }
   return bounds
+}
+
+/**
+ * Which seat a reading is attributed to.
+ *
+ * Named on the command line, because the credential cannot say. `observeSeat` reads under
+ * whatever login is ambient, and an ambient login names no seat — so the id is the operator's
+ * assertion that the person signed in here is the one whose subscription this seat draws on.
+ * The one-seat default is a convenience for that same operator, never a search: resolving a
+ * seat by owner across several would guess at exactly the attribution this argument exists to
+ * state.
+ */
+export function seatToObserve(seats: readonly Seat[], id?: string): Seat {
+  if (seats.length === 0) {
+    throw new BudgetError(
+      `no seats are declared. Declare the seat in \`budget.seats\` before observing it, ` +
+        `since an observation is recorded against a declared seat's id.`,
+    )
+  }
+  const declared = seats.map((s) => s.id).join(', ')
+  if (id === undefined) {
+    if (seats.length === 1) return seats[0] as Seat
+    throw new BudgetError(`several seats are declared (${declared}); name the one to observe`)
+  }
+  const seat = seats.find((s) => s.id === id)
+  if (seat === undefined) throw new BudgetError(`no seat "${id}" is declared. Declared seats: ${declared}`)
+  return seat
+}
+
+/**
+ * Whether the reading actually printed this window, as far as `Usage` can say.
+ *
+ * `parseUsage` starts `session` and `week` at zero and returns both whether or not the output
+ * mentioned either, so the placeholder differs from a real line only in carrying no reset. A
+ * window at 0% with no reset is therefore skipped: recording it would assert a fullness nobody
+ * measured, and skipping it discards nothing, since such a row derives no capacity, anchors no
+ * window and holds nothing shut.
+ */
+function reported(limit: Limit): boolean {
+  return limit.percentUsed !== 0 || limit.resetsAt !== undefined
+}
+
+/**
+ * Takes one usage reading and appends an observation per window it reports, returning the rows
+ * it wrote.
+ *
+ * **Which credential.** The ambient interactive login, never the seat's declared token source —
+ * the one path here that deliberately reads a seat through a credential the seat did not name,
+ * per `scheduled-observation` §1. `/usage` reports windows against a subscription and a
+ * `setup-token` credential resolves none, so the seat's own token cannot answer; the owner's
+ * login reports the same windows the seat draws on, because a subscription has only one set of
+ * them. The seat handed to `readUsage` therefore carries no token fields, which leaves
+ * `CLAUDE_CODE_OAUTH_TOKEN` exactly as the environment already has it.
+ *
+ * **Whose reading it is.** Nothing verifies that the ambient login is the seat owner's, and
+ * nothing can: the reading arrives as a subscription's figures with no seat identity on it.
+ * Naming the seat is the operator's assertion, made at `seatToObserve`.
+ *
+ * **Failure.** A reading that cannot be taken throws, so nothing is written and no earlier
+ * figure stands in for it. Rows go one at a time because `appendRecord` reads, modifies and
+ * writes one file per day, and concurrent appends to it drop each other.
+ */
+export async function observeSeat(
+  seat: Seat,
+  destination: string,
+  env: NodeJS.ProcessEnv = process.env,
+  run?: (env: NodeJS.ProcessEnv) => Promise<string>,
+  write: typeof appendRecord = appendRecord,
+  describe?: (env: NodeJS.ProcessEnv) => Promise<AuthContext | undefined>,
+): Promise<Observation[]> {
+  // Read before the reading, not after, and once for every row.
+  //
+  // Before, because `resolveReset` takes the first occurrence of a phrase at or after the
+  // instant it is given, and the provider prints the reset that is next as it answers. A
+  // reading that straddles a reset — seconds, on a boundary that comes round every five hours —
+  // resolves a full year out when it is read against the moment it came back.
+  //
+  // Once, because the rows describe a single moment; stamping them separately would order the
+  // windows of one reading against each other.
+  const at = new Date().toISOString()
+
+  const usage = await readUsage({ id: seat.id, reserve: seat.reserve }, env, run, describe)
+  const observation = (window: Window, limit: Limit, model?: string): Observation => {
+    const phrase = limit.resetsAt
+    const resolved = phrase === undefined ? undefined : resolveReset(phrase, at)
+    return {
+      at,
+      seat: seat.id,
+      window,
+      percentUsed: limit.percentUsed,
+      ...(resolved === undefined ? {} : { resetsAt: resolved }),
+      ...(phrase === undefined ? {} : { resetsPhrase: phrase }),
+      source: 'usage',
+      ...(model === undefined ? {} : { model }),
+    }
+  }
+
+  const rows: Observation[] = []
+  if (reported(usage.session)) rows.push(observation('session', usage.session))
+  if (reported(usage.week)) rows.push(observation('week', usage.week))
+  // No placeholder exists for these: an entry is here only because a line matched, so there is
+  // nothing to mistake a default for.
+  for (const { model, ...limit } of usage.perModel) rows.push(observation('week', limit, model))
+
+  for (const row of rows) await recordObservation(destination, row, write)
+  return rows
 }
