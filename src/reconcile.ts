@@ -204,6 +204,8 @@ export async function reconcile(
     else extra.push(pr)
   }
   const prs = [...scan.prs, ...extra]
+  /** Read by number already, so their `mergedBy` is settled and re-reading one buys nothing. */
+  const readByNumber = new Set(extra.map((p) => p.number))
 
   const result: Reconciliation = {
     promoted: [],
@@ -247,8 +249,23 @@ export async function reconcile(
     // Free on this path: these are the files the loop was fetching anyway.
     const proposedIds = idsFrom(proposal.files)
     if (proposedIds.length === 0) continue
-    const by = pr.mergedBy ?? pr.assignees[0] ?? 'unknown'
-    const at = pr.mergedAt ?? now.toISOString().slice(0, 10)
+    /**
+     * Who merged, which the list endpoint does not carry: it omits `merged_by` outright, so a
+     * pull request the scan found has to be read back by number to answer for it. Asked here
+     * rather than up with the scan because only a merged proposal needs the answer — one
+     * request each, against the two or three the file reads above already spent on it.
+     *
+     * A read that fails leaves the pull request for the next run rather than promoting under
+     * the assignee: `reviewed.by` is written into the entry permanently, and a run that could
+     * not ask who merged does not get to guess.
+     */
+    const detail = readByNumber.has(pr.number) ? pr : await pullRequest(repo, pr.number)
+    if (detail === undefined) {
+      unfinished.push(pr.number)
+      continue
+    }
+    const by = detail.mergedBy ?? detail.assignees[0] ?? 'unknown'
+    const at = detail.mergedAt ?? now.toISOString().slice(0, 10)
     const landed = new Set(idsFrom(proposal.landed))
     /**
      * What this pull request had produced before its entries were walked. Anything it adds is
@@ -309,7 +326,8 @@ export async function reconcile(
         status: 'active',
         reviewed: { by, at },
       })
-      const unexpected = pr.mergedBy !== undefined && !pr.assignees.includes(pr.mergedBy)
+      const unexpected =
+        detail.mergedBy !== undefined && !detail.assignees.includes(detail.mergedBy)
       result.promoted.push({
         id,
         by,
