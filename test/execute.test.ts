@@ -8,7 +8,7 @@ import {
   ABSOLUTE_CEILING_MS, branchFor, claudeWorker, complete, DENIED_COMMAND_LIMIT, denialsFrom, describeTool, execute,
   ExecutionError, limitWindow, MODEL_SILENCE_MS, permits, prBody, PR_BODY_LIMIT, recordExecution, renderProgress, spendByModel, stripLinkage,
   TOOL_SILENCE_MS, usageLimit, watchWorker, workerEnv, workerPrompt, workerSystemPrompt,
-  describeCommand,
+  describeCommand, refusalPath,
   type ExecutionResult, type Progress, type WorkerEvent, type WorkerRunner,
 } from '../src/execute.js'
 import { CAPACITY_PATH } from '../src/capacity.js'
@@ -24,18 +24,31 @@ const ledger = vi.hoisted(() => ({
   /** Aligned with `records`: a run writes to more than one log. */
   paths: [] as string[],
   files: [] as string[],
+  /** Aligned with `files`: what a document write actually carried, not only where it went. */
+  documents: [] as unknown[],
   /** The state branch is a repository over the network: set this to make one log unwritable. */
   unwritable: undefined as string | undefined,
+  /** The same, for the document writes: a prefix, since a refusal's path is named for its instant. */
+  unwritableFile: undefined as string | undefined,
+  /** Each write is a network round trip: set this to make the clock move across one. */
+  tick: undefined as (() => void) | undefined,
 }))
 vi.mock('../src/state.js', async (actual) => ({
   ...(await actual<typeof import('../src/state.js')>()),
   appendRecord: async (_destination: string, path: string, record: Record<string, unknown>) => {
     if (path === ledger.unwritable) throw new Error(`no state branch: ${path}`)
     ledger.paths.push(path)
-    ledger.records.push(record)
+    // Stamped the way the real one stamps: at entry, and only where the record brought none.
+    ledger.records.push({ at: new Date().toISOString(), ...record })
+    ledger.tick?.()
   },
-  writeState: async (_destination: string, path: string) => {
+  writeState: async (_destination: string, path: string, value: unknown) => {
+    if (ledger.unwritableFile !== undefined && path.startsWith(ledger.unwritableFile)) {
+      throw new Error(`no state branch: ${path}`)
+    }
     ledger.files.push(path)
+    ledger.documents.push(value)
+    ledger.tick?.()
   },
 }))
 
@@ -2029,5 +2042,288 @@ describe('a refusal is an observation, and the only one a dedicated seat can pro
 
     expect(ledger.paths).toEqual(['executions.ndjson'])
     expect(ledger.files).toEqual(['transcripts/github/o/r/7.md'])
+  })
+})
+
+/**
+ * Nobody has seen what this provider returns when it refuses a run for a spent window, and
+ * `usageLimit` kept the verdict and dropped the evidence. What is asserted here is that the
+ * first real one writes itself down whole — the patterns it will be read against do not exist
+ * yet, so anything this suite summarised would be summarising to a guess.
+ */
+describe('a refusal leaves the envelope behind, not only the verdict', () => {
+  const RESET = new Date(Date.now() + HOUR).toISOString()
+
+  /** A 429 as the CLI is believed to report one, plus a field `WorkerOutput` does not model. */
+  const REFUSED = {
+    is_error: true,
+    result: 'Claude AI usage limit reached. Your limit will reset at Sep 18 at 4pm (America/Los_Angeles).',
+    api_error_status: 429,
+    terminal_reason: 'usage_limit',
+    rate_limit_info: { status: 'rejected', unix_epoch_seconds: 1789000000 },
+    an_unmodelled_field: { the_shape_nobody_guessed: true },
+  }
+
+  /** Exactly what a bad token returns, from #56. Understood already, and not what is awaited. */
+  const CREDENTIALS = {
+    is_error: true,
+    api_error_status: 401,
+    terminal_reason: 'api_error',
+    result: 'Failed to authenticate. API Error: 401 Invalid bearer token',
+  }
+
+  beforeEach(() => {
+    ledger.records.length = 0
+    ledger.paths.length = 0
+    ledger.files.length = 0
+    ledger.documents.length = 0
+    ledger.unwritable = undefined
+    ledger.unwritableFile = undefined
+    ledger.tick = undefined
+  })
+
+  /** Only the captures. The ledger row and the transcript ride the same call. */
+  const captures = () => ledger.documents.filter((_, i) => (ledger.files[i] ?? '').startsWith('refusals/'))
+
+  const refused = async (output: Record<string, unknown>) => {
+    const { provider } = fakeProvider([])
+    const { host } = fakeCodeHost()
+    const { t } = fakeTracker()
+    const item = candidate()
+    const result = await execute(provider, t, host, item, role(), {
+      worker: async () => {
+        throw new ExecutionError('worker exited 1', output)
+      },
+    })
+    await recordExecution('acme/lore', item, role(), result, 'fleet-1')
+    return result
+  }
+
+  it('writes the envelope whole, including what nothing here knows to read', async () => {
+    const result = await refused(REFUSED)
+
+    expect(result.outcome).toBe('budget')
+    // Field for field, not a subset: the point of the capture is the fields nobody thought of.
+    expect(captures()).toHaveLength(1)
+    expect((captures()[0] as Record<string, unknown>)['envelope']).toEqual(REFUSED)
+  })
+
+  it('keeps what was concluded beside what it was concluded from', async () => {
+    // A pattern fitted to this later has to be checked against the reading made at the time,
+    // and `resolveReset` answers relative to a moment — so the moment has to be in the file.
+    const before = Date.now()
+    await refused({ ...REFUSED, result: `Claude AI usage limit reached|${Math.floor(Date.parse(RESET) / 1000)}` })
+
+    const capture = captures()[0] as Record<string, unknown>
+    expect(capture).toMatchObject({
+      item: 'github:o/r#7',
+      role: 'triage',
+      seat: 'fleet-1',
+      window: 'session',
+      resetsAt: RESET.replace(/\.\d+Z$/, '.000Z'),
+    })
+    const at = Date.parse(String(capture['at']))
+    expect(at).toBeGreaterThanOrEqual(before)
+    expect(at).toBeLessThanOrEqual(Date.now())
+  })
+
+  it('captures a refusal no seat was named for, which an observation would not', async () => {
+    // An observation owes a seat and this does not: an envelope nobody can attribute still
+    // shows the shape, which is the whole of what is being waited for.
+    const { provider } = fakeProvider([])
+    const { host } = fakeCodeHost()
+    const { t } = fakeTracker()
+    const item = candidate()
+    const result = await execute(provider, t, host, item, role(), {
+      worker: async () => {
+        throw new ExecutionError('worker exited 1', REFUSED)
+      },
+    })
+    await recordExecution('acme/lore', item, role(), result)
+
+    expect(captures()).toHaveLength(1)
+    expect(captures()[0]).not.toHaveProperty('seat')
+    expect(ledger.records.filter((_, i) => ledger.paths[i] === CAPACITY_PATH)).toEqual([])
+  })
+
+  it('gives each refusal its own file, so the second cannot bury the first', async () => {
+    await refused(REFUSED)
+    await refused({ ...REFUSED, result: 'Claude AI usage limit reached' })
+
+    const paths = ledger.files.filter((p) => p.startsWith('refusals/'))
+    expect(paths).toHaveLength(2)
+    expect(new Set(paths).size).toBe(2)
+    // Asked of one instant and one item, because two runs are separated by the clock anyway on
+    // a fast machine — and the case the name is built for is two seats refusing at once.
+    const at = new Date().toISOString()
+    expect(refusalPath(at, 'github:o/r#7')).not.toBe(refusalPath(at, 'github:o/r#7'))
+    // Checked out onto a real filesystem, and linked to from an issue.
+    for (const p of paths) expect(p).toMatch(/^refusals\/[A-Za-z0-9_-]+\.json$/)
+  })
+
+  it('captures a refusal the worker met and then exited zero on', async () => {
+    // The other budget path: a run that produced no changes and reported the limit itself.
+    const { provider } = fakeProvider([])
+    const { host } = fakeCodeHost()
+    const { t } = fakeTracker()
+    const item = candidate()
+    const result = await execute(provider, t, host, item, role(), { worker: async () => REFUSED })
+    await recordExecution('acme/lore', item, role(), result, 'fleet-1')
+
+    expect(result.outcome).toBe('budget')
+    expect((captures()[0] as Record<string, unknown>)['envelope']).toEqual(REFUSED)
+  })
+
+  it('stays quiet for the credential rejection, which is understood and would bury this', async () => {
+    const result = await refused(CREDENTIALS)
+
+    expect(result.outcome).toBe('failed')
+    expect(captures()).toEqual([])
+  })
+
+  it('writes nothing for an ordinary run, whatever it cost', async () => {
+    const { provider } = fakeProvider(edited)
+    const { host } = fakeCodeHost()
+    const { t } = fakeTracker()
+    const item = candidate()
+    const result = await execute(provider, t, host, item, role(), {
+      worker: async () => ({ result: 'Fixed it.', total_cost_usd: 0.02 }),
+    })
+    await recordExecution('acme/lore', item, role(), result, 'fleet-1')
+
+    expect(captures()).toEqual([])
+  })
+
+  it('leaves the run and both other records standing when the capture is what fails', async () => {
+    // A capture that takes the handoff down with it would be worse than the bug it fixes: the
+    // item would sit claimed with nothing said on it, over a file written for a reader.
+    ledger.unwritableFile = 'refusals/'
+    const said: unknown[] = []
+    const { provider } = fakeProvider([])
+    const { host } = fakeCodeHost()
+    const { t } = fakeTracker()
+    const item = candidate()
+    const result = await execute(provider, t, host, item, role(), {
+      worker: async () => {
+        throw new ExecutionError('worker exited 1', REFUSED)
+      },
+    })
+
+    await expect(
+      recordExecution('acme/lore', item, role(), result, 'fleet-1', (e) => said.push(e)),
+    ).resolves.toBeUndefined()
+
+    expect(ledger.paths).toEqual(['executions.ndjson', CAPACITY_PATH])
+    // Caught, not swallowed: a capture that failed in silence leaves someone waiting on
+    // evidence that is not coming until the next exhausted window.
+    expect(said).toHaveLength(1)
+  })
+
+  it('names which of the guesses fired, so a crash that quoted the words reads as one', async () => {
+    // `usageLimit` matches limit wording in `envelope.result`, and a worker crashing on an item
+    // *about* rate limits says the same words. Both land here; the file has to say which is
+    // which, or the first thing in the directory is a crash and nobody can tell.
+    await refused(REFUSED)
+    await refused({ is_error: true, result: 'I could not build it. The item is about the usage limit header.' })
+
+    await refused({ is_error: true, stop_reason: 'usage_limit' })
+
+    const [strong, weak, stopped] = captures() as Record<string, unknown>[]
+    expect(strong?.['matched']).toEqual(['api_error_status', 'terminal_reason', 'rate_limit_info', 'result'])
+    expect(weak?.['matched']).toEqual(['result'])
+    // Two separate fields carry the same wording, and which one the provider uses is part of
+    // what nobody knows yet — so they are named apart.
+    expect(stopped?.['matched']).toEqual(['stop_reason'])
+  })
+
+  it('points at no transcript where the run wrote none', async () => {
+    // The throw path carries no transcript, so naming one sends the reader to a path that is
+    // not on the branch — on the one file written to be opened by hand.
+    await refused(REFUSED)
+
+    expect(captures()[0]).not.toHaveProperty('transcript')
+    expect(ledger.files.filter((p) => p.startsWith('transcripts/'))).toEqual([])
+  })
+
+  it('points at the transcript where the run did write one', async () => {
+    const { provider } = fakeProvider([])
+    const { host } = fakeCodeHost()
+    const { t } = fakeTracker()
+    const item = candidate()
+    const result = await execute(provider, t, host, item, role(), { worker: async () => REFUSED })
+    await recordExecution('acme/lore', item, role(), result, 'fleet-1')
+
+    expect(captures()[0]).toMatchObject({ transcript: 'transcripts/github/o/r/7.md' })
+  })
+
+  it('leaves the refused run\'s own spend inside the span the observation vouches for', async () => {
+    // `spendInInstance` is half-open at the observation's `at`, so a ledger row stamped at or
+    // after it is not counted — and the run the refusal stopped is the spend that matters most.
+    // Stamp the observation before that row and a refusal on a seat with a declared capacity
+    // divides nothing, finds no figure, and leaves the optimistic declaration standing.
+    const start = Date.parse('2026-09-17T17:00:00.000Z')
+    vi.useFakeTimers()
+    vi.setSystemTime(start)
+    try {
+      ledger.tick = () => vi.advanceTimersByTime(3_000)
+      await recordExecution(
+        'acme/lore',
+        candidate(),
+        role(),
+        {
+          outcome: 'budget',
+          changed: [],
+          refusals: [],
+          transcript: '',
+          costUsd: 0.5,
+          reason: 'the seat ran out of capacity',
+          resetsAt: new Date(start + 2 * HOUR).toISOString(),
+          limitEnvelope: REFUSED,
+        },
+        'fleet-1',
+      )
+
+      const spend = ledger.records.filter((_, i) => ledger.paths[i] === 'executions.ndjson')[0] ?? {}
+      const observation = ledger.records.filter((_, i) => ledger.paths[i] === CAPACITY_PATH)[0] ?? {}
+      expect(Date.parse(String(observation['at']))).toBeGreaterThan(Date.parse(String(spend['at'])))
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('agrees with the observation about the window, across the writes between them', async () => {
+    // Both are derived from one refusal, and each used to ask the clock separately — with three
+    // network round trips in between. The capture is what a later reading is checked against,
+    // so the two disagreeing about the same refusal makes the check meaningless.
+    const start = Date.parse('2026-09-17T17:00:00.000Z')
+    vi.useFakeTimers()
+    vi.setSystemTime(start)
+    try {
+      // Four seconds the weekly side of the five-hour boundary, which the writes then cross.
+      const resetsAt = new Date(start + 5 * HOUR + 4000).toISOString()
+      ledger.tick = () => vi.advanceTimersByTime(10_000)
+      await recordExecution(
+        'acme/lore',
+        candidate(),
+        role(),
+        {
+          outcome: 'budget',
+          changed: [],
+          refusals: [],
+          transcript: '',
+          costUsd: 0.42,
+          reason: 'the seat ran out of capacity',
+          resetsAt,
+          limitEnvelope: REFUSED,
+        },
+        'fleet-1',
+      )
+
+      const capture = captures()[0] as Record<string, unknown>
+      const observation = ledger.records.filter((_, i) => ledger.paths[i] === CAPACITY_PATH)[0] ?? {}
+      expect(capture['window']).toBe(observation['window'])
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

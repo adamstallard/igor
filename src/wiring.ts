@@ -114,9 +114,17 @@ export async function wire(
         said.add(line)
         out.warn(line)
       }
-      await recordExecution(destination, item, role, execution, seat).catch(
-        warnOnly(`could not record the run of ${item.id}`),
-      )
+      // Said out loud rather than swallowed: the refusal envelope is what three deferred
+      // decisions are waiting on, and a capture that failed in silence leaves someone waiting
+      // on evidence that is not coming until the next exhausted window.
+      await recordExecution(
+        destination,
+        item,
+        role,
+        execution,
+        seat,
+        warnOnly(`could not capture the refusal envelope from ${item.id}`),
+      ).catch(warnOnly(`could not record the run of ${item.id}`))
     },
   }
 }
