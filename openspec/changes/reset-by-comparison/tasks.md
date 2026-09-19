@@ -16,6 +16,9 @@
 - [ ] 2.2 Where one of the two named none, the flag is still raised — that hour can be early by
       up to the missing window's own length
 - [ ] 2.3 The cadence-ceiling case on the derived path is untouched and still raises it
+- [ ] 2.4 A boundary tiled from a stated reset stays unmarked — `derivedWindow`'s over-bound
+      branch returns `bound.resetsAt` with no `estimated`, and `test/budget.test.ts:1416` asserts
+      it. Nothing here should move it
 
 ## 3. Tests
 

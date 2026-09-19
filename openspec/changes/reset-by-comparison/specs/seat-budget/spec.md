@@ -51,7 +51,9 @@ seats is still what a handoff states.
 
 - **WHEN** one of a seat's two blocked windows names no return, or names one that cannot be
   resolved to a comparable instant
-- **THEN** the two are not compared, and this requirement places no condition on the hour stated
+- **THEN** the hour stated for that seat is not arrived at by comparing the two
+- **AND** which hour is stated is decided by the rules already governing an unplaceable return,
+  which this requirement does not disturb
 
 #### Scenario: The pool is still back on its earliest seat
 
@@ -59,29 +61,33 @@ seats is still what a handoff states.
 - **THEN** each seat answers with the later of its own two returns
 - **AND** the pool's stated return is the earliest of those
 
-### Requirement: An approximate return is one the provider did not state
+### Requirement: An hour is marked approximate where a stated reset does not fix it
 
-Where the hour a handoff states is not a return the provider stated, it SHALL be marked as
-approximate, so that the handoff hedges it rather than promising it. An hour the provider
-stated, and which nothing has displaced, SHALL NOT be marked approximate.
+An hour a handoff states SHALL be marked approximate where no reset the provider stated fixes
+it — a cadence ceiling standing in for a reset a refusal never named, and an hour named while
+another window that is also holding the seat named no return. An hour the provider stated, and a
+window boundary tiled from one along the window's own cadence, SHALL NOT be marked.
 
-The flag says what kind of claim the hour is, and it is read by the sentence a person sees: an
-hour that is marked is reported as "back around" and an hour that is not as "back at". It must
-therefore mean something a reader can act on, and "the provider did not state this" is the thing
-that is true of every case it covers — a cadence ceiling standing in for a reset a refusal never
-named, and a window whose return is unknown but bounded by its own length.
+The flag says what kind of claim the hour is, and a person reads it in the sentence: a marked
+hour is reported as "back around" and an unmarked one as "back at". So the line it draws has to
+be one a reader can act on, and the line is whether a stated reset fixes the hour, not whether
+the provider printed those exact words. A boundary reached by tiling is fixed: instances tile
+the timeline, so one stated reset places every boundary before and after it by subtraction, and
+an instance end computed that way is as exact as the reset it came from. A cadence ceiling is
+not: nothing was stated, and the hour is a bound on how late the return can be rather than the
+return.
 
-Taking the later of two stated hours narrows what the flag has to cover. A comparison between
-two returns the provider stated yields one of those returns: it is the provider's own hour,
-arrived at by ordering rather than by substitution, and marking it approximate would tell a
-reader to doubt a figure that came from the same place as an unmarked one. Before this change
-the flag was raised on every seat blocked in both windows, because the hour was reached by a
-preference rather than by a comparison and could be early; with the comparison it can be early
-only where one of the two hours was never stated, and that is the case that still raises it.
+Taking the later of two stated hours narrows what the flag covers. A comparison between two
+returns the provider stated yields one of those returns — the provider's own hour, arrived at by
+ordering rather than by substitution — and marking it would tell a reader to doubt a figure that
+came from the same place as an unmarked one. Before this change the flag was raised on every
+seat blocked in both windows, because the hour was reached by a preference and could be early.
+With the comparison it can be early only where one of the two windows named no return, and that
+is the case that still raises it.
 
 #### Scenario: A compared pair of stated hours is exact
 
-- **WHEN** both of a seat's blocked windows name a provider-stated return
+- **WHEN** both of a seat's blocked windows name a provider-stated return and the later is taken
 - **THEN** the hour stated is not marked approximate
 
 #### Scenario: An unstated return still hedges the hour
@@ -93,3 +99,9 @@ only where one of the two hours was never stated, and that is the case that stil
 
 - **WHEN** the hour stated stands in for a reset the provider never named
 - **THEN** it is marked approximate, as before
+
+#### Scenario: A tiled boundary is still exact
+
+- **WHEN** the hour stated is the end of the instance a seat's spend was summed inside, tiled
+  from a reset the provider stated
+- **THEN** it is not marked approximate, as before

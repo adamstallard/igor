@@ -53,14 +53,20 @@ the provider, or derived from observations and record — the seat's stated hour
 them. The defect is not that one path is wrong; it is that the question has two answers, and a
 rule that lives in one path is a rule the other can drift away from again.
 
-**`resetApproximate` narrows, and its meaning is stated.** Today the flag means "not a return
-the provider stated", and it is raised on every seat blocked in both windows because the week
-was reached by preference and could be early. With the comparison, a pair of stated hours yields
-one of those stated hours — the provider's own, arrived at by ordering rather than substitution
-— so the flag is not raised for it. What it still covers is a cadence ceiling standing in for a
-reset a refusal never named, and a blocked window whose return is unknown but bounded by its own
-length. The flag keeps its meaning and loses one case; the handoff stops hedging an hour it does
-not need to hedge.
+**`resetApproximate` narrows, and the line it draws is stated.** Today the flag is described as
+"not a return the provider stated" and is raised on every seat blocked in both windows, because
+the week was reached by preference and could be early. With the comparison, a pair of stated
+hours yields one of those stated hours — the provider's own, arrived at by ordering rather than
+substitution — so it is not raised for that.
+
+Written down, the line is not quite the words the code's comment uses. It is whether a stated
+reset *fixes* the hour. A window boundary tiled from a stated reset along the window's own
+cadence is not a phrase the provider printed, and it is exact all the same — instances tile the
+timeline, so one reset places every boundary by subtraction — and it is deliberately unmarked
+today. What is marked is an hour no stated reset pins: a cadence ceiling standing in for a reset
+a refusal never named, and an hour named while another window also holding the seat named no
+return. Stating it that way keeps every current case on the side it is already on and removes
+one: the both-windows-shut hour.
 
 **Ordering across seats is untouched.** A pool is back when its first seat is back. Each seat
 answers with the later of its own two returns, and the earliest of those is still what the
@@ -91,8 +97,8 @@ Explicitly out of scope:
 ### Modified Capabilities
 
 - `seat-budget`: a seat blocked in both windows returns on the later of the two, stated once for
-  the seat rather than per path; and `resetApproximate` means "not a return the provider stated"
-  with the both-windows case no longer among them.
+  the seat rather than per path; and an hour is marked approximate where no stated reset fixes
+  it, with the both-windows case no longer among those.
 
 Both deltas are `ADDED`. The tempting `MODIFIED` target is "A seat at 100% is spent until its
 window resets", but that requirement is scoped to observations — it is the derived path's own
