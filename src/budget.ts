@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
 import type { NoFigure, Observation, SeatBound, SeatBounds } from './capacity.js'
+import { keyCheck } from './keys.js'
 import { resolveRecentReset } from './reset.js'
 
 /**
@@ -1284,11 +1285,9 @@ function parseDeclaredEstimate(raw: unknown, seatId: string): DeclaredEstimate |
   return estimate
 }
 
-/**
- * Every key a seat may name. Anything else is refused rather than dropped: a key this parser
- * does not know is a key it ignores in silence, and a misspelt `reserve`, token source, or
- * estimate leaves a seat that reads as configured and behaves as though it were not.
- */
+const refuseUnknownKeys = keyCheck(BudgetError)
+
+/** Every key a seat may name. Anything else is refused by name — see `keyCheck`. */
 const SEAT_KEYS = [
   'id',
   'owner',
@@ -1300,21 +1299,50 @@ const SEAT_KEYS = [
   'token_command',
 ]
 
+const BUDGET_KEYS = ['seats', 'pools']
+
+const POOL_KEYS = ['id', 'seats']
+
+/**
+ * A list left out is empty; a list that is present and is not one is refused.
+ *
+ * Taken as empty, a misspelt or malformed `seats:` is not a smaller budget but no budget at
+ * all: every ceiling disappears, no seat is ever passed over, and the report says budget is
+ * not being enforced — which is what it says for an operator who meant that.
+ */
+function requireList(raw: unknown, subject: string): unknown[] {
+  if (raw === undefined) return []
+  if (!Array.isArray(raw)) {
+    throw new BudgetError(`${subject} must be a list, or left out entirely`)
+  }
+  return raw
+}
+
+/**
+ * What to call an entry in a refusal: its id, or its position while the id is still unread.
+ *
+ * The keys are checked before the id is required, so a misspelt `id` reads as the typo on the
+ * line rather than as an absence — and at that point there is no id to quote.
+ */
+function subjectOf(entry: Record<string, unknown>, kind: string, position: string): string {
+  const id = entry['id']
+  return typeof id === 'string' && id.trim() !== '' ? `${kind} "${id}"` : position
+}
+
 export function parseOrgBudget(raw: unknown): OrgBudget {
   if (raw === undefined || raw === null) return { seats: [], pools: [] }
   if (typeof raw !== 'object' || Array.isArray(raw)) throw new BudgetError('budget must be a mapping')
   const data = raw as Record<string, unknown>
+  refuseUnknownKeys(data, BUDGET_KEYS, 'budget', 'a budget key')
 
   const seats: Seat[] = []
-  for (const entry of Array.isArray(data['seats']) ? data['seats'] : []) {
-    if (typeof entry !== 'object' || entry === null) throw new BudgetError('each seat must be a mapping')
-    const s = entry as Record<string, unknown>
-    if (typeof s['id'] !== 'string' || s['id'].trim() === '') throw new BudgetError('each seat needs an id')
-    for (const key of Object.keys(s)) {
-      if (!SEAT_KEYS.includes(key)) {
-        throw new BudgetError(`seat "${s['id']}" names "${key}", which is not a seat key: ${SEAT_KEYS.join(', ')}`)
-      }
+  for (const [index, entry] of requireList(data['seats'], 'budget.seats').entries()) {
+    if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) {
+      throw new BudgetError('each seat must be a mapping')
     }
+    const s = entry as Record<string, unknown>
+    refuseUnknownKeys(s, SEAT_KEYS, subjectOf(s, 'seat', `budget.seats[${index}]`), 'a seat key')
+    if (typeof s['id'] !== 'string' || s['id'].trim() === '') throw new BudgetError('each seat needs an id')
     const dedicated = s['dedicated'] === true
     const reserveRaw = s['reserve']
     if (reserveRaw !== undefined && (typeof reserveRaw !== 'number' || reserveRaw < 0 || reserveRaw >= 1)) {
@@ -1343,11 +1371,14 @@ export function parseOrgBudget(raw: unknown): OrgBudget {
   }
 
   const pools: Pool[] = []
-  for (const entry of Array.isArray(data['pools']) ? data['pools'] : []) {
-    if (typeof entry !== 'object' || entry === null) throw new BudgetError('each pool must be a mapping')
+  for (const [index, entry] of requireList(data['pools'], 'budget.pools').entries()) {
+    if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) {
+      throw new BudgetError('each pool must be a mapping')
+    }
     const p = entry as Record<string, unknown>
+    refuseUnknownKeys(p, POOL_KEYS, subjectOf(p, 'pool', `budget.pools[${index}]`), 'a pool key')
     if (typeof p['id'] !== 'string' || p['id'].trim() === '') throw new BudgetError('each pool needs an id')
-    const list = Array.isArray(p['seats']) ? p['seats'] : []
+    const list = requireList(p['seats'], `pool "${p['id']}".seats`)
     if (list.some((x) => typeof x !== 'string')) throw new BudgetError(`pool "${p['id']}".seats must be seat ids`)
     for (const id of list as string[]) {
       if (!seats.some((s) => s.id === id)) {

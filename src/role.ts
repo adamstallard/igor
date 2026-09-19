@@ -2,6 +2,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { parse as parseYaml } from 'yaml'
 import { poolFor, type OrgBudget } from './budget.js'
+import { keyCheck } from './keys.js'
 import type { Config } from './config.js'
 
 export const ROLES_DIR = 'roles'
@@ -85,6 +86,45 @@ export interface ResolvedRole {
 
 export class RoleError extends Error {}
 
+const refuseUnknownKeys = keyCheck(RoleError)
+
+/**
+ * Every key a role file may name, and every key its nested mappings may. Anything else is
+ * refused by name — see `keyCheck`. `name` is not here: it has a refusal of its own, which says
+ * where the name comes from instead of listing what it is not.
+ */
+const ROLE_KEYS = [
+  'extends',
+  'seat',
+  'sources',
+  'lane',
+  'instructions',
+  'completion',
+  'allow',
+  'commands',
+  'budget_share',
+  'reviewers',
+  'settle_seconds',
+  'cooldown_minutes',
+  'poll_minutes',
+]
+
+/**
+ * Keys a role file may not set, each with the reason it may not. Kept out of the list above
+ * because "not a role key" is the wrong answer to either: both are settings somebody reached
+ * for deliberately, and what they need back is the reason, not a list of what they missed.
+ */
+const REFUSED_KEYS: Record<string, string> = {
+  name: 'the filename is the name, as with lore entry ids',
+  claim:
+    'the claim message carries the stop instruction, the only notice a reader gets that ' +
+    'stopping is possible and permitted, so it is not a role\'s to replace',
+}
+
+const SOURCE_KEYS = ['tracker', 'repo', 'query']
+
+const LANE_KEYS = ['labels', 'paths', 'age']
+
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v)
 }
@@ -110,9 +150,13 @@ export function readRoleFile(dir: string, name: string): Record<string, unknown>
   const raw = parseYaml(readFileSync(file, 'utf8')) as unknown
   if (raw === null) return {}
   if (!isRecord(raw)) throw new RoleError(`${file} must be a mapping`)
-  if ('name' in raw) {
-    throw new RoleError(`${file} sets "name" — the filename is the name, as with lore entry ids`)
+  for (const [key, why] of Object.entries(REFUSED_KEYS)) {
+    if (key in raw) throw new RoleError(`${file} sets "${key}" — ${why}`)
   }
+  // Here rather than where each key is read: every path into a role file comes through this
+  // function, so one check covers a role, the org base it inherits, and a parent read only for
+  // what it contributes.
+  refuseUnknownKeys(raw, ROLE_KEYS, file, 'a role key')
   return raw
 }
 
@@ -217,10 +261,12 @@ function mergeLane(base: Lane, next: Lane): Lane {
 function parseLane(v: unknown, where: string): Lane {
   if (v === undefined) return {}
   if (!isRecord(v)) throw new RoleError(`${where}.lane must be a mapping`)
+  refuseUnknownKeys(v, LANE_KEYS, `${where}.lane`, 'a lane key')
   const lane: Lane = {}
   const labels = v['labels']
   if (labels !== undefined) {
     if (!isRecord(labels)) throw new RoleError(`${where}.lane.labels must be a mapping`)
+    refuseUnknownKeys(labels, ['includes', 'excludes'], `${where}.lane.labels`, 'a label constraint')
     const includes = strArray(labels['includes'], `${where}.lane.labels.includes`)
     const excludes = strArray(labels['excludes'], `${where}.lane.labels.excludes`)
     // One level contributes one group: "any of these", which the merge then conjoins.
@@ -232,12 +278,14 @@ function parseLane(v: unknown, where: string): Lane {
   const paths = v['paths']
   if (paths !== undefined) {
     if (!isRecord(paths)) throw new RoleError(`${where}.lane.paths must be a mapping`)
+    refuseUnknownKeys(paths, ['under'], `${where}.lane.paths`, 'a path constraint')
     const under = strArray(paths['under'], `${where}.lane.paths.under`)
     if (under.length) lane.paths = { under: [under] }
   }
   const age = v['age']
   if (age !== undefined) {
     if (!isRecord(age)) throw new RoleError(`${where}.lane.age must be a mapping`)
+    refuseUnknownKeys(age, ['max_days'], `${where}.lane.age`, 'an age constraint')
     const maxDays = age['max_days']
     if (maxDays !== undefined) {
       if (typeof maxDays !== 'number' || maxDays <= 0) {
@@ -254,7 +302,8 @@ function parseSources(v: unknown, where: string): Source[] {
   if (!Array.isArray(v)) throw new RoleError(`${where}.sources must be a list`)
   return v.map((entry, i) => {
     if (!isRecord(entry)) throw new RoleError(`${where}.sources[${i}] must be a mapping`)
-    for (const key of ['tracker', 'repo', 'query'] as const) {
+    refuseUnknownKeys(entry, SOURCE_KEYS, `${where}.sources[${i}]`, 'a source key')
+    for (const key of SOURCE_KEYS as (keyof Source)[]) {
       if (typeof entry[key] !== 'string' || (entry[key] as string).trim() === '') {
         throw new RoleError(`${where}.sources[${i}].${key} is required`)
       }

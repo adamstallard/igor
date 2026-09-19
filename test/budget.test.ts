@@ -683,8 +683,60 @@ describe('parsing org budget config', () => {
     expect(() => parseOrgBudget({ seats: [{ id: 'z', token_file: '/tmp/t' }] })).not.toThrow()
   })
 
+  it('refuses a budget key it does not know', () => {
+    expect(() => parseOrgBudget({ seat: [{ id: 'x' }] })).toThrow(
+      /budget names "seat", which is not a budget key: seats, pools/,
+    )
+  })
+
+  it('refuses a seats list that is not one, rather than enforcing nothing', () => {
+    // One level up from the seat key, and the worst of the family: read as empty, a misspelt
+    // or malformed `seats:` leaves every ceiling gone and nothing saying so.
+    expect(() => parseOrgBudget({ seats: { id: 'x' } })).toThrow(/budget\.seats must be a list/)
+    expect(() => parseOrgBudget({ seats: null })).toThrow(/budget\.seats must be a list/)
+    expect(() => parseOrgBudget({ pools: 'engineering' })).toThrow(/budget\.pools must be a list/)
+  })
+
+  it('names a misspelt id key rather than reporting the id absent', () => {
+    // The same order the config level keeps: "each seat needs an id" over a line reading
+    // `- di: adam` sends somebody looking for a key they can see. Positional until the id is
+    // known to be readable, because `seat "undefined"` names nothing.
+    expect(() => parseOrgBudget({ seats: [{ di: 'adam', reserve: 0.5 }] })).toThrow(
+      /budget\.seats\[0\] names "di", which is not a seat key/,
+    )
+    expect(() => parseOrgBudget({ seats: [{ id: 'a' }], pools: [{ ip: 'eng', seats: ['a'] }] })).toThrow(
+      /budget\.pools\[0\] names "ip", which is not a pool key/,
+    )
+    // An id that is simply missing still says so.
+    expect(() => parseOrgBudget({ seats: [{ reserve: 0.5 }] })).toThrow(/each seat needs an id/)
+  })
+
+  it('refuses a seat or a pool written as a list, rather than naming its indices as keys', () => {
+    expect(() => parseOrgBudget({ seats: [['adam', 0.5]] })).toThrow(/each seat must be a mapping/)
+    expect(() => parseOrgBudget({ seats: [{ id: 'a' }], pools: [['a']] })).toThrow(
+      /each pool must be a mapping/,
+    )
+  })
+
+  it('refuses a pool key it does not know', () => {
+    expect(() => parseOrgBudget({ seats: [{ id: 'x' }], pools: [{ id: 'p', seat: ['x'] }] })).toThrow(
+      /pool "p" names "seat", which is not a pool key: id, seats/,
+    )
+  })
+
+  it('refuses a pool whose seats are not a list, rather than reading it as an empty pool', () => {
+    expect(() => parseOrgBudget({ seats: [{ id: 'x' }], pools: [{ id: 'p', seats: 'x' }] })).toThrow(
+      /pool "p"\.seats must be a list/,
+    )
+  })
+
   it('treats absent budget config as no seats rather than an error', () => {
+    // The discrimination the refusals must not swallow: no budget declared is the documented
+    // way to run unenforced, and only a budget that is declared and misspelt fails.
     expect(parseOrgBudget(undefined)).toEqual({ seats: [], pools: [] })
+    expect(parseOrgBudget(null)).toEqual({ seats: [], pools: [] })
+    expect(parseOrgBudget({})).toEqual({ seats: [], pools: [] })
+    expect(parseOrgBudget({ seats: [{ id: 'x' }] }).pools).toEqual([])
   })
 })
 

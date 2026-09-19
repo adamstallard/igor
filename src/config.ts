@@ -3,6 +3,7 @@ import { dirname, isAbsolute, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parse as parseYaml } from 'yaml'
 import { parseOrgBudget, type OrgBudget } from './budget.js'
+import { keyCheck } from './keys.js'
 
 export const DEFAULT_CONFIG_FILENAME = 'igor.config.yaml'
 export const EXAMPLE_CONFIG_FILENAME = 'igor.config.example.yaml'
@@ -24,6 +25,11 @@ export interface Config {
 }
 
 export class ConfigError extends Error {}
+
+const refuseUnknownKeys = keyCheck(ConfigError)
+
+/** Every key this file may name. Anything else is refused by name — see `keyCheck`. */
+const CONFIG_KEYS = ['destination', 'reviewers', 'experts', 'publicStore', 'budget']
 
 /** The root of the Igor installation — lore must never be written inside it. */
 export function igorRoot(): string {
@@ -48,6 +54,9 @@ export function resolveConfig(raw: unknown, configDir: string): Config {
     throw new ConfigError('config must be a mapping')
   }
   const data = raw as Record<string, unknown>
+  // Before the required-key check, so a misspelt `destination` is reported as the typo it is
+  // rather than as an absence.
+  refuseUnknownKeys(data, CONFIG_KEYS, 'config', 'a config key')
 
   const destinationRaw = data['destination']
   if (typeof destinationRaw !== 'string' || destinationRaw.trim() === '') {

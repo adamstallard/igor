@@ -5,6 +5,10 @@
 #
 # It does not belong inside a clone of Igor. Igor is a shared public tool; this file
 # describes your team. The tool refuses to start if it finds a config inside itself.
+#
+# Every key here is read. A key Igor does not recognise is refused by name rather than
+# ignored, at every level of this file and of the role files beside it, so a typo fails
+# where you can see it instead of turning something off.
 
 # Where entries are written, relative to this config file. When the config lives in the
 # lore repository, as it should, that is simply here.

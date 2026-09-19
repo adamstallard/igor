@@ -355,16 +355,83 @@ describe('a seat a role names must be declared', () => {
 })
 
 describe('claim wording is not a role setting', () => {
-  it('does not carry a claim value into the effective role', () => {
+  it('refuses a role that sets one, rather than loading without it', () => {
     // The message it would replace is the only place anyone is told that stopping is possible
-    // and needs no permission, so it is not an org's to rewrite.
+    // and needs no permission, so it is not an org's to rewrite. Dropping the key in silence
+    // leaves whoever wrote it believing the fleet says what they told it to.
     const dir = store({ org: ORG, fe: 'sources: []\nseat: igor-1\nclaim: "Taking this"\n' })
-    expect('claim' in loadRole(config(dir), 'fe').role).toBe(false)
+    expect(() => loadRole(config(dir), 'fe')).toThrow(/claim.*stop instruction/s)
   })
 
-  it('does not report it in explain', () => {
-    const dir = store({ org: ORG, fe: 'sources: []\nseat: igor-1\nclaim: "Taking this"\n' })
-    expect(explainRole(loadRole(config(dir), 'fe'))).not.toMatch(/claim:/)
+  it('refuses it on the org base too, where it would reach every role', () => {
+    const dir = store({ org: `${ORG}claim: "Taking this"\n`, fe: 'sources: []\nseat: igor-1\n' })
+    expect(() => loadRole(config(dir), 'fe')).toThrow(/claim/)
+  })
+})
+
+describe('a role file refuses a key nobody reads', () => {
+  it('names the offending key and the ones it accepts', () => {
+    const dir = store({ org: ORG, fe: 'sources: []\nseat: igor-1\nreviewer: [sarah]\n' })
+    expect(() => resolveRole(dir, 'fe')).toThrow(/names "reviewer", which is not a role key: extends, seat/)
+  })
+
+  it('refuses one on the org base, where it would otherwise be dropped for every role', () => {
+    const dir = store({ org: `${ORG}budget_shar: 0.4\n`, fe: 'sources: []\n' })
+    expect(() => resolveRole(dir, 'fe')).toThrow(/names "budget_shar"/)
+  })
+
+  it('refuses one on a parent read only for what it contributes', () => {
+    const dir = store({ org: ORG, base: 'lanes:\n  labels:\n    excludes: [x]\n', fe: 'extends: [base]\n' })
+    expect(() => resolveRole(dir, 'fe')).toThrow(/base\.yaml names "lanes"/)
+  })
+
+  it('refuses a lane constraint nobody reads, which is a safety rail going missing', () => {
+    const dir = store({ org: ORG, fe: 'lane:\n  labels:\n    exclude: [Human]\n' })
+    expect(() => resolveRole(dir, 'fe')).toThrow(
+      /fe\.lane\.labels names "exclude", which is not a label constraint: includes, excludes/,
+    )
+    expect(() => resolveRole(store({ org: ORG, fe: 'lane:\n  label: {}\n' }), 'fe')).toThrow(
+      /fe\.lane names "label"/,
+    )
+    expect(() => resolveRole(store({ org: ORG, fe: 'lane:\n  age:\n    maxDays: 3\n' }), 'fe')).toThrow(
+      /fe\.lane\.age names "maxDays"/,
+    )
+  })
+
+  it('refuses a source key nobody reads', () => {
+    const dir = store({ org: ORG, fe: 'sources:\n  - {tracker: github, repo: o/r, query: q, label: ai}\n' })
+    expect(() => resolveRole(dir, 'fe')).toThrow(/fe\.sources\[0\] names "label"/)
+  })
+
+  it('takes every key a role documents, timing included', () => {
+    const dir = store({
+      org: ORG,
+      fe: [
+        'extends: [org]',
+        'seat: igor-1',
+        'sources:',
+        '  - {tracker: github, repo: o/r, query: q}',
+        'lane:',
+        '  labels:',
+        '    includes: [ai]',
+        '    excludes: [wontfix]',
+        '  paths:',
+        '    under: [src/]',
+        '  age:',
+        '    max_days: 30',
+        'instructions: Link the issue.',
+        'completion: unassign',
+        'allow: [comment, unassign]',
+        'commands: []',
+        'budget_share: 0.4',
+        'reviewers: [sarah]',
+        'settle_seconds: 5',
+        'cooldown_minutes: 30',
+        'poll_minutes: 2',
+        '',
+      ].join('\n'),
+    })
+    expect(() => resolveRole(dir, 'fe')).not.toThrow()
   })
 })
 

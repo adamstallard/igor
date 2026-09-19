@@ -34,7 +34,7 @@ login: it cannot read your conversations, your projects, or anything on your mac
 
 Ask to see the seat's entry before you hand anything over. It looks like this:
 
-```yaml
+```yaml igor:budget
 seats:
   - id: adam
     owner: adam@example.com

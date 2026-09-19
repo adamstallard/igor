@@ -73,7 +73,7 @@ Four steps, once a colleague has sent you a token ([`seats.md`](seats.md) is wha
 
 1. **Declare the seat** in `igor.config.yaml`, which is committed. The token is not:
 
-   ```yaml
+   ```yaml igor:config
    budget:
      seats:
        - {id: adam, owner: adam@example.com, reserve: 0.5, token_env: IGOR_SEAT_ADAM}
@@ -136,7 +136,7 @@ security add-generic-password -a "$USER" -s igor-seat-adam -w
 
 Then in `igor.config.yaml`, and nowhere in any shell:
 
-```yaml
+```yaml igor:seats
 - id: adam
   token_command: security find-generic-password -a "$USER" -s igor-seat-adam -w
 ```

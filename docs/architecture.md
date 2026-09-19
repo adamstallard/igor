@@ -772,7 +772,7 @@ Merge semantics (§6.0) describe how fields combine, not what they are called. T
 
 `roles/frontend.yaml` — the filename is the name, as with lore entry ids:
 
-```yaml
+```yaml igor:role
 extends: [org]                          # org-level base, same file shape
 seat: adam-primary                      # which seat this Igor spends from
 
@@ -793,7 +793,8 @@ instructions: |                         # APPEND — org's plus this role's
 
 completion: unassign                    # OVERRIDE — unassign | close | assign
 
-allow: [draft-pr, comment]              # MONOTONIC — subset of inherited
+allow: [draft-pr, comment, unassign]    # MONOTONIC — subset of inherited, and must cover
+                                        # the completion above
 commands:                               # MONOTONIC — subset of inherited
   - "npm test:*"                        # what the worker may run, so it can check itself
   - "npx tsc --noEmit"
@@ -1263,11 +1264,14 @@ depends on local logging, not on anything the provider records.
 Three concepts, no more: a **seat** is capacity, a **pool** is an ordered list of seats, and a
 role's `budget_share` is a **ceiling** on what it may draw from its pool.
 
-```yaml
+```yaml igor:budget
 seats:
   - id: fleet-1
     token_env: IGOR_SEAT_FLEET_1
     dedicated: true          # nobody works here; reserve is 0
+  - id: fleet-2
+    token_env: IGOR_SEAT_FLEET_2
+    dedicated: true
   - id: adam
     owner: adam@example.com
     token_env: IGOR_SEAT_ADAM
@@ -1275,7 +1279,7 @@ seats:
 
 pools:
   - id: engineering
-    seats: [fleet-1, fleet-2, fleet-3, adam, kapo, hudson]
+    seats: [fleet-1, fleet-2, adam]
 ```
 
 **Pool order is the whole allocation mechanism.** An Igor takes the first seat in its pool with

@@ -165,7 +165,7 @@ repository.
 2. **Declare a seat and set its token.** A seat is a Claude subscription — trying this out,
    it is yours. In `igor.config.yaml`:
 
-   ```yaml
+   ```yaml igor:config
    budget:
      seats:
        - id: me
@@ -296,7 +296,7 @@ It declares `extends`, `seat`, `sources`, `lane`, `instructions`, `completion`, 
 inherits but never widen it — `igor role explain <name>` prints the effective merge with the
 level each value came from.
 
-```yaml
+```yaml igor:role
 # roles/frontend.yaml
 seat: pool:engineering
 sources:
@@ -370,7 +370,7 @@ pool engineering: fleet-1 has 83% of the session left
 
 ### Configuring seats
 
-```yaml
+```yaml igor:config
 budget:
   seats:
     - {id: fleet-1, dedicated: true, token_env: IGOR_SEAT_FLEET_1}
