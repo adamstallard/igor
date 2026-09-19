@@ -227,3 +227,52 @@ describe('a conflict where one side deleted the file', () => {
     expect(changed).toEqual([{ path: 'doomed.ts', content: 'alpha changed\n', kind: 'modified' }])
   })
 })
+
+describe('what the worker deletes on top of a merge', () => {
+  /**
+   * A merge that conflicts on one file and stages the base's change to another cleanly —
+   * which is the ordinary shape, and the one where the worker has a second file to decide on.
+   */
+  async function conflictPlusCleanEdit(): Promise<string> {
+    const origin = tempDir('igor-tree-md-')
+    const git = (...args: string[]) => run('git', ['-C', origin, ...args])
+    await git('init', '-q', '-b', 'main', '.')
+    await git('config', 'user.email', 't@example.invalid')
+    await git('config', 'user.name', 'test')
+    writeFileSync(join(origin, 'f.txt'), 'one\n')
+    writeFileSync(join(origin, 'also.txt'), 'the base had this\n')
+    await git('add', '-A')
+    await git('commit', '-qm', 'base')
+    await git('checkout', '-qb', 'artifact')
+    writeFileSync(join(origin, 'f.txt'), 'the artifact\n')
+    await git('commit', '-qam', 'artifact')
+    await git('checkout', '-q', 'main')
+    writeFileSync(join(origin, 'f.txt'), 'the base moved\n')
+    writeFileSync(join(origin, 'also.txt'), 'the base rewrote this\n')
+    await git('commit', '-qam', 'base moved')
+
+    const clone = tempDir('igor-tree-mdc-')
+    await run('git', ['clone', '-q', '--depth', '1', '--branch', 'artifact', `file://${origin}`, clone])
+    return clone
+  }
+
+  it('reports a file the merge staged and the worker then removed as deleted', async () => {
+    // Porcelain reads `MD`: the index holds the merge's version, the work tree holds nothing.
+    // Named in neither the deleted statuses nor the unmerged ones, the read throws and the
+    // record is dropped — so the path is in neither `files` nor `deletions`, the resolution
+    // leaves the artifact's own older copy in the tree, and with the base recorded as a
+    // parent the base's rewrite of that file is reverted the moment the artifact merges.
+    const clone = await conflictPlusCleanEdit()
+    const tree = new ClonedTree(clone, 'o/r')
+    const merge = await tree.merge('main')
+    expect(merge.conflicts).toEqual(['f.txt'])
+
+    rmSync(join(clone, 'also.txt'))
+    const changed = await tree.changes()
+    expect(changed.find((c) => c.path === 'also.txt')).toEqual({
+      path: 'also.txt',
+      content: '',
+      kind: 'deleted',
+    })
+  })
+})

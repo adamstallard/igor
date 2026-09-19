@@ -82,10 +82,20 @@ function run(cmd: string, args: readonly string[], cwd?: string): Promise<string
   })
 }
 
-/** Statuses git reports that mean the file is gone. */
-const DELETED = new Set(['D', 'AD', 'RD'])
+/**
+ * Statuses that mean the file is gone: the work tree column reads `D`, or the index says
+ * deleted and the work tree has nothing to add. `MD` counts as much as `AD` — a path the
+ * merge staged and the worker then removed is a deletion, and read as an unreadable file
+ * instead it is dropped from the files *and* the deletions, so the resolution keeps the
+ * artifact's older copy and reverts the base's own change to that path on merge.
+ */
+const GONE = /^(?:.D|D )$/
 
-/** Either side of an unmerged entry, which is where a delete/modify conflict shows up. */
+/**
+ * Either side of an unmerged entry, which is where a delete/modify conflict shows up. Tested
+ * before `GONE`, because `UD` reads as gone by that shape while the file is still on disk:
+ * reported deleted it would throw away the side the artifact edited.
+ */
 const UNMERGED = /^(?:U.|.U|AA|DD)$/
 
 /** Exported so the change-collection rules can be tested against a real repository. */
@@ -110,7 +120,8 @@ export class ClonedTree implements WorkingTree {
 
     for (let i = 0; i < entries.length; i += 1) {
       const entry = entries[i]!
-      const code = entry.slice(0, 2).trim()
+      const flags = entry.slice(0, 2)
+      const code = flags.trim()
       const path = entry.slice(3)
       // A rename or a copy is **two** records: the new path, then the original alone on the
       // next one. Read as a status line that second record is a path sliced out of the middle
@@ -123,7 +134,7 @@ export class ClonedTree implements WorkingTree {
         out.push({ path: from, content: '', kind: 'deleted' })
       }
       if (path === '') continue
-      if (DELETED.has(code)) {
+      if (!UNMERGED.test(flags) && GONE.test(flags)) {
         out.push({ path, content: '', kind: 'deleted' })
         continue
       }
@@ -138,7 +149,7 @@ export class ClonedTree implements WorkingTree {
         // worker that was told not to run git can say "honour the deletion" — and read as an
         // unreadable file it says nothing at all, so the resolution keeps the artifact's copy
         // and the base's deletion comes back the moment the artifact merges.
-        if (UNMERGED.test(entry.slice(0, 2))) {
+        if (UNMERGED.test(flags)) {
           out.push({ path, content: '', kind: 'deleted' })
           continue
         }
