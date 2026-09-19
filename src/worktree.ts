@@ -24,7 +24,7 @@ export const TREE_PREFIX = 'igor-tree-'
 export interface ChangedFile {
   path: string
   content: string
-  /** Deletions and binaries are reported but cannot be carried by the tree-API artifact path. */
+  /** A deletion is reported but cannot be carried by the tree-API artifact path. */
   kind: 'added' | 'modified' | 'deleted'
 }
 
@@ -95,8 +95,10 @@ export class ClonedTree implements WorkingTree {
       try {
         content = await readFile(join(this.path, path), 'utf8')
       } catch {
-        // A binary or unreadable file; the caller reports it rather than guessing. With
-        // `-uall` a directory never reaches here, which is what this used to swallow.
+        // An unreadable file. A binary is not this case and never reaches here: `utf8`
+        // substitutes U+FFFD rather than throwing, so a binary is read as mojibake and
+        // published as text — see `docs/architecture.md` §6.7.3 for why nothing stops that.
+        // With `-uall` a directory never reaches here, which is what this used to swallow.
         continue
       }
       out.push({ path, content, kind: code.includes('?') || code === 'A' ? 'added' : 'modified' })
