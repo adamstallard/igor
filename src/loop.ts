@@ -440,7 +440,7 @@ export async function planCycle(
     const gate = options.budget ?? (options.gate === undefined ? undefined : await options.gate())
     let env: NodeJS.ProcessEnv | undefined
     try {
-      env = await workerEnv(gate?.token, process.env, gate?.seat)
+      env = (await workerEnv(gate?.token, process.env, gate?.seat)).env
     } catch (error) {
       report.failures.push(`triage: ${error instanceof Error ? error.message : String(error)}`)
     }
