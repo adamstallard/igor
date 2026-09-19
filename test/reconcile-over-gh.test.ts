@@ -48,6 +48,16 @@ function prNumber(endpoint: string): number {
 }
 
 /**
+ * A row as a page of the list endpoint actually carries it: `merged_by` is not null on it, it
+ * is absent from the payload altogether. Only `pulls/{number}` answers who merged, and a fake
+ * that handed the key back on a page would hide every consequence of that.
+ */
+function listRow(pull: RawPull): Omit<RawPull, 'merged_by'> {
+  const { merged_by: _merger, ...page } = pull
+  return page
+}
+
+/**
  * The list endpoint, answered per query rather than wholesale.
  *
  * A fake that returned every pull request whatever was asked for would let a query claiming a
@@ -55,7 +65,7 @@ function prNumber(endpoint: string): number {
  */
 function servePulls(query: URLSearchParams): unknown {
   // `state=open` is read with `--paginate --slurp`, which wraps the pages in an outer array.
-  if (query.get('state') === 'open') return [pulls.filter((p) => p.state === 'open')]
+  if (query.get('state') === 'open') return [pulls.filter((p) => p.state === 'open').map(listRow)]
   const closed = pulls
     .filter((p) => p.state === 'closed')
     .sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at))
@@ -79,7 +89,7 @@ function servePulls(query: URLSearchParams): unknown {
     })
     openDuringScan = undefined
   }
-  return rows
+  return rows.map(listRow)
 }
 
 vi.mock('../src/gh.js', () => ({
@@ -712,5 +722,131 @@ describe('how far the watermark moves', () => {
     expect(first.deferred).toEqual([7])
     expect(mark).toEqual({ closedSeen: '2026-04-01T10:00:00Z' })
     expect((await reconcile(config(dir))).deferred).toEqual([])
+  })
+})
+
+describe('who a promotion is attributed to', () => {
+  const path = `${ENTRIES_DIR}/use-query-hook.md`
+
+  /** A merged proposal whose merger and assignee are whoever is named. */
+  function proposal(number: number, assignee: string, merger: string): void {
+    pulls.push({
+      number,
+      state: 'closed',
+      merged_at: '2026-04-01T10:00:00Z',
+      updated_at: '2026-04-01T10:00:00Z',
+      html_url: `https://github.com/org/lore/pull/${number}`,
+      assignees: [{ login: assignee }],
+      merged_by: { login: merger },
+    })
+    commits.set(number, [`sha${number}`])
+    filesAt.set(`sha${number}`, touched(path))
+    landed.set(number, touched(path))
+  }
+
+  it('names whoever merged, not whoever was assigned to review', async () => {
+    const dir = store()
+    writeEntry(dir, entry('use-query-hook'))
+    proposal(7, 'sarah', 'abram')
+
+    const result = await reconcile(config(dir))
+
+    expect(result.promoted).toEqual([
+      { id: 'use-query-hook', by: 'abram', at: '2026-04-01', pr: 7, mergerWasNotAssigned: true },
+    ])
+    expect(loadEntry(dir, 'use-query-hook').entry?.reviewed).toEqual({
+      by: 'abram',
+      at: '2026-04-01',
+    })
+  })
+
+  it('reads the merger back for one the scan found, since no page carries it', async () => {
+    const dir = store()
+    writeEntry(dir, entry('use-query-hook'))
+    proposal(7, 'sarah', 'abram')
+
+    await reconcile(config(dir))
+
+    expect(requests).toContain('repos/org/lore/pulls/7')
+  })
+
+  it('attributes a carried pull request exactly as the scan attributed it', async () => {
+    // The divergence this fixes: the same merge, found two ways. Carrying re-reads the pull
+    // request by number and has always been right; the scan had only the assignee to go on.
+    const dir = store()
+    writeEntry(dir, entry('use-query-hook'))
+    proposal(7, 'sarah', 'abram')
+
+    const scanned = await reconcile(config(dir))
+    expect(mark).toEqual({ closedSeen: '2026-04-01T10:00:00Z', pending: [7] })
+
+    // The floor has passed #7, so the second run reaches it through `pending` alone.
+    writeEntry(dir, entry('use-query-hook'))
+    const carried = await reconcile(config(dir))
+
+    expect(carried.promoted).toEqual(scanned.promoted)
+  })
+
+  it('does not flag a merger who was assigned to review it', async () => {
+    const dir = store()
+    writeEntry(dir, entry('use-query-hook'))
+    proposal(7, 'abram', 'abram')
+
+    expect((await reconcile(config(dir))).promoted).toEqual([
+      { id: 'use-query-hook', by: 'abram', at: '2026-04-01', pr: 7 },
+    ])
+  })
+
+  it('leaves the promotion for the next run when it cannot ask who merged', async () => {
+    // `reviewed.by` is written into the entry permanently and no later run revisits it, so a
+    // run that could not reach `pulls/{number}` must not fall back to the assignee. Carrying
+    // the number is what the floor already does for every other unfinished condition.
+    const dir = store()
+    writeEntry(dir, entry('use-query-hook'))
+    proposal(7, 'sarah', 'abram')
+    refuseSinglePullRequest = true
+
+    const refused = await reconcile(config(dir))
+
+    expect(refused.promoted).toEqual([])
+    expect(loadEntry(dir, 'use-query-hook').entry?.status).toBe('provisional')
+    expect(mark).toEqual({ closedSeen: '2026-04-01T10:00:00Z', pending: [7] })
+
+    refuseSinglePullRequest = false
+    const retried = await reconcile(config(dir))
+
+    expect(retried.promoted.map((p) => p.by)).toEqual(['abram'])
+  })
+})
+
+describe('what asking who merged costs', () => {
+  it('costs nothing on a pull request that proposed no entry', async () => {
+    // The bound #46 bought is on the scan, and the scan is mostly pull requests that are not
+    // proposals at all. None of them is read back by number.
+    const dir = store()
+    for (let n = 1; n <= 50; n += 1) mergedOn(n, dayOf(n))
+
+    await reconcile(config(dir))
+
+    expect(perPullRequest().length).toBe(150)
+    expect(requests.filter((e) => /^repos\/org\/lore\/pulls\/\d+$/.test(e))).toEqual([])
+  })
+
+  it('costs one request on a pull request that did propose one', async () => {
+    const dir = store()
+    const path = `${ENTRIES_DIR}/use-query-hook.md`
+    writeEntry(dir, entry('use-query-hook'))
+    mergedOn(7, '2026-04-01')
+    filesAt.set('sha7', touched(path))
+    landed.set(7, touched(path))
+
+    await reconcile(config(dir))
+
+    expect(perPullRequest()).toEqual([
+      'repos/org/lore/pulls/7/files?per_page=100',
+      'repos/org/lore/pulls/7/commits',
+      'repos/org/lore/commits/sha7',
+      'repos/org/lore/pulls/7',
+    ])
   })
 })
