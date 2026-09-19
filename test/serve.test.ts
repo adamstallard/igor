@@ -2,7 +2,16 @@ import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import type { Artifact, Candidate, ClaimVerdict, CodeHost, Tracker } from '../src/adapter.js'
+import type {
+  Artifact,
+  Candidate,
+  CatchUp,
+  CatchUpRequest,
+  ClaimVerdict,
+  CodeHost,
+  InFlight,
+  Tracker,
+} from '../src/adapter.js'
 import type { Gate } from '../src/budget.js'
 import type { CycleDeps } from '../src/loop.js'
 import type { Role } from '../src/role.js'
@@ -45,7 +54,7 @@ const issue = (n: number): Candidate =>
     idleDays: 0,
   }) as unknown as Candidate
 
-function deps(found: Candidate[], opts: { searchThrows?: boolean; verdict?: ClaimVerdict } = {}) {
+function deps(found: Candidate[], opts: { searchThrows?: boolean; verdict?: ClaimVerdict; caughtUp?: CatchUp[] } = {}) {
   let searches = 0
   const tracker: Tracker = {
     name: 'github',
@@ -63,9 +72,16 @@ function deps(found: Candidate[], opts: { searchThrows?: boolean; verdict?: Clai
     release: async () => {},
     linkage: () => 'Closes #1',
   }
+  const caughtUp: CatchUpRequest[] = []
+  const answers = [...(opts.caughtUp ?? [])]
   const codeHost: CodeHost = {
     name: 'github',
     produce: async (): Promise<Artifact> => ({ kind: 'pull-request', ref: '#9', url: 'u' }),
+    catchUp: async (r): Promise<CatchUp> => {
+      caughtUp.push(r)
+      return answers.shift() ?? { outcome: 'already-current' }
+    },
+    resolve: async (): Promise<string> => 'resolvedsha',
   }
   const trees: TreeProvider = {
     name: 'fake',
@@ -79,6 +95,7 @@ function deps(found: Candidate[], opts: { searchThrows?: boolean; verdict?: Clai
   return {
     d: { tracker, codeHost, trees, destination: 'o/lore' } as CycleDeps,
     searches: () => searches,
+    caughtUp: () => caughtUp,
   }
 }
 
@@ -365,3 +382,59 @@ describe('the loop records what it handed back', () => {
   })
 })
 
+
+/** An issue whose own artifact stopped merging — the state #21 sat in, unnoticed. */
+const rotting = (n: number, over: Partial<InFlight> = {}): Candidate => ({
+  ...issue(n),
+  inFlight: {
+    kind: 'pull-request',
+    ref: `#${n}1`,
+    url: `https://example.test/${n}1`,
+    draft: true,
+    author: 'igor-bot',
+    mergeable: 'conflicting',
+    branch: `igor/triage/${n}-issue`,
+    base: 'main',
+    ...over,
+  },
+})
+
+describe('a published artifact that stopped merging', () => {
+  it('is caught up with no worker and no model call', async () => {
+    // Asserted as an absence rather than described. This is the property that makes the check
+    // cheap enough to run on every artifact on every cycle: a triage stub that is never asked,
+    // and a tree provider that would throw if anything tried to provision one.
+    let triaged = 0
+    const { d, caughtUp } = deps([rotting(7)], { caughtUp: [{ outcome: 'merged', sha: 'mergesha' }] })
+    d.trees = {
+      name: 'exploding',
+      provision: async () => { throw new Error('a clean catch-up must never provision a tree') },
+    }
+
+    const s = await serve(d, role(), 'igor-bot', {
+      ...base,
+      maxCycles: 1,
+      worker: async () => { throw new Error('a clean catch-up must never run a worker') },
+      triage: async (cs) => {
+        triaged += cs.length
+        return { results: [], costUsd: 0, costUnreported: 0, failures: [] }
+      },
+    })
+
+    expect(s.failures).toBe(0)
+    expect(triaged).toBe(0)
+    expect(s.costUsd).toBe(0)
+    expect(caughtUp()).toEqual([{ repo: 'o/r', branch: 'igor/triage/7-issue', base: 'main' }])
+  })
+
+  it('counts against the same budget gate as any other work', async () => {
+    // Free on the quiet path and a worker on the conflicting one, and only the gate knows
+    // which it will be. An Igor with nothing to spend stops before finding out.
+    const { d, caughtUp } = deps([rotting(7)])
+    const { events, onEvent } = collect()
+    await serve(d, role(), 'igor-bot', { ...base, maxCycles: 1, gate: async () => shut, onEvent })
+
+    expect(caughtUp()).toEqual([])
+    expect(events.filter((e) => e.kind === 'stopping')).toHaveLength(1)
+  })
+})

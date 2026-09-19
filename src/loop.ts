@@ -9,7 +9,7 @@ import { appendRecord } from './state.js'
 import {
   advance, discover, EMPTY_STATE, freshCandidates, heldBelow, loadDiscoveryState, saveDiscoveryState,
 } from './discovery.js'
-import { countStages, screen } from './predicate.js'
+import { countStages, screen, staleOwnArtifact, universalSkip } from './predicate.js'
 import { isStop } from './signals.js'
 import { fingerprint, loadDeferrals, stillDeferred, type DeferralState } from './deferred.js'
 import { systemPrompt, triageBatch, TRIAGE_MODEL } from './triage.js'
@@ -67,6 +67,8 @@ export interface ItemDeps {
 
 export type ItemOutcome =
   | 'produced'
+  /** An artifact brought up to date by the code host alone — no worker, no model, no word. */
+  | 'caught-up'
   | 'handed-off'
   | 'stopped'
   | 'lost'
@@ -79,7 +81,11 @@ export interface ItemRun {
   execution?: ExecutionResult
   /** Undefined where the worker never reported one, which a killed run never does. */
   costUsd: number | undefined
-  /** Whether a message was left on the item. False here is a bug, not a state. */
+  /**
+   * Whether a message was left on the item. False is a bug on any outcome that took a claim,
+   * because the claim told other people to stand off. A clean catch-up takes none and says
+   * nothing on purpose, so there it is a state.
+   */
   spoke: boolean
   /** Why it was handed back, where it was — a budget handoff says nothing about the item. */
   handoff?: HandoffReason['kind']
@@ -288,6 +294,109 @@ export async function runItem(
   }
 }
 
+/**
+ * An artifact of the Igor's own that no longer merges, brought back up to date.
+ *
+ * Two paths, and the split is the point. The code host is asked to merge the base in, which is
+ * one request and settles the ordinary case with no clone, no worker and no model call —
+ * *and no word on the item*, because a catch-up nobody had to think about is not news. Only a
+ * conflict the host reports back escalates, and then it escalates into the ordinary run: the
+ * item is claimed, a worker is handed files with markers in them, and every outcome the claim
+ * protocol owes is the one `runItem` already produces.
+ *
+ * Nothing is claimed on the quiet path. The claim exists to tell other people to stand off
+ * work they might otherwise duplicate, and an assign-then-unassign per cycle on a merge nobody
+ * would have raced is timeline noise bought for nothing.
+ */
+export async function catchUpItem(
+  deps: ItemDeps,
+  candidate: Candidate,
+  role: Role,
+  identity: string,
+  options: RunOptions = {},
+): Promise<ItemRun> {
+  const artifact = candidate.inFlight
+  if (artifact === undefined) {
+    return {
+      outcome: 'refused', candidate, reason: 'nothing in flight to catch up', costUsd: 0,
+      spoke: false, cures: [],
+    }
+  }
+
+  let caught
+  try {
+    caught = await deps.codeHost.catchUp({
+      repo: candidate.repo,
+      branch: artifact.branch,
+      base: artifact.base,
+    })
+  } catch (error) {
+    // Nothing was claimed and nobody was told to stand off, so there is no receipt owed and
+    // no handoff to write. The next cycle asks again, which is what a rate limit wants.
+    return {
+      outcome: 'refused',
+      candidate,
+      reason: `could not ask ${deps.codeHost.name} to catch up ${artifact.ref}: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+      costUsd: 0,
+      spoke: false,
+      cures: [],
+    }
+  }
+
+  if (caught.outcome !== 'conflict') {
+    return {
+      outcome: 'caught-up',
+      candidate,
+      reason:
+        caught.outcome === 'merged'
+          ? `merged ${artifact.base} into ${artifact.ref}`
+          : `${artifact.ref} was already current`,
+      costUsd: 0,
+      spoke: false,
+      cures: [],
+    }
+  }
+
+  const run = await runItem(deps, candidate, role, identity, { ...options, catchUp: artifact })
+  // The claim comment said the Igor picked the item up; nothing else would say what it then
+  // did. An ordinary run ends in a pull request that announces itself, and a catch-up ends on
+  // a branch that already exists — so without this the item goes quiet mid-sentence.
+  //
+  // Both branches speak, because by here a claim has been taken and the claim comment is
+  // already on the item — silence after it is the very failure this exists to prevent, not
+  // the quiet path's exemption, which claims nothing.
+  //
+  // What they say turns on whether a worker was handed a conflict, not on whether files
+  // changed. A merge that came out clean in the clone changes plenty of files and resolved
+  // nothing, and saying otherwise claims work nobody did.
+  if (run.outcome === 'produced') {
+    await deps.tracker
+      .report(
+        candidate,
+        run.execution?.conflictResolved === true
+          ? resolvedNote(role, artifact.ref, artifact.url, artifact.base)
+          : broughtCurrentNote(role, artifact.ref, artifact.url, artifact.base),
+      )
+      .catch(() => undefined)
+  }
+  return run
+}
+
+/** Short on purpose: the diff is on the artifact, and this is a pointer rather than a report. */
+export function resolvedNote(role: Role, ref: string, url: string, base: string): string {
+  return `**${role.name}** resolved a merge conflict on [${ref}](${url}) and brought it up to date with \`${base}\`.`
+}
+
+/**
+ * What to say where no conflict was resolved: the base went in cleanly, or was already there.
+ * Still owed a sentence, because the claim comment has gone out by the time this is known.
+ */
+export function broughtCurrentNote(role: Role, ref: string, url: string, base: string): string {
+  return `**${role.name}** brought [${ref}](${url}) up to date with \`${base}\`. There was nothing to resolve.`
+}
+
 export interface CycleDeps extends ItemDeps {
   /** Repository holding the state branch — the lore destination, not the worked repository. */
   destination: string
@@ -319,6 +428,11 @@ export interface CycleReport {
   /** Model verdicts, both ways — a skip with a reason is as useful as a claim. */
   verdicts: { candidate: Candidate; outcome: 'proceed' | 'skip'; reason: string }[]
   toClaim: CycleCandidate[]
+  /**
+   * Artifacts of the Igor's own that no longer merge. Kept apart from `toClaim` because they
+   * cost no model call to decide on and are not claimed to act on — see `catchUpItem`.
+   */
+  toCatchUp: CycleCandidate[]
   triageCostUsd: number
   /** Triage calls whose envelope stated no usable cost, making the figure above a floor. */
   triageCostUnreported: number
@@ -376,6 +490,7 @@ export async function planCycle(
     skipped: [],
     verdicts: [],
     toClaim: [],
+    toCatchUp: [],
     triageCostUsd: 0,
     triageCostUnreported: 0,
     failures: [],
@@ -390,7 +505,21 @@ export async function planCycle(
   }
 
   const survivors: Candidate[] = []
+  // Read over everything the query returned rather than over what the watermark let through.
+  // A base moving does not touch the item it came from — `main` advanced eight commits under
+  // #21 and the issue's `updatedAt` never moved — so a stale artifact sits below the mark and
+  // would never be looked at again. The mark exists to avoid re-paying for a model call, and
+  // this costs none: the data is already on the page discovery fetched.
+  const catchingUp = new Set<string>()
   for (const result of results) {
+    for (const candidate of result.candidates) {
+      const artifact = staleOwnArtifact(candidate, options.identity)
+      if (artifact === undefined || universalSkip(candidate, options.identity) !== undefined) continue
+      if (catchingUp.has(candidate.id)) continue
+      catchingUp.add(candidate.id)
+      report.toCatchUp.push({ candidate, reason: `${artifact.ref} no longer merges into ${artifact.base}` })
+    }
+
     const fresh =
       options.sinceDays === undefined
         ? result.fresh
@@ -406,7 +535,7 @@ export async function planCycle(
     for (const t of screened) {
       if (t.verdict.outcome === 'skip') {
         report.skipped.push({ candidate: t.candidate, reason: t.verdict.reason, stage: t.verdict.stage })
-      } else {
+      } else if (!catchingUp.has(t.candidate.id)) {
         survivors.push(t.candidate)
       }
     }
@@ -429,6 +558,41 @@ export async function planCycle(
   // somebody stopped do not consume triage slots — and both are told the limit, so they stop
   // looking once the cycle has enough work. The stop gate goes first because its answer is the
   // one a person is owed: an item that is both stopped and unanswered reports the stop.
+  // A stop and a handoff bind a catch-up exactly as they bind ordinary work. Somebody who
+  // said stop meant the artifact too; and the deferral record is what keeps a conflict the
+  // worker could not resolve from being retried at full worker cost every cycle after.
+  //
+  // Gated through a report of its own so that **nothing here can hold the watermark**. An
+  // ordinary item the tracker would not answer for sits above the mark, so `heldBelow` pulls
+  // the mark back by as long as the outage. A catch-up item is below the mark by construction
+  // — #21's issue had not moved in months — so the same rule would reset the mark to the age
+  // of the oldest rotting artifact and re-read every item newer than it on the next cycle.
+  // Holding it buys nothing either way: a stale artifact is found by scanning everything the
+  // query returned, which the mark does not bound.
+  const asked: Pick<CycleReport, 'skipped' | 'skippedStopped' | 'skippedDeferred' | 'skippedUnreadable'> = {
+    skipped: [], skippedStopped: 0, skippedDeferred: 0, skippedUnreadable: 0,
+  }
+  const catchUps = await dropDeferred(
+    comments,
+    await dropStopped(
+      comments,
+      report.toCatchUp.map((c) => c.candidate),
+      role.cooldownMinutes,
+      options.identity ?? '',
+      asked,
+      now,
+    ),
+    quiet,
+    options.identity ?? '',
+    asked,
+  )
+  for (const { held: _held, ...entry } of asked.skipped) report.skipped.push(entry)
+  report.skippedStopped += asked.skippedStopped
+  report.skippedDeferred += asked.skippedDeferred
+  report.skippedUnreadable += asked.skippedUnreadable
+  const catchingUpStill = new Set(catchUps.map((c) => c.id))
+  report.toCatchUp = report.toCatchUp.filter((c) => catchingUpStill.has(c.candidate.id))
+
   const awake = await dropStopped(
     comments, survivors, role.cooldownMinutes, options.identity ?? '', report, now, limit,
   )
@@ -734,7 +898,9 @@ export async function recordDecisions(
   report: CycleReport,
   write: typeof appendRecord = appendRecord,
 ): Promise<void> {
-  if (report.fresh === 0 && report.failures.length === 0) return
+  // A cycle whose only decision was a catch-up has no fresh items and no failures, and its
+  // one decision would otherwise go unwritten — which is the cycle most worth a record.
+  if (report.fresh === 0 && report.failures.length === 0 && report.toCatchUp.length === 0) return
   await write(
     destination,
     DECISIONS_PATH,
@@ -755,6 +921,12 @@ export async function recordDecisions(
       ...(report.triageSeat === undefined ? {} : { seat: report.triageSeat }),
       decisions: [
         ...report.skipped.map((s) => ({ item: s.candidate.id, stage: s.stage, outcome: 'skip', reason: s.reason })),
+        // A catch-up is decided at the universal stage and reaches neither of the other two
+        // lists, so without this it is the one decision a cycle makes and never records —
+        // and the skip ratio the record exists to make determinable would be short by it.
+        ...report.toCatchUp.map((c) => ({
+          item: c.candidate.id, stage: 'catch-up', outcome: 'proceed', reason: c.reason,
+        })),
         ...report.verdicts.map((v) => ({ item: v.candidate.id, stage: 'model', outcome: v.outcome, reason: v.reason })),
       ],
       ...(report.failures.length > 0 ? { failures: report.failures } : {}),
