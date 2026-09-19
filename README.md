@@ -340,12 +340,12 @@ another.
 
 ```
 $ igor budget
-seat             window    used  reserve  headroom  resets
-fleet-1          session    17%       0%       83%  Sep 13 at 8pm (America/Los_Angeles)  read live
-fleet-1          week       12%       0%       88%  Sep 18 at 4pm (America/Los_Angeles)  read live
-                 wk:Fable    0%
-adam             session  $1.20      50%     $8.80  2026-09-19T09:19:00.000Z  within its bound — $8.80 left of $10.00; $20.00 capacity observed, from 6% used at 2026-09-19T04:28:55.803Z (usage)
-adam             week         —      50%         —  2026-09-25T22:59:00.000Z  no capacity figure — the week has never been observed, and none is declared. Passed over while a 50% reserve stands against it: run `igor observe adam` on the owner's machine, or declare a capacity
+seat             window        used  reserve  headroom  resets
+fleet-1          session        17%       0%       83%  Sep 13 at 8pm (America/Los_Angeles)  read live
+fleet-1          week           12%       0%       88%  Sep 18 at 4pm (America/Los_Angeles)  read live
+                 wk:Fable        0%
+adam             session      $1.20      50%     $8.80  2026-09-19T09:19:00.000Z  within its bound — $8.80 left of $10.00; $20.00 capacity observed, from 6% used at 2026-09-19T04:28:55.803Z (usage)
+adam             week             —      50%         —  2026-09-25T22:59:00.000Z  no capacity figure — the week has never been observed, and none is declared. Passed over while a 50% reserve stands against it: run `igor observe adam` on the owner's machine, or declare a capacity_estimate
                  !  seat "adam" carries no subscription, so no window is reported against it. The rows above are derived, not read.
 
 pool engineering: fleet-1 has 83% of the session left
@@ -363,7 +363,7 @@ pool engineering: fleet-1 has 83% of the session left
   credential that cannot be read, a window nobody has observed, a window observed and still
   unbounded, a bound with room in it, a bound reached, and a window the provider refused are
   six different things, fixed by different people: one is a token, one is `igor observe` on the
-  owner's machine, one is a declared `capacity`, and one is waiting. A derived figure carries
+  owner's machine, one is a declared `capacity_estimate`, and one is waiting. A derived figure carries
   the observation it came from and when that observation was taken, because headroom derived
   from a limit error an hour ago and headroom derived from a month-old reading are not the same
   claim.

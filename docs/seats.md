@@ -76,7 +76,7 @@ is not a floor. So:
 
 **Getting a reserved seat started** is therefore a sequence, and it is worth agreeing on before
 you hand anything over: declare the seat with `reserve: 0`, let it run for a while, have a
-reading taken, then add your reserve. Or declare a starting `capacity` in the config if somebody
+reading taken, then add your reserve. Or declare a `capacity_estimate` in the config if somebody
 knows roughly what the window is worth — it is reported as an assumption until a reading
 replaces it.
 

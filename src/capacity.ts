@@ -3,6 +3,7 @@ import { resolveReset } from './reset.js'
 import {
   BudgetError,
   parseNdjson,
+  percent,
   readUsage,
   type AuthContext,
   type Limit,
@@ -148,7 +149,7 @@ export function capacityFrom(spendInInstanceUsd: number, percentUsed: number): n
 }
 
 /** Where a capacity figure came from, so an assumption is never reported as a measurement. */
-export type CapacityEstimate =
+export type CapacityFigure =
   | { capacityUsd: number; basis: 'observed'; from: Observation }
   | { capacityUsd: number; basis: 'declared' }
 
@@ -262,7 +263,7 @@ export function capacityFor(
   seat: string,
   window: Window,
   declaredUsd?: number,
-): CapacityEstimate | undefined {
+): CapacityFigure | undefined {
   for (const o of newestFirst(observations, seat, window)) {
     const span = observedSpan(o, WINDOW_LENGTH[window])
     if (span === undefined) continue
@@ -284,7 +285,7 @@ export interface NoFigure {
   /** What stopped the division, as a clause completing "…, but ". */
   why: string
   /**
-   * Igor spend inside the current instance of this window — the same sum `SeatCapacity` carries
+   * Igor spend inside the current instance of this window — the same sum `CapacityAndSpend` carries
    * for a window that has a figure, for one that does not.
    *
    * §5.1 asks for Igor spend per window, and a window nothing bounds has still been spent on.
@@ -336,7 +337,7 @@ export function whyNoFigure(
     }
   }
   if (!Number.isFinite(newest.percentUsed) || newest.percentUsed <= 0) {
-    return { from: newest, why: `a window ${newest.percentUsed}% used divides into no capacity` }
+    return { from: newest, why: `a window ${percent(newest.percentUsed)} used divides into no capacity` }
   }
   return {
     from: newest,
@@ -401,7 +402,7 @@ export interface SpentWindow {
  * `spend ≥ (1 − reserve) × capacity`, leaving a comparison of the observed fraction against
  * the reserve that no amount of spending ever crosses.
  */
-export interface SeatCapacity {
+export interface CapacityAndSpend {
   capacityUsd: number
   /** `declared` for a figure somebody named, so an assumption is never reported as a
    *  measurement. */
@@ -416,7 +417,7 @@ export interface SeatCapacity {
 /** One window of one seat, as the gate is handed it. Both halves are optional and at least one
  *  is present: a window can be spent with no figure, or bounded without being spent. */
 export interface SeatBound {
-  capacity?: SeatCapacity
+  capacity?: CapacityAndSpend
   spent?: SpentWindow
   /**
    * The newest observation of this window and why it divided into nothing, present only where
@@ -445,7 +446,7 @@ export type SeatBounds = Map<string, Partial<Record<Window, SeatBound>>>
 /**
  * The unexpired observation at 100% holding a window shut, or `undefined` where none does.
  *
- * Independent of any capacity estimate, per `capacity-from-observation` §2: a refusal is the
+ * Independent of any capacity figure, per `capacity-from-observation` §2: a refusal is the
  * provider saying there is nothing left, which is a fact about the present, where a capacity
  * is a fact about the window's size. Deriving one from the other works only when the instance
  * happens to hold recorded spend, and the run that was refused recorded none.
@@ -500,7 +501,7 @@ export function spentFor(
 export function boundsForSeats(
   observations: readonly Observation[],
   records: readonly SpendRecord[],
-  seats: readonly { id: string; capacity?: { [W in Window]?: number } }[],
+  seats: readonly { id: string; capacityEstimate?: { [W in Window]?: number } }[],
   now: string = Temporal.Now.instant().toString({ fractionalSecondDigits: 3 }),
 ): SeatBounds {
   const bounds: SeatBounds = new Map()
@@ -524,12 +525,12 @@ export function boundsForSeats(
       // A refusal with nothing in its instance to divide derives no capacity and still shuts
       // the window. Without an entry the gate sees a seat it knows nothing about, which it
       // lets run uncalibrated wherever no reserve is declared.
-      const estimate = capacityFor(vouched, records, seat.id, window, seat.capacity?.[window])
+      const figure = capacityFor(vouched, records, seat.id, window, seat.capacityEstimate?.[window])
       // Carried whenever there is no figure, so that a window read and still uncalibrated is
       // never reported as one nobody has read. It is evidence rather than a bound: every
       // consumer keys off `capacity` and `spent`, so an entry holding only this leaves the gate
       // deciding exactly what it decided when there was no entry at all.
-      const unexplained = estimate === undefined ? whyNoFigure(vouched, records, seat.id, window) : undefined
+      const unexplained = figure === undefined ? whyNoFigure(vouched, records, seat.id, window) : undefined
       const uncalibratedAnchor = unexplained === undefined ? undefined : resetAnchor(vouched, seat.id, window)
       const uncalibratedInstance =
         uncalibratedAnchor === undefined ? undefined : currentInstance(uncalibratedAnchor, WINDOW_LENGTH[window], now)
@@ -549,7 +550,7 @@ export function boundsForSeats(
         spent === undefined && noFigure === undefined
           ? undefined
           : { ...(spent === undefined ? {} : { spent }), ...(noFigure === undefined ? {} : { noFigure }) }
-      if (estimate === undefined) {
+      if (figure === undefined) {
         if (shutOnly !== undefined) windows[window] = shutOnly
         continue
       }
@@ -576,10 +577,10 @@ export function boundsForSeats(
       const tiled = anchor === undefined ? undefined : instance.end
       windows[window] = {
         capacity: {
-          capacityUsd: estimate.capacityUsd,
-          basis: estimate.basis,
+          capacityUsd: figure.capacityUsd,
+          basis: figure.basis,
           spentUsd: spendInInstance(records, seat.id, instance),
-          ...(estimate.basis === 'observed' ? { from: estimate.from } : {}),
+          ...(figure.basis === 'observed' ? { from: figure.from } : {}),
         },
         ...(spent === undefined ? {} : { spent }),
         ...(tiled === undefined ? {} : { resetsAt: tiled }),

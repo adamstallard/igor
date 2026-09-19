@@ -389,7 +389,7 @@ describe('an operator can tell the states apart from the report alone', () => {
     { id: 'freewheel', reserve: 0, tokenEnv: 'T' },
     { id: 'uncalibrated', reserve: 0.5, tokenEnv: 'T' },
     { id: 'calibrated', reserve: 0.25, tokenEnv: 'T' },
-    { id: 'declared', reserve: 0.25, tokenEnv: 'T', capacity: { session: 40 } },
+    { id: 'declared', reserve: 0.25, tokenEnv: 'T', capacityEstimate: { session: 40 } },
     { id: 'refused', reserve: 0.1, tokenEnv: 'T' },
   ]
   const observations: Observation[] = [
@@ -449,7 +449,7 @@ describe('an operator can tell the states apart from the report alone', () => {
     expect(text).not.toContain('never been observed')
     expect(text).not.toContain('unreadable')
     // And the remedy is the one that would work: another reading changes nothing here.
-    expect(text).toContain('declaring a capacity')
+    expect(text).toContain('declaring a capacity_estimate')
     expect(text).not.toContain('igor observe')
     // The per-model row it wrote is shown too, rather than disappearing off the derived path.
     expect(out).toContain('wk:Fable')
@@ -465,6 +465,49 @@ describe('an operator can tell the states apart from the report alone', () => {
     const text = renderBudget([unmeasurable(s)], b, [o])
     expect(text).toContain('$4.00')
     expect(text).toContain('divides into no capacity')
+  })
+
+  it('keeps the columns aligned when a capacity runs to four figures', () => {
+    // Adam's own config declares a $3000 week, so this is the report he gets, not a hypothetical
+    // one. `padStart` does not truncate: `$3000.00` in a five-wide column pushed reserve,
+    // headroom and the state prose three columns right on that row and nowhere else.
+    const s: Seat = { id: 'big', reserve: 0.5, tokenEnv: 'T', capacityEstimate: { week: 3000 } }
+    const text = renderBudget([unmeasurable(s)], boundsForSeats([], [paid(s.id, 1200, at)], [s], NOW), [])
+    const lines = text.split('\n')
+    const header = lines[0]!
+    const week = lines.find((l) => l.startsWith('big') && l.includes('week'))!
+    expect(week).toContain('$1200.00')
+    // Right-aligned columns end where their heading ends, on every row and whatever is in them.
+    for (const column of ['used', 'reserve', 'headroom'] as const) {
+      const cell = { used: '$1200.00', reserve: '50%', headroom: '$300.00' }[column]
+      expect(week.indexOf(cell) + cell.length, column).toBe(header.indexOf(column) + column.length)
+    }
+  })
+
+  it('prints a reserve as a percentage rather than as the noise of a binary multiply', () => {
+    // 0.29 * 100 is 28.999999999999996, and 100 minus that carries the noise on into headroom.
+    // In a report whose job is to be believed, that reads as an arithmetic bug.
+    const s: Seat = { id: 'noisy', reserve: 0.29, tokenEnv: 'T' }
+    for (const text of [renderBudget([unmeasurable(s)]), renderBudget([{ seat: s, usage: parseUsage(REAL) }])]) {
+      expect(text).toContain('29%')
+      expect(text).not.toMatch(/\d\.\d{6,}/)
+    }
+  })
+
+  it('says what a spent window’s dollars rest on where no capacity figure exists', () => {
+    // §5.1 again: the amount is Igor spend inside the current instance, and a row that prints it
+    // beside a refusal and says nothing about it leaves the reader to guess what it is a share
+    // of. A refusal on the first run of an instance leaves nothing to divide, so this is the
+    // ordinary shape of a spent window, not a corner.
+    const d = describeWindow(seats.find((s) => s.id === 'refused')!, 'session', bounds.get('refused')?.session)
+    expect(d.state).toBe('spent')
+    expect(d.used).toBe('$0.00')
+    expect(d.note).toContain('the $0.00 is Igor spend inside the current instance')
+    expect(d.note).toContain('no capacity figure bounds')
+    expect(d.note).toContain('there is nothing to divide')
+    // `spentFor` and `whyNoFigure` settled on the same reading here, and naming it twice in one
+    // sentence reads as two observations.
+    expect(d.note.match(/100% used at/g)).toHaveLength(1)
   })
 
   it('shows a derived headroom figure with the observation it rests on and that observation’s time', () => {
@@ -572,42 +615,72 @@ describe('parsing org budget config', () => {
     expect(() => parseOrgBudget({ seats: [{ id: 'x', dedicated: true, reserve: 0.5 }] })).toThrow(/nobody is there/)
   })
 
-  it('reads a declared capacity per window as a starting estimate', () => {
-    const b = parseOrgBudget({ seats: [{ id: 'adam', reserve: 0.5, capacity: { session: 12, week: 250 } }] })
-    expect(b.seats[0]?.capacity).toStrictEqual({ session: 12, week: 250 })
+  it('reads a declared capacity estimate per window as a starting figure', () => {
+    const b = parseOrgBudget({ seats: [{ id: 'adam', reserve: 0.5, capacity_estimate: { session: 12, week: 250 } }] })
+    expect(b.seats[0]?.capacityEstimate).toStrictEqual({ session: 12, week: 250 })
   })
 
   it('takes a seat declaring one window and not the other', () => {
-    const b = parseOrgBudget({ seats: [{ id: 'adam', reserve: 0.5, capacity: { week: 250 } }] })
-    expect(b.seats[0]).toStrictEqual({ id: 'adam', reserve: 0.5, capacity: { week: 250 } })
+    const b = parseOrgBudget({ seats: [{ id: 'adam', reserve: 0.5, capacity_estimate: { week: 250 } }] })
+    expect(b.seats[0]).toStrictEqual({ id: 'adam', reserve: 0.5, capacityEstimate: { week: 250 } })
   })
 
-  it('leaves capacity unset on a seat that declares none', () => {
+  it('leaves the estimate unset on a seat that declares none', () => {
     const b = parseOrgBudget({ seats: [{ id: 'adam', reserve: 0.5 }] })
     expect(b.seats[0]).toStrictEqual({ id: 'adam', reserve: 0.5 })
   })
 
-  it('rejects a capacity that names no window, rather than spending it as both', () => {
-    expect(() => parseOrgBudget({ seats: [{ id: 'x', capacity: 250 }] })).toThrow(
-      /seat "x"\.capacity must name a window: session, week/,
+  it('rejects an estimate that names no window, rather than spending it as both', () => {
+    expect(() => parseOrgBudget({ seats: [{ id: 'x', capacity_estimate: 250 }] })).toThrow(
+      /seat "x"\.capacity_estimate must name a window: session, week/,
     )
-    // `capacity:` with nothing under it, which YAML reads as null.
-    expect(() => parseOrgBudget({ seats: [{ id: 'x', capacity: null }] })).toThrow(/must name a window/)
-    expect(() => parseOrgBudget({ seats: [{ id: 'x', capacity: {} }] })).toThrow(/seat "x"\.capacity names no window/)
-  })
-
-  it('rejects a capacity naming something that is not a window', () => {
-    expect(() => parseOrgBudget({ seats: [{ id: 'x', capacity: { weekly: 250 } }] })).toThrow(
-      /seat "x"\.capacity names "weekly", which is not a window/,
+    // `capacity_estimate:` with nothing under it, which YAML reads as null.
+    expect(() => parseOrgBudget({ seats: [{ id: 'x', capacity_estimate: null }] })).toThrow(/must name a window/)
+    expect(() => parseOrgBudget({ seats: [{ id: 'x', capacity_estimate: {} }] })).toThrow(
+      /seat "x"\.capacity_estimate names no window/,
     )
   })
 
-  it('rejects a declared capacity that is not a positive number of dollars', () => {
-    expect(() => parseOrgBudget({ seats: [{ id: 'x', capacity: { session: 0 } }] })).toThrow(
-      /seat "x"\.capacity\.session must be a positive number of dollars/,
+  it('rejects an estimate naming something that is not a window', () => {
+    expect(() => parseOrgBudget({ seats: [{ id: 'x', capacity_estimate: { weekly: 250 } }] })).toThrow(
+      /seat "x"\.capacity_estimate names "weekly", which is not a window/,
     )
-    expect(() => parseOrgBudget({ seats: [{ id: 'x', capacity: { week: -1 } }] })).toThrow(/\.capacity\.week must be/)
-    expect(() => parseOrgBudget({ seats: [{ id: 'x', capacity: { week: '250' } }] })).toThrow(/\.capacity\.week must be/)
+  })
+
+  it('rejects a declared estimate that is not a positive number of dollars', () => {
+    expect(() => parseOrgBudget({ seats: [{ id: 'x', capacity_estimate: { session: 0 } }] })).toThrow(
+      /seat "x"\.capacity_estimate\.session must be a positive number of dollars/,
+    )
+    expect(() => parseOrgBudget({ seats: [{ id: 'x', capacity_estimate: { week: -1 } }] })).toThrow(
+      /\.capacity_estimate\.week must be/,
+    )
+    expect(() => parseOrgBudget({ seats: [{ id: 'x', capacity_estimate: { week: '250' } }] })).toThrow(
+      /\.capacity_estimate\.week must be/,
+    )
+  })
+
+  it('refuses a seat key it does not know, rather than dropping it in silence', () => {
+    // The retired spelling is the case that matters: dropped in silence it leaves a reserved
+    // seat with no figure, passed over, and a config that looks right.
+    expect(() => parseOrgBudget({ seats: [{ id: 'x', capacity: { week: 250 } }] })).toThrow(
+      /seat "x" names "capacity", which is not a seat key/,
+    )
+    expect(() => parseOrgBudget({ seats: [{ id: 'x', reserv: 0.5 }] })).toThrow(/names "reserv"/)
+    // Named in full, so the message says what was meant instead without guessing at it.
+    expect(() => parseOrgBudget({ seats: [{ id: 'x', capacity: 1 }] })).toThrow(/capacity_estimate/)
+  })
+
+  it('takes every seat key it documents', () => {
+    const every = {
+      id: 'x',
+      owner: 'adamstallard',
+      reserve: 0.5,
+      capacity_estimate: { session: 12 },
+      token_command: 'pass show igor/x',
+    }
+    expect(() => parseOrgBudget({ seats: [every] })).not.toThrow()
+    expect(() => parseOrgBudget({ seats: [{ id: 'y', dedicated: true, token_env: 'T' }] })).not.toThrow()
+    expect(() => parseOrgBudget({ seats: [{ id: 'z', token_file: '/tmp/t' }] })).not.toThrow()
   })
 
   it('treats absent budget config as no seats rather than an error', () => {
@@ -1159,7 +1232,7 @@ describe('a seat the provider refused is spent until it resets', () => {
     // Nothing this seat has been observed for named a reset, so there is no boundary to tile
     // from and its sum clears at a moment nothing here can name. The refusal's own hour — a
     // cadence ceiling — is not an answer for a seat the arithmetic will still be holding.
-    const s = seat({ capacity: { session: 10 } })
+    const s = seat({ capacityEstimate: { session: 10 } })
     const { resetsAt, ...unplaced } = refusal({ at: '2026-09-13T12:00:00.000Z' })
     const records = [paid('2026-09-13T12:50:00.000Z', 12)]
     const g = gate(s, [unplaced], records, '2026-09-13T13:00:00.000Z')
@@ -1171,7 +1244,7 @@ describe('a seat the provider refused is spent until it resets', () => {
     // Earliest across the pool is what makes an unknowable return dangerous: contributed as the
     // refusal's own hour it wins the race, and the pool is then promised the one seat whose
     // hour means nothing over a pool-mate whose hour is real.
-    const rolling = seat({ capacity: { session: 10 } })
+    const rolling = seat({ capacityEstimate: { session: 10 } })
     const clocked = seat({ id: 'sam', owner: 'sam' })
     const records = [paid('2026-09-13T12:50:00.000Z', 12)]
     // Nothing has ever named a reset for `adam`, so its bound has no boundary to clear at.
