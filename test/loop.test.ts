@@ -1,9 +1,20 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { Artifact, ArtifactRequest, Candidate, ClaimVerdict, CodeHost, Tracker } from '../src/adapter.js'
+import type {
+  Artifact,
+  ArtifactRequest,
+  Candidate,
+  CatchUp,
+  CatchUpRequest,
+  ClaimVerdict,
+  CodeHost,
+  InFlight,
+  ResolutionRequest,
+  Tracker,
+} from '../src/adapter.js'
 import type { Role } from '../src/role.js'
-import type { TreeProvider, WorkingTree, ChangedFile } from '../src/worktree.js'
+import type { TreeProvider, WorkingTree, ChangedFile, MergeState } from '../src/worktree.js'
 import {
-  declineReason, dropDeferred, dropStopped, oneFetchPerItem, recordDecisions, runItem,
+  catchUpItem, declineReason, dropDeferred, dropStopped, oneFetchPerItem, recordDecisions, runItem,
   type CommentSource, type CycleReport, type ItemDeps,
 } from '../src/loop.js'
 import { defer, NO_DEFERRALS, shouldDefer } from '../src/deferred.js'
@@ -18,6 +29,8 @@ const role = (over: Partial<Role> = {}): Role =>
   ({ name: 'triage', reviewers: ['alice'], allow: ['comment', 'draft-pr', 'unassign'], commands: [], completion: 'unassign', instructions: [], settleSeconds: 0, cooldownMinutes: 60, ...over }) as Role
 
 function deps(opts: {
+  caughtUp?: CatchUp[]
+  merge?: MergeState
   verdicts?: ClaimVerdict[]
   claimSticks?: boolean
   changes?: ChangedFile[]
@@ -40,23 +53,50 @@ function deps(opts: {
     linkage: () => 'Closes #7',
   }
   const produced: ArtifactRequest[] = []
+  const asked: CatchUpRequest[] = []
+  const resolved: ResolutionRequest[] = []
+  const answers = [...(opts.caughtUp ?? [])]
   const codeHost: CodeHost = {
     name: 'fake',
     produce: async (r): Promise<Artifact> => {
       produced.push(r)
       return { kind: 'pull-request', ref: '#9', url: 'https://example.test/9' }
     },
+    catchUp: async (r): Promise<CatchUp> => {
+      asked.push(r)
+      return answers.shift() ?? { outcome: 'already-current' }
+    },
+    resolve: async (r): Promise<string> => {
+      resolved.push(r)
+      return 'resolvedsha'
+    },
   }
+  const provisioned: (string | undefined)[] = []
+  const merged: string[] = []
   const trees: TreeProvider = {
     name: 'fake',
-    provision: async (): Promise<WorkingTree> => ({
-      path: tempDir('igor-loop-'),
-      repo: 'o/r',
-      changes: async () => opts.changes ?? [],
-      release: async () => {},
-    }),
+    provision: async (_repo, ref): Promise<WorkingTree> => {
+      provisioned.push(ref)
+      return {
+        path: tempDir('igor-loop-'),
+        repo: 'o/r',
+        changes: async () => opts.changes ?? [],
+        ...(opts.merge === undefined
+          ? {}
+          : {
+              merge: async (into: string): Promise<MergeState> => {
+                merged.push(into)
+                return opts.merge!
+              },
+            }),
+        release: async () => {},
+      }
+    },
   }
-  return { d: { tracker, codeHost, trees } as ItemDeps, posts, released, produced }
+  return {
+    d: { tracker, codeHost, trees } as ItemDeps,
+    posts, released, produced, asked, resolved, provisioned, merged,
+  }
 }
 
 const noWait = { claim: { wait: async () => {} } }
@@ -800,5 +840,152 @@ describe('the seat that is chosen is the seat that pays', () => {
 
     expect(seen?.['CLAUDE_CODE_OAUTH_TOKEN']).toBe('seat-two-token')
     expect(seen?.['IGOR_SEAT_1']).toBeUndefined()
+  })
+})
+
+/** An item carrying an artifact of this Igor's own that no longer merges. */
+const stale = (over: Partial<InFlight> = {}): Candidate =>
+  candidate({
+    inFlight: {
+      kind: 'pull-request',
+      ref: '#21',
+      url: 'https://example.test/21',
+      draft: true,
+      author: 'igor-bot',
+      mergeable: 'conflicting',
+      branch: 'igor/triage/7-a-bug',
+      base: 'main',
+      ...over,
+    },
+  })
+
+const conflicted: MergeState = { conflicts: ['src/a.ts'], head: 'headsha', broughtIn: 'basesha' }
+
+describe('catching an artifact of its own back up', () => {
+  it('asks the code host to merge, and finishes there when that is clean', async () => {
+    // The whole point of the cheap path: one request, no clone, no worker, no model.
+    const { d, provisioned, asked } = deps({ caughtUp: [{ outcome: 'merged', sha: 'mergesha' }] })
+    const run = await catchUpItem(d, stale(), role(), 'igor-bot')
+
+    expect(run.outcome).toBe('caught-up')
+    expect(run.costUsd).toBe(0)
+    expect(asked).toEqual([{ repo: 'o/r', branch: 'igor/triage/7-a-bug', base: 'main' }])
+    expect(provisioned).toEqual([])
+  })
+
+  it('says nothing on the item when nothing had to be thought about', async () => {
+    // A silent, clean catch-up is not news, and the merge commit on the branch is the record.
+    // An Igor that commented every cycle would be the noise people mute.
+    for (const outcome of [{ outcome: 'merged' as const, sha: 's' }, { outcome: 'already-current' as const }]) {
+      const { d, posts, released } = deps({ caughtUp: [outcome] })
+      const run = await catchUpItem(d, stale(), role(), 'igor-bot')
+      expect(posts).toEqual([])
+      expect(released).toEqual([])
+      expect(run.spoke).toBe(false)
+    }
+  })
+
+  it('leaves the item alone when the host cannot be asked', async () => {
+    // Nothing was claimed, so nobody was told to stand off and no receipt is owed. The next
+    // cycle asks again, which is what a rate limit wants.
+    const { d, posts } = deps()
+    d.codeHost.catchUp = async () => { throw new Error('API rate limit exceeded') }
+    const run = await catchUpItem(d, stale(), role(), 'igor-bot')
+    expect(run.outcome).toBe('refused')
+    expect(run.reason).toContain('rate limit')
+    expect(posts).toEqual([])
+  })
+
+  it('resolves a conflict on the branch that exists, never a new one', async () => {
+    // Regenerating the artifact would be cheaper for the Igor and would throw away whatever
+    // review has accumulated on it — a cost paid by the reviewer.
+    const { d, provisioned, merged, resolved, produced, posts } = deps({
+      caughtUp: [{ outcome: 'conflict' }, { outcome: 'already-current' }],
+      merge: conflicted,
+      changes: [{ path: 'src/a.ts', content: 'resolved\n', kind: 'modified' }],
+    })
+    const run = await catchUpItem(d, stale(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+
+    expect(run.outcome).toBe('produced')
+    // The claim comment said the Igor picked the item up. An ordinary run then ends in a pull
+    // request that announces itself; this one ends on a branch that is already there, so
+    // without a word the item goes quiet mid-sentence.
+    expect(posts.at(-1)).toContain('#21')
+    expect(posts.at(-1)).toContain('main')
+    expect(provisioned).toEqual(['igor/triage/7-a-bug'])
+    expect(merged).toEqual(['main'])
+    expect(produced).toEqual([])
+    expect(resolved).toEqual([
+      {
+        repo: 'o/r',
+        branch: 'igor/triage/7-a-bug',
+        parents: ['headsha', 'basesha'],
+        files: [{ path: 'src/a.ts', content: 'resolved\n' }],
+        message: 'Merge main into igor/triage/7-a-bug',
+      },
+    ])
+  })
+
+  it('hands off rather than publishing a tree the worker left markers in', async () => {
+    // Read off the content, because a worker may have staged its edits. Without this the
+    // markers themselves go onto the branch and the artifact is worse than it was.
+    const { d, resolved, posts } = deps({
+      caughtUp: [{ outcome: 'conflict' }],
+      merge: conflicted,
+      changes: [{ path: 'src/a.ts', content: '<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> x\n', kind: 'modified' }],
+    })
+    const run = await catchUpItem(d, stale(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+
+    expect(resolved).toEqual([])
+    expect(run.outcome).toBe('handed-off')
+    expect(run.reason).toContain('#21')
+    expect(posts.join(' ')).toContain('src/a.ts')
+  })
+
+  it('hands off once when the published resolution did not resolve anything', async () => {
+    // Task 4.2. A resolution that leaves the artifact conflicting is the one way this could
+    // spend a worker on the same merge every cycle forever. One request after publishing
+    // turns that into a single handoff, which the deferral record then keeps quiet.
+    const { d, resolved } = deps({
+      caughtUp: [{ outcome: 'conflict' }, { outcome: 'conflict' }],
+      merge: conflicted,
+      changes: [{ path: 'src/a.ts', content: 'resolved\n', kind: 'modified' }],
+    })
+    const run = await catchUpItem(d, stale(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+
+    expect(resolved).toHaveLength(1)
+    expect(run.outcome).toBe('handed-off')
+    expect(run.handoff).toBe('failure')
+    expect(shouldDefer(run.outcome, run.handoff, run.cures)).toBe(true)
+  })
+
+  it('hands off naming the artifact when the tree provider cannot merge at all', async () => {
+    // `merge` is optional on a working tree, because nothing about a tree provider promises
+    // git. A caller that cannot get one says so rather than guessing at a resolution.
+    const { d, resolved } = deps({ caughtUp: [{ outcome: 'conflict' }] })
+    const run = await catchUpItem(d, stale(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+
+    expect(resolved).toEqual([])
+    expect(run.outcome).toBe('handed-off')
+    expect(run.reason).toContain('#21')
+  })
+
+  it('spends no worker when the conflict cleared between the host and the clone', async () => {
+    // Somebody pushed in between. The merge is already in the tree, so paying a model to look
+    // at a tree with nothing left to decide would be paying for the race.
+    let ran = 0
+    const { d, resolved } = deps({
+      caughtUp: [{ outcome: 'conflict' }, { outcome: 'already-current' }],
+      merge: { conflicts: [], head: 'headsha', broughtIn: 'basesha' },
+      changes: [{ path: 'src/a.ts', content: 'merged\n', kind: 'modified' }],
+    })
+    const run = await catchUpItem(d, stale(), role(), 'igor-bot', {
+      ...noWait,
+      worker: async () => { ran += 1; return { result: 'x', total_cost_usd: 0.02 } },
+    })
+
+    expect(ran).toBe(0)
+    expect(run.outcome).toBe('produced')
+    expect(resolved).toHaveLength(1)
   })
 })

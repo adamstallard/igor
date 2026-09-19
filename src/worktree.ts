@@ -28,11 +28,28 @@ export interface ChangedFile {
   kind: 'added' | 'modified' | 'deleted'
 }
 
+/** What a merge left behind, and the two commits a resolution of it has to be parented on. */
+export interface MergeState {
+  /** Paths left with conflict markers in them. Empty where the merge was clean. */
+  conflicts: string[]
+  /** The tree's head before the merge. */
+  head: string
+  broughtIn: string
+}
+
 export interface WorkingTree {
   readonly path: string
   readonly repo: string
   /** Files the worker touched, read back from the tree rather than from what it claimed. */
   changes(): Promise<ChangedFile[]>
+  /**
+   * Merges `ref` in without committing, leaving conflict markers where it conflicts.
+   *
+   * Optional, because `TreeProvider` deliberately says nothing about how a tree is made and
+   * not every arrangement can offer this. A caller that needs it and does not find it hands
+   * off rather than guessing at a resolution it has no way to compute.
+   */
+  merge?(ref: string): Promise<MergeState>
   release(): Promise<void>
 }
 
@@ -102,6 +119,37 @@ export class ClonedTree implements WorkingTree {
       out.push({ path, content, kind: code.includes('?') || code === 'A' ? 'added' : 'modified' })
     }
     return out
+  }
+
+  /**
+   * Brings `ref` in and stops before the commit, so the tree holds the merge and nothing else
+   * does — no local commit to push, no identity to configure, and the loop still publishes.
+   *
+   * The clone is deepened first. A depth-1 clone has no ancestor in common with anything, so
+   * git refuses the merge outright rather than conflicting on it, and the worker would be
+   * handed an error instead of the files it is here for.
+   *
+   * A conflict is not a failure of this call: git exits non-zero and leaves exactly the tree
+   * that was asked for. Unmerged paths are what tells the two apart, rather than the exit
+   * code, which a merge refused for some other reason shares.
+   */
+  async merge(ref: string): Promise<MergeState> {
+    const git = (...args: string[]): Promise<string> => run('git', ['-C', this.path, ...args])
+    if ((await git('rev-parse', '--is-shallow-repository')).trim() === 'true') {
+      await git('fetch', '--quiet', '--unshallow', 'origin')
+    }
+    await git('fetch', '--quiet', 'origin', ref)
+    const head = (await git('rev-parse', 'HEAD')).trim()
+    const broughtIn = (await git('rev-parse', 'FETCH_HEAD')).trim()
+    try {
+      await git('merge', '--no-commit', '--no-ff', broughtIn)
+      return { conflicts: [], head, broughtIn }
+    } catch (error) {
+      const unmerged = await git('diff', '--name-only', '--diff-filter=U', '-z').catch(() => '')
+      const conflicts = unmerged.split('\0').filter((p) => p !== '')
+      if (conflicts.length === 0) throw error
+      return { conflicts, head, broughtIn }
+    }
   }
 
   /** Idempotent, because release runs from a finally that may also run on an already-failed path. */

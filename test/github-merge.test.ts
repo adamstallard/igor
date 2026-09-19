@@ -1,0 +1,118 @@
+import { describe, expect, it, vi } from 'vitest'
+
+class FakeGhError extends Error {
+  constructor(
+    message: string,
+    readonly status?: number,
+  ) {
+    super(message)
+  }
+}
+
+/** What each endpoint answers this test, and every call it was asked in the order it came. */
+const calls: { args: string[]; body: unknown }[] = []
+let answer: (endpoint: string, body: unknown) => unknown = () => null
+
+vi.mock('../src/gh.js', () => ({
+  GhError: FakeGhError,
+  gh: async (args: readonly string[], input?: string) => {
+    const body = input === undefined ? undefined : (JSON.parse(input) as unknown)
+    calls.push({ args: [...args], body })
+    return answer(args[1] ?? '', body)
+  },
+  ghPaginated: async () => [],
+}))
+
+const { commitOnBranch, mergeIntoBranch } = await import('../src/github.js')
+
+function reset(): void {
+  calls.length = 0
+  answer = () => null
+}
+
+const method = (i: number): string | undefined => {
+  const at = calls[i]?.args.indexOf('--method')
+  return at === undefined || at < 0 ? undefined : calls[i]?.args[at + 1]
+}
+
+describe('asking the host to merge, rather than merging locally', () => {
+  it('merges the base into the artifact branch and reports the commit', async () => {
+    // The direction matters and is easy to get backwards: the base goes *into* the artifact.
+    // Reversed, this merges unreviewed work into the default branch.
+    reset()
+    answer = () => ({ sha: 'mergesha' })
+
+    expect(await mergeIntoBranch('o/r', 'igor/fix-7', 'main')).toEqual({
+      outcome: 'merged',
+      sha: 'mergesha',
+    })
+    expect(calls).toHaveLength(1)
+    expect(calls[0]?.args[1]).toBe('repos/o/r/merges')
+    expect(method(0)).toBe('POST')
+    expect(calls[0]?.body).toMatchObject({ base: 'igor/fix-7', head: 'main' })
+  })
+
+  it('reads an empty body as nothing to bring in', async () => {
+    // GitHub answers 204 with no body when the base is already an ancestor, and `gh` hands
+    // an empty string back as null. Called a merge, that would report news every cycle.
+    reset()
+    answer = () => null
+    expect(await mergeIntoBranch('o/r', 'igor/fix-7', 'main')).toEqual({ outcome: 'already-current' })
+  })
+
+  it('reads 409 as a conflict and every other failure as a fault', async () => {
+    // The host reports a conflict rather than producing one, which is the whole reason this
+    // is a write to the host and not a clone. But a caller that treated any failure as a
+    // conflict would escalate a rate limit to a worker run.
+    reset()
+    answer = () => { throw new FakeGhError('gh: Merge conflict (HTTP 409)', 409) }
+    expect(await mergeIntoBranch('o/r', 'igor/fix-7', 'main')).toEqual({ outcome: 'conflict' })
+
+    answer = () => { throw new FakeGhError('gh: API rate limit exceeded (HTTP 403)', 403) }
+    await expect(mergeIntoBranch('o/r', 'igor/fix-7', 'main')).rejects.toThrow('rate limit')
+  })
+})
+
+describe('putting a resolution on a branch that already exists', () => {
+  it('commits with both parents and moves the ref rather than creating one', async () => {
+    // Both parents are load-bearing. A one-parent commit carrying the same content leaves the
+    // merge base where it was, so the host recomputes the conflict and the artifact goes on
+    // reporting that it cannot merge — a resolution that resolves nothing.
+    reset()
+    answer = (endpoint) => {
+      if (endpoint.endsWith('/git/blobs')) return { sha: 'blobsha' }
+      if (endpoint.endsWith('/git/trees')) return { sha: 'treesha' }
+      if (endpoint.endsWith('/git/commits')) return { sha: 'commitsha' }
+      return null
+    }
+
+    const sha = await commitOnBranch(
+      'o/r',
+      'igor/fix-7',
+      ['headsha', 'basesha'],
+      [{ path: 'src/a.ts', content: 'resolved\n' }],
+      'Merge main into igor/fix-7',
+    )
+
+    expect(sha).toBe('commitsha')
+    expect(calls.map((c) => c.args[1])).toEqual([
+      'repos/o/r/git/blobs',
+      'repos/o/r/git/trees',
+      'repos/o/r/git/commits',
+      'repos/o/r/git/refs/heads/igor/fix-7',
+    ])
+    expect(calls[2]?.body).toMatchObject({ parents: ['headsha', 'basesha'], tree: 'treesha' })
+    // A PATCH on the ref, never a POST to `git/refs`: the branch is there, and creating it is
+    // the operation that would fail — or, worse, put the resolution somewhere else.
+    expect(method(3)).toBe('PATCH')
+    expect(calls[3]?.body).toEqual({ sha: 'commitsha' })
+    // Laid over the artifact's own tree, so a file neither side touched is still there.
+    expect(calls[1]?.body).toMatchObject({ base_tree: 'headsha' })
+  })
+
+  it('refuses a commit with no parent rather than orphaning the branch', async () => {
+    reset()
+    await expect(commitOnBranch('o/r', 'b', [], [{ path: 'a', content: 'x' }], 'm')).rejects.toThrow()
+    expect(calls).toEqual([])
+  })
+})

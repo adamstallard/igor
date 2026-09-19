@@ -85,6 +85,84 @@ export async function createBranchWithFiles(
   return commit.sha
 }
 
+/**
+ * Merges `head` into `branch`, server-side.
+ *
+ * A write, not a scan: one request per artifact per cycle, whatever the size of the
+ * destination. GitHub answers 201 with the merge commit, 204 when there was nothing to bring
+ * in, and 409 when it conflicts — so the host reports a conflict rather than producing one,
+ * and the common case never reaches a clone.
+ *
+ * Only 409 is read as a conflict. Every other status is a fault and is thrown, because a
+ * caller that treated any failure as a conflict would send a worker at a rate limit.
+ */
+export async function mergeIntoBranch(
+  repo: string,
+  branch: string,
+  head: string,
+): Promise<{ outcome: 'merged'; sha: string } | { outcome: 'already-current' } | { outcome: 'conflict' }> {
+  try {
+    const merge = (await gh(
+      ['api', `repos/${repo}/merges`, '--method', 'POST', '--input', '-'],
+      JSON.stringify({ base: branch, head, commit_message: `Merge ${head} into ${branch}` }),
+    )) as { sha: string } | null
+    // 204 carries no body, and `gh` hands back an empty string that `gh()` reads as null.
+    return merge === null ? { outcome: 'already-current' } : { outcome: 'merged', sha: merge.sha }
+  } catch (error) {
+    if (error instanceof GhError && error.status === 409) return { outcome: 'conflict' }
+    throw error
+  }
+}
+
+/**
+ * Commits `files` onto an existing branch, with the parents given.
+ *
+ * The sibling of `createBranchWithFiles`, and separate because the last step differs where it
+ * matters: that one creates a ref and fails if the branch is there, this one moves a ref that
+ * must be. Nothing here creates a branch, so a resolution can never land somewhere other than
+ * the artifact it belongs to.
+ *
+ * The tree is `parents[0]`'s with `files` laid over it, so a path the merge deleted survives —
+ * the same limit the artifact path has, named here rather than discovered.
+ */
+export async function commitOnBranch(
+  repo: string,
+  branch: string,
+  parents: readonly string[],
+  files: readonly FileToCommit[],
+  message: string,
+): Promise<string> {
+  const first = parents[0]
+  if (first === undefined) throw new GitHubError('a commit on an existing branch needs a parent')
+  const blobs: { path: string; sha: string }[] = []
+  for (const file of files) {
+    const blob = (await gh(
+      ['api', `repos/${repo}/git/blobs`, '--method', 'POST', '--input', '-'],
+      JSON.stringify({ content: file.content, encoding: 'utf-8' }),
+    )) as { sha: string }
+    blobs.push({ path: file.path, sha: blob.sha })
+  }
+
+  const tree = (await gh(
+    ['api', `repos/${repo}/git/trees`, '--method', 'POST', '--input', '-'],
+    JSON.stringify({
+      base_tree: first,
+      tree: blobs.map((b) => ({ path: b.path, mode: '100644', type: 'blob', sha: b.sha })),
+    }),
+  )) as { sha: string }
+
+  const commit = (await gh(
+    ['api', `repos/${repo}/git/commits`, '--method', 'POST', '--input', '-'],
+    JSON.stringify({ message, tree: tree.sha, parents: [...parents] }),
+  )) as { sha: string }
+
+  await gh(
+    ['api', `repos/${repo}/git/refs/heads/${branch}`, '--method', 'PATCH', '--input', '-'],
+    JSON.stringify({ sha: commit.sha }),
+  )
+  return commit.sha
+}
+
 export interface OpenedPr {
   number: number
   url: string

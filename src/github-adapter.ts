@@ -9,12 +9,24 @@ import {
   type Candidate,
   type ClaimVerdict,
   type Comment,
+  type CatchUp,
+  type CatchUpRequest,
   type CodeHost,
   type InFlight,
+  type Mergeability,
+  type ResolutionRequest,
   type Source,
   type Tracker,
 } from './adapter.js'
-import { branchSha, createBranchWithFiles, defaultBranch, openPullRequest, requestReviewers } from './github.js'
+import {
+  branchSha,
+  commitOnBranch,
+  createBranchWithFiles,
+  defaultBranch,
+  mergeIntoBranch,
+  openPullRequest,
+  requestReviewers,
+} from './github.js'
 
 /**
  * One request returns issues with their labels, assignees and linked pull requests, at a
@@ -40,13 +52,24 @@ query($q: String!, $n: Int!, $after: String) {
         assignees(first: 10) { nodes { login } }
         timelineItems(itemTypes: [CROSS_REFERENCED_EVENT, CONNECTED_EVENT], first: 20) {
           nodes {
-            ... on CrossReferencedEvent { source { ... on PullRequest { number url state isDraft } } }
-            ... on ConnectedEvent { subject { ... on PullRequest { number url state isDraft } } }
+            ... on CrossReferencedEvent { source { ...pr } }
+            ... on ConnectedEvent { subject { ...pr } }
           }
         }
       }
     }
   }
+}
+
+fragment pr on PullRequest {
+  number
+  url
+  state
+  isDraft
+  mergeable
+  headRefName
+  baseRefName
+  author { login }
 }`
 
 interface RawPr {
@@ -54,6 +77,11 @@ interface RawPr {
   url: string
   state: 'OPEN' | 'CLOSED' | 'MERGED'
   isDraft: boolean
+  /** Computed asynchronously, so `UNKNOWN` — or nothing at all — is the ordinary first answer. */
+  mergeable?: 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN' | null
+  headRefName?: string
+  baseRefName?: string
+  author?: { login: string } | null
 }
 
 export interface RawIssue {
@@ -79,10 +107,30 @@ function inFlightFrom(issue: RawIssue): InFlight | undefined {
   for (const node of issue.timelineItems.nodes) {
     const pr = node?.source ?? node?.subject
     if (pr && pr.state === 'OPEN') {
-      return { kind: 'pull-request', ref: `#${pr.number}`, url: pr.url, draft: pr.isDraft }
+      const branch = pr.headRefName ?? ''
+      const base = pr.baseRefName ?? ''
+      return {
+        kind: 'pull-request',
+        ref: `#${pr.number}`,
+        url: pr.url,
+        draft: pr.isDraft,
+        author: pr.author?.login ?? '',
+        // An artifact whose branch or base did not come back is unknown however it reported
+        // its mergeability: acting on one means merging into a branch named by nothing.
+        mergeable: branch === '' || base === '' ? 'unknown' : mergeabilityFrom(pr.mergeable),
+        branch,
+        base,
+      }
     }
   }
   return undefined
+}
+
+/** Anything but a stated `CONFLICTING` is `unknown` rather than a pessimistic guess. */
+function mergeabilityFrom(raw: RawPr['mergeable']): Mergeability {
+  if (raw === 'MERGEABLE') return 'clean'
+  if (raw === 'CONFLICTING') return 'conflicting'
+  return 'unknown'
 }
 
 /**
@@ -308,5 +356,23 @@ export class GitHubCodeHost implements CodeHost {
     )
     if (request.reviewers?.length) await requestReviewers(request.repo, pr.number, request.reviewers)
     return { kind: 'pull-request', ref: `#${pr.number}`, url: pr.url }
+  }
+
+  async catchUp(request: CatchUpRequest): Promise<CatchUp> {
+    if (request.branch === '' || request.base === '') {
+      throw new AdapterError('catching up needs both the artifact\'s branch and its base')
+    }
+    return mergeIntoBranch(request.repo, request.branch, request.base)
+  }
+
+  async resolve(request: ResolutionRequest): Promise<string> {
+    if (request.files.length === 0) throw new AdapterError('a resolution needs at least one file')
+    return commitOnBranch(
+      request.repo,
+      request.branch,
+      request.parents,
+      request.files,
+      request.message,
+    )
   }
 }

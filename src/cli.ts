@@ -19,12 +19,12 @@ import { eligibleToPropose, propose, ProposeError } from './propose.js'
 import { reconcile, promoteInPlace } from './reconcile.js'
 import { GitHubError } from './github.js'
 import { explainRole, loadRole, rolesFrom, RoleError } from './role.js'
-import { planCycle, runItem, type CycleReport } from './loop.js'
+import { catchUpItem, planCycle, runItem, type CycleReport } from './loop.js'
 import { renderProgress } from './execute.js'
 import { serve, untilSignalled } from './serve.js'
 import { GitHubTracker, GitHubCodeHost } from './github-adapter.js'
 import type { Candidate } from './adapter.js'
-import { laneVerdict, universalSkip } from './predicate.js'
+import { laneVerdict, staleOwnArtifact, universalSkip } from './predicate.js'
 import { noteHandoff, shouldDefer } from './deferred.js'
 import { CloneProvider } from './worktree.js'
 import { TriageError } from './triage.js'
@@ -338,6 +338,12 @@ function renderCycle(report: CycleReport, verbose: boolean): string {
       (report.skippedUnreadable > 0 ? `${report.skippedUnreadable} unreadable, ` : '') +
       `${report.triaged} triaged (${triageSpend(report)})`,
   )
+  if (report.toCatchUp.length > 0) {
+    out.push('', `own artifacts that no longer merge (${report.toCatchUp.length}):`)
+    for (const c of report.toCatchUp) {
+      out.push(`  ${c.candidate.native.padStart(6)}  ${c.reason}`)
+    }
+  }
   if (verbose && report.skipped.length > 0) {
     out.push('', `skipped before any model call (${report.skipped.length}):`)
     for (const s of report.skipped.slice(0, 40)) {
@@ -436,6 +442,17 @@ program
       const universal = universalSkip(item, identity)
       if (universal) throw new RoleError(`refusing ${item.id}: ${universal.reason}`)
 
+      // An item whose own artifact stopped merging passes the universal skips and is not new
+      // work: opening a second pull request for it is the duplication that rule exists to
+      // prevent, and the branch is there already, so producing one would simply fail.
+      if (staleOwnArtifact(item, identity) !== undefined) {
+        const gate = await gateFor()
+        const run = await catchUpItem(deps, item, role, identity, { budget: gate, store })
+        process.stdout.write(`  ${run.outcome}: ${run.reason}\n`)
+        if (run.execution) await record(item, run.execution, gate.seat)
+        return
+      }
+
       const lane = laneVerdict(role.lane, item)
       if (lane.outcome === 'skip') {
         process.stdout.write(`note: outside this role's lane (${lane.reason}) — working it anyway\n`)
@@ -455,11 +472,24 @@ program
     process.stdout.write(`${renderCycle(report, opts.plan === true)}\n`)
 
     if (opts.plan) {
-      process.stdout.write(`\n${report.toClaim.length} would be claimed. Nothing was claimed or posted.\n`)
+      process.stdout.write(
+        `\n${report.toClaim.length} would be claimed and ${report.toCatchUp.length} caught up. ` +
+          'Nothing was claimed, merged or posted.\n',
+      )
       for (const c of report.toClaim) {
         process.stdout.write(`  igor run ${name} --claim ${c.candidate.id}\n`)
       }
       return
+    }
+
+    for (const c of report.toCatchUp) {
+      const gate = await gateFor()
+      const run = await catchUpItem(deps, c.candidate, role, identity, { budget: gate, store })
+      process.stdout.write(`  ${c.candidate.id}: ${run.reason}\n`)
+      if (shouldDefer(run.outcome, run.handoff, run.cures)) {
+        await noteHandoff(destination, c.candidate, run.reason).catch(() => undefined)
+      }
+      if (run.execution) await record(c.candidate, run.execution, gate.seat)
     }
 
     if (report.toClaim.length === 0) {

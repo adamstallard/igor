@@ -54,3 +54,89 @@ describe('what a working tree reports as changed', () => {
     expect(changed).toEqual([{ path: 'tracked.md', content: '', kind: 'deleted' }])
   })
 })
+
+/**
+ * An origin with a branch that conflicts with its own base, cloned the way `CloneProvider`
+ * clones — shallow — because the depth is exactly what makes the merge non-trivial.
+ */
+async function conflicting(): Promise<{ clone: string; origin: string }> {
+  const origin = tempDir('igor-tree-origin-')
+  const git = (...args: string[]) => run('git', ['-C', origin, ...args])
+  await git('init', '-q', '-b', 'main', '.')
+  await git('config', 'user.email', 't@example.invalid')
+  await git('config', 'user.name', 'test')
+  writeFileSync(join(origin, 'f.txt'), 'one\n')
+  writeFileSync(join(origin, 'untouched.txt'), 'quiet\n')
+  await git('add', '-A')
+  await git('commit', '-qm', 'base')
+  await git('checkout', '-qb', 'artifact')
+  writeFileSync(join(origin, 'f.txt'), 'the artifact\n')
+  await git('commit', '-qam', 'artifact')
+  await git('checkout', '-q', 'main')
+  writeFileSync(join(origin, 'f.txt'), 'the base moved\n')
+  writeFileSync(join(origin, 'added-on-main.txt'), 'new\n')
+  await git('add', '-A')
+  await git('commit', '-qm', 'base moved')
+
+  const clone = tempDir('igor-tree-clone-')
+  await run('git', ['clone', '-q', '--depth', '1', '--branch', 'artifact', `file://${origin}`, clone])
+  return { clone, origin }
+}
+
+describe('bringing a base into an artifact tree', () => {
+  it('deepens a shallow clone rather than refusing the merge for want of an ancestor', async () => {
+    // A depth-1 clone shares no ancestor with anything, so git declines the merge outright
+    // instead of conflicting on it — and the worker would be handed an error rather than the
+    // files it is there for.
+    const { clone } = await conflicting()
+    expect((await run('git', ['-C', clone, 'rev-parse', '--is-shallow-repository'])).stdout.trim()).toBe('true')
+
+    const merge = await new ClonedTree(clone, 'o/r').merge('main')
+    expect(merge.conflicts).toEqual(['f.txt'])
+    expect(merge.head).not.toBe(merge.broughtIn)
+  })
+
+  it('leaves the conflict in the tree, and everything the merge brought in beside it', async () => {
+    // What escalates is files with markers in them. The worker is handed that and nothing
+    // else — no branch, no remote, no commit to make.
+    const { clone } = await conflicting()
+    const tree = new ClonedTree(clone, 'o/r')
+    await tree.merge('main')
+
+    const changed = await tree.changes()
+    const conflicted = changed.find((c) => c.path === 'f.txt')
+    expect(conflicted?.content).toContain('<<<<<<<')
+    expect(conflicted?.content).toContain('the base moved')
+    // The merge stages what it brought in cleanly too, and the resolution has to carry it:
+    // publishing only the conflicted file would drop the rest of the base's commit.
+    expect(changed.map((c) => c.path).sort()).toEqual(['added-on-main.txt', 'f.txt'])
+    expect(changed.find((c) => c.path === 'untouched.txt')).toBeUndefined()
+  })
+
+  it('does not commit, so the tree holds the merge and nothing else does', async () => {
+    // The loop publishes. A local commit would need an identity nobody configured, and would
+    // put a second copy of the resolution somewhere only this disposable clone can see.
+    const { clone } = await conflicting()
+    await new ClonedTree(clone, 'o/r').merge('main')
+    const head = await run('git', ['-C', clone, 'rev-parse', 'HEAD'])
+    const artifact = await run('git', ['-C', clone, 'rev-parse', 'artifact'])
+    expect(head.stdout.trim()).toBe(artifact.stdout.trim())
+  })
+
+  it('reports a clean merge as no conflicts at all', async () => {
+    const { clone, origin } = await conflicting()
+    await run('git', ['-C', origin, 'checkout', '-q', 'main'])
+    writeFileSync(join(origin, 'f.txt'), 'one\n')
+    await run('git', ['-C', origin, 'commit', '-qam', 'put it back'])
+
+    const merge = await new ClonedTree(clone, 'o/r').merge('main')
+    expect(merge.conflicts).toEqual([])
+  })
+
+  it('throws when the merge failed for a reason that is not a conflict', async () => {
+    // Only unmerged paths make a non-zero exit a conflict. A caller that read every failure
+    // as one would hand a worker a tree with nothing wrong in it.
+    const { clone } = await conflicting()
+    await expect(new ClonedTree(clone, 'o/r').merge('no-such-branch')).rejects.toThrow()
+  })
+})
