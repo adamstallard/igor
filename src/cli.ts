@@ -199,7 +199,24 @@ program
       )
     }
 
-    for (const r of await propose(config, entries, serialize)) {
+    const outcome = await propose(config, entries, serialize)
+    // `entries/` upstream only ever advances through a merged pull request, so an id there
+    // that the local pass let through means this checkout is behind, and pulling fixes it.
+    if (outcome.skipped.inStore.length > 0) {
+      process.stdout.write(
+        `behind    ${outcome.skipped.inStore.join(', ')} — in the store upstream but not in this checkout; pull the destination\n`,
+      )
+    }
+    // `rejected/` diverges the other way just as often: `reconcile` writes a rejection into the
+    // checkout for somebody to commit, and un-rejecting is deleting that file in a pull request.
+    // So the checkout may be behind or ahead here, and telling someone to pull would undo the
+    // deletion they are in the middle of landing. Name the state upstream and not a remedy.
+    if (outcome.skipped.rejected.length > 0) {
+      process.stdout.write(
+        `rejected  ${outcome.skipped.rejected.join(', ')} — still rejected on the destination's default branch; that record has to go before these can be proposed again\n`,
+      )
+    }
+    for (const r of outcome.results) {
       const owner = r.reassignedTo
         ? `${r.reassignedTo.join(', ')} (${r.author} is not a collaborator here)`
         : r.author
