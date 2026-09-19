@@ -16,7 +16,7 @@ import {
   ENTRIES_DIR,
 } from './store.js'
 import { eligibleToPropose, propose, ProposeError } from './propose.js'
-import { reconcile, promoteInPlace } from './reconcile.js'
+import { reconcile, promoteInPlace, renderReconciliation } from './reconcile.js'
 import { GitHubError } from './github.js'
 import { explainRole, loadRole, rolesFrom, RoleError } from './role.js'
 import { planCycle, runItem, type CycleReport } from './loop.js'
@@ -217,43 +217,7 @@ program
     const config = loadConfig(program.opts()['config'])
     const r = await reconcile(config, { staleAfterDays: Number(opts.staleAfter) })
 
-    for (const p of r.promoted) {
-      const flag = p.mergerWasNotAssigned ? '  (merged by someone not assigned to review it)' : ''
-      process.stdout.write(`promoted  ${p.id}  by ${p.by} on ${p.at}${flag}\n`)
-    }
-    for (const d of r.declined) {
-      process.stdout.write(`declined  ${d.id}  by ${d.by} (pr #${d.pr}) — recorded in ${d.record}\n`)
-    }
-    for (const s of r.stale) {
-      process.stdout.write(
-        `stale     #${s.pr} last active ${s.lastActivity}, assigned ${s.assignees.join(', ') || '(nobody)'} — escalate to ${config.reviewers.join(', ') || '(no store reviewers configured)'}\n  ${s.url}\n`,
-      )
-    }
-    if (r.deferred.length > 0) {
-      process.stdout.write(`deferred  ${r.deferred.map((n) => `#${n}`).join(', ')} (closed unmerged)\n`)
-    }
-    if (r.missingLocally.length > 0) {
-      process.stdout.write(
-        `behind    ${r.missingLocally.join(', ')} — merged upstream but not here; pull the destination\n`,
-      )
-    }
-    for (const u of r.unreadable) {
-      process.stdout.write(`unreadable ${u.id} — ${u.reason}\n`)
-    }
-    if (
-      r.promoted.length === 0 &&
-      r.declined.length === 0 &&
-      r.stale.length === 0 &&
-      r.missingLocally.length === 0 &&
-      r.unreadable.length === 0
-    ) {
-      process.stdout.write('nothing to reconcile\n')
-    }
-    if (r.promoted.length > 0 || r.declined.length > 0) {
-      process.stdout.write(
-        '\nPromotions and rejection records edited files locally — commit and push them.\n',
-      )
-    }
+    process.stdout.write(renderReconciliation(r, config.reviewers))
   })
 
 program
