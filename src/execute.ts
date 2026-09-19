@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import type { Artifact, Candidate, ClaimVerdict, CodeHost, Tracker } from './adapter.js'
 import { resolveToken, type TokenSource, type Window } from './budget.js'
 import { recordObservation, WINDOW_LENGTH } from './capacity.js'
@@ -88,6 +89,14 @@ export interface ExecutionResult {
   apiErrorStatus?: number | string
   /** Only on a budget stop or a failure. */
   terminalReason?: string
+  /**
+   * Only on a budget stop: the terminal envelope whole, for `recordExecution` to write out.
+   *
+   * `apiErrorStatus` and `terminalReason` beside it are the two fields already known to
+   * matter. This is everything else — a refusal nobody has seen yet cannot be summarised into
+   * the fields a guess thought to keep, and it dies with the process unless it is carried.
+   */
+  limitEnvelope?: WorkerOutput
   reason: string
 }
 
@@ -369,18 +378,41 @@ function resetFrom(envelope: WorkerOutput, info: Record<string, unknown> | undef
 }
 
 /**
+ * Which of the guesses an envelope tripped, named. The list of patterns lives here and nowhere
+ * else, so `usageLimit` and the refusal capture cannot drift apart about what a limit looks like.
+ *
+ * Says nothing about whether the run stopped for one — that is `usageLimit`'s question, and it
+ * asks more than this. `result` alone is the weak answer: it is worker prose written about an
+ * item, so an item about rate limits trips it, and a capture naming only that signal is as
+ * likely to be a crash as a refusal. Which is the reason to write the names down rather than
+ * the verdict: the first reader has to be able to tell those two apart.
+ */
+export function limitSignals(envelope: WorkerOutput): string[] {
+  const status = asRecord(envelope.rate_limit_info)?.['status']
+  return [
+    ...(Number(envelope.api_error_status) === 429 ? ['api_error_status'] : []),
+    ...(LIMIT_FIELD.test(envelope.stop_reason ?? '') ? ['stop_reason'] : []),
+    ...(LIMIT_FIELD.test(envelope.terminal_reason ?? '') ? ['terminal_reason'] : []),
+    // Only where it says the call was refused: every instance yet observed carried
+    // `status: "allowed"`, which is the provider reporting that nothing is wrong.
+    ...(typeof status === 'string' && /reject|block|exhaust|limit|denied/i.test(status) ? ['rate_limit_info'] : []),
+    ...(LIMIT_TEXT.some((pattern) => pattern.test(envelope.result ?? '')) ? ['result'] : []),
+  ]
+}
+
+/**
  * Whether the terminal envelope is a seat with no capacity left, and when it comes back.
  *
  * **These patterns are unverified against a live usage-limit error.** Nobody has captured one
  * from this provider, so which field carries it is a guess spread across the plausible
- * carriers; correct them here and nowhere else once one is seen.
+ * carriers; correct them here and nowhere else once one is seen. One to correct them from
+ * arrives on its own: every envelope this fires on is written whole to `refusals/` on the
+ * state branch.
  *
  * Wrong in the safe direction on purpose. An ambiguous envelope reads as an ordinary failure,
  * because a crash announced as "out of budget" buries a bug under a reason nobody will
  * question, while a budget stop announced as a crash costs one re-run. So nothing counts on a
- * run the provider reports as successful, and `rate_limit_info` counts only where it says the
- * call was refused — every instance of it yet observed carried `status: "allowed"`, which is
- * the provider reporting that nothing is wrong.
+ * run the provider reports as successful, whatever `limitSignals` found in it.
  */
 export function usageLimit(
   envelope: WorkerOutput | undefined,
@@ -389,16 +421,8 @@ export function usageLimit(
   // A finished run is not an exhausted seat, whatever status it repeats: a limit the run hit,
   // retried past and finished around is history rather than the reason it stopped.
   if (envelope === undefined || envelope.is_error === false) return undefined
+  if (limitSignals(envelope).length === 0) return undefined
   const info = asRecord(envelope.rate_limit_info)
-  const status = info?.['status']
-  const refused = typeof status === 'string' && /reject|block|exhaust|limit|denied/i.test(status)
-  const hit =
-    Number(envelope.api_error_status) === 429 ||
-    LIMIT_FIELD.test(envelope.stop_reason ?? '') ||
-    LIMIT_FIELD.test(envelope.terminal_reason ?? '') ||
-    refused ||
-    LIMIT_TEXT.some((pattern) => pattern.test(envelope.result ?? ''))
-  if (!hit) return undefined
   // A time already gone reads as "capacity is back" on a message releasing the item, which is
   // worse than naming no time at all: the envelope can be repeating a limit from hours ago.
   const resetsAt = resetFrom(envelope, info)
@@ -955,6 +979,25 @@ export function transcriptPath(candidate: Candidate): string {
   return `transcripts/${candidate.tracker}/${candidate.repo}/${candidate.native}.md`
 }
 
+/** Where the envelopes behind budget stops land on the state branch, beside `capacity.ndjson`. */
+export const REFUSALS_DIR = 'refusals'
+
+/**
+ * One file per refusal, named for when it arrived and which item met it. Two properties are the
+ * point: a second refusal cannot overwrite the first, which is the one everything is waiting
+ * on; and each is a whole JSON document a person opens and quotes rather than a line to be cut
+ * out of a log. The item and the random tail are what make the first claim true — two seats can
+ * refuse in the same millisecond, and a name that collides has the later one land on the
+ * earlier. The timestamp leads so the directory sorts into the order the refusals happened.
+ *
+ * Everything outside a filename's safe set goes to `-`, the timestamp's own punctuation
+ * included: a path is checked out onto a real filesystem, and `:` is not portable there.
+ */
+export function refusalPath(at: string, item: string): string {
+  const name = `${at}-${item}-${randomUUID().slice(0, 8)}`.replace(/[^A-Za-z0-9_-]+/g, '-')
+  return `${REFUSALS_DIR}/${name}.json`
+}
+
 /** The lore store transcripts are written to — a different repository from the one being worked. */
 export interface TranscriptStore {
   /** `owner/repo` of the destination. */
@@ -1221,6 +1264,7 @@ export async function execute(
             ...trace(envelope),
             ...evidence(envelope),
             ...cured(),
+            ...(envelope === undefined ? {} : { limitEnvelope: envelope }),
             ...(limit.resetsAt === undefined ? {} : { resetsAt: limit.resetsAt }),
             reason: outOfCapacity(limit.resetsAt),
           }
@@ -1278,6 +1322,7 @@ export async function execute(
           ...kept,
           ...cured(),
           ...evidence(worker),
+          limitEnvelope: worker,
           ...(limit.resetsAt === undefined ? {} : { resetsAt: limit.resetsAt }),
           reason: outOfCapacity(limit.resetsAt),
         }
@@ -1408,6 +1453,9 @@ export async function complete(
  * Two shapes, because they answer different questions. The NDJSON log answers "what has this
  * Igor been doing and what did it cost", and stays small enough to read whole. The transcript
  * answers "why did it do *that*", is far larger, and is only wanted for one item at a time.
+ *
+ * A refusal adds a third, on its own in `refusals/`: the envelope that stopped the run, kept
+ * whole because no pattern has ever been fitted to a real one.
  */
 export async function recordExecution(
   destination: string,
@@ -1415,8 +1463,56 @@ export async function recordExecution(
   role: Role,
   result: ExecutionResult,
   seat?: string,
+  notice: (error: unknown) => void = () => {},
 ): Promise<void> {
   const path = transcriptPath(candidate)
+  const at = new Date().toISOString()
+  // Asked once, though two records carry it. Each write is a round trip to the state branch,
+  // and a window asked again after three of them can answer differently about one refusal: a
+  // reset seconds the far side of the session boundary crosses back over it while the records
+  // are being written, and the capture then contradicts the observation derived from it.
+  const window = limitWindow(result.resetsAt, Date.parse(at))
+  const wroteTranscript = result.transcript.trim() !== ''
+
+  // First of the writes and the only one caught, which inverts the ordering argument below on
+  // purpose. Nobody has yet seen what this provider returns when it refuses a run for a spent
+  // window, so `usageLimit`'s patterns, `resetFrom`'s, and the reset phrase `Observation`
+  // never carries are all guesses at a shape this is the first chance to read. A ledger row
+  // lost to a flaky branch is a run nobody can account for; this envelope lost is the next
+  // exhausted window, hours or a week away. Caught because the reverse — a capture failing and
+  // taking the handoff with it — would be a worse bug than the one it exists to fix.
+  //
+  // Nothing redacts it. `envelope.result` is worker prose that came from an item and could say
+  // anything, and it is also where the reset phrase is believed to be, so a redaction removes
+  // the thing being captured. It is the same text the transcript below writes to the same
+  // branch — except on the path where the worker threw, which carries no transcript at all.
+  if (result.outcome === 'budget' && result.limitEnvelope !== undefined) {
+    await writeState(
+      destination,
+      refusalPath(at, candidate.id),
+      {
+        at,
+        item: candidate.id,
+        url: candidate.url,
+        role: role.name,
+        ...(seat === undefined ? {} : { seat }),
+        // What was concluded, beside what it was concluded from. A pattern fitted later has to
+        // be checked against the reading this made, and `at` is what `resolveReset` would have
+        // been handed — it answers with the first occurrence at or after the moment it is
+        // given, so a phrase read without that moment cannot be re-read.
+        ...(result.resetsAt === undefined ? {} : { resetsAt: result.resetsAt }),
+        window,
+        // Which guesses fired, because `result` alone is the one that a crash on an item about
+        // rate limits also trips — and the reader has to sort those out of this directory.
+        matched: limitSignals(result.limitEnvelope),
+        // Named only where there is one to open. The throw path writes none, and a refusal is
+        // exactly where a reader follows the pointer.
+        ...(wroteTranscript ? { transcript: path } : {}),
+        envelope: result.limitEnvelope,
+      },
+      `Refusal envelope from ${candidate.id}`,
+    ).catch(notice)
+  }
 
   await appendRecord(
     destination,
@@ -1454,7 +1550,7 @@ export async function recordExecution(
     `Record ${role.name} on ${candidate.id}`,
   )
 
-  if (result.transcript.trim() !== '') {
+  if (wroteTranscript) {
     await writeState(
       destination,
       path,
@@ -1481,9 +1577,15 @@ export async function recordExecution(
   // row; nothing supersedes the transcript ahead of it, which is this run's only account.
   if (result.outcome === 'budget' && seat !== undefined) {
     await recordObservation(destination, {
+      // Its own reading, later than the ledger row above by however long that write took. The
+      // span it vouches for ends here and `spendInInstance` is half-open at that end, so an
+      // observation stamped first drops the spend of the very run that was refused — and a
+      // refusal that divides nothing yields no figure, leaving the declared capacity that
+      // permitted the overspend standing. The window is the hoisted one regardless: one refusal
+      // owes one answer about which cap it hit.
       at: new Date().toISOString(),
       seat,
-      window: limitWindow(result.resetsAt),
+      window,
       percentUsed: 100,
       // Absent where the provider named no return, or named one already past. That the seat
       // refused is worth recording without it; `capacity-from-observation` §1 has such a row
