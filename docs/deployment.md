@@ -255,8 +255,11 @@ igor run <role> --plan      # what it would claim right now, claiming nothing
 Everything an Igor did is on the `igor-state` branch of the lore repository:
 `executions/` for what it worked and what that cost, one `.ndjson` file per UTC day,
 `discovery.json` for the watermarks, `transcripts/` for why it did what it did, and
-`refusals/` for the whole envelope the provider sent back when a seat ran out — one JSON file
-per refusal, which is what a reset phrase can be read off later. Readable with `git show`, no
+`refusals/` for the whole envelope behind a limit — one JSON file each, which is what a reset
+phrase can be read off later. Most are seats that ran out; the rest are runs that met a limit
+the provider named in a field of its own and did not stop for it. Each file's `outcome` says
+which it was, and `matched` which fields named the limit — `result` alone is the worker's own
+prose, which a crash on an item about rate limits trips too. Readable with `git show`, no
 checkout needed.
 
 ## When something is wrong
