@@ -16,6 +16,7 @@ import {
   renderBudget,
   type WindowState,
   resolveToken,
+  percent,
   roleSharePercent,
   seatStatus,
   type OrgBudget,
@@ -226,6 +227,97 @@ describe('headroom is percent, straight from the reading', () => {
 
   it('reports none rather than a negative once past the floor', () => {
     expect(seatStatus(seat({ reserve: 0.5 }), usage(80), 'session').headroomPercent).toBe(0)
+  })
+})
+
+describe('a seat sitting exactly on its reserve', () => {
+  const pool = { id: 'eng', seats: ['adam'] }
+  const role = { name: 'triage' }
+  const readings = (reserve: number, used: number): SeatUsage[] => [
+    { seat: seat({ reserve }), usage: usage(used, 0) },
+  ]
+
+  // `reserve * 100` is inexact, so the subtraction that makes headroom can land a few ulps
+  // above zero instead of on it. These are every integer usage a two-decimal reserve does it
+  // at; finer reserves have their own, which the invariant below covers.
+  for (const [reserve, used] of [
+    [0.57, 43],
+    [0.58, 42],
+  ] as const) {
+    it(`is not chosen at a ${reserve} reserve and ${used}% used`, () => {
+      expect(chooseSeat(pool, readings(reserve, used), [], role).seat).toBeUndefined()
+    })
+
+    it(`prints no headroom at a ${reserve} reserve and ${used}% used`, () => {
+      const rows = renderBudget(readings(reserve, used))
+        .split('\n')
+        .filter((l) => l.includes('session'))
+      expect(rows).toHaveLength(1)
+      // used, then reserve, then the headroom column the gate was just asked about.
+      expect(rows[0]).toMatch(new RegExp(`\\s${used}%\\s+\\d+%\\s+0%\\s`))
+    })
+  }
+
+  it('hedges the handoff hour once its week is at the reserve too', () => {
+    // The gate has a second at-reserve test, in the reset race, and a seat shut on one window
+    // states that window's hour flatly. A week sitting on noise instead of on nothing is the
+    // difference between an hour promised and an hour hedged.
+    const s = seat({ reserve: 0.57 })
+    const g = budgetGate(
+      { seats: [s], pools: [{ id: 'p', seats: ['adam'] }] },
+      { name: 'triage', seat: 'pool:p' },
+      [
+        {
+          seat: s,
+          usage: {
+            session: { percentUsed: 100, resetsAt: 'Sep 25 at 8pm (America/Los_Angeles)' },
+            week: { percentUsed: 43, resetsAt: 'Sep 25 at 4pm (America/Los_Angeles)' },
+            perModel: [],
+          },
+        },
+      ],
+      [],
+    )
+    expect(g.resetAt).toBe('Sep 25 at 4pm (America/Los_Angeles)')
+    expect(g.resetApproximate).toBe(true)
+  })
+
+  /** Both sides of the pairing at once: the gate spends a seat exactly when its row shows
+   *  something to spend. Passing it means the two agree; which of them moved does not matter. */
+  const agrees = (reserve: number, used: number): void => {
+    const status = seatStatus(seat({ reserve }), usage(used, 0), 'session')
+    const chosen = chooseSeat(pool, readings(reserve, used), [], role).seat !== undefined
+    expect(chosen, `${reserve} / ${used}%`).toBe(percent(status.headroomPercent) !== '0%')
+  }
+
+  it('agrees with its row across every reserve a config can hold', () => {
+    for (let r = 0; r < 100; r++) {
+      for (let u = 0; u <= 100; u++) agrees(r / 100, u)
+    }
+  })
+
+  it('agrees with its row on a reading finer than the column', () => {
+    // `parseUsage` takes a fractional percentage, so headroom reaches the band between the
+    // noise and what a column can print. A threshold finer than the column parts from the row
+    // only here, and the row is what the gate has to answer to.
+    agrees(0, 99.99999)
+    agrees(0.5, 49.99999)
+  })
+
+  it('agrees with its row on either side of the reserve, down to what a row can print', () => {
+    // A tenth of a thousandth of a point still prints, so it is still headroom, and a threshold
+    // coarser than the column trades one disagreement for its mirror. Walking the boundary at
+    // three-decimal reserves is also what reaches the 179 pairs whose headroom is noise rather
+    // than nothing — two of them, and only two, sit at a whole percent used.
+    for (let r = 0; r < 1000; r++) {
+      const reserve = r / 1000
+      const boundary = 100 - reserve * 100
+      for (const off of [-0.1, -0.01, -0.001, -0.0001, 0, 0.0001, 0.001, 0.01, 0.1]) {
+        const used = Number((boundary + off).toFixed(4))
+        if (used < 0 || used > 100) continue
+        agrees(reserve, used)
+      }
+    }
   })
 })
 

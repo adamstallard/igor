@@ -387,6 +387,20 @@ export function seatStatus(seat: Seat, usage: Usage, window: Window): SeatStatus
   }
 }
 
+/**
+ * Whether the gate may spend this seat, asked at the precision the report prints.
+ *
+ * `100 - reserve * 100 - used` subtracts three binaries, and at a 0.57 reserve and 43% used it
+ * lands on 7.1e-15 rather than on nothing. A bare `> 0` spends a seat sitting exactly on its
+ * reserve while its row reads `0%` — the report and the gate saying opposite things about the
+ * same seat, with nothing on the row to show it. Rounding here and printing there round the
+ * same, so a sliver too small to print is refused as the nothing it prints as.
+ *
+ * Not in `seatStatus`: the field has exactly two numeric readers and they are both this
+ * question, so rounding it at the source would round it for a reader that never asked.
+ */
+export const hasHeadroom = (s: SeatStatus): boolean => Number(s.headroomPercent.toFixed(PERCENT_DP)) > 0
+
 export function spendByRole(
   records: readonly SpendRecord[],
   seat: string,
@@ -646,7 +660,7 @@ export function chooseSeat(
 
     const blocked = (['session', 'week'] as Window[])
       .map((w) => seatStatus(reading.seat, usage, w))
-      .find((s) => s.headroomPercent <= 0)
+      .find((s) => !hasHeadroom(s))
     if (blocked) {
       considered.push({
         seat: id,
@@ -875,7 +889,7 @@ export function budgetGate(
       const usage = reading?.usage
       if (reading === undefined || usage === undefined) return []
       const shut = (['week', 'session'] as Window[]).filter(
-        (w) => seatStatus(reading.seat, usage, w).headroomPercent <= 0,
+        (w) => !hasHeadroom(seatStatus(reading.seat, usage, w)),
       )
       if (shut.length === 0) return []
       const resets = shut.map((w) => limitFor(usage, w).resetsAt)
@@ -959,6 +973,9 @@ export interface WindowReport {
 
 const money = (n: number): string => `$${n.toFixed(2)}`
 
+/** Where every printed percentage is rounded, and where `hasHeadroom` asks its question. */
+const PERCENT_DP = 4
+
 /**
  * A percentage, without the noise a binary multiply leaves behind.
  *
@@ -966,9 +983,10 @@ const money = (n: number): string => `$${n.toFixed(2)}`
  * `28.999999999999996`; a subtraction from it carries the noise on into headroom. In a report
  * whose whole job is to be believed, that reads as an arithmetic bug rather than a rounding
  * one. Rounded here, where the figure is printed, and never in `seatStatus`, whose
- * `headroomPercent` the gate compares against zero.
+ * `headroomPercent` is the raw arithmetic — `hasHeadroom` rounds the same way, so the gate and
+ * the row cannot disagree about a seat.
  */
-export const percent = (n: number): string => `${Number(n.toFixed(4))}%`
+export const percent = (n: number): string => `${Number(n.toFixed(PERCENT_DP))}%`
 
 /**
  * An observation in the two terms §5.1 asks for: what it said, and when it was taken.
