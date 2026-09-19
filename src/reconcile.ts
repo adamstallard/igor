@@ -16,11 +16,39 @@ import {
   fileAtRef,
   landedFiles,
   listPullRequests,
+  pullRequest,
   proposedFiles,
   proposingCommitFiles,
   repoFromCheckout,
   type PrState,
 } from './github.js'
+import { readState, writeState } from './state.js'
+
+/** Where the closed-pull-request floor lives on the destination's state branch. */
+export const STATE_PATH = 'reconcile.json'
+
+/**
+ * How many unfinished pull requests are carried. Each costs a handful of requests per run, so
+ * the cap is what keeps the bound a bound; a destination with more than this many standing
+ * conditions has something wrong with it that re-reading them will not fix.
+ */
+const MAX_PENDING = 100
+
+interface ReconcileState {
+  /**
+   * Every closed pull request whose activity is at or before this instant has been examined.
+   * Losing it costs one full re-examination and nothing else, which is the state branch's
+   * standing bargain.
+   */
+  closedSeen: string
+  /**
+   * Pull requests the last run left something to do on, carried by number so that the floor can
+   * keep moving without abandoning them. A floor held behind them instead would re-read
+   * everything newer on every run forever: one entry retired after it was promoted, or one file
+   * with frontmatter nobody fixes, and the bound is gone.
+   */
+  pending?: number[]
+}
 
 export interface Promoted {
   id: string
@@ -64,6 +92,12 @@ export interface Reconciliation {
   /** Entries a merged pull request added that are not in the local checkout yet. */
   missingLocally: string[]
   unreadable: Unreadable[]
+  /**
+   * The floor the closed half of the sweep stopped at, absent where it read the whole history.
+   * Reported rather than inferred: what was not looked at is the one thing a reader of this
+   * cannot work out from the rest of it.
+   */
+  scannedSince?: string
 }
 
 function daysBetween(iso: string, now: Date): number {
@@ -82,9 +116,9 @@ function idsFrom(paths: readonly string[]): string[] {
 /**
  * Entry text that a person wrote and nothing validated. Unparseable frontmatter is ordinary —
  * an unquoted colon in a claim is enough — and it must not be fatal: reconciliation sweeps
- * every pull request the destination has, so one bad candidate in one old proposal would
- * otherwise abort every run forever, including the merge-triggered one, and never get past
- * the pull request that wedged it.
+ * every pull request it has not already settled, and a throw leaves the watermark unwritten —
+ * so one bad candidate in one old proposal would otherwise abort every run forever, including
+ * the merge-triggered one, and never get past the pull request that wedged it.
  *
  * Says why rather than only that it failed, because the two callers report it to a person who
  * has to go and fix the file.
@@ -120,6 +154,28 @@ async function isProposal(repo: string, number: number): Promise<boolean> {
 }
 
 /**
+ * How far the floor may move: to the newest closed pull request the scan actually read.
+ *
+ * Nothing is held back here, because a floor is a prefix and holding it behind one pull request
+ * abandons nothing while re-reading everything newer than it, run after run. Unfinished work is
+ * carried by number in `pending` instead, which costs a few requests each and clears itself.
+ *
+ * A scan that cannot be vouched for moves nothing. Everything below the floor is abandoned by
+ * definition, so a scan that may have hidden a row behind a page boundary must not set one.
+ */
+function nextMark(
+  examined: readonly PrState[],
+  previous: string | undefined,
+  complete: boolean,
+): string | undefined {
+  if (!complete || examined.length === 0) return undefined
+  const instant = (pr: PrState): number => Date.parse(pr.updatedAtInstant)
+  const newest = examined.reduce((a, b) => (instant(a) >= instant(b) ? a : b))
+  if (previous !== undefined && instant(newest) <= Date.parse(previous)) return undefined
+  return newest.updatedAtInstant
+}
+
+/**
  * Runs at the start of every invocation rather than on a timer: there is no daemon, so a
  * merged pull request stays unpromoted until someone next uses the tool.
  */
@@ -130,7 +186,24 @@ export async function reconcile(
   const now = options.now ?? new Date()
   const staleAfterDays = options.staleAfterDays ?? 7
   const repo = await repoFromCheckout(config.destination)
-  const prs = await listPullRequests(repo)
+  const stored = await readState<ReconcileState>(repo, STATE_PATH)
+  const since = typeof stored?.closedSeen === 'string' ? stored.closedSeen : undefined
+  const scan = await listPullRequests(repo, since)
+  // Carried from the last run because the floor has already passed them. Each costs one request
+  // to read back, and a read that fails keeps the number rather than failing the run — see the
+  // write below for why it is kept rather than dropped.
+  const carried = Array.isArray(stored?.pending) ? stored.pending : []
+  const scanned = new Set(scan.prs.map((p) => p.number))
+  const extra: PrState[] = []
+  /** Carried numbers this run could not read back, which is not the same as no longer there. */
+  const unread: number[] = []
+  for (const number of carried) {
+    if (typeof number !== 'number' || scanned.has(number)) continue
+    const pr = await pullRequest(repo, number)
+    if (pr === undefined) unread.push(number)
+    else extra.push(pr)
+  }
+  const prs = [...scan.prs, ...extra]
 
   const result: Reconciliation = {
     promoted: [],
@@ -139,9 +212,14 @@ export async function reconcile(
     deferred: [],
     missingLocally: [],
     unreadable: [],
+    ...(since === undefined ? {} : { scannedSince: since }),
   }
   const present = takenIds(config.destination)
   const rejected = rejectedIds(config.destination)
+  /** Closed pull requests the scan itself covered, which is what the floor may move over. */
+  const examined = scan.prs.filter((p) => p.state !== 'open')
+  /** Pull requests this run left something to do on, whichever half they came from. */
+  const unfinished: number[] = []
 
   for (const pr of prs) {
     if (pr.state === 'open') {
@@ -172,6 +250,19 @@ export async function reconcile(
     const by = pr.mergedBy ?? pr.assignees[0] ?? 'unknown'
     const at = pr.mergedAt ?? now.toISOString().slice(0, 10)
     const landed = new Set(idsFrom(proposal.landed))
+    /**
+     * What this pull request had produced before its entries were walked. Anything it adds is
+     * something a later run still has to see: a promotion or a rejection because the write into
+     * the checkout is committed by somebody else and may never be, and a missing or unreadable
+     * entry because the promotion it is owed is still owed once the checkout or the file is
+     * fixed.
+     */
+    const produced = (): number =>
+      result.promoted.length +
+      result.declined.length +
+      result.missingLocally.length +
+      result.unreadable.length
+    const before = produced()
 
     for (const id of proposedIds) {
       const path = `${ENTRIES_DIR}/${id}.md`
@@ -227,6 +318,28 @@ export async function reconcile(
         ...(unexpected ? { mergerWasNotAssigned: true } : {}),
       })
     }
+    if (produced() > before) unfinished.push(pr.number)
+  }
+
+  const closedSeen = nextMark(examined, since, scan.complete) ?? since
+  if (closedSeen !== undefined) {
+    // A read that failed stays carried. `pullRequest` cannot tell a pull request that is gone
+    // from one the API would not hand over just now, and dropping it on a rate limit would
+    // abandon the promotion it is owed with nothing above the floor to find it again.
+    //
+    // Newest first, so a cap that bites drops the oldest standing condition rather than the
+    // pull request somebody merged a minute ago.
+    const pending = [...new Set([...unfinished, ...unread])]
+      .sort((a, b) => b - a)
+      .slice(0, MAX_PENDING)
+    // Swallowed: a destination that refuses the write reconciles unbounded, which is slow
+    // rather than wrong, and nothing in this run reads it back.
+    await writeState(
+      repo,
+      STATE_PATH,
+      { closedSeen, ...(pending.length === 0 ? {} : { pending }) } satisfies ReconcileState,
+      'Update reconciliation watermark',
+    ).catch(() => undefined)
   }
   return result
 }

@@ -23,8 +23,8 @@
       happens
 - [x] 3.3 An observation with no spend in its instance yields nothing, rather than a number
 - [x] 3.4 An observation implying a lower capacity than the current estimate lowers it
-- [x] 3.5 A `capacity` declared on a seat, per window, is the estimate until an observation of
-      that window exists, and is then superseded outright rather than combined
+- [x] 3.5 A `capacity_estimate` declared on a seat, per window, is the figure until an
+      observation of that window exists, and is then superseded outright rather than combined
 - [x] 3.6 Tests: the division, instance bounding, the monotone correction after a limit error,
       and that a co-consumer makes the estimate low rather than high
 
@@ -42,8 +42,12 @@
 
 - [x] 5.1 Budget reporting shows Igor spend, reserve, headroom, reset, and the observation each
       headroom figure derives from with its time
-- [x] 5.2 Never observed, unreadable credential, and spent are three distinct reported states
-- [x] 5.3 Test that an operator can tell the three apart from the report alone
+- [x] 5.2 Each window of a seat is reported in one of five distinct states — bounded, at its
+      bound, spent, never observed, and observed but still uncalibrated — and a credential
+      nothing could read gets a line of its own in place of them, no record rescuing it.
+      Merging the last two window states is what made a seat with three observations
+      behind it read as broken
+- [x] 5.3 Test that an operator can tell all of them apart from the report alone
 
 ## 6. Reconciling the sibling change
 

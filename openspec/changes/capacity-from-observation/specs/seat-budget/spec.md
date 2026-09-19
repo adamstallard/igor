@@ -11,10 +11,10 @@ team has spare — without a separate overflow concept. A seat nobody works on d
 reserve; a person's seat declares one, and is listed after the dedicated seats so it is drawn
 on last.
 
-A seat declaring a reserve is drawn on only once its capacity has been observed, because a
-fraction of an unknown quantity bounds nothing. The overflow position in a pool is therefore
-conditional on that seat having been calibrated, and a pool whose only reserved seat has never
-been observed has nothing to overflow into.
+A seat declaring a reserve is drawn on only once it has a capacity figure — observed, or
+declared as a `capacity_estimate` — because a fraction of an unknown quantity bounds nothing.
+The overflow position in a pool is therefore conditional on that seat having a figure, and a
+pool whose only reserved seat has neither has nothing to overflow into.
 
 #### Scenario: Dedicated capacity is consumed before a person's
 
@@ -31,7 +31,7 @@ been observed has nothing to overflow into.
 #### Scenario: An uncalibrated reserved seat is not the pool's fallback
 
 - **WHEN** the dedicated seats in a pool have no headroom and the reserved seat behind them has
-  no observed capacity
+  no capacity figure, neither observed nor declared
 - **THEN** the pool is treated as having no headroom
 - **AND** the reserved seat is not spent from against a guessed capacity
 
@@ -94,17 +94,18 @@ Remaining capacity SHALL be established from the seat itself — read directly w
 credential yields a reading, and otherwise derived from recorded observations of that seat and
 recorded spend against it. The system MUST NOT require a person to submit a usage figure.
 
-A capacity MAY be declared in configuration as a starting estimate, per seat **and per window**,
-and SHALL be superseded by any observation of that seat and window rather than averaged with one.
+A capacity MAY be declared in configuration as `capacity_estimate`, a starting figure per seat
+**and per window**, and SHALL be superseded by any observation of that seat and window rather
+than averaged with one.
 One figure cannot serve both: every consumer is per window — the bound is `(1 − reserve) ×
 capacity` within a window, and reporting is per seat and per window. Deriving one window's
 capacity from the other's by their cadence ratio would assume the two limits are proportional,
 which is the thing two independent limits exist to deny: were a session exactly a 168th of a
 week, the weekly limit would forbid nothing the session limit already forbids. A seat MAY
-declare one window and not the other; the undeclared one is simply unobserved until it is. It
-exists so a seat with a reserve can be drawn on before it has been observed, which is otherwise
-impossible: a reserve needs a capacity, a capacity needs spend inside an observed window, and a
-seat carrying a reserve is not spent from. A declared figure is reported as declared until an
+declare one window and not the other; the undeclared one is simply unobserved until it is. A
+declared figure needs neither an observation nor recorded spend, which is what it is for: a
+reserved seat with no figure at all is passed over rather than spent from, so without one
+nothing ever accumulates for a derivation to divide. It is reported as declared until an
 observation replaces it, so nobody mistakes an assumption for a measurement.
 
 What must never be configured is a *usage figure*. Capacity is a property of the plan and

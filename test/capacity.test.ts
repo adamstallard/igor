@@ -473,9 +473,9 @@ describe('a declared capacity', () => {
 
   it('is superseded only for the window observed, leaving the other window as declared', () => {
     const { seats } = parseOrgBudget({
-      seats: [{ id: 'adam', reserve: 0.5, capacity: { session: 12, week: 250 } }],
+      seats: [{ id: 'adam', reserve: 0.5, capacity_estimate: { session: 12, week: 250 } }],
     })
-    const declared = seats[0]?.capacity
+    const declared = seats[0]?.capacityEstimate
     const weekly = observed({ window: 'week' })
     // Six days before the reset: inside the weekly instance, nowhere near a five-hour one.
     const inWeek = [spend('2026-09-09T21:30:00.000Z', 18)]
@@ -566,7 +566,7 @@ describe('the bounds the gate is handed', () => {
     // boundary to step from. A length back from now always covers the elapsed part of the real
     // instance, which over-counts rather than under-counts.
     const records = [spent('2026-09-13T10:00:00.000Z', 4), spent('2026-09-13T07:00:00.000Z', 99)]
-    const bound = boundsForSeats([], records, [{ id: 'adam', capacity: { session: 30 } }], NOW).get('adam')?.session
+    const bound = boundsForSeats([], records, [{ id: 'adam', capacityEstimate: { session: 30 } }], NOW).get('adam')?.session
     // No `resetsAt`: a declared figure's window rolls back from now and names no return.
     expect(bound).toEqual({ capacity: { capacityUsd: 30, basis: 'declared', spentUsd: 4 } })
   })

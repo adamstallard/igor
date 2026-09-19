@@ -43,13 +43,12 @@ budget:
     # A person's own subscription, lent to the fleet. `reserve` is their floor: at 0.5 an Igor
     # stops at half the window and leaves the rest to them. See docs/seats.md.
     #
-    # `capacity` is an optional starting estimate, per window, in dollars of list-price spend
-    # that window holds. A reserve is a fraction of capacity, so a reserved seat with no
-    # capacity figure at all is passed over rather than guessed at; a declared one gets it
-    # started. The first observation of that seat and window replaces it outright, and until
-    # then it is reported as declared. Declare only a window you know the size of — a
-    # plausible-looking number authorises real spend, and waiting for an observation is the
-    # safer course.
+    # `capacity_estimate` is an optional starting figure, per window, in dollars of list-price
+    # spend that window holds. A reserve is a fraction of capacity, so a reserved seat with no
+    # figure at all is passed over rather than guessed at; a declared one gets it started. The
+    # first observation of that seat and window replaces it outright, and until then it is
+    # reported as declared. Declare only a window you know the size of — a plausible-looking
+    # number authorises real spend, and waiting for an observation is the safer course.
     - id: adam
       owner: adamstallard
       reserve: 0.5
@@ -59,7 +58,7 @@ budget:
       # Exactly one per seat. All three name where the token is rather than holding it, which
       # is what keeps this file committable.
       token_command: pass show igor/seat-adam
-      # capacity:
+      # capacity_estimate:
       #   session: <dollars>
       #   week: <dollars>
 

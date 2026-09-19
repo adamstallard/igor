@@ -28,7 +28,7 @@ import { laneVerdict, universalSkip } from './predicate.js'
 import { noteHandoff, shouldDefer } from './deferred.js'
 import { CloneProvider } from './worktree.js'
 import { TriageError } from './triage.js'
-import { BudgetError, budgetGate, loadSpend, readAllSeats, renderBudget } from './budget.js'
+import { BudgetError, budgetGate, loadSpend, percent, readAllSeats, renderBudget } from './budget.js'
 import { boundsForSeats, loadObservations, observeSeat, seatToObserve } from './capacity.js'
 import { wire } from './wiring.js'
 import { readLog } from './state.js'
@@ -582,7 +582,7 @@ program
     for (const o of observations) {
       const scope = o.model === undefined ? o.window : `${o.window} (${o.model})`
       const resets = o.resetsAt ?? o.resetsPhrase ?? 'not stated'
-      process.stdout.write(`${seat.id} ${scope}: ${o.percentUsed}% used, resets ${resets}\n`)
+      process.stdout.write(`${seat.id} ${scope}: ${percent(o.percentUsed)} used, resets ${resets}\n`)
     }
   })
 

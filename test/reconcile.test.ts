@@ -21,7 +21,8 @@ const fetched: string[] = []
 
 vi.mock('../src/github.js', () => ({
   repoFromCheckout: async () => 'org/lore',
-  listPullRequests: async () => prs,
+  listPullRequests: async () => ({ prs, complete: true }),
+  pullRequest: async (_repo: string, number: number) => prs.find((p) => p.number === number),
   proposedFiles: async (_repo: string, number: number) => {
     fetched.push(`proposed:${number}`)
     const proposed = proposals.get(number)?.files ?? []
@@ -41,6 +42,13 @@ vi.mock('../src/github.js', () => ({
     return landed.get(number) ?? []
   },
   fileAtRef: async (_repo: string, path: string, ref: string) => atCommit.get(`${ref}:${path}`),
+}))
+
+// The watermark is the bound, not the behaviour under test here, and unmocked it would reach
+// for `gh`. `reconcile-over-gh.test.ts` is where what it does to the fetch is proved.
+vi.mock('../src/state.js', () => ({
+  readState: async () => undefined,
+  writeState: async () => true,
 }))
 
 const { reconcile } = await import('../src/reconcile.js')
@@ -75,6 +83,7 @@ function proposeOne(id: string, number = 7): void {
     mergedBy: 'adam',
     mergedAt: '2026-04-01',
     updatedAt: '2026-04-01',
+    updatedAtInstant: '2026-04-01T10:00:00Z',
     assignees: ['adam'],
     url: `https://github.com/org/lore/pull/${number}`,
   })
@@ -88,6 +97,7 @@ function openPr(number: number, daysAgo: number): void {
     state: 'open',
     merged: false,
     updatedAt: at,
+    updatedAtInstant: `${at}T10:00:00Z`,
     assignees: ['sarah'],
     url: `https://github.com/org/lore/pull/${number}`,
   })
@@ -225,6 +235,7 @@ describe('a proposal is recognized by the entry files it adds', () => {
       mergedBy: 'adam',
       mergedAt: '2026-04-01',
       updatedAt: '2026-04-01',
+      updatedAtInstant: '2026-04-01T10:00:00Z',
       assignees: ['adam'],
       url: 'https://github.com/org/lore/pull/7',
     })
@@ -245,6 +256,7 @@ describe('a proposal is recognized by the entry files it adds', () => {
       state: 'closed',
       merged: false,
       updatedAt: '2026-04-01',
+      updatedAtInstant: '2026-04-01T10:00:00Z',
       assignees: [],
       url: 'https://github.com/org/lore/pull/7',
     })
@@ -268,6 +280,7 @@ describe('a proposal is recognized by the entry files it adds', () => {
       mergedBy: 'adam',
       mergedAt: '2026-04-01',
       updatedAt: '2026-04-01',
+      updatedAtInstant: '2026-04-01T10:00:00Z',
       assignees: ['adam'],
       url: 'https://github.com/org/lore/pull/7',
     })
