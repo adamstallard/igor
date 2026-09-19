@@ -168,6 +168,25 @@ describe('an id the checkout does not know is taken', () => {
   })
 })
 
+describe('an id rejected upstream', () => {
+  it('is not reported as a checkout that needs pulling', async () => {
+    // `reconcile` writes a rejection into the checkout for somebody to commit, and un-rejecting
+    // is deleting that file in a pull request — so a checkout can be *ahead* here, and "pull the
+    // destination" would undo the deletion being landed.
+    upstream[REJECTED_DIR] = ['use-query-hook.md']
+
+    let message = '(it did not refuse)'
+    try {
+      await propose(config(store()), [entry('use-query-hook')], serialize)
+    } catch (e) {
+      message = (e as Error).message
+    }
+
+    expect(message).toMatch(/rejected: use-query-hook/)
+    expect(message).not.toMatch(/pull/)
+  })
+})
+
 describe('the upstream read', () => {
   it('costs one request for the commit and one per directory present', async () => {
     upstream[ENTRIES_DIR] = ['use-query-hook.md']
@@ -214,11 +233,12 @@ describe('the upstream read', () => {
   })
 
   it('refuses a listing it cannot read in full rather than gating on half of it', async () => {
-    // A short read reports an id free that is there, which is the overwrite this prevents.
+    // The candidate is absent from the listing, so without the refusal the proposal would
+    // succeed on a short read — which is the overwrite this prevents, not a collision.
     upstream[ENTRIES_DIR] = ['use-query-hook.md']
     truncated.add(ENTRIES_DIR)
 
-    await expect(propose(config(store()), [entry('use-query-hook')], serialize)).rejects.toBeInstanceOf(
+    await expect(propose(config(store()), [entry('lint-first')], serialize)).rejects.toBeInstanceOf(
       GitHubError,
     )
     expect(posts).toEqual([])

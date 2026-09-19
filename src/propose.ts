@@ -226,10 +226,15 @@ export async function propose(
   const eligible = eligibleToPropose(entries, upstream.taken, upstream.rejected)
   const skipped = { inStore: eligible.inStore, rejected: eligible.rejected }
   if (eligible.entries.length === 0) {
+    // Stated as what is true on the default branch, with no remedy attached: a checkout can be
+    // behind on `entries/` and ahead on `rejected/` at the same time, and "pull" is wrong for
+    // the second — `reconcile` writes rejections locally, and un-rejecting deletes one.
+    const why = [
+      ...(skipped.inStore.length > 0 ? [`already in the store: ${skipped.inStore.join(', ')}`] : []),
+      ...(skipped.rejected.length > 0 ? [`rejected: ${skipped.rejected.join(', ')}`] : []),
+    ].join('; ')
     throw new ProposeError(
-      `every candidate is already in the store upstream or was rejected there — ` +
-        `${[...skipped.inStore, ...skipped.rejected].join(', ')} — and this checkout does not ` +
-        `have it yet; pull the destination and propose again`,
+      `every candidate is taken on ${base}, though this checkout does not show it — ${why}`,
     )
   }
 
