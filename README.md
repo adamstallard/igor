@@ -168,44 +168,48 @@ repository.
    ```yaml
    budget:
      seats:
-       - {id: me, owner: you@example.com, reserve: 0.5, token_env: IGOR_SEAT_ME}
+       - id: me
+         owner: yourhandle
+         reserve: 0.5
+         token_command: security find-generic-password -a "$USER" -s igor-seat-me -w
    ```
 
    Then `seat: me` on the role. Once any seat is declared every role must name one, and a role
    that does not fails at load rather than defaulting to a seat nobody chose for it. `reserve:
    0.5` keeps half your window for you. [Budgets](#budgets) covers pools and shares.
 
-   `token_env` is the *name* of a variable, which is why the config stays safe to commit. A
-   seat may instead name `token_file` (a path) or `token_command` (something to run and take
-   stdout) — never more than one. Igor reads whichever it names at the moment it runs and
-   keeps nothing, so being signed in to `claude` yourself is not enough on its own: with
-   `token_env`, the variable only has to exist for that one process:
+   A seat names *where* its token is, never the token itself, which is why the config stays
+   safe to commit. `token_command` runs something and takes its stdout, `token_env` names a
+   variable, `token_file` a path — never more than one. Igor reads whichever it names at the
+   moment it runs and keeps nothing, so being signed in to `claude` yourself is not enough on
+   its own.
 
    ```sh
    claude setup-token                                            # approve in the browser
    security add-generic-password -a "$USER" -s igor-seat-me -w   # prompts twice, echoes neither
    ```
 
-   ```sh
-   # in ~/.zshrc, in place of exporting anything
-   igor() {
-     IGOR_SEAT_ME="$(security find-generic-password -a "$USER" -s igor-seat-me -w)" \
-       command igor "$@"
-   }
-   ```
+   That is the whole setup: the config above reads that entry when it needs it. `secret-tool`,
+   `pass` and `op read` substitute for `security` where there is no macOS keychain.
 
-   `secret-tool`, `pass` and `op read` substitute for `security` where there is no macOS
-   keychain. Exporting the token from a profile instead is the obvious thing and the wrong one:
-   it puts a year-long credential in the environment of every process you start, a package
-   manager's install scripts included. [Keeping the token out of your
+   `token_env` is the alternative, and on a laptop it costs a shell function to put the value
+   somewhere igor can see — which is why `token_command` is the one to reach for here. Under a
+   service `token_env` earns its place, because the unit supplies the variable. Exporting the
+   token from a profile is the obvious thing and the wrong one either way: it puts a year-long
+   credential in the environment of every process you start, a package manager's install
+   scripts included. [Keeping the token out of your
    shells](docs/deployment.md#keeping-the-token-out-of-your-shells) has that comparison and the
    fallback for a machine with no secret store at all.
 
-   A shell function is not inherited by a service, so leaving `igor serve` running under
-   launchd or systemd this way still puts the token in that unit's environment for the unit's
-   whole lifetime. Under a service this is an `EnvironmentFile=` instead, or — better, where
-   systemd is available — `token_file` naming what `LoadCredential=` decrypts, which never
-   touches an environment at all.
+   **Do not set `CLAUDE_CODE_OAUTH_TOKEN` yourself.** That is the variable `claude` reads, so
+   it authenticates everything igor spawns rather than the one seat you meant — including
+   `igor observe`, which has to use your own login precisely because a seat token cannot report
+   a window. Name the token in the config and let igor decide what sees it.
+
+   A token placed in a service's environment stays there for the unit's whole lifetime, so
+   `igor serve` under launchd or systemd wants more than a laptop does: an `EnvironmentFile=`
+   supplying `token_env`, or — better, where systemd is available — `token_file` naming what
+   `LoadCredential=` decrypts, which never touches an environment at all.
    [`deployment.md`](docs/deployment.md#adding-a-seat-somebody-has-given-you) has that, the
    naming convention for several seats, and why not `~/.zshrc` directly. Where the
    subscription is somebody else's, [`docs/seats.md`](docs/seats.md) is the page to send them.
