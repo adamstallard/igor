@@ -51,9 +51,14 @@ budget:
     # plausible-looking number authorises real spend, and waiting for an observation is the
     # safer course.
     - id: adam
-      owner: adam@example.com
+      owner: adamstallard
       reserve: 0.5
-      token_env: IGOR_SEAT_ADAM
+      # A different source from fleet-1's, because the choice is per seat and the right one
+      # depends on where the token already lives: `token_env` names a variable, `token_file` a
+      # path, `token_command` something to run and take stdout — `pass`, `op read`, a keychain.
+      # Exactly one per seat. All three name where the token is rather than holding it, which
+      # is what keeps this file committable.
+      token_command: pass show igor/seat-adam
       # capacity:
       #   session: <dollars>
       #   week: <dollars>
