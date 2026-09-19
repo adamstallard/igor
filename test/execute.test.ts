@@ -2174,6 +2174,117 @@ describe('a refusal leaves the envelope behind, not only the verdict', () => {
     expect((captures()[0] as Record<string, unknown>)['envelope']).toEqual(REFUSED)
   })
 
+  it('captures a refusal the worker met after it had already edited files', async () => {
+    // The diff is why this is not a budget stop: work that reached the tree is published
+    // rather than thrown away over a limit, so the run is `produced` — and the envelope used
+    // to leave with the process. A seat running out is likeliest once a worker is well into an
+    // item, which makes this the path the first real refusal most probably arrives on.
+    const { provider } = fakeProvider(edited)
+    const { host, seen } = fakeCodeHost()
+    const { t } = fakeTracker()
+    const item = candidate()
+    const result = await execute(provider, t, host, item, role(), { worker: async () => REFUSED })
+    await recordExecution('acme/lore', item, role(), result, 'fleet-1')
+
+    // Still published, and still one pull request: capturing evidence decides nothing.
+    expect(result.outcome).toBe('produced')
+    expect(seen).toHaveLength(1)
+    expect(captures()).toHaveLength(1)
+    const capture = captures()[0] as Record<string, unknown>
+    expect(capture['envelope']).toEqual(REFUSED)
+    // Nothing else in the file separates this from a run the refusal stopped, and a reader
+    // fitting a pattern to `refusals/` has to know which of the two they are holding.
+    expect(capture).toMatchObject({
+      outcome: 'produced',
+      matched: ['api_error_status', 'terminal_reason', 'rate_limit_info', 'result'],
+    })
+  })
+
+  it('writes nothing where a published run only said the words itself', async () => {
+    // The distinction the widening rests on. A run that stopped for a limit is worth a file on
+    // its prose alone, because the verdict is already on the record; one that finished and
+    // published is a worker writing about an item, and a directory of those buries the refusal
+    // it exists for.
+    const { provider } = fakeProvider(edited)
+    const { host } = fakeCodeHost()
+    const { t } = fakeTracker()
+    const item = candidate()
+    const result = await execute(provider, t, host, item, role(), {
+      worker: async () => ({ result: 'Added handling for the usage limit header.', total_cost_usd: 0.02 }),
+    })
+    await recordExecution('acme/lore', item, role(), result, 'fleet-1')
+
+    expect(result.outcome).toBe('produced')
+    expect(captures()).toEqual([])
+  })
+
+  it('keeps the envelope of a crash that named a limit in a field of the provider\'s own', async () => {
+    // Classified `failed`, deliberately: the provider reported the run successful, so
+    // `usageLimit` declines it and the item is not parked behind a capacity that may be there.
+    // The envelope is kept regardless — a 429 the classification dares not act on is still
+    // evidence of the shape, and of a pattern that may be reading it wrong.
+    const result = await refused({ is_error: false, api_error_status: 429, result: 'the worker fell over' })
+
+    expect(result.outcome).toBe('failed')
+    expect(captures()).toHaveLength(1)
+    expect(captures()[0]).toMatchObject({ outcome: 'failed', matched: ['api_error_status'] })
+  })
+
+  it('writes nothing for a run the provider itself called successful', async () => {
+    // A limit a run hit, retried past and finished around is history, not the reason it
+    // stopped — `usageLimit` says so and drops the same envelope. Captured here it would be
+    // the burial this directory exists to avoid, and the commonest envelope of the lot.
+    const { provider } = fakeProvider(edited)
+    const { host } = fakeCodeHost()
+    const { t } = fakeTracker()
+    const item = candidate()
+    const result = await execute(provider, t, host, item, role(), {
+      worker: async () => ({
+        is_error: false,
+        result: 'Fixed it.',
+        total_cost_usd: 0.02,
+        api_error_status: 429,
+        rate_limit_info: { status: 'allowed' },
+      }),
+    })
+    await recordExecution('acme/lore', item, role(), result, 'fleet-1')
+
+    expect(result.outcome).toBe('produced')
+    expect(captures()).toEqual([])
+  })
+
+  it('names no window on a capture from a run that was never stopped', async () => {
+    // The window says which cap a refusal exhausted, and it is read off a reset time only a
+    // budget stop has. Stamped on a run that published, it is a conclusion drawn from nothing
+    // — on the one file written to be read by hand and fitted with a pattern.
+    const { provider } = fakeProvider(edited)
+    const { host } = fakeCodeHost()
+    const { t } = fakeTracker()
+    const item = candidate()
+    const result = await execute(provider, t, host, item, role(), { worker: async () => REFUSED })
+    await recordExecution('acme/lore', item, role(), result, 'fleet-1')
+
+    expect(result.outcome).toBe('produced')
+    expect(captures()[0]).not.toHaveProperty('window')
+  })
+
+  it('captures an envelope that never said whether it errored, as the classifier reads one', async () => {
+    // `usageLimit` parks the item on this envelope — only a stated success is history to it —
+    // so a run that met the same one after editing files owes the same evidence. Deciding it
+    // is a refusal and refusing to write it down is the one combination nothing can defend.
+    const { provider } = fakeProvider(edited)
+    const { host } = fakeCodeHost()
+    const { t } = fakeTracker()
+    const item = candidate()
+    const { is_error: _stated, ...unstated } = REFUSED
+    const result = await execute(provider, t, host, item, role(), { worker: async () => unstated })
+    await recordExecution('acme/lore', item, role(), result, 'fleet-1')
+
+    expect(result.outcome).toBe('produced')
+    expect(captures()).toHaveLength(1)
+    expect((captures()[0] as Record<string, unknown>)['envelope']).toEqual(unstated)
+  })
+
   it('stays quiet for the credential rejection, which is understood and would bury this', async () => {
     const result = await refused(CREDENTIALS)
 

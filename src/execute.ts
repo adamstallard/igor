@@ -90,7 +90,9 @@ export interface ExecutionResult {
   /** Only on a budget stop or a failure. */
   terminalReason?: string
   /**
-   * Only on a budget stop: the terminal envelope whole, for `recordExecution` to write out.
+   * The terminal envelope whole, for `recordExecution` to write out: on a budget stop, and on
+   * any run whose envelope named a limit in one of the provider's own fields, whatever the run
+   * then did with it.
    *
    * `apiErrorStatus` and `terminalReason` beside it are the two fields already known to
    * matter. This is everything else — a refusal nobody has seen yet cannot be summarised into
@@ -377,6 +379,9 @@ function resetFrom(envelope: WorkerOutput, info: Record<string, unknown> | undef
   return stamped?.[1] === undefined ? undefined : asIso(stamped[1])
 }
 
+/** The one signal that is the worker's own prose about an item, not the provider's vocabulary. */
+const PROSE_SIGNAL = 'result'
+
 /**
  * Which of the guesses an envelope tripped, named. The list of patterns lives here and nowhere
  * else, so `usageLimit` and the refusal capture cannot drift apart about what a limit looks like.
@@ -396,8 +401,20 @@ export function limitSignals(envelope: WorkerOutput): string[] {
     // Only where it says the call was refused: every instance yet observed carried
     // `status: "allowed"`, which is the provider reporting that nothing is wrong.
     ...(typeof status === 'string' && /reject|block|exhaust|limit|denied/i.test(status) ? ['rate_limit_info'] : []),
-    ...(LIMIT_TEXT.some((pattern) => pattern.test(envelope.result ?? '')) ? ['result'] : []),
+    ...(LIMIT_TEXT.some((pattern) => pattern.test(envelope.result ?? '')) ? [PROSE_SIGNAL] : []),
   ]
+}
+
+/**
+ * Whether a limit is named in a field the provider fills rather than in prose the worker wrote.
+ *
+ * This is what a capture is worth keeping on, whatever the run went on to do. Prose alone is
+ * not: a crash on an item that discusses rate limits says the same words, and a `refusals/`
+ * directory filled with those buries the first real refusal, which is the whole thing anyone
+ * is waiting for.
+ */
+export function structuralLimit(envelope: WorkerOutput): boolean {
+  return limitSignals(envelope).some((signal) => signal !== PROSE_SIGNAL)
 }
 
 /**
@@ -979,7 +996,7 @@ export function transcriptPath(candidate: Candidate): string {
   return `transcripts/${candidate.tracker}/${candidate.repo}/${candidate.native}.md`
 }
 
-/** Where the envelopes behind budget stops land on the state branch, beside `capacity.ndjson`. */
+/** Where the envelopes behind refusals land on the state branch, beside `capacity.ndjson`. */
 export const REFUSALS_DIR = 'refusals'
 
 /**
@@ -1278,6 +1295,11 @@ export async function execute(
           ...trace(envelope),
           ...evidence(envelope),
           ...cured(),
+          // Classified a failure on purpose — `usageLimit` declined it, and an ambiguous
+          // envelope reads as an ordinary fault. The envelope is kept anyway where a provider
+          // field named a limit: what is unsafe to conclude from is still the shape nobody has
+          // seen, and a run that mentions one and dies is exactly where a pattern is wrong.
+          ...(envelope !== undefined && structuralLimit(envelope) ? { limitEnvelope: envelope } : {}),
           reason: error instanceof Error ? error.message : String(error),
         }
       }
@@ -1289,7 +1311,22 @@ export async function execute(
     const transcript = typeof worker.result === 'string' ? worker.result : ''
     // A refused command and a session log are worth the same to a reader whatever the run went
     // on to do, so they ride with the cost into every outcome below.
-    const kept = { ...spend(worker), ...trace(worker) }
+    const kept = {
+      ...spend(worker),
+      ...trace(worker),
+      // On the same argument, where a provider field named a limit on a run the envelope does
+      // not report as a success: a seat that refuses after the worker has already edited files
+      // publishes as `produced`, and the evidence would leave with the process.
+      //
+      // `is_error` is asked exactly as `usageLimit` asks it, and requiring `=== true` here is
+      // the tempting mistake. An envelope that never says it errored is one `usageLimit` parks
+      // the item over: on an empty tree that same envelope is a budget stop, with a capture and
+      // a capacity observation behind it. Calling it a refusal there and unworthy of recording
+      // here is the one combination nothing can defend. A stated success is the only history —
+      // a limit the run hit, retried past and finished around. The throw path above asks even
+      // less, because a non-zero exit has already said the run did not finish.
+      ...(worker.is_error !== false && structuralLimit(worker) ? { limitEnvelope: worker } : {}),
+    }
     const changed = await tree.changes()
 
     // Read before anything is decided, not merely before publishing: a stop during a run that
@@ -1486,7 +1523,14 @@ export async function recordExecution(
   // anything, and it is also where the reset phrase is believed to be, so a redaction removes
   // the thing being captured. It is the same text the transcript below writes to the same
   // branch — except on the path where the worker threw, which carries no transcript at all.
-  if (result.outcome === 'budget' && result.limitEnvelope !== undefined) {
+  //
+  // Not only a budget stop. A seat can refuse after the worker has edited files, and that run
+  // publishes as `produced` with the envelope in hand — the evidence does not depend on how the
+  // run was classified. Prose alone still counts only where the run stopped for it: there the
+  // verdict is already on the record, while anywhere else it is as likely to be a crash on an
+  // item about rate limits, and those are what would bury the refusal this directory is for.
+  const captured = result.limitEnvelope
+  if (captured !== undefined && (result.outcome === 'budget' || structuralLimit(captured))) {
     await writeState(
       destination,
       refusalPath(at, candidate.id),
@@ -1496,19 +1540,27 @@ export async function recordExecution(
         url: candidate.url,
         role: role.name,
         ...(seat === undefined ? {} : { seat }),
+        // What the run did with it, because not every capture stopped one and the two are read
+        // very differently: a refusal that ends the run, against one met and published past.
+        outcome: result.outcome,
         // What was concluded, beside what it was concluded from. A pattern fitted later has to
         // be checked against the reading this made, and `at` is what `resolveReset` would have
         // been handed — it answers with the first occurrence at or after the moment it is
         // given, so a phrase read without that moment cannot be re-read.
         ...(result.resetsAt === undefined ? {} : { resetsAt: result.resetsAt }),
-        window,
+        // Which cap was exhausted, where something was read to answer that. A capture from a
+        // run nothing stopped has no reset time behind it, and `session` from nothing is
+        // indistinguishable in the file from a real refusal that named no return. A budget
+        // stop always names one: the observation derived from the same refusal carries it,
+        // and the two disagreeing about one refusal makes the capture uncheckable.
+        ...(result.outcome === 'budget' || result.resetsAt !== undefined ? { window } : {}),
         // Which guesses fired, because `result` alone is the one that a crash on an item about
         // rate limits also trips — and the reader has to sort those out of this directory.
-        matched: limitSignals(result.limitEnvelope),
+        matched: limitSignals(captured),
         // Named only where there is one to open. The throw path writes none, and a refusal is
         // exactly where a reader follows the pointer.
         ...(wroteTranscript ? { transcript: path } : {}),
-        envelope: result.limitEnvelope,
+        envelope: captured,
       },
       `Refusal envelope from ${candidate.id}`,
     ).catch(notice)
