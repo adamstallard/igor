@@ -691,6 +691,40 @@ comment itself lifts the item above the watermark, which is what makes it return
 what keeps the Igor quiet until a reply or an edit answers it, and losing it costs one repeated
 handoff.
 
+**Reconciliation keeps one there too, in `reconcile.json`, and it is what makes running on every
+merge affordable.** `reconcile` used to read the destination's whole pull request history each
+invocation. The paging was the visible cost and the smaller one: past the list, every closed pull
+request reaching the loop costs about three more requests to read its files, so a lore store
+sharing a repository with ordinary work spends hundreds of requests per merge. `closedSeen` is
+the floor, and the closed half is read newest-activity-first and stops there. The open half is
+never bounded — the review backlog bounds it already, and hiding an old quiet proposal behind a
+watermark would silence the escalation that half exists for.
+
+**A time window is the obvious floor and it is rejected.** "Everything closed in the last N days"
+needs no state at all, and it is wrong exactly when a destination's workflow has been off for
+longer than N: a merged proposal is promoted on the next invocation, and a window makes that
+conditional on when the last invocation happened. The lesson stops at the open half, where the
+same shape is the staleness threshold rather than a floor, and is right.
+
+**A floor held behind unfinished work is rejected, and it is the subtler trap.** A pull request
+that promoted an entry has written into the checkout for somebody else to commit, so it has to be
+read again; so does one whose entry was unreadable or absent locally. Holding the floor behind the
+oldest of them looks like the way to say so, and it abandons nothing while re-reading everything
+newer, every run, forever — one entry retired after it was promoted reports `missingLocally` for
+the rest of time and the bound is gone. Unfinished pull requests are carried by **number**, in
+`pending`, which clears itself on the first run that finds nothing left to do. A condition that
+never clears still costs its few requests every run and holds one of a hundred slots, which is
+the same standing condition at a constant price rather than at the price of the bound.
+
+**Offset paging is safe over a set that only grows, and `state=closed` is not one.** The old
+`state=all` sweep could not skip a row: a reopened pull request stays in `state=all`. Filtering to
+closed changes that — a reopen removes the row, everything behind it shifts up, and the row on a
+page boundary is returned by no page, permanently below a floor set from what the scan did see. So
+a multi-page closed scan re-reads the open list and moves nothing if a number appeared there. The
+dedupe does not cover this and cannot: it is for activity moving a row *up*, which repeats a row
+rather than losing one. Anyone reaching for offset paging over a filtered list should reach for
+this paragraph first.
+
 **The append-only logs are partitioned by UTC day** — `executions/2026-09-15.ndjson`, and the
 same shape for decisions and firings. The Contents API has no append, so a write downloads the
 file and re-uploads it whole, and on one ever-growing file the bytes sent grow with the square

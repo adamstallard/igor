@@ -146,7 +146,14 @@ export interface PrState {
   merged: boolean
   mergedBy?: string
   mergedAt?: string
+  /** The activity date, which is what staleness and every report are stated in. */
   updatedAt: string
+  /**
+   * The same activity as GitHub reports it, to the second. A watermark compares against this
+   * and never against `updatedAt`: truncating to a day would re-examine a day of pull requests
+   * on every run, or skip one, depending on which way the comparison rounded.
+   */
+  updatedAtInstant: string
   assignees: string[]
   url: string
 }
@@ -161,34 +168,155 @@ interface RawPr {
   merged_by: { login: string } | null
 }
 
+function toPrState(p: RawPr): PrState {
+  return {
+    number: p.number,
+    state: p.state,
+    merged: p.merged_at !== null,
+    ...(p.merged_by ? { mergedBy: p.merged_by.login } : {}),
+    ...(p.merged_at ? { mergedAt: p.merged_at.slice(0, 10) } : {}),
+    updatedAt: p.updated_at.slice(0, 10),
+    updatedAtInstant: p.updated_at,
+    assignees: p.assignees.map((a) => a.login),
+    url: p.html_url,
+  }
+}
+
 /**
- * Every pull request the repository has, open or closed. Which of them is a lore proposal is
- * decided by the entry files it adds, and the list endpoint carries no file list: `RawPr` is
- * exactly the fields a page holds. So the caller filters, where it can do it on files it was
- * fetching anyway.
+ * Every open pull request. Bounded by the review backlog rather than by history — a closed one
+ * never reopens itself, so this is the half that has to be complete.
  */
-export async function listPullRequests(repo: string): Promise<PrState[]> {
+async function listOpen(repo: string): Promise<PrState[]> {
   // `--slurp` cannot be combined with `--jq`, so the mapping happens here rather than in
   // the query. Pages come back as an array of arrays.
   const pages = (await gh([
     'api',
-    `repos/${repo}/pulls?state=all&per_page=100`,
+    `repos/${repo}/pulls?state=open&per_page=100`,
     '--paginate',
     '--slurp',
-  ])) as RawPr[][]
+  ])) as RawPr[][] | null
 
-  return pages
-    .flat()
-    .map((p) => ({
-      number: p.number,
-      state: p.state,
-      merged: p.merged_at !== null,
-      ...(p.merged_by ? { mergedBy: p.merged_by.login } : {}),
-      ...(p.merged_at ? { mergedAt: p.merged_at.slice(0, 10) } : {}),
-      updatedAt: p.updated_at.slice(0, 10),
-      assignees: p.assignees.map((a) => a.login),
-      url: p.html_url,
-    }))
+  return (pages ?? []).flat().map(toPrState)
+}
+
+const CLOSED_PAGE_SIZE = 100
+
+/**
+ * Closed pull requests, newest activity first, stopping at `since`.
+ *
+ * Paged by hand because `--paginate` cannot stop: it follows Link headers to exhaustion and
+ * only then returns, so the sort order buys nothing while it is in use. That is what made
+ * every `reconcile` read the destination's whole history.
+ *
+ * Sorting on `updated` is what makes the stop sound: the key only ever increases, so a pull
+ * request whose activity moves during the scan moves *up* the ordering and is handed back
+ * twice rather than skipped — which is what the dedupe is for.
+ *
+ * **Activity moving is not the only thing that happens mid-scan.** A pull request reopened
+ * while the scan is in flight *leaves* `state=closed` altogether, every row behind it shifts
+ * up, and the row on a page boundary is then returned by no page at all. Offset paging cannot
+ * see that, so `pages` is reported and the caller refuses to vouch for a multi-page scan it
+ * cannot rule the shrink out for. Do not treat the dedupe as covering this — it cannot.
+ */
+async function listClosed(
+  repo: string,
+  since?: string,
+): Promise<{ prs: PrState[]; pages: number }> {
+  const floor = since === undefined ? undefined : Date.parse(since)
+  const seen = new Set<number>()
+  const found: PrState[] = []
+  for (let page = 1; ; page += 1) {
+    const rows =
+      ((await gh([
+        'api',
+        `repos/${repo}/pulls?state=closed&sort=updated&direction=desc` +
+          `&per_page=${CLOSED_PAGE_SIZE}&page=${page}`,
+      ])) as RawPr[] | null) ?? []
+    for (const row of rows) {
+      if (floor !== undefined && Date.parse(row.updated_at) <= floor) {
+        return { prs: found, pages: page }
+      }
+      if (seen.has(row.number)) continue
+      seen.add(row.number)
+      found.push(toPrState(row))
+    }
+    if (rows.length < CLOSED_PAGE_SIZE) return { prs: found, pages: page }
+  }
+}
+
+export interface PullRequestScan {
+  prs: PrState[]
+  /**
+   * Whether everything newer than the oldest row here was certainly read. False where a
+   * multi-page closed scan ran while the closed set was shrinking, which can hide a pull
+   * request behind a page boundary — so a watermark must not advance over this scan.
+   */
+  complete: boolean
+}
+
+/**
+ * The pull requests reconciliation has to consider: every open one, and every closed one
+ * touched since `since`.
+ *
+ * Which of them is a lore proposal is decided by the entry files it adds, and the list endpoint
+ * carries no file list: `RawPr` is exactly the fields a page holds. So the caller filters, where
+ * it can do it on files it was fetching anyway — and each pull request that reaches that filter
+ * costs requests of its own, which is why the two halves are asked for separately rather than
+ * as one `state=all` sweep.
+ *
+ * Omitting `since` reads the closed history in full, which is what a destination with no
+ * watermark yet has to do once.
+ */
+export async function listPullRequests(repo: string, since?: string): Promise<PullRequestScan> {
+  // Open first: a pull request closed between the two reads is then in both lists rather than
+  // in neither, and the dedupe below keeps the closed reading of it.
+  const open = await listOpen(repo)
+  const closed = await listClosed(repo, since)
+  const closedNumbers = new Set(closed.prs.map((p) => p.number))
+  return {
+    prs: [...open.filter((p) => !closedNumbers.has(p.number)), ...closed.prs],
+    // One page is one request and cannot shift under itself, so the common scan is vouched for
+    // free. Past that, the only thing that can hide a row is a pull request reopening mid-scan,
+    // and a reopened one is in the open list — so re-reading it answers the question.
+    complete: closed.pages === 1 || (await nothingLeftClosed(repo, open, closed.prs)),
+  }
+}
+
+/**
+ * Whether the open list gained a pull request that had been closed, which is the only way the
+ * closed set shrinks under a scan.
+ *
+ * One opened meanwhile does not count, and the number is what tells them apart: GitHub issues
+ * them in order, so one numbered above everything this scan saw is new — and a pull request
+ * that was never closed cannot have moved a closed page. Counting it would be a false alarm
+ * with nowhere to recover to: on the run that has no watermark yet, the scan is at its longest
+ * and writes no floor, so the next run is another full history read on the same odds.
+ *
+ * The number is a proxy and it holds, because a reopen can only hide a row it sits *ahead* of:
+ * paging forward, a removal shifts rows up into territory already read, so the one that left
+ * was itself on a page this scan read and its number is in `highest`. One numbered above
+ * everything seen sat past the cursor, where its leaving moves nothing already passed.
+ */
+async function nothingLeftClosed(
+  repo: string,
+  openBefore: readonly PrState[],
+  closed: readonly PrState[],
+): Promise<boolean> {
+  const was = new Set(openBefore.map((p) => p.number))
+  const highest = Math.max(0, ...was, ...closed.map((p) => p.number))
+  return (await listOpen(repo)).every((p) => was.has(p.number) || p.number > highest)
+}
+
+/**
+ * One pull request by number, for a caller holding a number rather than a scan. Undefined where
+ * it is gone, so a stale reference drops out rather than failing the run.
+ */
+export async function pullRequest(repo: string, number: number): Promise<PrState | undefined> {
+  try {
+    return toPrState((await gh(['api', `repos/${repo}/pulls/${number}`])) as RawPr)
+  } catch {
+    return undefined
+  }
 }
 
 export interface ProposingCommit {
