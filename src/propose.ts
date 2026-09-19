@@ -1,11 +1,13 @@
+import { basename } from 'node:path'
 import type { Config } from './config.js'
 import type { Entry, ProvenanceItem } from './entry.js'
-import { ENTRIES_DIR } from './store.js'
+import { ENTRIES_DIR, REJECTED_DIR } from './store.js'
 import {
   assign,
   branchSha,
   createBranchWithFiles,
   defaultBranch,
+  filesUnder,
   isPublic,
   openPullRequest,
   repoFromCheckout,
@@ -166,6 +168,34 @@ export interface ProposalResult {
   reassignedTo?: string[]
 }
 
+export interface ProposeOutcome {
+  results: ProposalResult[]
+  /**
+   * Candidates dropped against the upstream tip. A caller that filtered against a checkout
+   * first and still sees ids here is holding a checkout that is behind.
+   */
+  skipped: { inStore: string[]; rejected: string[] }
+}
+
+/**
+ * The ids a store holds at one commit — entries and rejections both.
+ *
+ * Read from the tree a proposal is committed onto, never from a checkout, because the two are
+ * not the same tree. A checkout behind upstream reports an id free that the commit would
+ * overwrite, and an overwrite arrives at review as an edit to an entry somebody already
+ * approved: not a proposal, so nothing reconciles it, and the pull request is invisible to
+ * every report that would have raised it.
+ */
+async function idsAt(
+  repo: string,
+  sha: string,
+): Promise<{ taken: Set<string>; rejected: Set<string> }> {
+  const dirs = await filesUnder(repo, sha, [ENTRIES_DIR, REJECTED_DIR])
+  const ids = (dir: string): Set<string> =>
+    new Set((dirs.get(dir) ?? []).filter((f) => f.endsWith('.md')).map((f) => basename(f, '.md')))
+  return { taken: ids(ENTRIES_DIR), rejected: ids(REJECTED_DIR) }
+}
+
 function branchName(author: string, now: Date): string {
   const stamp = now.toISOString().replace(/[-:T]/g, '').slice(0, 12)
   return `${BRANCH_PREFIX}${author.toLowerCase()}-${stamp}`
@@ -176,7 +206,7 @@ export async function propose(
   entries: readonly Entry[],
   serialize: (entry: Entry) => string,
   options: { now?: Date } = {},
-): Promise<ProposalResult[]> {
+): Promise<ProposeOutcome> {
   if (entries.length === 0) {
     throw new ProposeError(
       'every candidate is already in the store or was rejected, so there is nothing to propose',
@@ -189,10 +219,24 @@ export async function propose(
 
   const base = await defaultBranch(repo)
   const baseSha = await branchSha(repo, base)
+
+  // Gated on the tree the commit below is built on, named by the same sha, so nothing can
+  // take an id in between the two.
+  const upstream = await idsAt(repo, baseSha)
+  const eligible = eligibleToPropose(entries, upstream.taken, upstream.rejected)
+  const skipped = { inStore: eligible.inStore, rejected: eligible.rejected }
+  if (eligible.entries.length === 0) {
+    throw new ProposeError(
+      `every candidate is already in the store upstream or was rejected there — ` +
+        `${[...skipped.inStore, ...skipped.rejected].join(', ')} — and this checkout does not ` +
+        `have it yet; pull the destination and propose again`,
+    )
+  }
+
   const now = options.now ?? new Date()
 
   const results: ProposalResult[] = []
-  for (const [author, group] of groupByDominant(entries)) {
+  for (const [author, group] of groupByDominant(eligible.entries)) {
     const branch = branchName(author, now)
     const files = group.map((entry) => ({
       path: `${ENTRIES_DIR}/${entry.id}.md`,
@@ -236,5 +280,5 @@ export async function propose(
       ...(reassignedTo ? { reassignedTo } : {}),
     })
   }
-  return results
+  return { results, skipped }
 }

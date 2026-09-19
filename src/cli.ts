@@ -199,7 +199,20 @@ program
       )
     }
 
-    for (const r of await propose(config, entries, serialize)) {
+    const outcome = await propose(config, entries, serialize)
+    // The local pass above already let these through, so upstream holding them is proof this
+    // checkout is behind — the same news `reconcile` reports under the same word.
+    if (outcome.skipped.inStore.length > 0) {
+      process.stdout.write(
+        `behind    ${outcome.skipped.inStore.join(', ')} — in the store upstream but not in this checkout; pull the destination\n`,
+      )
+    }
+    if (outcome.skipped.rejected.length > 0) {
+      process.stdout.write(
+        `behind    ${outcome.skipped.rejected.join(', ')} — rejected upstream but not in this checkout; pull the destination\n`,
+      )
+    }
+    for (const r of outcome.results) {
       const owner = r.reassignedTo
         ? `${r.reassignedTo.join(', ')} (${r.author} is not a collaborator here)`
         : r.author

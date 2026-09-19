@@ -464,3 +464,58 @@ export async function fileExistsOnBranch(
     return false
   }
 }
+
+interface RawTree {
+  truncated: boolean
+  tree: { path: string; type: string; sha: string }[]
+}
+
+async function tree(repo: string, sha: string): Promise<RawTree> {
+  const raw = (await gh([
+    'api', `repos/${repo}/git/trees/${sha}`,
+    '--jq', '{truncated, tree: [.tree[] | {path, type, sha}]}',
+  ])) as RawTree
+  if (raw.truncated) {
+    throw new GitHubError(
+      `the tree ${sha} in ${repo} is too large to read in one request — a short read of it would ` +
+        `report a path free that is there`,
+    )
+  }
+  return raw
+}
+
+/**
+ * The file names directly under each of `dirs` at one commit, keyed by directory. A directory
+ * that is not there maps to nothing; one that is there but is not a directory is refused.
+ *
+ * One request for the commit's root tree and one per directory present — three at most for a
+ * whole store, and none per file. The contents endpoint would answer the same question in two,
+ * and caps a directory listing at a thousand files with nothing in the payload saying it did:
+ * here a read that came back short is a path reported free that is already taken, which is the
+ * failure this is used to prevent. `truncated` is refused rather than trimmed for the same
+ * reason.
+ *
+ * `dirs` are paths at the root of the tree, not nested ones.
+ */
+export async function filesUnder(
+  repo: string,
+  sha: string,
+  dirs: readonly string[],
+): Promise<Map<string, string[]>> {
+  const root = await tree(repo, sha)
+  const found = new Map<string, string[]>()
+  for (const dir of dirs) {
+    const node = root.tree.find((e) => e.path === dir)
+    if (node === undefined) continue
+    if (node.type !== 'tree') {
+      // A symlink or a submodule where a directory is expected. Reading it as absent would
+      // hand back an empty listing, which is a caller told every path in it is free.
+      throw new GitHubError(
+        `${dir} at ${sha} in ${repo} is a ${node.type}, not a directory — it cannot be listed`,
+      )
+    }
+    const listing = await tree(repo, node.sha)
+    found.set(dir, listing.tree.filter((e) => e.type === 'blob').map((e) => e.path))
+  }
+  return found
+}
