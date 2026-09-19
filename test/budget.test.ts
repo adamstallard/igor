@@ -5,7 +5,11 @@ import { tempDir } from './tmp.js'
 import {
   budgetGate,
   BudgetError,
+  breakersFor,
   chooseSeat,
+  credentialBreaker,
+  fingerprintToken,
+  renderCredentials,
   parseOrgBudget,
   parseUsage,
   readAllSeats,
@@ -1672,4 +1676,233 @@ describe('regression: what the hunt on §5 found', () => {
     expect(d.resets).toBe('2026-09-13T16:30:00.000Z')
   })
 
+})
+
+describe('a credential the provider rejects takes the seat out of rotation', () => {
+  const SINCE = '2026-09-13T12:00:00.000Z'
+  const NOW = Date.parse('2026-09-13T12:01:00.000Z')
+  const FP = 'a'.repeat(64)
+  const OTHER = 'b'.repeat(64)
+  const minutes = (n: number): string => new Date(Date.parse(SINCE) + n * 60_000).toISOString()
+
+  /** A run the provider refused the credential on, as `recordExecution` writes it. */
+  const rejected = (at: string, over: Partial<SpendRecord> = {}): SpendRecord => ({
+    at, seat: 'adam', role: 'triage', cures: ['seat:adam:credential'], tokenFingerprint: FP, ...over,
+  })
+  /** A run that failed for anything else: the one this must never be tripped by. */
+  const ordinary = (at: string, over: Partial<SpendRecord> = {}): SpendRecord =>
+    ({ at, seat: 'adam', role: 'triage', costUsd: 0.4, ...over })
+  const three = [rejected(minutes(-3)), rejected(minutes(-2)), rejected(minutes(-1))]
+
+  it('holds the seat after three consecutive rejections and not before', () => {
+    expect(credentialBreaker(three.slice(1), 'adam', FP, NOW)?.tripped).toBe(false)
+    const b = credentialBreaker(three, 'adam', FP, NOW)
+    expect(b?.rejections).toBe(3)
+    expect(b?.tripped).toBe(true)
+    // The cooldown runs from the newest rejection, not from the first.
+    expect(b?.retryAt).toBe(minutes(14))
+  })
+
+  it('never trips on failures that are not a credential rejection', () => {
+    // The failure that would take a working seat out of rotation, which is worse than the bug
+    // being fixed. Five in a row, including one that minted a cure key of its own.
+    const failures = [
+      ordinary(minutes(-5)),
+      ordinary(minutes(-4)),
+      ordinary(minutes(-3), { cures: ['role:triage:commands'] }),
+      ordinary(minutes(-2)),
+      ordinary(minutes(-1), { cures: ['seat:adam:token'] }),
+    ]
+    expect(credentialBreaker(failures, 'adam', FP, NOW)).toBeUndefined()
+  })
+
+  it('counts trailing rows only, so one run through closes it', () => {
+    // A count over the whole log never falls again, and the half-open run below could succeed
+    // and leave the seat held forever.
+    const b = credentialBreaker([...three, ordinary(minutes(0)), rejected(minutes(1))], 'adam', FP, NOW)
+    expect(b?.rejections).toBe(1)
+    expect(b?.tripped).toBe(false)
+  })
+
+  it('clears the moment a different credential resolves, with nobody saying so', () => {
+    expect(credentialBreaker(three, 'adam', OTHER, NOW)).toBeUndefined()
+    // And a seat holding no credential at all can have nothing attributed to one.
+    expect(credentialBreaker(three, 'adam', undefined, NOW)).toBeUndefined()
+  })
+
+  it('is per seat, and per credential rather than per role', () => {
+    expect(credentialBreaker(three, 'fleet-1', FP, NOW)).toBeUndefined()
+    // Another seat's rows interleave without breaking this seat's run, and this seat's own
+    // rows count whichever role wrote them: the provider refuses a credential for all of them.
+    const mixed = [
+      rejected(minutes(-3)),
+      ordinary(minutes(-3), { seat: 'fleet-1' }),
+      rejected(minutes(-2), { role: 'docs' }),
+      rejected(minutes(-1), { role: 'reviewer' }),
+    ]
+    expect(credentialBreaker(mixed, 'adam', FP, NOW)?.tripped).toBe(true)
+  })
+
+  it('lets one run through once the cooldown has passed, and waits longer each time it fails', () => {
+    const past = Date.parse(minutes(14)) + 1
+    expect(credentialBreaker(three, 'adam', FP, past)?.tripped).toBe(false)
+
+    // The probe was refused too, so the fourth rejection doubles the wait rather than repeating
+    // it: this state persists for days, and a fixed wait burns items for all of them.
+    const four = [...three, rejected(minutes(20))]
+    expect(credentialBreaker(four, 'adam', FP, NOW)?.retryAt).toBe(minutes(50))
+    const many = [...four, rejected(minutes(21)), rejected(minutes(22)), rejected(minutes(23)),
+                  rejected(minutes(24)), rejected(minutes(25))]
+    // Nine rejections would be sixty-four times the first wait; the cap is six hours.
+    expect(credentialBreaker(many, 'adam', FP, NOW)?.retryAt).toBe(minutes(25 + 360))
+  })
+
+  it('leaves a rejection nothing can place in time out of the count', () => {
+    // A cooldown from an unparseable moment never expires, and a seat that never comes back is
+    // worse than one that burns an item.
+    const b = credentialBreaker([rejected('whenever'), rejected(minutes(-1))], 'adam', FP, NOW)
+    expect(b?.rejections).toBe(1)
+  })
+
+  const held = (s: Seat, readings: SeatUsage[], records: SpendRecord[]) =>
+    chooseSeat({ id: 'p', seats: readings.map((r) => r.seat.id) }, readings, records, { name: 'triage' },
+      new Map(), NOW)
+
+  it('passes the held seat over and takes the next in the pool', () => {
+    const adam: Seat = { id: 'adam', reserve: 0, tokenEnv: 'A' }
+    const spare: Seat = { id: 'spare', reserve: 0, tokenEnv: 'B' }
+    const c = held(adam, [{ seat: adam, usage: usage(1, 1), fingerprint: FP },
+                          { seat: spare, usage: usage(1, 1), fingerprint: OTHER }], three)
+    expect(c.seat?.id).toBe('spare')
+    expect(c.considered[0]).toMatchObject({ seat: 'adam', verdict: 'rejected' })
+    // Not the verdict an unreadable token gets: this credential read perfectly well here.
+    expect(c.considered[0]?.verdict).not.toBe('credential')
+  })
+
+  it('holds a seat whose own reading says it has headroom, and an unmeasurable one alike', () => {
+    // Nothing local separates a revoked token from a working one, so a reading is no answer to
+    // a record of runs the provider refused.
+    const adam: Seat = { id: 'adam', reserve: 0, tokenEnv: 'A' }
+    expect(held(adam, [{ seat: adam, usage: usage(1, 1), fingerprint: FP }], three).seat).toBeUndefined()
+    const un: SeatUsage = { seat: adam, error: 'no subscription', unmeasured: true, fingerprint: FP }
+    expect(held(adam, [un], three).seat).toBeUndefined()
+  })
+
+  it('takes the seat back the moment a different credential resolves', () => {
+    const adam: Seat = { id: 'adam', reserve: 0, tokenEnv: 'A' }
+    const c = held(adam, [{ seat: adam, usage: usage(1, 1), fingerprint: OTHER }], three)
+    expect(c.seat?.id).toBe('adam')
+  })
+
+  it('hands off saying the credential was refused, not that nothing could be read', () => {
+    const adam: Seat = { id: 'adam', reserve: 0, tokenEnv: 'A' }
+    const g = budgetGate({ seats: [adam], pools: [{ id: 'p', seats: ['adam'] }] },
+      { name: 'triage', seat: 'pool:p' }, [{ seat: adam, usage: usage(1, 1), fingerprint: FP }], three,
+      new Map(), minutes(1))
+    expect(g.exhausted()).toBe(true)
+    expect(g.blocked).toBe('rejected')
+
+    const handoff = composeHandoff({ name: 'triage', reviewers: [] } as unknown as Role, { id: 'x' } as never, {
+      reason: { kind: 'budget', ...(g.blocked === undefined ? {} : { blocked: g.blocked }),
+                ...(g.passedOver === undefined ? {} : { passedOver: g.passedOver }) },
+      done: [], remaining: [], suggested: [],
+    })
+    expect(handoff).toContain('refused the credential')
+    expect(handoff).not.toContain("usage could not be read")
+  })
+
+  it('says so in the report, and prints the state without clearing it', () => {
+    const adam: Seat = { id: 'adam', reserve: 0, tokenEnv: 'A' }
+    const readings: SeatUsage[] = [{ seat: adam, usage: usage(1, 1), fingerprint: FP }]
+    const breakers = breakersFor(readings, three, NOW)
+    const table = renderBudget(readings, new Map(), [], breakers)
+    expect(table).toContain('out of rotation')
+    // One line for the seat, not a state written into each window row: the provider refuses a
+    // credential for the whole seat.
+    expect(table.split('\n').filter((l) => l.includes('out of rotation'))).toHaveLength(1)
+
+    const printed = renderCredentials(readings, breakers)
+    expect(printed).toContain(FP)
+    expect(printed).toContain('resolving a different credential')
+    // Reading the report changes nothing about the breaker.
+    expect(breakersFor(readings, three, NOW).get('adam')?.tripped).toBe(true)
+  })
+
+  it('publishes a hash of the token and never any part of the token', () => {
+    const token = 'sk-ant-oat01-secret-material'
+    const digest = fingerprintToken(token)
+    expect(digest).toMatch(/^[0-9a-f]{64}$/)
+    expect(fingerprintToken(token)).toBe(digest)
+    expect(fingerprintToken(`${token}2`)).not.toBe(digest)
+    // Nothing of the credential survives into the digest, at either end.
+    for (let n = 4; n <= token.length; n++) {
+      expect(digest).not.toContain(token.slice(0, n))
+      expect(digest).not.toContain(token.slice(-n))
+    }
+  })
+
+  it('says the seat is held even where its reading failed outright, not that the token is unreadable', () => {
+    // `/usage` exiting non-zero is the likeliest shape a revoked token takes, and that reading
+    // fails before it can be called unmeasurable. Reported as an unreadable credential it sends
+    // an operator to check a path or a variable that is perfectly correct.
+    const adam: Seat = { id: 'adam', reserve: 0, tokenEnv: 'A' }
+    const readings: SeatUsage[] = [{ seat: adam, error: 'claude exited 1', fingerprint: FP }]
+    const table = renderBudget(readings, new Map(), [], breakersFor(readings, three, NOW))
+
+    expect(table).toContain('out of rotation')
+    expect(table.split('\n').filter((l) => l.includes('out of rotation'))).toHaveLength(1)
+  })
+
+  /** A seat naming no token source spends the ambient login, which `workerEnv` forwards. */
+  const ambient = async (env: NodeJS.ProcessEnv) =>
+    (await readAllSeats([{ id: 'adam', reserve: 0 }], env, async () => REAL))[0]?.fingerprint
+
+  it('names the credential a seat with no token source actually presents', async () => {
+    // Without one the gate can never count that seat's rejections, and #56's loop stands for
+    // the whole configuration `AMBIENT_TOKENS` exists to support.
+    const one = await ambient({ CLAUDE_CODE_OAUTH_TOKEN: 'ambient-one' })
+    expect(one).toMatch(/^[0-9a-f]{64}$/)
+    expect(await ambient({ CLAUDE_CODE_OAUTH_TOKEN: 'ambient-two' })).not.toBe(one)
+    // Either name replaced is a different credential, whichever one the worker ends up using.
+    expect(await ambient({ CLAUDE_CODE_OAUTH_TOKEN: 'ambient-one', ANTHROPIC_API_KEY: 'k' })).not.toBe(one)
+    // A login nothing in the environment names cannot be attributed to, and is not guessed at.
+    expect(await ambient({})).toBeUndefined()
+  })
+
+  it('does not tell a seat spending the ambient login that it cannot pay', async () => {
+    // The worker forwards that login, so the seat pays with it — and a held seat's row would
+    // otherwise send its operator to add a token source on the line above the one naming the
+    // credential that was actually refused.
+    const seatless: Seat = { id: 'adam', reserve: 0 }
+    const print = (await ambient({ CLAUDE_CODE_OAUTH_TOKEN: 'ambient-one' })) ?? ''
+    const readings: SeatUsage[] = [{ seat: seatless, usage: usage(10, 10), fingerprint: print }]
+    const table = renderBudget(readings, new Map(), [], breakersFor(readings, three, NOW))
+
+    expect(table).not.toContain('cannot pay')
+    // Still warned where nothing at all would reach the worker.
+    expect(renderBudget([{ seat: seatless, usage: usage(10, 10) }])).toContain('cannot pay')
+  })
+
+  it('holds such a seat on its own rejections, like any other', async () => {
+    const seatless: Seat = { id: 'adam', reserve: 0 }
+    const print = (await ambient({ CLAUDE_CODE_OAUTH_TOKEN: 'ambient-one' })) ?? ''
+    const rows = three.map((r) => ({ ...r, tokenFingerprint: print }))
+    const c = held(seatless, [{ seat: seatless, usage: usage(1, 1), fingerprint: print }], rows)
+
+    expect(c.seat).toBeUndefined()
+    expect(c.considered[0]?.verdict).toBe('rejected')
+  })
+
+  it('keeps the fingerprint of a seat whose reading throws, which is the seat this is for', async () => {
+    // A revoked token reads exactly as an unmeasurable one, so the reading always fails on the
+    // one seat the breaker exists to hold.
+    const [read] = await readAllSeats(
+      [{ id: 'adam', reserve: 0, tokenEnv: 'A' }],
+      { A: 'revoked-token' },
+      async () => 'Total cost: $0.01',
+      async () => ({ authMethod: 'oauth_token' }),
+    )
+    expect(read?.unmeasured).toBe(true)
+    expect(read?.fingerprint).toBe(fingerprintToken('revoked-token'))
+  })
 })

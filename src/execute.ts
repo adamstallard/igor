@@ -1,7 +1,10 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import type { Artifact, Candidate, ClaimVerdict, CodeHost, Tracker } from './adapter.js'
-import { resolveToken, type TokenSource, type Window } from './budget.js'
+import {
+  AMBIENT_TOKENS, ambientFingerprint, credentialCure, fingerprintToken, resolveToken,
+  type TokenSource, type Window,
+} from './budget.js'
 import { recordObservation, WINDOW_LENGTH } from './capacity.js'
 import type { Action, Role } from './role.js'
 import { withTree, type ChangedFile, type TreeProvider, type WorkingTree } from './worktree.js'
@@ -87,6 +90,9 @@ export interface ExecutionResult {
   session?: string
   /** Only on a budget stop or a failure: what `usageLimit` classified the envelope on. */
   apiErrorStatus?: number | string
+  /** Only beside `seat:<id>:credential`: which credential the provider refused, hashed. Off
+   *  every other run, where it would publish a digest nothing reads. */
+  tokenFingerprint?: string
   /** Only on a budget stop or a failure. */
   terminalReason?: string
   /**
@@ -714,8 +720,6 @@ const FORWARDED = [
 ] as const
 
 /** Where an ambient login lives, for the configuration in which no seat names a token. */
-const AMBIENT_TOKENS = ['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY'] as const
-
 /**
  * What the worker gets, written out rather than inherited.
  *
@@ -733,7 +737,7 @@ export async function workerEnv(
   seatToken: TokenSource = {},
   env: NodeJS.ProcessEnv = process.env,
   seat?: string,
-): Promise<NodeJS.ProcessEnv> {
+): Promise<{ env: NodeJS.ProcessEnv; fingerprint?: string }> {
   const out: NodeJS.ProcessEnv = {}
   for (const name of ['PATH', 'HOME', ...FORWARDED]) {
     const value = env[name]
@@ -761,11 +765,16 @@ export async function workerEnv(
       const value = env[name]
       if (value !== undefined && value !== '') out[name] = value
     }
-    return out
+    // Named like any other, so a seat spending the ambient login is held on its own rejections
+    // rather than left to rediscover a dead credential an item at a time.
+    const digest = ambientFingerprint(env)
+    return { env: out, ...(digest === undefined ? {} : { fingerprint: digest }) }
   }
 
   out['CLAUDE_CODE_OAUTH_TOKEN'] = token
-  return out
+  // Taken here and nowhere else: a hash computed downstream would need the value to have
+  // travelled there, and the point of the digest is that nothing else has to carry the token.
+  return { env: out, fingerprint: fingerprintToken(token) }
 }
 
 export interface WorkerInput {
@@ -1133,7 +1142,15 @@ export async function execute(
    * to fix, and spread last into a result so a key minted late is not dropped by a snapshot.
    */
   const minted = new Set<string>()
-  const cured = () => (minted.size === 0 ? {} : { cures: [...minted] })
+  /** Named only where a seat is, since the key is about that seat's credential and no other. */
+  const credentialKey = options.seat === undefined ? undefined : credentialCure(options.seat)
+  /** Which credential the worker ran under, set once it has resolved. */
+  let credential: string | undefined
+  const cured = () => {
+    if (minted.size === 0) return {}
+    const rejected = credentialKey !== undefined && minted.has(credentialKey) && credential !== undefined
+    return { cures: [...minted], ...(rejected ? { tokenFingerprint: credential } : {}) }
+  }
   const linkage = tracker.linkage(candidate)
 
   return withTree(provider, candidate.repo, async (tree: WorkingTree) => {
@@ -1197,10 +1214,30 @@ export async function execute(
       }
     }
 
-    /** Kept whatever the outcome: both answer questions asked after a run, not during it. */
-    const trace = (output: WorkerOutput | undefined) => {
+    /**
+     * Kept whatever the outcome: both answer questions asked after a run, not during it.
+     *
+     * `finished` is what the exit code already said, which the envelope cannot be asked for.
+     */
+    const trace = (output: WorkerOutput | undefined, finished = false) => {
       const denials = denialsFrom(output?.permission_denials, role.name)
       for (const d of denials) if (d.cure !== undefined) minted.add(d.cure)
+      // Deliberately not a `limitSignals` member. A limit and a refused credential want opposite
+      // responses, and reading one as the other parks items over an authentication failure and
+      // fills `refusals/` with it. Here because a credential can be refused on either path into
+      // this — the worker throwing, and the worker returning an envelope.
+      //
+      // Asked differently on the two paths, because they carry different evidence and this is a
+      // decision to stop using a seat rather than to write something down. A non-zero exit has
+      // already said the run did not finish, so an envelope silent about erroring is still a
+      // failure there. Exit zero says the opposite, and a run that published a pull request must
+      // state that it errored before it can hold its own seat: minting on silence would take a
+      // working seat out of rotation, and — since a rejection row extends the trailing run
+      // rather than ending it — every successful probe would re-trip instead of closing.
+      const refused = finished ? output?.is_error === true : output?.is_error !== false
+      if (credentialKey !== undefined && refused && Number(output?.api_error_status) === 401) {
+        minted.add(credentialKey)
+      }
       const id = typeof output?.session_id === 'string' && output.session_id !== '' ? output.session_id : session
       return {
         ...(denials.length === 0 ? {} : { denials }),
@@ -1247,7 +1284,9 @@ export async function execute(
 
     let worker: WorkerOutput
     try {
-      const env = await workerEnv(options.seatToken, process.env, options.seat)
+      const resolved = await workerEnv(options.seatToken, process.env, options.seat)
+      credential = resolved.fingerprint
+      const env = resolved.env
       worker = await (options.worker ?? headlessClaude)({
         cwd: tree.path,
         system: workerSystemPrompt(role, role.allow, options.lore ?? ''),
@@ -1313,7 +1352,7 @@ export async function execute(
     // on to do, so they ride with the cost into every outcome below.
     const kept = {
       ...spend(worker),
-      ...trace(worker),
+      ...trace(worker, true),
       // On the same argument, where a provider field named a limit on a run the envelope does
       // not report as a success: a seat that refuses after the worker has already edited files
       // publishes as `produced`, and the evidence would leave with the process.
@@ -1596,6 +1635,10 @@ export async function recordExecution(
       // The one string that turns grepping a disposable clone's transcript into opening a file.
       ...(result.session === undefined ? {} : { session: result.session }),
       ...(result.apiErrorStatus === undefined ? {} : { apiErrorStatus: result.apiErrorStatus }),
+      // Which credential was refused, where one was. The breaker counts trailing rows carrying
+      // both this and the key above, so a credential somebody has since replaced stops counting
+      // the moment the new one resolves.
+      ...(result.tokenFingerprint === undefined ? {} : { tokenFingerprint: result.tokenFingerprint }),
       ...(result.terminalReason === undefined ? {} : { terminalReason: result.terminalReason }),
       transcript: path,
     },

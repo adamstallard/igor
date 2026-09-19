@@ -164,7 +164,9 @@ export function suggest(role: Role, candidate: Candidate, identity: string): str
  * one to a reading nobody has taken. Saying "the budget is used up" about either was #49 —
  * true of one way to reach "no seat" and false of the rest.
  *
- * No hour is offered, and none exists: nothing here comes back on a clock.
+ * No hour is offered. None of these is capacity returning, so an hour stated here would be
+ * read as one — including for `rejected`, whose seats do get one more run on a clock, which is
+ * a retry rather than a return.
  */
 function unspendable(
   blocked: SeatVerdict | undefined,
@@ -183,6 +185,12 @@ function unspendable(
   switch (blocked) {
     case 'credential':
       return `no seat's usage could be read${named}, so nothing was spent and nothing says the budget is`
+    case 'rejected':
+      return (
+        `the provider refused the credential on every seat this role draws on${named}, so they are ` +
+        'held out of rotation rather than spending items on a token that cannot buy anything — ' +
+        'presenting a different credential is what releases them'
+      )
     case 'no-figure':
       return (
         `no seat has a capacity figure to spend against${named} — a reserve is a fraction of one, ` +
@@ -202,6 +210,8 @@ function clauseFor({ seat, verdict }: { seat: string; verdict: SeatVerdict }): s
   switch (verdict) {
     case 'credential':
       return `${seat}'s usage could not be read`
+    case 'rejected':
+      return `${seat}'s credential was refused by the provider`
     case 'no-figure':
       return `nothing bounds ${seat}`
     case 'spent':
