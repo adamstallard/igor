@@ -467,6 +467,49 @@ describe('an operator can tell the states apart from the report alone', () => {
     expect(text).toContain('divides into no capacity')
   })
 
+  it('keeps the columns aligned when a capacity runs to four figures', () => {
+    // Adam's own config declares a $3000 week, so this is the report he gets, not a hypothetical
+    // one. `padStart` does not truncate: `$3000.00` in a five-wide column pushed reserve,
+    // headroom and the state prose three columns right on that row and nowhere else.
+    const s: Seat = { id: 'big', reserve: 0.5, tokenEnv: 'T', capacity: { week: 3000 } }
+    const text = renderBudget([unmeasurable(s)], boundsForSeats([], [paid(s.id, 1200, at)], [s], NOW), [])
+    const lines = text.split('\n')
+    const header = lines[0]!
+    const week = lines.find((l) => l.startsWith('big') && l.includes('week'))!
+    expect(week).toContain('$1200.00')
+    // Right-aligned columns end where their heading ends, on every row and whatever is in them.
+    for (const column of ['used', 'reserve', 'headroom'] as const) {
+      const cell = { used: '$1200.00', reserve: '50%', headroom: '$300.00' }[column]
+      expect(week.indexOf(cell) + cell.length, column).toBe(header.indexOf(column) + column.length)
+    }
+  })
+
+  it('prints a reserve as a percentage rather than as the noise of a binary multiply', () => {
+    // 0.29 * 100 is 28.999999999999996, and 100 minus that carries the noise on into headroom.
+    // In a report whose job is to be believed, that reads as an arithmetic bug.
+    const s: Seat = { id: 'noisy', reserve: 0.29, tokenEnv: 'T' }
+    for (const text of [renderBudget([unmeasurable(s)]), renderBudget([{ seat: s, usage: parseUsage(REAL) }])]) {
+      expect(text).toContain('29%')
+      expect(text).not.toMatch(/\d\.\d{6,}/)
+    }
+  })
+
+  it('says what a spent window’s dollars rest on where no capacity figure exists', () => {
+    // §5.1 again: the amount is Igor spend inside the current instance, and a row that prints it
+    // beside a refusal and says nothing about it leaves the reader to guess what it is a share
+    // of. A refusal on the first run of an instance leaves nothing to divide, so this is the
+    // ordinary shape of a spent window, not a corner.
+    const d = describeWindow(seats.find((s) => s.id === 'refused')!, 'session', bounds.get('refused')?.session)
+    expect(d.state).toBe('spent')
+    expect(d.used).toBe('$0.00')
+    expect(d.note).toContain('the $0.00 is Igor spend inside the current instance')
+    expect(d.note).toContain('no capacity figure bounds')
+    expect(d.note).toContain('there is nothing to divide')
+    // `spentFor` and `whyNoFigure` settled on the same reading here, and naming it twice in one
+    // sentence reads as two observations.
+    expect(d.note.match(/100% used at/g)).toHaveLength(1)
+  })
+
   it('shows a derived headroom figure with the observation it rests on and that observation’s time', () => {
     // §5.1: "Headroom derived from a limit error an hour ago and headroom derived from a
     // month-old reading are not the same claim." A number alone cannot be judged.

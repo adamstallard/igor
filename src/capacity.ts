@@ -3,6 +3,7 @@ import { resolveReset } from './reset.js'
 import {
   BudgetError,
   parseNdjson,
+  percent,
   readUsage,
   type AuthContext,
   type Limit,
@@ -336,7 +337,7 @@ export function whyNoFigure(
     }
   }
   if (!Number.isFinite(newest.percentUsed) || newest.percentUsed <= 0) {
-    return { from: newest, why: `a window ${newest.percentUsed}% used divides into no capacity` }
+    return { from: newest, why: `a window ${percent(newest.percentUsed)} used divides into no capacity` }
   }
   return {
     from: newest,

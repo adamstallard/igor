@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
-import type { Observation, SeatBound, SeatBounds } from './capacity.js'
+import type { NoFigure, Observation, SeatBound, SeatBounds } from './capacity.js'
 import { resolveRecentReset } from './reset.js'
 
 /**
@@ -504,13 +504,13 @@ function derivedWindow(
     capacity === undefined || allowance === undefined
       ? ''
       : `Igors have spent $${capacity.spentUsd.toFixed(2)} of the ${window}'s $${allowance.toFixed(2)} bound ` +
-        `(${capacity.basis} capacity $${capacity.capacityUsd.toFixed(2)}, ${seat.reserve * 100}% reserved)`
+        `(${capacity.basis} capacity $${capacity.capacityUsd.toFixed(2)}, ${percent(seat.reserve * 100)} reserved)`
 
   const spent = bound?.spent
   if (spent !== undefined) {
     const { from, resetsAt, estimated } = spent
     const spentWhy =
-      `its ${window} was ${from.percentUsed}% used when observed at ${from.at}, and ` +
+      `its ${window} was ${percent(from.percentUsed)} used when observed at ${from.at}, and ` +
       (estimated
         ? `the provider named no reset, so it stands until ${resetsAt} at the latest`
         : `does not reset until ${resetsAt}`)
@@ -539,7 +539,7 @@ function derivedWindow(
       blocked:
         seen === undefined
           ? `${NO_CAPACITY_FIGURE}: its ${window} has never been observed and none is declared`
-          : `${NO_CAPACITY_FIGURE}: its ${window} was ${seen.from.percentUsed}% used when observed at ` +
+          : `${NO_CAPACITY_FIGURE}: its ${window} was ${percent(seen.from.percentUsed)} used when observed at ` +
             `${seen.from.at}, but ${seen.why}, and none is declared`,
       verdict: 'no-figure',
     }
@@ -648,7 +648,9 @@ export function chooseSeat(
     if (blocked) {
       considered.push({
         seat: id,
-        why: `${blocked.window} is ${blocked.percentUsed}% used, past its ${blocked.reservePercent}% reserve`,
+        why:
+          `${blocked.window} is ${percent(blocked.percentUsed)} used, ` +
+          `past its ${percent(blocked.reservePercent)} reserve`,
         verdict: 'spent',
       })
       continue
@@ -671,7 +673,8 @@ export function chooseSeat(
 
     considered.push({ seat: id, why: 'chosen', verdict: 'chosen' })
     const session = seatStatus(reading.seat, usage, 'session')
-    return { seat: reading.seat, reason: `${id} has ${session.headroomPercent}% of the session left`, considered }
+    const left = percent(session.headroomPercent)
+    return { seat: reading.seat, reason: `${id} has ${left} of the session left`, considered }
   }
 
   // "No headroom" only where a seat actually ran out. A pool none of whose seats could be read
@@ -955,6 +958,17 @@ export interface WindowReport {
 const money = (n: number): string => `$${n.toFixed(2)}`
 
 /**
+ * A percentage, without the noise a binary multiply leaves behind.
+ *
+ * A reserve is stored as the fraction it is written as, and `0.29 * 100` is
+ * `28.999999999999996`; a subtraction from it carries the noise on into headroom. In a report
+ * whose whole job is to be believed, that reads as an arithmetic bug rather than a rounding
+ * one. Rounded here, where the figure is printed, and never in `seatStatus`, whose
+ * `headroomPercent` the gate compares against zero.
+ */
+export const percent = (n: number): string => `${Number(n.toFixed(4))}%`
+
+/**
  * An observation in the two terms §5.1 asks for: what it said, and when it was taken.
  *
  * Neither is enough alone. "Headroom derived from a limit error an hour ago and headroom
@@ -962,17 +976,41 @@ const money = (n: number): string => `$${n.toFixed(2)}`
  * observation's age is a claim whose strength nobody can judge.
  */
 const cameFrom = (o: Observation): string =>
-  `${o.percentUsed}% used at ${o.at} (${o.source}${o.model === undefined ? '' : `, ${o.model}`})`
+  `${percent(o.percentUsed)} used at ${o.at} (${o.source}${o.model === undefined ? '' : `, ${o.model}`})`
+
+/** Two readings of one seat and window are the same reading, by value: `spentFor` and
+ *  `whyNoFigure` pick their row independently and frequently pick the same one. */
+const sameReading = (a: Observation, b: Observation | undefined): boolean =>
+  b !== undefined && a.at === b.at && a.source === b.source && a.percentUsed === b.percentUsed
+
+/**
+ * The reading that divided into nothing, and what stopped it.
+ *
+ * `named` where the sentence has already introduced that reading, since naming it twice in one
+ * sentence reads as two readings.
+ */
+const unexplained = (seen: NoFigure, named: boolean): string =>
+  named ? seen.why : `observed ${cameFrom(seen.from)}, but ${seen.why}`
 
 export function describeWindow(seat: Seat, window: Window, bound: SeatBound | undefined): WindowReport {
   const capacity = bound?.capacity
   const allowance = capacity === undefined ? undefined : (1 - seat.reserve) * capacity.capacityUsd
+  const seen = bound?.noFigure
+  // What the figures on this row rest on: the capacity they were divided against, or — where
+  // there is none and the window is refused — the reading that divided into nothing. §5.1 wants
+  // the dollars beside a spent window to say what they are, not stand there as a bare amount.
   const rests =
-    capacity === undefined
-      ? ''
-      : capacity.from === undefined
+    capacity !== undefined
+      ? capacity.from === undefined
         ? `${money(capacity.capacityUsd)} capacity declared, no observation having yielded one`
         : `${money(capacity.capacityUsd)} capacity observed, from ${cameFrom(capacity.from)}`
+      : seen === undefined
+        ? ''
+        : `${
+            seen.spentUsd === undefined
+              ? 'no capacity figure bounds this window'
+              : `the ${money(seen.spentUsd)} is Igor spend inside the current instance, which no capacity figure bounds`
+          } — ${unexplained(seen, sameReading(seen.from, bound?.spent?.from))}`
   const resets = bound?.resetsAt === undefined ? {} : { resets: bound.resetsAt }
 
   // A window can be refused *and* over its bound, and it is back only once the later of the two
@@ -1021,20 +1059,19 @@ export function describeWindow(seat: Seat, window: Window, bound: SeatBound | un
       ...(spentSoFar === undefined ? {} : { used: money(spentSoFar) }),
       headroom: 'none',
       resets: later.resetsAt,
-      note: overBound ? `${spentWhy}; ${overWhy}; ${rests}` : spentWhy + (capacity === undefined ? '' : `; ${rests}`),
+      note: overBound ? `${spentWhy}; ${overWhy}; ${rests}` : spentWhy + (rests === '' ? '' : `; ${rests}`),
     }
   }
 
   if (capacity === undefined || allowance === undefined) {
-    const seen = bound?.noFigure
     const runs = seat.reserve <= 0
     const figure =
       seen === undefined
         ? `no capacity figure — the ${window} has never been observed, and none is declared`
-        : `no capacity figure — observed ${cameFrom(seen.from)}, but ${seen.why}; none is declared`
+        : `no capacity figure — ${unexplained(seen, false)}; none is declared`
     const consequence = runs
       ? 'No reserve stands against it, so it runs uncalibrated until its first limit error'
-      : `Passed over while a ${seat.reserve * 100}% reserve stands against it: ` +
+      : `Passed over while a ${percent(seat.reserve * 100)} reserve stands against it: ` +
         (seen === undefined
           ? `run \`igor observe ${seat.id}\` on the owner's machine, or declare a capacity`
           : 'declaring a capacity is what starts a seat no observation has bounded')
@@ -1077,6 +1114,17 @@ export function describeWindow(seat: Seat, window: Window, bound: SeatBound | un
 }
 
 /**
+ * The report's column widths, and the only statement of them: the heading is printed through
+ * the same `row`, so a column cannot be widened for the figures and left narrow in the heading.
+ *
+ * `used` and `headroom` carry dollars on the derived path, where a declared weekly capacity
+ * reaches four figures in ordinary use. A `$3000.00` printed into a five-wide column does not
+ * truncate: it pushes the reserve, the headroom and the state prose along on that row alone, and
+ * the table stops being one.
+ */
+const WIDTH = { seat: 16, window: 8, used: 9, reserve: 8, headroom: 9 } as const
+
+/**
  * Every seat, in the state it is actually in.
  *
  * Three things stop a seat being spent from and the remedies are not the same: a credential is
@@ -1094,7 +1142,6 @@ export function renderBudget(
   observations: readonly Observation[] = [],
 ): string {
   if (readings.length === 0) return 'no seats configured\n'
-  const lines = ['seat             window    used  reserve  headroom  resets']
   /** One window's row. An absent figure prints as a dash rather than a blank, so a column with
    *  nothing in it is visibly nothing rather than a hole in the table. */
   const row = (
@@ -1102,8 +1149,11 @@ export function renderBudget(
     window: string,
     c: { used?: string; reserve: string; headroom?: string; resets?: string; state: string },
   ): string =>
-    `${id.padEnd(16)} ${window.padEnd(8)} ${(c.used ?? '—').padStart(5)} ${c.reserve.padStart(8)} ` +
-    `${(c.headroom ?? '—').padStart(9)}  ${c.resets ?? '—'}  ${c.state}`
+    `${id.padEnd(WIDTH.seat)} ${window.padEnd(WIDTH.window)} ${(c.used ?? '—').padStart(WIDTH.used)} ` +
+    `${c.reserve.padStart(WIDTH.reserve)} ${(c.headroom ?? '—').padStart(WIDTH.headroom)}  ` +
+    `${c.resets ?? '—'}  ${c.state}`
+  const heading = { used: 'used', reserve: 'reserve', headroom: 'headroom', resets: 'resets', state: '' }
+  const lines = [row('seat', 'window', heading).trimEnd()]
 
   for (const r of readings) {
     if (r.usage === undefined) {
@@ -1112,14 +1162,14 @@ export function renderBudget(
         // credential itself is in doubt, the gate passes the seat over whatever has been
         // observed of it, and a headroom figure here would be one nothing will ever spend.
         lines.push(
-          `${r.seat.id.padEnd(16)} —  credential unreadable, so the seat is passed over whatever is ` +
+          `${r.seat.id.padEnd(WIDTH.seat)} —  credential unreadable, so the seat is passed over whatever is ` +
             `recorded of it: ${r.error ?? 'unreadable'}`,
         )
         continue
       }
       for (const w of ['session', 'week'] as Window[]) {
         const d = describeWindow(r.seat, w, bounds.get(r.seat.id)?.[w])
-        lines.push(row(r.seat.id, w, { ...d, reserve: `${r.seat.reserve * 100}%`, state: d.note }))
+        lines.push(row(r.seat.id, w, { ...d, reserve: percent(r.seat.reserve * 100), state: d.note }))
       }
       // The per-model cap the live path shows, from the log instead of from a reading. Igor
       // enforces neither; a fleet concentrated on one model exhausts one of these first, and a
@@ -1134,25 +1184,31 @@ export function renderBudget(
         if (o.seat === r.seat.id && o.model !== undefined) latest.set(o.model, o)
       }
       for (const [model, o] of latest) {
-        lines.push(`${''.padEnd(16)} ${`wk:${model}`.padEnd(8)} ${`${o.percentUsed}%`.padStart(5)}  observed at ${o.at}`)
+        lines.push(
+          `${''.padEnd(WIDTH.seat)} ${`wk:${model}`.padEnd(WIDTH.window)} ` +
+            `${percent(o.percentUsed).padStart(WIDTH.used)}  observed at ${o.at}`,
+        )
       }
-      lines.push(`${''.padEnd(16)} !  the rows above are derived, not read: ${r.error ?? 'unreadable'}`)
+      lines.push(`${''.padEnd(WIDTH.seat)} !  the rows above are derived, not read: ${r.error ?? 'unreadable'}`)
       continue
     }
     for (const w of ['session', 'week'] as Window[]) {
       const s = seatStatus(r.seat, r.usage, w)
       lines.push(
         row(r.seat.id, w, {
-          used: `${s.percentUsed}%`,
-          reserve: `${s.reservePercent}%`,
-          headroom: `${s.headroomPercent}%`,
+          used: percent(s.percentUsed),
+          reserve: percent(s.reservePercent),
+          headroom: percent(s.headroomPercent),
           ...(s.resetsAt === undefined ? {} : { resets: s.resetsAt }),
           state: 'read live',
         }),
       )
     }
     for (const m of r.usage.perModel) {
-      lines.push(`${''.padEnd(16)} ${`wk:${m.model}`.padEnd(8)} ${`${m.percentUsed}%`.padStart(5)}`)
+      lines.push(
+        `${''.padEnd(WIDTH.seat)} ${`wk:${m.model}`.padEnd(WIDTH.window)} ` +
+          `${percent(m.percentUsed).padStart(WIDTH.used)}`,
+      )
     }
     // Reading a seat inherits this process's environment, so a keychain or an ambient login
     // answers for it — and a worker's does not, being written out rather than inherited. A
@@ -1160,7 +1216,7 @@ export function renderBudget(
     // item, which is the one misconfiguration this command would otherwise conceal.
     if (r.seat.tokenEnv === undefined && r.seat.tokenFile === undefined && r.seat.tokenCommand === undefined) {
       lines.push(
-        `${''.padEnd(16)} !  readable here but cannot pay: no token source, and a worker ` +
+        `${''.padEnd(WIDTH.seat)} !  readable here but cannot pay: no token source, and a worker ` +
           `inherits nothing. See docs/seats.md.`,
       )
     }
