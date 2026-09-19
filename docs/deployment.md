@@ -98,8 +98,9 @@ Four steps, once a colleague has sent you a token ([`seats.md`](seats.md) is wha
    one, because a seat is a subscription several Igors may draw from. `GH_TOKEN` is the
    opposite — it is identity, and belongs in `/etc/igor/<role>.env`.
 
-   Running from a shell instead, the variable has to be set in the shell that starts `igor` —
-   which should mean a wrapper reading it from a secret store, not an export:
+   Running from a shell instead, `token_env` needs the variable set in the shell that starts
+   `igor`, which means a wrapper rather than an export — or `token_command`, which reads the
+   store itself and needs no shell at all:
    [Keeping the token out of your shells](#keeping-the-token-out-of-your-shells) below.
 
 3. **Pick it up.** Under systemd, `sudo systemctl restart igor@maintenance`. From a shell,
@@ -121,17 +122,28 @@ just `igor` — a package manager's install scripts, every CLI, anything that re
 environment and sends it somewhere. On a machine that runs `npm install` that is the exposure
 worth caring about, rather than the `0600` file.
 
-Igor reads the variable at the moment it runs and stores nothing, so the variable only has to
-exist for that one process. Keep the secret in a store and inject it:
-
-Once, typed at a prompt. It asks for the value twice and echoes neither, so the token never
-reaches a command line:
+Keep the secret in a store and have the seat name the command that reads it. Once, typed at a
+prompt — it asks for the value twice and echoes neither, so the token never reaches a command
+line:
 
 ```sh
 security add-generic-password -a "$USER" -s igor-seat-adam -w
 ```
 
-Then this, and only this, in your profile:
+Then in `igor.config.yaml`, and nowhere in any shell:
+
+```yaml
+- id: adam
+  token_command: security find-generic-password -a "$USER" -s igor-seat-adam -w
+```
+
+`pass`, `gopass` and `op read` substitute for `security find-generic-password` unchanged; a
+vault the team already shares is the better choice for somebody else's seat, since it is where
+they handed the token over.
+
+`token_env` reads the variable at the moment igor runs and stores nothing, so it need only
+exist for that one process — but on a laptop something has to put it there, which means a
+wrapper:
 
 ```sh
 igor() {
@@ -140,10 +152,16 @@ igor() {
 }
 ```
 
-Open a new shell, then delete `~/.config/igor/env` and the line sourcing it. The wrapper covers
-`igor` invoked as a command; `npm run igor --` from a clone bypasses it and finds no token. `pass`, `gopass` and `op read`
-substitute for `security find-generic-password` unchanged; a vault the team already shares is
-the better choice for somebody else's seat, since it is where they handed the token over.
+Open a new shell, then delete `~/.config/igor/env` and the line sourcing it. That wrapper covers
+`igor` invoked as a command and nothing else: `npm run igor --` from a clone bypasses it and
+finds no token. `token_command` has neither cost, which is why it is the one to reach for on a
+laptop. Under a service the variable comes from the unit rather than a shell, and `token_env`
+earns its place there.
+
+Whichever source names it, **do not set `CLAUDE_CODE_OAUTH_TOKEN` yourself.** That is the
+variable `claude` itself reads, so it authenticates everything igor spawns rather than the seat
+you named — and `igor observe`, which has to read a window under your own login, gets the seat's
+credential instead and reports that it carries no subscription.
 
 This does not remove the token from the `igor` process or the worker it spawns, which is where
 it has to be. It removes it from everything else you run.
