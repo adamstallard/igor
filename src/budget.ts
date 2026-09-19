@@ -64,11 +64,12 @@ export interface Seat extends TokenSource {
   dedicated?: boolean
   /** Fraction of the limit Igors must not consume. */
   reserve: number
-  /** Starting capacity estimate, superseded outright by the first observation of this seat and
-   *  window that yields one. It exists so a seat carrying a reserve can be drawn on before it
-   *  has ever been observed, which is otherwise impossible: a reserve needs a capacity, a
-   *  capacity needs spend inside an observed window, and a reserved seat is not spent from. */
-  capacity?: SeatCapacity
+  /** A starting capacity per window, in dollars, needing neither an observation nor recorded
+   *  spend — which is what it is for: a reserved seat with no figure at all is passed over
+   *  rather than spent from, so without one nothing ever accumulates for a derivation to
+   *  divide. Superseded outright by the first observation of this window that yields a
+   *  figure. */
+  capacityEstimate?: DeclaredEstimate
 }
 
 /**
@@ -78,7 +79,7 @@ export interface Seat extends TokenSource {
  * exactly a 168th of a week the weekly limit would forbid nothing the session limit already
  * forbids.
  */
-export type SeatCapacity = { [W in Window]?: number }
+export type DeclaredEstimate = { [W in Window]?: number }
 
 /**
  * How long a `token_command` may run before it is treated as failed. Provisional: no real
@@ -1073,8 +1074,8 @@ export function describeWindow(seat: Seat, window: Window, bound: SeatBound | un
       ? 'No reserve stands against it, so it runs uncalibrated until its first limit error'
       : `Passed over while a ${percent(seat.reserve * 100)} reserve stands against it: ` +
         (seen === undefined
-          ? `run \`igor observe ${seat.id}\` on the owner's machine, or declare a capacity`
-          : 'declaring a capacity is what starts a seat no observation has bounded')
+          ? `run \`igor observe ${seat.id}\` on the owner's machine, or declare a capacity_estimate`
+          : 'declaring a capacity_estimate is what starts a seat no observation has bounded')
     return {
       state: seen === undefined ? 'unobserved' : 'unmeasured',
       usable: runs,
@@ -1243,43 +1244,61 @@ export async function loadSpend(read: (path: string) => Promise<string | undefin
 }
 
 /**
- * Reads the capacities a seat declares.
+ * Reads the capacity estimates a seat declares.
  *
  * A figure that names no window is refused rather than taken for both: spent as a session
  * capacity, a weekly figure over-states the session bound by the cadence ratio, and a seat
  * whose owner's floor rests on that bound would never know.
  */
-function parseSeatCapacity(raw: unknown, seatId: string): SeatCapacity | undefined {
+function parseDeclaredEstimate(raw: unknown, seatId: string): DeclaredEstimate | undefined {
   if (raw === undefined) return undefined
   const windows: Window[] = ['session', 'week']
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
     throw new BudgetError(
-      `seat "${seatId}".capacity must name a window: ${windows.join(', ')}, or both, ` +
+      `seat "${seatId}".capacity_estimate must name a window: ${windows.join(', ')}, or both, ` +
         `each a positive number of dollars`,
     )
   }
   const declared = raw as Record<string, unknown>
   for (const key of Object.keys(declared)) {
     if (!windows.includes(key as Window)) {
-      throw new BudgetError(`seat "${seatId}".capacity names "${key}", which is not a window: ${windows.join(', ')}`)
+      throw new BudgetError(
+        `seat "${seatId}".capacity_estimate names "${key}", which is not a window: ${windows.join(', ')}`,
+      )
     }
   }
-  const capacity: SeatCapacity = {}
+  const estimate: DeclaredEstimate = {}
   for (const window of windows) {
     const value = declared[window]
     if (value === undefined) continue
     if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
-      throw new BudgetError(`seat "${seatId}".capacity.${window} must be a positive number of dollars`)
+      throw new BudgetError(`seat "${seatId}".capacity_estimate.${window} must be a positive number of dollars`)
     }
-    capacity[window] = value
+    estimate[window] = value
   }
-  if (Object.keys(capacity).length === 0) {
+  if (Object.keys(estimate).length === 0) {
     throw new BudgetError(
-      `seat "${seatId}".capacity names no window: declare ${windows.join(' or ')}, or leave it out`,
+      `seat "${seatId}".capacity_estimate names no window: declare ${windows.join(' or ')}, or leave it out`,
     )
   }
-  return capacity
+  return estimate
 }
+
+/**
+ * Every key a seat may name. Anything else is refused rather than dropped: a key this parser
+ * does not know is a key it ignores in silence, and a misspelt `reserve`, token source, or
+ * estimate leaves a seat that reads as configured and behaves as though it were not.
+ */
+const SEAT_KEYS = [
+  'id',
+  'owner',
+  'dedicated',
+  'reserve',
+  'capacity_estimate',
+  'token_env',
+  'token_file',
+  'token_command',
+]
 
 export function parseOrgBudget(raw: unknown): OrgBudget {
   if (raw === undefined || raw === null) return { seats: [], pools: [] }
@@ -1291,6 +1310,11 @@ export function parseOrgBudget(raw: unknown): OrgBudget {
     if (typeof entry !== 'object' || entry === null) throw new BudgetError('each seat must be a mapping')
     const s = entry as Record<string, unknown>
     if (typeof s['id'] !== 'string' || s['id'].trim() === '') throw new BudgetError('each seat needs an id')
+    for (const key of Object.keys(s)) {
+      if (!SEAT_KEYS.includes(key)) {
+        throw new BudgetError(`seat "${s['id']}" names "${key}", which is not a seat key: ${SEAT_KEYS.join(', ')}`)
+      }
+    }
     const dedicated = s['dedicated'] === true
     const reserveRaw = s['reserve']
     if (reserveRaw !== undefined && (typeof reserveRaw !== 'number' || reserveRaw < 0 || reserveRaw >= 1)) {
@@ -1299,7 +1323,7 @@ export function parseOrgBudget(raw: unknown): OrgBudget {
     if (dedicated && typeof reserveRaw === 'number' && reserveRaw > 0) {
       throw new BudgetError(`seat "${s['id']}" is dedicated, so nobody is there to reserve capacity for`)
     }
-    const capacity = parseSeatCapacity(s['capacity'], s['id'])
+    const capacityEstimate = parseDeclaredEstimate(s['capacity_estimate'], s['id'])
     const tokenEnv = typeof s['token_env'] === 'string' ? s['token_env'] : undefined
     const tokenFile = typeof s['token_file'] === 'string' ? s['token_file'] : undefined
     const tokenCommand = typeof s['token_command'] === 'string' ? s['token_command'] : undefined
@@ -1313,7 +1337,7 @@ export function parseOrgBudget(raw: unknown): OrgBudget {
       ...(tokenFile === undefined ? {} : { tokenFile }),
       ...(tokenCommand === undefined ? {} : { tokenCommand }),
       ...(dedicated ? { dedicated } : {}),
-      ...(capacity === undefined ? {} : { capacity }),
+      ...(capacityEstimate === undefined ? {} : { capacityEstimate }),
       reserve: dedicated ? 0 : ((reserveRaw as number) ?? 0),
     })
   }
