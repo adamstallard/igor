@@ -254,8 +254,10 @@ igor run <role> --plan      # what it would claim right now, claiming nothing
 
 Everything an Igor did is on the `igor-state` branch of the lore repository:
 `executions/` for what it worked and what that cost, one `.ndjson` file per UTC day,
-`discovery.json` for the watermarks, `transcripts/` for why it did what it did. Readable with
-`git show`, no checkout needed.
+`discovery.json` for the watermarks, `transcripts/` for why it did what it did, and
+`refusals/` for the whole envelope the provider sent back when a seat ran out — one JSON file
+per refusal, which is what a reset phrase can be read off later. Readable with `git show`, no
+checkout needed.
 
 ## When something is wrong
 
