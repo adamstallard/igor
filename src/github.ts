@@ -43,6 +43,12 @@ export async function branchSha(repo: string, branch: string): Promise<string> {
 export interface FileToCommit {
   path: string
   content: string
+  /**
+   * Read only where a commit lands on a branch that already has the path. A tree entry's mode
+   * is what the tree says it is, so writing every blob `100644` takes the executable bit off a
+   * script that had one.
+   */
+  executable?: boolean
 }
 
 /**
@@ -122,32 +128,39 @@ export async function mergeIntoBranch(
  * must be. Nothing here creates a branch, so a resolution can never land somewhere other than
  * the artifact it belongs to.
  *
- * The tree is `parents[0]`'s with `files` laid over it, so a path the merge deleted survives —
- * the same limit the artifact path has, named here rather than discovered.
+ * The tree is `parents[0]`'s with `files` laid over it and `deletions` removed from it. The
+ * removals matter more here than on the artifact path: this commit names the base as a parent,
+ * so a path the base deleted and this tree keeps is a revert of that deletion, landing the
+ * moment the artifact merges.
  */
 export async function commitOnBranch(
   repo: string,
   branch: string,
   parents: readonly string[],
   files: readonly FileToCommit[],
+  deletions: readonly string[],
   message: string,
 ): Promise<string> {
   const first = parents[0]
   if (first === undefined) throw new GitHubError('a commit on an existing branch needs a parent')
-  const blobs: { path: string; sha: string }[] = []
+  const blobs: { path: string; mode: string; sha: string }[] = []
   for (const file of files) {
     const blob = (await gh(
       ['api', `repos/${repo}/git/blobs`, '--method', 'POST', '--input', '-'],
       JSON.stringify({ content: file.content, encoding: 'utf-8' }),
     )) as { sha: string }
-    blobs.push({ path: file.path, sha: blob.sha })
+    blobs.push({ path: file.path, mode: file.executable === true ? '100755' : '100644', sha: blob.sha })
   }
 
   const tree = (await gh(
     ['api', `repos/${repo}/git/trees`, '--method', 'POST', '--input', '-'],
     JSON.stringify({
       base_tree: first,
-      tree: blobs.map((b) => ({ path: b.path, mode: '100644', type: 'blob', sha: b.sha })),
+      tree: [
+        ...blobs.map((b) => ({ path: b.path, mode: b.mode, type: 'blob', sha: b.sha })),
+        // A null sha is how the tree API says "not in this tree".
+        ...deletions.map((path) => ({ path, mode: '100644', type: 'blob', sha: null })),
+      ],
     }),
   )) as { sha: string }
 

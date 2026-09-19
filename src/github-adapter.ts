@@ -366,12 +366,15 @@ export class GitHubCodeHost implements CodeHost {
   }
 
   async resolve(request: ResolutionRequest): Promise<string> {
-    if (request.files.length === 0) throw new AdapterError('a resolution needs at least one file')
+    if (request.files.length === 0 && request.deletions.length === 0) {
+      throw new AdapterError('a resolution needs at least one changed path')
+    }
     return commitOnBranch(
       request.repo,
       request.branch,
       request.parents,
       request.files,
+      request.deletions,
       request.message,
     )
   }

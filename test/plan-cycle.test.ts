@@ -20,7 +20,7 @@ vi.mock('../src/state.js', () => ({
   },
 }))
 
-const { planCycle } = await import('../src/loop.js')
+const { planCycle, recordDecisions } = await import('../src/loop.js')
 const { sourceKey, STATE_PATH } = await import('../src/discovery.js')
 const { defer, NO_DEFERRALS, STATE_PATH: DEFERRALS_PATH } = await import('../src/deferred.js')
 const { triageBatch } = await import('../src/triage.js')
@@ -473,5 +473,84 @@ describe('an artifact of the Igor\'s own that stopped merging', () => {
       { now: NOW, identity: 'igor-bot', triage },
     )
     expect(answered.toCatchUp).toHaveLength(1)
+  })
+})
+
+describe('a catch-up must not move the watermark', () => {
+  it('leaves the mark where it was when the tracker will not answer for a rotting artifact', async () => {
+    // A catch-up item is old by construction — the premise of the whole change is that the
+    // base moved and the item never did. `heldBelow` pulls the mark back below anything
+    // nobody examined, which for an ordinary item is bounded by the mark itself. For this one
+    // it is not: one rate limit on a 200-day-old artifact resets the mark 200 days and every
+    // cycle after re-triages the backlog. Holding it buys nothing either way, because a stale
+    // artifact is found by scanning everything the query returned.
+    stored.clear()
+    const old = withArtifact(9, 200 * 24 * 60)
+    const recent = candidate(1, 10)
+
+    await planCycle(deps([old, recent], none), role(), { now: NOW, identity: 'igor-bot', triage })
+    const after = structuredClone(stored.get(STATE_PATH))
+
+    const report = await planCycle(
+      deps([old, recent], (c) => c.id === old.id),
+      role(),
+      { now: NOW, identity: 'igor-bot', triage },
+    )
+    expect(report.skippedUnreadable).toBe(1)
+    expect(report.toCatchUp).toEqual([])
+    expect(stored.get(STATE_PATH)).toEqual(after)
+  })
+
+  it('leaves the mark where it was when somebody has stopped the item', async () => {
+    stored.clear()
+    const old = withArtifact(9, 200 * 24 * 60)
+
+    await planCycle(deps([old], none), role(), { now: NOW, identity: 'igor-bot', triage })
+    const after = structuredClone(stored.get(STATE_PATH))
+
+    const tracker = {
+      name: 'github',
+      search: async () => [old],
+      commentsSince: async () => [{ author: 'alice', at: ago(5), body: 'stop' }],
+    } as unknown as Tracker
+    const report = await planCycle(
+      { tracker, codeHost: {}, trees: {}, destination: 'o/state' } as never,
+      role(),
+      { now: NOW, identity: 'igor-bot', triage },
+    )
+    expect(report.skippedStopped).toBe(1)
+    expect(stored.get(STATE_PATH)).toEqual(after)
+  })
+
+  it('records the catch-up as a decision, the way every other decision is recorded', async () => {
+    // A catch-up is decided at the universal stage and lands in neither `skipped` nor
+    // `verdicts`, so it is the one decision a cycle can make and never write down — and
+    // work-triage requires the ratio at each stage be determinable from the record.
+    stored.clear()
+    const written: unknown[] = []
+    const report = await planCycle(deps([withArtifact(7, 40)], none), role(), {
+      now: NOW, identity: 'igor-bot', triage,
+    })
+    await recordDecisions('o/state', role(), report, async (_r, _p, value) => {
+      written.push(value)
+    })
+    const decisions = (written[0] as { decisions: { item: string; stage: string }[] }).decisions
+    expect(decisions.some((d) => d.item === 'github:o/r#7' && d.stage === 'catch-up')).toBe(true)
+  })
+
+  it('writes a record for a cycle whose only decision was a catch-up', async () => {
+    // Nothing fresh and no failures, so the early return would drop it — and that is the
+    // cycle whose one decision is most worth being able to read back.
+    stored.clear()
+    const item = withArtifact(7, 40)
+    await planCycle(deps([item], none), role(), { now: NOW, identity: 'igor-bot', triage })
+
+    const written: unknown[] = []
+    const second = await planCycle(deps([item], none), role(), { now: NOW, identity: 'igor-bot', triage })
+    expect(second.fresh).toBe(0)
+    await recordDecisions('o/state', role(), second, async (_r, _p, value) => {
+      written.push(value)
+    })
+    expect(written).toHaveLength(1)
   })
 })

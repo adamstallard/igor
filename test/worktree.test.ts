@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { describe, expect, it } from 'vitest'
@@ -138,5 +138,92 @@ describe('bringing a base into an artifact tree', () => {
     // as one would hand a worker a tree with nothing wrong in it.
     const { clone } = await conflicting()
     await expect(new ClonedTree(clone, 'o/r').merge('no-such-branch')).rejects.toThrow()
+  })
+})
+
+describe('what a rename and a file mode survive', () => {
+  it('reports the path a rename came from as deleted', async () => {
+    // Porcelain reports a rename as *two* NUL-separated records — the new path, then the
+    // original alone. Read as a status line the second is a path sliced out of the middle of
+    // a filename, so the original is reported as neither changed nor deleted. A resolution
+    // lays its files over the tree the branch already has, so the branch then carries the
+    // file at both paths — and with the base recorded as a parent, git never asks again.
+    const dir = await repo()
+    await run('git', ['-C', dir, 'mv', 'tracked.md', 'renamed.md'])
+
+    const changed = await new ClonedTree(dir, 'o/r').changes()
+    expect(changed).toEqual([
+      { path: 'tracked.md', content: '', kind: 'deleted' },
+      { path: 'renamed.md', content: 'before\n', kind: 'modified' },
+    ])
+  })
+
+  it('does not invent a file out of the second record of a rename', async () => {
+    const dir = await repo()
+    await run('git', ['-C', dir, 'mv', 'tracked.md', 'renamed.md'])
+    const changed = await new ClonedTree(dir, 'o/r').changes()
+    expect(changed.map((c) => c.path)).not.toContain('acked.md')
+  })
+
+  it('reports an executable file as executable', async () => {
+    // Only a resolution reads this, and only because it lays blobs over a tree the branch
+    // already has: every entry written `100644` takes the bit off a script that had one.
+    const dir = await repo()
+    writeFileSync(join(dir, 'run.sh'), '#!/bin/sh\necho hi\n', { mode: 0o755 })
+    writeFileSync(join(dir, 'plain.md'), 'text\n')
+
+    const changed = await new ClonedTree(dir, 'o/r').changes()
+    expect(changed.find((c) => c.path === 'run.sh')?.executable).toBe(true)
+    expect(changed.find((c) => c.path === 'plain.md')?.executable).toBeUndefined()
+  })
+})
+
+describe('a conflict where one side deleted the file', () => {
+  /** The base removes a file the artifact's branch edited — an ordinary delete/modify merge. */
+  async function deleteModify(): Promise<string> {
+    const origin = tempDir('igor-tree-dm-')
+    const git = (...args: string[]) => run('git', ['-C', origin, ...args])
+    await git('init', '-q', '-b', 'main', '.')
+    await git('config', 'user.email', 't@example.invalid')
+    await git('config', 'user.name', 'test')
+    writeFileSync(join(origin, 'doomed.ts'), 'alpha\n')
+    await git('add', '-A')
+    await git('commit', '-qm', 'base')
+    await git('checkout', '-qb', 'artifact')
+    writeFileSync(join(origin, 'doomed.ts'), 'alpha changed\n')
+    await git('commit', '-qam', 'edit it')
+    await git('checkout', '-q', 'main')
+    await git('rm', '-q', 'doomed.ts')
+    await git('commit', '-qm', 'delete it')
+
+    const clone = tempDir('igor-tree-dmc-')
+    await run('git', ['clone', '-q', '--depth', '1', '--branch', 'artifact', `file://${origin}`, clone])
+    return clone
+  }
+
+  it('lets the worker accept the deletion by deleting the file', async () => {
+    // A delete/modify conflict carries no markers, so the only way a worker can say "honour
+    // the deletion" is to remove the file — and an unmerged path whose file is gone was
+    // reported as nothing at all, so the resolution kept the artifact's copy and the base's
+    // deletion came back the moment the artifact merged.
+    const clone = await deleteModify()
+    const tree = new ClonedTree(clone, 'o/r')
+    const merge = await tree.merge('main')
+    expect(merge.conflicts).toContain('doomed.ts')
+
+    rmSync(join(clone, 'doomed.ts'))
+    const changed = await tree.changes()
+    expect(changed).toEqual([{ path: 'doomed.ts', content: '', kind: 'deleted' }])
+  })
+
+  it('still offers the artifact\'s copy where the worker kept it', async () => {
+    // Keeping the file is a legitimate resolution of delete/modify, so the other choice has
+    // to keep working: the path comes back as content, not as a deletion.
+    const clone = await deleteModify()
+    const tree = new ClonedTree(clone, 'o/r')
+    await tree.merge('main')
+
+    const changed = await tree.changes()
+    expect(changed).toEqual([{ path: 'doomed.ts', content: 'alpha changed\n', kind: 'modified' }])
   })
 })

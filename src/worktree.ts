@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { mkdtemp, rm, readFile } from 'node:fs/promises'
+import { mkdtemp, rm, readFile, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -26,6 +26,11 @@ export interface ChangedFile {
   content: string
   /** Deletions and binaries are reported but cannot be carried by the tree-API artifact path. */
   kind: 'added' | 'modified' | 'deleted'
+  /**
+   * Whether the file is executable. Only a resolution reads it: it lays blobs over a tree the
+   * branch already has, so a mode assumed here replaces the mode that is there.
+   */
+  executable?: boolean
 }
 
 /** What a merge left behind, and the two commits a resolution of it has to be parented on. */
@@ -80,6 +85,9 @@ function run(cmd: string, args: readonly string[], cwd?: string): Promise<string
 /** Statuses git reports that mean the file is gone. */
 const DELETED = new Set(['D', 'AD', 'RD'])
 
+/** Either side of an unmerged entry, which is where a delete/modify conflict shows up. */
+const UNMERGED = /^(?:U.|.U|AA|DD)$/
+
 /** Exported so the change-collection rules can be tested against a real repository. */
 export class ClonedTree implements WorkingTree {
   private released = false
@@ -100,23 +108,50 @@ export class ClonedTree implements WorkingTree {
     const entries = status.split('\0').filter((e) => e.length > 0)
     const out: ChangedFile[] = []
 
-    for (const entry of entries) {
+    for (let i = 0; i < entries.length; i += 1) {
+      const entry = entries[i]!
       const code = entry.slice(0, 2).trim()
       const path = entry.slice(3)
+      // A rename or a copy is **two** records: the new path, then the original alone on the
+      // next one. Read as a status line that second record is a path sliced out of the middle
+      // of a filename, so the original is reported as neither changed nor deleted — and a
+      // resolution, which lays its files over the tree the branch already has, keeps the old
+      // path and publishes the file twice. A merge is where renames arrive, so this is the
+      // ordinary case rather than an exotic one.
+      const from = entry.startsWith('R') || entry.startsWith('C') ? entries[++i] : undefined
+      if (entry.startsWith('R') && from !== undefined && from !== '') {
+        out.push({ path: from, content: '', kind: 'deleted' })
+      }
       if (path === '') continue
       if (DELETED.has(code)) {
         out.push({ path, content: '', kind: 'deleted' })
         continue
       }
       let content: string
+      let executable = false
       try {
         content = await readFile(join(this.path, path), 'utf8')
+        executable = ((await stat(join(this.path, path))).mode & 0o111) !== 0
       } catch {
+        // A path still unmerged and no longer on disk is a deletion the worker made. A
+        // delete/modify conflict carries no markers, so removing the file is the only way a
+        // worker that was told not to run git can say "honour the deletion" — and read as an
+        // unreadable file it says nothing at all, so the resolution keeps the artifact's copy
+        // and the base's deletion comes back the moment the artifact merges.
+        if (UNMERGED.test(entry.slice(0, 2))) {
+          out.push({ path, content: '', kind: 'deleted' })
+          continue
+        }
         // A binary or unreadable file; the caller reports it rather than guessing. With
         // `-uall` a directory never reaches here, which is what this used to swallow.
         continue
       }
-      out.push({ path, content, kind: code.includes('?') || code === 'A' ? 'added' : 'modified' })
+      out.push({
+        path,
+        content,
+        kind: code.includes('?') || code === 'A' ? 'added' : 'modified',
+        ...(executable ? { executable } : {}),
+      })
     }
     return out
   }

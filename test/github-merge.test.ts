@@ -91,6 +91,7 @@ describe('putting a resolution on a branch that already exists', () => {
       'igor/fix-7',
       ['headsha', 'basesha'],
       [{ path: 'src/a.ts', content: 'resolved\n' }],
+      ['src/gone.ts'],
       'Merge main into igor/fix-7',
     )
 
@@ -106,13 +107,22 @@ describe('putting a resolution on a branch that already exists', () => {
     // the operation that would fail — or, worse, put the resolution somewhere else.
     expect(method(3)).toBe('PATCH')
     expect(calls[3]?.body).toEqual({ sha: 'commitsha' })
-    // Laid over the artifact's own tree, so a file neither side touched is still there.
-    expect(calls[1]?.body).toMatchObject({ base_tree: 'headsha' })
+    // Laid over the artifact's own tree, so a file neither side touched is still there — and
+    // a path the base deleted is dropped from it with a null sha. Left in, that path would be
+    // a revert of the base's deletion the moment the artifact merges, because this commit
+    // names the base as a parent.
+    expect(calls[1]?.body).toMatchObject({
+      base_tree: 'headsha',
+      tree: [
+        { path: 'src/a.ts', mode: '100644', type: 'blob', sha: 'blobsha' },
+        { path: 'src/gone.ts', mode: '100644', type: 'blob', sha: null },
+      ],
+    })
   })
 
   it('refuses a commit with no parent rather than orphaning the branch', async () => {
     reset()
-    await expect(commitOnBranch('o/r', 'b', [], [{ path: 'a', content: 'x' }], 'm')).rejects.toThrow()
+    await expect(commitOnBranch('o/r', 'b', [], [{ path: 'a', content: 'x' }], [], 'm')).rejects.toThrow()
     expect(calls).toEqual([])
   })
 })

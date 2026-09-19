@@ -173,7 +173,13 @@ export interface ResolutionRequest {
   branch: string
   /** The artifact's head, then the base it takes in. Order is the commit's parent order. */
   parents: readonly [string, string]
-  files: { path: string; content: string }[]
+  files: { path: string; content: string; executable?: boolean }[]
+  /**
+   * Paths the merge removed. Carried rather than dropped, because this commit names the base
+   * as a parent: a deletion left out of it is not a gap in the artifact, it is a revert of the
+   * base's deletion that lands the moment the artifact merges.
+   */
+  deletions: readonly string[]
   message: string
 }
 
