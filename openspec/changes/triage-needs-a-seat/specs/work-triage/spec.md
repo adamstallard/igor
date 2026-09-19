@@ -3,9 +3,9 @@
 ### Requirement: The model stage does not run where no seat can pay for it
 
 Triage's model call is a spend, and SHALL be charged to the seat the budget gate chooses for the
-role, using that seat's credential. Where the gate names no seat — every seat in the pool spent
-to its bound, or the pool unusable for any other reason — the model stage SHALL NOT run, and no
-other credential SHALL be substituted for the seat's.
+role, using that seat's credential where the seat names one. Where the gate names no seat —
+every seat in the pool spent to its bound, or the pool unusable for any other reason — the model
+stage SHALL NOT run, and no credential SHALL be substituted for the seat the gate did not name.
 
 Every stage before the model call SHALL be unaffected: discovery, reading an item's comments,
 the stop gate, the deferral gate, the universal skips and the lane predicates all run as they

@@ -3,10 +3,16 @@
 ### Requirement: A spend with no seat behind it does not happen
 
 Where seats are declared, every model call Igor makes on its own behalf SHALL be charged to the
-seat the gate chose for the role and SHALL be made with that seat's credential. Where the gate
-names no seat, the call SHALL NOT be made, and no ambient credential SHALL be substituted for
-the seat's. Where an organization declares no seats, budget is not enforced and this requirement
-places no condition on anything.
+seat the gate chose for the role, and SHALL be made with that seat's credential where the seat
+names one. Where the gate names no seat, the call SHALL NOT be made, and no ambient credential
+SHALL be substituted for the seat the gate did not name. Where an organization declares no
+seats, budget is not enforced and this requirement places no condition on anything.
+
+The condition is whether the gate named a seat, not whether a credential was found. A seat
+naming none of the three token mechanisms is already unaffected by the rule that governs them —
+it runs on whatever login is ambient — and it is still a seat the gate chose, still bounded by
+its reserve, still named in the record as having paid. What has no seat behind it is a call the
+gate refused to choose one for.
 
 This is the spending-side counterpart of the reading rule already in force: a seat naming a
 token that is not available is reported unreadable and no other credential is used in its place.
@@ -47,5 +53,11 @@ credential pays, and the fallback is what it runs on.
 #### Scenario: A call that runs names the seat that paid
 
 - **WHEN** the gate names a seat and the call is made
-- **THEN** the call uses that seat's credential
-- **AND** the record names that seat as having paid
+- **THEN** the call uses that seat's credential where the seat names one
+- **AND** the record names that seat as having paid, whether or not it named a token
+
+#### Scenario: A seat naming no token is still a seat
+
+- **WHEN** the gate chooses a seat that names none of the token mechanisms
+- **THEN** the call is made, on the ambient login, as that configuration already permits
+- **AND** the seat is recorded as having paid
