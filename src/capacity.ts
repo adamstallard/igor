@@ -277,6 +277,73 @@ export function capacityFor(
   return undefined
 }
 
+/** An observation of a window, and what stopped it yielding a capacity figure. */
+export interface NoFigure {
+  /** The newest all-models observation of the window. */
+  from: Observation
+  /** What stopped the division, as a clause completing "…, but ". */
+  why: string
+  /**
+   * Igor spend inside the current instance of this window — the same sum `SeatCapacity` carries
+   * for a window that has a figure, for one that does not.
+   *
+   * §5.1 asks for Igor spend per window, and a window nothing bounds has still been spent on.
+   * Absent where no observation resolved a reset, because without one nothing places the
+   * instance and a total over all history answers a different question.
+   */
+  spentUsd?: number
+  /**
+   * ISO instant the instance `spentUsd` was summed inside ends, and so the only reset this
+   * window has to state.
+   *
+   * It comes from whichever row resolved a reset, which is frequently not the row `why`
+   * explains: the newest observation supplies the explanation and an older one the position.
+   * Present and absent exactly with `spentUsd`, both being facts about the same instance.
+   */
+  resetsAt?: string
+}
+
+/**
+ * Why a window that has been observed still has no capacity figure.
+ *
+ * A seat read three times and still uncalibrated is not a seat nobody has read, and the two
+ * want different things done: the first wants spend inside an instance, or a declared
+ * `capacity`; the second wants `igor observe`. Reporting them as one sentence is what sends an
+ * operator to run a reading they have already run.
+ *
+ * Only the newest observation is explained, and only meaningfully once `capacityFor` has
+ * returned nothing — which is to say once every row failed, the newest among them included.
+ */
+export function whyNoFigure(
+  observations: readonly Observation[],
+  records: readonly SpendRecord[],
+  seat: string,
+  window: Window,
+): NoFigure | undefined {
+  const [newest] = newestFirst(observations, seat, window)
+  if (newest === undefined) return undefined
+  const span = observedSpan(newest, WINDOW_LENGTH[window])
+  if (span === undefined) {
+    return {
+      from: newest,
+      // Said of this reading and no other. An older row may well have resolved a reset and
+      // placed the instance; what this one cannot do is divide inside it.
+      why:
+        newest.resetsAt === undefined
+          ? `that reading's reset${newest.resetsPhrase === undefined ? '' : ` ("${newest.resetsPhrase}")`} ` +
+            `resolved to no instant, so it places no instance to divide inside`
+          : 'the reading precedes the instance its own reset places it in',
+    }
+  }
+  if (!Number.isFinite(newest.percentUsed) || newest.percentUsed <= 0) {
+    return { from: newest, why: `a window ${newest.percentUsed}% used divides into no capacity` }
+  }
+  return {
+    from: newest,
+    why: 'no Igor spend is recorded inside the instance it observed, so there is nothing to divide',
+  }
+}
+
 /**
  * The instance of a window containing `now`, stepped from an observed reset by whole window
  * lengths.
@@ -351,6 +418,13 @@ export interface SeatCapacity {
 export interface SeatBound {
   capacity?: SeatCapacity
   spent?: SpentWindow
+  /**
+   * The newest observation of this window and why it divided into nothing, present only where
+   * no `capacity` was derived. It changes no decision — a window with no figure is a window
+   * with no figure — and it is what lets the gate and the report say *observed and still
+   * uncalibrated* instead of *never observed*, which is a different thing to go and fix.
+   */
+  noFigure?: NoFigure
   /**
    * ISO instant the instance `capacity.spentUsd` was summed inside ends, and so when a window
    * stopped by the arithmetic has room again.
@@ -450,8 +524,31 @@ export function boundsForSeats(
       // A refusal with nothing in its instance to divide derives no capacity and still shuts
       // the window. Without an entry the gate sees a seat it knows nothing about, which it
       // lets run uncalibrated wherever no reserve is declared.
-      const shutOnly = spent === undefined ? undefined : { spent }
       const estimate = capacityFor(vouched, records, seat.id, window, seat.capacity?.[window])
+      // Carried whenever there is no figure, so that a window read and still uncalibrated is
+      // never reported as one nobody has read. It is evidence rather than a bound: every
+      // consumer keys off `capacity` and `spent`, so an entry holding only this leaves the gate
+      // deciding exactly what it decided when there was no entry at all.
+      const unexplained = estimate === undefined ? whyNoFigure(vouched, records, seat.id, window) : undefined
+      const uncalibratedAnchor = unexplained === undefined ? undefined : resetAnchor(vouched, seat.id, window)
+      const uncalibratedInstance =
+        uncalibratedAnchor === undefined ? undefined : currentInstance(uncalibratedAnchor, WINDOW_LENGTH[window], now)
+      const noFigure =
+        unexplained === undefined
+          ? undefined
+          : {
+              ...unexplained,
+              ...(uncalibratedInstance === undefined
+                ? {}
+                : {
+                    spentUsd: spendInInstance(records, seat.id, uncalibratedInstance),
+                    resetsAt: uncalibratedInstance.end,
+                  }),
+            }
+      const shutOnly =
+        spent === undefined && noFigure === undefined
+          ? undefined
+          : { ...(spent === undefined ? {} : { spent }), ...(noFigure === undefined ? {} : { noFigure }) }
       if (estimate === undefined) {
         if (shutOnly !== undefined) windows[window] = shutOnly
         continue

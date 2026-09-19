@@ -106,8 +106,12 @@ Four steps, once a colleague has sent you a token ([`seats.md`](seats.md) is wha
 3. **Pick it up.** Under systemd, `sudo systemctl restart igor@maintenance`. From a shell,
    open a new one — a token exported into one shell is invisible to every other.
 
-4. **Check `igor budget`.** The seat should print its windows. A seat whose variable is unset
-   reports unreadable and is skipped, never substituted with whatever login is ambient.
+4. **Check `igor budget`.** The seat should print its windows — read live where the credential
+   answers with them, derived from observation and record where it does not. A seat whose
+   variable is unset reports its credential unreadable and is skipped, never substituted with
+   whatever login is ambient. That is a different row from a seat nobody has observed, which
+   wants `igor observe` run on the owner's machine, and from a seat that has run out, which
+   wants waiting.
 
 `igor budget` reading a seat is necessary and not sufficient. Reading inherits this process's
 environment, so an ambient login or a keychain can answer for a seat that names no token source
@@ -198,8 +202,9 @@ nothing else is what stands in for the isolation there.
 A `claude setup-token` credential lasts **one year**, and the lifetime cannot be configured.
 Nothing warns beforehand.
 
-What you get instead is a clear failure: the seat reports unreadable in `igor budget`, and a
-worker's handoff carries the message the CLI actually gave rather than an exit code. Rotating
+What you get instead is a clear failure: the seat reports its credential unreadable in
+`igor budget` — distinctly from a seat nobody has observed and from one that has run out — and
+a worker's handoff carries the message the CLI actually gave rather than an exit code. Rotating
 is the same command the colleague ran the first time, and step 2 again.
 
 A calendar reminder eleven months out is cruder than it should be and is currently the only
@@ -243,7 +248,7 @@ which disappears when the manager cleans up. Point at a stable interpreter.
 ## Checking on it
 
 ```bash
-igor budget                 # what each seat has left, read live
+igor budget                 # what each seat has left, and what state each one is in
 igor run <role> --plan      # what it would claim right now, claiming nothing
 ```
 

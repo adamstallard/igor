@@ -546,7 +546,7 @@ program
 
 program
   .command('budget')
-  .description('What each seat has left, read live from the seat itself')
+  .description('What each seat has left — read live where it can be, derived from observation where it cannot')
   .action(async () => {
     const config = loadConfig(program.opts()['config'])
     const repo = await repoFromCheckout(config.destination)
@@ -555,12 +555,11 @@ program
       loadSpend((path) => readLog(repo, path)),
       loadObservations((path) => readLog(repo, path)),
     ])
-    process.stdout.write(renderBudget(readings))
-
-    // The table above reports a seat live or not at all; the gate below bounds an unreadable
-    // one by observation, so the pool line must be given the same figures the loop gets or it
-    // reports a pool exhausted that an Igor would happily spend.
+    // The same figures the loop gets, so the table and the pool line below cannot disagree —
+    // and so that a seat nothing can read is reported in the state it is actually in rather
+    // than as one broken line.
     const bounds = boundsForSeats(observations, spend, config.budget.seats)
+    process.stdout.write(renderBudget(readings, bounds, observations))
     for (const pool of config.budget.pools) {
       const gate = budgetGate(config.budget, { name: '(any role)', seat: `pool:${pool.id}` }, readings, spend, bounds)
       process.stdout.write(`\npool ${pool.id}: ${gate.reason}\n`)

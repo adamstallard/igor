@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 import type { Candidate, Tracker } from '../src/adapter.js'
 import type { ExecutionResult } from '../src/execute.js'
 import type { Role } from '../src/role.js'
-import { composeHandoff, handOffFrom, stepsFrom, suggest } from '../src/handoff.js'
+import { composeHandoff, handOffFrom, stepsFrom, suggest, type HandoffReason } from '../src/handoff.js'
+import { shouldDefer } from '../src/deferred.js'
 
 const NOW = Date.parse('2026-09-13T12:00:00Z')
 const CLAIMED = new Date(NOW - 12 * 60_000).toISOString()
@@ -146,6 +147,53 @@ describe('a budget handoff says when capacity returns', () => {
       reason: { kind: 'budget' }, done: [], remaining: [], suggested: [],
     }, NOW)
     expect(text).toMatch(/not known/)
+  })
+
+  it('does not call the budget used up where no seat could be read — #49', () => {
+    // One way to reach "no seat" is a spent budget and another is a token that did not
+    // resolve. The first sends the reader to look at spend and the second at configuration,
+    // and a sentence covering both sends half of them to the wrong place.
+    const text = composeHandoff(role(), candidate(), {
+      reason: { kind: 'budget', blocked: 'credential',
+                passedOver: [{ seat: 'igor-1', verdict: 'credential' }, { seat: 'adam', verdict: 'credential' }] },
+      done: [], remaining: [], suggested: [],
+    }, NOW)
+    expect(text).toContain("no seat's usage could be read")
+    expect(text).toContain('igor-1, adam')
+    expect(text).not.toContain('is used up')
+    expect(text).not.toMatch(/not known/)
+  })
+
+  it('names an uncalibrated pool as uncalibrated rather than as spent', () => {
+    const text = composeHandoff(role(), candidate(), {
+      reason: { kind: 'budget', blocked: 'no-figure', passedOver: [{ seat: 'adam', verdict: 'no-figure' }] },
+      done: [], remaining: [], suggested: [],
+    }, NOW)
+    expect(text).toContain('no seat has a capacity figure to spend against')
+    expect(text).toContain('adam')
+    expect(text).not.toContain('is used up')
+  })
+
+  it('still says used up where a seat really did run out', () => {
+    // The verdict the sentence was always right about, and the reason it is kept: a pool with
+    // one spent seat is a spent pool whatever else is also wrong with it.
+    const text = composeHandoff(role(), candidate(), {
+      reason: { kind: 'budget', seat: 'igor-1', resetAt, blocked: 'spent',
+                passedOver: [{ seat: 'igor-1', verdict: 'spent' }] },
+      done: [], remaining: [], suggested: [],
+    }, NOW)
+    expect(text).toContain('is used up')
+    expect(text).toContain('2026-09-13 15:00 UTC')
+  })
+
+  it('stays a budget handoff whichever way there was no seat, so nothing parks the item', () => {
+    // `shouldDefer` exempts `kind: 'budget'`. A credential fault reported as a kind of its own
+    // would park every item an unreadable seat was offered, for something they had no part in
+    // — the harm #49 rules out while asking for the distinction.
+    const reason: HandoffReason = {
+      kind: 'budget', blocked: 'credential', passedOver: [{ seat: 'igor-1', verdict: 'credential' }],
+    }
+    expect(shouldDefer('handed-off', reason.kind, [])).toBe(false)
   })
 
   it('offers no way to defer for being busy', () => {

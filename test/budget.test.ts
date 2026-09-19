@@ -12,7 +12,9 @@ import {
   hasSubscription,
   readUsage,
   NO_CAPACITY_FIGURE,
+  describeWindow,
   renderBudget,
+  type WindowState,
   resolveToken,
   roleSharePercent,
   seatStatus,
@@ -23,6 +25,8 @@ import {
   type Usage,
 } from '../src/budget.js'
 import { boundsForSeats, type Observation } from '../src/capacity.js'
+import { composeHandoff } from '../src/handoff.js'
+import type { Role } from '../src/role.js'
 
 /** Exactly what `claude -p '/usage'` returns. */
 const REAL = `You are currently using your subscription to power your Claude Code usage
@@ -368,6 +372,171 @@ describe('reporting', () => {
   })
 })
 
+describe('an operator can tell the states apart from the report alone', () => {
+  const NOW = '2026-09-13T13:00:00.000Z'
+  const at = '2026-09-13T12:00:00.000Z'
+  const obs = (over: Partial<Observation>): Observation =>
+    ({ at, seat: 'x', window: 'session', percentUsed: 50, resetsAt: '2026-09-13T14:00:00.000Z', source: 'usage', ...over })
+  const paid = (seatId: string, usd: number, when = '2026-09-13T11:00:00.000Z'): SpendRecord =>
+    ({ seat: seatId, costUsd: usd, at: when })
+  const unmeasurable = (s: Seat): SeatUsage =>
+    ({ seat: s, unmeasured: true, error: `seat "${s.id}" carries no subscription.` })
+
+  const seats: Seat[] = [
+    { id: 'live', reserve: 0, dedicated: true, tokenEnv: 'T' },
+    { id: 'badtoken', reserve: 0.5, tokenEnv: 'GONE' },
+    { id: 'virgin', reserve: 0.5, tokenEnv: 'T' },
+    { id: 'freewheel', reserve: 0, tokenEnv: 'T' },
+    { id: 'uncalibrated', reserve: 0.5, tokenEnv: 'T' },
+    { id: 'calibrated', reserve: 0.25, tokenEnv: 'T' },
+    { id: 'declared', reserve: 0.25, tokenEnv: 'T', capacity: { session: 40 } },
+    { id: 'refused', reserve: 0.1, tokenEnv: 'T' },
+  ]
+  const observations: Observation[] = [
+    // Read three times and still uncalibrated: 0% divides into nothing, and the 6% row has no
+    // Igor spend inside the instance it saw. This is Adam's own seat, to the row.
+    obs({ seat: 'uncalibrated', window: 'session', percentUsed: 0, resetsAt: '2026-09-13T14:00:00.000Z' }),
+    obs({ seat: 'uncalibrated', window: 'week', percentUsed: 6, resetsAt: '2026-09-18T16:00:00.000Z' }),
+    obs({ seat: 'uncalibrated', window: 'week', percentUsed: 0, resetsAt: '2026-09-18T16:00:00.000Z', model: 'Fable' }),
+    obs({ seat: 'calibrated', window: 'session', percentUsed: 50 }),
+    obs({ seat: 'refused', window: 'session', percentUsed: 100, source: 'limit' }),
+  ]
+  const records = [paid('calibrated', 10), paid('declared', 31, at)]
+  const bounds = boundsForSeats(observations, records, seats, NOW)
+  const readings: SeatUsage[] = [
+    { seat: seats[0]!, usage: parseUsage(REAL) },
+    { seat: seats[1]!, error: 'seat "badtoken" names $GONE, which is not set' },
+    ...seats.slice(2).map((s) => unmeasurable(s)),
+  ]
+  const out = renderBudget(readings, bounds, observations)
+  /** The seat's own lines. A report holding eight seats matches any phrase somewhere, so every
+   *  assertion here is against the lines that actually carry the id. */
+  const rows = (id: string): string => out.split('\n').filter((l) => l.startsWith(id)).join('\n')
+
+  it('reports a seat that could be read on its reading, in percent', () => {
+    expect(rows('live')).toMatch(/session\s+17%\s+0%\s+83%/)
+    expect(rows('live')).toContain('read live')
+    expect(rows('live')).not.toContain('$')
+  })
+
+  it('tells an unreadable credential from everything a record could say about the seat', () => {
+    expect(rows('badtoken')).toContain('credential unreadable')
+    expect(rows('badtoken')).toContain('$GONE')
+    expect(rows('badtoken')).not.toContain('never been observed')
+    expect(rows('badtoken')).not.toContain('no headroom')
+  })
+
+  it('tells a seat nobody has ever observed from one that is broken', () => {
+    expect(rows('virgin')).toContain('the session has never been observed')
+    expect(rows('virgin')).toContain('igor observe virgin')
+    expect(rows('virgin')).not.toContain('unreadable')
+  })
+
+  it('says an unreserved uncalibrated seat runs anyway, rather than reading as passed over', () => {
+    expect(rows('freewheel')).toContain('never been observed')
+    expect(rows('freewheel')).toContain('runs uncalibrated')
+    expect(rows('freewheel')).not.toContain('Passed over')
+  })
+
+  it('tells a seat observed and still uncalibrated from one never observed — the live #38 report', () => {
+    // The whole test of the change. Before it, this seat printed one line saying its credential
+    // carries no subscription and nothing else, and read as broken when it is merely unbounded.
+    const text = rows('uncalibrated')
+    expect(text).toContain('observed 0% used at 2026-09-13T12:00:00.000Z (usage)')
+    expect(text).toContain('observed 6% used at 2026-09-13T12:00:00.000Z (usage)')
+    expect(text).toContain('a window 0% used divides into no capacity')
+    expect(text).toContain('no Igor spend is recorded inside the instance it observed')
+    expect(text).not.toContain('never been observed')
+    expect(text).not.toContain('unreadable')
+    // And the remedy is the one that would work: another reading changes nothing here.
+    expect(text).toContain('declaring a capacity')
+    expect(text).not.toContain('igor observe')
+    // The per-model row it wrote is shown too, rather than disappearing off the derived path.
+    expect(out).toContain('wk:Fable')
+  })
+
+  it('shows Igor spend on a window nothing bounds, a window with no figure still having cost', () => {
+    // §5.1 asks for Igor spend on every window, not only on the ones a division succeeded for.
+    // A reset the provider named places the instance even where no capacity came of it.
+    const s: Seat = { id: 'observed-unbounded', reserve: 0.5, tokenEnv: 'T' }
+    const o = obs({ seat: s.id, window: 'session', percentUsed: 0, resetsAt: '2026-09-13T14:00:00.000Z' })
+    const b = boundsForSeats([o], [paid(s.id, 4, '2026-09-13T12:30:00.000Z')], [s], NOW)
+    expect(b.get(s.id)?.session?.noFigure?.spentUsd).toBe(4)
+    const text = renderBudget([unmeasurable(s)], b, [o])
+    expect(text).toContain('$4.00')
+    expect(text).toContain('divides into no capacity')
+  })
+
+  it('shows a derived headroom figure with the observation it rests on and that observation’s time', () => {
+    // §5.1: "Headroom derived from a limit error an hour ago and headroom derived from a
+    // month-old reading are not the same claim." A number alone cannot be judged.
+    const text = rows('calibrated')
+    expect(text).toContain('$20.00 capacity observed')
+    expect(text).toContain('from 50% used at 2026-09-13T12:00:00.000Z (usage)')
+    expect(text).toMatch(/\$10\.00\s+25%\s+\$5\.00/)
+  })
+
+  it('says a declared figure is declared, so an assumption is never read as a measurement', () => {
+    expect(rows('declared')).toContain('capacity declared, no observation having yielded one')
+    expect(rows('declared')).not.toContain('capacity observed')
+    // And it is at its bound, which is a different thing again from having no figure.
+    expect(rows('declared')).toContain('at its bound')
+  })
+
+  it('tells a spent seat from an uncalibrated one, and says when it is back', () => {
+    const text = rows('refused')
+    expect(text).toContain('spent — observed 100% used at 2026-09-13T12:00:00.000Z (limit)')
+    expect(text).toContain('back at 2026-09-13T14:00:00.000Z')
+    // Its week is a different state on the same seat, and says so rather than inheriting this.
+    expect(text).toContain('the week has never been observed')
+  })
+
+  it('gives every state a line no other state could have produced', () => {
+    // The property 5.3 asks for, asserted rather than eyeballed. Two states whose sentences
+    // differ only in a number are not told apart by a reader, so the shapes are compared with
+    // the numbers and instants taken out.
+    const shapes = new Map<string, WindowState>()
+    for (const s of seats.slice(2)) {
+      for (const w of ['session', 'week'] as const) {
+        const d = describeWindow(s, w, bounds.get(s.id)?.[w])
+        const shape = d.note
+          .replace(/\d{4}-\d{2}-\d{2}T[\d:.]+Z/g, '<at>')
+          .replace(/[\d.]+/g, '<n>')
+          .replace(new RegExp(`\\b(${s.id}|session|week)\\b`, 'g'), '<w>')
+        const seen = shapes.get(shape)
+        expect(seen ?? d.state, shape).toBe(d.state)
+        shapes.set(shape, d.state)
+      }
+    }
+    expect(new Set(shapes.values())).toEqual(
+      new Set<WindowState>(['unobserved', 'unmeasured', 'bounded', 'at-bound', 'spent']),
+    )
+  })
+
+  it('classifies each seat as the state it is in, and not as a neighbouring one', () => {
+    const state = (id: string, w: 'session' | 'week'): WindowState | undefined =>
+      describeWindow(seats.find((s) => s.id === id)!, w, bounds.get(id)?.[w]).state
+    expect(state('virgin', 'session')).toBe('unobserved')
+    expect(state('freewheel', 'session')).toBe('unobserved')
+    expect(state('uncalibrated', 'session')).toBe('unmeasured')
+    expect(state('uncalibrated', 'week')).toBe('unmeasured')
+    expect(state('calibrated', 'session')).toBe('bounded')
+    expect(state('declared', 'session')).toBe('at-bound')
+    expect(state('refused', 'session')).toBe('spent')
+    // Never observed and observed-but-unbounded are one verdict and two states: both are
+    // passed over, and they are fixed by different people doing different things.
+    expect(describeWindow(seats[2]!, 'session', undefined).usable).toBe(false)
+    expect(describeWindow(seats[3]!, 'session', undefined).usable).toBe(true)
+  })
+
+  it('keeps the credential fault beside the derived rows rather than instead of them', () => {
+    // A seat bounded by observation still has a credential nothing can read, and the two are
+    // both true at once: the window rows carry the headroom, the fault gets a line of its own.
+    expect(out).toContain('carries no subscription')
+    expect(rows('calibrated')).toContain('$20.00 capacity observed')
+  })
+})
+
 describe('parsing org budget config', () => {
   it('reads seats and pools', () => {
     const b = parseOrgBudget({
@@ -443,6 +612,75 @@ describe('parsing org budget config', () => {
 
   it('treats absent budget config as no seats rather than an error', () => {
     expect(parseOrgBudget(undefined)).toEqual({ seats: [], pools: [] })
+  })
+})
+
+describe('a pool nobody could read is not a pool that ran out', () => {
+  // #49: `kind: 'budget'` said "the budget is used up" for every way of reaching no seat. It
+  // is true of one of them. The rest send their reader to look at spend when the fix is a
+  // credential nobody can resolve or a reading nobody has taken.
+  const org = (seats: Seat[]): OrgBudget => ({ seats, pools: [{ id: 'eng', seats: seats.map((s) => s.id) }] })
+  const role = { name: 'triage', seat: 'pool:eng' }
+
+  it('says the credential is what stopped it, not the money', () => {
+    const s = seat({ id: 'adam', reserve: 0 })
+    const g = budgetGate(org([s]), role, [{ seat: s, error: 'seat "adam" names $GONE, which is not set' }], [])
+    expect(g.exhausted()).toBe(true)
+    expect(g.blocked).toBe('credential')
+    expect(g.passedOver).toEqual([{ seat: 'adam', verdict: 'credential' }])
+    expect(g.reason).not.toContain('has headroom')
+  })
+
+  it('says a reserved seat with nothing to bound it is uncalibrated, not spent', () => {
+    const s = seat({ id: 'adam', reserve: 0.5 })
+    const g = budgetGate(org([s]), role, [{ seat: s, unmeasured: true, error: 'no subscription' }], [])
+    expect(g.blocked).toBe('no-figure')
+    expect(g.passedOver).toEqual([{ seat: 'adam', verdict: 'no-figure' }])
+  })
+
+  it('still calls a spent pool spent, whatever else is also wrong with it', () => {
+    // One seat that really ran out makes "the budget is used up" a true sentence about the
+    // pool, so the verdict it always had is the one it keeps.
+    const bad = seat({ id: 'badtoken', reserve: 0 })
+    const done = seat({ id: 'full', reserve: 0 })
+    const g = budgetGate(
+      org([bad, done]),
+      role,
+      [{ seat: bad, error: 'token missing' }, { seat: done, usage: usage(100, 100) }],
+      [],
+    )
+    expect(g.blocked).toBe('spent')
+    // Every passed-over seat, not only the one that won: a sentence about the pool has to be
+    // true of each of them.
+    expect(g.passedOver).toEqual([
+      { seat: 'badtoken', verdict: 'credential' },
+      { seat: 'full', verdict: 'spent' },
+    ])
+    expect(g.reason).toBe('no seat in "eng" has headroom')
+  })
+
+  it('leaves a gate that chose a seat carrying no verdict at all', () => {
+    const s = seat({ id: 'adam', reserve: 0 })
+    const g = budgetGate(org([s]), role, [{ seat: s, usage: usage(10, 10) }], [])
+    expect(g.exhausted()).toBe(false)
+    expect(g.blocked).toBeUndefined()
+  })
+
+  it('calls an empty pool a configuration fault too, there never having been anything to spend', () => {
+    const g = budgetGate({ seats: [], pools: [{ id: 'eng', seats: [] }] }, role, [], [])
+    // No seats at all is the unenforced case and must stay that; an empty *pool* is not.
+    const g2 = budgetGate({ seats: [seat({ id: 'other' })], pools: [{ id: 'eng', seats: [] }] }, role, [], [])
+    expect(g.exhausted()).toBe(false)
+    expect(g2.exhausted()).toBe(true)
+    expect(g2.blocked).toBe('absent')
+    expect(g2.reason).toContain('declares no seats')
+  })
+
+  it('calls a role naming a pool nothing declares a configuration fault, not a spent budget', () => {
+    const s = seat({ id: 'adam', reserve: 0 })
+    const g = budgetGate(org([s]), { name: 'triage', seat: 'pool:nope' }, [{ seat: s, usage: usage(1, 1) }], [])
+    expect(g.exhausted()).toBe(true)
+    expect(g.blocked).toBe('absent')
   })
 })
 
@@ -587,6 +825,19 @@ describe('a seat nothing can read is bounded by observation and record', () => {
     // "never observed" and "bad token" are fixed by different people, so they read differently.
     expect(c.considered[0]?.why).not.toContain('IGOR_SEAT_ADAM')
     expect(c.considered[0]?.why).not.toBe(unreadable(seat()).error)
+  })
+
+  it('tells a reserved seat observed and still unbounded from one never observed', () => {
+    // Both are passed over for the same verdict and they are not the same news. One wants a
+    // reading taken; the other has had three and wants spend inside an instance, or a declared
+    // capacity. Sending its owner to `igor observe` is sending them to repeat themselves.
+    const s = seat({ reserve: 0.25 })
+    const c = choose(s, [sessionObs({ percentUsed: 0 }), weekObs()], [])
+    expect(c.seat).toBeUndefined()
+    expect(c.considered[0]?.why).toContain(NO_CAPACITY_FIGURE)
+    expect(c.considered[0]?.why).toContain(`observed at ${OBSERVED_AT}`)
+    expect(c.considered[0]?.why).not.toContain('never been observed')
+    expect(c.considered[0]?.verdict).toBe('no-figure')
   })
 
   it('runs a seat with no reserve and no figure at all, uncalibrated', () => {
@@ -1112,4 +1363,96 @@ describe('a seat the provider refused is spent until it resets', () => {
     const c = chooseSeat({ id: 'p', seats: ['adam'] }, [{ seat: s, usage: usage(17, 17) }], [], { name: 'triage' }, bounds)
     expect(c.seat?.id).toBe('adam')
   })
+})
+
+describe('regression: what the hunt on §5 found', () => {
+  const NOW = '2026-09-13T13:00:00.000Z'
+  const obs = (over: Partial<Observation>): Observation =>
+    ({ at: '2026-09-13T12:00:00.000Z', seat: 'adam', window: 'session', percentUsed: 50,
+       resetsAt: '2026-09-13T14:00:00.000Z', source: 'usage', ...over })
+
+  it('does not say nothing was spent about a pool holding a seat that was read and spent', () => {
+    // One seat's token did not resolve; the other was read fine and was passed over for the
+    // role's own ceiling. "No seat's usage could be read" is false of the second, and so is
+    // "nothing was spent" — it is the ceiling on Igor spend that stopped it.
+    const a: Seat = { id: 'a', reserve: 0, tokenEnv: 'GONE' }
+    const b: Seat = { id: 'b', reserve: 0, tokenEnv: 'T' }
+    const g = budgetGate(
+      { seats: [a, b], pools: [{ id: 'p', seats: ['a', 'b'] }] },
+      { name: 'triage', seat: 'pool:p', budgetShare: 0.05 },
+      [{ seat: a, error: 'seat "a" names $GONE, which is not set' }, { seat: b, usage: usage(10, 10) }],
+      [{ seat: 'b', costUsd: 1, at: NOW, role: 'triage' }],
+    )
+    expect(g.exhausted()).toBe(true)
+    const text = composeHandoff({ name: 'triage', reviewers: [] } as unknown as Role, { id: 'x' } as never, {
+      reason: { kind: 'budget', ...(g.blocked === undefined ? {} : { blocked: g.blocked }),
+                ...(g.passedOver === undefined ? {} : { passedOver: g.passedOver }) },
+      done: [], remaining: [], suggested: [],
+    }, Date.parse(NOW))
+    // Both clauses of the credential sentence are false of `b`, which was read fine and was
+    // stopped by the ceiling on Igor spend. Each seat gets a clause that is true of it.
+    expect(text).not.toContain("no seat's usage could be read")
+    expect(text).toContain("b is at this role's share")
+    expect(text).toContain("a's usage could not be read")
+  })
+
+  it('states the same return in the table as the gate does, where two things hold the window', () => {
+    // `derivedWindow` takes the later of the refusal's hour and the instance's, because the
+    // seat is back only once both clear. A table naming the earlier one promises a return the
+    // command's own pool line, printed directly beneath it, will not honour.
+    const s: Seat = { id: 'adam', reserve: 0, tokenEnv: 'T' }
+    const { resetsAt: _dropped, ...refusal } = obs({
+      percentUsed: 100, source: 'limit', at: '2026-09-13T11:00:00.000Z', resetsPhrase: 'later',
+    })
+    const reading = obs({ percentUsed: 30, at: '2026-09-13T11:40:00.000Z', resetsAt: '2026-09-13T16:30:00.000Z' })
+    const records = [
+      { seat: 'adam', costUsd: 3, at: '2026-09-13T11:35:00.000Z' },
+      { seat: 'adam', costUsd: 12, at: '2026-09-13T11:50:00.000Z' },
+    ]
+    const bounds = boundsForSeats([refusal, reading], records, [s], '2026-09-13T12:00:00.000Z')
+    const gate = budgetGate(
+      { seats: [s], pools: [{ id: 'p', seats: ['adam'] }] },
+      { name: 'triage', seat: 'pool:p' },
+      [{ seat: s, unmeasured: true, error: 'no subscription' }],
+      records, bounds, '2026-09-13T12:00:00.000Z',
+    )
+    const d = describeWindow(s, 'session', bounds.get('adam')?.session)
+    expect(gate.resetAt).toBe('2026-09-13T16:30:00.000Z')
+    expect(d.resets).toBe(gate.resetAt)
+    // And the bound it has passed is named, not only the refusal: the columns are dollars here.
+    expect(d.note).toContain('$15.00')
+  })
+
+  it('shows the spend a refused window carries even where no capacity came of it', () => {
+    // A refusal on the first run of an instance derives no capacity — there was nothing in the
+    // observed span to divide — so `spent` arrives beside `noFigure`, and the dollars are on
+    // the second. §5.1 asks for Igor spend on every window, this one included.
+    const s: Seat = { id: 'adam', reserve: 0.5, tokenEnv: 'T' }
+    const refusal = obs({ percentUsed: 100, source: 'limit', at: '2026-09-13T09:00:00.000Z',
+                          resetsAt: '2026-09-13T13:00:00.000Z' })
+    const records = [{ seat: 'adam', costUsd: 7, at: '2026-09-13T10:00:00.000Z' }]
+    const bounds = boundsForSeats([refusal], records, [s], '2026-09-13T12:00:00.000Z')
+    const d = describeWindow(s, 'session', bounds.get('adam')?.session)
+    expect(d.state).toBe('spent')
+    expect(bounds.get('adam')?.session?.noFigure?.spentUsd).toBe(7)
+    expect(d.used).toBe('$7.00')
+  })
+
+  it('does not deny placing an instance on a row that prints spend counted inside one', () => {
+    // The newest observation's reset did not resolve, so it places nothing — but an older one
+    // did, and the spend figure beside the sentence was summed inside the instance it placed.
+    const s: Seat = { id: 'adam', reserve: 0.5, tokenEnv: 'T' }
+    const placed = obs({ percentUsed: 40, at: '2026-09-13T11:00:00.000Z', resetsAt: '2026-09-13T16:30:00.000Z' })
+    const { resetsAt: _unresolved, ...unplaced } = obs({
+      percentUsed: 50, at: '2026-09-13T12:00:00.000Z', resetsPhrase: '9pm',
+    })
+    const records = [{ seat: 'adam', costUsd: 7, at: '2026-09-13T12:00:00.000Z' }]
+    const bounds = boundsForSeats([placed, unplaced], records, [s], '2026-09-13T12:30:00.000Z')
+    const d = describeWindow(s, 'session', bounds.get('adam')?.session)
+    expect(d.used).toBe('$7.00')
+    expect(d.note).not.toContain('nothing places the instance')
+    // An instance was placed, so the row can say when it ends rather than printing a dash.
+    expect(d.resets).toBe('2026-09-13T16:30:00.000Z')
+  })
+
 })

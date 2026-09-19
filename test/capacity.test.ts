@@ -3,6 +3,7 @@ import {
   CAPACITY_PATH,
   WINDOW_LENGTH,
   boundsForSeats,
+  whyNoFigure,
   capacityFor,
   capacityFrom,
   currentInstance,
@@ -581,6 +582,56 @@ describe('the bounds the gate is handed', () => {
 
   it('names no seat at all where nothing was derived for either window', () => {
     expect(boundsForSeats([], [], [{ id: 'adam' }], NOW).has('adam')).toBe(false)
+  })
+
+  describe('a window read and still uncalibrated is not a window nobody has read', () => {
+    // Adam's own case, three observations in: the report used to say his seat had never been
+    // observed, which sent him to run the reading he had just run.
+    it('says no Igor spend landed inside the instance the observation saw', () => {
+      const why = whyNoFigure([observation], [], 'adam', 'session')
+      expect(why?.from).toEqual(observation)
+      expect(why?.why).toContain('no Igor spend is recorded inside the instance it observed')
+    })
+
+    it('says a window observed at nothing divides into nothing', () => {
+      const idle = { ...observation, percentUsed: 0 }
+      expect(whyNoFigure([idle], [spent('2026-09-13T13:30:00.000Z', 10)], 'adam', 'session')?.why).toContain(
+        '0% used divides into no capacity',
+      )
+    })
+
+    it('says a reset that never resolved places no instance, and quotes the phrase', () => {
+      const { resetsAt, ...unplaced } = { ...observation, resetsPhrase: 'whenever' }
+      const why = whyNoFigure([unplaced], [spent('2026-09-13T11:00:00.000Z', 10)], 'adam', 'session')
+      expect(why?.why).toContain('"whenever"')
+      expect(why?.why).toContain('resolved to no instant')
+    })
+
+    it('says nothing at all about a window nobody has observed', () => {
+      expect(whyNoFigure([], [], 'adam', 'session')).toBeUndefined()
+      expect(whyNoFigure([observation], [], 'adam', 'week')).toBeUndefined()
+    })
+
+    it('carries the observation on the bound, so the gate and the report say the same thing', () => {
+      const bound = boundsForSeats([observation], [], [{ id: 'adam' }], NOW).get('adam')?.session
+      expect(bound?.capacity).toBeUndefined()
+      expect(bound?.noFigure?.from).toEqual(observation)
+    })
+
+    it('leaves it off a window that did yield a figure, there being nothing to explain', () => {
+      const records = [spent('2026-09-13T11:00:00.000Z', 10)]
+      expect(boundsForSeats([observation], records, [{ id: 'adam' }], NOW).get('adam')?.session?.noFigure)
+        .toBeUndefined()
+    })
+
+    it('changes no decision: a window with only this is still a window with no figure', () => {
+      // The entry exists where it did not before. It must leave the gate deciding exactly what
+      // it decided when the seat had no entry at all, or it has quietly become a bound.
+      const bounds = boundsForSeats([observation], [], [{ id: 'adam' }], NOW)
+      expect(bounds.get('adam')?.session?.capacity).toBeUndefined()
+      expect(bounds.get('adam')?.session?.spent).toBeUndefined()
+      expect(bounds.get('adam')?.session?.resetsAt).toBeUndefined()
+    })
   })
 })
 

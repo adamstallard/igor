@@ -218,7 +218,7 @@ repository.
 
    ```sh
    igor role explain <role>   # the effective merge, and which file each value came from
-   igor budget                # every seat, read live
+   igor budget                # every seat, and what state each one is in
    igor run <role> --plan     # what it would claim, claiming nothing
    ```
 
@@ -331,28 +331,42 @@ disposable clone, and claiming, commenting and publishing all happen afterwards 
 
 ## Budgets
 
-An Igor spends a Claude subscription seat. It asks that seat how much is left, through that
-seat's own token, whenever the answer matters — so there is nothing to submit, nothing to keep
-up to date, and no way to read one seat and charge another.
+An Igor spends a Claude subscription seat. Where that seat's own token yields a reading it is
+asked how much is left, whenever the answer matters. Where it does not — a `claude setup-token`
+credential resolves no subscription, so the provider reports no windows against it — the seat is
+bounded instead by observations recorded of it and spend recorded against it. Either way there
+is nothing to submit, nothing to keep up to date, and no way to read one seat and charge
+another.
 
 ```
 $ igor budget
 seat             window    used  reserve  headroom  resets
-fleet-1           session    17%       0%       83%  Sep 13 at 8pm (America/Los_Angeles)
-fleet-1           week       12%       0%       88%  Sep 18 at 4pm (America/Los_Angeles)
+fleet-1          session    17%       0%       83%  Sep 13 at 8pm (America/Los_Angeles)  read live
+fleet-1          week       12%       0%       88%  Sep 18 at 4pm (America/Los_Angeles)  read live
                  wk:Fable    0%
-adam             session    17%      50%       33%  Sep 13 at 8pm (America/Los_Angeles)
+adam             session  $1.20      50%     $8.80  2026-09-19T09:19:00.000Z  within its bound — $8.80 left of $10.00; $20.00 capacity observed, from 6% used at 2026-09-19T04:28:55.803Z (usage)
+adam             week         —      50%         —  2026-09-25T22:59:00.000Z  no capacity figure — the week has never been observed, and none is declared. Passed over while a 50% reserve stands against it: run `igor observe adam` on the owner's machine, or declare a capacity
+                 !  seat "adam" carries no subscription, so no window is reported against it. The rows above are derived, not read.
 
 pool engineering: fleet-1 has 83% of the session left
 ```
 
-- **used** — how much of that window is gone, read live.
+- **used** — how much of that window is gone. A seat the provider reports windows for is read
+  live, in percent; a seat it does not is measured in dollars of Igor spend instead.
 - **reserve** — the share of a seat Igors will not touch, so you never sit down to find your
   capacity spent. Dedicated seats reserve nothing.
 - **headroom** — what is left after the reserve. A seat is usable only when **both** windows
   have some: the session limit bites first, the weekly one bites longest.
 - **wk:** rows — per-model weekly limits. Igor does not enforce these, and shows them so that a
   fleet concentrated on one model does not exhaust a limit nothing reported.
+- **the tail of each row** — what state that window is in, and what the figure rests on. A
+  credential that cannot be read, a window nobody has observed, a window observed and still
+  unbounded, a bound with room in it, a bound reached, and a window the provider refused are
+  six different things, fixed by different people: one is a token, one is `igor observe` on the
+  owner's machine, one is a declared `capacity`, and one is waiting. A derived figure carries
+  the observation it came from and when that observation was taken, because headroom derived
+  from a limit error an hour ago and headroom derived from a month-old reading are not the same
+  claim.
 
 ### Configuring seats
 

@@ -1,6 +1,7 @@
 import type { Artifact, Candidate, Tracker } from './adapter.js'
 import type { ExecutionResult } from './execute.js'
 import type { Role } from './role.js'
+import type { SeatVerdict } from './budget.js'
 
 /**
  * What an Igor says before it lets go of something it claimed.
@@ -32,6 +33,21 @@ export type HandoffReason =
       /** `resetAt` is not a return the provider stated, so the sentence says "back around"
        *  and promises neither the hour nor a side of it. */
       resetApproximate?: boolean
+      /**
+       * Which of the ways to have no seat this is. Only `spent` and `share` are a budget that
+       * ran out; the rest are a pool that could not be used, and saying "the budget is used up"
+       * about one of those sends its reader to look at spend when the fix is a credential or a
+       * reading — #49.
+       *
+       * The kind stays `budget` whatever this says, because `stillDeferred` exempts that kind
+       * and nothing about the item caused any of these. A variant of its own would park items
+       * for a fault they had no part in.
+       */
+      blocked?: SeatVerdict
+      /** Every seat the pool passed over, with its verdict, so the sentence can be true of each
+       *  rather than of whichever one won the summary. Verdict words only, never a seat's error
+       *  text: a handoff is posted where anyone can read it. */
+      passedOver?: readonly { seat: string; verdict: SeatVerdict }[]
     }
   // Every configuration of the Igor's own the run proved wrong, and often more than one: a
   // run can be refused an action and have been denied a command, and both have to be fixed.
@@ -140,14 +156,74 @@ export function suggest(role: Role, candidate: Candidate, identity: string): str
   return [...new Set(people)]
 }
 
+/**
+ * What to say where no seat could be used and none of them ran out.
+ *
+ * `undefined` for a pool that really is spent, which keeps the sentence it always had. The
+ * others each name a different thing to go and look at: one sends the reader to configuration,
+ * one to a reading nobody has taken. Saying "the budget is used up" about either was #49 —
+ * true of one way to reach "no seat" and false of the rest.
+ *
+ * No hour is offered, and none exists: nothing here comes back on a clock.
+ */
+function unspendable(
+  blocked: SeatVerdict | undefined,
+  passedOver: readonly { seat: string; verdict: SeatVerdict }[] = [],
+): string | undefined {
+  if (blocked === undefined || blocked === 'spent') return undefined
+  const named = passedOver.length === 0 ? '' : ` (${passedOver.map((p) => p.seat).join(', ')})`
+
+  // A pool where the seats failed differently gets one clause each. The focused sentences below
+  // quantify over the whole pool — "no seat's usage could be read" — and saying that of a pool
+  // holding one seat that was read perfectly well is the same false report, one verdict over.
+  if (!passedOver.every((p) => p.verdict === blocked)) {
+    return `no seat in the pool could be used — ${passedOver.map(clauseFor).join('; ')}`
+  }
+
+  switch (blocked) {
+    case 'credential':
+      return `no seat's usage could be read${named}, so nothing was spent and nothing says the budget is`
+    case 'no-figure':
+      return (
+        `no seat has a capacity figure to spend against${named} — a reserve is a fraction of one, ` +
+        'so until the seat is observed or a capacity is declared there is no quantity to reserve'
+      )
+    case 'absent':
+      return `the seats this role draws on are not declared${named}`
+    case 'share':
+      return `this role is at its own share of every seat it could draw on${named}, which no hour clears`
+    default:
+      return undefined
+  }
+}
+
+/** One passed-over seat, in the fewest words that still say where to look. */
+function clauseFor({ seat, verdict }: { seat: string; verdict: SeatVerdict }): string {
+  switch (verdict) {
+    case 'credential':
+      return `${seat}'s usage could not be read`
+    case 'no-figure':
+      return `nothing bounds ${seat}`
+    case 'spent':
+      return `${seat} has run out`
+    case 'share':
+      return `${seat} is at this role's share`
+    case 'absent':
+      return `${seat} is not declared`
+    default:
+      return seat
+  }
+}
+
 export function composeHandoff(role: Role, candidate: Candidate, handoff: Handoff, now: number = Date.now()): string {
   const why =
     handoff.reason.kind === 'budget'
-      ? `the budget${handoff.reason.seat ? ` on seat \`${handoff.reason.seat}\`` : ''} is used up` +
-        (handoff.reason.resetAt
-          ? `, back ${handoff.reason.resetApproximate === true ? 'around' : 'at'} ` +
-            `${clock(handoff.reason.resetAt)}${until(handoff.reason.resetAt, now)}`
-          : ', and when it returns is not known')
+      ? (unspendable(handoff.reason.blocked, handoff.reason.passedOver) ??
+          `the budget${handoff.reason.seat ? ` on seat \`${handoff.reason.seat}\`` : ''} is used up` +
+            (handoff.reason.resetAt
+              ? `, back ${handoff.reason.resetApproximate === true ? 'around' : 'at'} ` +
+                `${clock(handoff.reason.resetAt)}${until(handoff.reason.resetAt, now)}`
+              : ', and when it returns is not known'))
       : handoff.reason.kind === 'nothing-to-do'
         ? handoff.reason.detail
         : // Another layer's sentence, and several of them end in a full stop of their own —

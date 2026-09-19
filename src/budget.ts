@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
-import type { SeatBound, SeatBounds } from './capacity.js'
+import type { Observation, SeatBound, SeatBounds } from './capacity.js'
 import { resolveRecentReset } from './reset.js'
 
 /**
@@ -420,11 +420,46 @@ export function roleSharePercent(
   return ((byRole.get(role) ?? 0) / total) * percentUsed
 }
 
+/**
+ * What became of a seat the gate looked at, in a word rather than a sentence.
+ *
+ * `why` is for a person and cannot be branched on: a composer that matched its prose would be
+ * guessing at a distinction the gate already knows, which is the rule #41 set. Each verdict
+ * sends its reader somewhere different — `spent` to a clock, `credential` to configuration,
+ * `no-figure` to `igor observe` or a declared capacity, `share` to the role's own ceiling —
+ * and telling a caller only that no seat was chosen sends them to the wrong one.
+ *
+ * Open rather than closed: `capacity-from-observation` §5 named three states, the code holds
+ * more, and a credential the provider has rejected (#56) is a member added here with a case
+ * added wherever this is switched on.
+ */
+export type SeatVerdict = 'chosen' | 'absent' | 'credential' | 'no-figure' | 'spent' | 'share'
+
 export interface Choice {
   seat?: Seat
   reason: string
   /** Every seat considered, in pool order, with why each was passed over. */
-  considered: { seat: string; why: string }[]
+  considered: { seat: string; why: string; verdict: SeatVerdict }[]
+}
+
+/**
+ * What stopped a pool, where nothing in it was chosen.
+ *
+ * `spent` wins outright: one seat that really ran out makes "the budget is used up" a true
+ * sentence about the pool, whatever else is also wrong. Where nothing ran out, the first seat
+ * in pool order answers, because pool order is allocation order and that seat is the one that
+ * should have been used.
+ */
+function poolVerdict(considered: Choice['considered']): SeatVerdict | undefined {
+  // The two that mean a bound was reached, in that order: one seat that ran out makes "the
+  // budget is used up" true of the pool whatever else is wrong, and a role at its own ceiling
+  // is the next most specific thing to say. Leaving `share` out of this let a pool-mate's
+  // unreadable token outrank it on declaration order alone, and the sentence that came out
+  // said nothing had been spent on a seat whose spend was the whole problem.
+  for (const winner of ['spent', 'share'] as const) {
+    if (considered.some((c) => c.verdict === winner)) return winner
+  }
+  return considered.find((c) => c.verdict !== 'chosen')?.verdict
 }
 
 /**
@@ -448,7 +483,14 @@ function derivedWindow(
   seat: Seat,
   window: Window,
   bound: SeatBound | undefined,
-): { remainingUsd?: number; blocked?: string; resetAt?: string; estimated?: boolean } {
+): {
+  remainingUsd?: number
+  blocked?: string
+  /** Which of the two ways to be blocked this is, so a caller never reads it out of `blocked`. */
+  verdict?: Extract<SeatVerdict, 'spent' | 'no-figure'>
+  resetAt?: string
+  estimated?: boolean
+} {
   // Two independent reasons to stop, per `capacity-from-observation` §2, so the arithmetic is
   // settled before the refusal answers. A refusal is not an estimate to be weighed against a
   // capacity figure: one on the first run of an instance leaves no spend to divide and derives
@@ -472,28 +514,40 @@ function derivedWindow(
       (estimated
         ? `the provider named no reset, so it stands until ${resetsAt} at the latest`
         : `does not reset until ${resetsAt}`)
-    if (!overBound) return { blocked: spentWhy, resetAt: resetsAt, estimated }
+    if (!overBound) return { blocked: spentWhy, verdict: 'spent', resetAt: resetsAt, estimated }
 
     // Both hold, so the seat is back only once the later clears, and the sentence names both
     // rather than leave a reason the stated hour does not account for. A rolling window has no
     // boundary at all, which makes when its sum clears unknown rather than merely later — and
     // the refusal's hour is a confident answer to a question nothing here can settle.
     const both = `${spentWhy}; ${overWhy}`
-    if (bound?.resetsAt === undefined) return { blocked: both }
+    if (bound?.resetsAt === undefined) return { blocked: both, verdict: 'spent' }
     return Date.parse(bound.resetsAt) > Date.parse(resetsAt)
-      ? { blocked: both, resetAt: bound.resetsAt, estimated: false }
-      : { blocked: both, resetAt: resetsAt, estimated }
+      ? { blocked: both, verdict: 'spent', resetAt: bound.resetsAt, estimated: false }
+      : { blocked: both, verdict: 'spent', resetAt: resetsAt, estimated }
   }
 
   if (capacity === undefined || allowance === undefined) {
     // A third state rather than an arithmetic verdict, and subordinate to a refusal: the
     // division is undefined without a figure, so this seat waits on a reading, not on a clock.
     if (seat.reserve <= 0) return {}
-    return { blocked: `${NO_CAPACITY_FIGURE}: its ${window} has never been observed and none is declared` }
+    // Which reading it waits on depends on whether one has already been taken. A seat observed
+    // and still uncalibrated is waiting on spend inside an instance, or on a declared capacity;
+    // telling its owner to go and observe it is telling them to repeat what they just did.
+    const seen = bound?.noFigure
+    return {
+      blocked:
+        seen === undefined
+          ? `${NO_CAPACITY_FIGURE}: its ${window} has never been observed and none is declared`
+          : `${NO_CAPACITY_FIGURE}: its ${window} was ${seen.from.percentUsed}% used when observed at ` +
+            `${seen.from.at}, but ${seen.why}, and none is declared`,
+      verdict: 'no-figure',
+    }
   }
   if (overBound) {
     return {
       blocked: overWhy,
+      verdict: 'spent',
       // The sum clears when its instance does, and a tiled boundary is an observed figure
       // rather than an estimate. A rolling window names none.
       ...(bound?.resetsAt === undefined ? {} : { resetAt: bound.resetsAt }),
@@ -528,7 +582,7 @@ export function chooseSeat(
   for (const id of pool.seats) {
     const reading = readings.find((r) => r.seat.id === id)
     if (reading === undefined) {
-      considered.push({ seat: id, why: 'declared in the pool but not among the seats' })
+      considered.push({ seat: id, why: 'declared in the pool but not among the seats', verdict: 'absent' })
       continue
     }
     if (reading.usage === undefined) {
@@ -537,7 +591,7 @@ export function chooseSeat(
       // may spend without giving it anything to spend with: chosen, it claims an item, fails on
       // the worker's spawn, and does it again next cycle.
       if (reading.unmeasured !== true) {
-        considered.push({ seat: id, why: reading.error ?? 'its usage could not be read' })
+        considered.push({ seat: id, why: reading.error ?? 'its usage could not be read', verdict: 'credential' })
         continue
       }
 
@@ -549,7 +603,7 @@ export function chooseSeat(
 
       const stopped = derived.find((d) => d.blocked !== undefined)
       if (stopped) {
-        considered.push({ seat: id, why: stopped.blocked! })
+        considered.push({ seat: id, why: stopped.blocked!, verdict: stopped.verdict ?? 'spent' })
         continue
       }
 
@@ -566,12 +620,16 @@ export function chooseSeat(
           )
         })
         if (over) {
-          considered.push({ seat: id, why: `role "${role.name}" is at its ${role.budgetShare} ceiling for the ${over.window}` })
+          considered.push({
+            seat: id,
+            why: `role "${role.name}" is at its ${role.budgetShare} ceiling for the ${over.window}`,
+            verdict: 'share',
+          })
           continue
         }
       }
 
-      considered.push({ seat: id, why: 'chosen' })
+      considered.push({ seat: id, why: 'chosen', verdict: 'chosen' })
       const left = derived.find((d) => d.window === 'session')?.remainingUsd
       return {
         seat: reading.seat,
@@ -591,6 +649,7 @@ export function chooseSeat(
       considered.push({
         seat: id,
         why: `${blocked.window} is ${blocked.percentUsed}% used, past its ${blocked.reservePercent}% reserve`,
+        verdict: 'spent',
       })
       continue
     }
@@ -601,18 +660,32 @@ export function chooseSeat(
         (w) => roleSharePercent(records, id, role.name, limitFor(usage, w).percentUsed) >= ceiling,
       )
       if (over) {
-        considered.push({ seat: id, why: `role "${role.name}" is at its ${role.budgetShare} ceiling for the ${over}` })
+        considered.push({
+          seat: id,
+          why: `role "${role.name}" is at its ${role.budgetShare} ceiling for the ${over}`,
+          verdict: 'share',
+        })
         continue
       }
     }
 
-    considered.push({ seat: id, why: 'chosen' })
+    considered.push({ seat: id, why: 'chosen', verdict: 'chosen' })
     const session = seatStatus(reading.seat, usage, 'session')
     return { seat: reading.seat, reason: `${id} has ${session.headroomPercent}% of the session left`, considered }
   }
 
+  // "No headroom" only where a seat actually ran out. A pool none of whose seats could be read
+  // has headroom nobody counted, and reporting it as spent sends its reader to look at spend
+  // when the fix is a credential — #49.
+  const verdict = poolVerdict(considered)
+  const detail = considered.map((c) => `${c.seat} — ${c.why}`).join('; ')
   return {
-    reason: considered.length === 0 ? `pool "${pool.id}" declares no seats` : `no seat in "${pool.id}" has headroom`,
+    reason:
+      considered.length === 0
+        ? `pool "${pool.id}" declares no seats`
+        : verdict === 'spent'
+          ? `no seat in "${pool.id}" has headroom`
+          : `no seat in "${pool.id}" could be used: ${detail}`,
     considered,
   }
 }
@@ -733,6 +806,22 @@ export interface Gate {
    *  preferred over the session. It can be late or early, so the handoff hedges the hour
    *  rather than bounding it. */
   resetApproximate?: boolean
+  /**
+   * Why nothing was chosen, where nothing was. Absent on a gate that is not exhausted.
+   *
+   * A handoff is composed from this rather than from `reason`, which is prose for a log. Only
+   * `spent` and `share` mean the budget ran out; the rest mean the pool could not be used, and
+   * a reader sent to look at spend for one of those looks in the wrong place — #49.
+   */
+  blocked?: SeatVerdict
+  /**
+   * Every seat the pool passed over, with its own verdict, so a sentence composed from this
+   * can be true of each of them rather than of the one that won the summary.
+   *
+   * Verdict words only, never a seat's error text: that can quote whatever the provider or a
+   * token command printed, and a handoff is posted where anyone can read it.
+   */
+  passedOver?: readonly { seat: string; verdict: SeatVerdict }[]
   reason: string
 }
 
@@ -757,6 +846,9 @@ export function budgetGate(
   if (pool === undefined) {
     return {
       exhausted: () => true,
+      // Not a budget that ran out: a name in configuration that resolves to nothing. The
+      // handoff says so rather than sending its reader to look at spend.
+      blocked: 'absent',
       reason:
         role.seat === undefined
           ? `role "${role.name}" names no pool and none is declared`
@@ -801,10 +893,21 @@ export function budgetGate(
     // neither wins by being the kind of figure it is.
     const derived = derivedReset(pool, readings, bounds)
     const soonest = earliestReturn([...live, ...(derived === undefined ? [] : [derived])], now)
+    // An empty pool is a configuration fault like any other name that resolves to nothing, and
+    // not a budget that ran out: there was never anything there to spend.
+    const blocked = poolVerdict(choice.considered) ?? 'absent'
     return {
       exhausted: () => true,
       ...(soonest === undefined ? {} : { resetAt: soonest.resetAt }),
       ...(soonest?.estimated === true ? { resetApproximate: true } : {}),
+      ...(blocked === undefined
+        ? {}
+        : {
+            blocked,
+            passedOver: choice.considered
+              .filter((c) => c.verdict !== 'chosen')
+              .map((c) => ({ seat: c.seat, verdict: c.verdict })),
+          }),
       reason: choice.reason,
     }
   }
@@ -820,19 +923,232 @@ export function budgetGate(
   }
 }
 
-export function renderBudget(readings: readonly SeatUsage[]): string {
+/**
+ * What the report says about one window of a seat nothing can read.
+ *
+ * The axis §5 is about. Each state has a different remedy and a different person to reach for
+ * it — `spent` and `at-bound` want a clock, `bounded` wants nothing, `unobserved` wants
+ * `igor observe` run on the owner's machine, `unmeasured` wants spend inside an observed
+ * instance or a declared capacity — so a report that merges any two of them sends somebody to
+ * fix the wrong thing.
+ *
+ * Open rather than closed, like `SeatVerdict`: a credential the provider has rejected (#56) is
+ * a member added here and a case added in `describeWindow`.
+ */
+export type WindowState = 'spent' | 'at-bound' | 'bounded' | 'unobserved' | 'unmeasured'
+
+export interface WindowReport {
+  state: WindowState
+  /** Whether the gate would spend this window. An uncalibrated seat carrying no reserve runs
+   *  anyway, and "no capacity figure" alone does not say which of those an operator is looking
+   *  at — one is a seat to leave alone, the other a seat to go and calibrate. */
+  usable: boolean
+  /** Dollars, where the live path's columns are percentages: capacity derived from a division
+   *  is a quantity of spend, and the seat it describes reports no percentage to anybody. */
+  used?: string
+  headroom?: string
+  resets?: string
+  /** The state in a sentence, with whatever it rests on. */
+  note: string
+}
+
+const money = (n: number): string => `$${n.toFixed(2)}`
+
+/**
+ * An observation in the two terms §5.1 asks for: what it said, and when it was taken.
+ *
+ * Neither is enough alone. "Headroom derived from a limit error an hour ago and headroom
+ * derived from a month-old reading are not the same claim", and a figure printed without its
+ * observation's age is a claim whose strength nobody can judge.
+ */
+const cameFrom = (o: Observation): string =>
+  `${o.percentUsed}% used at ${o.at} (${o.source}${o.model === undefined ? '' : `, ${o.model}`})`
+
+export function describeWindow(seat: Seat, window: Window, bound: SeatBound | undefined): WindowReport {
+  const capacity = bound?.capacity
+  const allowance = capacity === undefined ? undefined : (1 - seat.reserve) * capacity.capacityUsd
+  const rests =
+    capacity === undefined
+      ? ''
+      : capacity.from === undefined
+        ? `${money(capacity.capacityUsd)} capacity declared, no observation having yielded one`
+        : `${money(capacity.capacityUsd)} capacity observed, from ${cameFrom(capacity.from)}`
+  const resets = bound?.resetsAt === undefined ? {} : { resets: bound.resetsAt }
+
+  // A window can be refused *and* over its bound, and it is back only once the later of the two
+  // clears; naming the earlier promises a return the seat does not keep. Where the bound is
+  // tiled this takes the later, as `derivedWindow` does.
+  //
+  // Where it is rolling it states the refusal's hour, which `derivedWindow` declines to. The
+  // two are answering different questions and the divergence is deliberate: a rolling sum has
+  // no boundary, so it clears by dollars ageing out rather than at an instant, and a handoff
+  // that named one would be promising something. A report showing the hour the refusal itself
+  // ends, beside the spend that is ageing, withholds nothing and invents nothing.
+  const overBound = capacity !== undefined && allowance !== undefined && allowance - capacity.spentUsd <= 0
+  const overWhy =
+    capacity === undefined || allowance === undefined
+      ? ''
+      : `Igors have spent ${money(capacity.spentUsd)} of the ${window}'s ${money(allowance)} bound`
+  // Igor spend inside the current instance, from whichever half of the bound is carrying it.
+  // The two are mutually exclusive: `noFigure` exists only where no capacity was derived.
+  const spentSoFar = capacity?.spentUsd ?? bound?.noFigure?.spentUsd
+
+  const spent = bound?.spent
+  if (spent !== undefined) {
+    // A rolling window names no boundary at all, so where one is missing the refusal's hour is
+    // the only one there is.
+    const later =
+      overBound && bound?.resetsAt !== undefined && Date.parse(bound.resetsAt) > Date.parse(spent.resetsAt)
+        ? { resetsAt: bound.resetsAt, estimated: false }
+        : { resetsAt: spent.resetsAt, estimated: spent.estimated }
+    const spentWhy =
+      `spent — observed ${cameFrom(spent.from)}, back at ${later.resetsAt}` +
+      // The hedge belongs to the refusal's own hour and to no other. Attached to an instance
+      // boundary it says "at the latest" of a figure that is not a ceiling at all.
+      //
+      // A ceiling is not a boundary either, so it does not have to agree with the instance the
+      // dollars beside it were summed inside: §1 has an unresolved reset "place no window
+      // boundary" while still expiring one length on. Two hours on one row is not two windows,
+      // and pairing them would assert a boundary the spec denies.
+      (later.estimated ? ' (the provider named no reset, so that is the cadence ceiling)' : '')
+    return {
+      state: 'spent',
+      usable: false,
+      // Dollars, like every other figure on this path; the 100% is in the note, where it can
+      // say which observation it came from. A refusal on the first run of an instance derives
+      // no capacity, so the sum is on `noFigure` instead — and a window whose spend printed as
+      // a dash reads as a window Igor never touched.
+      ...(spentSoFar === undefined ? {} : { used: money(spentSoFar) }),
+      headroom: 'none',
+      resets: later.resetsAt,
+      note: overBound ? `${spentWhy}; ${overWhy}; ${rests}` : spentWhy + (capacity === undefined ? '' : `; ${rests}`),
+    }
+  }
+
+  if (capacity === undefined || allowance === undefined) {
+    const seen = bound?.noFigure
+    const runs = seat.reserve <= 0
+    const figure =
+      seen === undefined
+        ? `no capacity figure — the ${window} has never been observed, and none is declared`
+        : `no capacity figure — observed ${cameFrom(seen.from)}, but ${seen.why}; none is declared`
+    const consequence = runs
+      ? 'No reserve stands against it, so it runs uncalibrated until its first limit error'
+      : `Passed over while a ${seat.reserve * 100}% reserve stands against it: ` +
+        (seen === undefined
+          ? `run \`igor observe ${seat.id}\` on the owner's machine, or declare a capacity`
+          : 'declaring a capacity is what starts a seat no observation has bounded')
+    return {
+      state: seen === undefined ? 'unobserved' : 'unmeasured',
+      usable: runs,
+      // Spent, though nothing bounds it: §5.1 asks for Igor spend on every window, and a
+      // window with no denominator has still had a numerator.
+      ...(seen?.spentUsd === undefined ? {} : { used: money(seen.spentUsd) }),
+      ...resets,
+      // Falling back to the instance `spentUsd` was summed inside, which is the window this row
+      // is about even though no capacity came of it. Whichever row resolved a reset placed that
+      // instance, and it is frequently not the row the sentence explains.
+      ...(bound?.resetsAt === undefined && seen?.resetsAt !== undefined ? { resets: seen.resetsAt } : {}),
+      note: `${figure}. ${consequence}`,
+    }
+  }
+
+  const remaining = allowance - capacity.spentUsd
+  if (remaining <= 0) {
+    return {
+      state: 'at-bound',
+      usable: false,
+      used: money(capacity.spentUsd),
+      headroom: money(0),
+      ...resets,
+      note: `at its bound — ${overWhy}; ${rests}`,
+    }
+  }
+  return {
+    state: 'bounded',
+    usable: true,
+    used: money(capacity.spentUsd),
+    headroom: money(remaining),
+    ...resets,
+    // Says the bound as well as the distance from it: the columns give the headroom, and what
+    // it is headroom against is the figure a reserve was taken out of.
+    note: `within its bound — ${money(remaining)} left of ${money(allowance)}; ${rests}`,
+  }
+}
+
+/**
+ * Every seat, in the state it is actually in.
+ *
+ * Three things stop a seat being spent from and the remedies are not the same: a credential is
+ * fixed by the operator, an uncalibrated seat by a reading taken on its owner's machine, a
+ * spent one by waiting. Before §5 this report had one line for all of them, and a seat with
+ * three observations behind it read as broken.
+ *
+ * A seat that could be read is reported on its reading alone, because that is what the gate
+ * judges it on. Printing a derived figure beside a live one would show two answers to a
+ * question only one of them is being asked.
+ */
+export function renderBudget(
+  readings: readonly SeatUsage[],
+  bounds: SeatBounds = new Map(),
+  observations: readonly Observation[] = [],
+): string {
   if (readings.length === 0) return 'no seats configured\n'
   const lines = ['seat             window    used  reserve  headroom  resets']
+  /** One window's row. An absent figure prints as a dash rather than a blank, so a column with
+   *  nothing in it is visibly nothing rather than a hole in the table. */
+  const row = (
+    id: string,
+    window: string,
+    c: { used?: string; reserve: string; headroom?: string; resets?: string; state: string },
+  ): string =>
+    `${id.padEnd(16)} ${window.padEnd(8)} ${(c.used ?? '—').padStart(5)} ${c.reserve.padStart(8)} ` +
+    `${(c.headroom ?? '—').padStart(9)}  ${c.resets ?? '—'}  ${c.state}`
+
   for (const r of readings) {
     if (r.usage === undefined) {
-      lines.push(`${r.seat.id.padEnd(16)} —  ${r.error ?? 'unreadable'}`)
+      if (r.unmeasured !== true) {
+        // The one state no record rescues, and so the one seat that gets no window rows: the
+        // credential itself is in doubt, the gate passes the seat over whatever has been
+        // observed of it, and a headroom figure here would be one nothing will ever spend.
+        lines.push(
+          `${r.seat.id.padEnd(16)} —  credential unreadable, so the seat is passed over whatever is ` +
+            `recorded of it: ${r.error ?? 'unreadable'}`,
+        )
+        continue
+      }
+      for (const w of ['session', 'week'] as Window[]) {
+        const d = describeWindow(r.seat, w, bounds.get(r.seat.id)?.[w])
+        lines.push(row(r.seat.id, w, { ...d, reserve: `${r.seat.reserve * 100}%`, state: d.note }))
+      }
+      // The per-model cap the live path shows, from the log instead of from a reading. Igor
+      // enforces neither; a fleet concentrated on one model exhausts one of these first, and a
+      // report that dropped the rows would leave that invisible on the derived path alone.
+      //
+      // Log order, deliberately, where the seat's own rows above are ordered by `at`. Nothing
+      // derives from a per-model row, and where the two orders disagree it is because two
+      // machines disagree about the clock — in which case the row written last is the reading
+      // taken last, and the `at` beside it lets a reader judge either way.
+      const latest = new Map<string, Observation>()
+      for (const o of observations) {
+        if (o.seat === r.seat.id && o.model !== undefined) latest.set(o.model, o)
+      }
+      for (const [model, o] of latest) {
+        lines.push(`${''.padEnd(16)} ${`wk:${model}`.padEnd(8)} ${`${o.percentUsed}%`.padStart(5)}  observed at ${o.at}`)
+      }
+      lines.push(`${''.padEnd(16)} !  the rows above are derived, not read: ${r.error ?? 'unreadable'}`)
       continue
     }
     for (const w of ['session', 'week'] as Window[]) {
       const s = seatStatus(r.seat, r.usage, w)
       lines.push(
-        `${r.seat.id.padEnd(16)} ${w.padEnd(8)} ${`${s.percentUsed}%`.padStart(5)} ` +
-          `${`${s.reservePercent}%`.padStart(8)} ${`${s.headroomPercent}%`.padStart(9)}  ${s.resetsAt ?? ''}`,
+        row(r.seat.id, w, {
+          used: `${s.percentUsed}%`,
+          reserve: `${s.reservePercent}%`,
+          headroom: `${s.headroomPercent}%`,
+          ...(s.resetsAt === undefined ? {} : { resets: s.resetsAt }),
+          state: 'read live',
+        }),
       )
     }
     for (const m of r.usage.perModel) {

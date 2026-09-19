@@ -40,10 +40,10 @@
 
 ## 5. Saying which
 
-- [ ] 5.1 Budget reporting shows Igor spend, reserve, headroom, reset, and the observation each
+- [x] 5.1 Budget reporting shows Igor spend, reserve, headroom, reset, and the observation each
       headroom figure derives from with its time
-- [ ] 5.2 Never observed, unreadable credential, and spent are three distinct reported states
-- [ ] 5.3 Test that an operator can tell the three apart from the report alone
+- [x] 5.2 Never observed, unreadable credential, and spent are three distinct reported states
+- [x] 5.3 Test that an operator can tell the three apart from the report alone
 
 ## 6. Reconciling the sibling change
 

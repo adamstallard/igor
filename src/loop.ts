@@ -1,5 +1,5 @@
 import type { Candidate, CodeHost, Comment, Tracker } from './adapter.js'
-import type { Gate } from './budget.js'
+import type { Gate, SeatVerdict } from './budget.js'
 import { checkpoint, eligibleAfterStop, stopReceipt, takeClaim, type ClaimOptions } from './claiming.js'
 import { complete, execute, workerEnv, type ExecuteOptions, type ExecutionResult } from './execute.js'
 import { handOffFrom, type HandoffReason } from './handoff.js'
@@ -105,6 +105,8 @@ export interface RunOptions extends ExecuteOptions {
     token?: { tokenEnv?: string; tokenFile?: string; tokenCommand?: string }
     resetAt?: string
     resetApproximate?: boolean
+    blocked?: SeatVerdict
+    passedOver?: readonly { seat: string; verdict: SeatVerdict }[]
   }
 }
 
@@ -150,6 +152,11 @@ export async function runItem(
       ...(options.budget.seat === undefined ? {} : { seat: options.budget.seat }),
       ...(options.budget.resetAt === undefined ? {} : { resetAt: options.budget.resetAt }),
       ...(options.budget.resetApproximate === true ? { resetApproximate: true } : {}),
+      // Carried so the handoff can say which way there was no seat. Without it every route to
+      // "no seat" reads as a spent budget, including the one where no seat's usage could be
+      // read at all — #49.
+      ...(options.budget.blocked === undefined ? {} : { blocked: options.budget.blocked }),
+      ...(options.budget.passedOver === undefined ? {} : { passedOver: options.budget.passedOver }),
     }
     const out = await handOffFrom(tracker, candidate, role, identity, claim.claimedAt, reason)
     return {

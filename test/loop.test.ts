@@ -8,6 +8,7 @@ import {
 } from '../src/loop.js'
 import { defer, NO_DEFERRALS, shouldDefer } from '../src/deferred.js'
 import { ExecutionError } from '../src/execute.js'
+import { budgetGate } from '../src/budget.js'
 import { tempDir } from './tmp.js'
 
 const candidate = (over: Partial<Candidate> = {}): Candidate =>
@@ -80,6 +81,24 @@ describe('an Igor never goes silent on something it claimed', () => {
     expect(r.handoff).toBe('budget')
     expect(posts.at(-1)).toMatch(/budget.*igor-1/s)
     expect(released).toEqual(['igor-bot'])
+  })
+
+  it('carries the gate’s own verdict into what it posts, rather than always saying used up', async () => {
+    // The seam #49 lives on: the gate knows no seat could be read, and every hop between it
+    // and the posted sentence rebuilds its object field by field. A real gate is used here
+    // rather than a hand-made one, because a field dropped in one of those hops typechecks.
+    const gate = budgetGate(
+      { seats: [{ id: 'igor-1', reserve: 0 }], pools: [{ id: 'eng', seats: ['igor-1'] }] },
+      { name: 'triage', seat: 'pool:eng' },
+      [{ seat: { id: 'igor-1', reserve: 0 }, error: 'seat "igor-1" names $IGOR_SEAT_1, which is not set' }],
+      [],
+    )
+    const { d, posts } = deps()
+    const r = await runItem(d, candidate(), role(), 'igor-bot', { ...noWait, budget: gate })
+    expect(r.handoff).toBe('budget')
+    expect(posts.at(-1)).toContain("no seat's usage could be read")
+    expect(posts.at(-1)).toContain('igor-1')
+    expect(posts.at(-1)).not.toContain('is used up')
   })
 
   it('hands off on budget when the seat runs out mid-run, not on failure', async () => {
