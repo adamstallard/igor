@@ -708,3 +708,30 @@ describe('candidates a mark cannot tell apart', () => {
     expect(asked.map((a) => a.length)).toEqual([2])
   })
 })
+
+describe('a held pool on a cycle that also hit its cap', () => {
+  const source = (repo: string): Source => ({ tracker: 'github', repo, query: 'is:issue' }) as Source
+  const mark = () =>
+    (stored.get(STATE_PATH) as { watermarks: Record<string, { lastSeen: string }> })
+      .watermarks[sourceKey(source('o/r'))]?.lastSeen
+
+  it('holds the mark below every one of them, whichever reason it was', async () => {
+    // Nothing was decided at all, so the mark belongs below the oldest candidate in the cycle —
+    // not below the oldest of whichever group is looked at first.
+    stored.clear()
+    const items = Array.from({ length: 15 }, (_, i) => candidate(i + 1, 10 + i * 10))
+
+    const report = await planCycle(deps(items, none), role(), {
+      now: NOW,
+      identity: 'igor-bot',
+      triage,
+      limit: 10,
+      gate: async () => ({ exhausted: () => true, blocked: 'spent', reason: 'spent' }) as never,
+    })
+
+    expect(report.triaged).toBe(0)
+    expect(report.untriaged).toHaveLength(15)
+    expect(new Set(report.untriaged.map((u) => u.reason)).size).toBe(2)
+    expect(mark()).toBe(new Date(NOW - 150 * 60000 - 1).toISOString())
+  })
+})
