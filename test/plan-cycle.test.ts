@@ -572,3 +572,139 @@ describe('a cycle with no seat to pay for triage', () => {
     expect(report.heldPool).toBeUndefined()
   })
 })
+
+describe('a seat the gate named and nothing could read', () => {
+  const source = (repo: string): Source => ({ tracker: 'github', repo, query: 'is:issue' }) as Source
+
+  const mark = () =>
+    (stored.get(STATE_PATH) as { watermarks: Record<string, { lastSeen: string }> })
+      .watermarks[sourceKey(source('o/r'))]?.lastSeen
+
+  /** The gate chose a seat; its token source resolves to nothing, which `workerEnv` refuses. */
+  const unreadable = () => async () =>
+    ({
+      exhausted: () => false,
+      seat: 'seat-2',
+      token: { tokenEnv: 'IGOR_SEAT_NOWHERE' },
+      reason: 'chosen',
+    }) as never
+
+  it('holds the mark below candidates no call was ever made about', async () => {
+    // The same permanent loss as a held pool, one branch over: the gate named a seat, the
+    // credential behind it did not resolve, and nothing about these items caused that.
+    stored.clear()
+    const items = [candidate(7, 50), candidate(8, 20)]
+    let calls = 0
+    const counted: typeof triageBatch = async (cs, system, model) => {
+      calls += 1
+      return triage(cs, system, model)
+    }
+
+    const report = await planCycle(deps(items, none), role(), {
+      now: NOW, identity: 'igor-bot', triage: counted, gate: unreadable(),
+    })
+
+    expect(calls).toBe(0)
+    expect(report.untriaged.map((u) => u.candidate.id)).toEqual(items.map((i) => i.id))
+    expect(report.failures.join(' ')).toContain('triage:')
+    expect(mark()).toBe(new Date(NOW - 50 * 60000 - 1).toISOString())
+  })
+
+  it('is not reported as a held pool, which would send the reader to look at spend', async () => {
+    stored.clear()
+
+    const report = await planCycle(deps([candidate(7, 40)], none), role(), {
+      now: NOW, identity: 'igor-bot', triage, gate: unreadable(),
+    })
+
+    expect(report.heldPool).toBeUndefined()
+    expect(report.untriaged[0]?.reason).toContain('credential')
+  })
+})
+
+describe('more candidates than one cycle may triage', () => {
+  const source = (repo: string): Source => ({ tracker: 'github', repo, query: 'is:issue' }) as Source
+  const mark = () =>
+    (stored.get(STATE_PATH) as { watermarks: Record<string, { lastSeen: string }> })
+      .watermarks[sourceKey(source('o/r'))]?.lastSeen
+
+  it('works the backlog a limit at a time instead of dropping its tail', async () => {
+    // The cap truncates, and what it truncates was never examined — so a mark let past it drops
+    // those items for good, the same loss a held pool would cause one stage later.
+    //
+    // The cap has to fall on the newest for that to work, which is why the survivors are
+    // ordered. Holding the mark below an arbitrary tail pulls it under items this cycle already
+    // decided, and the next cycle triages them again: a full limit of calls every cycle, on a
+    // backlog that never drains. Asserting each candidate is asked about exactly once is what
+    // pins both halves.
+    stored.clear()
+    // Newest first, which is the order a search with no `sort:` qualifier may return.
+    const items = Array.from({ length: 15 }, (_, i) => candidate(i + 1, 10 + i * 10))
+    const asked: string[][] = []
+    const watch: typeof triageBatch = async (cs, system, model) => {
+      asked.push(cs.map((c) => c.native))
+      return triage(cs, system, model)
+    }
+    const d = deps(items, none)
+    const run = () => planCycle(d, role(), { now: NOW, identity: 'igor-bot', triage: watch, limit: 10 })
+
+    const first = await run()
+    expect(first.triaged).toBe(10)
+    expect(first.untriaged).toHaveLength(5)
+    // The five it did not reach are the five newest, and the mark waits below the oldest of them.
+    expect(first.untriaged.map((u) => u.candidate.native).sort()).toEqual(['1', '2', '3', '4', '5'])
+    expect(mark()).toBe(new Date(NOW - 50 * 60000 - 1).toISOString())
+
+    const second = await run()
+    expect(second.fresh).toBe(5)
+    expect(second.triaged).toBe(5)
+    expect(second.untriaged).toEqual([])
+
+    const third = await run()
+    expect(third.fresh).toBe(0)
+
+    const all = asked.flat()
+    expect(all).toHaveLength(15)
+    expect(new Set(all).size).toBe(15)
+  })
+
+  it('records the tail as untriaged rather than as a decision about it', async () => {
+    stored.clear()
+    const items = Array.from({ length: 4 }, (_, i) => candidate(i + 1, 10 + i * 10))
+
+    const report = await planCycle(deps(items, none), role(), {
+      now: NOW, identity: 'igor-bot', triage, limit: 2,
+    })
+
+    expect(report.skipped).toEqual([])
+    expect(report.heldPool).toBeUndefined()
+    expect(report.untriaged[0]?.reason).toContain('limit')
+  })
+})
+
+describe('candidates a mark cannot tell apart', () => {
+  it('concedes a tie rather than triaging the same items every cycle', async () => {
+    // One bulk edit gives a page of items the same `updatedAt`, and tracker timestamps are
+    // coarse enough for that to be exact. A mark cannot sit between two of them, so holding it
+    // below the untriaged tail would put it below the triaged head as well, and every cycle
+    // would pay for the same verdicts again. The tail is passed over instead, as it was before
+    // any of this — the one case the cap cannot rescue.
+    stored.clear()
+    const items = Array.from({ length: 4 }, (_, i) => candidate(i + 1, 30))
+    const asked: string[][] = []
+    const watch: typeof triageBatch = async (cs, system, model) => {
+      asked.push(cs.map((c) => c.native))
+      return triage(cs, system, model)
+    }
+    const d = deps(items, none)
+    const run = () => planCycle(d, role(), { now: NOW, identity: 'igor-bot', triage: watch, limit: 2 })
+
+    const first = await run()
+    expect(first.triaged).toBe(2)
+    expect(first.untriaged).toHaveLength(2)
+
+    const second = await run()
+    expect(second.fresh).toBe(0)
+    expect(asked.map((a) => a.length)).toEqual([2])
+  })
+})

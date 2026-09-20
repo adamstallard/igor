@@ -39,3 +39,12 @@
       the `/login` reading is not the first guess
 - [x] 5.3 Close #33 and #66 — by `Closes #33` / `Closes #66` in PR #70's description, which
       closes them on merge rather than before it
+
+## 6. Every other way the model stage does not run
+
+- [x] 6.1 A seat the gate named whose credential will not resolve leaves its candidates
+      untriaged rather than in neither set, reported distinctly from a held pool
+- [x] 6.2 Candidates past the cycle's cap on model calls are untriaged too, and the cap falls on
+      the newest so the mark advances past what was triaged
+- [x] 6.3 Tests: a candidate lost past the cap on the unfixed code is not lost; no candidate is
+      triaged twice across the cycles that drain a backlog

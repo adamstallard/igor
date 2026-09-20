@@ -79,6 +79,18 @@ This is the same reading as "Running out of budget is not a decision about the i
 earlier — there an item handed back for want of budget is not suppressed, here an item never
 triaged for want of budget is not marked as seen.
 
+The rule is about the outcome and not about its cause. A held pool is one way the model stage
+does not run; a seat whose credential will not resolve and a cycle that reaches its own cap on
+model calls are others, and an item left by any of them is in the same position — nothing about
+it produced this, and nothing about it will lift it.
+
+Where the cap is the cause, **the candidates left over SHALL be the newest of them**. This is
+not a preference about which work comes first: a mark held below an arbitrary remainder is
+pulled under candidates the same cycle triaged, so the next cycle triages them again and the
+mark never advances — a full cap's worth of calls every cycle on a backlog that never drains.
+Taking the oldest first puts the cap above everything decided, so the mark moves and the
+backlog clears a cap's worth at a time.
+
 #### Scenario: Untriaged is not decided
 
 - **WHEN** the pool is held and candidates had survived to the model stage
@@ -96,6 +108,20 @@ triaged for want of budget is not marked as seen.
 - **WHEN** an item is left untriaged because the pool was held
 - **THEN** nothing records it as handed back, deferred or quiet
 - **AND** it needs no reply and no edit to be worked once capacity returns
+
+#### Scenario: The reason the call did not happen does not change the handling
+
+- **WHEN** a candidate reaches the model stage and no call is made about it, because the pool is
+  held, because the seat the gate named has no readable credential, or because the cycle reached
+  its cap on model calls first
+- **THEN** it is recorded as untriaged with that reason and holds its source's mark back
+- **AND** which of those it was makes no difference to whether the item comes back
+
+#### Scenario: The cap falls on the newest, so the mark still moves
+
+- **WHEN** more candidates survive to the model stage than the cycle may triage
+- **THEN** the ones left untriaged are the newest of them
+- **AND** the mark advances past every candidate the cycle did triage, so none is triaged twice
 
 #### Scenario: Nothing is posted to an item nobody claimed
 

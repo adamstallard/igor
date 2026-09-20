@@ -19,7 +19,7 @@ import { eligibleToPropose, propose, ProposeError } from './propose.js'
 import { reconcile, promoteInPlace } from './reconcile.js'
 import { GitHubError } from './github.js'
 import { explainRole, loadRole, rolesFrom, RoleError } from './role.js'
-import { planCycle, runItem, type CycleReport } from './loop.js'
+import { planCycle, runItem, UNTRIAGED_NO_SEAT, type CycleReport } from './loop.js'
 import { renderProgress } from './execute.js'
 import { serve, untilSignalled } from './serve.js'
 import { GitHubTracker, GitHubCodeHost } from './github-adapter.js'
@@ -329,15 +329,22 @@ function triageSpend(report: CycleReport): string {
 }
 
 /**
- * What a cycle that triaged nothing for want of a seat says for itself, so it cannot be read
- * as a cycle that found nothing.
+ * What a cycle left untriaged and why, so it cannot be read as a cycle that found nothing.
  *
- * Not a failure line: nothing here is broken, and only some of these send the reader anywhere.
- * The sentence says which — a spent pool is a wait, an unreadable or undeclared one is a fault.
+ * One line per reason, because they answer differently: a held pool is a wait or a fault
+ * depending which way it was held, which is why that group gets the fuller sentence; a seat
+ * whose credential would not read already has a failure line carrying what the provider said;
+ * and items past the cycle's cap are simply next in line.
  */
-function heldPoolLine(report: CycleReport): string | undefined {
-  if (report.heldPool === undefined) return undefined
-  return `${report.untriaged.length} left untriaged — ${noCapacity(report.heldPool)}`
+function untriagedLines(report: CycleReport): string[] {
+  const counts = new Map<string, number>()
+  for (const u of report.untriaged) counts.set(u.reason, (counts.get(u.reason) ?? 0) + 1)
+  return [...counts].map(([reason, n]) => {
+    const why = reason === UNTRIAGED_NO_SEAT && report.heldPool !== undefined
+      ? noCapacity(report.heldPool)
+      : reason
+    return `${n} left untriaged — ${why}`
+  })
 }
 
 function renderCycle(report: CycleReport, verbose: boolean): string {
@@ -351,8 +358,7 @@ function renderCycle(report: CycleReport, verbose: boolean): string {
       (report.skippedUnreadable > 0 ? `${report.skippedUnreadable} unreadable, ` : '') +
       `${report.triaged} triaged (${triageSpend(report)})`,
   )
-  const held = heldPoolLine(report)
-  if (held !== undefined) out.push(held)
+  out.push(...untriagedLines(report))
   if (verbose && report.skipped.length > 0) {
     out.push('', `skipped before any model call (${report.skipped.length}):`)
     for (const s of report.skipped.slice(0, 40)) {
@@ -529,8 +535,7 @@ program
               `cycle ${e.cycle}: ${e.report.fresh} fresh, ${e.report.triaged} triaged, ` +
                 `${e.report.toClaim.length} to claim (${triageSpend(e.report)})`,
             )
-            const held = heldPoolLine(e.report)
-            if (held !== undefined) say(`  ${held}`)
+            for (const line of untriagedLines(e.report)) say(`  ${line}`)
             for (const f of e.report.failures) say(`  ! ${f}`)
             break
           }
