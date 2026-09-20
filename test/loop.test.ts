@@ -399,6 +399,7 @@ describe('what triage decided is written down, skips included', () => {
       { candidate: candidate({ id: 'd' }), outcome: 'proceed' as const, reason: 'concrete' },
     ],
     toClaim: [{ candidate: candidate({ id: 'd' }), reason: 'concrete' }],
+    untriaged: [],
     triageCostUsd: 0.048,
     failures: [],
   }

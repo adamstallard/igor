@@ -26,6 +26,7 @@ import { GitHubTracker, GitHubCodeHost } from './github-adapter.js'
 import type { Candidate } from './adapter.js'
 import { laneVerdict, universalSkip } from './predicate.js'
 import { noteHandoff, shouldDefer } from './deferred.js'
+import { noCapacity } from './handoff.js'
 import { CloneProvider } from './worktree.js'
 import { TriageError } from './triage.js'
 import { BudgetError, budgetGate, loadSpend, percent, readAllSeats, renderBudget } from './budget.js'
@@ -327,6 +328,18 @@ function triageSpend(report: CycleReport): string {
     : amount
 }
 
+/**
+ * What a cycle that triaged nothing for want of a seat says for itself, so it cannot be read
+ * as a cycle that found nothing.
+ *
+ * Not a failure line: nothing here is broken, and only some of these send the reader anywhere.
+ * The sentence says which — a spent pool is a wait, an unreadable or undeclared one is a fault.
+ */
+function heldPoolLine(report: CycleReport): string | undefined {
+  if (report.heldPool === undefined) return undefined
+  return `${report.untriaged.length} left untriaged — ${noCapacity(report.heldPool)}`
+}
+
 function renderCycle(report: CycleReport, verbose: boolean): string {
   const out: string[] = []
   for (const f of report.failures) out.push(`  ! ${f}`)
@@ -338,6 +351,8 @@ function renderCycle(report: CycleReport, verbose: boolean): string {
       (report.skippedUnreadable > 0 ? `${report.skippedUnreadable} unreadable, ` : '') +
       `${report.triaged} triaged (${triageSpend(report)})`,
   )
+  const held = heldPoolLine(report)
+  if (held !== undefined) out.push(held)
   if (verbose && report.skipped.length > 0) {
     out.push('', `skipped before any model call (${report.skipped.length}):`)
     for (const s of report.skipped.slice(0, 40)) {
@@ -509,13 +524,16 @@ program
       store,
       onEvent: (e) => {
         switch (e.kind) {
-          case 'planned':
+          case 'planned': {
             say(
               `cycle ${e.cycle}: ${e.report.fresh} fresh, ${e.report.triaged} triaged, ` +
                 `${e.report.toClaim.length} to claim (${triageSpend(e.report)})`,
             )
+            const held = heldPoolLine(e.report)
+            if (held !== undefined) say(`  ${held}`)
             for (const f of e.report.failures) say(`  ! ${f}`)
             break
+          }
           case 'working':
             say(`  working ${e.item.native} "${e.item.title.slice(0, 50)}" on ${e.seat ?? '(unenforced)'}`)
             break

@@ -312,6 +312,24 @@ export interface CycleReport {
   skippedUnreadable: number
   triaged: number
   /**
+   * Candidates that reached the model stage and were never asked about, because nothing could
+   * pay for the call. Not skips: nothing about them produced this and nothing about them will
+   * lift it, so they hold their source's mark back and come back when capacity does.
+   */
+  untriaged: CycleCandidate[]
+  /**
+   * Why no seat could be found, where that is what stopped the model stage. Verdict words, not
+   * prose: only `spent` and `share` mean the budget ran out, and a reader sent to look at spend
+   * for a pool that could not be used at all looks in the wrong place (#49).
+   */
+  heldPool?: {
+    blocked?: SeatVerdict
+    resetAt?: string
+    /** The hour is derived rather than stated, so a reader is owed "around" instead of "at". */
+    resetApproximate?: boolean
+    passedOver?: readonly { seat: string; verdict: SeatVerdict }[]
+  }
+  /**
    * Everything dropped before a model call, with the reason, so a lane can be tuned. `held`
    * marks the ones only the clock will bring back, which the watermark has to wait for.
    */
@@ -350,6 +368,9 @@ export interface CycleOptions extends RunOptions {
   identity?: string
 }
 
+/** The reason every candidate a held pool stopped the call for is recorded against. */
+const HELD_POOL = 'no seat could pay for the triage call'
+
 /**
  * Discovery, triage, and the decision — everything up to but not including a claim.
  *
@@ -373,6 +394,7 @@ export async function planCycle(
     skippedStopped: 0,
     skippedUnreadable: 0,
     triaged: 0,
+    untriaged: [],
     skipped: [],
     verdicts: [],
     toClaim: [],
@@ -435,32 +457,46 @@ export async function planCycle(
   const considered = await dropDeferred(comments, awake, quiet, options.identity ?? '', report, limit)
   if (considered.length > 0) {
     // Resolved only now — a cycle with nothing to triage never reads a seat's usage for it.
-    // The same seat a worker would draw from, written out the same way — never whatever login
-    // happens to be ambient, and never a superset of what the chosen seat allows.
+    // The seat a worker would draw from, spending what it allows and nothing wider. Where it
+    // names no seat there is no call: the triage model call is a spend like any other.
     const gate = options.budget ?? (options.gate === undefined ? undefined : await options.gate())
-    let env: NodeJS.ProcessEnv | undefined
-    try {
-      env = await workerEnv(gate?.token, process.env, gate?.seat)
-    } catch (error) {
-      report.failures.push(`triage: ${error instanceof Error ? error.message : String(error)}`)
-    }
-    if (env !== undefined) {
-      const batch = await (options.triage ?? triageBatch)(
-        considered,
-        systemPrompt(role.name, role.instructions),
-        options.triageModel ?? TRIAGE_MODEL,
-        env,
-      )
-      report.triaged = batch.results.length
-      report.triageCostUsd = batch.costUsd
-      report.triageCostUnreported = batch.costUnreported
-      if (gate?.seat !== undefined) report.triageSeat = gate.seat
-      for (const { candidate, verdict } of batch.results) {
-        report.verdicts.push({ candidate, outcome: verdict.outcome, reason: verdict.reason })
-        if (verdict.outcome === 'proceed') report.toClaim.push({ candidate, reason: verdict.reason })
+    if (gate?.exhausted() === true) {
+      // A gate that names no seat is the answer, not an obstacle to get past. Falling through
+      // to `workerEnv` spends whatever login is ambient — one no seat named, no ceiling bounds
+      // and nothing in the record can attribute — or, on a host with no such login, fails
+      // saying the machine is not logged in when its only problem is that every seat is held.
+      report.heldPool = {
+        ...(gate.blocked === undefined ? {} : { blocked: gate.blocked }),
+        ...(gate.resetAt === undefined ? {} : { resetAt: gate.resetAt }),
+        ...(gate.resetApproximate === true ? { resetApproximate: true } : {}),
+        ...(gate.passedOver === undefined ? {} : { passedOver: gate.passedOver }),
       }
-      for (const { candidate, error } of batch.failures) {
-        report.failures.push(`${candidate.native}: ${error.message.slice(0, 80)}`)
+      for (const candidate of considered) report.untriaged.push({ candidate, reason: HELD_POOL })
+    } else {
+      let env: NodeJS.ProcessEnv | undefined
+      try {
+        env = await workerEnv(gate?.token, process.env, gate?.seat)
+      } catch (error) {
+        report.failures.push(`triage: ${error instanceof Error ? error.message : String(error)}`)
+      }
+      if (env !== undefined) {
+        const batch = await (options.triage ?? triageBatch)(
+          considered,
+          systemPrompt(role.name, role.instructions),
+          options.triageModel ?? TRIAGE_MODEL,
+          env,
+        )
+        report.triaged = batch.results.length
+        report.triageCostUsd = batch.costUsd
+        report.triageCostUnreported = batch.costUnreported
+        if (gate?.seat !== undefined) report.triageSeat = gate.seat
+        for (const { candidate, verdict } of batch.results) {
+          report.verdicts.push({ candidate, outcome: verdict.outcome, reason: verdict.reason })
+          if (verdict.outcome === 'proceed') report.toClaim.push({ candidate, reason: verdict.reason })
+        }
+        for (const { candidate, error } of batch.failures) {
+          report.failures.push(`${candidate.native}: ${error.message.slice(0, 80)}`)
+        }
       }
     }
   }
@@ -475,10 +511,15 @@ export async function planCycle(
   // clock and an outage with the tracker's recovery, so neither touches the item to lift it
   // above a mark that passed it. Every other skip was a decision, and the edit or the reply
   // that reverses one lifts the item by itself.
+  //
+  // An item the model stage never asked about is the same case one stage later, and a worse
+  // one: it was never dropped, so nothing in `skipped` holds it, and a mark let past it drops
+  // it from the pool for good.
   if (options.sinceDays === undefined && results.length > 0) {
-    const unexamined = new Set(
-      report.skipped.filter((s) => s.held === true).map((s) => s.candidate.id),
-    )
+    const unexamined = new Set([
+      ...report.skipped.filter((s) => s.held === true).map((s) => s.candidate.id),
+      ...report.untriaged.map((u) => u.candidate.id),
+    ])
     await saveDiscoveryState(deps.destination, advance(stored, heldBelow(results, unexamined)))
   }
   // Not worth failing a cycle over, but a write that vanishes silently leaves nobody able to
@@ -749,6 +790,8 @@ export async function recordDecisions(
       skippedStopped: report.skippedStopped,
       skippedUnreadable: report.skippedUnreadable,
       triaged: report.triaged,
+      ...(report.untriaged.length === 0 ? {} : { untriaged: report.untriaged.length }),
+      ...(report.heldPool === undefined ? {} : { heldPool: report.heldPool }),
       claimed: report.toClaim.length,
       triageCostUsd: Number(report.triageCostUsd.toFixed(4)),
       ...(report.triageCostUnreported > 0 ? { triageCostUnreported: report.triageCostUnreported } : {}),
@@ -756,6 +799,9 @@ export async function recordDecisions(
       decisions: [
         ...report.skipped.map((s) => ({ item: s.candidate.id, stage: s.stage, outcome: 'skip', reason: s.reason })),
         ...report.verdicts.map((v) => ({ item: v.candidate.id, stage: 'model', outcome: v.outcome, reason: v.reason })),
+        // Recorded so the items are named rather than only counted, and as their own outcome:
+        // reading one of these back as a skip would say triage decided something about it.
+        ...report.untriaged.map((u) => ({ item: u.candidate.id, stage: 'model', outcome: 'untriaged', reason: u.reason })),
       ],
       ...(report.failures.length > 0 ? { failures: report.failures } : {}),
     },

@@ -7,6 +7,8 @@ import type { Role } from '../src/role.js'
  * the question here is whether a cycle that could not consider its items moves it.
  */
 const stored = new Map<string, unknown>()
+/** Every decision record this cycle wrote, so what a reader would find can be asserted on. */
+const recorded: Record<string, unknown>[] = []
 /** Flipped by the one test that asks what a cycle does when its decisions cannot be written. */
 const branch = vi.hoisted(() => ({ writable: true }))
 vi.mock('../src/state.js', () => ({
@@ -15,8 +17,9 @@ vi.mock('../src/state.js', () => ({
     stored.set(path, value)
     return true
   },
-  appendRecord: async () => {
+  appendRecord: async (_repo: string, _path: string, record: Record<string, unknown>) => {
     if (!branch.writable) throw new Error('state branch is unreachable')
+    recorded.push(record)
   },
 }))
 
@@ -361,5 +364,211 @@ describe('a cycle whose decisions could not be recorded', () => {
     expect(report.toClaim).toHaveLength(1)
     expect(report.failures.join(' ')).toMatch(/could not record decisions/)
     expect(report.failures.join(' ')).toContain('state branch is unreachable')
+  })
+})
+
+describe('a cycle with no seat to pay for triage', () => {
+  const source = (repo: string): Source => ({ tracker: 'github', repo, query: 'is:issue' }) as Source
+
+  /** Counts what nobody should have called: the model, and anything posted to an item. */
+  function watching(
+    items: Candidate[],
+    spoken: Record<string, { author: string; at: string; body: string }[]> = {},
+  ) {
+    const calls = { triaged: 0, posted: 0 }
+    const tracker = {
+      name: 'github',
+      search: async () => items,
+      commentsSince: async (c: Candidate, since: string) =>
+        (spoken[c.id] ?? []).filter((m) => Date.parse(m.at) >= Date.parse(since)),
+      report: async () => {
+        calls.posted += 1
+      },
+    } as unknown as Tracker
+    const counted: typeof triageBatch = async (cs, system, model) => {
+      calls.triaged += 1
+      return triage(cs, system, model)
+    }
+    return { d: { tracker, codeHost: {}, trees: {}, destination: 'o/state' } as never, calls, counted }
+  }
+
+  const mark = () =>
+    (stored.get(STATE_PATH) as { watermarks: Record<string, { lastSeen: string }> })
+      .watermarks[sourceKey(source('o/r'))]?.lastSeen
+
+  /** Every seat spent, with the hour the first of them comes back. */
+  const held = (over: Record<string, unknown> = {}) => async () =>
+    ({
+      exhausted: () => true,
+      blocked: 'spent',
+      resetAt: new Date(NOW + 4 * 60 * 60000).toISOString(),
+      reason: 'every seat in the pool is past its reserve',
+      ...over,
+    }) as never
+
+  const withSeat = () => async () => ({ exhausted: () => false, seat: 'seat-2', reason: 'chosen' }) as never
+
+  it('makes no model call, and holds the mark below every candidate it never asked about', async () => {
+    // The part a "skip the call" implementation gets wrong. These items were never dropped, so
+    // nothing in `skipped` holds them; a mark let past them drops them from the pool for good,
+    // and nothing about them will ever lift them back above it. That is worse than the spend
+    // this refuses, because today they at least get a verdict.
+    stored.clear()
+    const items = [candidate(7, 50), candidate(8, 20), candidate(9, 5)]
+    const first = watching(items)
+
+    const report = await planCycle(first.d, role(), {
+      now: NOW, identity: 'igor-bot', triage: first.counted, gate: held(),
+    })
+
+    expect(first.calls.triaged).toBe(0)
+    expect(report.triaged).toBe(0)
+    expect(report.toClaim).toEqual([])
+    expect(report.untriaged.map((u) => u.candidate.id)).toEqual(items.map((i) => i.id))
+    expect(mark()).toBe(new Date(NOW - 50 * 60000 - 1).toISOString())
+
+    // Same items, nobody has touched them, and the pool has capacity again.
+    const next = watching(items)
+    const second = await planCycle(next.d, role(), {
+      now: NOW, identity: 'igor-bot', triage: next.counted, gate: withSeat(),
+    })
+    expect(second.fresh).toBe(3)
+    expect(second.toClaim.map((c) => c.candidate.id)).toEqual(items.map((i) => i.id))
+  })
+
+  it('records them as untriaged rather than as anything triage decided', async () => {
+    stored.clear()
+    const first = watching([candidate(7, 40)])
+
+    const report = await planCycle(first.d, role(), {
+      now: NOW, identity: 'igor-bot', triage: first.counted, gate: held(),
+    })
+
+    expect(report.skipped).toEqual([])
+    expect(report.skippedDeferred).toBe(0)
+    expect(report.verdicts).toEqual([])
+    expect(report.untriaged[0]?.reason).toContain('no seat')
+  })
+
+  it('posts nothing to an item nobody claimed', async () => {
+    stored.clear()
+    const first = watching([candidate(7, 40)])
+
+    await planCycle(first.d, role(), { now: NOW, identity: 'igor-bot', triage: first.counted, gate: held() })
+
+    expect(first.calls.posted).toBe(0)
+  })
+
+  it('still reads comments, so a stop arriving while the pool is held is acted on', async () => {
+    // The boundary is the model call and nothing above it. Comments are fetched per discovered
+    // candidate, so an Igor that stopped discovering would stop hearing — exactly while
+    // somebody is most likely to be trying to reach it.
+    stored.clear()
+    const stopped = candidate(7, 50)
+    const first = watching([stopped, candidate(8, 10)], {
+      [stopped.id]: [{ author: 'alice', at: ago(50), body: 'stop' }],
+    })
+
+    const report = await planCycle(first.d, role(), {
+      now: NOW, identity: 'igor-bot', triage: first.counted, gate: held(),
+    })
+
+    expect(report.skippedStopped).toBe(1)
+    expect(report.untriaged.map((u) => u.candidate.id)).toEqual(['github:o/r#8'])
+  })
+
+  it('still reads the reply that answers a handed-back item, and leaves the record alone', async () => {
+    stored.clear()
+    const quiet = candidate(7, 40)
+    const record = defer(NO_DEFERRALS, quiet, 'could not reproduce', NOW - 5 * 24 * 60 * 60000)
+    stored.set(DEFERRALS_PATH, record)
+    const first = watching([quiet], {
+      [quiet.id]: [{ author: 'alice', at: ago(3 * 24 * 60), body: 'here is the repro' }],
+    })
+
+    const report = await planCycle(first.d, role(), {
+      now: NOW, identity: 'igor-bot', triage: first.counted, gate: held(),
+    })
+
+    // The reply lifted the deferral, and the item waits for a seat rather than for an answer.
+    expect(report.skippedDeferred).toBe(0)
+    expect(report.untriaged.map((u) => u.candidate.id)).toEqual([quiet.id])
+    expect(stored.get(DEFERRALS_PATH)).toEqual(record)
+  })
+
+  it('says how many it left, why, and when capacity returns', async () => {
+    stored.clear()
+    const first = watching([candidate(7, 40), candidate(8, 20)])
+
+    const report = await planCycle(first.d, role(), {
+      now: NOW, identity: 'igor-bot', triage: first.counted, gate: held(),
+    })
+
+    expect(report.untriaged).toHaveLength(2)
+    expect(report.heldPool?.blocked).toBe('spent')
+    expect(report.heldPool?.resetAt).toBe(new Date(NOW + 4 * 60 * 60000).toISOString())
+  })
+
+  it('tells a pool that could not be used from one that ran out', async () => {
+    // #49: only `spent` and `share` mean the budget ran out. A reader sent to look at spend for
+    // an unreadable seat looks in the wrong place, and no hour brings that one back.
+    stored.clear()
+    const first = watching([candidate(7, 40)])
+
+    const report = await planCycle(first.d, role(), {
+      now: NOW,
+      identity: 'igor-bot',
+      triage: first.counted,
+      gate: held({ blocked: 'credential', resetAt: undefined, passedOver: [{ seat: 'seat-2', verdict: 'credential' }] }),
+    })
+
+    expect(report.heldPool?.blocked).toBe('credential')
+    expect(report.heldPool?.resetAt).toBeUndefined()
+    expect(report.heldPool?.passedOver).toEqual([{ seat: 'seat-2', verdict: 'credential' }])
+  })
+
+  it('is distinguishable from a cycle that had nothing to triage', async () => {
+    stored.clear()
+    const empty = watching([])
+
+    const report = await planCycle(empty.d, role(), {
+      now: NOW, identity: 'igor-bot', triage: empty.counted, gate: held(),
+    })
+
+    expect(report.triaged).toBe(0)
+    expect(report.untriaged).toEqual([])
+    expect(report.heldPool).toBeUndefined()
+  })
+
+  it('writes what it could not do into the decision record', async () => {
+    stored.clear()
+    recorded.length = 0
+    const first = watching([candidate(7, 40)])
+
+    await planCycle(first.d, role(), { now: NOW, identity: 'igor-bot', triage: first.counted, gate: held() })
+
+    const written = recorded[0]!
+    expect(written['untriaged']).toBe(1)
+    expect(written['heldPool']).toMatchObject({ blocked: 'spent' })
+    const decisions = written['decisions'] as { item: string; outcome: string; stage: string }[]
+    expect(decisions).toEqual([
+      { item: 'github:o/r#7', stage: 'model', outcome: 'untriaged', reason: expect.stringContaining('no seat') },
+    ])
+  })
+
+  it('triages as before where no seats are declared, which the gate reports as unenforced', async () => {
+    stored.clear()
+    const first = watching([candidate(7, 40)])
+
+    const report = await planCycle(first.d, role(), {
+      now: NOW,
+      identity: 'igor-bot',
+      triage: first.counted,
+      gate: async () => ({ exhausted: () => false, reason: 'no seats configured, so budget is not enforced' }) as never,
+    })
+
+    expect(first.calls.triaged).toBe(1)
+    expect(report.toClaim).toHaveLength(1)
+    expect(report.heldPool).toBeUndefined()
   })
 })
