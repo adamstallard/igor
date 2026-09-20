@@ -46,14 +46,28 @@ the defect this change exists to fix. A second escalation follows only from the 
 changed and gone wrong again — the `fingerprint` shape, applied to the subject rather than to
 an item.
 
+**A subject is an occurrence, not a thing.** A cure key opens, clears and reopens over its
+life, so keying on the cure alone would match a closed escalation from last time and stay
+silent while a fleet sat stopped. A quiet proposal's subject carries the activity it went quiet
+from; a condition's carries that occurrence's opening. An escalation follows the *condition's*
+open state, not a probe's, so a scope that probes and stops repeatedly has one escalation.
+
 **Igor closes what it raised, once the subject resolves**, so an open escalation means
 something is still waiting and the list is worth reading.
 
-**An escalation is not work.** It is assigned to the people it names, and an item held by
-somebody else is already universally skipped — the act that says who is subscribed is the same
-act that keeps the loop from claiming it. Where nobody could be assigned, that is reported on
-the precedent `lore-review` already sets for assignment, and the escalation still must not be
-claimable.
+**`lore-review` is not modified.** Its promise that a quiet proposal "is reported with its
+assignees and the store reviewers to escalate to" stays exactly as written, because it is not
+wrong — whoever typed `reconcile` at a terminal is present, and stdout is the right surface for
+them. It is incomplete, and only when nobody typed anything. The escalation is raised from the
+same finding rather than in place of the report.
+
+**An escalation is not work, by what it is.** The tempting guard is assignment, since
+`universalSkip` already skips an item held by somebody else — but `reviewers` is optional and
+defaults to empty, which `src/cli.ts` already reports as a state it expects, so unassigned is
+the default rather than the edge case. An escalation is therefore excluded as an escalation,
+alongside closed, in flight and held, and assignment does only the job it can do: naming who is
+subscribed. Who was actually assigned is read back and reported, on the precedent `lore-review`
+sets.
 
 **An escalation that cannot be raised is said out loud.** The template grants
 `pull-requests: read` and no `issues: write`, so the first deployment of this fails; a
@@ -89,7 +103,9 @@ Explicitly out of scope:
 - `templates/reconcile-on-merge.yml` needs `issues: write`; without it the job reports a
   failure to escalate on every merge, which is loud but correct.
 - Igor becomes an author of items in the destination. Nothing today excludes an item by its
-  author, so the guard against the loop working its own message is assignment, and an
-  unassignable escalation is a hole this change has to close rather than discover later.
+  author, and assignment cannot stand in for it, so `universalSkip` gains a case — the first
+  time the loop is taught about an item Igor itself wrote.
 - An operator who closes an escalation without curing anything gets silence, deliberately.
-  The alternative is a surface they mute, which is worse and harder to detect.
+  The alternative is a surface they mute, which is worse and harder to detect. Silence is
+  narrower than it sounds: closing while also nudging the pull request re-arms the subject, so
+  it escalates again when it next goes quiet.
