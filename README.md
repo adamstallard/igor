@@ -222,8 +222,9 @@ repository.
    igor run <role> --plan     # what it would claim, claiming nothing
    ```
 
-   `--plan` claims nothing and posts nothing. It is not free: triage is a model call, measured
-   around four cents for a nine-candidate cycle.
+   That run claims nothing, posts nothing, and writes nothing: the discovery watermark stays
+   where it was, so looking at the backlog does not consume it. It is not free: triage is a
+   model call, measured around four cents for a nine-candidate cycle.
 
 4. **Leave it running.** Everything above is a command you run once; finding your own work is
    a loop.

@@ -348,14 +348,22 @@ export interface CycleOptions extends RunOptions {
    * is what a preview that does not know who would run should assume.
    */
   identity?: string
+  /**
+   * Show what a cycle would decide and persist none of it — no watermark, no cycle record.
+   * A preview that moved the mark would leave every candidate it triaged marked seen, and no
+   * later cycle would rediscover them.
+   */
+  preview?: boolean
 }
 
 /**
  * Discovery, triage, and the decision — everything up to but not including a claim.
  *
- * Separated from acting so a supervised run can show what it would do and stop. The watermark
- * advances here regardless, because deciding not to act on an item is still having considered
- * it, and reconsidering it every cycle would cost the model call again for the same answer.
+ * Separated from acting so a supervised run can show what it would do and stop. A cycle that
+ * acts advances the watermark over what it skipped as well as what it claimed, because deciding
+ * not to act on an item is still having considered it, and reconsidering it every cycle would
+ * cost the model call again for the same answer. A `preview` cycle decided nothing, so it
+ * writes nothing.
  */
 export async function planCycle(
   deps: CycleDeps,
@@ -471,23 +479,29 @@ export async function planCycle(
     )
   }
 
-  // An item dropped before anything examined it holds the mark back. A cooldown ends with the
-  // clock and an outage with the tracker's recovery, so neither touches the item to lift it
-  // above a mark that passed it. Every other skip was a decision, and the edit or the reply
-  // that reverses one lifts the item by itself.
-  if (options.sinceDays === undefined && results.length > 0) {
-    const unexamined = new Set(
-      report.skipped.filter((s) => s.held === true).map((s) => s.candidate.id),
-    )
-    await saveDiscoveryState(deps.destination, advance(stored, heldBelow(results, unexamined)))
+  // The cycle's only two writes, and a preview makes neither: somebody looking at the backlog
+  // decided nothing, and a mark or a record saying otherwise costs those items the real cycle
+  // that would have worked them.
+  if (options.preview !== true) {
+    // A look-back reaches deliberately behind the mark, so it must not carry the mark over what
+    // it finds there. Separately: an item dropped before anything examined it holds the mark
+    // back. A cooldown ends with the clock and an outage with the tracker's recovery, so neither
+    // touches the item to lift it above a mark that passed it. Every other skip was a decision,
+    // and the edit or the reply that reverses one lifts the item by itself.
+    if (options.sinceDays === undefined && results.length > 0) {
+      const unexamined = new Set(
+        report.skipped.filter((s) => s.held === true).map((s) => s.candidate.id),
+      )
+      await saveDiscoveryState(deps.destination, advance(stored, heldBelow(results, unexamined)))
+    }
+    // Not worth failing a cycle over, but a write that vanishes silently leaves nobody able to
+    // say afterwards what this cycle decided — so it is reported like any other cycle failure.
+    await recordDecisions(deps.destination, role, report).catch((error: unknown) => {
+      report.failures.push(
+        `could not record decisions: ${error instanceof Error ? error.message : String(error)}`,
+      )
+    })
   }
-  // Not worth failing a cycle over, but a write that vanishes silently leaves nobody able to
-  // say afterwards what this cycle decided — so it is reported like any other cycle failure.
-  await recordDecisions(deps.destination, role, report).catch((error: unknown) => {
-    report.failures.push(
-      `could not record decisions: ${error instanceof Error ? error.message : String(error)}`,
-    )
-  })
   return report
 }
 

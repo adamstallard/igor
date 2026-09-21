@@ -9,6 +9,8 @@ import type { Role } from '../src/role.js'
 const stored = new Map<string, unknown>()
 /** Flipped by the one test that asks what a cycle does when its decisions cannot be written. */
 const branch = vi.hoisted(() => ({ writable: true }))
+/** Attempts, not successes, so a test can ask whether a cycle tried to record itself at all. */
+const records = vi.hoisted(() => ({ count: 0 }))
 vi.mock('../src/state.js', () => ({
   readState: async (_repo: string, path: string) => stored.get(path),
   writeState: async (_repo: string, path: string, value: unknown) => {
@@ -16,6 +18,7 @@ vi.mock('../src/state.js', () => ({
     return true
   },
   appendRecord: async () => {
+    records.count += 1
     if (!branch.writable) throw new Error('state branch is unreachable')
   },
 }))
@@ -361,5 +364,57 @@ describe('a cycle whose decisions could not be recorded', () => {
     expect(report.toClaim).toHaveLength(1)
     expect(report.failures.join(' ')).toMatch(/could not record decisions/)
     expect(report.failures.join(' ')).toContain('state branch is unreachable')
+  })
+})
+
+describe('a preview decides nothing, so it persists nothing', () => {
+  const key = () => sourceKey({ tracker: 'github', repo: 'o/r', query: 'is:issue' })
+
+  it('leaves the stored mark where a real cycle put it, having seen past it', async () => {
+    stored.clear()
+    // The real cycle first, so the preview has a mark it could move and does not.
+    await planCycle(deps([candidate(7, 40)], none), role(), { now: NOW, identity: 'igor-bot', triage })
+    expect(stored.get(STATE_PATH)).toEqual({ watermarks: { [key()]: { lastSeen: ago(40) } } })
+    const mark = JSON.stringify(stored.get(STATE_PATH))
+
+    const report = await planCycle(deps([candidate(7, 40), candidate(8, 5)], none), role(), {
+      now: NOW, identity: 'igor-bot', triage, preview: true,
+    })
+
+    // It found the newer item and says it would claim it — the report is computed either way.
+    expect(report.toClaim.map((c) => c.candidate.native)).toEqual(['8'])
+    expect(JSON.stringify(stored.get(STATE_PATH))).toBe(mark)
+  })
+
+  it('writes no cycle record, and the cycle after it still finds the item', async () => {
+    stored.clear()
+    records.count = 0
+    const items = [candidate(7, 40)]
+
+    // `recordDecisions` returns early on a cycle with nothing fresh, so the count only means
+    // something once there is a decision to record.
+    const preview = await planCycle(deps(items, none), role(), {
+      now: NOW, identity: 'igor-bot', triage, preview: true,
+    })
+    expect(preview.fresh).toBe(1)
+    expect(records.count).toBe(0)
+    expect(stored.get(STATE_PATH)).toBeUndefined()
+
+    const real = await planCycle(deps(items, none), role(), { now: NOW, identity: 'igor-bot', triage })
+    expect(real.fresh).toBe(1)
+    expect(records.count).toBe(1)
+    expect(stored.get(STATE_PATH)).toEqual({ watermarks: { [key()]: { lastSeen: ago(40) } } })
+  })
+
+  it('still reads the stored mark, so it previews the cycle that would actually run', async () => {
+    stored.clear()
+    await planCycle(deps([candidate(7, 40)], none), role(), { now: NOW, identity: 'igor-bot', triage })
+
+    const report = await planCycle(deps([candidate(7, 40)], none), role(), {
+      now: NOW, identity: 'igor-bot', triage, preview: true,
+    })
+
+    expect(report.fresh).toBe(0)
+    expect(report.toClaim).toEqual([])
   })
 })

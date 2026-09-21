@@ -448,6 +448,9 @@ program
       identity,
       limit: Number(opts.limit),
       ...(opts.since === undefined ? {} : { sinceDays: Number(opts.since) }),
+      // A preview stops before the cycle's two writes, so looking at the backlog does not mark
+      // its candidates seen and cost them the cycle that would have worked them.
+      preview: opts.plan === true,
       // The seat triage spends from and records against is the same one a worker would choose —
       // read lazily, so a cycle with nothing to triage never pays for a seat's usage reading.
       gate: gateFor,
@@ -455,7 +458,10 @@ program
     process.stdout.write(`${renderCycle(report, opts.plan === true)}\n`)
 
     if (opts.plan) {
-      process.stdout.write(`\n${report.toClaim.length} would be claimed. Nothing was claimed or posted.\n`)
+      process.stdout.write(
+        `\n${report.toClaim.length} would be claimed. Nothing was claimed, posted or recorded, ` +
+          'and the discovery mark is unchanged.\n',
+      )
       for (const c of report.toClaim) {
         process.stdout.write(`  igor run ${name} --claim ${c.candidate.id}\n`)
       }
