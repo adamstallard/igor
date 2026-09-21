@@ -52,11 +52,18 @@ describe('one definition of whether --claim was given', () => {
     expect(claimRequested({ claim: 'github:o/r#5' })).toBe(true)
   })
 
-  it('agrees with the contradiction check for every value, which is why both read it here', () => {
-    // The bug this prevents is two predicates for one flag disagreeing about the empty string.
-    for (const claim of ['', 'github:o/r#5', undefined]) {
-      const refused = contradictoryRunFlags({ plan: true, claim }) !== undefined
-      expect(refused).toBe(claimRequested({ claim }))
+  it('refuses exactly the values it counts as given', () => {
+    // Both sides pinned against literals rather than against each other. Asserting only that
+    // they agree passes whenever they are wrong together, which is the state this exists to
+    // catch: two predicates for one flag, disagreeing about the empty string.
+    const cases = [
+      { claim: '', given: true },
+      { claim: 'github:o/r#5', given: true },
+      { claim: undefined, given: false },
+    ]
+    for (const { claim, given } of cases) {
+      expect(claimRequested({ claim })).toBe(given)
+      expect(contradictoryRunFlags({ plan: true, claim }) !== undefined).toBe(given)
     }
   })
 })
