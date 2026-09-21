@@ -551,18 +551,28 @@ export async function planCycle(
   // for one bulk edit to tie a page of items, so the tie is conceded rather than pinning the
   // mark: the item is passed over as it would have been anyway, where holding it would triage
   // the same items again every cycle for as long as the tie lasted.
+  //
+  // Which is a question per source, because the marks move independently: a verdict in another
+  // source is nothing this one's mark has to clear, and conceding a tie with it drops an item
+  // this mark could have sat cleanly below.
   if (options.sinceDays === undefined && results.length > 0) {
-    const decided = report.verdicts.reduce(
-      (newest, v) => Math.max(newest, instant(v.candidate.updatedAt)),
-      -Infinity,
-    )
-    const unexamined = new Set([
-      ...report.skipped.filter((s) => s.held === true).map((s) => s.candidate.id),
-      ...report.untriaged
-        .filter((u) => instant(u.candidate.updatedAt) > decided)
-        .map((u) => u.candidate.id),
-    ])
-    await saveDiscoveryState(deps.destination, advance(stored, heldBelow(results, unexamined)))
+    const held = report.skipped.filter((s) => s.held === true).map((s) => s.candidate.id)
+    const marks = results.flatMap((result) => {
+      const here = new Set(result.candidates.map((c) => c.id))
+      const decided = report.verdicts.reduce(
+        (newest, v) =>
+          here.has(v.candidate.id) ? Math.max(newest, instant(v.candidate.updatedAt)) : newest,
+        -Infinity,
+      )
+      const unexamined = new Set([
+        ...held,
+        ...report.untriaged
+          .filter((u) => instant(u.candidate.updatedAt) > decided)
+          .map((u) => u.candidate.id),
+      ])
+      return heldBelow([result], unexamined)
+    })
+    await saveDiscoveryState(deps.destination, advance(stored, marks))
   }
   // Not worth failing a cycle over, but a write that vanishes silently leaves nobody able to
   // say afterwards what this cycle decided — so it is reported like any other cycle failure.

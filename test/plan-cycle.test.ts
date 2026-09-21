@@ -735,3 +735,43 @@ describe('a held pool on a cycle that also hit its cap', () => {
     expect(mark()).toBe(new Date(NOW - 150 * 60000 - 1).toISOString())
   })
 })
+
+describe('a tie the cap falls on in another source', () => {
+  const source = (repo: string): Source => ({ tracker: 'github', repo, query: 'is:issue' }) as Source
+  const mark = (repo: string) =>
+    (stored.get(STATE_PATH) as { watermarks: Record<string, { lastSeen: string }> })
+      .watermarks[sourceKey(source(repo))]?.lastSeen
+
+  it('holds the other source below it, since nothing there was decided', async () => {
+    // Two candidates bulk-edited into the same second, one per source, and a cap that reaches
+    // only the first. A mark cannot sit between two candidates in *one* source sharing an
+    // instant — but these marks move separately, and the second source triaged nothing for its
+    // mark to clear. Conceding that tie too would drop the item with no tie to concede to.
+    stored.clear()
+    const here = candidate(1, 30)
+    const there = { ...candidate(2, 30), id: 'github:o/s#2', repo: 'o/s', native: '2' }
+    const two = { ...role(), sources: [source('o/r'), source('o/s')] } as Role
+    const bySource: Record<string, Candidate[]> = { 'o/r': [here], 'o/s': [there] }
+    const tracker = {
+      name: 'github',
+      search: async (s: Source) => bySource[s.repo] ?? [],
+      commentsSince: async () => [],
+    } as unknown as Tracker
+    const d = { tracker, codeHost: {}, trees: {}, destination: 'o/state' } as never
+    const asked: string[] = []
+    const watch: typeof triageBatch = async (cs, system, model) => {
+      asked.push(...cs.map((c) => c.id))
+      return triage(cs, system, model)
+    }
+    const run = () => planCycle(d, two, { now: NOW, identity: 'igor-bot', triage: watch, limit: 1 })
+
+    const first = await run()
+    expect(first.triaged).toBe(1)
+    expect(first.untriaged).toHaveLength(1)
+    expect(mark('o/s')).toBe(new Date(NOW - 30 * 60000 - 1).toISOString())
+
+    const second = await run()
+    expect(second.triaged).toBe(1)
+    expect(asked.sort()).toEqual(['github:o/r#1', 'github:o/s#2'])
+  })
+})
