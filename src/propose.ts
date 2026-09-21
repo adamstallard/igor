@@ -204,6 +204,7 @@ export async function propose(
       branch,
       baseSha,
       files,
+      [],
       `Propose ${group.length} lore ${group.length === 1 ? 'entry' : 'entries'} from ${author}'s reviews`,
     )
 

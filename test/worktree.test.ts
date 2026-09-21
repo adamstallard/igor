@@ -3,7 +3,7 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { describe, expect, it } from 'vitest'
-import { ClonedTree } from '../src/worktree.js'
+import { carried, ClonedTree } from '../src/worktree.js'
 import { tempDir } from './tmp.js'
 
 const run = promisify(execFile)
@@ -274,5 +274,28 @@ describe('what the worker deletes on top of a merge', () => {
       content: '',
       kind: 'deleted',
     })
+  })
+})
+
+describe('what of a change an artifact can carry', () => {
+  it('keeps a removal whose path nothing writes back', () => {
+    const { written, removed } = carried([
+      { path: 'src/a.ts', content: 'edited', kind: 'modified' },
+      { path: 'src/gone.ts', content: '', kind: 'deleted' },
+    ])
+    expect(written.map((c) => c.path)).toEqual(['src/a.ts'])
+    expect(removed).toEqual(['src/gone.ts'])
+  })
+
+  it('drops a removal whose path is written again', () => {
+    // A tree carries each path once. A removal sent beside its own blob either takes the file
+    // out of the artifact or has the host reject the tree, and neither is what happened.
+    const { written, removed } = carried([
+      { path: 'src/old.ts', content: '', kind: 'deleted' },
+      { path: 'src/new.ts', content: 'moved', kind: 'modified' },
+      { path: 'src/old.ts', content: 'export * from "./new.js"', kind: 'added' },
+    ])
+    expect(written.map((c) => c.path)).toEqual(['src/new.ts', 'src/old.ts'])
+    expect(removed).toEqual([])
   })
 })

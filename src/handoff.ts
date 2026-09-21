@@ -2,6 +2,7 @@ import type { Artifact, Candidate, Tracker } from './adapter.js'
 import type { ExecutionResult } from './execute.js'
 import type { Role } from './role.js'
 import type { SeatVerdict } from './budget.js'
+import { carried } from './worktree.js'
 
 /**
  * What an Igor says before it lets go of something it claimed.
@@ -118,8 +119,12 @@ export function stepsFrom(
     return { done, remaining }
   }
 
-  const edits = result.changed.filter((c) => c.kind !== 'deleted').length
-  if (edits > 0) done.push(`changed ${edits} file${edits === 1 ? '' : 's'}`)
+  // Counted apart, because a run whose every change was a removal is real work and reads as
+  // none under a single "changed" clause. Counted the way the artifact is built, so the two
+  // never disagree about whether a path was removed.
+  const { written, removed } = carried(result.changed)
+  if (written.length > 0) done.push(`changed ${written.length} file${written.length === 1 ? '' : 's'}`)
+  if (removed.length > 0) done.push(`removed ${removed.length} file${removed.length === 1 ? '' : 's'}`)
   // An artifact that already existed was brought up to date, not opened — saying otherwise
   // tells the reader a pull request they have been reviewing for a week is new.
   if (result.artifact) {
@@ -152,8 +157,8 @@ export function stepsFrom(
       remaining.push(
         result.artifact !== undefined
           ? `what was published is on ${result.artifact.ref}; the rest needs a person`
-          : edits > 0
-            ? 'the edits were made but never published, so they are gone with the working copy'
+          : result.changed.length > 0
+            ? 'the changes were made but never published, so they are gone with the working copy'
             : 'all of it — nothing usable was produced',
       )
       break

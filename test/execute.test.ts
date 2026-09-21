@@ -2464,3 +2464,66 @@ describe('a refusal leaves the envelope behind, not only the verdict', () => {
     }
   })
 })
+
+describe('an artifact carries the removals as well as the edits', () => {
+  /** One item, one set of changes, and whatever reached the code host. */
+  async function publish(changes: ChangedFile[]) {
+    const { provider } = fakeProvider(changes)
+    const { host, seen } = fakeCodeHost()
+    const { t } = fakeTracker()
+    const result = await execute(provider, t, host, candidate(), role(), {
+      worker: async () => ({ result: 'Done.', total_cost_usd: 0.01 }),
+    })
+    return { result, request: seen[0] }
+  }
+
+  it('publishes a deletion alongside the edits rather than dropping it', async () => {
+    // Dropped, the pull request looks complete and is not: the reviewer reads a refactor that
+    // still has the module it removed.
+    const { result, request } = await publish([
+      { path: 'src/a.ts', content: 'fixed', kind: 'modified' },
+      { path: 'src/gone.ts', content: '', kind: 'deleted' },
+    ])
+    expect(result.outcome).toBe('produced')
+    expect(request?.files.map((f) => f.path)).toEqual(['src/a.ts'])
+    expect(request?.deletions).toEqual(['src/gone.ts'])
+    expect(result.refusals).toEqual([])
+  })
+
+  it('publishes a change that is only deletions', async () => {
+    // The worker ran and was paid for. Refusing here spends a full run to discover a limit.
+    const { result, request } = await publish([
+      { path: 'src/gone.ts', content: '', kind: 'deleted' },
+      { path: 'test/gone.test.ts', content: '', kind: 'deleted' },
+    ])
+    expect(result.outcome).toBe('produced')
+    expect(request?.files).toEqual([])
+    expect(request?.deletions).toEqual(['src/gone.ts', 'test/gone.test.ts'])
+    expect(result.refusals).toEqual([])
+  })
+
+  it('does not send a path as both a file and a removal', async () => {
+    // A rename that leaves a re-export behind: porcelain reports the rename's original path as
+    // deleted, and the recreated file at that same path as untracked. Sent as both, one tree
+    // entry carries the path twice — the shim is dropped, or the whole publish is rejected.
+    const { request } = await publish([
+      { path: 'src/old.ts', content: '', kind: 'deleted' },
+      { path: 'src/new.ts', content: 'moved', kind: 'modified' },
+      { path: 'src/old.ts', content: 'export * from "./new.js"', kind: 'added' },
+    ])
+    expect(request?.files.map((f) => f.path)).toEqual(['src/new.ts', 'src/old.ts'])
+    expect(request?.deletions).toEqual([])
+  })
+
+  it('leaves no duplicate behind a rename', async () => {
+    // Porcelain reports a rename as the new path plus the original, and the original is a
+    // deletion. Kept, the file is in the pull request twice.
+    const { result, request } = await publish([
+      { path: 'src/new.ts', content: 'moved', kind: 'added' },
+      { path: 'src/old.ts', content: '', kind: 'deleted' },
+    ])
+    expect(result.outcome).toBe('produced')
+    expect(request?.files.map((f) => f.path)).toEqual(['src/new.ts'])
+    expect(request?.deletions).toEqual(['src/old.ts'])
+  })
+})

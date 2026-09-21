@@ -4,7 +4,14 @@ import type { Artifact, Candidate, ClaimVerdict, CodeHost, InFlight, Tracker } f
 import { resolveToken, type TokenSource, type Window } from './budget.js'
 import { recordObservation, WINDOW_LENGTH } from './capacity.js'
 import type { Action, Role } from './role.js'
-import { withTree, type ChangedFile, type MergeState, type TreeProvider, type WorkingTree } from './worktree.js'
+import {
+  carried,
+  withTree,
+  type ChangedFile,
+  type MergeState,
+  type TreeProvider,
+  type WorkingTree,
+} from './worktree.js'
 import { appendRecord, STATE_BRANCH, writeState } from './state.js'
 
 /**
@@ -1536,34 +1543,18 @@ export async function execute(
       }
     }
 
-    // A deletion reaches an artifact's own branch but not a new one: a resolution moves a ref
-    // it can drop a path from, while `produce` builds its commit out of files alone.
-    const deletions = changed.filter((c) => c.kind === 'deleted').map((c) => c.path)
-    if (artifact === undefined) {
-      for (const path of deletions) {
-        refusals.push({ action: 'draft-pr', why: `deleting ${path} is not supported yet` })
-      }
-    }
-    const files = changed
-      .filter((c) => c.kind !== 'deleted')
-      .map((c) => ({
-        path: c.path,
-        content: c.content,
-        // Carried only onto a branch that already has the path; `produce` builds a new tree,
-        // where every file is new and there is no mode to preserve.
-        ...(artifact !== undefined && c.executable === true ? { executable: true } : {}),
-      }))
-    if (files.length === 0 && (artifact === undefined || deletions.length === 0)) {
-      return {
-        outcome: 'refused' as const,
-        changed,
-        refusals,
-        transcript,
-        ...kept,
-        ...cured(),
-        reason: 'the only changes were deletions, which cannot be published yet',
-      }
-    }
+    // Both publishing paths build their tree from the same call, so a removal rides either one
+    // as an entry over the base tree with no blob behind it. Nothing needs guarding against
+    // both coming out empty: a removal is only dropped in favour of a file at that same path,
+    // and an empty `changed` returned above.
+    const { written, removed: deletions } = carried(changed)
+    const files = written.map((c) => ({
+      path: c.path,
+      content: c.content,
+      // Carried only onto a branch that already has the path; `produce` builds a new tree,
+      // where every file is new and there is no mode to preserve.
+      ...(artifact !== undefined && c.executable === true ? { executable: true } : {}),
+    }))
 
     // The resolution goes on the branch that exists, with both sides as parents. A one-parent
     // commit carrying the same content leaves the merge base where it was, so the host
@@ -1679,6 +1670,7 @@ export async function execute(
       title: candidate.title,
       body: prBody(linkage, transcript, candidate, options.store),
       files,
+      deletions,
       reviewers: lost ? [] : role.reviewers,
       // Reversible by default: a draft asks for review rather than announcing completion.
       draft: lost || wanted === 'draft-pr',

@@ -23,7 +23,8 @@ vi.mock('../src/gh.js', () => ({
   ghPaginated: async () => [],
 }))
 
-const { commitOnBranch, mergeIntoBranch } = await import('../src/github.js')
+const { commitOnBranch, createBranchWithFiles, mergeIntoBranch } = await import('../src/github.js')
+const { GitHubCodeHost } = await import('../src/github-adapter.js')
 
 function reset(): void {
   calls.length = 0
@@ -123,6 +124,88 @@ describe('putting a resolution on a branch that already exists', () => {
   it('refuses a commit with no parent rather than orphaning the branch', async () => {
     reset()
     await expect(commitOnBranch('o/r', 'b', [], [{ path: 'a', content: 'x' }], [], 'm')).rejects.toThrow()
+    expect(calls).toEqual([])
+  })
+})
+
+describe('creating the branch an artifact lives on', () => {
+  it('drops a removed path from the base tree with a null sha', async () => {
+    // The same tree call the resolution path makes, so a removal costs nothing extra: only the
+    // last step differs, and it creates a ref rather than moving one.
+    reset()
+    answer = (endpoint) => {
+      if (endpoint.endsWith('/git/blobs')) return { sha: 'blobsha' }
+      if (endpoint.endsWith('/git/trees')) return { sha: 'treesha' }
+      if (endpoint.endsWith('/git/commits')) return { sha: 'commitsha' }
+      return null
+    }
+
+    const sha = await createBranchWithFiles(
+      'o/r',
+      'igor/fix-7',
+      'basesha',
+      [{ path: 'src/new.ts', content: 'moved\n' }],
+      ['src/old.ts'],
+      'Rename the module',
+    )
+
+    expect(sha).toBe('commitsha')
+    expect(calls[1]?.body).toMatchObject({
+      base_tree: 'basesha',
+      tree: [
+        { path: 'src/new.ts', mode: '100644', type: 'blob', sha: 'blobsha' },
+        { path: 'src/old.ts', mode: '100644', type: 'blob', sha: null },
+      ],
+    })
+    // A POST to `git/refs`, never a PATCH: the branch does not exist yet, and moving a ref
+    // that is already there would put the artifact on somebody else's branch.
+    expect(method(3)).toBe('POST')
+    expect(calls[3]?.body).toMatchObject({ ref: 'refs/heads/igor/fix-7', sha: 'commitsha' })
+  })
+
+  it('opens an artifact whose every change is a removal', async () => {
+    // No blob to write, so the first call is the tree. Refused here, a run that deleted a
+    // module publishes nothing and the worker was still paid for.
+    reset()
+    answer = (endpoint) => {
+      if (endpoint.endsWith('/git/trees')) return { sha: 'treesha' }
+      if (endpoint.endsWith('/git/commits')) return { sha: 'commitsha' }
+      if (endpoint === 'repos/o/r') return { default_branch: 'main' }
+      if (endpoint.endsWith('/git/ref/heads/main')) return { sha: 'basesha' }
+      if (endpoint.endsWith('/pulls')) return { number: 42, html_url: 'https://example.test/42' }
+      return null
+    }
+
+    const artifact = await new GitHubCodeHost().produce({
+      repo: 'o/r',
+      branch: 'igor/fix-7',
+      title: 'Drop the obsolete module',
+      body: 'Closes #7',
+      files: [],
+      deletions: ['src/gone.ts'],
+      draft: true,
+    })
+
+    expect(artifact).toMatchObject({ kind: 'pull-request', ref: '#42' })
+    const tree = calls.find((c) => c.args[1] === 'repos/o/r/git/trees')
+    expect(tree?.body).toMatchObject({
+      tree: [{ path: 'src/gone.ts', mode: '100644', type: 'blob', sha: null }],
+    })
+  })
+
+  it('refuses an artifact with nothing in it at all', async () => {
+    reset()
+    await expect(
+      new GitHubCodeHost().produce({
+        repo: 'o/r',
+        branch: 'igor/fix-7',
+        title: 't',
+        body: 'b',
+        files: [],
+        deletions: [],
+        draft: true,
+      }),
+    ).rejects.toThrow()
     expect(calls).toEqual([])
   })
 })

@@ -24,13 +24,37 @@ export const TREE_PREFIX = 'igor-tree-'
 export interface ChangedFile {
   path: string
   content: string
-  /** Deletions and binaries are reported but cannot be carried by the tree-API artifact path. */
+  /** A deletion carries no content, and a binary is not reported at all. */
   kind: 'added' | 'modified' | 'deleted'
   /**
    * Whether the file is executable. Only a resolution reads it: it lays blobs over a tree the
    * branch already has, so a mode assumed here replaces the mode that is there.
    */
   executable?: boolean
+}
+
+/**
+ * Splits what the tree reported into what an artifact carries.
+ *
+ * A path can be reported both ways at once: a file removed with git and written back again is
+ * a deletion record and an addition record for the one path. The file on disk wins, because a
+ * tree carries each path once — a removal sent beside its own blob either drops the file from
+ * the artifact or has the host reject the whole tree.
+ *
+ * Shared rather than applied twice, because the second place to apply it is whatever tells a
+ * person what the run did, and a count that disagrees with the artifact sends them looking for
+ * a deletion that is not in the diff.
+ */
+export function carried(changed: readonly ChangedFile[]): {
+  written: ChangedFile[]
+  removed: string[]
+} {
+  const written = changed.filter((c) => c.kind !== 'deleted')
+  const paths = new Set(written.map((c) => c.path))
+  return {
+    written,
+    removed: changed.filter((c) => c.kind === 'deleted' && !paths.has(c.path)).map((c) => c.path),
+  }
 }
 
 /** What a merge left behind, and the two commits a resolution of it has to be parented on. */

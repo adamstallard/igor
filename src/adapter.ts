@@ -138,6 +138,11 @@ export interface ArtifactRequest {
   title: string
   body: string
   files: { path: string; content: string }[]
+  /**
+   * Paths the work removed. Left out, the artifact looks complete to a reviewer and is not —
+   * a refactor still carrying the module it removes, a rename with the file in two places.
+   */
+  deletions: readonly string[]
   reviewers?: string[]
   draft: boolean
 }
