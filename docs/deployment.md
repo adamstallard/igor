@@ -258,8 +258,8 @@ igor run <role> --plan      # what it would claim right now, claiming nothing
 ```
 
 `--plan` persists nothing: no watermark, no cycle record. Looking at the backlog does not
-consume it, so this is safe to run when something is already wrong. `--claim` is a separate
-path rather than a preview, and claims the item it names even alongside `--plan`.
+consume it, so this is safe to run when something is already wrong. `--claim` is not a preview
+and the two are refused together, so the claim lines a preview prints are run without `--plan`.
 
 Everything an Igor did is on the `igor-state` branch of the lore repository:
 `executions/` for what it worked and what that cost, one `.ndjson` file per UTC day,

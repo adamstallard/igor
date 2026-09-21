@@ -18,6 +18,7 @@ import {
 import { eligibleToPropose, propose, ProposeError } from './propose.js'
 import { reconcile, promoteInPlace } from './reconcile.js'
 import { GitHubError } from './github.js'
+import { claimRequested, contradictoryRunFlags } from './flags.js'
 import { explainRole, loadRole, rolesFrom, RoleError } from './role.js'
 import { planCycle, runItem, type CycleReport } from './loop.js'
 import { renderProgress } from './execute.js'
@@ -365,6 +366,9 @@ program
   .option('--since <days>', 'look back this far instead of using the stored watermark')
   .option('--claim <id>', 'work only this item, which a previous run reported it would claim')
   .action(async (name: string, opts) => {
+    // First, so a contradiction costs no network call and no model call.
+    const contradiction = contradictoryRunFlags(opts)
+    if (contradiction !== undefined) throw new RoleError(contradiction)
     const config = loadConfig(program.opts()['config'])
     const role = loadRole(config, name).role
     const tracker = new GitHubTracker()
@@ -422,7 +426,7 @@ program
       return run
     }
 
-    if (opts.claim) {
+    if (claimRequested(opts)) {
       const repo = opts.claim.replace(/^github:/, '').split('#')[0]!
       const [item] = (
         await tracker.search({ tracker: 'github', repo, query: `is:issue ${opts.claim.split('#')[1]}` })
