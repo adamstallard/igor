@@ -406,6 +406,27 @@ describe('a preview decides nothing, so it persists nothing', () => {
     expect(stored.get(STATE_PATH)).toEqual({ watermarks: { [key()]: { lastSeen: ago(40) } } })
   })
 
+  it('leaves the mark alone under --since too, which suppresses that write for its own reason', async () => {
+    stored.clear()
+    records.count = 0
+    // A look-back reaches deliberately behind the mark. It must not carry the mark over what it
+    // went behind the mark to find — preview or not.
+    const report = await planCycle(deps([candidate(7, 40)], none), role(), {
+      now: NOW, identity: 'igor-bot', triage, sinceDays: 7, preview: true,
+    })
+    expect(report.toClaim).toHaveLength(1)
+    expect(stored.get(STATE_PATH)).toBeUndefined()
+    expect(records.count).toBe(0)
+
+    // Without the preview the look-back still holds the mark back, and still records the cycle.
+    const real = await planCycle(deps([candidate(7, 40)], none), role(), {
+      now: NOW, identity: 'igor-bot', triage, sinceDays: 7,
+    })
+    expect(real.toClaim).toHaveLength(1)
+    expect(stored.get(STATE_PATH)).toBeUndefined()
+    expect(records.count).toBe(1)
+  })
+
   it('still reads the stored mark, so it previews the cycle that would actually run', async () => {
     stored.clear()
     await planCycle(deps([candidate(7, 40)], none), role(), { now: NOW, identity: 'igor-bot', triage })
