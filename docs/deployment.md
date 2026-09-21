@@ -55,6 +55,11 @@ Three things, in this order. None can be automated, and the first two are the on
    walking up from there. Creating one is
    [Setting up a lore repository](../README.md#setting-up-a-lore-repository) in the README.
 
+And one thing about the repositories a role is pointed at: its work has to be text. A binary
+file a worker changes is published corrupted rather than dropped, and the diff gives no sign of
+it — [`architecture.md`](architecture.md) §6.7.3 has why that is tolerated and what would
+change it.
+
 ## systemd
 
 ```bash

@@ -34,4 +34,5 @@
 
 - [ ] 5.1 Target utilisation, tolerance and the reserve decay's shape are configurable, with
       defaults marked provisional in the code until a seat has run a full week
-- [ ] 5.2 Record what the defaults were reasoned from, since nothing has measured them
+- [ ] 5.2 Record what the defaults were reasoned from, since nothing has measured them;
+      fitting them against real readings is [#69](https://github.com/adamstallard/igor/issues/69)

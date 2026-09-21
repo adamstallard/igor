@@ -339,6 +339,14 @@ home directory, the host's proxy settings, and the token of the seat it spends. 
 and no other seat's token, because the worker has no use for either: it edits files in a
 disposable clone, and claiming, commenting and publishing all happen afterwards in the loop.
 
+**Point a role only at work that is text.** A file the worker changed is read back out of the
+tree as UTF-8 and published as UTF-8, and a byte that is not valid UTF-8 is substituted rather
+than rejected — so a PNG, an archive or anything else git treats as binary is published
+corrupted instead of dropped, and nothing in the diff says so. Nothing refuses it, because no
+role can reach a binary today; a role that could — one whose work produces images, or checks
+fixtures in — is what would make that refusal worth building.
+[`docs/architecture.md`](docs/architecture.md) §6.7.3 has the rest.
+
 ## Budgets
 
 An Igor spends a Claude subscription seat. Where that seat's own token yields a reading it is

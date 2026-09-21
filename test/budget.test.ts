@@ -16,15 +16,19 @@ import {
   renderBudget,
   type WindowState,
   resolveToken,
+  percent,
   roleSharePercent,
   seatStatus,
+  type Choice,
   type OrgBudget,
   type Seat,
   type SeatUsage,
   type SpendRecord,
   type Usage,
+  type Window,
+  type WindowReport,
 } from '../src/budget.js'
-import { boundsForSeats, type Observation } from '../src/capacity.js'
+import { boundsForSeats, type Observation, type SeatBounds } from '../src/capacity.js'
 import { composeHandoff } from '../src/handoff.js'
 import type { Role } from '../src/role.js'
 
@@ -226,6 +230,261 @@ describe('headroom is percent, straight from the reading', () => {
 
   it('reports none rather than a negative once past the floor', () => {
     expect(seatStatus(seat({ reserve: 0.5 }), usage(80), 'session').headroomPercent).toBe(0)
+  })
+})
+
+describe('a seat sitting exactly on its reserve', () => {
+  const pool = { id: 'eng', seats: ['adam'] }
+  const role = { name: 'triage' }
+  const readings = (reserve: number, used: number): SeatUsage[] => [
+    { seat: seat({ reserve }), usage: usage(used, 0) },
+  ]
+
+  // `reserve * 100` is inexact, so the subtraction that makes headroom can land a few ulps
+  // above zero instead of on it. These are every integer usage a two-decimal reserve does it
+  // at; finer reserves have their own, which the invariant below covers.
+  for (const [reserve, used] of [
+    [0.57, 43],
+    [0.58, 42],
+  ] as const) {
+    it(`is not chosen at a ${reserve} reserve and ${used}% used`, () => {
+      expect(chooseSeat(pool, readings(reserve, used), [], role).seat).toBeUndefined()
+    })
+
+    it(`prints no headroom at a ${reserve} reserve and ${used}% used`, () => {
+      const rows = renderBudget(readings(reserve, used))
+        .split('\n')
+        .filter((l) => l.includes('session'))
+      expect(rows).toHaveLength(1)
+      // used, then reserve, then the headroom column the gate was just asked about.
+      expect(rows[0]).toMatch(new RegExp(`\\s${used}%\\s+\\d+%\\s+0%\\s`))
+    })
+  }
+
+  it('hedges the handoff hour once its week is at the reserve too', () => {
+    // The gate has a second at-reserve test, in the reset race, and a seat shut on one window
+    // states that window's hour flatly. A week sitting on noise instead of on nothing is the
+    // difference between an hour promised and an hour hedged.
+    const s = seat({ reserve: 0.57 })
+    const g = budgetGate(
+      { seats: [s], pools: [{ id: 'p', seats: ['adam'] }] },
+      { name: 'triage', seat: 'pool:p' },
+      [
+        {
+          seat: s,
+          usage: {
+            session: { percentUsed: 100, resetsAt: 'Sep 25 at 8pm (America/Los_Angeles)' },
+            week: { percentUsed: 43, resetsAt: 'Sep 25 at 4pm (America/Los_Angeles)' },
+            perModel: [],
+          },
+        },
+      ],
+      [],
+    )
+    expect(g.resetAt).toBe('Sep 25 at 4pm (America/Los_Angeles)')
+    expect(g.resetApproximate).toBe(true)
+  })
+
+  /** Both sides of the pairing at once: the gate spends a seat exactly when its row shows
+   *  something to spend. Passing it means the two agree; which of them moved does not matter. */
+  const agrees = (reserve: number, used: number): void => {
+    const status = seatStatus(seat({ reserve }), usage(used, 0), 'session')
+    const chosen = chooseSeat(pool, readings(reserve, used), [], role).seat !== undefined
+    expect(chosen, `${reserve} / ${used}%`).toBe(percent(status.headroomPercent) !== '0%')
+  }
+
+  it('agrees with its row across every reserve a config can hold', () => {
+    for (let r = 0; r < 100; r++) {
+      for (let u = 0; u <= 100; u++) agrees(r / 100, u)
+    }
+  })
+
+  it('agrees with its row on a reading finer than the column', () => {
+    // `parseUsage` takes a fractional percentage, so headroom reaches the band between the
+    // noise and what a column can print. A threshold finer than the column parts from the row
+    // only here, and the row is what the gate has to answer to.
+    agrees(0, 99.99999)
+    agrees(0.5, 49.99999)
+  })
+
+  it('agrees with its row on either side of the reserve, down to what a row can print', () => {
+    // A tenth of a thousandth of a point still prints, so it is still headroom, and a threshold
+    // coarser than the column trades one disagreement for its mirror. Walking the boundary at
+    // three-decimal reserves is also what reaches the 179 pairs whose headroom is noise rather
+    // than nothing — two of them, and only two, sit at a whole percent used.
+    for (let r = 0; r < 1000; r++) {
+      const reserve = r / 1000
+      const boundary = 100 - reserve * 100
+      for (const off of [-0.1, -0.01, -0.001, -0.0001, 0, 0.0001, 0.001, 0.01, 0.1]) {
+        const used = Number((boundary + off).toFixed(4))
+        if (used < 0 || used > 100) continue
+        agrees(reserve, used)
+      }
+    }
+  })
+})
+
+describe('a seat sitting exactly on its dollar bound', () => {
+  const pool = { id: 'eng', seats: ['adam'] }
+  const role = { name: 'triage' }
+  /** The #30 seat, and the only way in: `derivedWindow` is reached where a credential answered
+   *  and reported no window, so the dollar bound is judged on nothing else. */
+  const unreadable = (s: Seat): SeatUsage => ({
+    seat: s,
+    error: 'seat "adam" is authenticated as oauth_token but its credential carries no subscription',
+    unmeasured: true,
+  })
+  const observed = (window: Window): Observation => ({
+    at: '2026-09-13T12:00:00.000Z',
+    seat: 'adam',
+    window,
+    percentUsed: 50,
+    resetsAt: '2026-09-13T14:00:00.000Z',
+    source: 'usage',
+  })
+  /** Built by hand rather than derived through `boundsForSeats`: the sweeps below walk thousands
+   *  of points, and manufacturing spend records for each of them measures the same arithmetic
+   *  twice. The week is left with room on purpose, or it blocks before the session is asked. */
+  const bounds = (capacityUsd: number, spentUsd: number): SeatBounds =>
+    new Map([
+      [
+        'adam',
+        {
+          session: { capacity: { capacityUsd, spentUsd, basis: 'observed' as const, from: observed('session') } },
+          week: {
+            capacity: { capacityUsd: 10_000, spentUsd: 0, basis: 'observed' as const, from: observed('week') },
+          },
+        },
+      ],
+    ])
+  const choose = (reserve: number, capacityUsd: number, spentUsd: number): Choice =>
+    chooseSeat(pool, [unreadable(seat({ reserve }))], [], role, bounds(capacityUsd, spentUsd))
+  const row = (reserve: number, capacityUsd: number, spentUsd: number): WindowReport =>
+    describeWindow(seat({ reserve }), 'session', bounds(capacityUsd, spentUsd).get('adam')?.session)
+
+  it('is not chosen at a 0.08 reserve, $20.00 capacity and $18.40 spent', () => {
+    // `0.92 * 20` is 18.400000000000002, so the bound has 3.55e-15 of itself left.
+    expect(choose(0.08, 20, 18.4).seat).toBeUndefined()
+  })
+
+  it('prints that seat as at its bound, not as bounded with nothing left', () => {
+    const d = row(0.08, 20, 18.4)
+    expect(d.state).toBe('at-bound')
+    expect(d.usable).toBe(false)
+    expect(d.headroom).toBe('$0.00')
+  })
+
+  /** Both sides of the pairing at once: the gate spends a seat exactly when its row shows
+   *  something to spend, and the sentence it is handed over with reads off that same row.
+   *  Passing it means the three agree; which of them moved does not matter. */
+  const agrees = (reserve: number, capacityUsd: number, spentUsd: number): void => {
+    const label = `${reserve} reserve / $${capacityUsd} capacity / $${spentUsd} spent`
+    const d = row(reserve, capacityUsd, spentUsd)
+    const c = choose(reserve, capacityUsd, spentUsd)
+    const chosen = c.seat !== undefined
+    expect(chosen, label).toBe(d.headroom !== '$0.00')
+    expect(d.usable, label).toBe(chosen)
+    if (chosen) expect(c.reason, label).toBe(`adam has ${d.headroom} of its session bound left`)
+  }
+
+  it('agrees with its row on either side of the bound, down to what a column can print', () => {
+    // A tenth of a cent does not print, so it is not headroom; half a cent rounds up and is.
+    // The gate is asked at both, at every reserve a config can hold, against capacities from
+    // under a dollar to the four figures a declared weekly one reaches.
+    for (let r = 0; r < 100; r++) {
+      const reserve = r / 100
+      for (const capacityUsd of [0.75, 5, 16.6, 20, 37.5, 100, 3000]) {
+        const boundary = (1 - reserve) * capacityUsd
+        for (const off of [-1, -0.01, -0.005, -0.001, 0, 0.001, 0.005, 0.01, 1]) {
+          const spentUsd = Number((boundary + off).toFixed(3))
+          if (spentUsd < 0) continue
+          agrees(reserve, capacityUsd, spentUsd)
+        }
+      }
+    }
+  })
+
+  it('agrees with its row wherever the bound lands on noise rather than on nothing', () => {
+    // `(1 - reserve) * capacity` is a binary multiply: where the exact bound is a whole number
+    // of cents and Igors have spent exactly that, the remainder is a few ulps above zero rather
+    // than zero. These are every two-decimal capacity to $20.00 that does it, the issue's $20
+    // at a 0.08 reserve among them — and unlike the percent path they are not the whole class,
+    // since a genuine remainder under half a cent prints as `$0.00` too.
+    let noise = 0
+    for (let r = 0; r < 100; r++) {
+      const reserve = r / 100
+      for (let capCents = 1; capCents <= 2000; capCents++) {
+        const hundredthsOfACent = (100 - r) * capCents
+        if (hundredthsOfACent % 100 !== 0) continue
+        const capacityUsd = capCents / 100
+        const spentUsd = hundredthsOfACent / 10_000
+        if ((1 - reserve) * capacityUsd - spentUsd <= 0) continue
+        noise++
+        agrees(reserve, capacityUsd, spentUsd)
+      }
+    }
+    expect(noise).toBe(1669)
+  })
+
+  it('still chooses a seat whose bound has a printable cent left', () => {
+    // The failure worth more than the bug: rounding the gate must not take a working seat out
+    // of rotation. One cent is the smallest headroom the column can state, so it is the
+    // smallest the gate has to honour.
+    const c = choose(0.08, 20, 18.39)
+    expect(c.seat?.id).toBe('adam')
+    expect(c.reason).toBe('adam has $0.01 of its session bound left')
+  })
+
+  it('names the bound in a refusal whose remainder only looked like headroom', () => {
+    // `overBound` does not only block. Where the window is refused as well, it composes the
+    // sentence and picks the later of the two hours, so a remainder of 3.55e-15 used to leave
+    // the refusal silent about a bound that was in fact reached, and stating the earlier hour.
+    const REFUSED_AT = '2026-09-13T13:00:00.000Z'
+    const bound = {
+      capacity: { capacityUsd: 20, spentUsd: 18.4, basis: 'observed' as const, from: observed('session') },
+      spent: {
+        from: { ...observed('session'), at: REFUSED_AT, percentUsed: 100, source: 'limit' as const },
+        resetsAt: '2026-09-13T14:00:00.000Z',
+        estimated: false,
+      },
+      resetsAt: '2026-09-13T16:00:00.000Z',
+    }
+    const bs: SeatBounds = new Map([['adam', { session: bound }]])
+    const c = chooseSeat(pool, [unreadable(seat({ reserve: 0.08 }))], [], role, bs)
+    expect(c.considered[0]?.why).toMatch(/Igors have spent \$18\.40 of the session's \$18\.40 bound/)
+    expect(describeWindow(seat({ reserve: 0.08 }), 'session', bound).resets).toBe('2026-09-13T16:00:00.000Z')
+  })
+
+  it('hands the pool off on the instance hour, where it used to spend the seat', () => {
+    // The second reader of the gate's answer: `derivedReset` races `derivedWindow`'s hour to
+    // pick the one a handoff states. A bound sitting on noise contributed none, because the
+    // window was not blocked at all — the seat ran, and the pool never handed off.
+    const s = seat({ reserve: 0.08 })
+    const bs: SeatBounds = new Map([
+      [
+        'adam',
+        {
+          session: {
+            capacity: { capacityUsd: 20, spentUsd: 18.4, basis: 'observed' as const, from: observed('session') },
+            resetsAt: '2026-09-13T14:00:00.000Z',
+          },
+          week: {
+            capacity: { capacityUsd: 10_000, spentUsd: 0, basis: 'observed' as const, from: observed('week') },
+          },
+        },
+      ],
+    ])
+    const g = budgetGate(
+      { seats: [s], pools: [{ id: 'p', seats: ['adam'] }] },
+      { name: 'triage', seat: 'pool:p' },
+      [unreadable(s)],
+      [],
+      bs,
+      '2026-09-13T13:00:00.000Z',
+    )
+    expect(g.exhausted()).toBe(true)
+    expect(g.blocked).toBe('spent')
+    expect(g.resetAt).toBe('2026-09-13T14:00:00.000Z')
   })
 })
 
