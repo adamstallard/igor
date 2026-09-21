@@ -67,6 +67,12 @@ rename whose old path the base tree does not have.
 The same reliance is already live on the resolution path, so this change widens the exposure
 rather than creating it.
 
+**A path that becomes a directory, or the reverse.** `carried` compares whole path strings, so
+a run that empties `sub/` and writes a file at `sub` sends `sub` as a blob and `sub/x.txt` as a
+removal in one tree request. Judged below the bar rather than proved safe: no plausible worker
+does this, and the resolution path already had the shape before removals reached the artifact
+path. Recorded because the judgement is about reachability, not about the tree being correct.
+
 **Binaries.** `changes()` skips a file it cannot read as UTF-8, so a binary is reported as
 neither changed nor removed. Deleting one therefore still goes silently unpublished. That is a
 limit of how changes are read rather than of how they are published, and it is untouched here.
