@@ -14,7 +14,10 @@ The dependency runs one way and is total: every requirement here reads the condi
 `ADDED`, including the ones on `stuck-conditions` — a capability that has no base spec in
 `openspec/specs/` until `condition-backoff` archives. That is also the sequencing constraint:
 `condition-backoff` archives first, or this change's requirements land as the whole of a
-capability whose other half is still an open change.
+capability whose other half is still an open change. Archiving this one first was tried in a
+throwaway copy of `openspec/` and does exactly that without complaining: it creates
+`openspec/specs/stuck-conditions/spec.md` holding these four requirements alone, over a Purpose
+line naming this change as what created the capability.
 
 ## The exit is keyed to the cure's scope, and the case against that is worth writing down
 
