@@ -504,7 +504,7 @@ export async function planCycle(
     report.failures.push(`${failure.source.repo}: ${failure.error.message}`)
   }
 
-  const survivors: Candidate[] = []
+  const droppedSurvivors: Candidate[] = []
   // Read over everything the query returned rather than over what the watermark let through.
   // A base moving does not touch the item it came from — `main` advanced eight commits under
   // #21 and the issue's `updatedAt` never moved — so a stale artifact sits below the mark and
@@ -536,7 +536,7 @@ export async function planCycle(
       if (t.verdict.outcome === 'skip') {
         report.skipped.push({ candidate: t.candidate, reason: t.verdict.reason, stage: t.verdict.stage })
       } else if (!catchingUp.has(t.candidate.id)) {
-        survivors.push(t.candidate)
+        droppedSurvivors.push(t.candidate)
       }
     }
   }
@@ -594,7 +594,7 @@ export async function planCycle(
   report.toCatchUp = report.toCatchUp.filter((c) => catchingUpStill.has(c.candidate.id))
 
   const awake = await dropStopped(
-    comments, survivors, role.cooldownMinutes, options.identity ?? '', report, now, limit,
+    comments, droppedSurvivors, role.cooldownMinutes, options.identity ?? '', report, now, limit,
   )
   const considered = await dropDeferred(comments, awake, quiet, options.identity ?? '', report, limit)
   if (considered.length > 0) {
