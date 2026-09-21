@@ -91,6 +91,25 @@ mark never advances — a full cap's worth of calls every cycle on a backlog tha
 Taking the oldest first puts the cap above everything decided, so the mark moves and the
 backlog clears a cap's worth at a time.
 
+A coarse clock is the one case the hold cannot serve. A mark held below an untriaged candidate
+still has to sit above every candidate that source triaged, and where the two share an
+`updatedAt` no instant lies between them. Tracker timestamps are seconds, so one bulk edit ties
+a page of items and this is not a corner. Such a candidate SHALL be passed over rather than
+held: being dropped is the outcome it already had, where holding it would buy the same verdicts
+again every cycle for as long as the tie lasted. This is a limit the clock imposes, not a result
+worth keeping — a candidate that can be separated from everything its source decided is always
+held, and narrowing what counts as separable is how the loss comes back.
+
+Separable **by that source's own verdicts**, because marks advance per source. What one source
+triaged is nothing another source's mark has to clear, so a tie measured across the whole cycle
+concedes candidates their own source could have been held below cleanly — the same permanent
+loss stated above, reached from the other side. A comparison recomputed over every source's
+verdicts is that loss, however the tie is worded.
+
+The reason has to be that no call was made. A call that was made and failed is a different
+fact — the item was examined and paid for — and what becomes of it is #78, not this
+requirement.
+
 #### Scenario: Untriaged is not decided
 
 - **WHEN** the pool is held and candidates had survived to the model stage
@@ -122,6 +141,20 @@ backlog clears a cap's worth at a time.
 - **WHEN** more candidates survive to the model stage than the cycle may triage
 - **THEN** the ones left untriaged are the newest of them
 - **AND** the mark advances past every candidate the cycle did triage, so none is triaged twice
+
+#### Scenario: A tie inside one source is conceded rather than looped on
+
+- **WHEN** a candidate is left untriaged and shares its `updatedAt` with a candidate the same
+  source triaged in that cycle
+- **THEN** the mark is not held below it, since no instant separates the two
+- **AND** that source's decided candidates are not triaged a second time
+
+#### Scenario: A verdict in another source concedes nothing
+
+- **WHEN** a candidate is left untriaged and shares its `updatedAt` only with candidates triaged
+  in a different source
+- **THEN** its own source's mark is held below it
+- **AND** the next cycle considers it again rather than having dropped it
 
 #### Scenario: Nothing is posted to an item nobody claimed
 

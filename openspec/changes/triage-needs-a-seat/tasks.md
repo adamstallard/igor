@@ -48,3 +48,10 @@
       the newest so the mark advances past what was triaged
 - [x] 6.3 Tests: a candidate lost past the cap on the unfixed code is not lost; no candidate is
       triaged twice across the cycles that drain a backlog
+- [x] 6.4 A tie is conceded only to the source that decided something: the global comparison
+      dropped a capped candidate whose `updatedAt` matched a verdict in another source, where
+      that source's own mark could have sat below it cleanly
+- [x] 6.5 The delta states both, since a behaviour a test pins and no requirement names is what
+      the next reader gets wrong — and it was the narrower rule living only in a comment that
+      let the global reading ship
+- [x] 6.6 An errored triage call is a different fact from a call never made, and is #78
