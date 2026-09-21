@@ -19,31 +19,46 @@ throwaway copy of `openspec/` and does exactly that without complaining: it crea
 `openspec/specs/stuck-conditions/spec.md` holding these four requirements alone, over a Purpose
 line naming this change as what created the capability.
 
-## The exit is keyed to the cure's scope, and the case against that is worth writing down
+## The exit is keyed to what is left, and detected rather than inferred
 
-The requirement says an Igor-scoped condition exits and a role- or seat-scoped one does not. The
-argument for it is that exiting discards capacity the cure says nothing about.
+The rule is: establish whether the conditions open against this process leave it any item it could
+take. None left is an exit; any left is a report and a running loop.
 
-What weakens it here: `igor serve` takes exactly one role, and `deploy/igor.service` is a per-role
-template (`ExecStart=/usr/local/bin/igor serve %i`). So the process serving a stopped role *is* up
-and doing nothing — the exact failure mode this change exists to end. "The Igor is still doing
-useful work" is true of the machine account and its other role instances, and false of the unit
-that is actually stopped. The issue's own open question is the same one arriving from the seat
-side: every seat a role can draw on being stopped is Igor-scoped in effect if not in derivation.
+The alternative, written first and rejected, keys the exit to the cure's *derivation* — an
+Igor-scoped condition exits, a role- or seat-scoped one never does. It reads well and it does not
+survive the shapes this repository ships. `igor serve` takes exactly one role, and
+`deploy/igor.service` is a per-role template (`ExecStart=/usr/local/bin/igor serve %i`), so a
+role-scoped stop leaves the unit serving that role up and doing nothing: the failure mode this
+change exists to end, arriving through the door the rule left open. The issue's own open question —
+whether every seat being stopped should exit — is the same omission approached from the seat end,
+and a scope-derived rule has to answer it as a special case. Keyed to what is left, both fall out
+of one check.
 
-Both are deferred rather than answered, because the discriminator that would settle them is not
-measurable yet. It is the one the requirement already leans on: a budget window reopens on its own
-clock, a stopped scope waits for a person. If that is as true of a role-scoped stop as of an
-Igor-scoped one — and on the evidence above it looks true — then the exit is effect-derived,
-"can this process take anything at all", and the requirement is modified rather than extended.
-What makes it a measurement instead of a preference is either the first operator report of an Igor
-found silently idle on a role-scoped stop, or a `serve` that runs more than one role, at which
-point the per-process argument evaporates on its own.
+**Detected, not inferred from today's process shape.** The distinction matters, because "`serve`
+runs one role, so role-scoped means fatal" is an inference that expires the moment `serve` runs
+two. The requirement asks what is *left*, which a process answers about itself: a condition naming
+the Igor's own credential leaves nothing; a condition on a role it serves leaves nothing if it
+serves no other; a stopped seat leaves nothing only where every seat that role could spend from is
+stopped. A multi-role `serve` satisfies the same sentence unchanged.
 
-Specifying the scope-derived version first costs one modified requirement if that evidence
-arrives. Specifying the effect-derived version first costs a fleet that exits on a condition
-affecting one of several roles, and there is no way back from a supervisor's alert that should not
-have fired.
+Nothing new has to be recorded for it. A cure key *is* its scope — `role:<name>:commands` names a
+role, `seat:<id>:token` names a seat — and resolving a role's seat reference into the seats it may
+spend from is what the budget gate already does before choosing one. The check belongs where that
+resolution happens.
+
+**The guard is in the requirement, not only here.** Only *stopped scopes* may count toward
+"nothing left". A seat with no headroom, a window that has not reset, a role held back by pacing
+or by its own ceiling must not. The discriminator is the one this whole change turns on — a budget
+window reopens on its own clock, a stopped scope waits for a person — and it is written into the
+requirement because the requirement is what an implementer is held to. Folded together, the check
+makes `igor serve` exit on an ordinary session limit, which is a crash loop on a state every Igor
+reaches in normal use, and it would spend the exit signal precisely where it means nothing.
+
+A credential the provider refused is the one genuinely arguable exclusion. It waits for a person
+too, so by the discriminator alone it belongs. It is left out because it is a different mechanism
+with its own hold, cooldown and reporting line, still unmerged in
+[#65](https://github.com/adamstallard/igor/pull/65), and folding it in would make this change also
+the change that decides there is one "cannot proceed until somebody acts" state rather than two.
 
 ## Exit and probe are in tension, and the probe wins at startup
 

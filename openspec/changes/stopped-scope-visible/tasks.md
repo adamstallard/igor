@@ -5,20 +5,29 @@
 - [ ] 0.2 Land after `condition-backoff` archives, so `stuck-conditions` has a base spec rather
       than two open changes writing the whole of one capability
 
-## 1. Exiting on an Igor-scoped condition
+## 1. Exiting where nothing is left to do
 
-- [ ] 1.1 `serve` reports an open Igor-scoped condition to its caller rather than ending the
-      process itself, so the loop stays testable without a process exit
-- [ ] 1.2 `igor serve` sets a non-zero exit status from it, after printing the cure key, the
-      cure, and that it is exiting for that reason
-- [ ] 1.3 A role- or seat-scoped condition leaves the status alone and the loop running
-- [ ] 1.4 Tests: Igor-scoped exits non-zero; role-scoped does not; seat-scoped does not; an
-      exhausted budget does not; a signalled shutdown with nothing open still exits zero
+- [ ] 1.1 Given the open conditions and the role a process serves, decide whether anything is
+      left it could take: a cure key naming the Igor, a key naming that role, or every seat the
+      role could spend from stopped — resolved where the gate already resolves a role's seats
+- [ ] 1.2 Only stopped scopes feed that decision. A seat with no headroom, an unreset window, a
+      role held back by pacing or its own ceiling are excluded, with a comment saying why in the
+      present tense: a window reopens on its own clock, a stopped scope waits for a person
+- [ ] 1.3 `serve` reports the verdict to its caller rather than ending the process itself, so
+      the loop stays testable without a process exit
+- [ ] 1.4 `igor serve` sets a non-zero exit status from it, after printing the cure keys, the
+      cures, and that it is exiting for that reason
+- [ ] 1.5 A stop that leaves the process work leaves the status alone and the loop running
+- [ ] 1.6 Tests: the Igor's own credential; the role this process serves; a role it does not
+      serve; one seat stopped with another behind it; every seat in the pool stopped; a spent
+      budget alone; one seat stopped and the rest merely out of headroom; a signalled shutdown
+      with nothing open
 
 ## 2. The probe survives the restart the exit causes
 
-- [ ] 2.1 The startup path reads the open condition before deciding anything: cooldown passed
-      means take the probe, cooldown not passed means exit non-zero without claiming
+- [ ] 2.1 The startup path reads the open conditions before deciding anything: a passed cooldown
+      on a condition that would free the process means take the probe, none passed means exit
+      non-zero without claiming
 - [ ] 2.2 The pre-probe exit states when the probe is due
 - [ ] 2.3 A probe that does not meet the condition closes it and the service goes on serving
 - [ ] 2.4 Exit writes nothing to the condition — same count, same cooldown, read by the next
@@ -50,7 +59,8 @@
 
 ## 5. Documentation
 
-- [ ] 5.1 `docs/deployment.md`: what an Igor-scoped exit assumes of a supervisor, which shapes
+- [ ] 5.1 `docs/deployment.md`: what an exit on an open condition assumes of a supervisor, which
+      shapes
       escalate (Kubernetes) and which do not (the shipped systemd unit, `docker compose`, a bare
       `while true`), and what an operator adds where theirs does not
 - [ ] 5.2 `deploy/igor.service`: escalate a repeatedly failing Igor or say in the file what to
@@ -62,6 +72,6 @@
 
 ## 6. Closing out
 
-- [ ] 6.1 File an issue for whichever of the two deferred questions is still open at archive —
-      the derivation of the exit (scope or effect) and `on_condition_command` — each carrying the
-      evidence that would settle it, and link the issue here
+- [ ] 6.1 File an issue for each question still open at archive — whether a credential the
+      provider refused joins the same determination, and `on_condition_command` — each carrying
+      the evidence that would settle it, and link the issues here

@@ -1,61 +1,84 @@
 ## ADDED Requirements
 
-### Requirement: An Igor whose own condition is open exits rather than staying up
+### Requirement: A process the open conditions leave no work for exits rather than staying up
 
-Where a condition whose cure is the Igor's own — a credential or a configuration that governs
-every scope it runs — is open, the service SHALL terminate with a non-zero exit status, having
-first stated the cure key, what changing it would take, and that it is exiting for that reason. A
-condition scoped to a role or to a seat SHALL NOT be reported through the exit status.
+Where the conditions open against this process leave it no item it could take, the service SHALL
+terminate with a non-zero exit status, having first stated the cure keys that leave it nothing to
+do, what changing them would take, and that it is exiting for that reason. Where they leave it any
+work it could still do, the exit status SHALL be unaffected and the loop SHALL go on running,
+reporting the stop as the requirements below specify.
+
+Whether anything is left SHALL be determined rather than assumed from the cure's scope: a
+condition whose cure is the Igor's own leaves nothing; a condition stopping the role this process
+serves leaves nothing; a stopped seat leaves nothing where every seat that role could spend from
+is stopped, and leaves the process working where one is not.
 
 A long-running service has exactly one state nothing watches for: up and doing nothing. It passes
 every liveness check, its logs are quiet in the way a quiet week is quiet, and the only thing that
-distinguishes it from an Igor with an empty queue is a record nobody is reading. An Igor that
+distinguishes it from an Igor with an empty queue is a record nobody is reading. A service that
 exits is a crash-looping service instead, which is a shape that already means something to whoever
-is on call.
+is on call. What makes that worth an exit is not which cure was named but that nothing this
+process can be handed would help — so that is the thing to establish, from the cure keys and the
+seats the role can spend from, and not from the derivation of the scope.
 
-The exit is reserved for the scope where nothing the Igor could be handed would help. Where the
-cure governs one role or one seat, capacity that cure says nothing about is still usable, and
-ending the process discards it — the same reasoning that keeps the stop itself as small as the
-cure it is named for.
+**Only open conditions count toward it.** A seat with no headroom, a window that has not reset, a
+role held back by pacing or by its own ceiling SHALL NOT count as leaving the process nothing to
+do. The discriminator is who ends the wait: a budget window reopens on its own clock, and a
+stopped scope waits for a person who has not been told. Folding the first into this check turns an
+ordinary session limit into an exit, and an exit into a crash loop on a state every Igor reaches
+in normal use — which would spend the signal exactly where it means nothing. A credential the
+provider refused waits for a person too and is arguably the same case, but it is a different
+mechanism with its own hold and cooldown; it is out of scope here and stays out until something
+decides to merge the two.
 
-An exhausted budget is not this and does not exit. A window reopens on its own clock and an Igor
-waiting for one is waiting correctly; a condition is waiting for a person who has not been told.
-That difference is what the exit status is being spent on, and spending it on both would make it
-mean nothing.
+#### Scenario: A condition whose cure is the Igor's own ends the process
 
-#### Scenario: An Igor-scoped condition ends the process
-
-- **WHEN** a condition whose cure is the Igor's own credential is open
+- **WHEN** a condition naming the Igor's own credential is open
 - **THEN** the service exits with a non-zero status
 - **AND** it says which cure key stopped it and what would cure it before exiting
 
-#### Scenario: A role-scoped condition does not
+#### Scenario: A stopped role leaves the process serving it with nothing
 
-- **WHEN** a condition stops one role
-- **THEN** the exit status is unaffected by it
-- **AND** the loop goes on running on its interval
+- **WHEN** a condition stops the role this process serves
+- **THEN** the service exits with a non-zero status, naming that cure key
 
-#### Scenario: A seat-scoped condition does not
+#### Scenario: A condition on a role this process does not serve is not its exit
 
-- **WHEN** a condition stops a seat
-- **THEN** the exit status is unaffected by it
+- **WHEN** a condition stops some other role
+- **THEN** this process's exit status is unaffected and its loop goes on running
+- **AND** the stop is still listed where every open condition is listed
 
-#### Scenario: An exhausted budget is still not an exit
+#### Scenario: A stopped seat with another seat behind it is not an exit
 
-- **WHEN** no seat has headroom until a window resets
+- **WHEN** a condition stops one seat and the role can still spend from another
+- **THEN** the exit status is unaffected, and the stop is reported rather than exited on
+
+#### Scenario: Every seat the role can spend from stopped is an exit
+
+- **WHEN** a condition has stopped each seat the role this process serves could spend from
+- **THEN** the service exits with a non-zero status, naming those cure keys
+
+#### Scenario: An exhausted budget is not a reason to exit
+
+- **WHEN** no seat has headroom until a window resets, and no condition is open
 - **THEN** nothing exits, because that wait ends without anybody acting
+
+#### Scenario: A window that has not reset does not complete a stop
+
+- **WHEN** one of a role's seats is stopped by a condition and the rest merely have no headroom
+- **THEN** the process does not exit, because the seats without headroom come back on their own
 
 #### Scenario: A clean shutdown is still a clean exit
 
-- **WHEN** the service is asked to stop and no condition covers the Igor
+- **WHEN** the service is asked to stop and nothing open leaves it without work
 - **THEN** it exits zero, as it does today
 
 ### Requirement: A restart does not defeat the probe
 
-A process that starts while an Igor-scoped condition is open SHALL take the probe where that
-condition's cooldown has passed, and SHALL exit non-zero without claiming anything where it has
-not — saying, in that case, when the probe is due. Exiting SHALL NOT clear a condition, reset its
-count, or shorten its cooldown.
+A process that starts with open conditions leaving it no work SHALL take the probe where the
+cooldown of a condition that would free it has passed, and SHALL exit non-zero without claiming
+anything where none has — saying, in that case, when the probe is due. Exiting SHALL NOT clear a
+condition, reset its count, or shorten its cooldown.
 
 A condition clears by not recurring, and the only observation available from inside a stop is the
 one probe item a cooldown buys. A process that exits the moment it reads an open condition never
@@ -69,7 +92,7 @@ probe would have run anyway.
 
 #### Scenario: A start inside the cooldown exits again
 
-- **WHEN** a process starts, an Igor-scoped condition is open, and its cooldown has not passed
+- **WHEN** a process starts with nothing it can take and no cooldown passed
 - **THEN** it claims nothing and exits non-zero
 - **AND** it says when the probe is due
 
@@ -96,9 +119,9 @@ probe would have run anyway.
 ### Requirement: Exiting is a signal only where the supervisor escalates and retries
 
 Because an exit is inert unless something acts on it, the deployment documentation SHALL state
-which supervision shapes an Igor-scoped exit assumes, and what an operator running any other shape
-must add for a stopped Igor to reach them. The supervision recipes this repository ships SHALL
-either escalate a repeatedly failing Igor or say in the file itself what to add so that it does,
+which supervision shapes an exit on an open condition assumes, and what an operator running any
+other shape must add for a stopped Igor to reach them. The supervision recipes this repository
+ships SHALL either escalate a repeatedly failing Igor or say in the file itself what to add so that it does,
 and SHALL NOT retry faster than the loop would have polled.
 
 An exit that nobody escalates reproduces the failure it was meant to end, one level out: a service
