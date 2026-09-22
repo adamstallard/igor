@@ -120,7 +120,15 @@ export function stepsFrom(
 
   const edits = result.changed.filter((c) => c.kind !== 'deleted').length
   if (edits > 0) done.push(`changed ${edits} file${edits === 1 ? '' : 's'}`)
-  if (result.artifact) done.push(`opened ${result.artifact.ref} as a draft`)
+  // An artifact that already existed was brought up to date, not opened — saying otherwise
+  // tells the reader a pull request they have been reviewing for a week is new.
+  if (result.artifact) {
+    done.push(
+      result.caughtUp === true
+        ? `brought ${result.artifact.ref} up to date`
+        : `opened ${result.artifact.ref} as a draft`,
+    )
+  }
 
   for (const refusal of result.refusals) {
     remaining.push(`${refusal.action} was not attempted — ${refusal.why}`)
@@ -138,10 +146,15 @@ export function stepsFrom(
     // A budget stop is nobody's fault and everything is still to do, which is the same two
     // sentences: what reached the tree is gone with it, and the rest was never attempted.
     case 'budget':
+      // An artifact means the edits reached it. Telling somebody the work is gone in the same
+      // message that links to it is wrong twice, and it is the catch-up paths that get here
+      // holding one: they publish and then discover the resolution did not take.
       remaining.push(
-        edits > 0
-          ? 'the edits were made but never published, so they are gone with the working copy'
-          : 'all of it — nothing usable was produced',
+        result.artifact !== undefined
+          ? `what was published is on ${result.artifact.ref}; the rest needs a person`
+          : edits > 0
+            ? 'the edits were made but never published, so they are gone with the working copy'
+            : 'all of it — nothing usable was produced',
       )
       break
   }

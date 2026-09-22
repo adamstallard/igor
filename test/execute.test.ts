@@ -2,7 +2,17 @@ import { chmodSync, mkdtempSync, writeFileSync, existsSync, mkdirSync } from 'no
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Artifact, ArtifactRequest, Candidate, ClaimVerdict, CodeHost, Tracker } from '../src/adapter.js'
+import type {
+  Artifact,
+  ArtifactRequest,
+  Candidate,
+  CatchUp,
+  CatchUpRequest,
+  ClaimVerdict,
+  CodeHost,
+  ResolutionRequest,
+  Tracker,
+} from '../src/adapter.js'
 import type { Role } from '../src/role.js'
 import {
   ABSOLUTE_CEILING_MS, branchFor, claudeWorker, complete, DENIED_COMMAND_LIMIT, denialsFrom, describeTool, execute,
@@ -104,16 +114,32 @@ function fakeProvider(changes: ChangedFile[], opts: { failProvision?: boolean } 
   return { provider, log }
 }
 
-function fakeCodeHost(): { host: CodeHost; seen: ArtifactRequest[] } {
+function fakeCodeHost(opts: { caughtUp?: CatchUp[] } = {}): {
+  host: CodeHost
+  seen: ArtifactRequest[]
+  resolved: ResolutionRequest[]
+  asked: CatchUpRequest[]
+} {
   const seen: ArtifactRequest[] = []
+  const resolved: ResolutionRequest[] = []
+  const asked: CatchUpRequest[] = []
+  const answers = [...(opts.caughtUp ?? [])]
   const host: CodeHost = {
     name: 'fake',
     produce: async (r): Promise<Artifact> => {
       seen.push(r)
       return { kind: 'pull-request', ref: '#42', url: 'https://example.test/42' }
     },
+    catchUp: async (r): Promise<CatchUp> => {
+      asked.push(r)
+      return answers.shift() ?? { outcome: 'already-current' }
+    },
+    resolve: async (r): Promise<string> => {
+      resolved.push(r)
+      return 'resolvedsha'
+    },
   }
-  return { host, seen }
+  return { host, seen, resolved, asked }
 }
 
 function fakeTracker() {

@@ -1,6 +1,6 @@
 import type { Candidate } from './adapter.js'
 import type { CycleDeps, CycleOptions, CycleReport, ItemRun } from './loop.js'
-import { planCycle, runItem } from './loop.js'
+import { catchUpItem, planCycle, runItem } from './loop.js'
 import type { Gate } from './budget.js'
 import { windsDownOnSignal } from './execute.js'
 import { noteHandoff, shouldDefer } from './deferred.js'
@@ -89,6 +89,31 @@ export async function serve(
       const report = await planCycle(deps, role, { ...options, identity })
       summary.costUsd += report.triageCostUsd
       emit({ kind: 'planned', cycle, report })
+
+      // Before new work. An artifact already published and no longer merging is the closest
+      // thing this Igor has to unfinished business, and the ordinary case of it is one request.
+      for (const { candidate } of report.toCatchUp) {
+        if (winding) {
+          emit({ kind: 'stopping', reason: 'asked to stop between items' })
+          break
+        }
+        // Catching up counts against the gate like any other work. The quiet path spends
+        // nothing, but the conflicting one spends a worker, and it is the same gate that
+        // decides whether there is a worker to spend.
+        const gate = await options.gate()
+        if (gate.exhausted()) {
+          emit({ kind: 'stopping', reason: gate.reason })
+          break
+        }
+        emit({ kind: 'working', item: candidate, ...(gate.seat === undefined ? {} : { seat: gate.seat }) })
+        const run = await catchUpItem(deps, candidate, role, identity, { ...options, budget: gate })
+        summary.worked += 1
+        summary.costUsd += run.costUsd ?? 0
+        if (shouldDefer(run.outcome, run.handoff, run.cures)) {
+          await (options.note ?? noteHandoff)(deps.destination, candidate, run.reason).catch(() => undefined)
+        }
+        emit({ kind: 'worked', item: candidate, run, ...(gate.seat === undefined ? {} : { seat: gate.seat }) })
+      }
 
       for (const { candidate } of report.toClaim) {
         // Checked between items rather than once per cycle: an item can take minutes, and a

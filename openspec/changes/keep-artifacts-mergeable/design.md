@@ -20,12 +20,13 @@ pull requests quietly rot.
 ### Ask the code host to merge, rather than merging locally
 
 `POST /repos/{owner}/{repo}/merges` performs the merge server-side and reports a conflict
-instead of producing one. So the ordinary case — a base that moved without touching the same
-lines — costs one request, no clone, no worker, no tokens.
+instead of producing one. So finding out whether a reported conflict is still real costs one
+request, no clone, no worker, no tokens — and a `CONFLICTING` that has cleared since it was
+read comes back merged rather than escalating.
 
-That matters more than it sounds. Most staleness is incidental: `main` moved eight times under
-PR #21 and only the last one conflicted. A design that spent a worker run on each of those
-would cost more than the work it protects.
+The other half of that observation decides the trigger. Most staleness is incidental: `main`
+moved eight times under PR #21 and only the last one conflicted. Seven of those moves wanted
+nothing done to them, which is why the Igor acts on the conflict rather than on the move.
 
 ### Resolve on the branch; do not regenerate
 
@@ -55,6 +56,19 @@ that it does not.
 
 **Acting on a conflicting artifact somebody else opened.** Theirs. The holder rule already says
 so, and this change does not want an exception to that one as well.
+
+**Gating on staleness rather than on conflict.** Asking the host to merge the base into every
+own artifact every cycle, rather than only the ones that conflict, puts a merge commit, a CI
+run and a notification on a branch whose only problem was being slightly behind. This change
+already refuses to regenerate an artifact because the person's attention is the scarce thing,
+and refuses to rebase because that rewrites published history a reviewer may have commented
+against; both arguments cut the same way here. It is also self-perpetuating where the conflict
+path is self-limiting — a conflict is resolved or handed off and then goes quiet, while a
+branch merely behind has no terminating event and costs a request per open artifact per cycle
+indefinitely. What would reopen it: a repository that turns on *"Require branches to be up to
+date before merging"*, where a clean-but-behind branch genuinely cannot merge while GitHub
+still reports `mergeable: MERGEABLE`. The field that reveals that is `mergeStateStatus ===
+'BEHIND'`, not `mergeable`.
 
 ## Open
 

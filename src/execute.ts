@@ -1,10 +1,10 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import type { Artifact, Candidate, ClaimVerdict, CodeHost, Tracker } from './adapter.js'
+import type { Artifact, Candidate, ClaimVerdict, CodeHost, InFlight, Tracker } from './adapter.js'
 import { resolveToken, type TokenSource, type Window } from './budget.js'
 import { recordObservation, WINDOW_LENGTH } from './capacity.js'
 import type { Action, Role } from './role.js'
-import { withTree, type ChangedFile, type TreeProvider, type WorkingTree } from './worktree.js'
+import { withTree, type ChangedFile, type MergeState, type TreeProvider, type WorkingTree } from './worktree.js'
 import { appendRecord, STATE_BRANCH, writeState } from './state.js'
 
 /**
@@ -59,6 +59,13 @@ export interface ExecutionResult {
   /** `budget` is a seat with nothing left to spend: not the item's fault, and not a failure. */
   outcome: 'produced' | 'nothing-to-do' | 'refused' | 'failed' | 'budget'
   artifact?: Artifact
+  /** Whether `artifact` was brought up to date rather than opened by this run. */
+  caughtUp?: boolean
+  /**
+   * Whether a worker was handed a conflict and resolved it. False on a catch-up whose merge
+   * came out clean, where claiming a resolution would claim work nobody did.
+   */
+  conflictResolved?: boolean
   changed: ChangedFile[]
   refusals: Refusal[]
   transcript: string
@@ -193,6 +200,39 @@ export function workerPrompt(candidate: Candidate, linkage: string): string {
     '</item>',
     '',
     `The item will be referenced automatically as "${linkage}" — do not write that yourself.`,
+  ].join('\n')
+}
+
+/**
+ * What the worker is handed when an artifact of the Igor's own stopped merging: files with
+ * conflict markers in them, which is the shape it already deals in.
+ *
+ * It is not handed git. The merge is already in the tree, the loop will publish the result,
+ * and nothing here asks the worker for a branch, a remote or a commit — so the action space
+ * that bounds a steered worker is the same one it always had.
+ */
+export function conflictPrompt(candidate: Candidate, artifact: InFlight, paths: readonly string[]): string {
+  return [
+    `Resolve a merge conflict. ${artifact.base} has been merged into the branch behind ${artifact.ref},`,
+    'and the merge left conflicts in the working tree.',
+    '',
+    '<conflicts>',
+    ...(paths.length > 0 ? paths.map((p) => `- ${p}`) : ['(git reports none; check the tree)']),
+    '</conflicts>',
+    '',
+    '<item>',
+    `id: ${candidate.id}`,
+    `title: ${candidate.title}`,
+    '</item>',
+    '',
+    'Edit each conflicted file so it keeps both what the artifact changed and what the base',
+    'brought in, and remove every conflict marker. Do not revert either side wholesale, do not',
+    'touch files the merge did not conflict on, and do not run git — the loop publishes the',
+    'result. Say so plainly and change nothing if a conflict needs a decision only a person',
+    'can make.',
+    '',
+    'A conflicted file with no markers in it is one side deleting what the other edited. Keep',
+    `the file to keep the artifact's version; delete it to accept ${artifact.base}'s removal.`,
   ].join('\n')
 }
 
@@ -1095,7 +1135,28 @@ export interface ExecuteOptions {
   checkpointMs?: number
   onPublish?: () => void
   branchPrefix?: string
+  /**
+   * An artifact of the Igor's own to bring up to date, rather than an item to work.
+   *
+   * The tree is provisioned at the artifact's branch with its base merged in, and the result
+   * is published back to that same branch — never a new one, because replacing the artifact
+   * would discard whatever review has accumulated on it.
+   */
+  catchUp?: InFlight
 }
+
+/**
+ * The markers that carry a label — the two ends of a hunk, and diff3's base. Each is followed
+ * by a ref name, so it does not occur in ordinary source, and every file is read for it.
+ */
+const CONFLICT_MARKER = /^(?:<{7} |\|{7} |>{7} )/m
+
+/**
+ * The separator, which is the one marker that is also prose: seven equals signs alone on a
+ * line is a heading rule. Read only in files git itself reported unmerged, where it cannot
+ * plausibly be anything else.
+ */
+const SEPARATOR_MARKER = /^={7}$/m
 
 /** How long a stop can go unanswered mid-run — short enough that whoever posted it is still watching. */
 const CHECKPOINT_INTERVAL_MS = 30_000
@@ -1135,8 +1196,12 @@ export async function execute(
   const minted = new Set<string>()
   const cured = () => (minted.size === 0 ? {} : { cures: [...minted] })
   const linkage = tracker.linkage(candidate)
+  const artifact = options.catchUp
 
-  return withTree(provider, candidate.repo, async (tree: WorkingTree) => {
+  return withTree(
+    provider,
+    candidate.repo,
+    async (tree: WorkingTree) => {
     const stop = new AbortController()
     const checkpointMs = options.checkpointMs ?? CHECKPOINT_INTERVAL_MS
     let stopped = false
@@ -1245,20 +1310,62 @@ export async function execute(
         })
     }
 
-    let worker: WorkerOutput
+    // Held past the worker because its two commits are the parents the resolution needs.
+    let merge: MergeState | undefined
+    if (artifact !== undefined) {
+      if (tree.merge === undefined) {
+        return {
+          outcome: 'failed' as const,
+          changed: [],
+          refusals,
+          transcript: '',
+          ...spend(),
+          ...cured(),
+          reason: `the ${provider.name} tree provider cannot merge, so ${artifact.ref} cannot be caught up here`,
+        }
+      }
+      try {
+        merge = await tree.merge(artifact.base)
+      } catch (error) {
+        return {
+          outcome: 'failed' as const,
+          changed: [],
+          refusals,
+          transcript: '',
+          ...spend(),
+          ...cured(),
+          reason: `could not merge ${artifact.base} into ${artifact.branch}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        }
+      }
+    }
+
+    /**
+     * A catch-up whose merge came out clean asks for no worker. The conflict cleared between
+     * the host's answer and the clone — somebody pushed — and the merge is already in the
+     * tree, so a model call would only look at a tree with nothing left to decide.
+     */
+    const asksAWorker = merge === undefined || merge.conflicts.length > 0
+    let worker: WorkerOutput = {}
     try {
-      const env = await workerEnv(options.seatToken, process.env, options.seat)
-      worker = await (options.worker ?? headlessClaude)({
-        cwd: tree.path,
-        system: workerSystemPrompt(role, role.allow, options.lore ?? ''),
-        prompt: workerPrompt(candidate, linkage),
-        model,
-        limits: { ...DEFAULT_LIMITS, ...options.limits },
-        env,
-        allowedTools: role.commands.map((c) => `Bash(${c})`),
-        onEvent,
-        signal: stop.signal,
-      })
+      if (asksAWorker) {
+        const env = await workerEnv(options.seatToken, process.env, options.seat)
+        worker = await (options.worker ?? headlessClaude)({
+          cwd: tree.path,
+          system: workerSystemPrompt(role, role.allow, options.lore ?? ''),
+          prompt:
+            artifact === undefined || merge === undefined
+              ? workerPrompt(candidate, linkage)
+              : conflictPrompt(candidate, artifact, merge.conflicts),
+          model,
+          limits: { ...DEFAULT_LIMITS, ...options.limits },
+          env,
+          allowedTools: role.commands.map((c) => `Bash(${c})`),
+          onEvent,
+          signal: stop.signal,
+        })
+      }
     } catch (error) {
       // A worker killed at a checkpoint is a stop however it exited, not a failure.
       if (!stopped) {
@@ -1364,6 +1471,36 @@ export async function execute(
           reason: outOfCapacity(limit.resetsAt),
         }
       }
+      if (artifact !== undefined) {
+        // A conflicted merge leaves its own files staged, so an empty tree here means they
+        // were thrown away — `git merge --abort`, most likely. Calling that already up to
+        // date would report an abandoned conflict as a success.
+        if (merge !== undefined && merge.conflicts.length > 0) {
+          return {
+            outcome: 'failed' as const,
+            changed,
+            refusals,
+            transcript,
+            ...kept,
+            ...cured(),
+            reason: `the conflict on ${artifact.ref} was abandoned rather than resolved, and the tree came back empty`,
+          }
+        }
+        // Nothing to bring in: the base landed on the branch between the host's answer and
+        // the clone. Routed through "the worker made no changes" this becomes a handoff and a
+        // deferral on an artifact that merges perfectly well.
+        return {
+          outcome: 'produced' as const,
+          artifact: { kind: 'pull-request' as const, ref: artifact.ref, url: artifact.url },
+          caughtUp: true,
+          changed,
+          refusals,
+          transcript,
+          ...kept,
+          ...cured(),
+          reason: `${artifact.ref} was already up to date`,
+        }
+      }
       return {
         outcome: 'nothing-to-do' as const,
         changed,
@@ -1399,12 +1536,24 @@ export async function execute(
       }
     }
 
-    const unsupported = changed.filter((c) => c.kind === 'deleted')
-    for (const file of unsupported) {
-      refusals.push({ action: 'draft-pr', why: `deleting ${file.path} is not supported yet` })
+    // A deletion reaches an artifact's own branch but not a new one: a resolution moves a ref
+    // it can drop a path from, while `produce` builds its commit out of files alone.
+    const deletions = changed.filter((c) => c.kind === 'deleted').map((c) => c.path)
+    if (artifact === undefined) {
+      for (const path of deletions) {
+        refusals.push({ action: 'draft-pr', why: `deleting ${path} is not supported yet` })
+      }
     }
-    const files = changed.filter((c) => c.kind !== 'deleted').map((c) => ({ path: c.path, content: c.content }))
-    if (files.length === 0) {
+    const files = changed
+      .filter((c) => c.kind !== 'deleted')
+      .map((c) => ({
+        path: c.path,
+        content: c.content,
+        // Carried only onto a branch that already has the path; `produce` builds a new tree,
+        // where every file is new and there is no mode to preserve.
+        ...(artifact !== undefined && c.executable === true ? { executable: true } : {}),
+      }))
+    if (files.length === 0 && (artifact === undefined || deletions.length === 0)) {
       return {
         outcome: 'refused' as const,
         changed,
@@ -1416,13 +1565,115 @@ export async function execute(
       }
     }
 
+    // The resolution goes on the branch that exists, with both sides as parents. A one-parent
+    // commit carrying the same content leaves the merge base where it was, so the host
+    // recomputes the conflict and the artifact goes on reporting that it cannot merge.
+    if (artifact !== undefined && merge !== undefined) {
+      // Read off the content rather than off git, because the worker may have staged its
+      // edits. A worker that declined the conflict leaves the merge's own staged files in the
+      // tree, so without this the markers themselves would be published onto the branch.
+      //
+      // Every marker, not just the opening one: a worker that edits the top of a hunk and
+      // stops leaves `=======` and `>>>>>>>` behind, which is the ordinary way this goes wrong.
+      //
+      // And every file, not just the ones git reported unmerged. That list is taken before the
+      // worker runs, so a file the worker *creates* — a function moved out of the hunk, a note
+      // it wrote to itself — is on no list, and scoping to the list lets markers through in
+      // exactly the file most likely to have been written carelessly.
+      const conflicted = new Set(merge.conflicts)
+      const unresolved = files
+        .filter(
+          (f) =>
+            CONFLICT_MARKER.test(f.content) ||
+            (conflicted.has(f.path) && SEPARATOR_MARKER.test(f.content)),
+        )
+        .map((f) => f.path)
+      if (unresolved.length > 0) {
+        return {
+          outcome: 'failed' as const,
+          changed,
+          refusals,
+          transcript,
+          ...kept,
+          ...cured(),
+          reason:
+            `${artifact.ref} still conflicts: the worker left conflict markers in ` +
+            unresolved.join(', '),
+        }
+      }
+      options.onPublish?.()
+      await codeHost.resolve({
+        repo: candidate.repo,
+        branch: artifact.branch,
+        parents: [merge.head, merge.broughtIn],
+        files,
+        deletions,
+        message: `Merge ${artifact.base} into ${artifact.branch}`,
+      })
+      // Asked once, of the host that owns the answer: a resolution that did not actually
+      // resolve is the one way this could run a worker at the same artifact every cycle
+      // forever. One request converts that into a single handoff, which the deferral record
+      // then keeps quiet until somebody answers it.
+      if (status === 'lost') {
+        // Publishing is still right — it is the Igor's own branch, and a merge nobody else
+        // was going to make is a favour to whoever took the item. Saying so on the item is
+        // not: it would be a note claiming credit on work somebody else now owns. Reported
+        // as refused so the claim protocol's own lost handling runs, exactly as it does on
+        // the produce path.
+        return {
+          outcome: 'refused' as const,
+          artifact: { kind: 'pull-request' as const, ref: artifact.ref, url: artifact.url },
+          caughtUp: true,
+          changed,
+          refusals,
+          transcript,
+          ...kept,
+          ...cured(),
+          reason: `lost mid-execution; brought ${artifact.ref} up to date and left it`,
+        }
+      }
+      const after = await codeHost.catchUp({
+        repo: candidate.repo,
+        branch: artifact.branch,
+        base: artifact.base,
+      })
+      if (after.outcome === 'conflict') {
+        return {
+          outcome: 'failed' as const,
+          artifact: { kind: 'pull-request' as const, ref: artifact.ref, url: artifact.url },
+          caughtUp: true,
+          changed,
+          refusals,
+          transcript,
+          ...kept,
+          ...cured(),
+          reason: `${artifact.ref} still does not merge into ${artifact.base} after the resolution was published`,
+        }
+      }
+      return {
+        outcome: 'produced' as const,
+        artifact: { kind: 'pull-request' as const, ref: artifact.ref, url: artifact.url },
+        caughtUp: true,
+        ...(merge.conflicts.length > 0 ? { conflictResolved: true } : {}),
+        changed,
+        refusals,
+        transcript,
+        ...kept,
+        ...cured(),
+        reason:
+          merge.conflicts.length > 0
+            ? `resolved a conflict on ${artifact.ref} and brought it up to date with ${artifact.base}`
+            : `brought ${artifact.ref} up to date with ${artifact.base}`,
+      }
+    }
+
     // Somebody took the item over while the worker ran. Publishing is still the right move —
     // the tree is disposable, so discarding here destroys the diff for nobody's benefit — but
     // it is offered rather than submitted: a draft, and nothing asked of the new holder.
     const lost = status === 'lost'
 
     options.onPublish?.()
-    const artifact = await codeHost.produce({
+    const opened = await codeHost.produce({
       repo: candidate.repo,
       branch: branchFor(role, candidate, options.branchPrefix),
       title: candidate.title,
@@ -1433,30 +1684,32 @@ export async function execute(
       draft: lost || wanted === 'draft-pr',
     })
 
-    if (lost) {
+      if (lost) {
+        return {
+          outcome: 'refused' as const,
+          artifact: opened,
+          changed,
+          refusals,
+          transcript,
+          ...kept,
+          ...cured(),
+          reason: `lost mid-execution; left ${opened.ref} as a draft`,
+        }
+      }
+
       return {
-        outcome: 'refused' as const,
-        artifact,
+        outcome: 'produced' as const,
+        artifact: opened,
         changed,
         refusals,
         transcript,
         ...kept,
         ...cured(),
-        reason: `lost mid-execution; left ${artifact.ref} as a draft`,
+        reason: `opened ${opened.ref}`,
       }
-    }
-
-    return {
-      outcome: 'produced' as const,
-      artifact,
-      changed,
-      refusals,
-      transcript,
-      ...kept,
-      ...cured(),
-      reason: `opened ${artifact.ref}`,
-    }
-  })
+    },
+    artifact?.branch,
+  )
 }
 
 /**
