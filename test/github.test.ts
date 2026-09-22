@@ -74,7 +74,6 @@ function raw(number: number, ref: string, updatedAt = '2026-04-01T10:00:00Z'): R
     updated_at: updatedAt,
     html_url: `https://github.com/org/lore/pull/${number}`,
     assignees: [{ login: 'sarah' }],
-    merged_by: { login: 'adam' },
     head: { ref },
   } as unknown as RawPull
 }
@@ -97,7 +96,10 @@ describe('the pull request list is not filtered by branch', () => {
     const { prs } = await listPullRequests('org/lore')
 
     expect(prs.map((p) => p.number)).toEqual([1, 2])
-    expect(prs[1]).toMatchObject({ merged: true, mergedBy: 'adam', mergedAt: '2026-04-01' })
+    expect(prs[1]).toMatchObject({ merged: true, mergedAt: '2026-04-01' })
+    // A page says a pull request merged and not who merged it: `merged_by` is absent from the
+    // list payload altogether, so a caller that needs the merger has to read it by number.
+    expect(prs[1]?.mergedBy).toBeUndefined()
     expect(calls.map((c) => c[1])).toEqual([
       'repos/org/lore/pulls?state=open&per_page=100',
       'repos/org/lore/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=1',
