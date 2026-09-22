@@ -1,6 +1,7 @@
 import { basename } from 'node:path'
 import type { Config } from './config.js'
 import type { Entry, ProvenanceItem } from './entry.js'
+import { GhError } from './gh.js'
 import { ENTRIES_DIR, REJECTED_DIR } from './store.js'
 import {
   assign,
@@ -194,6 +195,38 @@ async function idsAt(
   const ids = (dir: string): Set<string> =>
     new Set((dirs.get(dir) ?? []).filter((f) => f.endsWith('.md')).map((f) => basename(f, '.md')))
   return { taken: ids(ENTRIES_DIR), rejected: ids(REJECTED_DIR) }
+}
+
+export interface TipIds {
+  /** Ids the store holds on its default branch. Empty where the tip could not be read. */
+  ids: Set<string>
+  /** Why the default branch could not be read, where it could not. */
+  unread?: string
+}
+
+/**
+ * The ids a proposal from this checkout would collide with, read from the default branch.
+ *
+ * Minting an id against the checkout alone hands out one that upstream already holds, and the
+ * proposal carrying it is dropped by the gate above — an entry written under an id that was
+ * never free. The same tree answers it before the entry exists.
+ *
+ * Where the tip cannot be read — no network, no credentials, a store too large to list in one
+ * request — the reason comes back rather than an empty set passed off as a complete one. A
+ * collision then survives to `propose`, which is late but never silent.
+ */
+export async function idsOnDefaultBranch(destination: string): Promise<TipIds> {
+  try {
+    const repo = await repoFromCheckout(destination)
+    const sha = await branchSha(repo, await defaultBranch(repo))
+    const { taken, rejected } = await idsAt(repo, sha)
+    return { ids: new Set([...taken, ...rejected]) }
+  } catch (error) {
+    // Only a failure of the read degrades. Anything else is a fault of ours, and swallowing it
+    // would hand back an empty store as though the branch had been read and found bare.
+    if (!(error instanceof GhError)) throw error
+    return { ids: new Set(), unread: error.message }
+  }
 }
 
 function branchName(author: string, now: Date): string {

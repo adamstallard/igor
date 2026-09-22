@@ -747,6 +747,28 @@ gating on half a store. `git/trees/{sha}:{path}` resolves a subdirectory in one 
 rejected for the same reason: it is undocumented, and its 404 cannot be told from a store that
 has no such directory.
 
+**`create` mints against the same branch, and that is what makes it a network command.** It read
+the checkout alone, so a person one merge behind minted an id upstream already held and wrote an
+entry the gate above then drops — caught, but only after the work. It now reads the ids on the
+default branch and counts them as taken, so the discriminator `lore-store` already requires is
+applied to the id set that decides anything.
+
+**Measured**: one `create` costs 5 requests where it cost none — the default branch, its tip, the
+root tree, and one tree per store directory present — and, like the gate, nothing per entry: a
+store of 200 entries costs the same 5. That is the real price of this fix, on a command that
+needed neither network nor credentials before. Where the read fails, `create` says on stderr what
+it could not check and mints against the checkout alone rather than refusing: the collision then
+survives to `propose`, which is the behaviour above — late, but never an overwrite and never
+silent. Refusing instead would make drafting impossible wherever `gh` cannot reach, and buys
+nothing the late catch does not already give.
+
+**A single-path existence probe is the cheaper read, and is rejected.** `contents/entries/<id>.md`
+is two requests and cannot be truncated, since the thousand-file cap binds on a listing and not on
+one exact path. It answers only the id in hand, though, so a `create` minting `-2`, `-3` costs a
+request per attempt, and its 404 cannot be told from a repository the credential cannot see — a
+private destination read without access reports every id free, which is this bug with no way to
+notice. The tree read is shared with `propose`, bounded, and says `truncated` when it is short.
+
 **The append-only logs are partitioned by UTC day** — `executions/2026-09-15.ndjson`, and the
 same shape for decisions and firings. The Contents API has no append, so a write downloads the
 file and re-uploads it whole, and on one ever-growing file the bytes sent grow with the square

@@ -15,7 +15,7 @@ import {
   StoreError,
   ENTRIES_DIR,
 } from './store.js'
-import { eligibleToPropose, propose, ProposeError } from './propose.js'
+import { eligibleToPropose, idsOnDefaultBranch, propose, ProposeError } from './propose.js'
 import { reconcile, promoteInPlace } from './reconcile.js'
 import { GitHubError } from './github.js'
 import { explainRole, loadRole, rolesFrom, RoleError } from './role.js'
@@ -63,10 +63,17 @@ program
   .option('--status <status>', 'provisional | active | deprecated', 'provisional')
   .option('--body <text>', 'reasoning and exceptions')
   .option('--into <dir>', `write the entry to <dir>/${ENTRIES_DIR}/ as a candidate, not to the store`)
-  .action((opts) => {
+  .action(async (opts) => {
     const config = loadConfig(program.opts()['config'])
-    const target = createTarget(config.destination, opts.into)
+    const upstream = await idsOnDefaultBranch(config.destination)
+    const target = createTarget(config.destination, opts.into, upstream.ids)
     const id = uniqueId(opts.claim, target.taken)
+    if (upstream.unread !== undefined) {
+      process.stderr.write(
+        `! ${config.destination} could not be read at its default branch, so ${id} is gated ` +
+          `against this checkout alone — ${upstream.unread}\n`,
+      )
+    }
     const entry: Entry = {
       id,
       claim: opts.claim,

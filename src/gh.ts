@@ -23,7 +23,10 @@ export function ghRaw(args: readonly string[], input?: string): Promise<string> 
     let stderr = ''
     child.stdout.on('data', (chunk) => (stdout += chunk))
     child.stderr.on('data', (chunk) => (stderr += chunk))
-    child.on('error', reject)
+    // Wrapped, because `gh` missing from PATH rejects with a raw ENOENT, and a caller that
+    // discriminates on GhError to tell a read that did not happen from a fault of its own
+    // cannot see one through that.
+    child.on('error', (error) => reject(new GhError(`gh could not be run: ${error.message}`)))
     child.on('close', (code) => {
       if (code === 0) resolve(stdout)
       else reject(new GhError(`gh ${args.slice(0, 2).join(' ')} failed: ${stderr.trim() || `exited ${code}`}`))

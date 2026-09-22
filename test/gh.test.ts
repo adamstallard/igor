@@ -1,7 +1,8 @@
-import { chmodSync, writeFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { chmodSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { gh } from '../src/gh.js'
+import { GhError, gh } from '../src/gh.js'
 import { tempDir } from './tmp.js'
 
 /** A real `gh` on PATH, so what is under test is the pipe rather than a stub's return value. */
@@ -12,6 +13,13 @@ function fakeGh(stdout: string): void {
   writeFileSync(join(bin, 'gh'), `#!/bin/sh\ncat '${payload}'\n`)
   chmodSync(join(bin, 'gh'), 0o755)
   vi.stubEnv('PATH', `${bin}:/usr/bin:/bin`)
+}
+
+/** A PATH holding `git` and nothing else, which is a host where `gh` was never installed. */
+function withoutGh(): void {
+  const bin = tempDir('igor-no-gh-')
+  symlinkSync(execFileSync('sh', ['-c', 'command -v git']).toString().trim(), join(bin, 'git'))
+  vi.stubEnv('PATH', bin)
 }
 
 describe('what gh says, read back whole', () => {
@@ -27,5 +35,12 @@ describe('what gh says, read back whole', () => {
     const issue = await gh<{ body: string }>(['api', 'repos/o/r/issues/1'])
     expect(issue.body.includes('�')).toBe(false)
     expect(issue.body).toBe(body)
+  })
+
+  it('fails as a gh failure where gh is not installed, not as a raw spawn error', async () => {
+    // Every caller discriminates on GhError to tell "the read did not happen" from a fault of
+    // its own. A raw ENOENT from the spawn passes that check and reaches the top of the process.
+    withoutGh()
+    await expect(gh(['api', 'repos/o/r'])).rejects.toBeInstanceOf(GhError)
   })
 })
