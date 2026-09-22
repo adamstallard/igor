@@ -31,11 +31,12 @@ protects: an entry that is already there is never overwritten by proposing.
 
 **Minting is covered because it is the same collision, one step earlier.** `create` gated a new
 id against the local store, so a person on a behind checkout mints an id that upstream already
-holds and writes an entry the proposal gate then drops. Gating both against the same tree is what
-makes the numeric discriminator `lore-store` already requires apply to the id set that decides
-anything. It costs `create` five requests where it made none, and where that read fails `create`
-says what it could not check and mints against the checkout alone: the collision then survives to
-proposing, which reads the tree unconditionally. Late, but never an overwrite and never silent.
+holds and writes an entry the proposal gate then drops. Gating both against the same branch —
+proposing at the sha it commits onto, minting at the tip when the id is made — is what makes the
+numeric discriminator `lore-store` already requires apply to the id set that decides anything. It
+costs `create` five requests where it made none, and where that read fails `create` says what it
+could not check and mints against the checkout alone: the collision then survives to proposing,
+which reads the branch unconditionally. Late, but never an overwrite and never silent.
 
 Explicitly out of scope, both filed and neither addressed here:
 
