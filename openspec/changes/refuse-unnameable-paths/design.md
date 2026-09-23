@@ -119,9 +119,19 @@ never produced cannot be mistaken for the work. Given that the whole failure mod
 change that looks right and is not*, the loud outcome is the one consistent with the rest of the
 change — and a refusal is reversible by a person in a way a merged half-change is not.
 
-This is recorded rather than settled: if a real repository ever trips it and the cost lands the
-other way, the per-entry form is a small delta from here, because the entries already carry the
-flag individually.
+**Settled, not merely recorded.** The reason that decided it is not the one above, and is worth
+having in writing because it survives the case the argument above turns on. **A handoff happens
+either way**, so publishing the other eleven files buys no automation — the same person is
+summoned to the same problem, and all that changes is what they are handed.
+
+Against that, the two risks are not symmetric. Duplicate work — somebody redoing files that were
+in fact published — costs time, and is visible to the person while they are doing it. A file
+missing from an artifact that reads as complete costs correctness, and is visible to nobody.
+**Better to risk the duplicate than the omission.**
+
+The per-entry form remains a small delta from here, because the entries already carry the flag
+individually. What it now needs is an argument that answers that asymmetry, rather than only
+evidence that a repository tripped the refusal.
 
 ## What this costs #88, measured
 
@@ -175,3 +185,11 @@ and NUL. #97 stopped at the parse seam for the same reason and said so. The roun
 testable at that seam — it operates on bytes rather than on the filesystem — so what is reasoned
 rather than shown is only that git reports such a name in the first place, which #97 already
 argued from `-z`'s existence.
+
+**Not reviewed:** the last fix of the last bug-hunter iteration got no finder pass of its own.
+The three-iteration budget ended on an iteration that fixed something, and an iteration that
+fixed something should not be the last. The unreviewed code is one boundary condition in
+`quoteName` — `byte >= 0x20` became `byte > 0x20`, so a space is escaped rather than left for a
+code span to strip — and the test that drove it red. Accepted as a gap rather than spent a
+fourth run on: the reasoning is under "What the handoff says", the change is one comparison, and
+a reviewer told which line went unswept can read it directly.
