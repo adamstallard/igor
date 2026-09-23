@@ -43,6 +43,12 @@ export async function branchSha(repo: string, branch: string): Promise<string> {
 export interface FileToCommit {
   path: string
   content: string
+  /**
+   * Read only where a commit lands on a branch that already has the path. A tree entry's mode
+   * is what the tree says it is, so writing every blob `100644` takes the executable bit off a
+   * script that had one.
+   */
+  executable?: boolean
 }
 
 /**
@@ -81,6 +87,91 @@ export async function createBranchWithFiles(
   await gh(
     ['api', `repos/${repo}/git/refs`, '--method', 'POST', '--input', '-'],
     JSON.stringify({ ref: `refs/heads/${branch}`, sha: commit.sha }),
+  )
+  return commit.sha
+}
+
+/**
+ * Merges `head` into `branch`, server-side.
+ *
+ * A write, not a scan: one request per artifact per cycle, whatever the size of the
+ * destination. GitHub answers 201 with the merge commit, 204 when there was nothing to bring
+ * in, and 409 when it conflicts — so the host reports a conflict rather than producing one,
+ * and the common case never reaches a clone.
+ *
+ * Only 409 is read as a conflict. Every other status is a fault and is thrown, because a
+ * caller that treated any failure as a conflict would send a worker at a rate limit.
+ */
+export async function mergeIntoBranch(
+  repo: string,
+  branch: string,
+  head: string,
+): Promise<{ outcome: 'merged'; sha: string } | { outcome: 'already-current' } | { outcome: 'conflict' }> {
+  try {
+    const merge = (await gh(
+      ['api', `repos/${repo}/merges`, '--method', 'POST', '--input', '-'],
+      JSON.stringify({ base: branch, head, commit_message: `Merge ${head} into ${branch}` }),
+    )) as { sha: string } | null
+    // 204 carries no body, and `gh` hands back an empty string that `gh()` reads as null.
+    return merge === null ? { outcome: 'already-current' } : { outcome: 'merged', sha: merge.sha }
+  } catch (error) {
+    if (error instanceof GhError && error.status === 409) return { outcome: 'conflict' }
+    throw error
+  }
+}
+
+/**
+ * Commits `files` onto an existing branch, with the parents given.
+ *
+ * The sibling of `createBranchWithFiles`, and separate because the last step differs where it
+ * matters: that one creates a ref and fails if the branch is there, this one moves a ref that
+ * must be. Nothing here creates a branch, so a resolution can never land somewhere other than
+ * the artifact it belongs to.
+ *
+ * The tree is `parents[0]`'s with `files` laid over it and `deletions` removed from it. The
+ * removals matter more here than on the artifact path: this commit names the base as a parent,
+ * so a path the base deleted and this tree keeps is a revert of that deletion, landing the
+ * moment the artifact merges.
+ */
+export async function commitOnBranch(
+  repo: string,
+  branch: string,
+  parents: readonly string[],
+  files: readonly FileToCommit[],
+  deletions: readonly string[],
+  message: string,
+): Promise<string> {
+  const first = parents[0]
+  if (first === undefined) throw new GitHubError('a commit on an existing branch needs a parent')
+  const blobs: { path: string; mode: string; sha: string }[] = []
+  for (const file of files) {
+    const blob = (await gh(
+      ['api', `repos/${repo}/git/blobs`, '--method', 'POST', '--input', '-'],
+      JSON.stringify({ content: file.content, encoding: 'utf-8' }),
+    )) as { sha: string }
+    blobs.push({ path: file.path, mode: file.executable === true ? '100755' : '100644', sha: blob.sha })
+  }
+
+  const tree = (await gh(
+    ['api', `repos/${repo}/git/trees`, '--method', 'POST', '--input', '-'],
+    JSON.stringify({
+      base_tree: first,
+      tree: [
+        ...blobs.map((b) => ({ path: b.path, mode: b.mode, type: 'blob', sha: b.sha })),
+        // A null sha is how the tree API says "not in this tree".
+        ...deletions.map((path) => ({ path, mode: '100644', type: 'blob', sha: null })),
+      ],
+    }),
+  )) as { sha: string }
+
+  const commit = (await gh(
+    ['api', `repos/${repo}/git/commits`, '--method', 'POST', '--input', '-'],
+    JSON.stringify({ message, tree: tree.sha, parents: [...parents] }),
+  )) as { sha: string }
+
+  await gh(
+    ['api', `repos/${repo}/git/refs/heads/${branch}`, '--method', 'PATCH', '--input', '-'],
+    JSON.stringify({ sha: commit.sha }),
   )
   return commit.sha
 }
@@ -463,4 +554,59 @@ export async function fileExistsOnBranch(
   } catch {
     return false
   }
+}
+
+interface RawTree {
+  truncated: boolean
+  tree: { path: string; type: string; sha: string }[]
+}
+
+async function tree(repo: string, sha: string): Promise<RawTree> {
+  const raw = (await gh([
+    'api', `repos/${repo}/git/trees/${sha}`,
+    '--jq', '{truncated, tree: [.tree[] | {path, type, sha}]}',
+  ])) as RawTree
+  if (raw.truncated) {
+    throw new GitHubError(
+      `the tree ${sha} in ${repo} is too large to read in one request — a short read of it would ` +
+        `report a path free that is there`,
+    )
+  }
+  return raw
+}
+
+/**
+ * The file names directly under each of `dirs` at one commit, keyed by directory. A directory
+ * that is not there maps to nothing; one that is there but is not a directory is refused.
+ *
+ * One request for the commit's root tree and one per directory present — three at most for a
+ * whole store, and none per file. The contents endpoint would answer the same question in two,
+ * and caps a directory listing at a thousand files with nothing in the payload saying it did:
+ * here a read that came back short is a path reported free that is already taken, which is the
+ * failure this is used to prevent. `truncated` is refused rather than trimmed for the same
+ * reason.
+ *
+ * `dirs` are paths at the root of the tree, not nested ones.
+ */
+export async function filesUnder(
+  repo: string,
+  sha: string,
+  dirs: readonly string[],
+): Promise<Map<string, string[]>> {
+  const root = await tree(repo, sha)
+  const found = new Map<string, string[]>()
+  for (const dir of dirs) {
+    const node = root.tree.find((e) => e.path === dir)
+    if (node === undefined) continue
+    if (node.type !== 'tree') {
+      // A symlink or a submodule where a directory is expected. Reading it as absent would
+      // hand back an empty listing, which is a caller told every path in it is free.
+      throw new GitHubError(
+        `${dir} at ${sha} in ${repo} is a ${node.type}, not a directory — it cannot be listed`,
+      )
+    }
+    const listing = await tree(repo, node.sha)
+    found.set(dir, listing.tree.filter((e) => e.type === 'blob').map((e) => e.path))
+  }
+  return found
 }

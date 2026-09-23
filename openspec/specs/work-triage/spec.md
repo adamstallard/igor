@@ -97,8 +97,14 @@ surface-supplied fields exclude it from, nor grant any permission.
 
 ### Requirement: Items with work already in flight are skipped
 
-Triage SHALL skip any item the adapter reports as having work already in flight. This rule is
-universal and MUST NOT be configurable; only its detection is adapter-supplied.
+Triage SHALL skip any item the adapter reports as having work already in flight, unless that
+artifact is the Igor's own and cannot merge. This rule is universal and MUST NOT be
+configurable; only its detection is adapter-supplied.
+
+The exception preserves the reason rather than qualifying it. Work in flight is skipped because
+duplicating work in review is never an organizational preference — and an artifact of one's own
+that cannot merge is not duplication, it is the same work, unfinished, which nothing else will
+bring back.
 
 #### Scenario: Item with an open linked artifact skipped
 
@@ -116,6 +122,21 @@ universal and MUST NOT be configurable; only its detection is adapter-supplied.
 
 - **WHEN** a role or org base attempts to disable the in-flight skip
 - **THEN** validation fails, because duplicating work in review is never an organizational preference
+
+#### Scenario: An Igor's own artifact that cannot merge is a candidate
+
+- **WHEN** an item's in-flight artifact was produced by this Igor and no longer merges
+- **THEN** it is not skipped
+
+#### Scenario: A healthy artifact of one's own is still skipped
+
+- **WHEN** an item's in-flight artifact was produced by this Igor and merges cleanly
+- **THEN** it is skipped, as before
+
+#### Scenario: Somebody else's conflicting artifact is not adopted
+
+- **WHEN** an item's in-flight artifact was produced by another party and cannot merge
+- **THEN** it is skipped, because it is theirs
 
 ### Requirement: An item held by another party is never a candidate
 
