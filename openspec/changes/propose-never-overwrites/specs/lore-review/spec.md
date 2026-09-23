@@ -15,6 +15,14 @@ refuses it. Where the branch cannot be read while minting, what could not be che
 reported and the id gated against the checkout alone — the collision then reaches proposing,
 which reads the branch unconditionally.
 
+Where the id moves because the branch holds the name the claim derives, minting SHALL say so, and
+SHALL say whether that name is held by an entry or by a rejection. Nothing downstream catches the
+case behind it: an id that moved is free on that branch, so a second entry making a claim already
+there — or one review has already turned down — is proposed like any other. Minting SHALL stay
+silent where the checkout already holds that name in the same kind, the entry or the rejection
+being in front of the person already, and SHALL speak where the kinds differ: a name the checkout
+holds as an entry and the branch as a rejection is the case worth stopping for.
+
 This governs the id space and nothing else. A checkout that is behind is still behind on the
 configuration committed beside the store, and on where in the repository the store is read from;
 neither is addressed here, and this requirement does not make proposing from a behind checkout
@@ -39,6 +47,30 @@ correct in general.
   checkout does not have it
 - **THEN** the id handed out is not that one
 - **AND** the entry is written under an id that was free on that branch when it was read
+- **AND** it is reported that an entry on that branch holds the name the claim derives, since the
+  draft may be a second entry for a claim already made there
+
+#### Scenario: A minted id whose name the default branch records as rejected
+
+- **WHEN** an id is created for a claim whose slug names a rejection on the default branch, and
+  the checkout does not have it
+- **THEN** the id handed out is not that one
+- **AND** it is reported that the name is rejected there and that such a claim is not proposed
+  again, which proposing cannot refuse under the id that was handed out
+
+#### Scenario: A name the checkout already holds in the same kind
+
+- **WHEN** an id is created for a claim whose slug names an entry the checkout has, whether or
+  not the default branch has it as well
+- **THEN** the id handed out is not that one
+- **AND** nothing is reported about the default branch, that entry being in front of the person
+  already
+
+#### Scenario: A name the checkout holds as an entry and the default branch as a rejection
+
+- **WHEN** an id is created for a claim whose slug names an entry the checkout has and a
+  rejection on the default branch
+- **THEN** it is reported as a rejection, which is what the checkout cannot show
 
 #### Scenario: The branch cannot be read while minting
 

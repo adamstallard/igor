@@ -38,6 +38,14 @@ costs `create` five requests where it made none, and where that read fails `crea
 could not check and mints against the checkout alone: the collision then survives to proposing,
 which reads the branch unconditionally. Late, but never an overwrite and never silent.
 
+**And minting says when the name moved, because nothing after it can.** A discriminator applied in
+silence reads as a free id. Where the name the claim derives is held on the branch, the draft may
+be a second entry for a claim already there — proposing gates on the id, and the id it is handed
+is free, so it passes. Where a rejection holds the name, that second entry carries a claim review
+has already turned down past the gate that exists to refuse it. Minting names which of the two it
+found; a collision the checkout can already show — the same name, in the same kind — is not news
+and is not reported.
+
 Explicitly out of scope, both filed and neither addressed here:
 
 - **A stale `publicStore`** ([#91](https://github.com/adamstallard/igor/issues/91)). The config

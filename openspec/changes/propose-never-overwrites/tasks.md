@@ -16,6 +16,10 @@
       checkout alone rather than refusing to create
 - [x] 2.4 Tests over the real `github.ts`: an id upstream holds is not minted, an id only the
       checkout holds is still not minted, and the cost does not grow with the store
+- [x] 2.5 Say when the id moved because the branch holds the name, and say whether an entry or a
+      rejection holds it — the second is a claim review turned down, and proposing gates on the
+      id, which moved. Silent where the checkout holds that name in the same kind, and speaking
+      where the kinds differ
 
 ## 3. The guarantee
 
