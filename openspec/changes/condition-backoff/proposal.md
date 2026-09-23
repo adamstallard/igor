@@ -124,7 +124,10 @@ Explicitly out of scope:
 - **Curing anything.** An Igor editing its own `commands` is the failure that file's comment
   exists to prevent. The stop names the cure and a person makes it.
 - **Reporting an open condition anywhere but the cycle record.** Which surface a stuck fleet
-  should be visible on is a question about operators, not about the loop.
+  should be visible on is a question about operators, not about the loop. Retiring a report that
+  an absorbed mechanism leaves behind is not that question: §4 replaces #65's seat line and
+  corrects its two messages because the mechanism printing them has stopped existing, and adds
+  no surface of its own.
 
 ## Capabilities
 
