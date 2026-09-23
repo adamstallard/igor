@@ -84,11 +84,30 @@ export interface Unreadable {
   reason: string
 }
 
+/**
+ * A pull request held over for the next run that nothing else in this report names. A read
+ * failed and something is still owed on it: the promotion is not lost, but it has not happened,
+ * and a run that says nothing about it looks exactly like a run that had nothing to do.
+ */
+export interface Carried {
+  pr: number
+  /** Which read failed — the pull request itself, or who merged it. */
+  reason: 'pull-request' | 'merger'
+}
+
 export interface Reconciliation {
   promoted: Promoted[]
   declined: Declined[]
   stale: Stale[]
   deferred: number[]
+  /** Held over for the next run and reported nowhere else in here. */
+  carried: Carried[]
+  /**
+   * Carried work the cap cut that the floor has already passed, so neither half of a later run
+   * goes looking for it. Reported rather than cut quietly: the carry is what a promotion below
+   * the floor is waiting on, and nothing else announces the list getting shorter.
+   */
+  evicted: number[]
   /** Entries a merged pull request added that are not in the local checkout yet. */
   missingLocally: string[]
   unreadable: Unreadable[]
@@ -176,6 +195,31 @@ function nextMark(
 }
 
 /**
+ * The order the cap cuts from: newest activity first, so what falls off is the oldest standing
+ * condition rather than the pull request somebody merged a minute ago.
+ *
+ * What falls off may be gone for good: where the floor moved over it, a number the cap cut is
+ * found by neither half of the next run. That is why the order has to be the one worth keeping,
+ * and why the report names what fell off rather than losing it quietly.
+ *
+ * A number whose own read failed has no date, and it ranks last rather than first. Do not move
+ * it to the front to protect it: the carry holds at most a hundred numbers, so a hundred that
+ * nothing can read — a transfer, a rename, a burst of single-pull-request reads that tripped
+ * the secondary rate limit — would then crowd out the merge that just landed, which is the one
+ * thing the cap exists to keep. Ranked last, an unreadable number drains out of the carry a few
+ * at a time and a live merge always has a slot.
+ */
+function retentionOrder(
+  unfinished: readonly number[],
+  unread: readonly number[],
+  activity: ReadonlyMap<number, number>,
+): number[] {
+  const at = (n: number): number => activity.get(n) ?? 0
+  const dated = [...unfinished].sort((a, b) => at(b) - at(a) || b - a)
+  return [...new Set([...dated, ...unread])]
+}
+
+/**
  * Runs at the start of every invocation rather than on a timer: there is no daemon, so a
  * merged pull request stays unpromoted until someone next uses the tool.
  */
@@ -212,6 +256,8 @@ export async function reconcile(
     declined: [],
     stale: [],
     deferred: [],
+    carried: unread.map((pr) => ({ pr, reason: 'pull-request' as const })),
+    evicted: [],
     missingLocally: [],
     unreadable: [],
     ...(since === undefined ? {} : { scannedSince: since }),
@@ -262,6 +308,7 @@ export async function reconcile(
     const detail = readByNumber.has(pr.number) ? pr : await pullRequest(repo, pr.number)
     if (detail === undefined) {
       unfinished.push(pr.number)
+      result.carried.push({ pr: pr.number, reason: 'merger' })
       continue
     }
     const by = detail.mergedBy ?? detail.assignees[0] ?? 'unknown'
@@ -344,22 +391,84 @@ export async function reconcile(
     // A read that failed stays carried. `pullRequest` cannot tell a pull request that is gone
     // from one the API would not hand over just now, and dropping it on a rate limit would
     // abandon the promotion it is owed with nothing above the floor to find it again.
-    //
-    // Newest first, so a cap that bites drops the oldest standing condition rather than the
-    // pull request somebody merged a minute ago.
-    const pending = [...new Set([...unfinished, ...unread])]
-      .sort((a, b) => b - a)
-      .slice(0, MAX_PENDING)
+    const activity = new Map(prs.map((p) => [p.number, Date.parse(p.updatedAtInstant)]))
+    const ordered = retentionOrder(unfinished, unread, activity)
+    const pending = ordered.slice(0, MAX_PENDING)
     // Swallowed: a destination that refuses the write reconciles unbounded, which is slow
     // rather than wrong, and nothing in this run reads it back.
-    await writeState(
+    const wrote = await writeState(
       repo,
       STATE_PATH,
       { closedSeen, ...(pending.length === 0 ? {} : { pending }) } satisfies ReconcileState,
       'Update reconciliation watermark',
     ).catch(() => undefined)
+    // Only a write that landed cut anything. A refused one leaves the previous document whole,
+    // so the carry is still its old length and the next run re-derives this same list.
+    if (wrote !== undefined) {
+      // The cap cutting a number is not what loses it — the floor moving past it is. A scan
+      // this run could not vouch for moves no floor, so everything it found is still above the
+      // old one and the next scan hands it straight back. Only what the floor has reached is
+      // gone; a number with no date came from below it and is gone either way.
+      const floor = Date.parse(closedSeen)
+      result.evicted = ordered
+        .slice(MAX_PENDING)
+        .filter((n) => (activity.get(n) ?? floor) <= floor)
+      const lost = new Set(result.evicted)
+      // A number the cap cut and the floor passed is waiting for nothing. Naming it as carried
+      // as well puts two lines in the report that contradict each other.
+      result.carried = result.carried.filter((c) => !lost.has(c.pr))
+    }
   }
   return result
+}
+
+/**
+ * The reconcile report as a person reads it, kept beside what produces it so that an outcome
+ * and the line announcing it are one change rather than two.
+ *
+ * Emptiness is "nothing was written", never a list of the outcomes that count. Do not go back
+ * to a list: it is stale the moment an outcome is added to it, and a run whose only outcome the
+ * list forgot prints `nothing to reconcile` under the line announcing it.
+ */
+export function renderReconciliation(r: Reconciliation, reviewers: readonly string[]): string {
+  let out = ''
+  for (const p of r.promoted) {
+    const flag = p.mergerWasNotAssigned ? '  (merged by someone not assigned to review it)' : ''
+    out += `promoted  ${p.id}  by ${p.by} on ${p.at}${flag}\n`
+  }
+  for (const d of r.declined) {
+    out += `declined  ${d.id}  by ${d.by} (pr #${d.pr}) — recorded in ${d.record}\n`
+  }
+  for (const s of r.stale) {
+    const assigned = s.assignees.join(', ') || '(nobody)'
+    const escalate = reviewers.join(', ') || '(no store reviewers configured)'
+    out += `stale     #${s.pr} last active ${s.lastActivity}, assigned ${assigned} — escalate to ${escalate}\n  ${s.url}\n`
+  }
+  if (r.deferred.length > 0) {
+    out += `deferred  ${r.deferred.map((n) => `#${n}`).join(', ')} (closed unmerged)\n`
+  }
+  for (const c of r.carried) {
+    out +=
+      c.reason === 'merger'
+        ? `carried   #${c.pr} — merged, but who merged could not be read; the promotion waits for the next run\n`
+        : `carried   #${c.pr} — could not be read this run; the next run asks again\n`
+  }
+  if (r.evicted.length > 0) {
+    out +=
+      `dropped   ${r.evicted.map((n) => `#${n}`).join(', ')} — cut from the carry at the ` +
+      `${MAX_PENDING}-pull-request cap; check them by hand\n`
+  }
+  if (r.missingLocally.length > 0) {
+    out += `behind    ${r.missingLocally.join(', ')} — merged upstream but not here; pull the destination\n`
+  }
+  for (const u of r.unreadable) {
+    out += `unreadable ${u.id} — ${u.reason}\n`
+  }
+  if (out === '') out = 'nothing to reconcile\n'
+  if (r.promoted.length > 0 || r.declined.length > 0) {
+    out += '\nPromotions and rejection records edited files locally — commit and push them.\n'
+  }
+  return out
 }
 
 /**
