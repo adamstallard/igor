@@ -63,23 +63,71 @@ export interface TreeProvider {
   provision(repo: string, ref?: string): Promise<WorkingTree>
 }
 
-function run(cmd: string, args: readonly string[], cwd?: string): Promise<string> {
+function runBytes(cmd: string, args: readonly string[], cwd?: string): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] })
-    // Text, not raw chunks: a multi-byte character the pipe splits in two decodes to replacement
-    // characters, so a path git listed or the reason it refused comes back wrong and nothing
-    // raises.
-    child.stdout.setEncoding('utf8')
-    child.stderr.setEncoding('utf8')
-    let out = ''
-    let err = ''
-    child.stdout.on('data', (c) => (out += c))
-    child.stderr.on('data', (c) => (err += c))
+    // Never decode a chunk as it arrives: a multi-byte character the pipe splits in two becomes
+    // replacement characters on both sides of the boundary, so a path git listed or the reason
+    // it refused comes back wrong and nothing raises. Bytes in, one decode at the end.
+    const out: Buffer[] = []
+    const err: Buffer[] = []
+    child.stdout.on('data', (c: Buffer) => out.push(c))
+    child.stderr.on('data', (c: Buffer) => err.push(c))
     child.on('error', reject)
-    child.on('close', (code) =>
-      code === 0 ? resolve(out) : reject(new TreeError(`${cmd} ${args[0]}: ${err.trim() || code}`)),
-    )
+    child.on('close', (code) => {
+      if (code === 0) return resolve(Buffer.concat(out))
+      const why = Buffer.concat(err).toString('utf8').trim()
+      reject(new TreeError(`${cmd} ${args[0]}: ${why || code}`))
+    })
   })
+}
+
+async function run(cmd: string, args: readonly string[], cwd?: string): Promise<string> {
+  return (await runBytes(cmd, args, cwd)).toString('utf8')
+}
+
+/** One `git status -z` record: the two status columns, and the name as the bytes git wrote. */
+export interface StatusRecord {
+  flags: string
+  path: Buffer
+  /** Where a rename or a copy came from, which git writes as the record after it. */
+  from?: Buffer
+}
+
+/**
+ * Splits `git status -z` output into records without decoding any name.
+ *
+ * A filename is bytes, and on ext4 the only ones it may not contain are `/` and NUL — which is
+ * why `-z` separates on NUL. Decoded to a string first, a name that is not valid UTF-8 becomes
+ * replacement characters, and the file under that name is one nothing can open.
+ *
+ * Exported so the parse can be tested against byte sequences no filesystem here will hold.
+ */
+export function statusRecords(status: Buffer): StatusRecord[] {
+  const entries: Buffer[] = []
+  for (let at = 0; at < status.length; ) {
+    const nul = status.indexOf(0, at)
+    const end = nul === -1 ? status.length : nul
+    if (end > at) entries.push(status.subarray(at, end))
+    at = end + 1
+  }
+  const records: StatusRecord[] = []
+  for (let i = 0; i < entries.length; i += 1) {
+    const flags = entries[i]!.subarray(0, 2).toString('latin1')
+    // A rename or a copy is **two** records: the new path, then the original alone on the next
+    // one. Read as a status line that second record is a path sliced out of the middle of a
+    // filename, so the original is reported as neither changed nor deleted — and a resolution,
+    // which lays its files over the tree the branch already has, keeps the old path and
+    // publishes the file twice. A merge is where renames arrive, so this is the ordinary case
+    // rather than an exotic one.
+    //
+    // Only the index column is read, so a rename git has not staged — ` R`, which `git add -N`
+    // on the destination produces — is still left unpaired: issue #96.
+    const path = entries[i]!.subarray(3)
+    const from = flags.startsWith('R') || flags.startsWith('C') ? entries[++i] : undefined
+    records.push({ flags, path, ...(from === undefined ? {} : { from }) })
+  }
+  return records
 }
 
 /**
@@ -98,6 +146,12 @@ const GONE = /^(?:.D|D )$/
  */
 const UNMERGED = /^(?:U.|.U|AA|DD)$/
 
+/**
+ * Joins a name onto the tree it sits in, in bytes. `path.join` takes strings, and a name that
+ * is not valid UTF-8 does not survive one: what comes back names no file on disk.
+ */
+const inside = (tree: string, name: Buffer): Buffer => Buffer.concat([Buffer.from(`${tree}/`), name])
+
 /** Exported so the change-collection rules can be tested against a real repository. */
 export class ClonedTree implements WorkingTree {
   private released = false
@@ -114,35 +168,27 @@ export class ClonedTree implements WorkingTree {
     // `?? openspec/` rather than the files under it. Reading that path throws EISDIR, the
     // catch below skips it, and every file a worker created in a new directory is lost from
     // the artifact without a word. Spec deltas are always new files in new directories.
-    const status = await run('git', ['-C', this.path, 'status', '--porcelain', '-z', '-uall'])
-    const entries = status.split('\0').filter((e) => e.length > 0)
+    const status = await runBytes('git', ['-C', this.path, 'status', '--porcelain', '-z', '-uall'])
     const out: ChangedFile[] = []
 
-    for (let i = 0; i < entries.length; i += 1) {
-      const entry = entries[i]!
-      const flags = entry.slice(0, 2)
+    for (const { flags, path, from } of statusRecords(status)) {
       const code = flags.trim()
-      const path = entry.slice(3)
-      // A rename or a copy is **two** records: the new path, then the original alone on the
-      // next one. Read as a status line that second record is a path sliced out of the middle
-      // of a filename, so the original is reported as neither changed nor deleted — and a
-      // resolution, which lays its files over the tree the branch already has, keeps the old
-      // path and publishes the file twice. A merge is where renames arrive, so this is the
-      // ordinary case rather than an exotic one.
-      const from = entry.startsWith('R') || entry.startsWith('C') ? entries[++i] : undefined
-      if (entry.startsWith('R') && from !== undefined && from !== '') {
-        out.push({ path: from, content: '', kind: 'deleted' })
+      if (flags.startsWith('R') && from !== undefined && from.length > 0) {
+        out.push({ path: from.toString('utf8'), content: '', kind: 'deleted' })
       }
-      if (path === '') continue
+      if (path.length === 0) continue
+      // The name the artifact publishes under. A name that is not valid UTF-8 has no faithful
+      // string form, so this is the name on disk only where the name is text.
+      const named = path.toString('utf8')
       if (!UNMERGED.test(flags) && GONE.test(flags)) {
-        out.push({ path, content: '', kind: 'deleted' })
+        out.push({ path: named, content: '', kind: 'deleted' })
         continue
       }
       let content: string
       let executable = false
       try {
-        content = await readFile(join(this.path, path), 'utf8')
-        executable = ((await stat(join(this.path, path))).mode & 0o111) !== 0
+        content = await readFile(inside(this.path, path), 'utf8')
+        executable = ((await stat(inside(this.path, path))).mode & 0o111) !== 0
       } catch {
         // A path still unmerged and no longer on disk is a deletion the worker made. A
         // delete/modify conflict carries no markers, so removing the file is the only way a
@@ -150,7 +196,7 @@ export class ClonedTree implements WorkingTree {
         // unreadable file it says nothing at all, so the resolution keeps the artifact's copy
         // and the base's deletion comes back the moment the artifact merges.
         if (UNMERGED.test(flags)) {
-          out.push({ path, content: '', kind: 'deleted' })
+          out.push({ path: named, content: '', kind: 'deleted' })
           continue
         }
         // An unreadable file. A binary is not this case and never reaches here: `utf8`
@@ -160,7 +206,7 @@ export class ClonedTree implements WorkingTree {
         continue
       }
       out.push({
-        path,
+        path: named,
         content,
         kind: code.includes('?') || code === 'A' ? 'added' : 'modified',
         ...(executable ? { executable } : {}),

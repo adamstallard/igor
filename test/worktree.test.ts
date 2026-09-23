@@ -3,7 +3,7 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { describe, expect, it } from 'vitest'
-import { ClonedTree } from '../src/worktree.js'
+import { ClonedTree, statusRecords } from '../src/worktree.js'
 import { tempDir } from './tmp.js'
 
 const run = promisify(execFile)
@@ -52,6 +52,68 @@ describe('what a working tree reports as changed', () => {
     await run('git', ['-C', dir, 'rm', '-q', 'tracked.md'])
     const changed = await new ClonedTree(dir, 'o/r').changes()
     expect(changed).toEqual([{ path: 'tracked.md', content: '', kind: 'deleted' }])
+  })
+})
+
+describe('what a name that is not text survives', () => {
+  /** The bytes `git status -z` writes for one record, name and all. */
+  const record = (flags: string, name: Buffer): Buffer =>
+    Buffer.concat([Buffer.from(`${flags} `), name, Buffer.from([0])])
+
+  it('carries a name that is not valid UTF-8 through as the bytes git wrote', () => {
+    // ext4 takes any byte in a name but `/` and NUL, and Igor runs as a service on Linux.
+    // Decoded to a string the undecodable bytes become U+FFFD, `readFile` is handed a name no
+    // file has, the read throws, and the entry is skipped — the run succeeds, the handoff reads
+    // normally, and the file is simply not in the change. Unreachable on APFS, which refuses
+    // the name outright, so the parse is the seam this can honestly be proved at.
+    const name = Buffer.from([0x63, 0x61, 0x66, 0xe9, 0x2e, 0x6d, 0x64])
+    const records = statusRecords(record('??', name))
+    expect(records).toHaveLength(1)
+    expect(records[0]!.path.equals(name)).toBe(true)
+  })
+
+  it('splits on the NUL byte rather than on a decoded one', () => {
+    const first = Buffer.from([0xff, 0xfe, 0x2e, 0x74, 0x78, 0x74])
+    const second = Buffer.from('ordinary.md')
+    const records = statusRecords(Buffer.concat([record(' M', first), record('??', second)]))
+    expect(records.map((r) => r.flags)).toEqual([' M', '??'])
+    expect(records[0]!.path.equals(first)).toBe(true)
+    expect(records[1]!.path.equals(second)).toBe(true)
+  })
+
+  it('keeps a rename\'s two records paired when neither name is text', () => {
+    const to = Buffer.from([0x6e, 0x65, 0x77, 0xc3, 0x28, 0x2e, 0x6d, 0x64])
+    const from = Buffer.from([0x6f, 0x6c, 0x64, 0xc3, 0x28, 0x2e, 0x6d, 0x64])
+    const records = statusRecords(
+      Buffer.concat([record('R ', to), Buffer.concat([from, Buffer.from([0])])]),
+    )
+    expect(records).toHaveLength(1)
+    expect(records[0]!.path.equals(to)).toBe(true)
+    expect(records[0]!.from?.equals(from)).toBe(true)
+  })
+
+  it('reads a file whose name is not ASCII off disk', async () => {
+    // The parse above proves the bytes survive; this proves the tree still opens what they
+    // name, through a `Buffer` path rather than a joined string. A name that is valid UTF-8 is
+    // the most this filesystem will hold, so the invalid case is reasoned from here, not shown.
+    const dir = await repo()
+    writeFileSync(join(dir, 'ま—.md'), 'kept\n')
+    const changed = await new ClonedTree(dir, 'o/r').changes()
+    expect(changed).toEqual([{ path: 'ま—.md', content: 'kept\n', kind: 'added' }])
+  })
+
+  it('decodes a status listing the pipe split across chunks', async () => {
+    // The bug `649692e` fixed, at this seam: a three-byte character straddling a chunk boundary
+    // decodes to replacement characters on both sides, so git's own listing names files that
+    // are not there. The listing runs to a few hundred kilobytes, well past the pipe buffer, so
+    // it arrives in several chunks and the boundaries fall inside these names.
+    const dir = await repo()
+    const names = Array.from({ length: 1200 }, (_, i) => `${'—'.repeat(80)}-${i}.md`)
+    for (const name of names) writeFileSync(join(dir, name), 'x\n')
+
+    const changed = await new ClonedTree(dir, 'o/r').changes()
+    expect(changed.filter((c) => c.path.includes('\uFFFD'))).toEqual([])
+    expect(changed.map((c) => c.path).sort()).toEqual(names.sort())
   })
 })
 
