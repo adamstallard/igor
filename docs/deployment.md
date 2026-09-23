@@ -55,6 +55,11 @@ Three things, in this order. None can be automated, and the first two are the on
    walking up from there. Creating one is
    [Setting up a lore repository](../README.md#setting-up-a-lore-repository) in the README.
 
+And one thing about the repositories a role is pointed at: its work has to be text. A binary
+file a worker changes is published corrupted rather than dropped, and the diff gives no sign of
+it — [`architecture.md`](architecture.md) §6.7.3 has why that is tolerated and what would
+change it.
+
 ## systemd
 
 ```bash
@@ -251,6 +256,10 @@ which disappears when the manager cleans up. Point at a stable interpreter.
 igor budget                 # what each seat has left, and what state each one is in
 igor run <role> --plan      # what it would claim right now, claiming nothing
 ```
+
+`--plan` persists nothing: no watermark, no cycle record. Looking at the backlog does not
+consume it, so this is safe to run when something is already wrong. `--claim` is not a preview
+and the two are refused together, so the claim lines a preview prints are run without `--plan`.
 
 Everything an Igor did is on the `igor-state` branch of the lore repository:
 `executions/` for what it worked and what that cost, one `.ndjson` file per UTC day,

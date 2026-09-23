@@ -177,8 +177,10 @@ export class ClonedTree implements WorkingTree {
           out.push({ path, content: '', kind: 'deleted' })
           continue
         }
-        // A binary or unreadable file; the caller reports it rather than guessing. With
-        // `-uall` a directory never reaches here, which is what this used to swallow.
+        // An unreadable file. A binary is not this case and never reaches here: `utf8`
+        // substitutes U+FFFD rather than throwing, so a binary is read as mojibake and
+        // published as text — see `docs/architecture.md` §6.7.3 for why nothing stops that.
+        // With `-uall` a directory never reaches here, which is what this used to swallow.
         continue
       }
       out.push({

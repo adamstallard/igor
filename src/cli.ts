@@ -15,9 +15,10 @@ import {
   StoreError,
   ENTRIES_DIR,
 } from './store.js'
-import { eligibleToPropose, propose, ProposeError } from './propose.js'
-import { reconcile, promoteInPlace } from './reconcile.js'
+import { eligibleToPropose, idsOnDefaultBranch, propose, upstreamHoldsTheName, ProposeError } from './propose.js'
+import { reconcile, promoteInPlace, renderReconciliation } from './reconcile.js'
 import { GitHubError } from './github.js'
+import { claimRequested, contradictoryRunFlags } from './flags.js'
 import { explainRole, loadRole, rolesFrom, RoleError } from './role.js'
 import { catchUpItem, planCycle, runItem, type CycleReport } from './loop.js'
 import { renderProgress } from './execute.js'
@@ -63,10 +64,19 @@ program
   .option('--status <status>', 'provisional | active | deprecated', 'provisional')
   .option('--body <text>', 'reasoning and exceptions')
   .option('--into <dir>', `write the entry to <dir>/${ENTRIES_DIR}/ as a candidate, not to the store`)
-  .action((opts) => {
+  .action(async (opts) => {
     const config = loadConfig(program.opts()['config'])
-    const target = createTarget(config.destination, opts.into)
+    const upstream = await idsOnDefaultBranch(config.destination)
+    const target = createTarget(config.destination, opts.into, upstream.ids)
     const id = uniqueId(opts.claim, target.taken)
+    if (upstream.unread !== undefined) {
+      process.stderr.write(
+        `! ${config.destination} could not be read at its default branch, so ${id} is gated ` +
+          `against this checkout alone — ${upstream.unread}\n`,
+      )
+    }
+    const spokenFor = upstreamHoldsTheName(opts.claim, id, upstream, target.checkout)
+    if (spokenFor !== undefined) process.stderr.write(spokenFor)
     const entry: Entry = {
       id,
       claim: opts.claim,
@@ -199,7 +209,24 @@ program
       )
     }
 
-    for (const r of await propose(config, entries, serialize)) {
+    const outcome = await propose(config, entries, serialize)
+    // `entries/` upstream only ever advances through a merged pull request, so an id there
+    // that the local pass let through means this checkout is behind, and pulling fixes it.
+    if (outcome.skipped.inStore.length > 0) {
+      process.stdout.write(
+        `behind    ${outcome.skipped.inStore.join(', ')} — in the store upstream but not in this checkout; pull the destination\n`,
+      )
+    }
+    // `rejected/` diverges the other way just as often: `reconcile` writes a rejection into the
+    // checkout for somebody to commit, and un-rejecting is deleting that file in a pull request.
+    // So the checkout may be behind or ahead here, and telling someone to pull would undo the
+    // deletion they are in the middle of landing. Name the state upstream and not a remedy.
+    if (outcome.skipped.rejected.length > 0) {
+      process.stdout.write(
+        `rejected  ${outcome.skipped.rejected.join(', ')} — still rejected on the destination's default branch; that record has to go before these can be proposed again\n`,
+      )
+    }
+    for (const r of outcome.results) {
       const owner = r.reassignedTo
         ? `${r.reassignedTo.join(', ')} (${r.author} is not a collaborator here)`
         : r.author
@@ -217,43 +244,7 @@ program
     const config = loadConfig(program.opts()['config'])
     const r = await reconcile(config, { staleAfterDays: Number(opts.staleAfter) })
 
-    for (const p of r.promoted) {
-      const flag = p.mergerWasNotAssigned ? '  (merged by someone not assigned to review it)' : ''
-      process.stdout.write(`promoted  ${p.id}  by ${p.by} on ${p.at}${flag}\n`)
-    }
-    for (const d of r.declined) {
-      process.stdout.write(`declined  ${d.id}  by ${d.by} (pr #${d.pr}) — recorded in ${d.record}\n`)
-    }
-    for (const s of r.stale) {
-      process.stdout.write(
-        `stale     #${s.pr} last active ${s.lastActivity}, assigned ${s.assignees.join(', ') || '(nobody)'} — escalate to ${config.reviewers.join(', ') || '(no store reviewers configured)'}\n  ${s.url}\n`,
-      )
-    }
-    if (r.deferred.length > 0) {
-      process.stdout.write(`deferred  ${r.deferred.map((n) => `#${n}`).join(', ')} (closed unmerged)\n`)
-    }
-    if (r.missingLocally.length > 0) {
-      process.stdout.write(
-        `behind    ${r.missingLocally.join(', ')} — merged upstream but not here; pull the destination\n`,
-      )
-    }
-    for (const u of r.unreadable) {
-      process.stdout.write(`unreadable ${u.id} — ${u.reason}\n`)
-    }
-    if (
-      r.promoted.length === 0 &&
-      r.declined.length === 0 &&
-      r.stale.length === 0 &&
-      r.missingLocally.length === 0 &&
-      r.unreadable.length === 0
-    ) {
-      process.stdout.write('nothing to reconcile\n')
-    }
-    if (r.promoted.length > 0 || r.declined.length > 0) {
-      process.stdout.write(
-        '\nPromotions and rejection records edited files locally — commit and push them.\n',
-      )
-    }
+    process.stdout.write(renderReconciliation(r, config.reviewers))
   })
 
 program
@@ -371,6 +362,9 @@ program
   .option('--since <days>', 'look back this far instead of using the stored watermark')
   .option('--claim <id>', 'work only this item, which a previous run reported it would claim')
   .action(async (name: string, opts) => {
+    // First, so a contradiction costs no network call and no model call.
+    const contradiction = contradictoryRunFlags(opts)
+    if (contradiction !== undefined) throw new RoleError(contradiction)
     const config = loadConfig(program.opts()['config'])
     const role = loadRole(config, name).role
     const tracker = new GitHubTracker()
@@ -428,7 +422,7 @@ program
       return run
     }
 
-    if (opts.claim) {
+    if (claimRequested(opts)) {
       const repo = opts.claim.replace(/^github:/, '').split('#')[0]!
       const [item] = (
         await tracker.search({ tracker: 'github', repo, query: `is:issue ${opts.claim.split('#')[1]}` })
@@ -465,6 +459,9 @@ program
       identity,
       limit: Number(opts.limit),
       ...(opts.since === undefined ? {} : { sinceDays: Number(opts.since) }),
+      // A preview stops before the cycle's two writes, so looking at the backlog does not mark
+      // its candidates seen and cost them the cycle that would have worked them.
+      preview: opts.plan === true,
       // The seat triage spends from and records against is the same one a worker would choose —
       // read lazily, so a cycle with nothing to triage never pays for a seat's usage reading.
       gate: gateFor,
@@ -474,7 +471,7 @@ program
     if (opts.plan) {
       process.stdout.write(
         `\n${report.toClaim.length} would be claimed and ${report.toCatchUp.length} caught up. ` +
-          'Nothing was claimed, merged or posted.\n',
+          'Nothing was claimed, merged, posted or recorded, and the discovery mark is unchanged.\n',
       )
       for (const c of report.toClaim) {
         process.stdout.write(`  igor run ${name} --claim ${c.candidate.id}\n`)

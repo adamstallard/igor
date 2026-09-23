@@ -55,6 +55,7 @@ export {
   ProposeError,
   BRANCH_PREFIX,
   type ProposalResult,
+  type ProposeOutcome,
   type Eligibility,
 } from './propose.js'
 

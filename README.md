@@ -232,8 +232,9 @@ repository.
    igor run <role> --plan     # what it would claim, claiming nothing
    ```
 
-   `--plan` claims nothing and posts nothing. It is not free: triage is a model call, measured
-   around four cents for a nine-candidate cycle.
+   That run claims nothing, posts nothing, and writes nothing: the discovery watermark stays
+   where it was, so looking at the backlog does not consume it. It is not free: triage is a
+   model call, measured around four cents for a nine-candidate cycle.
 
 4. **Leave it running.** Everything above is a command you run once; finding your own work is
    a loop.
@@ -338,6 +339,14 @@ The worker is spawned with an environment written out rather than inherited — 
 home directory, the host's proxy settings, and the token of the seat it spends. No `GH_TOKEN`
 and no other seat's token, because the worker has no use for either: it edits files in a
 disposable clone, and claiming, commenting and publishing all happen afterwards in the loop.
+
+**Point a role only at work that is text.** A file the worker changed is read back out of the
+tree as UTF-8 and published as UTF-8, and a byte that is not valid UTF-8 is substituted rather
+than rejected — so a PNG, an archive or anything else git treats as binary is published
+corrupted instead of dropped, and nothing in the diff says so. Nothing refuses it, because no
+role can reach a binary today; a role that could — one whose work produces images, or checks
+fixtures in — is what would make that refusal worth building.
+[`docs/architecture.md`](docs/architecture.md) §6.7.3 has the rest.
 
 ## Budgets
 

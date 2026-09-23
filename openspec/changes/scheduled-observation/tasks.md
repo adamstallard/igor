@@ -65,5 +65,6 @@
       stays there and nothing here restates it
 - [ ] 8.2 Issue for a deposit path that does not require push access to the lore repository,
       since that access is what excludes a lender outside the team
-- [ ] 8.3 Issue for the staleness threshold, to be fitted with the other constants once a week
-      of observations exists
+- [x] 8.3 Issue for the staleness threshold, to be fitted with the other constants once a week
+      of observations exists — [#69](https://github.com/adamstallard/igor/issues/69) covers it
+      alongside target utilisation and the dead band

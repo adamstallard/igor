@@ -725,6 +725,50 @@ dedupe does not cover this and cannot: it is for activity moving a row *up*, whi
 rather than losing one. Anyone reaching for offset paging over a filtered list should reach for
 this paragraph first.
 
+**`propose` gates candidate ids against the tree it commits onto, not against the checkout.** It
+used to check the destination checkout and then commit onto the upstream tip, so a checkout one
+merge behind proposed an id that was already there and the commit replaced it. The overwritten
+entry reaches review as a modification, which recognition correctly declines to read as a
+proposal, so nothing reconciles the pull request: no promotion, no deferral when it is closed, no
+quiet report, and no `behind` line either. Reading the ids at `baseSha` — the sha
+`createBranchWithFiles` is handed — closes that window by construction rather than narrowing it.
+
+**Measured**: proposing 5 candidates from one author costs 13 requests without the gate and 16
+with it. The gate is the commit's root tree plus one tree per store directory present, and it
+costs nothing per entry: a store holding 200 entries costs the same three. That is a different
+shape from the history read the watermark above removed, which was about three requests *per
+closed pull request* on every merge, bounded by nothing.
+
+**The contents endpoint would list the directory in two requests, and is rejected.**
+`contents/entries?ref=` caps a directory listing at a thousand files and says so nowhere in the
+payload; a listing that came back short reports an id free that is there, which is the overwrite
+the gate exists to prevent. The trees API reports `truncated`, and the read refuses rather than
+gating on half a store. `git/trees/{sha}:{path}` resolves a subdirectory in one request and is
+rejected for the same reason: it is undocumented, and its 404 cannot be told from a store that
+has no such directory.
+
+**`create` mints against the same branch, and that is what makes it a network command.** It read
+the checkout alone, so a person one merge behind minted an id upstream already held and wrote an
+entry the gate above then drops — caught, but only after the work. It now reads the ids on the
+default branch and counts them as taken, so the discriminator `lore-store` already requires is
+applied to the id set that decides anything.
+
+**Measured**: one `create` costs 5 requests where it cost none — the default branch, its tip, the
+root tree, and one tree per store directory present — and, like the gate, nothing per entry: a
+store of 200 entries costs the same 5. That is the real price of this fix, on a command that
+needed neither network nor credentials before. Where the read fails, `create` says on stderr what
+it could not check and mints against the checkout alone rather than refusing: the collision then
+survives to `propose`, which is the behaviour above — late, but never an overwrite and never
+silent. Refusing instead would make drafting impossible wherever `gh` cannot reach, and buys
+nothing the late catch does not already give.
+
+**A single-path existence probe is the cheaper read, and is rejected.** `contents/entries/<id>.md`
+is two requests and cannot be truncated, since the thousand-file cap binds on a listing and not on
+one exact path. It answers only the id in hand, though, so a `create` minting `-2`, `-3` costs a
+request per attempt, and its 404 cannot be told from a repository the credential cannot see — a
+private destination read without access reports every id free, which is this bug with no way to
+notice. The tree read is shared with `propose`, bounded, and says `truncated` when it is short.
+
 **The append-only logs are partitioned by UTC day** — `executions/2026-09-15.ndjson`, and the
 same shape for decisions and firings. The Contents API has no append, so a write downloads the
 file and re-uploads it whole, and on one ever-growing file the bytes sent grow with the square
@@ -1410,6 +1454,28 @@ execution obtains a disposable working tree through one provisioning function an
 nothing about its shape — not a clone, not a worktree. The shared object store above is then a
 swap behind that function rather than a change to how execution is written.
 
+### 6.7.3 A binary in an artifact is corrupted, not dropped — **known, and deliberately unguarded**
+
+Changes are read out of the tree as UTF-8 and published as blobs declared UTF-8. Reading a file
+as `utf8` does not fail on bytes that are not valid UTF-8 — each one becomes `U+FFFD` — so a
+binary file a worker touched is neither skipped nor refused. It arrives as an ordinary text
+entry full of replacement characters and is published as a file that looks plausible and is
+wrong, which is worse than an absence: nothing further along is positioned to notice, because
+the worker never sees the bytes and the diff shows an ordinary change.
+
+Detecting it and refusing — read a buffer, test it for valid UTF-8, hand off naming the file the
+way any unresolvable case is handed off — is the obvious guard, and is deliberately not built.
+No role can touch a binary today: artifacts are text changes to source, and nothing generates or
+carries an image, an archive or a compiled file into one. A guard against a case that cannot
+arise is machinery to keep working, and its own source of refusals on text that merely tests as
+binary.
+
+**A role that can touch one is what changes the answer** — one whose work produces images,
+checks in fixtures, or edits anything git treats as binary. The guard above lands first at that
+point, because it converts a silent corruption into a visible stop, and carrying binaries
+properly (read bytes, declare `base64`, widen the committed-file content from a string through
+to the blob write) is the larger question behind it.
+
 ### 6.8 Igor is necessarily self-hosted — **constraint**
 
 An Igor runs on a subscription seat token, and a seat token cannot be handed to a third
@@ -1568,3 +1634,5 @@ Agreed in principle, not scoped, roughly in dependency order:
 10. Seat pooling and the fleet-level budget policy, with a reserve floor where a human shares
     the seat (§6.5).
 11. Additional adapters: Linear, then Discord.
+12. Binaries in an artifact, refused or carried rather than corrupted (§6.7.3) — needs a role
+    that can touch one.
