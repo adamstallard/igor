@@ -97,16 +97,29 @@ constrains the outcome (the origin reaches the record); the tasks name the mecha
 `src/budget.ts:144`, `:155` and `:275`, and the `${(e as Error).message}` interpolation goes with
 it). The second half is not an afterthought; it is the half that does not earn spec text.
 
+### The other artifact that loses the same thing
+
+[#90](https://github.com/adamstallard/igor/issues/90) is a decision about error context, and there
+are two durable artifacts that lose it. This change covers one. The other —
+`executions.ndjson`'s `reason`, written per task at `src/execute.ts:1822` — is
+[#98](https://github.com/adamstallard/igor/issues/98), and it is the other half of the same
+decision rather than a lesser follow-up. **The harm is identical in both; the shapes are not, and
+that is why they are split.**
+
+`report.failures` is a list of faults: every entry in it is one, so a requirement about what a
+failure entry carries governs the whole field. `reason` is *what happened*, and a fault is one case
+among many — it is declared non-optional on `ExecutionResult` (`src/execute.ts:109`) and built at
+seventeen sites, of which two derive from a caught fault (`src/execute.ts:1338`, `:1410`). The rest
+say things like `` `${artifact.ref} was already up to date` `` and `` `opened ${opened.ref}` ``. One
+requirement spanning both records would have to read *"where this describes a fault…"*, and a
+conditional clause on a non-optional field gets read as optional — satisfied by writing `undefined`
+in the other fifteen places. What the execution record needs is a diagnostic beside `reason` rather
+than a widening of it, which is a different change, and #98 says so.
+
+Nothing else is carrying this. If #98 is closed unfixed, half of what #90 decided is dropped.
+
 ### Explicitly out of scope
 
-- **The execution outcome's `reason`** ([#98](https://github.com/adamstallard/igor/issues/98)).
-  `src/execute.ts:1338` and `:1410` have the identical defect and their output reaches
-  `executions.ndjson`. It is not fixed here because `reason` is not a failure field: it is declared
-  non-optional on `ExecutionResult` (`src/execute.ts:109`) and written on every outcome, including
-  `` `${artifact.ref} was already up to date` `` and `` `opened ${opened.ref}` ``. A requirement
-  about what a *failure* entry carries either does not reach a field that is also filled on success,
-  or forces a diagnostic onto `ExecutionResult` and a revisit of every one of its construction
-  sites. That is a different change with a different shape.
 - **`src/sweep.ts:65` and `src/wiring.ts:59`.** Both reduce an error for `out.warn`, which is a
   console a person is watching. Nothing durable is written, so the harm this proposal describes does
   not apply, and the requirement deliberately does not reach them.
