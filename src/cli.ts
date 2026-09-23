@@ -16,15 +16,15 @@ import {
   ENTRIES_DIR,
 } from './store.js'
 import { eligibleToPropose, idsOnDefaultBranch, propose, upstreamHoldsTheName, ProposeError } from './propose.js'
-import { reconcile, promoteInPlace } from './reconcile.js'
+import { reconcile, promoteInPlace, renderReconciliation } from './reconcile.js'
 import { GitHubError } from './github.js'
 import { explainRole, loadRole, rolesFrom, RoleError } from './role.js'
-import { planCycle, runItem, type CycleReport } from './loop.js'
+import { catchUpItem, planCycle, runItem, type CycleReport } from './loop.js'
 import { renderProgress } from './execute.js'
 import { serve, untilSignalled } from './serve.js'
 import { GitHubTracker, GitHubCodeHost } from './github-adapter.js'
 import type { Candidate } from './adapter.js'
-import { laneVerdict, universalSkip } from './predicate.js'
+import { laneVerdict, staleOwnArtifact, universalSkip } from './predicate.js'
 import { noteHandoff, shouldDefer } from './deferred.js'
 import { CloneProvider } from './worktree.js'
 import { TriageError } from './triage.js'
@@ -243,43 +243,7 @@ program
     const config = loadConfig(program.opts()['config'])
     const r = await reconcile(config, { staleAfterDays: Number(opts.staleAfter) })
 
-    for (const p of r.promoted) {
-      const flag = p.mergerWasNotAssigned ? '  (merged by someone not assigned to review it)' : ''
-      process.stdout.write(`promoted  ${p.id}  by ${p.by} on ${p.at}${flag}\n`)
-    }
-    for (const d of r.declined) {
-      process.stdout.write(`declined  ${d.id}  by ${d.by} (pr #${d.pr}) — recorded in ${d.record}\n`)
-    }
-    for (const s of r.stale) {
-      process.stdout.write(
-        `stale     #${s.pr} last active ${s.lastActivity}, assigned ${s.assignees.join(', ') || '(nobody)'} — escalate to ${config.reviewers.join(', ') || '(no store reviewers configured)'}\n  ${s.url}\n`,
-      )
-    }
-    if (r.deferred.length > 0) {
-      process.stdout.write(`deferred  ${r.deferred.map((n) => `#${n}`).join(', ')} (closed unmerged)\n`)
-    }
-    if (r.missingLocally.length > 0) {
-      process.stdout.write(
-        `behind    ${r.missingLocally.join(', ')} — merged upstream but not here; pull the destination\n`,
-      )
-    }
-    for (const u of r.unreadable) {
-      process.stdout.write(`unreadable ${u.id} — ${u.reason}\n`)
-    }
-    if (
-      r.promoted.length === 0 &&
-      r.declined.length === 0 &&
-      r.stale.length === 0 &&
-      r.missingLocally.length === 0 &&
-      r.unreadable.length === 0
-    ) {
-      process.stdout.write('nothing to reconcile\n')
-    }
-    if (r.promoted.length > 0 || r.declined.length > 0) {
-      process.stdout.write(
-        '\nPromotions and rejection records edited files locally — commit and push them.\n',
-      )
-    }
+    process.stdout.write(renderReconciliation(r, config.reviewers))
   })
 
 program
@@ -364,6 +328,12 @@ function renderCycle(report: CycleReport, verbose: boolean): string {
       (report.skippedUnreadable > 0 ? `${report.skippedUnreadable} unreadable, ` : '') +
       `${report.triaged} triaged (${triageSpend(report)})`,
   )
+  if (report.toCatchUp.length > 0) {
+    out.push('', `own artifacts that no longer merge (${report.toCatchUp.length}):`)
+    for (const c of report.toCatchUp) {
+      out.push(`  ${c.candidate.native.padStart(6)}  ${c.reason}`)
+    }
+  }
   if (verbose && report.skipped.length > 0) {
     out.push('', `skipped before any model call (${report.skipped.length}):`)
     for (const s of report.skipped.slice(0, 40)) {
@@ -462,6 +432,17 @@ program
       const universal = universalSkip(item, identity)
       if (universal) throw new RoleError(`refusing ${item.id}: ${universal.reason}`)
 
+      // An item whose own artifact stopped merging passes the universal skips and is not new
+      // work: opening a second pull request for it is the duplication that rule exists to
+      // prevent, and the branch is there already, so producing one would simply fail.
+      if (staleOwnArtifact(item, identity) !== undefined) {
+        const gate = await gateFor()
+        const run = await catchUpItem(deps, item, role, identity, { budget: gate, store })
+        process.stdout.write(`  ${run.outcome}: ${run.reason}\n`)
+        if (run.execution) await record(item, run.execution, gate.seat)
+        return
+      }
+
       const lane = laneVerdict(role.lane, item)
       if (lane.outcome === 'skip') {
         process.stdout.write(`note: outside this role's lane (${lane.reason}) — working it anyway\n`)
@@ -481,11 +462,24 @@ program
     process.stdout.write(`${renderCycle(report, opts.plan === true)}\n`)
 
     if (opts.plan) {
-      process.stdout.write(`\n${report.toClaim.length} would be claimed. Nothing was claimed or posted.\n`)
+      process.stdout.write(
+        `\n${report.toClaim.length} would be claimed and ${report.toCatchUp.length} caught up. ` +
+          'Nothing was claimed, merged or posted.\n',
+      )
       for (const c of report.toClaim) {
         process.stdout.write(`  igor run ${name} --claim ${c.candidate.id}\n`)
       }
       return
+    }
+
+    for (const c of report.toCatchUp) {
+      const gate = await gateFor()
+      const run = await catchUpItem(deps, c.candidate, role, identity, { budget: gate, store })
+      process.stdout.write(`  ${c.candidate.id}: ${run.reason}\n`)
+      if (shouldDefer(run.outcome, run.handoff, run.cures)) {
+        await noteHandoff(destination, c.candidate, run.reason).catch(() => undefined)
+      }
+      if (run.execution) await record(c.candidate, run.execution, gate.seat)
     }
 
     if (report.toClaim.length === 0) {

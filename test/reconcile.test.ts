@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Config } from '../src/config.js'
 import type { Entry } from '../src/entry.js'
 import type { PrState } from '../src/github.js'
+import type { Reconciliation } from '../src/reconcile.js'
 import { ENTRIES_DIR, REJECTED_DIR, rejectedIds, serialize, writeEntry } from '../src/store.js'
 import { tempDir } from './tmp.js'
 
@@ -51,7 +52,7 @@ vi.mock('../src/state.js', () => ({
   writeState: async () => true,
 }))
 
-const { reconcile } = await import('../src/reconcile.js')
+const { reconcile, renderReconciliation } = await import('../src/reconcile.js')
 
 function entry(id: string, overrides: Partial<Entry> = {}): Entry {
   return {
@@ -337,5 +338,60 @@ describe('an open pull request costs a fetch only once it is quiet', () => {
     const result = await reconcile(config(dir), { now: new Date(NOW), staleAfterDays: 7 })
 
     expect(result.stale.map((s) => s.pr)).toEqual([97])
+  })
+})
+
+
+describe('what the report says it did', () => {
+  function report(overrides: Partial<Reconciliation> = {}): Reconciliation {
+    return {
+      promoted: [],
+      declined: [],
+      stale: [],
+      deferred: [],
+      carried: [],
+      evicted: [],
+      missingLocally: [],
+      unreadable: [],
+      ...overrides,
+    }
+  }
+
+  it('does not say nothing happened underneath a line saying something did', () => {
+    // A deferral prints its own line, so the run plainly did something. `nothing to reconcile`
+    // underneath it is the report arguing with itself.
+    const out = renderReconciliation(report({ deferred: [7] }), ['abram'])
+
+    expect(out).toContain('#7')
+    expect(out).not.toContain('nothing to reconcile')
+  })
+
+  it('names a carried pull request whose own read failed', () => {
+    const out = renderReconciliation(report({ carried: [{ pr: 7, reason: 'pull-request' }] }), [])
+
+    expect(out).toContain('carried   #7')
+    expect(out).not.toContain('nothing to reconcile')
+  })
+
+  it('names a merged proposal whose promotion is waiting on who merged it', () => {
+    const out = renderReconciliation(report({ carried: [{ pr: 9, reason: 'merger' }] }), [])
+
+    expect(out).toContain('#9')
+    expect(out).toContain('who merged')
+    expect(out).not.toContain('nothing to reconcile')
+  })
+
+  it('says a dropped pull request is not coming back', () => {
+    const out = renderReconciliation(report({ evicted: [3, 4] }), [])
+
+    expect(out).toContain('#3, #4')
+    expect(out).toContain('check them by hand')
+    expect(out).not.toContain('nothing to reconcile')
+  })
+
+  it('says nothing to reconcile when it wrote nothing else', () => {
+    expect(renderReconciliation(report({ scannedSince: '2026-04-01T10:00:00Z' }), [])).toBe(
+      'nothing to reconcile\n',
+    )
   })
 })

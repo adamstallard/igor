@@ -61,5 +61,6 @@
 
 - [ ] 7.1 `scheduled-observation` carries the command that takes a reading on the owner's
       machine and the schedule it runs on; nothing here defines either
-- [ ] 7.2 Issue for constants — target utilisation, dead band, staleness — to be fitted once a
-      week of observations exists, rather than to the two items measured so far
+- [x] 7.2 Issue for constants — target utilisation, dead band, staleness — to be fitted once a
+      week of observations exists, rather than to the two items measured so far. Filed as
+      [#69](https://github.com/adamstallard/igor/issues/69)

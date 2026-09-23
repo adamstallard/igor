@@ -8,7 +8,25 @@ import { spawn } from 'node:child_process'
  * option — that belongs to `execFileSync` — so anything reading stdin hangs forever waiting on
  * input that never arrives.
  */
-export class GhError extends Error {}
+export class GhError extends Error {
+  /**
+   * The HTTP status, where `gh` named one. Callers act on a specific code — a merge that
+   * conflicts answers 409 and is a routine outcome, not a fault — and reading it back off the
+   * message at each call site would spread the same fragile parse over the codebase.
+   */
+  constructor(
+    message: string,
+    readonly status?: number,
+  ) {
+    super(message)
+  }
+}
+
+/** `gh` reports a failing request as `gh: <message> (HTTP <code>)` on stderr and nowhere else. */
+function statusFrom(stderr: string): number | undefined {
+  const match = stderr.match(/\(HTTP (\d{3})\)/)
+  return match?.[1] === undefined ? undefined : Number(match[1])
+}
 
 export function ghRaw(args: readonly string[], input?: string): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -29,7 +47,13 @@ export function ghRaw(args: readonly string[], input?: string): Promise<string> 
     child.on('error', (error) => reject(new GhError(`gh could not be run: ${error.message}`)))
     child.on('close', (code) => {
       if (code === 0) resolve(stdout)
-      else reject(new GhError(`gh ${args.slice(0, 2).join(' ')} failed: ${stderr.trim() || `exited ${code}`}`))
+      else
+        reject(
+          new GhError(
+            `gh ${args.slice(0, 2).join(' ')} failed: ${stderr.trim() || `exited ${code}`}`,
+            statusFrom(stderr),
+          ),
+        )
     })
     child.stdin.end(input ?? '')
   })

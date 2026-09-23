@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { mkdtemp, rm, readFile } from 'node:fs/promises'
+import { mkdtemp, rm, readFile, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -24,8 +24,22 @@ export const TREE_PREFIX = 'igor-tree-'
 export interface ChangedFile {
   path: string
   content: string
-  /** Deletions and binaries are reported but cannot be carried by the tree-API artifact path. */
+  /** A deletion is reported but cannot be carried by the tree-API artifact path. */
   kind: 'added' | 'modified' | 'deleted'
+  /**
+   * Whether the file is executable. Only a resolution reads it: it lays blobs over a tree the
+   * branch already has, so a mode assumed here replaces the mode that is there.
+   */
+  executable?: boolean
+}
+
+/** What a merge left behind, and the two commits a resolution of it has to be parented on. */
+export interface MergeState {
+  /** Paths left with conflict markers in them. Empty where the merge was clean. */
+  conflicts: string[]
+  /** The tree's head before the merge. */
+  head: string
+  broughtIn: string
 }
 
 export interface WorkingTree {
@@ -33,6 +47,14 @@ export interface WorkingTree {
   readonly repo: string
   /** Files the worker touched, read back from the tree rather than from what it claimed. */
   changes(): Promise<ChangedFile[]>
+  /**
+   * Merges `ref` in without committing, leaving conflict markers where it conflicts.
+   *
+   * Optional, because `TreeProvider` deliberately says nothing about how a tree is made and
+   * not every arrangement can offer this. A caller that needs it and does not find it hands
+   * off rather than guessing at a resolution it has no way to compute.
+   */
+  merge?(ref: string): Promise<MergeState>
   release(): Promise<void>
 }
 
@@ -60,8 +82,21 @@ function run(cmd: string, args: readonly string[], cwd?: string): Promise<string
   })
 }
 
-/** Statuses git reports that mean the file is gone. */
-const DELETED = new Set(['D', 'AD', 'RD'])
+/**
+ * Statuses that mean the file is gone: the work tree column reads `D`, or the index says
+ * deleted and the work tree has nothing to add. `MD` counts as much as `AD` — a path the
+ * merge staged and the worker then removed is a deletion, and read as an unreadable file
+ * instead it is dropped from the files *and* the deletions, so the resolution keeps the
+ * artifact's older copy and reverts the base's own change to that path on merge.
+ */
+const GONE = /^(?:.D|D )$/
+
+/**
+ * Either side of an unmerged entry, which is where a delete/modify conflict shows up. Tested
+ * before `GONE`, because `UD` reads as gone by that shape while the file is still on disk:
+ * reported deleted it would throw away the side the artifact edited.
+ */
+const UNMERGED = /^(?:U.|.U|AA|DD)$/
 
 /** Exported so the change-collection rules can be tested against a real repository. */
 export class ClonedTree implements WorkingTree {
@@ -83,25 +118,86 @@ export class ClonedTree implements WorkingTree {
     const entries = status.split('\0').filter((e) => e.length > 0)
     const out: ChangedFile[] = []
 
-    for (const entry of entries) {
-      const code = entry.slice(0, 2).trim()
+    for (let i = 0; i < entries.length; i += 1) {
+      const entry = entries[i]!
+      const flags = entry.slice(0, 2)
+      const code = flags.trim()
       const path = entry.slice(3)
+      // A rename or a copy is **two** records: the new path, then the original alone on the
+      // next one. Read as a status line that second record is a path sliced out of the middle
+      // of a filename, so the original is reported as neither changed nor deleted — and a
+      // resolution, which lays its files over the tree the branch already has, keeps the old
+      // path and publishes the file twice. A merge is where renames arrive, so this is the
+      // ordinary case rather than an exotic one.
+      const from = entry.startsWith('R') || entry.startsWith('C') ? entries[++i] : undefined
+      if (entry.startsWith('R') && from !== undefined && from !== '') {
+        out.push({ path: from, content: '', kind: 'deleted' })
+      }
       if (path === '') continue
-      if (DELETED.has(code)) {
+      if (!UNMERGED.test(flags) && GONE.test(flags)) {
         out.push({ path, content: '', kind: 'deleted' })
         continue
       }
       let content: string
+      let executable = false
       try {
         content = await readFile(join(this.path, path), 'utf8')
+        executable = ((await stat(join(this.path, path))).mode & 0o111) !== 0
       } catch {
-        // A binary or unreadable file; the caller reports it rather than guessing. With
-        // `-uall` a directory never reaches here, which is what this used to swallow.
+        // A path still unmerged and no longer on disk is a deletion the worker made. A
+        // delete/modify conflict carries no markers, so removing the file is the only way a
+        // worker that was told not to run git can say "honour the deletion" — and read as an
+        // unreadable file it says nothing at all, so the resolution keeps the artifact's copy
+        // and the base's deletion comes back the moment the artifact merges.
+        if (UNMERGED.test(flags)) {
+          out.push({ path, content: '', kind: 'deleted' })
+          continue
+        }
+        // An unreadable file. A binary is not this case and never reaches here: `utf8`
+        // substitutes U+FFFD rather than throwing, so a binary is read as mojibake and
+        // published as text — see `docs/architecture.md` §6.7.3 for why nothing stops that.
+        // With `-uall` a directory never reaches here, which is what this used to swallow.
         continue
       }
-      out.push({ path, content, kind: code.includes('?') || code === 'A' ? 'added' : 'modified' })
+      out.push({
+        path,
+        content,
+        kind: code.includes('?') || code === 'A' ? 'added' : 'modified',
+        ...(executable ? { executable } : {}),
+      })
     }
     return out
+  }
+
+  /**
+   * Brings `ref` in and stops before the commit, so the tree holds the merge and nothing else
+   * does — no local commit to push, no identity to configure, and the loop still publishes.
+   *
+   * The clone is deepened first. A depth-1 clone has no ancestor in common with anything, so
+   * git refuses the merge outright rather than conflicting on it, and the worker would be
+   * handed an error instead of the files it is here for.
+   *
+   * A conflict is not a failure of this call: git exits non-zero and leaves exactly the tree
+   * that was asked for. Unmerged paths are what tells the two apart, rather than the exit
+   * code, which a merge refused for some other reason shares.
+   */
+  async merge(ref: string): Promise<MergeState> {
+    const git = (...args: string[]): Promise<string> => run('git', ['-C', this.path, ...args])
+    if ((await git('rev-parse', '--is-shallow-repository')).trim() === 'true') {
+      await git('fetch', '--quiet', '--unshallow', 'origin')
+    }
+    await git('fetch', '--quiet', 'origin', ref)
+    const head = (await git('rev-parse', 'HEAD')).trim()
+    const broughtIn = (await git('rev-parse', 'FETCH_HEAD')).trim()
+    try {
+      await git('merge', '--no-commit', '--no-ff', broughtIn)
+      return { conflicts: [], head, broughtIn }
+    } catch (error) {
+      const unmerged = await git('diff', '--name-only', '--diff-filter=U', '-z').catch(() => '')
+      const conflicts = unmerged.split('\0').filter((p) => p !== '')
+      if (conflicts.length === 0) throw error
+      return { conflicts, head, broughtIn }
+    }
   }
 
   /** Idempotent, because release runs from a finally that may also run on an already-failed path. */

@@ -1454,6 +1454,28 @@ execution obtains a disposable working tree through one provisioning function an
 nothing about its shape — not a clone, not a worktree. The shared object store above is then a
 swap behind that function rather than a change to how execution is written.
 
+### 6.7.3 A binary in an artifact is corrupted, not dropped — **known, and deliberately unguarded**
+
+Changes are read out of the tree as UTF-8 and published as blobs declared UTF-8. Reading a file
+as `utf8` does not fail on bytes that are not valid UTF-8 — each one becomes `U+FFFD` — so a
+binary file a worker touched is neither skipped nor refused. It arrives as an ordinary text
+entry full of replacement characters and is published as a file that looks plausible and is
+wrong, which is worse than an absence: nothing further along is positioned to notice, because
+the worker never sees the bytes and the diff shows an ordinary change.
+
+Detecting it and refusing — read a buffer, test it for valid UTF-8, hand off naming the file the
+way any unresolvable case is handed off — is the obvious guard, and is deliberately not built.
+No role can touch a binary today: artifacts are text changes to source, and nothing generates or
+carries an image, an archive or a compiled file into one. A guard against a case that cannot
+arise is machinery to keep working, and its own source of refusals on text that merely tests as
+binary.
+
+**A role that can touch one is what changes the answer** — one whose work produces images,
+checks in fixtures, or edits anything git treats as binary. The guard above lands first at that
+point, because it converts a silent corruption into a visible stop, and carrying binaries
+properly (read bytes, declare `base64`, widen the committed-file content from a string through
+to the blob write) is the larger question behind it.
+
 ### 6.8 Igor is necessarily self-hosted — **constraint**
 
 An Igor runs on a subscription seat token, and a seat token cannot be handed to a third
@@ -1612,3 +1634,5 @@ Agreed in principle, not scoped, roughly in dependency order:
 10. Seat pooling and the fleet-level budget policy, with a reserve floor where a human shares
     the seat (§6.5).
 11. Additional adapters: Linear, then Discord.
+12. Binaries in an artifact, refused or carried rather than corrupted (§6.7.3) — needs a role
+    that can touch one.
