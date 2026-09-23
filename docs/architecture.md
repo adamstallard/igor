@@ -725,6 +725,50 @@ dedupe does not cover this and cannot: it is for activity moving a row *up*, whi
 rather than losing one. Anyone reaching for offset paging over a filtered list should reach for
 this paragraph first.
 
+**`propose` gates candidate ids against the tree it commits onto, not against the checkout.** It
+used to check the destination checkout and then commit onto the upstream tip, so a checkout one
+merge behind proposed an id that was already there and the commit replaced it. The overwritten
+entry reaches review as a modification, which recognition correctly declines to read as a
+proposal, so nothing reconciles the pull request: no promotion, no deferral when it is closed, no
+quiet report, and no `behind` line either. Reading the ids at `baseSha` — the sha
+`createBranchWithFiles` is handed — closes that window by construction rather than narrowing it.
+
+**Measured**: proposing 5 candidates from one author costs 13 requests without the gate and 16
+with it. The gate is the commit's root tree plus one tree per store directory present, and it
+costs nothing per entry: a store holding 200 entries costs the same three. That is a different
+shape from the history read the watermark above removed, which was about three requests *per
+closed pull request* on every merge, bounded by nothing.
+
+**The contents endpoint would list the directory in two requests, and is rejected.**
+`contents/entries?ref=` caps a directory listing at a thousand files and says so nowhere in the
+payload; a listing that came back short reports an id free that is there, which is the overwrite
+the gate exists to prevent. The trees API reports `truncated`, and the read refuses rather than
+gating on half a store. `git/trees/{sha}:{path}` resolves a subdirectory in one request and is
+rejected for the same reason: it is undocumented, and its 404 cannot be told from a store that
+has no such directory.
+
+**`create` mints against the same branch, and that is what makes it a network command.** It read
+the checkout alone, so a person one merge behind minted an id upstream already held and wrote an
+entry the gate above then drops — caught, but only after the work. It now reads the ids on the
+default branch and counts them as taken, so the discriminator `lore-store` already requires is
+applied to the id set that decides anything.
+
+**Measured**: one `create` costs 5 requests where it cost none — the default branch, its tip, the
+root tree, and one tree per store directory present — and, like the gate, nothing per entry: a
+store of 200 entries costs the same 5. That is the real price of this fix, on a command that
+needed neither network nor credentials before. Where the read fails, `create` says on stderr what
+it could not check and mints against the checkout alone rather than refusing: the collision then
+survives to `propose`, which is the behaviour above — late, but never an overwrite and never
+silent. Refusing instead would make drafting impossible wherever `gh` cannot reach, and buys
+nothing the late catch does not already give.
+
+**A single-path existence probe is the cheaper read, and is rejected.** `contents/entries/<id>.md`
+is two requests and cannot be truncated, since the thousand-file cap binds on a listing and not on
+one exact path. It answers only the id in hand, though, so a `create` minting `-2`, `-3` costs a
+request per attempt, and its 404 cannot be told from a repository the credential cannot see — a
+private destination read without access reports every id free, which is this bug with no way to
+notice. The tree read is shared with `propose`, bounded, and says `truncated` when it is short.
+
 **The append-only logs are partitioned by UTC day** — `executions/2026-09-15.ndjson`, and the
 same shape for decisions and firings. The Contents API has no append, so a write downloads the
 file and re-uploads it whole, and on one ever-growing file the bytes sent grow with the square
