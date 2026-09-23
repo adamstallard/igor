@@ -196,6 +196,11 @@ export function rejectedIds(destination: string): Set<string> {
 export interface CreateTarget {
   dir: string
   taken: Set<string>
+  /**
+   * What the destination checkout itself holds, kept apart by kind so a caller can tell a
+   * collision the person can already see from one only the branch knows about.
+   */
+  checkout: { taken: Set<string>; rejected: Set<string> }
 }
 
 /**
@@ -222,13 +227,14 @@ export function createTarget(
   into?: string,
   upstream: ReadonlySet<string> = new Set(),
 ): CreateTarget {
-  const inStore = new Set([...takenIds(destination), ...rejectedIds(destination), ...upstream])
-  if (into === undefined) return { dir: destination, taken: inStore }
+  const checkout = { taken: takenIds(destination), rejected: rejectedIds(destination) }
+  const inStore = new Set([...checkout.taken, ...checkout.rejected, ...upstream])
+  if (into === undefined) return { dir: destination, taken: inStore, checkout }
   const dir = resolve(into)
   if (!existsSync(dir) || !statSync(dir).isDirectory()) {
     throw new StoreError(`${dir} is not a directory — create it before writing into it`)
   }
-  return { dir, taken: new Set([...inStore, ...takenIds(dir)]) }
+  return { dir, taken: new Set([...inStore, ...takenIds(dir)]), checkout }
 }
 
 /**

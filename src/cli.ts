@@ -15,7 +15,7 @@ import {
   StoreError,
   ENTRIES_DIR,
 } from './store.js'
-import { eligibleToPropose, idsOnDefaultBranch, propose, ProposeError } from './propose.js'
+import { eligibleToPropose, idsOnDefaultBranch, propose, upstreamHoldsTheName, ProposeError } from './propose.js'
 import { reconcile, promoteInPlace } from './reconcile.js'
 import { GitHubError } from './github.js'
 import { explainRole, loadRole, rolesFrom, RoleError } from './role.js'
@@ -74,6 +74,8 @@ program
           `against this checkout alone — ${upstream.unread}\n`,
       )
     }
+    const spokenFor = upstreamHoldsTheName(opts.claim, id, upstream, target.checkout)
+    if (spokenFor !== undefined) process.stderr.write(spokenFor)
     const entry: Entry = {
       id,
       claim: opts.claim,

@@ -54,7 +54,7 @@ vi.mock('../src/gh.js', () => ({
   ghPaginated: async () => [],
 }))
 
-const { idsOnDefaultBranch } = await import('../src/propose.js')
+const { idsOnDefaultBranch, upstreamHoldsTheName } = await import('../src/propose.js')
 
 const CLAIM = 'Use the shared query hook.'
 const SLUG = 'use-shared-query-hook'
@@ -73,10 +73,19 @@ function holdsLocally(destination: string, dir: string, id: string): void {
   writeFileSync(join(destination, dir, `${id}.md`), '---\nid: x\n---\n', 'utf8')
 }
 
-/** What `create` does: read the tip, then mint against it and the checkout together. */
-async function createdId(destination: string, into?: string): Promise<string> {
+/** What `create` does: read the tip, mint against it and the checkout together, then speak. */
+async function created(
+  destination: string,
+  into?: string,
+): Promise<{ id: string; said: string | undefined }> {
   const tip = await idsOnDefaultBranch(destination)
-  return uniqueId(CLAIM, createTarget(destination, into, tip.ids).taken)
+  const target = createTarget(destination, into, tip.ids)
+  const id = uniqueId(CLAIM, target.taken)
+  return { id, said: upstreamHoldsTheName(CLAIM, id, tip, target.checkout) }
+}
+
+async function createdId(destination: string, into?: string): Promise<string> {
+  return (await created(destination, into)).id
 }
 
 beforeEach(() => {
@@ -124,6 +133,60 @@ describe('minting an id against the branch a proposal lands on', () => {
     ])
   })
 
+  it('says the name is an entry upstream, so a second entry for one claim is not written', async () => {
+    upstream[ENTRIES_DIR] = [`${SLUG}.md`]
+
+    const { id, said } = await created(store())
+
+    expect(id).toBe(`${SLUG}-2`)
+    expect(said).toContain(SLUG)
+    expect(said).toContain(`${SLUG}-2`)
+    expect(said).toMatch(/entry on the destination's default branch/)
+  })
+
+  it('says a rejection differently, because that claim must not be proposed again', async () => {
+    upstream[REJECTED_DIR] = [`${SLUG}.md`]
+
+    const { id, said } = await created(store())
+
+    expect(id).toBe(`${SLUG}-2`)
+    expect(said).toMatch(/rejected/)
+    // Proposing gates on the id, and `-2` is free there, so nothing downstream stops a claim
+    // review already turned down. This line is where it is caught.
+    expect(said).toMatch(/must not be proposed again/)
+  })
+
+  it('stays quiet where only this checkout holds the name, which is not news', async () => {
+    const destination = store()
+    holdsLocally(destination, ENTRIES_DIR, SLUG)
+
+    const { id, said } = await created(destination)
+
+    expect(id).toBe(`${SLUG}-2`)
+    expect(said).toBeUndefined()
+  })
+
+  it('stays quiet where the checkout shows the entry the branch holds, which is most stores', async () => {
+    upstream[ENTRIES_DIR] = [`${SLUG}.md`]
+    const destination = store()
+    holdsLocally(destination, ENTRIES_DIR, SLUG)
+
+    const { id, said } = await created(destination)
+
+    expect(id).toBe(`${SLUG}-2`)
+    expect(said).toBeUndefined()
+  })
+
+  it('still speaks where the checkout holds the name as an entry and the branch as a rejection', async () => {
+    upstream[REJECTED_DIR] = [`${SLUG}.md`]
+    const destination = store()
+    holdsLocally(destination, ENTRIES_DIR, SLUG)
+
+    const { said } = await created(destination)
+
+    expect(said).toMatch(/rejected/)
+  })
+
   it('names what it could not read rather than reporting an empty store', async () => {
     ghUnavailable = true
     const destination = store()
@@ -135,6 +198,11 @@ describe('minting an id against the branch a proposal lands on', () => {
     expect(tip.unread).toMatch(/authenticate/)
     // Gated on the checkout alone, so the collision survives to propose, where the gate that
     // reads the tip refuses it. Late, but not an overwrite and not silent.
-    expect(uniqueId(CLAIM, createTarget(destination, undefined, tip.ids).taken)).toBe(`${SLUG}-2`)
+    const target = createTarget(destination, undefined, tip.ids)
+    const id = uniqueId(CLAIM, target.taken)
+    expect(id).toBe(`${SLUG}-2`)
+    // Nothing was read, so nothing is known to be spoken for upstream: the two warnings never
+    // appear together.
+    expect(upstreamHoldsTheName(CLAIM, id, tip, target.checkout)).toBeUndefined()
   })
 })

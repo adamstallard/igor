@@ -2,6 +2,7 @@ import { basename } from 'node:path'
 import type { Config } from './config.js'
 import type { Entry, ProvenanceItem } from './entry.js'
 import { GhError } from './gh.js'
+import { slugFromClaim } from './id.js'
 import { ENTRIES_DIR, REJECTED_DIR } from './store.js'
 import {
   assign,
@@ -198,10 +199,56 @@ async function idsAt(
 }
 
 export interface TipIds {
-  /** Ids the store holds on its default branch. Empty where the tip could not be read. */
+  /** Ids entries hold on the default branch. */
+  taken: Set<string>
+  /** Ids rejection records hold there. A rejected id is never proposable again. */
+  rejected: Set<string>
+  /** Both together, which is what an id may not collide with. */
   ids: Set<string>
-  /** Why the default branch could not be read, where it could not. */
+  /** Why the default branch could not be read, where it could not. All three sets are then empty. */
   unread?: string
+}
+
+/**
+ * What to tell someone whose new id is not the name their claim derives, because the default
+ * branch holds that name and this checkout does not show it.
+ *
+ * Moving the id in silence reads as a name that was free. Nothing downstream catches the case
+ * where it was not: proposing gates on the id, and the moved id really is free there, so a second
+ * entry for a claim already upstream is proposed like any other. A rejection holding the name is
+ * the graver half — the claim review turned down travels past the gate meant to refuse it — so
+ * the two are said differently.
+ *
+ * Silent where the checkout holds that name in the same kind: the entry, or the rejection, is in
+ * front of the person already. Kind by kind, because a name the checkout has as an entry and the
+ * branch as a rejection is news the checkout cannot show.
+ */
+export function upstreamHoldsTheName(
+  claim: string,
+  id: string,
+  tip: TipIds,
+  checkout: { taken: ReadonlySet<string>; rejected: ReadonlySet<string> },
+): string | undefined {
+  const base = slugFromClaim(claim)
+  // A name the branch holds both ways is read as the rejection, the half worth stopping for.
+  const held =
+    tip.rejected.has(base) && !checkout.rejected.has(base)
+      ? {
+          how: 'is rejected on',
+          then: 'read that record: if this is the claim it turned down, it must not be proposed again',
+        }
+      : tip.taken.has(base) && !checkout.taken.has(base)
+        ? {
+            how: 'is an entry on',
+            then: 'read it: if it makes this claim already, delete this draft rather than proposing a second entry for one claim',
+          }
+        : undefined
+  if (held === undefined) return undefined
+  return (
+    `! ${base} ${held.how} the destination's default branch, which this checkout does not show, ` +
+    `so this one is ${id}.\n` +
+    `  Pull the destination and ${held.then} — proposing gates on the id, and ${id} is free there.\n`
+  )
 }
 
 /**
@@ -220,12 +267,12 @@ export async function idsOnDefaultBranch(destination: string): Promise<TipIds> {
     const repo = await repoFromCheckout(destination)
     const sha = await branchSha(repo, await defaultBranch(repo))
     const { taken, rejected } = await idsAt(repo, sha)
-    return { ids: new Set([...taken, ...rejected]) }
+    return { taken, rejected, ids: new Set([...taken, ...rejected]) }
   } catch (error) {
     // Only a failure of the read degrades. Anything else is a fault of ours, and swallowing it
     // would hand back an empty store as though the branch had been read and found bare.
     if (!(error instanceof GhError)) throw error
-    return { ids: new Set(), unread: error.message }
+    return { taken: new Set(), rejected: new Set(), ids: new Set(), unread: error.message }
   }
 }
 
