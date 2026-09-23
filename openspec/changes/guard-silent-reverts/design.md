@@ -20,51 +20,80 @@ own bug-hunter iterations. Three reachings of one shape is the argument for guar
 
 ## Decisions
 
-### The signal for "explicitly accounted for" is nothing the worker can send
+### A revert is publishable where the resolution declares the path, structurally
 
-This is the open question of the change, and the recommendation is the strictest of the three
-candidates: **every revert hands off, and a person decides.** There is no field, no phrase and no
-sentinel file that lets a worker publish one.
+The guard needs a way for a worker to say *"yes, I meant to undo the base's change to this
+path"*, because without one every legitimate revert is a refusal. The decision is an **explicit
+per-path declaration**, carried as structured data out of the working tree: one entry per path,
+each naming the base state it discards.
 
-The constraint that decides it is already settled here. What changed is read from the tree,
-never from what the worker said it did, precisely so that a worker reporting a change it did not
-make cannot mislead the artifact. A declaration that unlocks a publish is exactly that: the
-worker's account of its own intent, taken as authority over what may be committed. The guard
-exists because the tree disagreed with the intent; asking the intent is asking the side that was
-wrong.
+This change first recommended **no escape at all** — every revert hands off, a person decides.
+Adam decided against it after reading that argument, and what moved it is recorded below rather
+than quietly dropped, because one of the two reasons given was weaker than it read and the other
+is now a cost being accepted rather than one that was refuted.
 
-The second argument is the injection surface. A worker reads untrusted text — the item, the
-diff, the conflicting content itself. A declaration channel is a channel that text can reach,
-and silently undoing a change on the base is close to the most valuable thing an injection could
-ask for, because it is the one outcome review is structurally blind to. Everything ingested is
-data and never instruction; a field that authorizes a publish would make an exception of the one
-case where it matters most.
+**The authority argument does not carry.** It ran: what changed is read from the tree, never
+from what the worker said it did, so a declaration hands that authority back. But `changes()`
+distrusts the worker's *summary of what it edited*, and it can, because the tree already holds
+that answer — a summary is a competing account of a fact already in hand, and the stale or wrong
+one loses. *"Did you mean to drop the base's change to X?"* is not a fact the tree can contain.
+It is different information, not a rival account of the same information, and the rule that
+settles the first case says nothing about the second.
 
-The cost is bounded rather than recurring. An item handed back is not re-worked until something
-answers, so a refused resolution produces one handoff and then goes quiet — not a worker run per
-cycle at the same artifact.
+**The injection argument does carry, and it is accepted rather than answered.** A worker reads
+untrusted text — the item, the diff, the conflicting content itself. Silently undoing a change on
+the base is close to the most valuable thing an injection could ask for, because it is the one
+outcome review is structurally blind to. An attacker who can make the worker produce the revert
+can make it produce the declaration alongside; with no channel the revert is caught, and with one
+it is not. **That is a real loss, taken with eyes open.** What the mitigations below do is change
+what a successful injection buys: not a silent revert, but a recorded one that names the path and
+the base state it discarded, on the commit and in the run record. The attack goes from invisible
+to attributable. It does not go away.
 
-### Roads not taken on that question
+### Structured, because prose is what actually failed
 
-**The worker names the reverted paths in its resolution request.** The natural-language version.
-It fails on the rule above, and it fails a second time on reliability: a path named in prose has
-to be matched against a path in the tree, and the failure mode of that match is a revert
-published because the worker spelled the path slightly differently — a guard that is weakest
-exactly where the content is most confusing to the model.
+Adam's first instinct was the worker naming the reverted paths in prose, and the reason it is a
+field instead survives the flip. A path named in a sentence has to be matched against a path in
+the tree, and the failure mode of that match is a revert published because the worker spelled the
+path slightly differently, or named a directory, or described the file rather than naming it. The
+guard would be weakest exactly where the conflicting content is most confusing to the model —
+which is where reverts come from in the first place.
 
-**An explicit per-path field.** The structured version — a sentinel file in the tree, or a field
-on the resolution the loop reads and strips. It is precise where prose is not, and it is the
-same authority handed to the same party, now in a form that parses cleanly. It also asks every
-future caller of `resolve` to carry a field whose only purpose is to switch off a safety check,
-which is the shape of thing that ends up defaulted on.
+A structured entry either names a path that exists in the comparison or it does not, and the
+answer is the same on every reading.
 
-**Preferring the base's version automatically where a revert is detected.** Tempting, because
-the information is in hand and no human is needed. It decides correctness, which this change
-explicitly declines to do: the base's version may be exactly what the artifact's work replaced,
-and overwriting it is the same class of silent wrong in the other direction.
+### Answering the objection this design inherits
 
-**Asking a person before resolving rather than before publishing.** Consent to attempt is not
-verification of the result. The same silent revert lands, with somebody having agreed to it.
+The rejected per-path field was rejected partly on the grounds that *a field whose only purpose
+is to switch off a safety check gets defaulted on*. That objection now applies to the chosen
+design, and three properties answer it. All three are in the requirement rather than left to the
+implementation, because a safety property that lives only in code is the one that gets relaxed.
+
+**It names paths and can never be blanket.** There is no wildcard, no per-resolution flag, and
+nothing a role or an org config can set. The only way to permit a revert is to write down the
+path being reverted, once, for that resolution. A blanket form is the shape that gets set and
+forgotten; a list of paths is a decision that has to be retaken every time, because the next
+resolution's paths are different.
+
+**It names what it is overriding, not just where.** A declaration carries the base state it
+discards — the base's content for the path, or its absence where the base deleted it — and
+authorizes nothing if that is not what the base holds. So a declaration is a statement about one
+specific change rather than a standing permission on a filename: the base moving underneath it,
+or the same path being reverted for a different reason later, invalidates it rather than
+inheriting it. This is also what stops a declaration written early in a run from covering
+something that became true after it was written.
+
+**A declared revert is still reported.** It is named on the published resolution and recorded
+with the run, in the same place the refusal would have been reported. This is the property that
+makes the escape tolerable at all: almost the whole value of the guard is that an undone base
+change stops being invisible, and that value survives a declaration. What a declaration buys is
+not silence — it is not having to stop.
+
+One further mitigation was considered and rejected: **capping how many paths one resolution may
+declare**, or refusing where every flagged path is declared. It would catch the crudest injection
+and nothing else, at the price of a number nobody can derive — and a legitimate resolution that
+genuinely supersedes a large base change is exactly the case it would break. The recording
+property does the same work without a threshold.
 
 ### The comparison is exact restoration, not divergence
 
@@ -78,7 +107,7 @@ would fire on ordinary resolutions and be switched off. And a base change the ar
 already happened to contain is not a revert at all, which falls out of comparing content rather
 than comparing which paths were touched.
 
-### The guard sits at the seam where the merge happened
+### The guard, and the declaration, sit at the seam where the merge happened
 
 `resolve` receives `{repo, branch, parents, files, deletions, message}` and nothing about what
 the base changed. Putting the check in the adapter means widening that interface to carry the
@@ -86,9 +115,16 @@ merge base and the base's diff to every code host that will ever exist, so that 
 recompute something the caller already knew.
 
 The tree is where the data is. The merge unshallows the clone and already reports the artifact's
-head and the commit brought in, which is everything a merge-base-relative diff of the base
-needs. So the check belongs between the merge and the publish, on the same side of the seam as
-the conflict-marker check it stands beside.
+head and the commit brought in, which is everything a merge-base-relative diff of the base needs.
+So the check belongs between the merge and the publish, on the same side of the seam as the
+conflict-marker check it stands beside.
+
+The declaration arrives the same way, as a file the worker writes into the tree and the loop
+reads. That keeps the worker's side of the contract to the thing it already does — editing files
+— rather than adding an output channel, and it keeps the loop reading one place. The requirement
+that it never reaches the published commit follows from where it lives: a file in the tree is
+otherwise just another change to publish, and a declaration committed onto the artifact would be
+a standing permission that outlives the run that made it.
 
 Merging is optional on a working tree — a provider that cannot offer it hands off rather than
 guessing at a resolution. The guard inherits that fallback rather than needing one: where there
@@ -101,10 +137,40 @@ is not the post-publish re-ask in another guise: that asks the host whether the 
 and a revert merges perfectly cleanly. It also runs where the re-ask does not — a claim lost
 mid-execution publishes the resolution and returns before asking anything.
 
+## Roads not taken
+
+**No escape at all.** Every revert hands off; a person decides. Its case, intact: the injection
+surface above, which this design now accepts rather than closes; and the cost is bounded rather
+than recurring, since an item handed back is not re-worked until something answers, so a refused
+resolution produces one handoff and then goes quiet. What decided against it is that a
+legitimate revert — the base rewrote a file the artifact's work removes, the base changed
+something this work supersedes — then has no path through the Igor at all. Not a slower path: no
+path. The person resolves the branch by hand, and does so every time, for a case the worker had
+already got right. Weighed against an injection risk that the recording property makes
+attributable rather than silent, that was judged the worse trade.
+
+**The worker naming the reverted paths in prose.** See above: it fails where the content is
+hardest, which is where reverts come from.
+
+**Preferring the base's version automatically where a revert is detected.** Tempting, because the
+information is in hand and no human is needed. It decides correctness, which this change
+explicitly declines to do: the base's version may be exactly what the artifact's work replaced,
+and overwriting it is the same class of silent wrong in the other direction.
+
+**Asking a person before resolving rather than before publishing.** Consent to attempt is not
+verification of the result. The same silent revert lands, with somebody having agreed to it.
+
 ## Open
 
-**What a person does with the handoff.** Today the answer is that they resolve the branch
-themselves; the Igor has no way to be told "that revert was intended" and no memory that would
-carry the answer to the next cycle. A lore entry scoped to the artifact is the shape that could,
-and this change does not propose it — it would be the escape hatch again, one layer out, and it
-should be argued on its own.
+**Nothing carries a decision to the next cycle.** The declaration answers the question inside one
+run: a worker that means the revert says so, and the resolution publishes. It deliberately does
+not persist — it never reaches the commit, and the tree is disposable — so a revert that was
+refused, handed off, and then agreed to by a person is not thereby permitted next cycle. The
+person resolves that branch themselves; the next run starts from the same comparison and would
+refuse again.
+
+That is the right default for a permission that should be retaken rather than inherited, and it
+is still a gap: the human's answer goes nowhere an Igor can read. A lore entry scoped to the
+artifact is the shape that could carry it, and it is exactly the blanket, standing form this
+design refuses within a run — so it belongs in its own change, argued on its own, rather than
+smuggled in as a durability improvement on a field that is meant not to last.

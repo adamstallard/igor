@@ -20,7 +20,7 @@ there**. A reverted rewrite reads as the file being unchanged. Both are absences
 against the base looks unremarkable, and the failure is invisible to precisely the mechanism
 meant to catch it.
 
-**The guards `keep-artifacts-mergeable` already has cannot see it.** The conflict-marker check
+**The three guards already in force cannot see it.** The conflict-marker check
 catches a worker that declined the conflict, and says nothing about a resolution that is
 well-formed and wrong. The post-publish re-ask catches a resolution that resolved *nothing* — a
 revert merges perfectly cleanly, so it answers 204. Deferral keeps a handed-off item quiet and
@@ -34,22 +34,32 @@ consent; this one is about what may be published.
 
 ## What Changes
 
-**A resolution that would undo a base change is refused before it is published.** Before the
+**An undeclared revert of a base change is refused before it is published.** Before the
 two-parent commit goes onto the branch, what the base changed since the merge base is compared
 against what the resolution publishes. Where the resolution would restore a path to the state it
-held before the base touched it, nothing is published: the item is handed off naming those
-paths. Both sides are already in hand — the merge is performed locally, so the comparison costs
-git and no model call.
+held before the base touched it and does not say so, nothing is published: the item is handed
+off naming those paths. Both sides are already in hand — the merge is performed locally, so the
+comparison costs git and no model call.
 
 **The claim is deliberately narrow.** Not that a resolution is *correct* — only that **undoing a
 base change is never an accidental outcome**. A resolution that combines both sides, or that
 takes the base's side, or that agrees with a deletion the base made, diverges from nothing and
 trips nothing.
 
-**There is no escape a worker can operate.** A revert hands off and a person decides. The
-alternative is a declaration channel through which the worker authorizes its own publish, and
-the worker's word is never authority about what changed in the tree. `design.md` argues the
-alternatives down; the recommendation is the open question of this change.
+**A revert the resolution declares is published, and said out loud.** A worker that means to
+undo a base change writes it down: one entry per path, naming the base state it discards. There
+is no blanket form — no wildcard, no per-resolution flag, nothing a role or an org config can
+set — so the permission is retaken for each resolution rather than switched on once. A declared
+revert is reported in the same place a refusal would have been, on the resolution and with the
+run, because the point of the guard is that an undone base change stops being invisible and that
+survives being intended.
+
+**The declaration is a channel untrusted text can reach, and that cost is accepted.** A worker
+reads the item, the diff and the conflicting content; an injection that can produce the revert
+can produce the declaration beside it, and with no channel that revert would have been caught.
+What the recording requirement buys is not prevention: it is that the revert names itself and the
+change it discarded, so the attack is attributable rather than silent. `design.md` states the
+loss plainly and carries the case for refusing every revert as a rejected alternative.
 
 Explicitly out of scope:
 
@@ -66,8 +76,15 @@ Explicitly out of scope:
 
 ### Modified Capabilities
 
-- `task-execution`: a resolution that would undo what the base did to a path is not published;
-  the item is handed off naming the paths.
+- `task-execution`: a resolution that would undo what the base did to a path is published only
+  where it declares that path, and is reported when it does; an undeclared revert publishes
+  nothing and hands the item off naming the paths.
+
+A requirement of its own rather than a clause inside *"A published artifact is kept mergeable"*,
+which is now in force. That one says an artifact is brought up to date and what happens when a
+conflict cannot be resolved; this one says what may be committed when it *can* be. Distinct
+trigger, distinct outcome, and folding them together would give one requirement two subjects and
+a scenario list that reads as a single procedure.
 
 ## Impact
 
@@ -75,8 +92,10 @@ Explicitly out of scope:
   bug-hunter iterations, rather than waiting for the third.
 - Costs a `merge-base` and one diff per resolution, in a tree that already exists. No request,
   no model call.
-- Turns a rare legitimate revert into a human round-trip. That is the price, and it is paid
-  where the alternative is a silent revert that review structurally cannot see.
-- Does not collide with `keep-artifacts-mergeable`'s handoff for a conflict that *cannot* be
-  resolved. That one fires where the worker failed; this one fires where the worker succeeded
-  and the result would undo the base.
+- Lets a legitimate revert through, at the price of writing it down, and leaves a record of it
+  where a reverted deletion previously left none.
+- Opens one channel an injection can reach, deliberately. The revert it buys is recorded and
+  names what it discarded, rather than being the invisible outcome the guard was built for.
+- Does not collide with the in-force *"A published artifact is kept mergeable"* and its handoff
+  for a conflict that *cannot* be resolved. That one fires where the worker failed; this one
+  fires where the worker succeeded and the result would undo the base.
