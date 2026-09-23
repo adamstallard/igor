@@ -3,7 +3,7 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { describe, expect, it } from 'vitest'
-import { ClonedTree, statusRecords } from '../src/worktree.js'
+import { ClonedTree, named, quoteName, showName, statusRecords } from '../src/worktree.js'
 import { tempDir } from './tmp.js'
 
 const run = promisify(execFile)
@@ -114,6 +114,102 @@ describe('what a name that is not text survives', () => {
     const changed = await new ClonedTree(dir, 'o/r').changes()
     expect(changed.filter((c) => c.path.includes('\uFFFD'))).toEqual([])
     expect(changed.map((c) => c.path).sort()).toEqual(names.sort())
+  })
+})
+
+describe('telling a name that survived the decode from one that did not', () => {
+  it('keeps the bytes beside a name that is not valid UTF-8', () => {
+    const name = Buffer.from([0x63, 0x61, 0x66, 0xe9, 0x2e, 0x6d, 0x64])
+    expect(named(name).path).toBe('caf\uFFFD.md')
+    expect(named(name).rawName?.equals(name)).toBe(true)
+  })
+
+  it('keeps no bytes beside a name that is text', () => {
+    expect(named(Buffer.from('ordinary.md'))).toEqual({ path: 'ordinary.md' })
+    expect(named(Buffer.from('\u307E\u2014.md'))).toEqual({ path: '\u307E\u2014.md' })
+  })
+
+  it('leaves a name really spelled with U+FFFD alone', () => {
+    // The test available before the bytes were \u2014 does the decoded name contain U+FFFD \u2014 is
+    // what ruled detect-and-refuse out: U+FFFD is a character a file may legitimately carry,
+    // and that test calls such a name unpublishable when it publishes perfectly well. The
+    // round trip re-encodes and compares, so this name goes through untouched.
+    expect(named(Buffer.from([0xef, 0xbf, 0xbd, 0x2e, 0x6d, 0x64]))).toEqual({ path: '\uFFFD.md' })
+  })
+
+  it('catches a multi-byte sequence git wrote only part of', () => {
+    const cut = Buffer.from([0xe3, 0x81])
+    expect(named(cut).rawName?.equals(cut)).toBe(true)
+  })
+
+  it('flags the name a rename came from, which the record after it carries', () => {
+    const to = Buffer.from([0x6e, 0x65, 0x77, 0x2e, 0x6d, 0x64])
+    const from = Buffer.from([0x6f, 0x6c, 0x64, 0xc3, 0x28, 0x2e, 0x6d, 0x64])
+    const [record] = statusRecords(
+      Buffer.concat([Buffer.from('R  '), to, Buffer.from([0]), from, Buffer.from([0])]),
+    )
+    expect(named(record!.path).rawName).toBeUndefined()
+    expect(named(record!.from!).rawName?.equals(from)).toBe(true)
+  })
+
+  it('publishes a file that really is named with U+FFFD', async () => {
+    // End to end, because this name is one APFS will hold: the round trip is what keeps the
+    // refusal off a file nothing is wrong with.
+    const dir = await repo()
+    writeFileSync(join(dir, '\uFFFD.md'), 'kept\n')
+    const changed = await new ClonedTree(dir, 'o/r').changes()
+    expect(changed).toEqual([{ path: '\uFFFD.md', content: 'kept\n', kind: 'added' }])
+  })
+})
+
+describe('naming a file whose name is not text', () => {
+  it('writes the bytes git wrote rather than the spelling that lost them', () => {
+    const name = Buffer.from([0x63, 0x61, 0x66, 0xe9, 0x2e, 0x6d, 0x64])
+    expect(quoteName(name)).toBe('caf\\xe9.md')
+    expect(quoteName(name)).not.toContain('\uFFFD')
+  })
+
+  it('gives two names that decode alike two different renderings', () => {
+    // The collision the refusal exists to stop, reproduced inside the message reporting it: a
+    // sentence built from the decoded path names one file twice and the other never.
+    const one = Buffer.from([0x78, 0xe9, 0x2e, 0x6d, 0x64])
+    const two = Buffer.from([0x78, 0xea, 0x2e, 0x6d, 0x64])
+    expect(one.toString('utf8')).toBe(two.toString('utf8'))
+    expect(quoteName(one)).not.toBe(quoteName(two))
+  })
+
+  it('escapes the backslash, so no ordinary name can spell an escape', () => {
+    expect(quoteName(Buffer.from('a\\xe9.md'))).toBe('a\\\\xe9.md')
+  })
+
+  it('escapes the space, which a code span strips from its own edges', () => {
+    // CommonMark drops one space from each end of a code span's content, so a name whose bytes
+    // begin and end with 0x20 loses them where the refusal names it — and what is left may be
+    // another file in the same run.
+    const strip = (s: string): string => (s.startsWith(' ') && s.endsWith(' ') ? s.slice(1, -1) : s)
+    expect(quoteName(Buffer.from([0x20]))).toBe('\\x20')
+    expect(strip(quoteName(Buffer.from([0x20, 0xe9, 0x20])))).not.toBe(strip(quoteName(Buffer.from([0xe9]))))
+  })
+
+  it('escapes the backtick, which the handoff puts the name inside', () => {
+    // The refusal wraps the name in a code span so markdown leaves its backslashes alone. A
+    // backtick in the name closes that span early, and the rest of the name lands in body
+    // text — where `\\` collapses to `\`, which is the collapse the doubling exists to stop.
+    expect(quoteName(Buffer.from([0x61, 0x60, 0x62]))).toBe('a\\x60b')
+  })
+
+  it('doubles the backslash on the ordinary side too, where the names actually meet', () => {
+    // `quoteName` only ever sees a name that is not text, so doubling there alone proves
+    // nothing: the two names that collide are one of each kind, and they are told apart only
+    // if the ordinary one is doubled as well.
+    const escaped = Buffer.from([0x61, 0xe9, 0x2e, 0x6d, 0x64])
+    expect(showName({ path: 'a\\xe9.md' })).toBe('a\\\\xe9.md')
+    expect(showName({ path: escaped.toString('utf8'), rawName: escaped })).toBe('a\\xe9.md')
+  })
+
+  it('leaves an ordinary name alone, which is what the record is mostly made of', () => {
+    expect(showName({ path: 'src/a.ts' })).toBe('src/a.ts')
+    expect(showName({ path: 'ま—.md' })).toBe('ま—.md')
   })
 })
 

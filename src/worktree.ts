@@ -31,6 +31,13 @@ export interface ChangedFile {
    * branch already has, so a mode assumed here replaces the mode that is there.
    */
   executable?: boolean
+  /**
+   * The name git wrote, present only where `path` is not that name decoded and re-encoded —
+   * that is, only where the name is not text and `path` is the U+FFFD spelling of it.
+   *
+   * Its presence is the signal that this entry must not be published: see `named`.
+   */
+  rawName?: Buffer
 }
 
 /** What a merge left behind, and the two commits a resolution of it has to be parented on. */
@@ -152,6 +159,62 @@ const UNMERGED = /^(?:U.|.U|AA|DD)$/
  */
 const inside = (tree: string, name: Buffer): Buffer => Buffer.concat([Buffer.from(`${tree}/`), name])
 
+/**
+ * A name as a `ChangedFile` carries it: decoded, and — only where decoding lost it — the bytes
+ * git actually wrote.
+ *
+ * The test is a **round trip**, not a search for U+FFFD. A file may legitimately be named with
+ * that character, so a search refuses a name that publishes perfectly well; re-encoding the
+ * decoded string and comparing it to the bytes has no such case, and no heuristic in it.
+ */
+export function named(name: Buffer): { path: string; rawName?: Buffer } {
+  const path = name.toString('utf8')
+  return Buffer.from(path, 'utf8').equals(name) ? { path } : { path, rawName: name }
+}
+
+/**
+ * Writes a name that is not text so it can be read: printable ASCII as itself, every other byte
+ * as `\xHH`, and the backslash doubled so no ordinary name can spell an escape.
+ *
+ * Distinct bytes give distinct renderings, which is the property that matters — two names
+ * differing only in the bytes that did not decode are the case a refusal has to tell apart,
+ * and naming both by their decoded spelling names one of them twice.
+ *
+ * **The backtick and the space are escaped too, although both are printable.** A refusal puts
+ * the name inside a code span so markdown leaves the backslashes alone, and the span is what
+ * makes those two unsafe: a backtick closes it early, dropping the rest of the name into body
+ * text where `\\` collapses to `\`; and a span whose content begins and ends with a space has
+ * one taken off each end, so ` \xe9 ` and `\xe9` arrive as the same name. Every other printable
+ * byte is inert inside a span, and escaping those would only make the name harder to read.
+ */
+export function quoteName(name: Buffer): string {
+  let out = ''
+  for (const byte of name) {
+    if (byte === 0x5c) out += '\\\\'
+    else if (byte > 0x20 && byte <= 0x7e && byte !== 0x60) out += String.fromCharCode(byte)
+    else out += `\\x${byte.toString(16).padStart(2, '0')}`
+  }
+  return out
+}
+
+/**
+ * A changed file's name for a person to read: the bytes where the name is not text, and the
+ * name itself — backslashes doubled — where it is.
+ *
+ * **Both sides, or neither.** A backslash is a legal byte in a filename, so doubling only
+ * inside `quoteName` leaves a file really named `a\xe9.md` reading exactly like the escape of
+ * one named with the byte `0xe9`. That is the collision the refusal exists to stop, reappearing
+ * in the sentence that reports it.
+ *
+ * What keeps the two sides apart is the parity of each backslash run: an escape always carries
+ * an odd one, a doubled name never can. Only the escaped side is safe to put in markdown — a
+ * backtick in an ordinary name passes through — so a new site that wraps one of these in a code
+ * span must escape the ordinary branch too. Today the only one that does is the refusal, which
+ * lists escaped names alone.
+ */
+export const showName = (file: Pick<ChangedFile, 'path' | 'rawName'>): string =>
+  file.rawName === undefined ? file.path.replaceAll('\\', '\\\\') : quoteName(file.rawName)
+
 /** Exported so the change-collection rules can be tested against a real repository. */
 export class ClonedTree implements WorkingTree {
   private released = false
@@ -174,14 +237,16 @@ export class ClonedTree implements WorkingTree {
     for (const { flags, path, from } of statusRecords(status)) {
       const code = flags.trim()
       if (flags.startsWith('R') && from !== undefined && from.length > 0) {
-        out.push({ path: from.toString('utf8'), content: '', kind: 'deleted' })
+        out.push({ ...named(from), content: '', kind: 'deleted' })
       }
       if (path.length === 0) continue
-      // The name the artifact publishes under. A name that is not valid UTF-8 has no faithful
-      // string form, so this is the name on disk only where the name is text.
-      const named = path.toString('utf8')
+      // The name the artifact would publish under, and the bytes beside it where that name is
+      // not the one on disk. Nothing is dropped here: the publishing path decides what to do
+      // with a name that did not survive, and a run that never reaches it — a kill, a stop —
+      // still owes an account of what changed.
+      const name = named(path)
       if (!UNMERGED.test(flags) && GONE.test(flags)) {
-        out.push({ path: named, content: '', kind: 'deleted' })
+        out.push({ ...name, content: '', kind: 'deleted' })
         continue
       }
       let content: string
@@ -196,7 +261,7 @@ export class ClonedTree implements WorkingTree {
         // unreadable file it says nothing at all, so the resolution keeps the artifact's copy
         // and the base's deletion comes back the moment the artifact merges.
         if (UNMERGED.test(flags)) {
-          out.push({ path: named, content: '', kind: 'deleted' })
+          out.push({ ...name, content: '', kind: 'deleted' })
           continue
         }
         // An unreadable file. A binary is not this case and never reaches here: `utf8`
@@ -206,7 +271,7 @@ export class ClonedTree implements WorkingTree {
         continue
       }
       out.push({
-        path: named,
+        ...name,
         content,
         kind: code.includes('?') || code === 'A' ? 'added' : 'modified',
         ...(executable ? { executable } : {}),
