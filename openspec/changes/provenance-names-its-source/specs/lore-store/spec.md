@@ -42,8 +42,9 @@ the `url`. Whatever mines knows its source with certainty, having used it to fet
 reading it back out of a url afterwards is guessing, and guesses wrong — silently — for every
 url whose shape it did not anticipate.
 
-`source` records where an item came from, not what was true of that place. Whether a source is
-public or private SHALL NOT be stored on the item. Visibility is mutable and is relied on at
+`source` records where an item came from, not what was true of that place. An item MUST NOT
+carry a `visibility` field, and one carrying it SHALL be rejected. Visibility is mutable and is
+relied on at
 publication rather than at mining, so a stored answer is wrong in precisely the direction that
 matters: a repository public when an artifact was mined and private by the time an entry
 derived from it is proposed carries a recorded `public` past the guard that exists to stop it.
@@ -98,7 +99,7 @@ presented as one.
 
 #### Scenario: Stored visibility rejected
 
-- **WHEN** a provenance item records whether its source was public
+- **WHEN** a provenance item carries a `visibility` field
 - **THEN** validation fails, as it does for a stored `support`
 - **AND** the reason given is that the value is right when written and wrong whenever the
   source changes, while the moment it is relied on is publication rather than mining

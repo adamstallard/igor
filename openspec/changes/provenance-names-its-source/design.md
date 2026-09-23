@@ -28,6 +28,11 @@ The reverse case is merely annoying — a repository made public after mining is
 until someone edits eight files — but it is the same defect: a recorded answer cannot be
 re-derived and cannot be checked against the world.
 
+The refusal is of one named field, `visibility`, exactly as `DERIVED_FIELDS` names `support`.
+A category — "any field recording what was true of the source" — is not something a validator
+can check, and inventing a blocklist the requirement never enumerates is the same guess from an
+underspecified string that this whole change is about removing.
+
 Source has the opposite property. Where an artifact came from is fixed at the moment it was
 fetched and never changes afterwards. It is a fact about the item; visibility is a fact about
 somewhere else, at a time. Storing the first and resolving the second at the moment it is
@@ -75,6 +80,12 @@ removed. Two urls per item would invite them to disagree.
 The host token is a name for a kind of place, not a domain: `github` covers GitHub Enterprise
 under whatever domain, because what the guard dispatches on is which API can answer, not which
 DNS name served the page.
+
+That collapses github.com and an Enterprise instance into one token, so the same `source`
+resolves to different repositories depending on where `gh` is pointed. It is accepted rather
+than overlooked: a run queries one host, and a token carrying the domain would make the common
+case verbose to disambiguate a store nobody has. A store mining both wants the domain in the
+token, and that is a change to make when one exists.
 
 ### Undeterminable is refused, and configuration is the way out
 

@@ -4,9 +4,10 @@
       wherever `url` is present, naming `source` in the failure
 - [ ] 1.2 Reject a `source` that is not `<host>:<identifier>` — a bare `owner/name` is the same
       guess the url was
-- [ ] 1.3 Reject an item recording its source's visibility, with the reason a stored `support`
-      is rejected: right when written, wrong whenever the source changes, and read at
-      publication rather than at mining
+- [ ] 1.3 Reject an item carrying a `visibility` field, the way `DERIVED_FIELDS` rejects a
+      stored `support` and for the same reason: right when written, wrong whenever the source
+      changes, and read at publication rather than at mining. One named field, not a category —
+      rejecting every unrecognized key is a separate proposal
 - [ ] 1.4 An item with neither `url` nor `source` stays valid and is not reported as anything
 - [ ] 1.5 `create` takes `--source` alongside `--url`, paired positionally per `--author` the
       way `--url` and `--at` already are, and refuses a partial pairing rather than attaching
