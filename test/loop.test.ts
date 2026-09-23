@@ -1,9 +1,20 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { Artifact, ArtifactRequest, Candidate, ClaimVerdict, CodeHost, Tracker } from '../src/adapter.js'
+import type {
+  Artifact,
+  ArtifactRequest,
+  Candidate,
+  CatchUp,
+  CatchUpRequest,
+  ClaimVerdict,
+  CodeHost,
+  InFlight,
+  ResolutionRequest,
+  Tracker,
+} from '../src/adapter.js'
 import type { Role } from '../src/role.js'
-import type { TreeProvider, WorkingTree, ChangedFile } from '../src/worktree.js'
+import type { TreeProvider, WorkingTree, ChangedFile, MergeState } from '../src/worktree.js'
 import {
-  declineReason, dropDeferred, dropStopped, oneFetchPerItem, recordDecisions, runItem,
+  catchUpItem, declineReason, dropDeferred, dropStopped, oneFetchPerItem, recordDecisions, runItem,
   type CommentSource, type CycleReport, type ItemDeps,
 } from '../src/loop.js'
 import { defer, NO_DEFERRALS, shouldDefer } from '../src/deferred.js'
@@ -18,6 +29,8 @@ const role = (over: Partial<Role> = {}): Role =>
   ({ name: 'triage', reviewers: ['alice'], allow: ['comment', 'draft-pr', 'unassign'], commands: [], completion: 'unassign', instructions: [], settleSeconds: 0, cooldownMinutes: 60, ...over }) as Role
 
 function deps(opts: {
+  caughtUp?: CatchUp[]
+  merge?: MergeState
   verdicts?: ClaimVerdict[]
   claimSticks?: boolean
   changes?: ChangedFile[]
@@ -40,23 +53,50 @@ function deps(opts: {
     linkage: () => 'Closes #7',
   }
   const produced: ArtifactRequest[] = []
+  const asked: CatchUpRequest[] = []
+  const resolved: ResolutionRequest[] = []
+  const answers = [...(opts.caughtUp ?? [])]
   const codeHost: CodeHost = {
     name: 'fake',
     produce: async (r): Promise<Artifact> => {
       produced.push(r)
       return { kind: 'pull-request', ref: '#9', url: 'https://example.test/9' }
     },
+    catchUp: async (r): Promise<CatchUp> => {
+      asked.push(r)
+      return answers.shift() ?? { outcome: 'already-current' }
+    },
+    resolve: async (r): Promise<string> => {
+      resolved.push(r)
+      return 'resolvedsha'
+    },
   }
+  const provisioned: (string | undefined)[] = []
+  const merged: string[] = []
   const trees: TreeProvider = {
     name: 'fake',
-    provision: async (): Promise<WorkingTree> => ({
-      path: tempDir('igor-loop-'),
-      repo: 'o/r',
-      changes: async () => opts.changes ?? [],
-      release: async () => {},
-    }),
+    provision: async (_repo, ref): Promise<WorkingTree> => {
+      provisioned.push(ref)
+      return {
+        path: tempDir('igor-loop-'),
+        repo: 'o/r',
+        changes: async () => opts.changes ?? [],
+        ...(opts.merge === undefined
+          ? {}
+          : {
+              merge: async (into: string): Promise<MergeState> => {
+                merged.push(into)
+                return opts.merge!
+              },
+            }),
+        release: async () => {},
+      }
+    },
   }
-  return { d: { tracker, codeHost, trees } as ItemDeps, posts, released, produced }
+  return {
+    d: { tracker, codeHost, trees } as ItemDeps,
+    posts, released, produced, asked, resolved, provisioned, merged,
+  }
 }
 
 const noWait = { claim: { wait: async () => {} } }
@@ -400,6 +440,7 @@ describe('what triage decided is written down, skips included', () => {
     ],
     toClaim: [{ candidate: candidate({ id: 'd' }), reason: 'concrete' }],
     untriaged: [],
+    toCatchUp: [],
     triageCostUsd: 0.048,
     failures: [],
   }
@@ -801,5 +842,367 @@ describe('the seat that is chosen is the seat that pays', () => {
 
     expect(seen?.['CLAUDE_CODE_OAUTH_TOKEN']).toBe('seat-two-token')
     expect(seen?.['IGOR_SEAT_1']).toBeUndefined()
+  })
+})
+
+/** An item carrying an artifact of this Igor's own that no longer merges. */
+const stale = (over: Partial<InFlight> = {}): Candidate =>
+  candidate({
+    inFlight: {
+      kind: 'pull-request',
+      ref: '#21',
+      url: 'https://example.test/21',
+      draft: true,
+      author: 'igor-bot',
+      mergeable: 'conflicting',
+      branch: 'igor/triage/7-a-bug',
+      base: 'main',
+      ...over,
+    },
+  })
+
+const conflicted: MergeState = { conflicts: ['src/a.ts'], head: 'headsha', broughtIn: 'basesha' }
+
+describe('catching an artifact of its own back up', () => {
+  it('asks the code host to merge, and finishes there when that is clean', async () => {
+    // The whole point of the cheap path: one request, no clone, no worker, no model.
+    const { d, provisioned, asked } = deps({ caughtUp: [{ outcome: 'merged', sha: 'mergesha' }] })
+    const run = await catchUpItem(d, stale(), role(), 'igor-bot')
+
+    expect(run.outcome).toBe('caught-up')
+    expect(run.costUsd).toBe(0)
+    expect(asked).toEqual([{ repo: 'o/r', branch: 'igor/triage/7-a-bug', base: 'main' }])
+    expect(provisioned).toEqual([])
+  })
+
+  it('says nothing on the item when nothing had to be thought about', async () => {
+    // A silent, clean catch-up is not news, and the merge commit on the branch is the record.
+    // An Igor that commented every cycle would be the noise people mute.
+    for (const outcome of [{ outcome: 'merged' as const, sha: 's' }, { outcome: 'already-current' as const }]) {
+      const { d, posts, released } = deps({ caughtUp: [outcome] })
+      const run = await catchUpItem(d, stale(), role(), 'igor-bot')
+      expect(posts).toEqual([])
+      expect(released).toEqual([])
+      expect(run.spoke).toBe(false)
+    }
+  })
+
+  it('leaves the item alone when the host cannot be asked', async () => {
+    // Nothing was claimed, so nobody was told to stand off and no receipt is owed. The next
+    // cycle asks again, which is what a rate limit wants.
+    const { d, posts } = deps()
+    d.codeHost.catchUp = async () => { throw new Error('API rate limit exceeded') }
+    const run = await catchUpItem(d, stale(), role(), 'igor-bot')
+    expect(run.outcome).toBe('refused')
+    expect(run.reason).toContain('rate limit')
+    expect(posts).toEqual([])
+  })
+
+  it('resolves a conflict on the branch that exists, never a new one', async () => {
+    // Regenerating the artifact would be cheaper for the Igor and would throw away whatever
+    // review has accumulated on it — a cost paid by the reviewer.
+    const { d, provisioned, merged, resolved, produced, posts } = deps({
+      caughtUp: [{ outcome: 'conflict' }, { outcome: 'already-current' }],
+      merge: conflicted,
+      changes: [{ path: 'src/a.ts', content: 'resolved\n', kind: 'modified' }],
+    })
+    const run = await catchUpItem(d, stale(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+
+    expect(run.outcome).toBe('produced')
+    // The claim comment said the Igor picked the item up. An ordinary run then ends in a pull
+    // request that announces itself; this one ends on a branch that is already there, so
+    // without a word the item goes quiet mid-sentence.
+    expect(posts.at(-1)).toContain('#21')
+    expect(posts.at(-1)).toContain('main')
+    expect(provisioned).toEqual(['igor/triage/7-a-bug'])
+    expect(merged).toEqual(['main'])
+    expect(produced).toEqual([])
+    expect(resolved).toEqual([
+      {
+        repo: 'o/r',
+        branch: 'igor/triage/7-a-bug',
+        parents: ['headsha', 'basesha'],
+        files: [{ path: 'src/a.ts', content: 'resolved\n' }],
+        deletions: [],
+        message: 'Merge main into igor/triage/7-a-bug',
+      },
+    ])
+  })
+
+  it('hands off rather than publishing a tree the worker left markers in', async () => {
+    // Read off the content, because a worker may have staged its edits. Without this the
+    // markers themselves go onto the branch and the artifact is worse than it was.
+    const { d, resolved, posts } = deps({
+      caughtUp: [{ outcome: 'conflict' }],
+      merge: conflicted,
+      changes: [{ path: 'src/a.ts', content: '<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> x\n', kind: 'modified' }],
+    })
+    const run = await catchUpItem(d, stale(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+
+    expect(resolved).toEqual([])
+    expect(run.outcome).toBe('handed-off')
+    expect(run.reason).toContain('#21')
+    expect(posts.join(' ')).toContain('src/a.ts')
+  })
+
+  it('hands off once when the published resolution did not resolve anything', async () => {
+    // Task 4.2. A resolution that leaves the artifact conflicting is the one way this could
+    // spend a worker on the same merge every cycle forever. One request after publishing
+    // turns that into a single handoff, which the deferral record then keeps quiet.
+    const { d, resolved } = deps({
+      caughtUp: [{ outcome: 'conflict' }, { outcome: 'conflict' }],
+      merge: conflicted,
+      changes: [{ path: 'src/a.ts', content: 'resolved\n', kind: 'modified' }],
+    })
+    const run = await catchUpItem(d, stale(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+
+    expect(resolved).toHaveLength(1)
+    expect(run.outcome).toBe('handed-off')
+    expect(run.handoff).toBe('failure')
+    expect(shouldDefer(run.outcome, run.handoff, run.cures)).toBe(true)
+  })
+
+  it('hands off naming the artifact when the tree provider cannot merge at all', async () => {
+    // `merge` is optional on a working tree, because nothing about a tree provider promises
+    // git. A caller that cannot get one says so rather than guessing at a resolution.
+    const { d, resolved } = deps({ caughtUp: [{ outcome: 'conflict' }] })
+    const run = await catchUpItem(d, stale(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+
+    expect(resolved).toEqual([])
+    expect(run.outcome).toBe('handed-off')
+    expect(run.reason).toContain('#21')
+  })
+
+  it('spends no worker when the conflict cleared between the host and the clone', async () => {
+    // Somebody pushed in between. The merge is already in the tree, so paying a model to look
+    // at a tree with nothing left to decide would be paying for the race.
+    let ran = 0
+    const { d, resolved } = deps({
+      caughtUp: [{ outcome: 'conflict' }, { outcome: 'already-current' }],
+      merge: { conflicts: [], head: 'headsha', broughtIn: 'basesha' },
+      changes: [{ path: 'src/a.ts', content: 'merged\n', kind: 'modified' }],
+    })
+    const run = await catchUpItem(d, stale(), role(), 'igor-bot', {
+      ...noWait,
+      worker: async () => { ran += 1; return { result: 'x', total_cost_usd: 0.02 } },
+    })
+
+    expect(ran).toBe(0)
+    expect(run.outcome).toBe('produced')
+    expect(resolved).toHaveLength(1)
+  })
+})
+
+describe('what a resolution is allowed to publish', () => {
+  it('carries a deletion the base made, rather than resurrecting the file', async () => {
+    // The resolution commit has two parents, so the host records the base as merged. A path
+    // the base deleted and this commit does not is therefore not merely missing from the
+    // artifact — merging the artifact reverts the deletion on the base, silently, in a diff
+    // nobody asked for. That is worse than the produce path's gap, and cannot ride on it.
+    const { d, resolved } = deps({
+      caughtUp: [{ outcome: 'conflict' }, { outcome: 'already-current' }],
+      merge: conflicted,
+      changes: [
+        { path: 'src/a.ts', content: 'resolved\n', kind: 'modified' },
+        { path: 'src/gone.ts', content: '', kind: 'deleted' },
+      ],
+    })
+    const run = await catchUpItem(d, stale(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+
+    expect(run.outcome).toBe('produced')
+    expect(resolved[0]?.files).toEqual([{ path: 'src/a.ts', content: 'resolved\n' }])
+    expect(resolved[0]?.deletions).toEqual(['src/gone.ts'])
+  })
+
+  it('refuses a half-resolved hunk, not only one with its opening marker left', async () => {
+    // A worker that edits the top of a hunk and stops leaves `=======` and `>>>>>>>` behind.
+    // Matching only the opening marker passes that straight through onto the branch, which is
+    // the exact thing the check is here to stop.
+    for (const content of [
+      '<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> main\n',
+      'ours\n=======\ntheirs\n>>>>>>> main\n',
+      'ours\n=======\ntheirs\n',
+    ]) {
+      const { d, resolved } = deps({
+        caughtUp: [{ outcome: 'conflict' }],
+        merge: conflicted,
+        changes: [{ path: 'src/a.ts', content, kind: 'modified' }],
+      })
+      const run = await catchUpItem(d, stale(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+      expect(resolved).toEqual([])
+      expect(run.outcome).toBe('handed-off')
+    }
+  })
+
+  it('leaves a marker-shaped line alone in a file the merge did not conflict on', async () => {
+    // `=======` is a markdown rule as often as it is half a conflict. Only the files git
+    // reported unmerged are read for markers; refusing on the rest would park a resolution
+    // over a heading somebody underlined.
+    const { d, resolved } = deps({
+      caughtUp: [{ outcome: 'conflict' }, { outcome: 'already-current' }],
+      merge: conflicted,
+      changes: [
+        { path: 'src/a.ts', content: 'resolved\n', kind: 'modified' },
+        { path: 'README.md', content: 'Heading\n=======\n\ntext\n', kind: 'modified' },
+      ],
+    })
+    const run = await catchUpItem(d, stale(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+    expect(run.outcome).toBe('produced')
+    expect(resolved).toHaveLength(1)
+  })
+
+  it('stands down like any other run when the item is taken over mid-resolution', async () => {
+    // The produce path degrades on a lost claim and this one did not degrade at all, so the
+    // new holder got a note claiming credit on an item they now own.
+    const { d, resolved, posts, released } = deps({
+      caughtUp: [{ outcome: 'conflict' }, { outcome: 'already-current' }],
+      merge: conflicted,
+      changes: [{ path: 'src/a.ts', content: 'resolved\n', kind: 'modified' }],
+      verdicts: [{ status: 'held' }, { status: 'lost', by: 'alice' }],
+    })
+    const run = await catchUpItem(d, stale(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+
+    // The branch is the Igor's own, so bringing it up to date is still the right move.
+    expect(resolved).toHaveLength(1)
+    expect(run.outcome).toBe('lost')
+    expect(released).toContain('igor-bot')
+    expect(posts.join(' ')).not.toContain('resolved a merge conflict')
+  })
+
+  it('goes quiet when the tree comes back empty because somebody already caught it up', async () => {
+    // A 409 answered by a clean local merge with nothing in it means the base landed on the
+    // branch between the two requests. Routed through "the worker made no changes" that
+    // becomes a claim, a handoff comment and a deferral on an artifact that merges fine.
+    const { d, resolved, posts } = deps({
+      caughtUp: [{ outcome: 'conflict' }],
+      merge: { conflicts: [], head: 'headsha', broughtIn: 'basesha' },
+      changes: [],
+    })
+    const run = await catchUpItem(d, stale(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+
+    expect(resolved).toEqual([])
+    expect(run.outcome).toBe('produced')
+    expect(shouldDefer(run.outcome, run.handoff, run.cures)).toBe(false)
+    expect(posts.join(' ')).not.toContain('resolved a merge conflict')
+  })
+
+  it('hands off when a conflicted merge comes back with an empty tree', async () => {
+    // Not the same thing at all: the merge conflicted, so the tree held files, and something
+    // threw them away. Reporting that as already up to date would call an abandoned conflict
+    // a success.
+    const { d, resolved } = deps({
+      caughtUp: [{ outcome: 'conflict' }],
+      merge: conflicted,
+      changes: [],
+    })
+    const run = await catchUpItem(d, stale(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+
+    expect(resolved).toEqual([])
+    expect(run.outcome).toBe('handed-off')
+    expect(run.reason).toContain('#21')
+  })
+})
+
+describe('markers and silence after a claim was taken', () => {
+  it('refuses markers in a file the worker itself created', async () => {
+    // The conflicted-path list is read before the worker runs, so a file it creates after
+    // that is in no list. A worker restructuring a hunk into a new file carries the markers
+    // with it, and scoping the check to the paths git named lets them straight through.
+    const { d, resolved } = deps({
+      caughtUp: [{ outcome: 'conflict' }],
+      merge: conflicted,
+      changes: [
+        { path: 'src/a.ts', content: 'clean\n', kind: 'modified' },
+        { path: 'src/b.ts', content: '<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> main\n', kind: 'added' },
+      ],
+    })
+    const run = await catchUpItem(d, stale(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+
+    expect(resolved).toEqual([])
+    expect(run.outcome).toBe('handed-off')
+  })
+
+  it('still leaves a heading rule alone in a file the merge did not conflict on', async () => {
+    // `=======` is the one marker with a real false-positive rate, so it alone stays scoped
+    // to the paths git reported unmerged. Widening it would park a resolution over a heading.
+    const { d, resolved } = deps({
+      caughtUp: [{ outcome: 'conflict' }, { outcome: 'already-current' }],
+      merge: conflicted,
+      changes: [
+        { path: 'src/a.ts', content: 'resolved\n', kind: 'modified' },
+        { path: 'docs/x.md', content: 'Heading\n=======\n\ntext\n', kind: 'added' },
+      ],
+    })
+    const run = await catchUpItem(d, stale(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+    expect(run.outcome).toBe('produced')
+    expect(resolved).toHaveLength(1)
+  })
+
+  it('does not take a claim and then go quiet when the base had already landed', async () => {
+    // The claim comment has already gone out by the time the empty tree is discovered, so
+    // saying nothing after it is the "goes quiet mid-sentence" failure, not the clean-path
+    // exemption — that path never claims anything.
+    const { d, posts } = deps({
+      caughtUp: [{ outcome: 'conflict' }],
+      merge: { conflicts: [], head: 'headsha', broughtIn: 'basesha' },
+      changes: [],
+    })
+    const run = await catchUpItem(d, stale(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+
+    expect(run.outcome).toBe('produced')
+    expect(run.spoke).toBe(true)
+    expect(posts).toHaveLength(2)
+    expect(posts.at(-1)).toContain('#21')
+  })
+
+  it('does not tell somebody the work is gone when it is on the artifact', async () => {
+    // A handoff that links the published artifact and says in the same breath that the edits
+    // "are gone with the working copy" is wrong twice, and it is the catch-up paths that
+    // reach it — they are the ones that hand off holding an artifact.
+    const { d, posts } = deps({
+      caughtUp: [{ outcome: 'conflict' }, { outcome: 'conflict' }],
+      merge: conflicted,
+      changes: [{ path: 'src/a.ts', content: 'resolved\n', kind: 'modified' }],
+    })
+    const run = await catchUpItem(d, stale(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+
+    expect(run.outcome).toBe('handed-off')
+    const note = posts.at(-1) ?? ''
+    expect(note).not.toContain('never published')
+    expect(note).not.toContain('as a draft')
+    expect(note).toContain('#21')
+  })
+})
+
+describe('what the note on the item claims', () => {
+  it('does not claim a conflict was resolved when no worker ever saw one', async () => {
+    // The host answered 409 and the clone's merge came out clean — somebody pushed in
+    // between. Nothing was resolved and nothing was asked to resolve it, so saying a conflict
+    // was resolved is a claim about work that did not happen.
+    let ran = 0
+    const { d, posts } = deps({
+      caughtUp: [{ outcome: 'conflict' }, { outcome: 'already-current' }],
+      merge: { conflicts: [], head: 'headsha', broughtIn: 'basesha' },
+      changes: [{ path: 'src/a.ts', content: 'merged\n', kind: 'modified' }],
+    })
+    const run = await catchUpItem(d, stale(), role(), 'igor-bot', {
+      ...noWait,
+      worker: async () => { ran += 1; return { result: 'x', total_cost_usd: 0.02 } },
+    })
+
+    expect(ran).toBe(0)
+    expect(run.outcome).toBe('produced')
+    expect(posts.at(-1)).not.toContain('resolved a merge conflict')
+    expect(posts.at(-1)).toContain('#21')
+  })
+
+  it('does claim it where a worker actually resolved one', async () => {
+    const { d, posts } = deps({
+      caughtUp: [{ outcome: 'conflict' }, { outcome: 'already-current' }],
+      merge: conflicted,
+      changes: [{ path: 'src/a.ts', content: 'resolved\n', kind: 'modified' }],
+    })
+    await catchUpItem(d, stale(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+    expect(posts.at(-1)).toContain('resolved a merge conflict')
   })
 })

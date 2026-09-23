@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { Candidate, Source, Tracker } from '../src/adapter.js'
+import type { Candidate, InFlight, Source, Tracker } from '../src/adapter.js'
 import type { Role } from '../src/role.js'
 
 /**
@@ -11,6 +11,8 @@ const stored = new Map<string, unknown>()
 const recorded: Record<string, unknown>[] = []
 /** Flipped by the one test that asks what a cycle does when its decisions cannot be written. */
 const branch = vi.hoisted(() => ({ writable: true }))
+/** Attempts, not successes, so a test can ask whether a cycle tried to record itself at all. */
+const records = vi.hoisted(() => ({ count: 0 }))
 vi.mock('../src/state.js', () => ({
   readState: async (_repo: string, path: string) => stored.get(path),
   writeState: async (_repo: string, path: string, value: unknown) => {
@@ -18,12 +20,13 @@ vi.mock('../src/state.js', () => ({
     return true
   },
   appendRecord: async (_repo: string, _path: string, record: Record<string, unknown>) => {
+    records.count += 1
     if (!branch.writable) throw new Error('state branch is unreachable')
     recorded.push(record)
   },
 }))
 
-const { planCycle } = await import('../src/loop.js')
+const { planCycle, recordDecisions } = await import('../src/loop.js')
 const { sourceKey, STATE_PATH } = await import('../src/discovery.js')
 const { defer, NO_DEFERRALS, STATE_PATH: DEFERRALS_PATH } = await import('../src/deferred.js')
 const { triageBatch } = await import('../src/triage.js')
@@ -773,5 +776,269 @@ describe('a tie the cap falls on in another source', () => {
     const second = await run()
     expect(second.triaged).toBe(1)
     expect(asked.sort()).toEqual(['github:o/r#1', 'github:o/s#2'])
+  })
+})
+
+describe('a preview decides nothing, so it persists nothing', () => {
+  const key = () => sourceKey({ tracker: 'github', repo: 'o/r', query: 'is:issue' })
+
+  it('leaves the stored mark where a real cycle put it, having seen past it', async () => {
+    stored.clear()
+    // The real cycle first, so the preview has a mark it could move and does not.
+    await planCycle(deps([candidate(7, 40)], none), role(), { now: NOW, identity: 'igor-bot', triage })
+    expect(stored.get(STATE_PATH)).toEqual({ watermarks: { [key()]: { lastSeen: ago(40) } } })
+    const mark = JSON.stringify(stored.get(STATE_PATH))
+
+    const report = await planCycle(deps([candidate(7, 40), candidate(8, 5)], none), role(), {
+      now: NOW, identity: 'igor-bot', triage, preview: true,
+    })
+
+    // It found the newer item and says it would claim it — the report is computed either way.
+    expect(report.toClaim.map((c) => c.candidate.native)).toEqual(['8'])
+    expect(JSON.stringify(stored.get(STATE_PATH))).toBe(mark)
+  })
+
+  it('writes no cycle record, and the cycle after it still finds the item', async () => {
+    stored.clear()
+    records.count = 0
+    const items = [candidate(7, 40)]
+
+    // `recordDecisions` returns early on a cycle with nothing fresh, so the count only means
+    // something once there is a decision to record.
+    const preview = await planCycle(deps(items, none), role(), {
+      now: NOW, identity: 'igor-bot', triage, preview: true,
+    })
+    expect(preview.fresh).toBe(1)
+    expect(records.count).toBe(0)
+    expect(stored.get(STATE_PATH)).toBeUndefined()
+
+    const real = await planCycle(deps(items, none), role(), { now: NOW, identity: 'igor-bot', triage })
+    expect(real.fresh).toBe(1)
+    expect(records.count).toBe(1)
+    expect(stored.get(STATE_PATH)).toEqual({ watermarks: { [key()]: { lastSeen: ago(40) } } })
+  })
+
+  it('leaves the mark alone under --since too, which suppresses that write for its own reason', async () => {
+    stored.clear()
+    records.count = 0
+    // A look-back reaches deliberately behind the mark. It must not carry the mark over what it
+    // went behind the mark to find — preview or not.
+    const report = await planCycle(deps([candidate(7, 40)], none), role(), {
+      now: NOW, identity: 'igor-bot', triage, sinceDays: 7, preview: true,
+    })
+    expect(report.toClaim).toHaveLength(1)
+    expect(stored.get(STATE_PATH)).toBeUndefined()
+    expect(records.count).toBe(0)
+
+    // Without the preview the look-back still holds the mark back, and still records the cycle.
+    const real = await planCycle(deps([candidate(7, 40)], none), role(), {
+      now: NOW, identity: 'igor-bot', triage, sinceDays: 7,
+    })
+    expect(real.toClaim).toHaveLength(1)
+    expect(stored.get(STATE_PATH)).toBeUndefined()
+    expect(records.count).toBe(1)
+  })
+
+  it('still reads the stored mark, so it previews the cycle that would actually run', async () => {
+    stored.clear()
+    await planCycle(deps([candidate(7, 40)], none), role(), { now: NOW, identity: 'igor-bot', triage })
+
+    const report = await planCycle(deps([candidate(7, 40)], none), role(), {
+      now: NOW, identity: 'igor-bot', triage, preview: true,
+    })
+
+    expect(report.fresh).toBe(0)
+    expect(report.toClaim).toEqual([])
+  })
+})
+
+/** An item whose own artifact is in flight, with the mergeability the case under test needs. */
+const withArtifact = (n: number, minutes: number, over: Partial<InFlight> = {}): Candidate => ({
+  ...candidate(n, minutes),
+  inFlight: {
+    kind: 'pull-request',
+    ref: `#${n + 100}`,
+    url: `https://github.com/o/r/pull/${n + 100}`,
+    draft: true,
+    author: 'igor-bot',
+    mergeable: 'conflicting',
+    branch: `igor/triage/${n}-a-bug`,
+    base: 'main',
+    ...over,
+  },
+})
+
+describe('an artifact of the Igor\'s own that stopped merging', () => {
+  it('is noticed although nothing touched the item', async () => {
+    // This is #21 exactly. `main` advanced eight commits and the *issue* never moved, so the
+    // watermark holds the item below it forever — and the artifact reports work in flight,
+    // which triage skips. Read over everything the query returned, not over what was fresh.
+    stored.clear()
+    const items = [withArtifact(7, 40)]
+
+    const first = await planCycle(deps(items, none), role(), { now: NOW, identity: 'igor-bot', triage })
+    expect(first.toCatchUp).toHaveLength(1)
+
+    // A second cycle with the item untouched: below the mark, and still noticed.
+    const second = await planCycle(deps(items, none), role(), { now: NOW, identity: 'igor-bot', triage })
+    expect(second.fresh).toBe(0)
+    expect(second.toCatchUp.map((c) => c.candidate.id)).toEqual(['github:o/r#7'])
+    expect(second.toCatchUp[0]?.reason).toContain('#107')
+  })
+
+  it('costs no model call to decide on, and is not also queued as ordinary work', async () => {
+    // The whole design rests on this: one request per published artifact per cycle. An item
+    // that reached triage would pay for a verdict on work it has already done.
+    stored.clear()
+    const asked: string[] = []
+    const counting: typeof triageBatch = async (cs) => {
+      for (const c of cs) asked.push(c.id)
+      return { results: [], failures: [], costUsd: 0, costUnreported: 0 }
+    }
+
+    const report = await planCycle(deps([withArtifact(7, 40)], none), role(), {
+      now: NOW, identity: 'igor-bot', triage: counting,
+    })
+    expect(asked).toEqual([])
+    expect(report.triaged).toBe(0)
+    expect(report.triageCostUsd).toBe(0)
+    expect(report.toClaim).toEqual([])
+    expect(report.toCatchUp).toHaveLength(1)
+  })
+
+  it('leaves a healthy artifact, and somebody else\'s broken one, alone', async () => {
+    stored.clear()
+    const items = [
+      withArtifact(7, 40, { mergeable: 'clean' }),
+      withArtifact(8, 40, { mergeable: 'unknown' }),
+      withArtifact(9, 40, { author: 'alice' }),
+    ]
+    const report = await planCycle(deps(items, none), role(), { now: NOW, identity: 'igor-bot', triage })
+    expect(report.toCatchUp).toEqual([])
+    expect(report.skippedUniversal).toBe(3)
+  })
+
+  it('stays off it once somebody has said stop', async () => {
+    // A stop means the artifact too. Nothing about a catch-up exempts it.
+    stored.clear()
+    const item = withArtifact(7, 40)
+    const tracker = {
+      name: 'github',
+      search: async () => [item],
+      commentsSince: async () => [{ author: 'alice', at: ago(5), body: 'stop' }],
+    } as unknown as Tracker
+
+    const report = await planCycle(
+      { tracker, codeHost: {}, trees: {}, destination: 'o/state' } as never,
+      role(),
+      { now: NOW, identity: 'igor-bot', triage },
+    )
+    expect(report.toCatchUp).toEqual([])
+    expect(report.skippedStopped).toBeGreaterThan(0)
+  })
+
+  it('stops retrying a conflict it already handed back, until somebody answers', async () => {
+    // Task 4.2's stopper. A conflict the worker cannot resolve is handed off; the handoff is
+    // recorded; and the record is what keeps the next cycle from spending another worker on
+    // the same unresolvable merge, every poll interval, forever.
+    stored.clear()
+    const item = withArtifact(7, 40)
+    stored.set(DEFERRALS_PATH, defer(NO_DEFERRALS, item, 'the conflict needs a decision', NOW - 60000))
+
+    const quiet = await planCycle(deps([item], none), role(), { now: NOW, identity: 'igor-bot', triage })
+    expect(quiet.toCatchUp).toEqual([])
+    expect(quiet.skippedDeferred).toBe(1)
+
+    // And an answer brings it straight back, because the artifact is still rotting.
+    const tracker = {
+      name: 'github',
+      search: async () => [item],
+      commentsSince: async () => [{ author: 'alice', at: ago(1), body: 'take the base side here' }],
+    } as unknown as Tracker
+    const answered = await planCycle(
+      { tracker, codeHost: {}, trees: {}, destination: 'o/state' } as never,
+      role(),
+      { now: NOW, identity: 'igor-bot', triage },
+    )
+    expect(answered.toCatchUp).toHaveLength(1)
+  })
+})
+
+describe('a catch-up must not move the watermark', () => {
+  it('leaves the mark where it was when the tracker will not answer for a rotting artifact', async () => {
+    // A catch-up item is old by construction — the premise of the whole change is that the
+    // base moved and the item never did. `heldBelow` pulls the mark back below anything
+    // nobody examined, which for an ordinary item is bounded by the mark itself. For this one
+    // it is not: one rate limit on a 200-day-old artifact resets the mark 200 days and every
+    // cycle after re-triages the backlog. Holding it buys nothing either way, because a stale
+    // artifact is found by scanning everything the query returned.
+    stored.clear()
+    const old = withArtifact(9, 200 * 24 * 60)
+    const recent = candidate(1, 10)
+
+    await planCycle(deps([old, recent], none), role(), { now: NOW, identity: 'igor-bot', triage })
+    const after = structuredClone(stored.get(STATE_PATH))
+
+    const report = await planCycle(
+      deps([old, recent], (c) => c.id === old.id),
+      role(),
+      { now: NOW, identity: 'igor-bot', triage },
+    )
+    expect(report.skippedUnreadable).toBe(1)
+    expect(report.toCatchUp).toEqual([])
+    expect(stored.get(STATE_PATH)).toEqual(after)
+  })
+
+  it('leaves the mark where it was when somebody has stopped the item', async () => {
+    stored.clear()
+    const old = withArtifact(9, 200 * 24 * 60)
+
+    await planCycle(deps([old], none), role(), { now: NOW, identity: 'igor-bot', triage })
+    const after = structuredClone(stored.get(STATE_PATH))
+
+    const tracker = {
+      name: 'github',
+      search: async () => [old],
+      commentsSince: async () => [{ author: 'alice', at: ago(5), body: 'stop' }],
+    } as unknown as Tracker
+    const report = await planCycle(
+      { tracker, codeHost: {}, trees: {}, destination: 'o/state' } as never,
+      role(),
+      { now: NOW, identity: 'igor-bot', triage },
+    )
+    expect(report.skippedStopped).toBe(1)
+    expect(stored.get(STATE_PATH)).toEqual(after)
+  })
+
+  it('records the catch-up as a decision, the way every other decision is recorded', async () => {
+    // A catch-up is decided at the universal stage and lands in neither `skipped` nor
+    // `verdicts`, so it is the one decision a cycle can make and never write down — and
+    // work-triage requires the ratio at each stage be determinable from the record.
+    stored.clear()
+    const written: unknown[] = []
+    const report = await planCycle(deps([withArtifact(7, 40)], none), role(), {
+      now: NOW, identity: 'igor-bot', triage,
+    })
+    await recordDecisions('o/state', role(), report, async (_r, _p, value) => {
+      written.push(value)
+    })
+    const decisions = (written[0] as { decisions: { item: string; stage: string }[] }).decisions
+    expect(decisions.some((d) => d.item === 'github:o/r#7' && d.stage === 'catch-up')).toBe(true)
+  })
+
+  it('writes a record for a cycle whose only decision was a catch-up', async () => {
+    // Nothing fresh and no failures, so the early return would drop it — and that is the
+    // cycle whose one decision is most worth being able to read back.
+    stored.clear()
+    const item = withArtifact(7, 40)
+    await planCycle(deps([item], none), role(), { now: NOW, identity: 'igor-bot', triage })
+
+    const written: unknown[] = []
+    const second = await planCycle(deps([item], none), role(), { now: NOW, identity: 'igor-bot', triage })
+    expect(second.fresh).toBe(0)
+    await recordDecisions('o/state', role(), second, async (_r, _p, value) => {
+      written.push(value)
+    })
+    expect(written).toHaveLength(1)
   })
 })

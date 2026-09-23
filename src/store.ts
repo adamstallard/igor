@@ -196,6 +196,11 @@ export function rejectedIds(destination: string): Set<string> {
 export interface CreateTarget {
   dir: string
   taken: Set<string>
+  /**
+   * What the destination checkout itself holds, kept apart by kind so a caller can tell a
+   * collision the person can already see from one only the branch knows about.
+   */
+  checkout: { taken: Set<string>; rejected: Set<string> }
 }
 
 /**
@@ -204,22 +209,32 @@ export interface CreateTarget {
  * `into` names a candidate directory outside the store, laid out the same way so that
  * `propose --from` reads back what was written.
  *
- * Ids are taken against the store as well as the target, because `propose` silently drops a
- * candidate whose id is already in the store — a collision left to be found there disappears
- * rather than being reported. Rejected ids count as taken for the same reason, and because a
- * rule raised again on new evidence deserves its own id rather than a dead one's.
+ * Ids are taken against the store as well as the target, because `propose` drops a candidate
+ * whose id is already in the store — a collision left to be found there costs the work of
+ * writing an entry under an id that was never free. Rejected ids count as taken for the same
+ * reason, and because a rule raised again on new evidence deserves its own id rather than a
+ * dead one's.
+ *
+ * `upstream` carries the ids the store holds on the branch a proposal lands on, which this
+ * checkout may be behind: an id free here and taken there is one `propose` cannot take. The
+ * caller reads it, because this module reaches no further than the filesystem.
  *
  * The directory itself must be there already. `entries/` beneath it is layout the tool owns,
  * but a mistyped path would otherwise be created in full and look like it worked.
  */
-export function createTarget(destination: string, into?: string): CreateTarget {
-  const inStore = new Set([...takenIds(destination), ...rejectedIds(destination)])
-  if (into === undefined) return { dir: destination, taken: inStore }
+export function createTarget(
+  destination: string,
+  into?: string,
+  upstream: ReadonlySet<string> = new Set(),
+): CreateTarget {
+  const checkout = { taken: takenIds(destination), rejected: rejectedIds(destination) }
+  const inStore = new Set([...checkout.taken, ...checkout.rejected, ...upstream])
+  if (into === undefined) return { dir: destination, taken: inStore, checkout }
   const dir = resolve(into)
   if (!existsSync(dir) || !statSync(dir).isDirectory()) {
     throw new StoreError(`${dir} is not a directory — create it before writing into it`)
   }
-  return { dir, taken: new Set([...inStore, ...takenIds(dir)]) }
+  return { dir, taken: new Set([...inStore, ...takenIds(dir)]), checkout }
 }
 
 /**

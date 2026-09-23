@@ -37,6 +37,16 @@ Igors poll rather than wait for triggers. Each cycle:
 5. **Report** — status updates back to the same surfaces, including a graceful handoff if
    the Igor runs out of budget mid-task.
 
+An Igor does not forget a pull request once it has opened one. The base moves while the
+artifact waits, and an artifact that stopped merging is the Igor's own unfinished work rather
+than somebody else's work in review — so each cycle it asks the code host to merge the base
+into its own artifacts that no longer merge. That is one request, and where the merge is clean
+the Igor says nothing: the merge commit on the branch is the record, and a catch-up nobody had
+to think about is not news. Where it conflicts, a worker resolves the files on the branch that
+exists, so the pull request keeps its history and whatever review has accumulated on it. A
+conflict it cannot resolve is handed back once, naming the artifact, and then left quiet until
+somebody answers. It never touches a conflicting pull request somebody else opened.
+
 [`docs/architecture.md`](docs/architecture.md) is the long form: why team memory rather than
 per-agent memory, how recognition is meant to work, and what was considered and rejected.
 
@@ -222,8 +232,9 @@ repository.
    igor run <role> --plan     # what it would claim, claiming nothing
    ```
 
-   `--plan` claims nothing and posts nothing. It is not free: triage is a model call, measured
-   around four cents for a nine-candidate cycle.
+   That run claims nothing, posts nothing, and writes nothing: the discovery watermark stays
+   where it was, so looking at the backlog does not consume it. It is not free: triage is a
+   model call, measured around four cents for a nine-candidate cycle.
 
 4. **Leave it running.** Everything above is a command you run once; finding your own work is
    a loop.
