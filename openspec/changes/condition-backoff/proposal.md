@@ -40,6 +40,26 @@ key, so five Igors meeting one cure is one condition — counted once, cleared o
 five discovering it separately. It also keeps the stop as small as it can honestly be: a role
 refused one command says nothing about any other role.
 
+**What the condition was observed against, where the cure key does not say it.** For most cures
+the key is the identity: `role:web:commands` fully names what is stuck. `seat:<id>:credential`
+does not — it names the seat, not the credential, so a seat's two tokens produce the identical
+key. [#65](https://github.com/adamstallard/igor/pull/65)'s counting loop already needs two
+conditions for that reason, matching `record.cures?.includes(key) === true &&
+record.tokenFingerprint === fingerprint` (`src/budget.ts`). So the record carries a
+discriminator: an opaque value naming what the condition was observed against, absent for every
+condition whose key already says it. It is not context alongside the record — it is the part of
+the occurrence's identity the cure key cannot express, and without it a record reading
+`seat:adam:credential, count 3, open` cannot answer the question its own stop turns on: is this
+about the credential resolving now?
+
+A condition is an occurrence and not a thing. That observation was made against this change by
+name in [#77](https://github.com/adamstallard/igor/pull/77) — *"a cure key opens, clears and
+reopens over its life, so keying on the cure alone would match a closed escalation from last
+time and stay silent while a fleet sat stopped"* — and although that proposal was closed
+unmerged, its closing comment keeps the observation explicitly as work that survives. Same
+defect, same fix, one level down: here it is the count and the clearing rule that would answer
+for the wrong occurrence.
+
 **Self-clearing, through a probe.** Nobody sends a fixed signal, and nobody should have to:
 whoever reads the stop edits a configuration on a surface with no channel back to the loop. A
 condition is gone when it stops recurring — but a stopped scope runs nothing and so can never
@@ -47,6 +67,40 @@ observe an absence, which deadlocks. After a cooldown one item goes through. It 
 condition does not recur, and stops again for longer if it does. The probe is the next item the
 scope would take, not the item that was in flight when the condition opened: the condition is
 about the cure, and that item may be unworkable for reasons of its own.
+
+A condition carrying a discriminator clears that way **and** one more way: the moment the scope
+resolves a different discriminator, with no cooldown waited and no item spent. The probe exists
+because most cures are unobservable from inside the loop — an allowlist edited elsewhere
+announces nothing. A credential changing is observable, so a seat an operator has already fixed
+comes back immediately rather than after a backoff that lengthens each time it is wrong. That is
+the one capability a credential-shaped stop had that this record did not, and it is kept here
+instead of left to a second mechanism.
+
+**One record, one stop, one report —
+[#86](https://github.com/adamstallard/igor/issues/86).** Once §2–§3 exist, a 401 feeds two
+mechanisms on one cure key: #65's breaker counting trailing rows in `executions.ndjson` against
+a token fingerprint, and a condition record counting handoffs. Same seat, two thresholds, two
+clocks — held if either says so, free only when both agree. The condition record owns the record
+and the stop; #65's breaker is absorbed into §4 rather than duplicated beside it, which is what
+the clause above is for. #86 is answered by this change and closed by the implementation of §4,
+not by this text.
+
+**#65 merges as it stands.** It is the only thing stopping a revoked seat today, and §2–§4 are
+unimplemented: stripping its breaker now leaves nothing holding the seat. The duplication begins
+only when the general mechanism is built, which is when the absorption happens. Nothing here is
+a blocker on #65.
+
+**A measurement that contradicts what #65 documents.** #65's two operator-facing messages say a
+credential condition clears one way — `credentialBreaker`'s `why` ends *"resolving a different
+credential for this seat clears it, and nothing else does"*, and `renderCredentials`' header
+says *"resolving a different credential for it is the only thing that clears one"*. The code
+clears two ways. `credentialBreaker` counts backwards from the newest row and breaks on the
+first row that is not a rejection of this fingerprint, so a successful half-open probe on the
+**unchanged** credential ends the trailing run and the breaker closes — which the function's own
+doc comment states: *"which is how a successful probe closes the breaker, and how a replaced
+credential clears it without anybody saying so."* Both clears are real and the messages are what
+is wrong. The requirement here states the pair, and correcting those two strings is part of the
+absorption rather than a separate fix.
 
 **Suppression states the rule it already implies.** The in-force requirement is modified so a
 cause that was a fact about the Igor does not suppress, with budget as one instance, and a
@@ -76,9 +130,10 @@ Explicitly out of scope:
 
 ### New Capabilities
 
-- `stuck-conditions`: recording a condition against the cure that would clear it, stopping the
-  scope that cure names once it recurs, clearing by probe after a cooldown, and the refusal to
-  grade conditions by severity.
+- `stuck-conditions`: recording a condition against the cure that would clear it — with what it
+  was observed against, where the cure key does not say — stopping the scope that cure names
+  once it recurs, clearing by probe after a cooldown and, where a discriminator is carried, on
+  that discriminator changing, and the refusal to grade conditions by severity.
 
 ### Modified Capabilities
 
@@ -97,3 +152,9 @@ Explicitly out of scope:
   waiting and as waiting when it is broken.
 - A stopped scope is visible only where somebody looks at the record. A fleet stopped on one
   cure key is a strong signal and nothing currently surfaces it.
+- A conditions listing ([#82](https://github.com/adamstallard/igor/pull/82)) can say why a
+  condition is open and what would clear it from **one** read. Were the credential stop left to
+  a mechanism of its own, the same answer would take a cross-reference against the execution
+  log.
+- `executions.ndjson` stops being load-bearing for a decision. It remains a log of what was run,
+  rather than becoming the input to whether a seat is usable.
