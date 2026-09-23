@@ -30,6 +30,12 @@ Where an entry is bounded, the identity and the origin SHALL survive the bound a
 SHALL be what is shortened, so that bounding costs detail rather than costing the reader the two
 things they act on.
 
+This governs the record a cycle writes of its own faults — the source that would not answer, the
+credential that could not be read, the call that threw, the write that failed — and nothing else. It
+does not govern the outcome record an execution writes, whose stated reason is filled on a success
+as readily as on a failure and is therefore a different field with a different shape. That record
+carries the same defect and is not addressed here.
+
 #### Scenario: A fault carrying a code
 
 - **WHEN** a cycle records a failure whose fault carried a machine-readable identity
