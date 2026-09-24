@@ -59,10 +59,34 @@ anywhere else.
 ## What is not settled
 
 **The file mode on a removed entry.** Every removal is written `100644`, which is the shape
-GitHub documents, but it is unverified against a `100755` file, a symlink, or a path that is
-not in `base_tree` at all. Settling any of these needs a write to a real repository, and it was
-decided not to chase them here. Where it would bite: deleting an executable script, or a
-rename whose old path the base tree does not have.
+GitHub documents, but it is unverified against a `100755` file or a symlink. Where it would
+bite: deleting an executable script. Sending the wrong mode is very likely inert — a removal
+carries `sha: null`, so no blob is placed and there is no mode to apply — and `type: 'blob'` is
+already correct for a symlink, which git stores as a blob. Neither is measured.
+
+**Measured afterwards: a path absent from `base_tree` is refused, and this one is settled.**
+Asked directly against `origin/main`'s tree, creating unreferenced tree objects and nothing
+else:
+
+| request | result |
+|---|---|
+| remove a path the base tree holds | succeeds |
+| remove a path it does not hold | **422 `GitRPC::BadObjectState`** |
+| remove such a path nested under a directory it does hold | **422 `GitRPC::BadObjectState`** |
+
+So the whole tree `POST` fails, loudly, and nothing is published. A removal of a path the base
+does not have is not tolerated and never silently ignored.
+
+That makes the `indexOnly` guard added for #96 load-bearing rather than defensive: a chain
+rename — `git mv a b && mv b c && git add -N c` — names `b` as a source, `b` is in no tree, and
+without the guard the publish returns 422. It also settles #117 against `status.renames=false`,
+which reports that chain as `AD b`, reaching the same refused removal by a different route.
+
+**The approach that does not work, recorded so it is not retried.** Testing the mode cases the
+same way fails for an unrelated reason: a freshly created tree that no ref points at cannot
+serve as `base_tree`, and the request comes back **404**, not a verdict on the mode. Settling
+`100755` and `120000` needs a commit on a real branch, which is a larger footprint than the
+question has so far justified.
 
 The same reliance is already live on the resolution path, so this change widens the exposure
 rather than creating it.
