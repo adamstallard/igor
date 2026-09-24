@@ -4,7 +4,7 @@ import type { Artifact, Candidate, ClaimVerdict, CodeHost, InFlight, Tracker } f
 import { resolveToken, type TokenSource, type Window } from './budget.js'
 import { recordObservation, WINDOW_LENGTH } from './capacity.js'
 import type { Action, Role } from './role.js'
-import { withTree, type ChangedFile, type MergeState, type TreeProvider, type WorkingTree } from './worktree.js'
+import { showName, withTree, type ChangedFile, type MergeState, type TreeProvider, type WorkingTree } from './worktree.js'
 import { appendRecord, STATE_BRANCH, writeState } from './state.js'
 
 /**
@@ -1536,6 +1536,29 @@ export async function execute(
       }
     }
 
+    // A name that is not text is never published at the spelling decoding left behind. An
+    // artifact names a path as a string, so such a name has no form the tree API can carry: a
+    // modified file lands at a path no file on disk has and the branch carries it twice, a
+    // deletion removes nothing, and two names differing only in the bytes that did not decode
+    // collide on one path. The bytes are in hand here, and recovering a name only to publish
+    // it wrongly is a stranger state than never having recovered it — so the run stops, and
+    // the handoff names the file by those bytes rather than by the spelling that lost them.
+    const unnameable = changed.flatMap((c) => (c.rawName === undefined ? [] : [`\`${showName(c)}\``]))
+    if (unnameable.length > 0) {
+      return {
+        outcome: 'failed' as const,
+        changed,
+        refusals,
+        transcript,
+        ...kept,
+        ...cured(),
+        reason:
+          `${unnameable.join(', ')} ${unnameable.length === 1 ? 'is' : 'are'} named in bytes ` +
+          'that are not text, and an artifact can only publish at a path that is, ' +
+          'so nothing was published',
+      }
+    }
+
     // A deletion reaches an artifact's own branch but not a new one: a resolution moves a ref
     // it can drop a path from, while `produce` builds its commit out of files alone.
     const deletions = changed.filter((c) => c.kind === 'deleted').map((c) => c.path)
@@ -1829,7 +1852,9 @@ export async function recordExecution(
       outcome: result.outcome,
       reason: result.reason,
       ...(result.artifact ? { artifact: result.artifact.ref, url: result.artifact.url } : {}),
-      changed: result.changed.map((c) => `${c.kind} ${c.path}`),
+      // By the bytes where the name is not text, as the reason for refusing it names it. The
+      // decoded spelling here would send a reader looking for a file that is not on disk.
+      changed: result.changed.map((c) => `${c.kind} ${showName(c)}`),
       refusals: result.refusals,
       // A run that never reported a cost records none: zero would read as a run that was free.
       ...(result.costUsd === undefined ? {} : { costUsd: Number(result.costUsd.toFixed(4)) }),
