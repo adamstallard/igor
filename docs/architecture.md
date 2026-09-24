@@ -130,7 +130,7 @@ Three properties make that safe:
 
 ### 3.1 Store — **built**
 
-One markdown file per entry, in git, at a configurable path in the *operating team's* repo
+One markdown file per entry, in git, at the root of the *operating team's* own repository
 (lore is their data; Igor is the tool). The filename is the entry id, so a file is findable
 directly from a supersession pointer or provenance reference.
 
@@ -1392,6 +1392,17 @@ machine computed it.
 The tool refuses to start on a config found inside its own installation, and otherwise searches
 upward from the working directory the way git does, so running it anywhere inside the lore
 repository works with no flags.
+
+**The store is at the root of its repository, not in a subdirectory of one.** A nested store
+takes the host repository's access, visibility and lifecycle: who may push there becomes who may
+propose an entry, `publicStore` falls back to the host's visibility, and archiving or
+transferring the project takes the team's lore with it. `loadConfig` therefore asks
+`git -C <destination> rev-parse --is-bare-repository --is-inside-work-tree --show-prefix` and
+refuses a non-empty prefix — which makes git a load-time dependency of every command, including
+the ones that never reach GitHub. `--show-prefix` alone is not enough: a bare repository and
+anything inside a gitdir both answer it with empty output and would read as a root. The
+redirecting environment variables (`GIT_DIR`, `GIT_WORK_TREE`, `GIT_COMMON_DIR`) are removed from
+the child, because `-C <destination>` is the whole question.
 
 This generalizes: **the destination is not merely "where lore goes" — it is the team's Igor
 state.** Lore today, role definitions and fleet configuration later. Igor stays stateless and

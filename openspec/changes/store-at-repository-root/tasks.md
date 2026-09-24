@@ -23,26 +23,26 @@
 Gate two on this branch, not part of the specification push. The whole implementation is one
 check: the destination's prefix within its repository must be empty.
 
-- [ ] 2.1 Salvage `storePrefix` from `origin/store-prefix` (`src/github.ts`, the branch of the
+- [x] 2.1 Salvage `storePrefix` from `origin/store-prefix` (`src/github.ts`, the branch of the
       closed [#107](https://github.com/adamstallard/igor/pull/107) — closed PRs keep no diff, so
       read the branch). It shells `git -C <dir> rev-parse --show-prefix`, which returns the path
       from the repository root to `<dir>` with a trailing slash, and **empty at the root**
-- [ ] 2.2 Keep `stdout.replace(/\n$/, '')` rather than `.trim()`. `--show-prefix` emits the path
+- [x] 2.2 Keep `stdout.replace(/\n$/, '')` rather than `.trim()`. `--show-prefix` emits the path
       raw and terminates it with one newline; trimming eats a **leading space** in a directory's
       name, so a destination `<repo>/ lore` yields the prefix `lore/`, which names a directory
       that is not the store. A bug hunt on #107 found this and left a regression test
-- [ ] 2.3 Refuse a destination that is not inside a git repository, as `storePrefix` already
+- [x] 2.3 Refuse a destination that is not inside a git repository, as `storePrefix` already
       does — reading an unknown prefix as the root is the one outcome that must not happen
-- [ ] 2.4 Handle the bare repository: `git rev-parse --show-prefix` exits 0 with **empty output**
+- [x] 2.4 Handle the bare repository: `git rev-parse --show-prefix` exits 0 with **empty output**
       in a bare repository, so the primitive alone reads a bare repo as the root. The check needs
       a second question — `--is-bare-repository`, or that the destination is inside the work tree
       — before it treats empty output as "at the root"
-- [ ] 2.5 Refuse a non-empty prefix at config load, in `src/config.ts`, with a `ConfigError`
+- [x] 2.5 Refuse a non-empty prefix at config load, in `src/config.ts`, with a `ConfigError`
       naming the prefix and stating that a nested store takes the host repository's access,
       visibility and lifecycle
-- [ ] 2.6 Decide where the check runs relative to `isInside(destination, igorRoot())`, which is
+- [x] 2.6 Decide where the check runs relative to `isInside(destination, igorRoot())`, which is
       the config's other destination refusal, and keep the two errors distinguishable
-- [ ] 2.7 Tests for: root accepted, subdirectory refused with the prefix named, a directory whose
+- [x] 2.7 Tests for: root accepted, subdirectory refused with the prefix named, a directory whose
       name begins with a space, not a repository, and a bare repository
 
 ## 3. Checks
@@ -50,4 +50,4 @@ check: the destination's prefix within its repository must be empty.
 - [x] 3.1 `openspec validate --changes --strict`
 - [x] 3.2 `npm test` unchanged from the base, this being a specification-only change
 - [x] 3.3 Confirm no other in-force requirement names a default store path
-- [ ] 3.4 `npm test`, `npm run typecheck` and `npm run build` after the config-load check
+- [x] 3.4 `npm test`, `npm run typecheck` and `npm run build` after the config-load check
