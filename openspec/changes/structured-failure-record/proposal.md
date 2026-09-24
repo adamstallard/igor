@@ -81,20 +81,44 @@ the sentence is for whoever is watching the run; widening one must not cost the 
 the fuller trace is what gets shortened — otherwise the requirement silently mandates an unbounded
 stack per failure in an ndjson file people read with `git`.
 
-**A second added `work-discovery` requirement: a candidate whose triage call failed is asked about
-again.** The cycle records that it reached no verdict on that candidate and why, its source mark
-does not advance past it, and the failure entry is not the only record the cycle leaves of it. The
-carve-out is the one a coarse clock forces: where the candidate's `updatedAt` cannot be separated
-from that of a candidate the same source got a verdict for, it is passed over rather than held,
-because a mark held there would buy the same verdicts again every cycle for as long as the tie
-lasted.
+**A second added `work-discovery` requirement: a failed triage call leaves the candidate in the
+pool.** The cycle records that it reached no verdict on that candidate and why, the candidate stays
+reachable by a later cycle, and the failure entry is not the only record the cycle leaves of it.
+
+**The candidate is carried by id, and the mark advances normally.** The first version of this
+requirement kept the candidate in the pool by holding its source's mark below it, and one of its own
+scenarios cannot be satisfied that way: with one timestamp per source, not re-asking the candidates
+that *did* get verdicts needs the mark at or above the newest of them, while re-asking the failed
+candidate needs it below that candidate. Both hold only where the failed candidate is the newest in
+its source, and it is not — `survivors.sort(byAge)` (`src/loop.ts:588` on
+[#70](https://github.com/adamstallard/igor/pull/70)) triages oldest first, so a call that fails is
+older than the successes after it in the same batch. That is every partial failure, not a corner.
+
+So the mark advances over everything the cycle examined, and the candidate is carried **by id** in
+the discovery state beside the marks, re-offered next cycle regardless of the mark and cleared as
+soon as a cycle reaches a decision about it. This is the shape `reconcile` already uses for
+unfinished pull requests in `pending`, and `docs/architecture.md` §5.0.2 anticipates it in as many
+words — *"Watermarks **and seen-item records** are an efficiency measure, not a correctness
+mechanism."* The same section rejects a held floor for exactly the cost a held mark has here: it
+*"abandons nothing while re-reading everything newer, every run, forever"*, where carrying by number
+is *"the same standing condition at a constant price rather than at the price of the bound."*
+
+**The carried record is bounded, and the requirement says what happens at the bound.** Without one,
+a candidate that fails deterministically — its own content is what the call chokes on — never
+clears, and those accumulate one per broken item into state that only grows, while the cycle's
+triage capacity fills with candidates that will fail again. The requirement bounds both: how many
+are carried, and how much of a cycle they may take, so a cycle still reaches candidates it has never
+triaged. What is shed is what has been carried longest, and the cycle reports what it stopped
+carrying where a person sees it — a candidate that quietly stops being retried is
+[#78](https://github.com/adamstallard/igor/issues/78) again with more steps. The numbers are
+provisional and live in `design.md` and `tasks.md`, stated the way the credential breaker's
+constants are, because nothing has failed deterministically yet.
 
 **It states an outcome, not a fourth reason code.** #78 recommends a fourth untriaged reason and
-that is very likely how it will be built, but the mechanism differs by branch: on `main` there is no
-untriaged set at all and the mark is held from the held skips alone, while
-[#70](https://github.com/adamstallard/igor/pull/70) adds one and holds the mark from both. A
-requirement naming the mechanism would be false on one of the two branches depending on merge order,
-so the requirement says the mark holds and `tasks.md` names the reason code.
+that is very likely where the "no verdict was reached" record lands, but the destination differs by
+branch: on `main` there is no untriaged set at all, while #70 adds one. A requirement naming the
+mechanism would be false on one of the two branches depending on merge order, so the requirement
+says the candidate stays in the pool and `tasks.md` names the reason code.
 
 ### Why one change carries two requirements about `report.failures`
 
@@ -114,17 +138,33 @@ it, rather than in two proposals that do not mention each other.
 ### What `design.md` holds
 
 The second requirement is the only part of this change with a mechanism left to choose, so it is the
-only part with a design file. It refuses #78's other two options — re-queueing the candidate, and
-leaving the loss documented rather than removed — and it states which of two implementation shapes
-applies depending on whether [#70](https://github.com/adamstallard/igor/pull/70) has landed, since
-the destination for the lost candidate differs and the tie concession is already present on one
-branch and absent on the other.
+only part with a design file. It records why the held mark was taken first and why it is refused,
+with the unsatisfiable scenario as the proof; the `reconcile` precedent and how far it transfers;
+and the two alternatives refused in writing — bounding the retries while still holding the mark,
+which caps the duration of a wrong answer rather than making the requirement satisfiable, and
+dropping the scenario to accept either re-triage or loss.
 
-It also records two things the code said that a reader of #78 would not expect: that #78's
-description of the watermark block is `origin/triage-gate`'s shape and not `main`'s, and that
-`src/loop.ts:606`'s `workerEnv` throw is a second, uncovered instance of the same class on `main`
-which #70 claims by name and this change deliberately leaves to it. **If #70 is closed unmerged,
-that case has no home and this requirement is where it should be widened.**
+**Carrying the candidate was refused twice before, and the file answers both refusals rather than
+reversing them quietly** — #78's *"it needs somewhere to keep the queue, which the watermark exists
+to avoid"*, and this file's own earlier section, which asked for a home, a bound, a reconciliation
+and an answer for a failed write. Each is answered from code already running, and two of its clauses
+were wrong: a cycle does already carry per-item state between runs (`deferred.json` by candidate id,
+`reconcile.json` by number), and the claim that the requirement itself refused a re-queue was
+circular — the clause doing the refusing was the one that made the scenario unsatisfiable. The
+frequency premise both refusals rested on is unmeasured, and the file says what would measure it.
+
+The failed-write objection turned out to be the strongest, and it decides where the carry lives:
+`writeState` writes one whole document per call, so a carry in `discovery.json` is written with the
+mark in a single write and the two cannot diverge. In a file of its own they can, and the cycle
+where the mark write lands and the carry write does not is #78's bug restored by its own fix.
+
+It also records three things the code said. **#70 needs no change and is not at fault** — its
+untriaged candidates are always the newest in their source, so its `> max(verdicts)` filter concedes
+exactly ties, which is what its spec says. #78's description of the watermark block is
+`origin/triage-gate`'s shape and not `main`'s. And `src/loop.ts:606`'s `workerEnv` throw is a
+second, uncovered instance of the same class on `main` which #70 claims by name and this change
+deliberately leaves to it. **If #70 is closed unmerged, that case has no home and this requirement
+is where it should be widened.**
 
 ### Why `work-discovery` and not `task-execution`
 
@@ -202,9 +242,9 @@ Nothing else is carrying this. If #98 is closed unfixed, half of what #90 decide
   its origin intact rather than replaced by a description of it; and the entry still renders as one
   line for somebody watching the run.
 - `work-discovery`: a candidate whose triage call failed is recorded as one the cycle reached no
-  verdict on, and its source mark does not advance past it, so a later cycle asks about it again —
-  except where a coarse clock cannot separate it from a candidate the same source decided, which is
-  conceded rather than looped on.
+  verdict on and is carried by id past the mark, so a later cycle asks about it again while the
+  candidates beside it that got verdicts are not asked twice; the carried record is bounded, what it
+  sheds is reported, and carried candidates never crowd out candidates nothing has triaged.
 
 ## Impact
 
@@ -215,10 +255,11 @@ Nothing else is carrying this. If #98 is closed unfixed, half of what #90 decide
 - `CycleReport.failures` widens past `string[]`, which is a change to what the state branch holds
   and to the shape two CLI call sites read.
 - A candidate a triage call threw on stops being lost. `src/loop.ts:626` gains a second destination
-  for the candidate besides `report.failures`, and the watermark block at `src/loop.ts:643` holds
-  the mark below it. Where [#70](https://github.com/adamstallard/igor/pull/70) has landed this is a
-  fourth untriaged reason and the tie concession is already there; where it has not, it is a set of
-  its own and the concession comes with it.
+  for the candidate besides `report.failures`, and `DiscoveryState` gains a bounded per-source list
+  of carried candidate ids written in the same document as the marks. The watermark block at
+  `src/loop.ts:643` is unchanged by this half: the mark advances as it does today. Where
+  [#70](https://github.com/adamstallard/igor/pull/70) has landed, the "no verdict was reached"
+  record is a fourth untriaged reason; where it has not, it is a set of this change's own.
 - **Implementation is blocked.** Four of the seven files carrying the sites are held by
   [#65](https://github.com/adamstallard/igor/pull/65) — `budget.ts`, `execute.ts`, `handoff.ts` and
   `loop.ts` — and #65 alone holds all four. `loop.ts` is the binding one: `CycleReport.failures` is
