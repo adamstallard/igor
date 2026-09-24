@@ -14,7 +14,9 @@
 ## 2. `templates/org.yaml`
 
 - [ ] 2.1 The org template: `commands`, `allow`, `completion`, lane exclusions, and standing
-      instructions, each line carrying why it is there
+      instructions, each line carrying why it is there. The template may land before the command
+      does; a `cp templates/org.yaml roles/org.yaml` step in the README must not, because `init`
+      would delete it again
 - [ ] 2.2 `git rm:*` and `git mv:*` live if a worker's removal reaches the artifact by then,
       commented with a note naming #88 if not
 - [ ] 2.3 A test that the shipped template loads as a role and merges as an org base, so it
@@ -26,7 +28,9 @@
 
 - [ ] 3.1 The command, run inside an existing repository, writing the config, `roles/org.yaml`,
       a role stub and the workflow
-- [ ] 3.2 The config at the repository root with `destination: .`; refuse outside a repository
+- [ ] 3.2 The config at the repository root with `destination: .`; refuse outside a repository,
+      and refuse inside Igor's own installation, where the config would be one the loader is
+      already obliged to reject
 - [ ] 3.3 Per-file skip: name what was there, write what was not, succeed; `--force` overwrites,
       the shape `init-workflow` has
 - [ ] 3.4 It calls the existing workflow writer rather than copying the file itself, so one code

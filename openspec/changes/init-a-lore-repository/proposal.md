@@ -76,7 +76,10 @@ unlocks them. `design.md` argues that fork.
 **Three things it must not do**, all requirement-level:
 
 - **It must not create the repository.** That is `gh repo create`; a scaffolding command that
-  makes repositories is a different and more dangerous tool.
+  makes repositories is a different and more dangerous tool. It refuses inside a clone of Igor
+  for the same reason the loader does: a config resolving inside the installation is refused
+  whether or not a file is there, so writing one there scaffolds a repository that cannot load
+  its own configuration.
 - **It must not change branch protection or the ruleset bypass list.** Those are outward-facing
   repository settings, and a command whose job is writing files must not mutate who may push to
   `main`. It prints what remains; checking it belongs with

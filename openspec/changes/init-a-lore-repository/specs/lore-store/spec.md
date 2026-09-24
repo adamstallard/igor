@@ -105,6 +105,11 @@ exists. It SHALL NOT create a repository, and where it is run outside one it SHA
 say so rather than making one: a scaffolding command that creates repositories is a different
 and more dangerous tool, and creating one is already a command of the code host's.
 
+It SHALL likewise refuse where the enclosing repository is Igor's own installation. A config
+resolving inside Igor is refused whether or not a file is there, so writing one there produces
+a repository that cannot load its own configuration — and it leaves a team's files in a tool
+every team shares.
+
 It SHALL NOT change branch protection, a ruleset, or a ruleset's bypass list. Those are
 outward-facing repository settings, and a command whose job is writing files must not mutate
 who may push to the default branch. It SHALL print what remains to be set by hand instead.
@@ -118,6 +123,12 @@ SHALL overwrite, the shape the workflow command already has.
 
 - **WHEN** `init` is run outside any repository
 - **THEN** it refuses, and says that creating the repository is not its job
+
+#### Scenario: Run inside a clone of Igor
+
+- **WHEN** `init` is run inside Igor's own installation
+- **THEN** it refuses and writes nothing
+- **AND** it says that the configuration describes one team while Igor is shared
 
 #### Scenario: Repository settings are left alone
 
