@@ -421,6 +421,24 @@ export interface CycleReport {
   skippedUnreadable: number
   triaged: number
   /**
+   * Candidates that reached the model stage and were never asked about, because nothing could
+   * pay for the call. Not skips: nothing about them produced this and nothing about them will
+   * lift it, so they hold their source's mark back and come back when capacity does.
+   */
+  untriaged: CycleCandidate[]
+  /**
+   * Why no seat could be found, where that is what stopped the model stage. Verdict words, not
+   * prose: only `spent` and `share` mean the budget ran out, and a reader sent to look at spend
+   * for a pool that could not be used at all looks in the wrong place (#49).
+   */
+  heldPool?: {
+    blocked?: SeatVerdict
+    resetAt?: string
+    /** The hour is derived rather than stated, so a reader is owed "around" instead of "at". */
+    resetApproximate?: boolean
+    passedOver?: readonly { seat: string; verdict: SeatVerdict }[]
+  }
+  /**
    * Everything dropped before a model call, with the reason, so a lane can be tuned. `held`
    * marks the ones only the clock will bring back, which the watermark has to wait for.
    */
@@ -471,6 +489,19 @@ export interface CycleOptions extends RunOptions {
 }
 
 /**
+ * The reason every candidate a held pool stopped the call for is recorded against. Exported
+ * because this is the one group a reader is owed more than the phrase: which way there was no
+ * seat, and when capacity comes back.
+ */
+export const UNTRIAGED_NO_SEAT = 'no seat could pay for the triage call'
+
+/** The same, where the seat the gate named has no credential behind it. */
+const NO_CREDENTIAL = "the chosen seat's credential could not be read"
+
+/** And where the cycle's own cap on model calls was reached before the candidate was. */
+const OVER_LIMIT = "this cycle's triage limit was reached first"
+
+/**
  * Discovery, triage, and the decision — everything up to but not including a claim.
  *
  * Separated from acting so a supervised run can show what it would do and stop. A cycle that
@@ -495,6 +526,7 @@ export async function planCycle(
     skippedStopped: 0,
     skippedUnreadable: 0,
     triaged: 0,
+    untriaged: [],
     skipped: [],
     verdicts: [],
     toClaim: [],
@@ -548,6 +580,12 @@ export async function planCycle(
       }
     }
   }
+
+  // Oldest first, because the limit below truncates and everything past it holds the mark back.
+  // Cap an arbitrary order and the mark is pulled under candidates this cycle decided, which
+  // triages them again next cycle and never advances: measured at a full cap of calls every
+  // cycle on a backlog that never drains. In age order the cap falls above everything decided.
+  survivors.sort(byAge)
 
   const limit = options.limit ?? 10
   const quiet = await loadDeferrals(deps.destination)
@@ -605,34 +643,62 @@ export async function planCycle(
     comments, survivors, role.cooldownMinutes, options.identity ?? '', report, now, limit,
   )
   const considered = await dropDeferred(comments, awake, quiet, options.identity ?? '', report, limit)
+  // Survivors the cap never reached. Nothing examined them and nothing decided about them, so
+  // they wait exactly as a held pool's candidates do rather than being passed over for good.
+  const examined = new Set([
+    ...considered.map((c) => c.id),
+    ...report.skipped.map((s) => s.candidate.id),
+  ])
+  for (const candidate of survivors) {
+    if (!examined.has(candidate.id)) report.untriaged.push({ candidate, reason: OVER_LIMIT })
+  }
   if (considered.length > 0) {
     // Resolved only now — a cycle with nothing to triage never reads a seat's usage for it.
-    // The same seat a worker would draw from, written out the same way — never whatever login
-    // happens to be ambient, and never a superset of what the chosen seat allows.
+    // The seat a worker would draw from, spending what it allows and nothing wider. Where it
+    // names no seat there is no call: the triage model call is a spend like any other.
     const gate = options.budget ?? (options.gate === undefined ? undefined : await options.gate())
-    let env: NodeJS.ProcessEnv | undefined
-    try {
-      env = await workerEnv(gate?.token, process.env, gate?.seat)
-    } catch (error) {
-      report.failures.push(`triage: ${error instanceof Error ? error.message : String(error)}`)
-    }
-    if (env !== undefined) {
-      const batch = await (options.triage ?? triageBatch)(
-        considered,
-        systemPrompt(role.name, role.instructions),
-        options.triageModel ?? TRIAGE_MODEL,
-        env,
-      )
-      report.triaged = batch.results.length
-      report.triageCostUsd = batch.costUsd
-      report.triageCostUnreported = batch.costUnreported
-      if (gate?.seat !== undefined) report.triageSeat = gate.seat
-      for (const { candidate, verdict } of batch.results) {
-        report.verdicts.push({ candidate, outcome: verdict.outcome, reason: verdict.reason })
-        if (verdict.outcome === 'proceed') report.toClaim.push({ candidate, reason: verdict.reason })
+    if (gate?.exhausted() === true) {
+      // A gate that names no seat is the answer, not an obstacle to get past. Falling through
+      // to `workerEnv` spends whatever login is ambient — one no seat named, no ceiling bounds
+      // and nothing in the record can attribute — or, on a host with no such login, fails
+      // saying the machine is not logged in when its only problem is that every seat is held.
+      report.heldPool = {
+        ...(gate.blocked === undefined ? {} : { blocked: gate.blocked }),
+        ...(gate.resetAt === undefined ? {} : { resetAt: gate.resetAt }),
+        ...(gate.resetApproximate === true ? { resetApproximate: true } : {}),
+        ...(gate.passedOver === undefined ? {} : { passedOver: gate.passedOver }),
       }
-      for (const { candidate, error } of batch.failures) {
-        report.failures.push(`${candidate.native}: ${error.message.slice(0, 80)}`)
+      for (const candidate of considered) report.untriaged.push({ candidate, reason: UNTRIAGED_NO_SEAT })
+    } else {
+      let env: NodeJS.ProcessEnv | undefined
+      try {
+        env = await workerEnv(gate?.token, process.env, gate?.seat)
+      } catch (error) {
+        report.failures.push(`triage: ${error instanceof Error ? error.message : String(error)}`)
+      }
+      if (env === undefined) {
+        // A seat was named and its credential did not resolve, so no call is made here either.
+        // These candidates are in the position a held pool's are: nothing about them caused it,
+        // nothing about them will lift it, and a mark let past them drops them for good.
+        for (const candidate of considered) report.untriaged.push({ candidate, reason: NO_CREDENTIAL })
+      } else {
+        const batch = await (options.triage ?? triageBatch)(
+          considered,
+          systemPrompt(role.name, role.instructions),
+          options.triageModel ?? TRIAGE_MODEL,
+          env,
+        )
+        report.triaged = batch.results.length
+        report.triageCostUsd = batch.costUsd
+        report.triageCostUnreported = batch.costUnreported
+        if (gate?.seat !== undefined) report.triageSeat = gate.seat
+        for (const { candidate, verdict } of batch.results) {
+          report.verdicts.push({ candidate, outcome: verdict.outcome, reason: verdict.reason })
+          if (verdict.outcome === 'proceed') report.toClaim.push({ candidate, reason: verdict.reason })
+        }
+        for (const { candidate, error } of batch.failures) {
+          report.failures.push(`${candidate.native}: ${error.message.slice(0, 80)}`)
+        }
       }
     }
   }
@@ -652,11 +718,38 @@ export async function planCycle(
     // back. A cooldown ends with the clock and an outage with the tracker's recovery, so neither
     // touches the item to lift it above a mark that passed it. Every other skip was a decision,
     // and the edit or the reply that reverses one lifts the item by itself.
+    //
+    // An item the model stage never asked about is the same case one stage later, and a worse
+    // one: it was never dropped, so nothing in `skipped` holds it, and a mark let past it drops
+    // it from the pool for good.
+    //
+    // A mark held below an untriaged candidate still has to clear everything the cycle decided,
+    // and where the two share a timestamp it can do neither. Tracker timestamps are coarse enough
+    // for one bulk edit to tie a page of items, so the tie is conceded rather than pinning the
+    // mark: the item is passed over as it would have been anyway, where holding it would triage
+    // the same items again every cycle for as long as the tie lasted.
+    //
+    // Which is a question per source, because the marks move independently: a verdict in another
+    // source is nothing this one's mark has to clear, and conceding a tie with it drops an item
+    // this mark could have sat cleanly below.
     if (options.sinceDays === undefined && results.length > 0) {
-      const unexamined = new Set(
-        report.skipped.filter((s) => s.held === true).map((s) => s.candidate.id),
-      )
-      await saveDiscoveryState(deps.destination, advance(stored, heldBelow(results, unexamined)))
+      const held = report.skipped.filter((s) => s.held === true).map((s) => s.candidate.id)
+      const marks = results.flatMap((result) => {
+        const here = new Set(result.candidates.map((c) => c.id))
+        const decided = report.verdicts.reduce(
+          (newest, v) =>
+            here.has(v.candidate.id) ? Math.max(newest, instant(v.candidate.updatedAt)) : newest,
+          -Infinity,
+        )
+        const unexamined = new Set([
+          ...held,
+          ...report.untriaged
+            .filter((u) => instant(u.candidate.updatedAt) > decided)
+            .map((u) => u.candidate.id),
+        ])
+        return heldBelow([result], unexamined)
+      })
+      await saveDiscoveryState(deps.destination, advance(stored, marks))
     }
     // Not worth failing a cycle over, but a write that vanishes silently leaves nobody able to
     // say afterwards what this cycle decided — so it is reported like any other cycle failure.
@@ -784,6 +877,13 @@ export async function dropDeferred(
 /** How far back a stop is worth looking for: a stop older than the cooldown lifts by itself. */
 function stopWindow(now: number, cooldownMinutes: number): string {
   return new Date(now - cooldownMinutes * 60000).toISOString()
+}
+
+/** Oldest first. Two undatable candidates tie rather than comparing as `NaN`. */
+function byAge(a: Candidate, b: Candidate): number {
+  const x = instant(a.updatedAt)
+  const y = instant(b.updatedAt)
+  return x === y ? 0 : x < y ? -1 : 1
 }
 
 /** Unparseable sorts oldest, which holds a stop rather than lifting it. */
@@ -929,6 +1029,8 @@ export async function recordDecisions(
       skippedStopped: report.skippedStopped,
       skippedUnreadable: report.skippedUnreadable,
       triaged: report.triaged,
+      ...(report.untriaged.length === 0 ? {} : { untriaged: report.untriaged.length }),
+      ...(report.heldPool === undefined ? {} : { heldPool: report.heldPool }),
       claimed: report.toClaim.length,
       triageCostUsd: Number(report.triageCostUsd.toFixed(4)),
       ...(report.triageCostUnreported > 0 ? { triageCostUnreported: report.triageCostUnreported } : {}),
@@ -942,6 +1044,9 @@ export async function recordDecisions(
           item: c.candidate.id, stage: 'catch-up', outcome: 'proceed', reason: c.reason,
         })),
         ...report.verdicts.map((v) => ({ item: v.candidate.id, stage: 'model', outcome: v.outcome, reason: v.reason })),
+        // Recorded so the items are named rather than only counted, and as their own outcome:
+        // reading one of these back as a skip would say triage decided something about it.
+        ...report.untriaged.map((u) => ({ item: u.candidate.id, stage: 'model', outcome: 'untriaged', reason: u.reason })),
       ],
       ...(report.failures.length > 0 ? { failures: report.failures } : {}),
     },

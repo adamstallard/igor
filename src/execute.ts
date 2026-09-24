@@ -6,6 +6,7 @@ import { recordObservation, WINDOW_LENGTH } from './capacity.js'
 import type { Action, Role } from './role.js'
 import {
   carried,
+  showName,
   withTree,
   type ChangedFile,
   type MergeState,
@@ -1543,6 +1544,29 @@ export async function execute(
       }
     }
 
+    // A name that is not text is never published at the spelling decoding left behind. An
+    // artifact names a path as a string, so such a name has no form the tree API can carry: a
+    // modified file lands at a path no file on disk has and the branch carries it twice, a
+    // deletion removes nothing, and two names differing only in the bytes that did not decode
+    // collide on one path. The bytes are in hand here, and recovering a name only to publish
+    // it wrongly is a stranger state than never having recovered it — so the run stops, and
+    // the handoff names the file by those bytes rather than by the spelling that lost them.
+    const unnameable = changed.flatMap((c) => (c.rawName === undefined ? [] : [`\`${showName(c)}\``]))
+    if (unnameable.length > 0) {
+      return {
+        outcome: 'failed' as const,
+        changed,
+        refusals,
+        transcript,
+        ...kept,
+        ...cured(),
+        reason:
+          `${unnameable.join(', ')} ${unnameable.length === 1 ? 'is' : 'are'} named in bytes ` +
+          'that are not text, and an artifact can only publish at a path that is, ' +
+          'so nothing was published',
+      }
+    }
+
     // Both publishing paths build their tree from the same call, so a removal rides either one
     // as an entry over the base tree with no blob behind it. Nothing needs guarding against
     // both coming out empty: a removal is only dropped in favour of a file at that same path,
@@ -1821,7 +1845,9 @@ export async function recordExecution(
       outcome: result.outcome,
       reason: result.reason,
       ...(result.artifact ? { artifact: result.artifact.ref, url: result.artifact.url } : {}),
-      changed: result.changed.map((c) => `${c.kind} ${c.path}`),
+      // By the bytes where the name is not text, as the reason for refusing it names it. The
+      // decoded spelling here would send a reader looking for a file that is not on disk.
+      changed: result.changed.map((c) => `${c.kind} ${showName(c)}`),
       refusals: result.refusals,
       // A run that never reported a cost records none: zero would read as a run that was free.
       ...(result.costUsd === undefined ? {} : { costUsd: Number(result.costUsd.toFixed(4)) }),

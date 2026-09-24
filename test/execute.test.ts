@@ -579,6 +579,89 @@ describe('which pull request is preferred is stated rather than inferred', () =>
   })
 })
 
+describe('a file whose name did not survive being decoded', () => {
+  beforeEach(() => {
+    ledger.records.length = 0
+    ledger.files.length = 0
+  })
+
+  const bytes = Buffer.from([0x63, 0x61, 0x66, 0xe9, 0x2e, 0x6d, 0x64])
+
+  /** What `changes()` reports for a file git named in bytes that are not valid UTF-8. */
+  const unnameable: ChangedFile[] = [
+    { path: 'src/a.ts', content: 'fixed', kind: 'modified' },
+    { path: bytes.toString('utf8'), content: 'notes\n', kind: 'modified', rawName: bytes },
+  ]
+
+  async function publish(changes: ChangedFile[]) {
+    const { provider } = fakeProvider(changes)
+    const { host, seen } = fakeCodeHost()
+    const { t } = fakeTracker()
+    const result = await execute(provider, t, host, candidate(), role(), {
+      worker: async () => ({ result: 'Fixed it.', total_cost_usd: 0.02 }),
+    })
+    return { result, seen }
+  }
+
+  it('publishes nothing rather than publishing at the decoded spelling', async () => {
+    // Published at the U+FFFD spelling a modified file lands at a path no file on disk has,
+    // so the branch carries it twice; a deletion removes nothing; and two names differing
+    // only in those bytes collide on one path. The bytes are in hand by this point, and
+    // throwing them away at the last step is a stranger state than never having had them.
+    const { result, seen } = await publish(unnameable)
+    expect(result.outcome).toBe('failed')
+    expect(seen).toEqual([])
+  })
+
+  it('names the file as git wrote it, which is the whole point of having the bytes', async () => {
+    const { result } = await publish(unnameable)
+    expect(result.reason).toContain('caf\\xe9.md')
+    expect(result.reason).not.toContain('�')
+  })
+
+  it('refuses over a deletion too, where the mangled path would remove nothing', async () => {
+    const { result, seen } = await publish([
+      { path: bytes.toString('utf8'), content: '', kind: 'deleted', rawName: bytes },
+    ])
+    expect(result.outcome).toBe('failed')
+    expect(seen).toEqual([])
+  })
+
+  it('still records what the run changed, so the diff is not lost from the account', async () => {
+    const { result } = await publish(unnameable)
+    expect(result.changed).toEqual(unnameable)
+  })
+
+  it('does not let an ordinary name spell the escape of an unnameable one', async () => {
+    // A backslash is a legal byte in a filename. Rendered beside a name that was escaped into
+    // one, the two read alike, and the record cannot say which file stopped the run — the
+    // collision this refusal exists to stop, reappearing in the account of it.
+    const escaped = Buffer.from([0x61, 0xe9, 0x2e, 0x6d, 0x64])
+    const { result } = await publish([
+      { path: 'a\\xe9.md', content: 'ordinary\n', kind: 'modified' },
+      { path: escaped.toString('utf8'), content: 'notes\n', kind: 'modified', rawName: escaped },
+    ])
+    await recordExecution('acme/lore', candidate(), role(), result)
+
+    const written = ledger.records[0]?.['changed'] as string[]
+    expect(new Set(written).size).toBe(written.length)
+  })
+
+  it('writes the run record under the bytes too, not under the spelling', async () => {
+    // The reason and the record are read by the same person, one after the other. A record
+    // that spells the file with U+FFFD sends them looking for a file that is not there.
+    const { result } = await publish(unnameable)
+    await recordExecution('acme/lore', candidate(), role(), result)
+    expect(ledger.records[0]?.['changed']).toContain('modified caf\\xe9.md')
+  })
+
+  it('leaves an ordinary change alone', async () => {
+    const { result, seen } = await publish([{ path: 'src/a.ts', content: 'fixed', kind: 'modified' }])
+    expect(result.outcome).toBe('produced')
+    expect(seen).toHaveLength(1)
+  })
+})
+
 /** A worker that emits a run's worth of events before it finishes, and dies when aborted. */
 function streamingWorker(events: number) {
   const ran = { events: 0, aborted: false }

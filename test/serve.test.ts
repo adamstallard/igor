@@ -244,12 +244,20 @@ describe('the budget stops the cycle, not the process', () => {
     expect(calls).toBe(3)
   })
 
-  it('says the budget is why it stopped', async () => {
+  it('says the budget is why it triaged nothing, rather than going quiet', async () => {
+    // The gate stops the cycle at the triage call, which is a spend like any other, so there
+    // is nothing to claim and no item to stop before. The cycle's own report is where an
+    // operator reads why it went quiet.
     const { d } = deps([issue(1)])
     const { events, onEvent } = collect()
-    await serve(d, role(), 'igor-bot', { ...base, maxCycles: 1, gate: async () => shut, onEvent })
-    const stopped = events.find((e) => e.kind === 'stopping')
-    expect(stopped && stopped.kind === 'stopping' && stopped.reason).toMatch(/budget is spent/)
+    const s = await serve(d, role(), 'igor-bot', { ...base, maxCycles: 1, gate: async () => shut, onEvent })
+    const planned = events.find((e) => e.kind === 'planned')
+    if (planned?.kind !== 'planned') throw new Error('the cycle produced no plan')
+    expect(planned.report.untriaged).toHaveLength(1)
+    expect(planned.report.heldPool).toBeDefined()
+    expect(planned.report.triaged).toBe(0)
+    expect(events.some((e) => e.kind === 'working')).toBe(false)
+    expect(s.worked).toBe(0)
   })
 
   it('stops between items when asked to shut down mid-cycle', async () => {
@@ -340,8 +348,10 @@ describe('the loop records what it handed back', () => {
     const { events, onEvent } = collect()
     // Open when the loop asks, so the item is started, and shut when the claim is held — which
     // is the only path that produces a budget handoff rather than stopping the cycle.
+    // Three readings: the seat triage spends from, the one before the item is started, and
+    // the one inside the run. Only the last is shut.
     let checks = 0
-    const fading: Gate = { exhausted: () => checks++ > 0, seat: 'igor-1', reason: 'spent' }
+    const fading: Gate = { exhausted: () => checks++ > 1, seat: 'igor-1', reason: 'spent' }
     await serve(d, role(), 'igor-bot', { ...base, maxCycles: 1, note: n.note, onEvent, gate: async () => fading })
     const worked = events.find((e) => e.kind === 'worked')
     expect(worked?.kind === 'worked' && worked.run.handoff).toBe('budget')
