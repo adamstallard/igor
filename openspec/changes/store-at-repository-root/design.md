@@ -201,8 +201,3 @@ iteration that fixes something is never the last one.
   empty and the answer is correct; it is the same mechanism as the submodule.
 - **`core.bare = true` on a repository that has a work tree** reports the bare message for a
   nested path. A repository git itself refuses most operations in.
-- **Nothing pins `stdio: ['ignore', 'pipe', 'pipe']`.** Dropping it would leave git's fatal line
-  printed twice — once by the child on the inherited descriptor, once inside the `ConfigError`.
-  The code is right; the only assertion that would catch a change needs to observe the test
-  process's own file descriptor 2, which this suite has no way to do in process, so it is
-  reported rather than tested.
