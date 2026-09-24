@@ -28,3 +28,28 @@ markdown file per lore entry in `entries/`, and the filename SHALL be the entry'
 - **AND** the error names the path the destination sits at within that repository
 - **AND** the error states that a store nested in a repository takes that repository's access,
   visibility and lifecycle, which is why the root is the only place a store may be
+
+### Requirement: The lore destination is configured and bounded
+
+The store SHALL read a configured **destination** — the repository entries are written to,
+at whose root the store sits — independently of anything else Igor is pointed at, so that
+knowledge derived from one repository can be stored in another. The tool SHALL refuse to start when the
+destination resolves inside Igor's own repository.
+
+#### Scenario: Destination independent of other configuration
+
+- **WHEN** the destination is configured as one repository and Igor is operating against
+  others
+- **THEN** entries are written to the configured destination
+- **AND** no entry is written to a repository merely because it was operated against
+
+#### Scenario: Destination inside the Igor installation refused
+
+- **WHEN** the configured destination resolves inside the Igor tool's own repository
+- **THEN** the run refuses to start
+- **AND** the error states that lore belongs to the operating team, not to Igor
+
+#### Scenario: Destination not configured
+
+- **WHEN** no destination is configured
+- **THEN** the run refuses rather than choosing one

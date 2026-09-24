@@ -59,14 +59,20 @@ reading, not by a report — which is only possible if nothing nested is running
 Supporting nesting properly is a known, bounded piece of work:
 [#107](https://github.com/adamstallard/igor/pull/107) implemented the API-side prefix and
 [#108](https://github.com/adamstallard/igor/issues/108) recorded what remained in the workflow
-template. Both are closed in favour of this change. They are not being dropped because they are
-hard — #107 was finished and green. They are being dropped because the layout they support is one
-no team should choose, for the five reasons above, and every later feature would have to keep
-carrying a prefix through the API side for it.
+template. Both are closed in favour of this change, and not because they were hard — #107 was
+finished and green. They are closed because the layout they support is one no team should choose,
+for the five reasons above, and every later feature would have to keep carrying a prefix through
+the API side for it.
+
+#108 is not postponed by this change, it is **dissolved**. `for dir in entries rejected` from the
+repository root is the bug only while the store might be somewhere else; once the store is always
+at the root, that line is correct as written and there is nothing left to fix.
 
 ## What Changes
 
-**One modified `lore-store` requirement.** The store is at the **root** of its repository, under
+**Two modified `lore-store` requirements.**
+
+**"Entry files are markdown with frontmatter, named by id".** The store is at the **root** of its repository, under
 the configured `destination`, which is required and has no default. Beneath the destination, one
 markdown file per entry in `entries/`, named by the entry's `id` plus `.md`, so an entry is
 locatable from a supersession pointer or a provenance reference. Both existing scenarios are kept
@@ -77,6 +83,16 @@ and the requirement's name is unchanged; the first now names the path the code p
 refused at config load, naming the path within the repository and why the root is the only place
 a store may be.
 
+**"The lore destination is configured and bounded".** Its opening clause reads *"the repository
+and path entries are written to"*, which presupposes a path component inside a repository. Under
+the new rule there is none: the destination is the root. The clause now says *"the repository
+entries are written to, at whose root the store sits"*, keeping what the sentence is for — the
+destination is read independently of anything else Igor is pointed at, so knowledge derived from
+one repository can be stored in another. All three of its scenarios are carried unchanged and its
+name is unchanged. Without this, the capability would hold two requirements that disagree about
+whether a store has a path inside its repository, which is the drift this change opened by
+complaining about.
+
 **The implementation is a second gate on this branch**, not part of this change's spec push. One
 check at config load, against `git rev-parse --show-prefix`. See `tasks.md`.
 
@@ -86,7 +102,9 @@ check at config load, against `git rev-parse --show-prefix`. See `tasks.md`.
 
 - `lore-store`: the store is at its repository's root, under the required `destination`, and a
   destination below the root is refused at config load. This **narrows** the capability — the
-  in-force text permitted a nested store and named `lore/entries/` as the default.
+  in-force text permitted a nested store and named `lore/entries/` as the default. "The lore
+  destination is configured and bounded" is reworded in the same breath, so that no requirement
+  is left describing a destination with a path inside its repository.
 
 ## Impact
 

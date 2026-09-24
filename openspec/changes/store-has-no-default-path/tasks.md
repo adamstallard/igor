@@ -13,6 +13,10 @@
 - [x] 1.4 Say in the proposal that this **narrows** what was permitted, and that supporting
       nesting properly was rejected on ownership, visibility, lifecycle, scope and automation
       rather than on effort
+- [x] 1.5 Reword `lore-store`'s "The lore destination is configured and bounded" so its opening
+      clause no longer presupposes a path inside a repository, keeping the independence the
+      sentence exists for, and carrying all three of its scenarios unchanged — otherwise the
+      capability holds two requirements that disagree about whether a store has a path
 
 ## 2. The check at config load
 
