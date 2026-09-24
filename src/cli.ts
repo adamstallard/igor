@@ -18,6 +18,7 @@ import {
 import { eligibleToPropose, idsOnDefaultBranch, propose, upstreamHoldsTheName, ProposeError } from './propose.js'
 import { reconcile, promoteInPlace, renderReconciliation } from './reconcile.js'
 import { GitHubError } from './github.js'
+import { claimRequested, contradictoryRunFlags } from './flags.js'
 import { explainRole, loadRole, rolesFrom, RoleError } from './role.js'
 import { catchUpItem, planCycle, runItem, type CycleReport } from './loop.js'
 import { renderProgress } from './execute.js'
@@ -361,6 +362,9 @@ program
   .option('--since <days>', 'look back this far instead of using the stored watermark')
   .option('--claim <id>', 'work only this item, which a previous run reported it would claim')
   .action(async (name: string, opts) => {
+    // First, so a contradiction costs no network call and no model call.
+    const contradiction = contradictoryRunFlags(opts)
+    if (contradiction !== undefined) throw new RoleError(contradiction)
     const config = loadConfig(program.opts()['config'])
     const role = loadRole(config, name).role
     const tracker = new GitHubTracker()
@@ -418,7 +422,7 @@ program
       return run
     }
 
-    if (opts.claim) {
+    if (claimRequested(opts)) {
       const repo = opts.claim.replace(/^github:/, '').split('#')[0]!
       const [item] = (
         await tracker.search({ tracker: 'github', repo, query: `is:issue ${opts.claim.split('#')[1]}` })
@@ -455,6 +459,9 @@ program
       identity,
       limit: Number(opts.limit),
       ...(opts.since === undefined ? {} : { sinceDays: Number(opts.since) }),
+      // A preview stops before the cycle's two writes, so looking at the backlog does not mark
+      // its candidates seen and cost them the cycle that would have worked them.
+      preview: opts.plan === true,
       // The seat triage spends from and records against is the same one a worker would choose —
       // read lazily, so a cycle with nothing to triage never pays for a seat's usage reading.
       gate: gateFor,
@@ -464,7 +471,7 @@ program
     if (opts.plan) {
       process.stdout.write(
         `\n${report.toClaim.length} would be claimed and ${report.toCatchUp.length} caught up. ` +
-          'Nothing was claimed, merged or posted.\n',
+          'Nothing was claimed, merged, posted or recorded, and the discovery mark is unchanged.\n',
       )
       for (const c of report.toClaim) {
         process.stdout.write(`  igor run ${name} --claim ${c.candidate.id}\n`)

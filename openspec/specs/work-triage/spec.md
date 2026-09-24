@@ -47,6 +47,15 @@ lane and worth doing. The system MUST NOT compute, store, or act on a confidence
 Triage SHALL record, for each candidate, the outcome, the stage that decided it, and a
 human-readable reason. Skips MUST be recorded as fully as proceeds.
 
+A cycle that decided nothing SHALL write no record. A record is what the Igor decided, and one
+written by a cycle that had no option to act makes the ledger lie about which cycles acted — both
+to somebody asking what an Igor has been doing, and to the skip ratio below, which is a ratio over
+records and would count previews as decisions.
+
+This is about the cycle, not about any candidate within it. Where a cycle acted, every candidate
+it examined is recorded, skips as fully as proceeds, and a candidate the cycle declined to act on
+is a decision like any other.
+
 #### Scenario: Skip reason recorded
 
 - **WHEN** a candidate is skipped by a lane predicate
@@ -62,6 +71,12 @@ human-readable reason. Skips MUST be recorded as fully as proceeds.
 - **WHEN** an operator inspects triage records over a period
 - **THEN** the proportion of candidates skipped at each stage is determinable from the record
   rather than estimated
+
+#### Scenario: A preview writes no record
+
+- **WHEN** a cycle runs to show what it would claim, and claims nothing
+- **THEN** no decision record is written for that cycle
+- **AND** the records over a period contain only cycles that could have acted
 
 ### Requirement: A closed item is never a candidate
 
@@ -97,8 +112,14 @@ surface-supplied fields exclude it from, nor grant any permission.
 
 ### Requirement: Items with work already in flight are skipped
 
-Triage SHALL skip any item the adapter reports as having work already in flight. This rule is
-universal and MUST NOT be configurable; only its detection is adapter-supplied.
+Triage SHALL skip any item the adapter reports as having work already in flight, unless that
+artifact is the Igor's own and cannot merge. This rule is universal and MUST NOT be
+configurable; only its detection is adapter-supplied.
+
+The exception preserves the reason rather than qualifying it. Work in flight is skipped because
+duplicating work in review is never an organizational preference — and an artifact of one's own
+that cannot merge is not duplication, it is the same work, unfinished, which nothing else will
+bring back.
 
 #### Scenario: Item with an open linked artifact skipped
 
@@ -116,6 +137,21 @@ universal and MUST NOT be configurable; only its detection is adapter-supplied.
 
 - **WHEN** a role or org base attempts to disable the in-flight skip
 - **THEN** validation fails, because duplicating work in review is never an organizational preference
+
+#### Scenario: An Igor's own artifact that cannot merge is a candidate
+
+- **WHEN** an item's in-flight artifact was produced by this Igor and no longer merges
+- **THEN** it is not skipped
+
+#### Scenario: A healthy artifact of one's own is still skipped
+
+- **WHEN** an item's in-flight artifact was produced by this Igor and merges cleanly
+- **THEN** it is skipped, as before
+
+#### Scenario: Somebody else's conflicting artifact is not adopted
+
+- **WHEN** an item's in-flight artifact was produced by another party and cannot merge
+- **THEN** it is skipped, because it is theirs
 
 ### Requirement: An item held by another party is never a candidate
 
