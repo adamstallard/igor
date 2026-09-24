@@ -65,6 +65,14 @@ The implementation has less to build than it looks. `discoverSource` already kee
 query returned in `result.candidates` before the mark is applied (`src/discovery.ts:88`), so a
 carried id is picked out of what discovery already fetched and nothing extra is read.
 
+**The in-force requirement it sits under names the cost this answers.** *Watermarks reduce
+reconsideration without governing it* says the mark *"advances on a cycle that acted even over the
+items it skipped"*, and states what that costs: *"the items themselves: marked seen, never
+rediscovered, never worked."* A carried record is how that cost is paid down without making the
+mark do something it cannot — the mark keeps advancing exactly as that requirement says, and the
+one item the cycle could not decide about is remembered by name instead. The held-mark design was
+the one in tension with it.
+
 ## This design was refused twice in writing, and here is what changed
 
 It should not be reversed quietly. Both refusals are quoted and answered.
