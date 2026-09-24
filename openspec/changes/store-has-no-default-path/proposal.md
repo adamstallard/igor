@@ -8,61 +8,92 @@ invent one, in the error it throws when the key is absent:
 
 The clause is unchanged from `openspec/changes/archive/2026-09-13-lore-store/`, the first
 archived change — written when the store was conceived as a `lore/` folder inside something,
-before `destination` existed as a resolved absolute path with no default. Nothing broke, because
-`store.ts` has honoured `destination` all along.
+before `destination` existed as a resolved absolute path with no default.
 
-**The stated default is not a harmless leftover: it recommends the nested layout.** A store at
-`lore/` inside a project repository is a store owned by that project, and the README tells
-operators the opposite — `destination: .`, one store per team, a repository of its own. Two
-documents in this repository disagree about what normal looks like.
+Correcting the default is not enough, because the wording that replaces it still permits the
+store to sit in a subdirectory of a repository that is mostly something else. **A store below the
+root of its repository is refused, not supported.** That is a narrowing: the in-force text
+permitted the nested layout and in fact recommended it.
 
-**Nesting is a bad idea on its own merits**, which is the reason to correct the spec rather than
-to make the nested layout work:
+### Nesting fails on ownership
 
-- Ownership follows the host repository. Who may propose an entry becomes who may push to that
-  project.
-- `publicStore` defaults to the host repository's visibility, so a public product repository
-  silently makes the store public and the provenance guard starts refusing entries citing
-  private repositories.
-- Archiving or transferring the project takes the team's lore and its `igor-state` branch with
-  it.
-- Most of all, an entry declaring `scope: global` says it is not about one project. The README
-  already names the failure: splitting the store by project "would fragment the `global` entries
+`config.ts` already states the principle, in the error above: *lore belongs to the operating
+team*. A store nested inside a project repository belongs to the project instead, in five ways
+that are not fixable from inside Igor.
+
+- **Access follows the host repository.** Who may propose an entry becomes who may push to that
+  project. A team with three repositories has one privileged repository whose contributors can
+  add lore and two whose contributors cannot.
+- **Visibility follows the host repository.** `publicStore` defaults to `isPublic(destination)`,
+  so nesting in a public product repository silently makes the store public — and the provenance
+  guard then refuses entries citing private repositories. The team learns this by having an entry
+  rejected.
+- **Lifecycle follows the host repository.** Archive, transfer or split the project and the
+  team's lore goes with it, along with the `igor-state` orphan branch.
+- **Scope breaks.** An entry declaring `scope: global` says it is *not* about one project. The
+  README already names the failure: splitting by project "would fragment the `global` entries
   across repositories and leave anything spanning two with nowhere to live." A nested store is a
   per-project store by construction.
+- **The automation cannot work cleanly.** `templates/reconcile-on-merge.yml` triggers on every
+  push to the default branch with no file-diff gate, and the template explains why one is
+  impossible: "a merge whose only content is a reviewer's deletion adds no entry file, and a gate
+  on changed files skips exactly the merge that has a rejection to record." A nested store
+  therefore means a reconcile job on every merge of a product repository, needing
+  `contents: write` and the Actions actor on that repository's branch-protection bypass list.
 
-The nested layout's automated half is also still broken —
-[#108](https://github.com/adamstallard/igor/issues/108): `templates/reconcile-on-merge.yml`
-stages `for dir in entries rejected` from the repository root, and `init-workflow` writes the
-workflow under the store where Actions never reads it. That is filed and is not addressed here.
+### The narrowing costs nothing that is in use
+
+The claim worth checking before narrowing is that no store is nested today. What the code shows
+is stronger than a survey of operators: the two halves of Igor have disagreed about where the
+store is **since the commit that introduced them**, and no failure ever surfaced it.
+`855b74a` (2026-09-13, *Add propose and reconcile*) commits an entry to
+`` `${ENTRIES_DIR}/${entry.id}.md` `` — a GitHub-API tree path, always relative to the repository
+root — while the same `ENTRIES_DIR` is joined onto `destination` in `src/store.ts`. On
+`origin/main` today the same disagreement stands at four sites, in `propose.ts` and
+`reconcile.ts`. A nested store would have committed its entries somewhere the id gate never
+reads, so a second proposal of the same claim would have overwritten the first. It was found by
+reading, not by a report — which is only possible if nothing nested is running.
+
+### The alternative was rejected on the costs, not on effort
+
+Supporting nesting properly is a known, bounded piece of work:
+[#107](https://github.com/adamstallard/igor/pull/107) implemented the API-side prefix and
+[#108](https://github.com/adamstallard/igor/issues/108) recorded what remained in the workflow
+template. Both are closed in favour of this change. They are not being dropped because they are
+hard — #107 was finished and green. They are being dropped because the layout they support is one
+no team should choose, for the five reasons above, and every later feature would have to keep
+carrying a prefix through the API side for it.
 
 ## What Changes
 
-**One modified `lore-store` requirement.** The store lives under the configured `destination`,
-which is required and has no default. Everything else the requirement says is kept: one markdown
-file per entry, in `entries/` beneath the destination, named by the entry's `id` plus `.md`, so
-an entry is locatable from a supersession pointer or a provenance reference. Both scenarios are
-kept; the first now names the path the code actually produces,
+**One modified `lore-store` requirement.** The store is at the **root** of its repository, under
+the configured `destination`, which is required and has no default. Beneath the destination, one
+markdown file per entry in `entries/`, named by the entry's `id` plus `.md`, so an entry is
+locatable from a supersession pointer or a provenance reference. Both existing scenarios are kept
+and the requirement's name is unchanged; the first now names the path the code produces,
 `<destination>/entries/<id>.md`.
 
-**This does not forbid a nested destination.** `store.ts` reads and writes wherever
-`destination` resolves, and [#107](https://github.com/adamstallard/igor/pull/107) is in review
-to make the GitHub-API side honour it too
-([#92](https://github.com/adamstallard/igor/issues/92)). The change removes a recommendation, not
-a capability.
+**A new scenario for the refusal.** A `destination` resolving below the root of a repository is
+refused at config load, naming the path within the repository and why the root is the only place
+a store may be.
 
-No code changes. This is a specification correction.
+**The implementation is a second gate on this branch**, not part of this change's spec push. One
+check at config load, against `git rev-parse --show-prefix`. See `tasks.md`.
 
 ## Capabilities
 
 ### Modified Capabilities
 
-- `lore-store`: the entry directory is located under the required `destination` rather than
-  under a default path, matching `src/config.ts`, which refuses to have one.
+- `lore-store`: the store is at its repository's root, under the required `destination`, and a
+  destination below the root is refused at config load. This **narrows** the capability — the
+  in-force text permitted a nested store and named `lore/entries/` as the default.
 
 ## Impact
 
-- The spec and the README agree on where a store lives.
-- Nobody reads a recommendation to nest the store inside a project repository, which is the
-  layout whose consequences the proposal lists and whose automation is broken (#108).
-- No behaviour changes and no code is touched.
+- The spec, the README and `config.ts` agree on where a store lives: its own repository, at the
+  root, one per team.
+- A misconfiguration that would have quietly given the store a project's access, visibility and
+  lifecycle now fails at config load with a message that says why.
+- Nothing in use is broken: the nested layout has never worked on the GitHub-API side, so
+  refusing it removes no working configuration.
+- No code in this change. The config-load check lands separately on this branch.
