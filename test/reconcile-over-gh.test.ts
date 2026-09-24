@@ -153,13 +153,26 @@ function entry(id: string): Entry {
   }
 }
 
-/** A checkout whose origin is the destination, which is where `repoFromCheckout` reads it. */
-function store(): string {
-  const dir = tempDir('igor-over-gh-')
-  execFileSync('git', ['-C', dir, 'init', '-q'])
-  execFileSync('git', ['-C', dir, 'remote', 'add', 'origin', 'https://github.com/org/lore.git'])
+/**
+ * A checkout whose origin is the destination, which is where `repoFromCheckout` reads it, with
+ * the store `at` that path inside it.
+ */
+function checkoutHolding(at: string): string {
+  const root = tempDir('igor-over-gh-')
+  execFileSync('git', ['-C', root, 'init', '-q'])
+  execFileSync('git', ['-C', root, 'remote', 'add', 'origin', 'https://github.com/org/lore.git'])
+  const dir = join(root, at)
   mkdirSync(join(dir, ENTRIES_DIR), { recursive: true })
   return dir
+}
+
+function store(): string {
+  return checkoutHolding('')
+}
+
+/** A store one directory down, which is the layout the spec's default `lore/entries/` names. */
+function nestedStore(): string {
+  return checkoutHolding('lore')
 }
 
 /** `/commits/{sha}` and `/pulls/N/files` both report a status per file; added is the default. */
@@ -1017,5 +1030,55 @@ describe('what asking who merged costs', () => {
       'repos/org/lore/commits/sha7',
       'repos/org/lore/pulls/7',
     ])
+  })
+})
+
+describe('a store in a subdirectory of its checkout', () => {
+  const path = `lore/${ENTRIES_DIR}/use-query-hook.md`
+
+  it('promotes an entry the pull request added under the store', async () => {
+    const dir = nestedStore()
+    writeEntry(dir, entry('use-query-hook'))
+    mergedPr(7)
+    commits.set(7, ['sha1'])
+    filesAt.set('sha1', touched(path))
+    landed.set(7, touched(path))
+
+    const result = await reconcile(config(dir))
+
+    expect(result.promoted.map((p) => p.id)).toEqual(['use-query-hook'])
+    expect(loadEntry(dir, 'use-query-hook').entry?.status).toBe('active')
+  })
+
+  it('reads a candidate the reviewer deleted at the path the store puts it', async () => {
+    const dir = nestedStore()
+    mergedPr(7)
+    commits.set(7, ['sha1'])
+    filesAt.set('sha1', touched(path))
+    landed.set(7, [])
+    contentAt.set(`${path}@sha1`, serialize(entry('use-query-hook')))
+
+    const result = await reconcile(config(dir))
+
+    expect(result.declined.map((d) => d.id)).toEqual(['use-query-hook'])
+    expect(readFileSync(join(dir, REJECTED_DIR, 'use-query-hook.md'), 'utf8')).toContain(
+      'Fetch with the shared query hook',
+    )
+  })
+
+  it('reads an entries/ at the repository root as no proposal at all', async () => {
+    // Nothing writes there, so a markdown file that happens to be there is somebody else's.
+    const dir = nestedStore()
+    const atRoot = `${ENTRIES_DIR}/use-query-hook.md`
+    mergedPr(7)
+    commits.set(7, ['sha1'])
+    filesAt.set('sha1', touched(atRoot))
+    landed.set(7, touched(atRoot))
+
+    const result = await reconcile(config(dir))
+
+    expect(result.promoted).toEqual([])
+    expect(result.declined).toEqual([])
+    expect(result.missingLocally).toEqual([])
   })
 })

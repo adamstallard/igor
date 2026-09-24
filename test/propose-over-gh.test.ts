@@ -1,4 +1,6 @@
 import { execFileSync } from 'node:child_process'
+import { mkdirSync } from 'node:fs'
+import { join } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Config } from '../src/config.js'
 import type { Entry } from '../src/entry.js'
@@ -16,7 +18,11 @@ class FakeGhError extends Error {}
 
 const BASE_SHA = 'basesha'
 const TREES: Record<string, string> = { [ENTRIES_DIR]: 'entriestree', [REJECTED_DIR]: 'rejectedtree' }
+/** The tree the store's own directory holds, where the store is not at the repository root. */
+const STORE_TREE = 'storetree'
 
+/** The store's path within the repository, with a trailing slash and empty at the root. */
+let prefix = ''
 /** Upstream store contents at `BASE_SHA`, per directory. */
 let upstream: Record<string, string[]> = {}
 /** Directories whose tree comes back truncated, as a store past the API's cap does. */
@@ -34,16 +40,28 @@ function treeOf(dir: string): unknown {
   }
 }
 
+function storeDirs(): unknown[] {
+  return Object.keys(upstream).map((dir) => ({
+    path: dir,
+    type: notADirectory.has(dir) ? 'blob' : 'tree',
+    sha: TREES[dir],
+  }))
+}
+
 function rootTree(): unknown {
   return {
     truncated: truncated.has(''),
     tree: [
       { path: 'README.md', type: 'blob', sha: 'blob-readme' },
-      ...Object.keys(upstream).map((dir) => ({
-        path: dir,
-        type: notADirectory.has(dir) ? 'blob' : 'tree',
-        sha: TREES[dir],
-      })),
+      ...(prefix === ''
+        ? storeDirs()
+        : [
+            {
+              path: prefix.slice(0, -1),
+              type: notADirectory.has(prefix) ? 'blob' : 'tree',
+              sha: STORE_TREE,
+            },
+          ]),
     ],
   }
 }
@@ -68,6 +86,9 @@ vi.mock('../src/gh.js', () => ({
     if (endpoint === 'repos/org/lore') return { private: true, default_branch: 'main' }
     if (endpoint === 'repos/org/lore/git/ref/heads/main') return { sha: BASE_SHA }
     if (endpoint === `repos/org/lore/git/trees/${BASE_SHA}`) return rootTree()
+    if (endpoint === `repos/org/lore/git/trees/${STORE_TREE}`) {
+      return { truncated: truncated.has(prefix), tree: storeDirs() }
+    }
     const sub = Object.entries(TREES).find(([, sha]) => endpoint === `repos/org/lore/git/trees/${sha}`)
     if (sub) return treeOf(sub[0])
     throw new FakeGhError(`unexpected endpoint: ${endpoint}`)
@@ -99,6 +120,18 @@ function store(): string {
   return dir
 }
 
+/**
+ * The same checkout with the store one directory down, which is the layout the spec's default
+ * `lore/entries/` names. The destination is the store, and the repository is its parent.
+ */
+function nestedStore(): string {
+  const checkout = store()
+  prefix = 'lore/'
+  const dir = join(checkout, 'lore')
+  mkdirSync(dir)
+  return dir
+}
+
 function config(destination: string): Config {
   return { destination, reviewers: ['abram'], experts: [], budget: { seats: [], pools: [] } }
 }
@@ -114,6 +147,7 @@ function treeReads(): string[] {
 }
 
 beforeEach(() => {
+  prefix = ''
   upstream = { [ENTRIES_DIR]: [], [REJECTED_DIR]: [] }
   truncated = new Set()
   notADirectory = new Set()
@@ -254,5 +288,65 @@ describe('a store nothing collides with', () => {
       `${ENTRIES_DIR}/use-query-hook.md`,
     ])
     expect(outcome.skipped).toEqual({ inStore: [], rejected: [] })
+  })
+})
+
+describe('a store in a subdirectory of its checkout', () => {
+  it('commits the entry under the store rather than at the repository root', async () => {
+    await propose(config(nestedStore()), [entry('lint-first')], serialize)
+
+    expect(committedPaths()).toEqual([`lore/${ENTRIES_DIR}/lint-first.md`])
+  })
+
+  it('gates the id against the store rather than against the repository root', async () => {
+    // A gate reading the root finds no `entries/` at all and reports every id free, so the
+    // second proposal of a claim commits over the first.
+    upstream[ENTRIES_DIR] = ['use-query-hook.md']
+
+    const outcome = await propose(
+      config(nestedStore()),
+      [entry('use-query-hook'), entry('lint-first')],
+      serialize,
+    )
+
+    expect(outcome.skipped.inStore).toEqual(['use-query-hook'])
+    expect(committedPaths()).toEqual([`lore/${ENTRIES_DIR}/lint-first.md`])
+  })
+
+  it('reads the directory it walks through once, not once per store directory', async () => {
+    upstream[ENTRIES_DIR] = ['use-query-hook.md']
+
+    await propose(config(nestedStore()), [entry('lint-first')], serialize)
+
+    expect(treeReads()).toEqual([
+      `repos/org/lore/git/trees/${BASE_SHA}`,
+      `repos/org/lore/git/trees/${STORE_TREE}`,
+      `repos/org/lore/git/trees/${TREES[ENTRIES_DIR]}`,
+      `repos/org/lore/git/trees/${TREES[REJECTED_DIR]}`,
+    ])
+  })
+
+  it('refuses a directory on the way down that is not a directory', async () => {
+    // A submodule at the store's own path is a commit in the root tree. Reading it as absent
+    // would gate against an empty store, one level above where that is already refused.
+    const dir = nestedStore()
+    upstream[ENTRIES_DIR] = ['use-query-hook.md']
+    notADirectory.add(prefix)
+
+    await expect(propose(config(dir), [entry('use-query-hook')], serialize)).rejects.toBeInstanceOf(
+      GitHubError,
+    )
+    expect(posts).toEqual([])
+  })
+
+  it('refuses a listing on the way down that it cannot read in full', async () => {
+    const dir = nestedStore()
+    upstream[ENTRIES_DIR] = ['use-query-hook.md']
+    truncated.add(prefix)
+
+    await expect(propose(config(dir), [entry('lint-first')], serialize)).rejects.toBeInstanceOf(
+      GitHubError,
+    )
+    expect(posts).toEqual([])
   })
 })

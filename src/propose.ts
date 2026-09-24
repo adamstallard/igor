@@ -14,6 +14,7 @@ import {
   openPullRequest,
   repoFromCheckout,
   requestReviewers,
+  storePrefix,
   type OpenedPr,
 } from './github.js'
 
@@ -182,6 +183,9 @@ export interface ProposeOutcome {
 /**
  * The ids a store holds at one commit — entries and rejections both.
  *
+ * `prefix` is the store's path within the repository, because a tree path is relative to the
+ * repository root while the store may be anywhere inside it.
+ *
  * Read from the tree a proposal is committed onto, never from a checkout, because the two are
  * not the same tree. A checkout behind upstream reports an id free that the commit would
  * overwrite, and an overwrite arrives at review as an edit to an entry somebody already
@@ -191,11 +195,14 @@ export interface ProposeOutcome {
 async function idsAt(
   repo: string,
   sha: string,
+  prefix: string,
 ): Promise<{ taken: Set<string>; rejected: Set<string> }> {
-  const dirs = await filesUnder(repo, sha, [ENTRIES_DIR, REJECTED_DIR])
+  const entries = `${prefix}${ENTRIES_DIR}`
+  const rejected = `${prefix}${REJECTED_DIR}`
+  const dirs = await filesUnder(repo, sha, [entries, rejected])
   const ids = (dir: string): Set<string> =>
     new Set((dirs.get(dir) ?? []).filter((f) => f.endsWith('.md')).map((f) => basename(f, '.md')))
-  return { taken: ids(ENTRIES_DIR), rejected: ids(REJECTED_DIR) }
+  return { taken: ids(entries), rejected: ids(rejected) }
 }
 
 export interface TipIds {
@@ -265,8 +272,9 @@ export function upstreamHoldsTheName(
 export async function idsOnDefaultBranch(destination: string): Promise<TipIds> {
   try {
     const repo = await repoFromCheckout(destination)
+    const prefix = await storePrefix(destination)
     const sha = await branchSha(repo, await defaultBranch(repo))
-    const { taken, rejected } = await idsAt(repo, sha)
+    const { taken, rejected } = await idsAt(repo, sha, prefix)
     return { taken, rejected, ids: new Set([...taken, ...rejected]) }
   } catch (error) {
     // Only a failure of the read degrades. Anything else is a fault of ours, and swallowing it
@@ -294,6 +302,7 @@ export async function propose(
   }
 
   const repo = await repoFromCheckout(config.destination)
+  const prefix = await storePrefix(config.destination)
   const storeIsPublic = config.publicStore ?? (await isPublic(repo))
   await checkProvenanceVisibility(entries, storeIsPublic)
 
@@ -302,7 +311,7 @@ export async function propose(
 
   // Gated on the tree the commit below is built on, named by the same sha, so nothing can
   // take an id in between the two.
-  const upstream = await idsAt(repo, baseSha)
+  const upstream = await idsAt(repo, baseSha, prefix)
   const eligible = eligibleToPropose(entries, upstream.taken, upstream.rejected)
   const skipped = { inStore: eligible.inStore, rejected: eligible.rejected }
   if (eligible.entries.length === 0) {
@@ -324,7 +333,7 @@ export async function propose(
   for (const [author, group] of groupByDominant(eligible.entries)) {
     const branch = branchName(author, now)
     const files = group.map((entry) => ({
-      path: `${ENTRIES_DIR}/${entry.id}.md`,
+      path: `${prefix}${ENTRIES_DIR}/${entry.id}.md`,
       content: serialize(entry),
     }))
 

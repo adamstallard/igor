@@ -22,6 +22,32 @@ export async function repoFromCheckout(dir: string): Promise<string> {
   return `${match.groups['owner']}/${match.groups['name']}`
 }
 
+/**
+ * The store's path within its repository, with a trailing slash and empty at the root.
+ *
+ * Every tree path the GitHub API takes is relative to the repository root, while the store is
+ * read from a directory on disk. This is what turns one into the other, and getting it from git
+ * rather than from config means it cannot drift from where the files actually are.
+ *
+ * A destination outside a git repository is refused, as it is for the remote: reading it as the
+ * root would commit entries where nothing looks for them.
+ *
+ * Only the terminating newline comes off. git emits the path raw, so trimming instead takes a
+ * leading space off the directory's name — and the prefix then names a directory that is not the
+ * store, which the gate reads as empty and the commit lands beside.
+ */
+export async function storePrefix(dir: string): Promise<string> {
+  try {
+    const { stdout } = await run('git', ['-C', dir, 'rev-parse', '--show-prefix'])
+    return stdout.replace(/\n$/, '')
+  } catch {
+    throw new GitHubError(
+      `${dir} is not inside a git repository — the lore destination must be a checkout of the ` +
+        `repository pull requests are opened against`,
+    )
+  }
+}
+
 export async function isPublic(repo: string): Promise<boolean> {
   const data = (await gh(['api', `repos/${repo}`, '--jq', '{private}'])) as { private: boolean }
   return !data.private
@@ -577,35 +603,56 @@ async function tree(repo: string, sha: string): Promise<RawTree> {
 
 /**
  * The file names directly under each of `dirs` at one commit, keyed by directory. A directory
- * that is not there maps to nothing; one that is there but is not a directory is refused.
+ * that is not there maps to nothing; one that is there but is not a directory is refused, at
+ * every level of the walk down to it.
  *
- * One request for the commit's root tree and one per directory present — three at most for a
- * whole store, and none per file. The contents endpoint would answer the same question in two,
- * and caps a directory listing at a thousand files with nothing in the payload saying it did:
- * here a read that came back short is a path reported free that is already taken, which is the
- * failure this is used to prevent. `truncated` is refused rather than trimmed for the same
- * reason.
+ * `dirs` are paths relative to the root of the tree and may be nested, because a store in a
+ * subdirectory of its repository has to be walked down to.
  *
- * `dirs` are paths at the root of the tree, not nested ones.
+ * One request per directory on the way, each read once however many of `dirs` go through it,
+ * and none per file. The contents endpoint would answer the same question in two, and caps a
+ * directory listing at a thousand files with nothing in the payload saying it did: here a read
+ * that came back short is a path reported free that is already taken, which is the failure this
+ * is used to prevent. `truncated` is refused rather than trimmed for the same reason.
  */
 export async function filesUnder(
   repo: string,
   sha: string,
   dirs: readonly string[],
 ): Promise<Map<string, string[]>> {
-  const root = await tree(repo, sha)
+  /** Directories asked for so far, so a parent two of `dirs` share costs one request. */
+  const reads = new Map<string, Promise<RawTree | undefined>>()
+
+  const at = (path: string): Promise<RawTree | undefined> => {
+    const already = reads.get(path)
+    if (already !== undefined) return already
+    const slash = path.lastIndexOf('/')
+    const pending: Promise<RawTree | undefined> =
+      path === ''
+        ? tree(repo, sha)
+        : (async () => {
+            const parent = await at(slash === -1 ? '' : path.slice(0, slash))
+            if (parent === undefined) return undefined
+            const node = parent.tree.find((e) => e.path === path.slice(slash + 1))
+            if (node === undefined) return undefined
+            if (node.type !== 'tree') {
+              // A symlink or a submodule where a directory is expected. Reading it as absent
+              // would hand back an empty listing, which is a caller told every path in it is
+              // free.
+              throw new GitHubError(
+                `${path} at ${sha} in ${repo} is a ${node.type}, not a directory — it cannot be listed`,
+              )
+            }
+            return tree(repo, node.sha)
+          })()
+    reads.set(path, pending)
+    return pending
+  }
+
   const found = new Map<string, string[]>()
   for (const dir of dirs) {
-    const node = root.tree.find((e) => e.path === dir)
-    if (node === undefined) continue
-    if (node.type !== 'tree') {
-      // A symlink or a submodule where a directory is expected. Reading it as absent would
-      // hand back an empty listing, which is a caller told every path in it is free.
-      throw new GitHubError(
-        `${dir} at ${sha} in ${repo} is a ${node.type}, not a directory — it cannot be listed`,
-      )
-    }
-    const listing = await tree(repo, node.sha)
+    const listing = await at(dir)
+    if (listing === undefined) continue
     found.set(dir, listing.tree.filter((e) => e.type === 'blob').map((e) => e.path))
   }
   return found

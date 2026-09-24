@@ -1,4 +1,8 @@
+import { execFileSync } from 'node:child_process'
+import { mkdirSync } from 'node:fs'
+import { join } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { tempDir } from './tmp.js'
 
 class FakeGhError extends Error {}
 
@@ -57,7 +61,9 @@ vi.mock('../src/gh.js', () => ({
   ghPaginated: async (args: readonly string[]) => landed.get(prNumber(args[1] ?? '')) ?? [],
 }))
 
-const { listPullRequests, proposedFiles } = await import('../src/github.js')
+const { GitHubError, listPullRequests, proposedFiles, storePrefix } = await import(
+  '../src/github.js'
+)
 
 /** Both file endpoints report a status per file; `added` is the ordinary one. */
 function touched(...files: (string | [string, string])[]): { filename: string; status?: string }[] {
@@ -203,5 +209,35 @@ describe('a file the pull request did not add', () => {
 
     expect(proposal.files).toEqual(['entries/kept.md'])
     expect(proposal.landed).toEqual(['entries/swept.md', 'entries/kept.md'])
+  })
+})
+
+describe("the store's path within its repository", () => {
+  function repo(): string {
+    const root = tempDir('igor-prefix-')
+    execFileSync('git', ['-C', root, 'init', '-q'])
+    return root
+  }
+
+  it('is empty at the root and names the directory the store sits in', async () => {
+    const root = repo()
+    mkdirSync(join(root, 'lore'))
+
+    expect(await storePrefix(root)).toBe('')
+    expect(await storePrefix(join(root, 'lore'))).toBe('lore/')
+  })
+
+  it('keeps whitespace that is part of the directory name', async () => {
+    // git emits the path raw and terminates it with a newline, so only that newline may be
+    // taken off. Trimming eats a leading space, and the prefix then names a directory that is
+    // not the store: the gate reads it empty and the commit lands beside the store.
+    const root = repo()
+    mkdirSync(join(root, ' lore'))
+
+    expect(await storePrefix(join(root, ' lore'))).toBe(' lore/')
+  })
+
+  it('refuses a destination that is not inside a git repository', async () => {
+    await expect(storePrefix(tempDir('igor-outside-'))).rejects.toBeInstanceOf(GitHubError)
   })
 })

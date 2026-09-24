@@ -747,6 +747,17 @@ gating on half a store. `git/trees/{sha}:{path}` resolves a subdirectory in one 
 rejected for the same reason: it is undocumented, and its 404 cannot be told from a store that
 has no such directory.
 
+**Every tree path is the store's prefix within the repository plus the directory name.** A tree
+path is relative to the repository root and a store configured one directory down is not there,
+so the gate, the commit, recognition and the promote path each prepend what `git -C <destination>
+rev-parse --show-prefix` reports. That keeps all four agreeing with `store.ts`, which joins the
+destination on disk. The prefix is empty at the root, so nothing about the documented layout
+changes. Walking down to a nested store costs one tree per level, read once however many store
+directories go through it, and refuses a non-directory at every level rather than reading it as
+absent — which is the same short read one level up. A destination outside a git repository is
+refused exactly as one with no origin remote is: reading it as the root would put entries where
+nothing looks for them.
+
 **`create` mints against the same branch, and that is what makes it a network command.** It read
 the checkout alone, so a person one merge behind minted an id upstream already held and wrote an
 entry the gate above then drops — caught, but only after the work. It now reads the ids on the

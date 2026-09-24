@@ -22,6 +22,8 @@ const fetched: string[] = []
 
 vi.mock('../src/github.js', () => ({
   repoFromCheckout: async () => 'org/lore',
+  // The store is the checkout root here, which is what every path below is written against.
+  storePrefix: async () => '',
   listPullRequests: async () => ({ prs, complete: true }),
   pullRequest: async (_repo: string, number: number) => prs.find((p) => p.number === number),
   proposedFiles: async (_repo: string, number: number) => {

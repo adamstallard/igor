@@ -20,6 +20,7 @@ import {
   proposedFiles,
   proposingCommitFiles,
   repoFromCheckout,
+  storePrefix,
   type PrState,
 } from './github.js'
 import { readState, writeState } from './state.js'
@@ -123,13 +124,19 @@ function daysBetween(iso: string, now: Date): number {
   return (now.getTime() - Date.parse(iso)) / 86_400_000
 }
 
-/** An entry file, by where it lives. A markdown file elsewhere shares no namespace with it. */
-function isEntryFile(path: string): boolean {
-  return path.startsWith(`${ENTRIES_DIR}/`) && path.endsWith('.md')
+/**
+ * An entry file, by where it lives. A markdown file elsewhere shares no namespace with it.
+ *
+ * `prefix` is the store's path within the repository. These paths come back from the API and so
+ * are relative to the repository root, which is not where the store is unless it happens to sit
+ * there.
+ */
+function isEntryFile(path: string, prefix: string): boolean {
+  return path.startsWith(`${prefix}${ENTRIES_DIR}/`) && path.endsWith('.md')
 }
 
-function idsFrom(paths: readonly string[]): string[] {
-  return paths.filter(isEntryFile).map((p) => basename(p, '.md'))
+function idsFrom(paths: readonly string[], prefix: string): string[] {
+  return paths.filter((p) => isEntryFile(p, prefix)).map((p) => basename(p, '.md'))
 }
 
 /**
@@ -167,9 +174,9 @@ function readEntry(read: () => LoadedEntry): { entry?: Entry; reason: string } {
  * Costs requests either way, so the loop calls it only where it has no files in hand already
  * and the answer changes what gets reported.
  */
-async function isProposal(repo: string, number: number): Promise<boolean> {
-  if (idsFrom(await landedFiles(repo, number)).length > 0) return true
-  return idsFrom((await proposingCommitFiles(repo, number)).files).length > 0
+async function isProposal(repo: string, number: number, prefix: string): Promise<boolean> {
+  if (idsFrom(await landedFiles(repo, number), prefix).length > 0) return true
+  return idsFrom((await proposingCommitFiles(repo, number)).files, prefix).length > 0
 }
 
 /**
@@ -230,6 +237,7 @@ export async function reconcile(
   const now = options.now ?? new Date()
   const staleAfterDays = options.staleAfterDays ?? 7
   const repo = await repoFromCheckout(config.destination)
+  const prefix = await storePrefix(config.destination)
   const stored = await readState<ReconcileState>(repo, STATE_PATH)
   const since = typeof stored?.closedSeen === 'string' ? stored.closedSeen : undefined
   const scan = await listPullRequests(repo, since)
@@ -274,7 +282,7 @@ export async function reconcile(
       // The window is tested before the files are: a quiet pull request is the only open one
       // this reports on, so a backlog of active ones costs no request at all.
       if (daysBetween(pr.updatedAt, now) < staleAfterDays) continue
-      if (!(await isProposal(repo, pr.number))) continue
+      if (!(await isProposal(repo, pr.number, prefix))) continue
       result.stale.push({
         pr: pr.number,
         url: pr.url,
@@ -284,7 +292,7 @@ export async function reconcile(
       continue
     }
     if (!pr.merged) {
-      if (!(await isProposal(repo, pr.number))) continue
+      if (!(await isProposal(repo, pr.number, prefix))) continue
       // Closed without merging means deferred. Declining is permanent, so it must be the
       // deliberate act of deleting a file, never the passive one of closing a tab.
       result.deferred.push(pr.number)
@@ -293,7 +301,7 @@ export async function reconcile(
 
     const proposal = await proposedFiles(repo, pr.number)
     // Free on this path: these are the files the loop was fetching anyway.
-    const proposedIds = idsFrom(proposal.files)
+    const proposedIds = idsFrom(proposal.files, prefix)
     if (proposedIds.length === 0) continue
     /**
      * Who merged, which the list endpoint does not carry: it omits `merged_by` outright, so a
@@ -313,7 +321,7 @@ export async function reconcile(
     }
     const by = detail.mergedBy ?? detail.assignees[0] ?? 'unknown'
     const at = detail.mergedAt ?? now.toISOString().slice(0, 10)
-    const landed = new Set(idsFrom(proposal.landed))
+    const landed = new Set(idsFrom(proposal.landed, prefix))
     /**
      * What this pull request had produced before its entries were walked. Anything it adds is
      * something a later run still has to see: a promotion or a rejection because the write into
@@ -329,7 +337,7 @@ export async function reconcile(
     const before = produced()
 
     for (const id of proposedIds) {
-      const path = `${ENTRIES_DIR}/${id}.md`
+      const path = `${prefix}${ENTRIES_DIR}/${id}.md`
       if (!present.has(id)) {
         // A local absence means the reviewer deleted it, or this checkout is behind. Rejection
         // is permanent, so the pull request's own diff settles it. Asking the destination's
