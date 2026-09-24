@@ -22,6 +22,10 @@ A removal lost this way is the most expensive thing that can go missing. The res
 names the base as a parent, so a file left in it is restored the moment the artifact merges, and
 review sees a file that is still there rather than a change that is wrong.
 
+Nothing downstream recovers it. A guard comparing what the base changed against what the
+resolution publishes has no entry for a path the base never touched, and what the resolution
+publishes is itself built from this read.
+
 How the tree is read is not fixed here. What is fixed is that no changed path may be reported
 only as part of another.
 
@@ -41,8 +45,7 @@ only as part of another.
 #### Scenario: Nothing else in the loop would have caught it
 
 - **WHEN** the folded removal is of a path the base never changed
-- **THEN** the removal is still carried, because no comparison against what the base changed has
-  that path to compare
+- **THEN** the removal is still carried
 
 #### Scenario: A rename is carried however git reports it
 
@@ -52,5 +55,5 @@ only as part of another.
 
 #### Scenario: An ordinary run is unaffected
 
-- **WHEN** every changed path is reported on its own
-- **THEN** the run reads and publishes what it did before, and costs no more to do it
+- **WHEN** a run's changes involve no path git reports only as part of another
+- **THEN** the artifact carries the same additions, modifications and removals it carried before

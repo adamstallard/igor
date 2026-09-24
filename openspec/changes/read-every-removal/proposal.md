@@ -24,10 +24,10 @@ b.md
 ```
 
 The `--no-renames` line is what identifies the cause: the deletion is lost to rename detection,
-not to anything about the merge itself. Outside a conflicted merge the same deletion is always
-printed — a rename's destination has to be a tracked path in the index for the pairing to
-happen, and outside a merge an unstaged new file is untracked. Roughly 1–2% of fuzzed merge
-trials on PR #114 hit it.
+not to anything about the merge itself. In a control run outside a merge the deletion was
+printed (` D b.md`, `?? c.md`): the pairing needs the destination to be a tracked index entry,
+which a conflicted merge supplies and an untracked new file does not. Roughly 1–2% of fuzzed
+merge trials on PR #114 hit it.
 
 **No parsing change can recover it.** `statusRecords` and `changes()` can only pair, order and
 classify records that are in the output. This one is not, and it is not reported as a rename
