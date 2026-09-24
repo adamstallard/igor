@@ -20,13 +20,14 @@ import { reconcile, promoteInPlace, renderReconciliation } from './reconcile.js'
 import { GitHubError } from './github.js'
 import { claimRequested, contradictoryRunFlags } from './flags.js'
 import { explainRole, loadRole, rolesFrom, RoleError } from './role.js'
-import { catchUpItem, planCycle, runItem, type CycleReport } from './loop.js'
+import { catchUpItem, planCycle, runItem, UNTRIAGED_NO_SEAT, type CycleReport } from './loop.js'
 import { renderProgress } from './execute.js'
 import { serve, untilSignalled } from './serve.js'
 import { GitHubTracker, GitHubCodeHost } from './github-adapter.js'
 import type { Candidate } from './adapter.js'
 import { laneVerdict, staleOwnArtifact, universalSkip } from './predicate.js'
 import { noteHandoff, shouldDefer } from './deferred.js'
+import { noCapacity } from './handoff.js'
 import { CloneProvider } from './worktree.js'
 import { TriageError } from './triage.js'
 import { BudgetError, budgetGate, loadSpend, percent, readAllSeats, renderBudget } from './budget.js'
@@ -318,6 +319,25 @@ function triageSpend(report: CycleReport): string {
     : amount
 }
 
+/**
+ * What a cycle left untriaged and why, so it cannot be read as a cycle that found nothing.
+ *
+ * One line per reason, because they answer differently: a held pool is a wait or a fault
+ * depending which way it was held, which is why that group gets the fuller sentence; a seat
+ * whose credential would not read already has a failure line carrying what the provider said;
+ * and items past the cycle's cap are simply next in line.
+ */
+function untriagedLines(report: CycleReport): string[] {
+  const counts = new Map<string, number>()
+  for (const u of report.untriaged) counts.set(u.reason, (counts.get(u.reason) ?? 0) + 1)
+  return [...counts].map(([reason, n]) => {
+    const why = reason === UNTRIAGED_NO_SEAT && report.heldPool !== undefined
+      ? noCapacity(report.heldPool)
+      : reason
+    return `${n} left untriaged — ${why}`
+  })
+}
+
 function renderCycle(report: CycleReport, verbose: boolean): string {
   const out: string[] = []
   for (const f of report.failures) out.push(`  ! ${f}`)
@@ -335,6 +355,7 @@ function renderCycle(report: CycleReport, verbose: boolean): string {
       out.push(`  ${c.candidate.native.padStart(6)}  ${c.reason}`)
     }
   }
+  out.push(...untriagedLines(report))
   if (verbose && report.skipped.length > 0) {
     out.push('', `skipped before any model call (${report.skipped.length}):`)
     for (const s of report.skipped.slice(0, 40)) {
@@ -536,13 +557,15 @@ program
       store,
       onEvent: (e) => {
         switch (e.kind) {
-          case 'planned':
+          case 'planned': {
             say(
               `cycle ${e.cycle}: ${e.report.fresh} fresh, ${e.report.triaged} triaged, ` +
                 `${e.report.toClaim.length} to claim (${triageSpend(e.report)})`,
             )
+            for (const line of untriagedLines(e.report)) say(`  ${line}`)
             for (const f of e.report.failures) say(`  ! ${f}`)
             break
+          }
           case 'working':
             say(`  working ${e.item.native} "${e.item.title.slice(0, 50)}" on ${e.seat ?? '(unenforced)'}`)
             break
