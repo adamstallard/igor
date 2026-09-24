@@ -5,10 +5,12 @@ more than one defensible answer, and the rejected ones are worth having in writi
 
 ## Shipping `git rm:*` before a removal can be published
 
-A worker with `git rm:*` can delete a file today. The publishing path drops the deletion: the
-worker does the work, the seat is spent, the artifact arrives without the removal, and nothing
-in it says a file was meant to go. [#88](https://github.com/adamstallard/igor/pull/88) is the
-change that makes a removal survive, and it is open.
+A worker with `git rm:*` can delete a file. The publishing path used to drop the deletion: the
+worker did the work, the seat was spent, the artifact arrived without the removal, and nothing
+in it said a file was meant to go. [#88](https://github.com/adamstallard/igor/pull/88) is the
+change that makes a removal survive, and it has merged and archived — so the condition below is
+met and the two entries ship live. The fork is recorded because the requirement is written to
+outlive it.
 
 Three answers:
 
@@ -19,11 +21,11 @@ Three answers:
   — the config at the root, the org role, the workflow, the refusals — is useful now and has
   nothing to do with removals. Making the whole command wait on an unrelated pull request buys
   one accurate default at the cost of everything else.
-- **Ship them commented, with a note naming what unlocks them.** Taken. The operator sees the
-  two lines, sees why they are off, and uncomments them when the note says they work. If #88
-  has landed by the time this is implemented, the condition in the requirement is already
-  satisfied and they ship live — the requirement is written against the condition rather than
-  against the pull request number, so it needs no amendment either way.
+- **Ship them commented, with a note naming what unlocks them.** Taken, and already discharged:
+  #88 landed before this was implemented, so the condition in the requirement is satisfied and
+  the two entries ship live. The requirement is written against the condition rather than against
+  the pull request number, which is why it needed no amendment when #88 merged — and why it stays
+  correct if a future change ever makes a removal stop surviving again.
 
 The requirement states the condition ("where a removal a worker makes does not yet survive into
 the published artifact") rather than the pull request, because a spec that names an open PR

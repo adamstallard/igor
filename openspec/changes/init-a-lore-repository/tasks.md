@@ -17,8 +17,9 @@
       instructions, each line carrying why it is there. The template may land before the command
       does; a `cp templates/org.yaml roles/org.yaml` step in the README must not, because `init`
       would delete it again
-- [ ] 2.2 `git rm:*` and `git mv:*` live if a worker's removal reaches the artifact by then,
-      commented with a note naming #88 if not
+- [ ] 2.2 `git rm:*` and `git mv:*` ship **live**: #88 merged and archived, so a worker's removal
+      now reaches the artifact and the requirement's condition is met. Comment them only if that
+      stops being true
 - [ ] 2.3 A test that the shipped template loads as a role and merges as an org base, so it
       cannot rot into a file that no longer parses
 - [ ] 2.4 A test asserting the exclusions by name — nothing in the shipped list commits, pushes,

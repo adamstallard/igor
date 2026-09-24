@@ -66,12 +66,14 @@ bare `npx:*`, `curl`, `sh`, `bash` (the worker's environment holds the seat's to
 `grep` and `find` are redundant rather than dangerous: `commands` governs Bash alone, and the
 worker keeps Read, Edit, Write, Grep and Glob regardless.
 
-**`git rm:*` and `git mv:*` are only useful once a removal survives publication.** Until
-[#88](https://github.com/adamstallard/igor/pull/88) lands, a worker can produce a deletion and
-the publish path drops it — the work is done, the seat is spent, and nothing in the artifact
-says a file was meant to go. So the requirement makes those two entries conditional: active
-where a removal reaches the artifact, and otherwise shipped commented with a note naming what
-unlocks them. `design.md` argues that fork.
+**`git rm:*` and `git mv:*` are only useful once a removal survives publication.** Before
+[#88](https://github.com/adamstallard/igor/pull/88), a worker could produce a deletion and the
+publish path dropped it — the work done, the seat spent, and nothing in the artifact saying a
+file was meant to go. So the requirement makes those two entries conditional: active where a
+removal reaches the artifact, and otherwise shipped commented with a note naming what unlocks
+them. **#88 has merged and archived, so the condition is met and they ship live.** The
+conditional wording stays because it is what kept the requirement correct across that landing.
+`design.md` argues the fork.
 
 **Three things it must not do**, all requirement-level:
 
