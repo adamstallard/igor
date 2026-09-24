@@ -88,6 +88,48 @@ describe('composed from state, never from a model', () => {
     expect(remaining[0]).toContain('role may not open one')
   })
 
+  it('counts a removal as work rather than as nothing', () => {
+    // A run whose every change was a removal publishes a pull request. Counted only as edits,
+    // the handoff says a draft was opened over no changes at all.
+    const { done } = stepsFrom(
+      CLAIMED,
+      result({ changed: [{ path: 'src/gone.ts', content: '', kind: 'deleted' }] }),
+      NOW,
+    )
+    expect(done).toEqual(['claimed this 12 minutes ago', 'removed 1 file', 'opened #9 as a draft'])
+  })
+
+  it('counts what the artifact carries, not what git reported twice', () => {
+    // A path written back after being removed is two records for one file. Counted as both,
+    // the handoff sends the reader looking for a deletion that is not in the diff.
+    const { done } = stepsFrom(
+      CLAIMED,
+      result({
+        changed: [
+          { path: 'src/a.ts', content: '', kind: 'deleted' },
+          { path: 'src/a.ts', content: 'rewritten', kind: 'added' },
+        ],
+      }),
+      NOW,
+    )
+    expect(done).toEqual(['claimed this 12 minutes ago', 'changed 1 file', 'opened #9 as a draft'])
+  })
+
+  it('says a removal that was never published is gone too', () => {
+    // The alternative branch reads "nothing usable was produced", one line under a Done list
+    // that has just said a file was removed.
+    const { remaining } = stepsFrom(
+      CLAIMED,
+      result({
+        outcome: 'failed',
+        artifact: undefined,
+        changed: [{ path: 'src/gone.ts', content: '', kind: 'deleted' }],
+      }),
+      NOW,
+    )
+    expect(remaining.join(' ')).toMatch(/never published.*gone with the working copy/)
+  })
+
   it('does not claim files were changed when none were', () => {
     const { done } = stepsFrom(CLAIMED, result({ changed: [], artifact: undefined, outcome: 'nothing-to-do' }), NOW)
     expect(done.join(' ')).not.toMatch(/changed/)

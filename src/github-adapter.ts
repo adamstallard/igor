@@ -342,10 +342,19 @@ export class GitHubCodeHost implements CodeHost {
   readonly name = 'github'
 
   async produce(request: ArtifactRequest): Promise<Artifact> {
-    if (request.files.length === 0) throw new AdapterError('an artifact needs at least one file')
+    if (request.files.length === 0 && request.deletions.length === 0) {
+      throw new AdapterError('an artifact needs at least one changed path')
+    }
     const base = request.base ?? (await defaultBranch(request.repo))
     const baseSha = await branchSha(request.repo, base)
-    await createBranchWithFiles(request.repo, request.branch, baseSha, request.files, request.title)
+    await createBranchWithFiles(
+      request.repo,
+      request.branch,
+      baseSha,
+      request.files,
+      request.deletions,
+      request.title,
+    )
     const pr = await openPullRequest(
       request.repo,
       request.branch,
