@@ -13,7 +13,9 @@ because porcelain otherwise collapses an untracked directory to one entry and ev
 new directory was lost.
 
 This change is the next one in that sequence, and it is the first where what is missing is not a
-record that was misread but a record that is not there.
+record that was misread but a record that is not there. It is also the first where the read has
+to decide what **not** to remove: the mechanism that recovers the lost removal prints records for
+paths no tree holds, and publishing one of those costs the whole run.
 
 ## What the measurements said
 
@@ -46,6 +48,44 @@ Three things the table settles, each against an assumption this change started f
 conflicted `c.md` removed it printed `b.md`, `c.md`, `c.md`. Usable, but a cross-check built on
 it needs deduplication that a reader of the code would have to be told the reason for.
 
+### `--no-renames` is `status.renames=false`, which issue #117 was closed against
+
+The flag and the config are **byte-identical**. Compared as raw `-z` output over five
+repositories — a chain rename, the `DU` fold above, a staged rename whose destination was then
+deleted, a detected copy under `status.renames=copies`, and a rename brought in by a merge and
+then moved again — every pair matched byte for byte.
+
+So the measurement that closed #117 applies here in full and has to be answered rather than
+stepped around. It is this: with detection off, a chain rename prints a record for a path that
+exists in no tree.
+
+```
+git mv a.txt b.txt && mv b.txt c.txt && git add -N c.txt
+
+default                   R  b.txt|a.txt      R c.txt|b.txt
+--no-renames              D  a.txt   AD b.txt   A c.txt
+-c status.renames=false   D  a.txt   AD b.txt   A c.txt
+```
+
+`AD b.txt` is a path the run's own index invented mid-chain: HEAD never had it, and neither did
+the tree the artifact is published against. `GONE` matches `AD`, so a naive read publishes a
+removal of it.
+
+### What the host does with a removal the base tree does not hold
+
+Measured against a real repository and recorded in
+`openspec/changes/archive/2026-09-24-artifacts-carry-removals/design.md`:
+
+| request | result |
+| --- | --- |
+| remove a path `base_tree` holds | succeeds |
+| remove a path it does not hold | **422 `GitRPC::BadObjectState`** |
+| the same, nested under a directory it does hold | **422 `GitRPC::BadObjectState`** |
+
+The refusal is of the whole `POST /git/trees` call, so nothing is published — not the artifact
+minus the bad entry, nothing. One invented removal costs the run everything the worker produced.
+This is why the second requirement exists rather than being left implicit.
+
 ## Decisions
 
 ### Read with `--no-renames`
@@ -70,12 +110,68 @@ Both fall straight through the existing branches: `D ` matches `GONE`, `A ` and 
 content read as an addition. The second row is issue #96 — a rename git has not staged, which
 `statusRecords` leaves unpaired today — and it is not a special case under `--no-renames` either.
 
+A detected copy goes the same way: under `status.renames=copies`, `C  copy.md` + `t.md` becomes
+`A  copy.md`, with `M  t.md` beside it. Nothing pairs, so nothing is at risk of removing a copy's
+source, which was one of #117's two stated costs. Measured, not reasoned.
+
+### The removal is owed only where the index did not invent the path
+
+`--no-renames` alone is not the mechanism. The mechanism is the flag **and** a guard on the
+gone-check: a record whose index column says the index has this path and HEAD does not owes no
+removal, whatever the work tree column says.
+
+PR #114 already carries the primitive — `INDEX_NEW = /^[ARC]/` — where it suppresses a pairing
+source the index invented. Here it applies one step earlier, to the gone-check itself, and as a
+test on the record's own flags rather than as a set built from the whole record list. There is no
+set to build: nothing pairs under `--no-renames`, so there is no second path to cross-reference.
+
+**Every shape this changes, enumerated rather than spot-checked.** The gone-check fires on
+`/^(?:.D|D )$/` after `UNMERGED` has been tested. Under `--no-renames` porcelain emits no `R` and
+no `C` in either column at all, so of `INDEX_NEW`'s three letters only `A` is reachable, and of
+the shapes beginning with `A` only `AD` matches `GONE` — `A ` and `AM` are additions and never
+reached the gone-check. So the guard changes the reading of exactly one status shape:
+
+| produced by | record under `--no-renames` | today | with the guard |
+| --- | --- | --- | --- |
+| `git mv a b && mv b c && git add -N c` | `D  a`, `AD b`, ` A c` | removes `a` **and `b`** | removes `a`, skips `b`, adds `c` |
+| a merge's staged rename, moved again | `D  a`, `AD b`, ` A c` | removes `a` **and `b`** | removes `a`, skips `b`, adds `c` |
+| `git mv a b && rm b` | `D  a`, `AD b` | removes `a` **and `b`** | removes `a`, skips `b` |
+| `git add n && rm n` | `AD n` | removes `n` | skips `n` |
+| the #116 fold | ` D b.md`, `UD c.md` | removes `b` | removes `b` — index column is a space |
+| `git add -N n && rm n` | ` D n` | removes `n` | removes `n` — **see the residual below** |
+| an unstaged or staged plain deletion | ` D p`, `D  q` | removes it | removes it |
+| a worker deleting the conflicted path | `DU f` | `UNMERGED` first, deletion by the catch | unchanged |
+
+Nothing legitimate is skipped, and the argument is short enough to state rather than sample:
+
+- An index column of `A` means the index holds the path and **HEAD does not**. Porcelain's
+  unmerged codes are `DD`, `AU`, `UD`, `UA`, `DU`, `AA` and `UU`; `AD` is not among them, and the
+  four containing `A` are caught by `UNMERGED` before the gone-check, so `AD` never arrives from a
+  merge state. An index-added path is therefore absent from HEAD by construction.
+- Absent from HEAD is absent from `base_tree`. On the resolution path, `commitOnBranch` lays its
+  tree over `parents[0]`, and `merge()` stops before committing, so the clone's HEAD is still that
+  same commit. On the produce path, `base_tree` is the base branch's sha read at publish time,
+  which may be **ahead** of the clone — and that direction is harmless: a path the base gained
+  after the clone is not in the working tree at all, so no record can name it.
+
 ### The requirement says what must be true, not what to run
 
 `changes()` is a seam with one implementation, and a requirement naming a git flag would have to
-be amended by any tree provider that is not a clone. More to the point, the mechanism is a live
-question — see the interaction with #114 below — and pinning a flag in the specification would
-force a spec change to settle an implementation one.
+be amended by any tree provider that is not a clone. Both requirements are therefore outcomes —
+no removal lost, no removal invented — and this file holds the flag and the guard.
+
+### Rejected: abandoning `--no-renames` because #117 was closed against it
+
+#117's closure is a measurement, and the measurement is right: detection off produces `AD` on a
+chain rename, and publishing that record's removal returns 422. What it does not show is that the
+mechanism is wrong, because the failing step is the gone-check reading `AD` as a removal, not the
+absence of rename detection. The guard above is the piece #117 was missing; with it, both costs
+#117 named are gone — the copy distinction costs nothing because nothing pairs, and the invented
+removal is skipped by the same test #114 already wrote for the paired case.
+
+Keeping detection on and taking a cross-check instead would fix the fold at the price of a second
+read per `changes()` call, and would leave the ` R` pairing — two iterations and a refuter to get
+right — in the code permanently.
 
 ### Rejected: cross-check `git diff-files` or `git ls-files -d`
 
@@ -87,9 +183,9 @@ them agree.
 
 `ls-files -d` carries the extra defect of stage duplicates on an unmerged path.
 
-Neither is unreasonable as defence in depth, and the requirement's wording permits adding one if
-a second kind of fold is ever found. Adding it now would be guarding a failure nobody has
-measured, at a cost that recurs on every run.
+Neither is unreasonable as defence in depth, and the requirements' wording permits adding one if a
+second kind of fold is ever found. Adding it now would be guarding a failure nobody has measured,
+at a cost that recurs on every run.
 
 ### Rejected: cross-check only during a conflicted merge
 
@@ -101,18 +197,51 @@ whose whole point is that the code's belief about the tree was incomplete.
 Moot under `--no-renames`, which is unconditional and free, and recorded because the conditional
 version was the brief's own suggestion.
 
-### Deferred: what becomes of the rename pairing in `statusRecords`
+### Gate two: the pairing mechanism becomes deletable
 
-Under `--no-renames`, porcelain emits no `R` or `C` record, so the pairing in `statusRecords` —
-the `from` field and the `++i` that consumes the second entry — becomes unreachable. PR #114 is
-open and exists to fix that pairing for the ` R` column.
+Under `--no-renames` porcelain emits no `R` and no `C` record, so `PAIRED`, `RENAME`, `INDEX_NEW`
+as a set-builder and `indexOnly` in `src/worktree.ts` have nothing to fire on. The `from` field
+and the `++i` that consumes the second entry become unreachable.
 
-This is noted and not decided. Deleting live code on another change's subject, from a change that
-writes no code at all, would be deciding it in the wrong place and at the wrong time. Whoever
-implements this has three honest options — keep the pairing as dead-but-harmless defence against
-a read that forgets the flag, remove it once #114 has landed and settled, or keep detection on
-and take the cross-check after all — and the measurements above are what they should decide it
-on. `tasks.md` carries it as an explicit first task rather than as a surprise found mid-change.
+Deleting them is gate-two work and is **conditioned on PR #114's tests staying green**, because
+those tests are what pin the behaviour any replacement has to keep: a rename yields a removal of
+the old path plus an addition of the new one, and a chain yields no removal of a path the index
+invented. Both survive the mechanism here by a different route, so the tests should pass unchanged
+against the flag and the guard. Deleting a mechanism whose behaviour is pinned by tests is the safe
+version of this; deleting it blind is not, which is why the order matters and not merely the
+outcome.
+
+`INDEX_NEW` itself stays: the guard is its second and now its only caller.
+
+## The residual, measured and not covered
+
+The guard reads the index column, and there is one shape where the index column does not say what
+the index knows. `git add -N n.txt` followed by deleting the file prints:
+
+```
+ D n.txt
+```
+
+— an index column of space, byte for byte the shape a tracked file's unstaged deletion has, for a
+path HEAD does not hold (`git ls-tree HEAD -- n.txt` is empty; `git diff-index --cached
+--name-status HEAD` says `A`). A removal of it is published and the tree API refuses it, exactly
+as for `AD`.
+
+Three things about it:
+
+- **It is not this change's doing.** The output is identical with rename detection on and off, so
+  the defect is there today and `--no-renames` neither creates nor worsens it.
+- **`--porcelain=v2` does not settle it.** v2 carries HEAD's mode and object id per record, which
+  looks like the answer, and for an intent-to-add path it reports `100644` and the empty blob's
+  sha rather than zeros — it does not distinguish that path from a tracked one. Measured, because
+  the opposite is the natural assumption.
+- **Only a tree lookup distinguishes it**, which is the second read the mechanism above declines
+  for the fold. Whether it is worth paying for here is a different question with a different
+  measurement behind it, and it is `tasks.md`'s to answer rather than this change's to assume.
+
+The second requirement is deliberately worded to cover this case even though the mechanism here
+does not reach it. A requirement describing only what the current guard achieves would make the
+next instance of the 422 a surprise rather than a known gap.
 
 ## Risks
 
@@ -120,6 +249,9 @@ on. `tasks.md` carries it as an explicit first task rather than as a surprise fo
   today. The protection is a regression test that reproduces the fold, not the flag: the fold is
   cheap to construct deterministically (one similar file, one modify/delete conflict) even though
   it was found by fuzzing.
+- **A future read that forgets the guard fails loudly**, which is the better failure of the two:
+  the tree request returns 422 and nothing publishes. Loud, but it costs the run its work, so the
+  regression test for the chain rename is owed as much as the one for the fold.
 - **Rename detection may not be the only way git reports two changed paths as one.** Nothing
   found another; the requirement is worded against the class rather than against rename detection
   so that finding one is an implementation change and not a specification change.
