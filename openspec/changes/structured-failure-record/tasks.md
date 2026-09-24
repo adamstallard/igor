@@ -112,3 +112,59 @@ the "no verdict was reached" record lands, not the carry.
       screen; the mark advancing over a cycle that had a failure; shedding at the bound reported
       rather than silent; and a cycle offered more carried candidates than its capacity still
       triaging one it has never seen
+
+## 6. The ages a decision drops
+
+[#105](https://github.com/adamstallard/igor/issues/105). The third reading of the same cycle
+record: not the `failures` list but the `decisions` array beside it, and not a fault but every
+ordinary decision.
+
+- [x] 6.1 A third added requirement, in `work-triage` and not `work-discovery`: every decision a
+      cycle records carries the candidate's age and its idleness as they stood at the moment of the
+      decision, as numbers readable separately from the reason
+- [x] 6.2 Require both on **every** entry, whatever stage decided it and whatever the outcome — a
+      number present only where a predicate rejected the item cannot be compared against the items
+      it let through, and that comparison is the whole point
+- [x] 6.3 Say in the requirement why the reason string is not a substitute: a number inside a
+      sentence cannot be counted, sorted or compared across entries without a person reading each
+      one, and idleness appears in no sentence at all
+- [x] 6.4 Say in the requirement, explicitly, that this settles **nothing** about the axis — it does
+      not make idleness a constraint and does not say which of the two an age constraint should
+      read, so nobody reads the change as having answered the question `src/adapter.ts:38` defers
+- [x] 6.5 Have the requirement name "Every decision records its reason, including skips" and
+      compose with it rather than restate it, so two requirements over one entry cannot drift
+- [x] 6.6 Argue the placement in the proposal, and note that it inverts task 1.5: the same
+      distinction that keeps the first two requirements out of `work-triage` — `failures` is not a
+      per-candidate decision — is what puts this one in, because it is nothing else
+- [x] 6.7 Record in the proposal that the milestone `src/adapter.ts:38` defers to is already past:
+      section 6 of `openspec/changes/archive/2026-09-14-core-igor-loop/tasks.md`, four tasks ticked,
+      the change archived — so the comment reads forward and points backwards
+- [x] 6.8 Record why the evidence cannot simply be recovered later, and that it decays worst for the
+      case the doubt is about: for an item commented on since, the value at decision time is gone
+      from its current state
+- [x] 6.9 Say in the proposal why this is folded here rather than given its own change — one record,
+      one writer, `recordDecisions` — since the shared-capability argument for folding the second
+      requirement does not carry over
+
+## 7. The ages reach the record
+
+Blocked behind the same [#65](https://github.com/adamstallard/igor/pull/65), which holds
+`src/loop.ts`, where `recordDecisions` is.
+
+- [ ] 7.1 Add both ages to the decision entries at **all three** map sites — `report.skipped`
+      (`src/loop.ts:937`), `report.toCatchUp` (`:941`) and `report.verdicts` (`:944`). Each already
+      holds the whole candidate where it maps, so both numbers are in hand; adding them to the skip
+      branch alone is the failure mode this task exists to prevent
+- [ ] 7.2 Take them from the candidate rather than recomputing from `createdAt` and `updatedAt` at
+      write time. The record is of the decision, and a number recomputed later is a different number
+- [ ] 7.3 Leave the reason strings alone. `src/predicate.ts:97` keeps saying
+      `created N days ago, over the M-day limit`; the numbers go beside the sentence, not into it
+      and not in place of it
+- [ ] 7.4 Change no predicate, no prompt and no outcome. Nothing reads the new fields, and
+      `lane.age` still filters on `ageDays` exactly as it does today
+- [ ] 7.5 Tests: both numbers present on a predicate skip, on a model verdict and on a catch-up;
+      idleness recorded for an item the age constraint let through; and both asserted on what
+      reaches `decisions.ndjson` rather than on what `planCycle` returned
+- [ ] 7.6 Once cycles have run with this, the axis question is answerable and answering it is a
+      separate change. File it as an issue before this one is archived rather than leaving it in a
+      ticked task

@@ -53,6 +53,37 @@ a tie conceded across sources were the first two, both closed. Each was found on
 previous was fixed, which is why #78 asks for the remainder to be written down rather than
 rediscovered a fourth time.
 
+### The third thing the cycle record loses: the numbers a question was deferred to
+
+[#105](https://github.com/adamstallard/igor/issues/105) is the same cycle record read a third way —
+not the `failures` list this time but the `decisions` array beside it, and not a fault but every
+ordinary decision. `src/adapter.ts:38` defers a design question to observation:
+
+> Two ages, deliberately. `ageDays` is what `lane.age.max_days` reads; `idleDays` is carried so the
+> dry-run milestone can observe whether time-since-creation is the wrong axis — an ancient issue
+> commented on yesterday is arguably live, and only real data settles it.
+
+**Nothing collects the data it waits on.** Each entry `recordDecisions` writes is
+`{ item, stage, outcome, reason }` (`src/loop.ts:937`). `ageDays` and `idleDays` are computed on
+every candidate (`src/github-adapter.ts:158`) and handed to the model in the triage prompt
+(`src/triage.ts:78`), and then dropped. The only number that survives anywhere is `ageDays`, inside
+the **reason string** of an item the age predicate rejected — `created 867 days ago, over the
+90-day limit` (`src/predicate.ts:97`). `idleDays` is never written anywhere, for any item.
+
+**And the milestone it defers to is already past.** It is section 6 of
+`openspec/changes/archive/2026-09-14-core-igor-loop/tasks.md`, all four tasks ticked and the change
+archived: the dry-run was run against a real repository, every verdict was read by hand, and the
+lane predicates were tuned against what it surfaced. So the comment reads as forward-looking and
+points backwards. The observation window did not fail to arrive; it arrived, ran and closed without
+the number ever being written down — and because the change is archived, `openspec list` cannot
+surface what is left of it.
+
+**The evidence decays in the direction that matters most.** For an item nobody has touched since,
+present idleness still approximates what it was at the decision. For one that **has** been commented
+on since — the "ancient but arguably live" case the doubt is entirely about — the value at decision
+time is gone from the item's current state, recoverable only by replaying its timeline rather than
+by reading it. The cycles whose evidence would settle the question are the ones that lose it first.
+
 ## What Changes
 
 **One added `work-discovery` requirement: a recorded failure carries what a reader who was not
@@ -120,6 +151,23 @@ branch: on `main` there is no untriaged set at all, while #70 adds one. A requir
 mechanism would be false on one of the two branches depending on merge order, so the requirement
 says the candidate stays in the pool and `tasks.md` names the reason code.
 
+**A third requirement, added to `work-triage`: a recorded decision carries both ages as numbers.**
+Each decision the cycle writes carries the candidate's age and its idleness as they stood at the
+moment of the decision, readable as numbers on their own rather than phrased inside the reason, on
+every entry whatever stage decided it and whatever the outcome.
+
+**Both, on every entry, is the operative part.** A value present only on the entries an age
+constraint rejected cannot be compared against the entries it let through, and a comparison across
+the whole population is the only thing that distinguishes the two axes. The reason string is not a
+substitute and the requirement says why: a number inside a sentence cannot be counted, sorted or
+compared across entries without a person reading each one, which is the work the record exists to
+spare them. Idleness is not in any sentence at all.
+
+**It deliberately does not answer the axis question.** The requirement says so in as many words, so
+that nothing here reads as settling whether `lane.age` should filter on idleness. Recording a
+measurement is not adopting it; this makes the question answerable from the record and leaves it
+open.
+
 ### Why one change carries two requirements about `report.failures`
 
 They are two different faults in one field, found from opposite directions. The first is that a
@@ -134,6 +182,28 @@ editing the same capability in flight collide invisibly — a duplicated require
 requirements each half-covering what one failure entry must do, is found at archive time or not at
 all. One change stating both leaves the relationship between them in the text where a reader meets
 it, rather than in two proposals that do not mention each other.
+
+### Why the third requirement is folded in here too
+
+It lands in a different capability, so the reason the first two share a change does not carry over
+unchanged. A plainer one holds instead: **all three govern one artifact with one writer.**
+`recordDecisions` (`src/loop.ts:909`) writes a single ndjson line per cycle carrying both the
+`decisions` array and the `failures` list, and all three requirements constrain what goes into that
+line. A change of its own would put a second open proposal over one function, and the collision
+`openspec validate` cannot see between open changes does not get safer for crossing a capability
+boundary — two changes each widening one entry of `decisions.ndjson` are reconciled at archive time
+by whoever merges second, or not at all.
+
+It is also one defect class read a third way. The first requirement is that the record says too
+little about a fault; the second that the record loses the item a fault was about; the third that
+the record drops a measurement it was already holding. Each time the cycle had the thing in hand at
+the one moment it could be written down, and wrote a sentence instead.
+
+[#105](https://github.com/adamstallard/igor/issues/105) named this fold as one of three options,
+against a change of its own and against implementing the two fields without a requirement. It is
+folded because the record is one record; it is a requirement rather than a direct implementation
+because what a cycle record holds is a promise about the state branch, which is the same reason the
+first requirement is one.
 
 ### What `design.md` holds
 
@@ -166,7 +236,7 @@ second, uncovered instance of the same class on `main` which #70 claims by name 
 deliberately leaves to it. **If #70 is closed unmerged, that case has no home and this requirement
 is where it should be widened.**
 
-### Why `work-discovery` and not `task-execution`
+### Where each requirement lands, and why
 
 `task-execution`'s "Transcripts and outcomes are captured to the state branch" governs
 `executions.ndjson`, written per task in `src/execute.ts:1822`. That is the **execution record**.
@@ -174,12 +244,21 @@ is where it should be widened.**
 in `src/loop.ts`. They are different artifacts with different writers, and a requirement placed on
 the first would not reach the second.
 
-`work-triage` is the near miss. `decisions.ndjson` is the triage decisions file, and work-triage's
-"Every decision records its reason, including skips" already governs its per-candidate contents. But
-`failures` is not a per-candidate decision — it holds a discovery fault, a credential fault and a
-state-write fault as readily as a triage one. Putting the requirement there would write a triage
-requirement that governs a discovery failure, which is the "reads well, governs the wrong artifact"
-outcome.
+`work-triage` is the near miss **for the first two and the right answer for the third**, and one
+distinction decides it both ways. `decisions.ndjson` is the triage decisions file, and
+work-triage's "Every decision records its reason, including skips" already governs its
+per-candidate contents. But `failures` is not a per-candidate decision — it holds a discovery
+fault, a credential fault and a state-write fault as readily as a triage one. Putting either of the
+first two requirements there would write a triage requirement that governs a discovery failure,
+which is the "reads well, governs the wrong artifact" outcome.
+
+The third requirement is a per-candidate decision fact and nothing else, so the sentence that keeps
+the first two out of `work-triage` is the sentence that puts it in. Both ages belong to one
+candidate; they are recorded on the entry that says what was decided about that candidate; and the
+requirement already governing the contents of that entry is the `work-triage` one, which the new
+requirement names and composes with rather than restating. Placing it in `work-discovery` beside
+its siblings would have contradicted the paragraph above, so this change carries a `work-triage`
+delta as well, holding that one requirement.
 
 `work-discovery` is where cross-stage statements about the state branch already live. Its "State
 lives on an orphan branch of the destination" opens *"Discovery state **and execution transcripts**
@@ -245,6 +324,10 @@ Nothing else is carrying this. If #98 is closed unfixed, half of what #90 decide
   verdict on and is carried by id past the mark, so a later cycle asks about it again while the
   candidates beside it that got verdicts are not asked twice; the carried record is bounded, what it
   sheds is reported, and carried candidates never crowd out candidates nothing has triaged.
+- `work-triage`: every decision a cycle records carries the candidate's age and its idleness as
+  they stood at the moment of the decision, as numbers readable separately from the reason, on
+  every entry whatever stage decided it and whatever the outcome — and recording them settles
+  nothing about which of the two an age constraint ought to read.
 
 ## Impact
 
@@ -260,6 +343,11 @@ Nothing else is carrying this. If #98 is closed unfixed, half of what #90 decide
   `src/loop.ts:643` is unchanged by this half: the mark advances as it does today. Where
   [#70](https://github.com/adamstallard/igor/pull/70) has landed, the "no verdict was reached"
   record is a fourth untriaged reason; where it has not, it is a set of this change's own.
+- A question `src/adapter.ts:38` deferred to observation becomes answerable from the record. Every
+  entry in the `decisions` array gains two numbers, at all three sites that build one —
+  `report.skipped`, `report.toCatchUp` and `report.verdicts` (`src/loop.ts:937`, `:941`, `:944`) —
+  each of which already holds the whole candidate where it maps, so both numbers are in hand and
+  nothing extra is fetched or computed. No predicate, prompt or outcome changes.
 - **Implementation is blocked.** Four of the seven files carrying the sites are held by
   [#65](https://github.com/adamstallard/igor/pull/65) — `budget.ts`, `execute.ts`, `handoff.ts` and
   `loop.ts` — and #65 alone holds all four. `loop.ts` is the binding one: `CycleReport.failures` is
