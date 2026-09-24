@@ -69,25 +69,26 @@ Three distinct objects, often confused:
 Routing rule: guidance specific to one role's behavior is role config; guidance applying to
 anyone touching an area is lore.
 
-### 2.1 Roles — **planned** (`core-igor-loop`)
+### 2.1 Roles — **built** (`core-igor-loop`)
 
 Roles and Igors are **many-to-many**. Many Igors can run the same role; one Igor can hold
 several.
 
-Roles become real objects in `core-igor-loop`, not before. `lore-from-reviews` deliberately
-defines none: its reviewer comes from a mined comment's author, and routing guidance into
-role config is meaningless while nothing loads role config. Entries there carry a `scope`
-**label** (`role:frontend`) which is a tag, not a foreign key — enough to promote from later,
-costing nothing now. Defining the schema in the change that actually consumes it also means
-defining it with more information than we have today.
+Roles are real objects as of `core-igor-loop`, and were not before. `lore-from-reviews`
+deliberately defines none: its reviewer comes from a mined comment's author, and routing
+guidance into role config is meaningless while nothing loads role config. Entries there carry
+a `scope` **label** (`role:frontend`) which is a tag, not a foreign key — enough to promote
+from later, costing nothing now. Defining the schema in the change that actually consumes it
+also means defining it with more information than we have today.
 
 **`reviewers` is a list, not an owner.** Any one of them can approve a lore entry or role
 config change. No quorum and no single accountable person — that would be org structure
 leaking into config for no benefit.
 
-Until roles exist, the same need is met by a store-level `reviewers` list in the lore tool's
-config, which is where an entry escalates when the author it was mined from does not respond.
-Roles later narrow that to per-role lists; they do not introduce the concept.
+Before roles existed, the same need was met by a store-level `reviewers` list in the lore
+tool's config, which is where an entry escalates when the author it was mined from does not
+respond. A role narrows that to a per-role list; it did not introduce the concept, and the
+store-level list is still what a store without roles uses.
 
 **One Igor may hold several roles, but the reason is conditional.** The original argument was
 that a seat costs the same idle, so a role too narrow to fill its allowance wastes capacity
@@ -870,11 +871,12 @@ any amount of prose:
 - **`igor role explain <name>`** — the effective merged config, annotated with which level each
   value came from. Under inheritance, "what does this role actually do" is hard to answer by
   reading three files, and that is exactly when people guess.
-- **`igor role dry-run <name>`** — run discovery and triage over recent items and print what it
+- **`igor run <name> --plan`** — run discovery and triage over recent items and print what it
   *would* have claimed and why, claiming nothing. This is how a lane predicate gets found wrong
-  before anything posts publicly.
+  before anything posts publicly. It persists nothing: no watermark, no cycle record, so looking
+  at the backlog does not consume it.
 
-Dry-run is the one to build first. It also recovers the useful half of shadow mode — seeing
+The preview was the one to build first. It also recovers the useful half of shadow mode — seeing
 what an Igor would do without it doing anything — as a **development affordance** rather than a
 runtime mode, which is where it belonged.
 
