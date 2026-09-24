@@ -56,47 +56,42 @@ deletion that is not in the diff — which is what happened before it was shared
 at code deciding what an artifact carries; it is not a general statement about duplicate paths
 anywhere else.
 
-## What is not settled
+## What was not settled, and now is
 
-**The file mode on a removed entry.** Every removal is written `100644`, which is the shape
-GitHub documents, but it is unverified against a `100755` file or a symlink. Where it would
-bite: deleting an executable script. Sending the wrong mode is very likely inert — a removal
-carries `sha: null`, so no blob is placed and there is no mode to apply — and `type: 'blob'` is
-already correct for a symlink, which git stores as a blob. Neither is measured.
+All three cases this section once listed as unverified have been measured, against
+`origin/main`'s tree, creating unreferenced tree objects and nothing else. Only one was real.
 
-**Measured afterwards: a path absent from `base_tree` is refused, and this one is settled.**
-Asked directly against `origin/main`'s tree, creating unreferenced tree objects and nothing
-else:
+**The mode on a removed entry is ignored, and so is the type.** Removing the same real path with
+four different entries produced one identical tree:
+
+| entry | result |
+|---|---|
+| `mode 100644, type blob` (correct) | tree `59fdddea…` |
+| `mode 100755` — wrong, executable | tree `59fdddea…` |
+| `mode 120000` — wrong, symlink | tree `59fdddea…` |
+| `mode 040000, type tree` — wrong entirely | tree `59fdddea…` |
+| mode omitted | **422 `Must supply a valid tree.mode`** |
+| `mode 999999` | **422 `Must supply a valid tree.mode`** |
+
+So the field must be present and syntactically valid, and its value has no effect: a removal is
+matched on `path` alone. Writing every removal `100644` is therefore correct for a `100755` file
+and for a symlink alike, which is what the two open mode cases were about.
+
+**A path absent from `base_tree` is refused, and this is the one that mattered.**
 
 | request | result |
 |---|---|
 | remove a path the base tree holds | succeeds |
 | remove a path it does not hold | **422 `GitRPC::BadObjectState`** |
-| remove such a path nested under a directory it does hold | **422 `GitRPC::BadObjectState`** |
+| the same, nested under a directory it does hold | **422 `GitRPC::BadObjectState`** |
 
-So the whole tree `POST` fails, loudly, and nothing is published. A removal of a path the base
-does not have is not tolerated and never silently ignored.
+The whole tree `POST` fails and nothing is published. That makes the `indexOnly` guard added for
+#96 load-bearing rather than defensive: a chain rename — `git mv a b && mv b c && git add -N c` —
+names `b` as a source, `b` is in no tree, and without the guard the publish returns 422. It also
+settles #117 against `status.renames=false`, which reports that chain as `AD b` and reaches the
+same refused removal by a different route.
 
-That makes the `indexOnly` guard added for #96 load-bearing rather than defensive: a chain
-rename — `git mv a b && mv b c && git add -N c` — names `b` as a source, `b` is in no tree, and
-without the guard the publish returns 422. It also settles #117 against `status.renames=false`,
-which reports that chain as `AD b`, reaching the same refused removal by a different route.
-
-**The approach that does not work, recorded so it is not retried.** Testing the mode cases the
-same way fails for an unrelated reason: a freshly created tree that no ref points at cannot
-serve as `base_tree`, and the request comes back **404**, not a verdict on the mode. Settling
-`100755` and `120000` needs a commit on a real branch, which is a larger footprint than the
-question has so far justified.
-
-The same reliance is already live on the resolution path, so this change widens the exposure
-rather than creating it.
-
-**A path that becomes a directory, or the reverse.** `carried` compares whole path strings, so
-a run that empties `sub/` and writes a file at `sub` sends `sub` as a blob and `sub/x.txt` as a
-removal in one tree request. Judged below the bar rather than proved safe: no plausible worker
-does this, and the resolution path already had the shape before removals reached the artifact
-path. Recorded because the judgement is about reachability, not about the tree being correct.
-
-**Binaries.** `changes()` skips a file it cannot read as UTF-8, so a binary is reported as
-neither changed nor removed. Deleting one therefore still goes silently unpublished. That is a
-limit of how changes are read rather than of how they are published, and it is untouched here.
+**One approach that does not work, recorded so it is not retried.** Building a tree that contains
+a `100755` or `120000` entry and deleting from *that* fails at **404**: a freshly created tree no
+ref points at cannot serve as `base_tree`. The question is answerable without it — send a wrong
+mode against a path that does exist, which is what the table above does.
