@@ -148,11 +148,11 @@ Nothing legitimate is skipped, and the argument is short enough to state rather 
   unmerged codes are `DD`, `AU`, `UD`, `UA`, `DU`, `AA` and `UU`; `AD` is not among them, and the
   four containing `A` are caught by `UNMERGED` before the gone-check, so `AD` never arrives from a
   merge state. An index-added path is therefore absent from HEAD by construction.
-- Absent from HEAD is absent from `base_tree`. On the resolution path, `commitOnBranch` lays its
-  tree over `parents[0]`, and `merge()` stops before committing, so the clone's HEAD is still that
-  same commit. On the produce path, `base_tree` is the base branch's sha read at publish time,
-  which may be **ahead** of the clone — and that direction is harmless: a path the base gained
-  after the clone is not in the working tree at all, so no record can name it.
+- Absent from HEAD is absent from `base_tree` **on the resolution path**, which is where the
+  invented paths come from: `commitOnBranch` lays its tree over `parents[0]`, and `merge()` stops
+  before committing, so the clone's HEAD is still that same commit. On the produce path the two
+  can diverge — `produce` re-reads the base branch's sha at publish time, after the worker has
+  run — and only one direction of that divergence is harmless. Both are below.
 
 ### The requirement says what must be true, not what to run
 
@@ -213,10 +213,15 @@ outcome.
 
 `INDEX_NEW` itself stays: the guard is its second and now its only caller.
 
-## The residual, measured and not covered
+## The residuals, measured and not covered
 
-The guard reads the index column, and there is one shape where the index column does not say what
-the index knows. `git add -N n.txt` followed by deleting the file prints:
+Two ways to publish a removal of a path the base tree does not hold survive the guard. Both are
+what the second requirement is worded broadly enough to cover, and neither is created by this
+change.
+
+### The index column does not always say what the index knows
+
+The guard reads the index column, and `git add -N n.txt` followed by deleting the file prints:
 
 ```
  D n.txt
@@ -239,9 +244,27 @@ Three things about it:
   for the fold. Whether it is worth paying for here is a different question with a different
   measurement behind it, and it is `tasks.md`'s to answer rather than this change's to assume.
 
-The second requirement is deliberately worded to cover this case even though the mechanism here
-does not reach it. A requirement describing only what the current guard achieves would make the
-next instance of the 422 a surprise rather than a known gap.
+### The base can move under the produce path while the worker runs
+
+`produce` takes no base sha from the caller: `GitHubCodeHost.produce` reads
+`branchSha(repo, base)` when it publishes, and the clone the worker changed was made before the
+worker ran. So `base_tree` is the base branch as it is at publish time, and the two can differ by
+whatever landed on the base during the run.
+
+- **Ahead by an addition is harmless**, and the guard makes it so: a path the base gained after
+  the clone is not in the working tree at all, so no record can name it, so nothing is removed
+  from under it.
+- **Ahead by a deletion is the same 422.** If the base drops `X` during the run and the worker
+  also deleted `X` — it was in the clone — status prints ` D X`, index column a space, the
+  gone-check fires, and the removal goes to a `base_tree` that no longer holds `X`.
+
+The window is the worker's run, so this is a race rather than a shape, which is why it is recorded
+here rather than guarded against on a measurement nobody has taken. Nothing about the guard
+changes: skipping an index-added path can only decline a removal, never invent one.
+
+Both residuals are why the second requirement says what must be true rather than what the guard
+achieves. A requirement describing only the current guard would make the next instance of the 422
+a surprise rather than a known gap.
 
 ## Risks
 

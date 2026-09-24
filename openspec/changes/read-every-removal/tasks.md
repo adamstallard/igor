@@ -61,6 +61,10 @@
       not this change's doing. Decide whether to close it here with a tree lookup, or file it as
       its own issue and tick this with the number — `design.md` holds the measurements, including
       that `--porcelain=v2` does not distinguish the case
+- [ ] 6.2 The produce path re-reads the base branch's sha at publish time, so a path the base
+      deletes while the worker runs, and the worker deletes too, reaches the same 422. Establish
+      whether the window is worth closing — passing the clone's sha as the base, or dropping a
+      removal the base tree does not hold — or file it, and tick this with the number
 
 ## 7. Documentation
 
