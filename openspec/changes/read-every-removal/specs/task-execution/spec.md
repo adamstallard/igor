@@ -57,3 +57,48 @@ only as part of another.
 
 - **WHEN** a run's changes involve no path git reports only as part of another
 - **THEN** the artifact carries the same additions, modifications and removals it carried before
+
+### Requirement: No removal is published for a path the base does not hold
+
+An artifact SHALL carry a removal only for a path the tree it is laid over already holds.
+
+**The base here is that tree**, and not the set of changes the base branch made — the branch head
+a resolution commits onto, or the base branch a new artifact is cut from. *"A base change is
+undone only where the resolution says so"* is about the second; this requirement is about the
+first.
+
+Where reading the working tree offers a removal of a path the base does not hold, execution SHALL
+NOT publish it. Such a path is not a change the worker made: the run's own index brought it into
+being — as the destination of a rename that was then moved again, or as a staged addition the
+worker then deleted — and no tree the artifact is published against ever had it.
+
+**This is the opposite half of the requirement above it.** That one says the read may not lose a
+removal; this one says it may not invent one. A mechanism satisfying either by breaking the other
+satisfies neither, and the two are stated separately so that a future read is measured against
+both.
+
+**The host refuses an invented removal outright.** Dropping a path the base tree does not hold
+returns `422 GitRPC::BadObjectState`, and the refusal is of the whole tree request: nothing is
+published, not even the changes that were correct. So this is not a tidiness rule about extra
+entries. A single invented removal costs the run everything it produced, which is why the
+obligation is stated rather than left to whichever mechanism reads the tree.
+
+#### Scenario: A path only the run's own index ever held is not removed
+
+- **WHEN** reading the working tree offers a removal of a path that is absent from the tree the
+  artifact is published against, because the run's index brought that path into being
+- **THEN** no removal of it is published
+- **AND** the removals of paths the base does hold are published as before
+
+#### Scenario: A rename moved on a second time removes the original and nothing else
+
+- **WHEN** a worker moves a path the base holds, and then moves the result again, so that the
+  intermediate name exists in no tree
+- **THEN** the artifact no longer carries the original path
+- **AND** the artifact carries the final path
+- **AND** no removal is published for the intermediate name
+
+#### Scenario: A publish is not lost to a removal nobody asked for
+
+- **WHEN** a run's changes include a removal of a path the base does not hold
+- **THEN** the rest of the run's changes are still published
