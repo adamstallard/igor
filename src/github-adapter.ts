@@ -346,7 +346,11 @@ export class GitHubCodeHost implements CodeHost {
       throw new AdapterError('an artifact needs at least one changed path')
     }
     const base = request.base ?? (await defaultBranch(request.repo))
-    const baseSha = await branchSha(request.repo, base)
+    // The sha the caller's tree was cut from, in preference to the branch head now. Reading the
+    // head here is a round-trip that buys a race: the base branch can delete a path inside the
+    // worker's run, and a removal of a path the base tree no longer holds is refused with
+    // `422 GitRPC::BadObjectState` — the whole request, so nothing publishes.
+    const baseSha = request.baseSha ?? (await branchSha(request.repo, base))
     await createBranchWithFiles(
       request.repo,
       request.branch,

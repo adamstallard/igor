@@ -135,6 +135,12 @@ export interface ArtifactRequest {
   repo: string
   branch: string
   base?: string
+  /**
+   * The commit the artifact is laid over, where the caller knows it — the sha the worker's tree
+   * was cut from. Left out, the host reads `base`'s head instead, which is the same sha only if
+   * the branch did not move while the worker ran.
+   */
+  baseSha?: string
   title: string
   body: string
   files: { path: string; content: string }[]

@@ -1467,6 +1467,55 @@ execution obtains a disposable working tree through one provisioning function an
 nothing about its shape — not a clone, not a worktree. The shared object store above is then a
 swap behind that function rather than a change to how execution is written.
 
+### 6.7.2a The tree is read with rename detection off, and every removal is checked against HEAD
+
+`changes()` reads `git status --porcelain -z -uall --no-renames`. Detection folds two changed
+paths into one record, and a fold **loses a path from the input** rather than misreading one that
+is present — which is a different kind of defect from every other one this function has had, all
+of which were misreadings of a record that was there. Where a conflicted merge leaves one path
+unmerged and the worker deletes another that resembles it, the pair is reported as a rename of the
+unmerged path and the deletion is absent from the output entirely. Nothing downstream can recover
+what was never read, so no cross-check placed after the read can fix it.
+
+Off, the same two paths arrive as a removal and an addition, which is the shape the artifact wants
+anyway: the tree API removes a path or adds one and has no notion of a move.
+
+**Every removal is checked against HEAD before it enters the change list.** The tree API refuses a
+removal of a path `base_tree` does not hold with `422 GitRPC::BadObjectState`, and refuses the whole
+tree request, so one such entry costs the run everything the worker produced. One batched,
+pathspec-limited `git ls-tree HEAD` answers for all of them, run only where there is a removal to
+check: the cost is local and proportional to the removals in hand, not to the size of the repository.
+It runs with `core.precomposeunicode=false`, because darwin otherwise precomposes the pathspec and a
+name HEAD holds in decomposed form is matched by nothing.
+
+The check is on HEAD rather than on the status flags because no flag answers the question. An index
+column of `A` says the path is the run's own invention, but an intent-to-add path deleted before it
+was committed prints a column of *space*, indistinguishable from a tracked file's unstaged deletion;
+and the unmerged codes whose "ours" side HEAD never held — `DD`, `DU`, `AA`, `AU`, `UA` — are told
+apart from `UD` and `UU`, which it did, only by the tree. Both places a removal is emitted are
+covered: the gone-check and the unmerged branch of the content read's catch.
+
+A name that is not text is kept unchecked, because `spawn` writes `argv` as UTF-8 and those bytes
+cannot make the trip. Nothing is lost by it: execution stops on any such name before it builds a
+tree, and the handoff names the file by its bytes.
+
+**The base is the commit the tree was cut from**, not the branch head at publish time. A tree
+offers it through `WorkingTree.head()`, and execution passes it to the host as
+`ArtifactRequest.baseSha`; the resolution path has always had it, since `commitOnBranch` lays its
+tree over `parents[0]` and that is the clone's own HEAD. Re-reading the branch head instead opened
+a window the length of a worker run — a path the base branch deleted inside it, and the worker
+deleted too, was published as a removal of a path the base tree no longer held — and reading it
+cost a round-trip to buy that window. The artifact is laid over a base that may since have moved,
+which is an ordinary pull request branch and what the catch-up merge is for.
+
+Asking HEAD directly is what closed the last two routes to that 422, both of which had survived
+guards written against the status flags:
+[#121](https://github.com/adamstallard/igor/issues/121), the intent-to-add path deleted before
+commit, and the `DU` path the artifact branch itself deleted and the base modified — which a worker
+reaches by following the conflict prompt's own instruction to delete the file to accept the base's
+removal. **The one case where HEAD is not the base** is a worker that ran `git commit`: nothing
+grants that command, and such a run already fails loudly on a `base_tree` the host cannot resolve.
+
 ### 6.7.3 A binary in an artifact is corrupted, not dropped — **known, and deliberately unguarded**
 
 Changes are read out of the tree as UTF-8 and published as blobs declared UTF-8. Reading a file

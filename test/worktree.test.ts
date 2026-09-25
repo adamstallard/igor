@@ -1,5 +1,5 @@
-import { execFile } from 'node:child_process'
-import { mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { execFile, execFileSync } from 'node:child_process'
+import { mkdirSync, renameSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { describe, expect, it } from 'vitest'
@@ -81,16 +81,6 @@ describe('what a name that is not text survives', () => {
     expect(records[1]!.path.equals(second)).toBe(true)
   })
 
-  it('keeps a rename\'s two records paired when neither name is text', () => {
-    const to = Buffer.from([0x6e, 0x65, 0x77, 0xc3, 0x28, 0x2e, 0x6d, 0x64])
-    const from = Buffer.from([0x6f, 0x6c, 0x64, 0xc3, 0x28, 0x2e, 0x6d, 0x64])
-    const records = statusRecords(
-      Buffer.concat([record('R ', to), Buffer.concat([from, Buffer.from([0])])]),
-    )
-    expect(records).toHaveLength(1)
-    expect(records[0]!.path.equals(to)).toBe(true)
-    expect(records[0]!.from?.equals(from)).toBe(true)
-  })
 
   it('reads a file whose name is not ASCII off disk', async () => {
     // The parse above proves the bytes survive; this proves the tree still opens what they
@@ -142,15 +132,6 @@ describe('telling a name that survived the decode from one that did not', () => 
     expect(named(cut).rawName?.equals(cut)).toBe(true)
   })
 
-  it('flags the name a rename came from, which the record after it carries', () => {
-    const to = Buffer.from([0x6e, 0x65, 0x77, 0x2e, 0x6d, 0x64])
-    const from = Buffer.from([0x6f, 0x6c, 0x64, 0xc3, 0x28, 0x2e, 0x6d, 0x64])
-    const [record] = statusRecords(
-      Buffer.concat([Buffer.from('R  '), to, Buffer.from([0]), from, Buffer.from([0])]),
-    )
-    expect(named(record!.path).rawName).toBeUndefined()
-    expect(named(record!.from!).rawName?.equals(from)).toBe(true)
-  })
 
   it('publishes a file that really is named with U+FFFD', async () => {
     // End to end, because this name is one APFS will hold: the round trip is what keeps the
@@ -281,6 +262,20 @@ describe('bringing a base into an artifact tree', () => {
     expect(head.stdout.trim()).toBe(artifact.stdout.trim())
   })
 
+  it('offers the commit it was cut from, and still offers it once the merge is in', async () => {
+    // What an artifact is laid over. Re-read from the base branch at publish time it is a
+    // different sha whenever the branch moved during the run, and a removal of a path that sha
+    // no longer holds is refused with `422 GitRPC::BadObjectState` — the whole tree request.
+    const { clone, origin } = await conflicting()
+    const tree = new ClonedTree(clone, 'o/r')
+    const cutFrom = (await run('git', ['-C', origin, 'rev-parse', 'artifact'])).stdout.trim()
+    expect(await tree.head()).toBe(cutFrom)
+
+    await tree.merge('main')
+    unlinkSync(join(clone, 'untouched.txt'))
+    expect(await tree.head()).toBe(cutFrom)
+  })
+
   it('reports a clean merge as no conflicts at all', async () => {
     const { clone, origin } = await conflicting()
     await run('git', ['-C', origin, 'checkout', '-q', 'main'])
@@ -309,10 +304,16 @@ describe('what a rename and a file mode survive', () => {
     const dir = await repo()
     await run('git', ['-C', dir, 'mv', 'tracked.md', 'renamed.md'])
 
+    // Read with `--no-renames`, so the two paths arrive as git's own records in git's own
+    // order — `A  renamed.md` before `D  tracked.md` — rather than as a pair the parser
+    // unfolded deletion-first. The destination is `added` rather than `modified` because its
+    // index column really is `A`; under the pairing it carried `R`, which is neither, and fell
+    // to the `modified` default. Nothing downstream distinguishes the two: `carried()` asks
+    // only whether a change is `deleted`.
     const changed = await new ClonedTree(dir, 'o/r').changes()
     expect(changed).toEqual([
+      { path: 'renamed.md', content: 'before\n', kind: 'added' },
       { path: 'tracked.md', content: '', kind: 'deleted' },
-      { path: 'renamed.md', content: 'before\n', kind: 'modified' },
     ])
   })
 
@@ -343,21 +344,10 @@ describe('what a rename and a file mode survive', () => {
     const changed = await new ClonedTree(dir, 'o/r').changes()
     expect(changed).toEqual([
       { path: 'ADR-001.md', content: '', kind: 'deleted' },
-      { path: 'NEW-001.md', content: 'decision\n', kind: 'modified' },
+      { path: 'NEW-001.md', content: 'decision\n', kind: 'added' },
     ])
   })
 
-  it('pairs a rename the work tree column reports, and a copy in either column', () => {
-    const pair = (flags: string, to: string, from: string): Buffer =>
-      Buffer.concat([Buffer.from(`${flags} ${to}\0${from}\0`, 'latin1')])
-    const records = statusRecords(
-      Buffer.concat([pair(' R', 'new.md', 'old.md'), pair(' C', 'copy.md', 'source.md')]),
-    )
-    expect(records.map((r) => [r.flags, r.path.toString(), r.from?.toString()])).toEqual([
-      [' R', 'new.md', 'old.md'],
-      [' C', 'copy.md', 'source.md'],
-    ])
-  })
 
   it('leaves the source of a copy in place rather than deleting it', async () => {
     // A copy is the one two-path shape whose source is still there, so the pair is read for the
@@ -536,5 +526,231 @@ describe('what of a change an artifact can carry', () => {
     ])
     expect(written.map((c) => c.path)).toEqual(['src/new.ts', 'src/old.ts'])
     expect(removed).toEqual([])
+  })
+})
+
+describe('a fold cannot lose a removal', () => {
+  /**
+   * Two files similar enough for rename detection to pair them, one left unmerged by a
+   * modify/delete conflict. With detection on, git reports the pair as a rename of the
+   * unmerged path and the worker's deletion is **absent from the output** — not misread in it,
+   * gone. Nothing downstream can recover a path that was never read.
+   */
+  async function twoSimilarFilesOneConflicted(): Promise<string> {
+    const origin = tempDir('igor-fold-origin-')
+    const git = (...a: string[]): Promise<unknown> => run('git', ['-C', origin, ...a])
+    await git('init', '-q', '.')
+    await git('config', 'user.email', 't@example.invalid')
+    await git('config', 'user.name', 'test')
+    const body = Array.from({ length: 40 }, (_, n) => `line ${n} of a shared body`).join('\n')
+    writeFileSync(join(origin, 'one.md'), `${body}\n`)
+    writeFileSync(join(origin, 'two.md'), `${body}\n`)
+    await git('add', '-A')
+    await git('commit', '-qm', 'base')
+    await git('checkout', '-qb', 'artifact')
+    writeFileSync(join(origin, 'one.md'), `${body}\nthe artifact\n`)
+    await git('commit', '-qam', 'artifact')
+    await git('checkout', '-q', 'main')
+    rmSync(join(origin, 'one.md'))
+    await git('commit', '-qam', 'base deleted it')
+
+    const clone = tempDir('igor-fold-clone-')
+    await run('git', ['clone', '-q', '--branch', 'artifact', `file://${origin}`, clone])
+    return clone
+  }
+
+  it('reports the worker deleting one of two similar files, with the other unmerged', async () => {
+    const clone = await twoSimilarFilesOneConflicted()
+    const tree = new ClonedTree(clone, 'o/r')
+    await tree.merge('main')
+
+    rmSync(join(clone, 'two.md'))
+    const changed = await tree.changes()
+
+    expect(changed.find((c) => c.path === 'two.md')).toEqual({
+      path: 'two.md',
+      content: '',
+      kind: 'deleted',
+    })
+
+    // And it survives into what the publish path is handed: `carried()` is the seam between the
+    // read and the tree request, so a removal that reaches `removed` is a removal the artifact
+    // carries. Asserting only on `changes()` would leave the fold able to reappear one layer down.
+    expect(carried(changed).removed).toContain('two.md')
+  })
+
+  it('owes no removal of the intermediate name in a chain rename', async () => {
+    // `AD b.md` is a path the run's own index invented: HEAD never held it, and neither does
+    // the tree the artifact is laid over. Publishing a removal of it returns 422 on the whole
+    // tree request, so nothing publishes — not even the changes that were correct.
+    const dir = await repo()
+    await run('git', ['-C', dir, 'mv', 'tracked.md', 'b.md'])
+    renameSync(join(dir, 'b.md'), join(dir, 'c.md'))
+    await run('git', ['-C', dir, 'add', '-N', 'c.md'])
+
+    const changed = await new ClonedTree(dir, 'o/r').changes()
+    const paths = changed.map((c) => c.path)
+
+    expect(changed.find((c) => c.path === 'tracked.md')?.kind).toBe('deleted')
+    expect(paths).toContain('c.md')
+    expect(paths).not.toContain('b.md')
+  })
+
+  it('leaves no duplicate path for a staged or an unstaged rename', async () => {
+    const staged = await repo()
+    await run('git', ['-C', staged, 'mv', 'tracked.md', 'moved.md'])
+    const a = (await new ClonedTree(staged, 'o/r').changes()).map((c) => c.path)
+    expect(a).toEqual([...new Set(a)])
+
+    const unstaged = await repo()
+    renameSync(join(unstaged, 'tracked.md'), join(unstaged, 'moved.md'))
+    await run('git', ['-C', unstaged, 'add', '-N', 'moved.md'])
+    const b = (await new ClonedTree(unstaged, 'o/r').changes()).map((c) => c.path)
+    expect(b).toEqual([...new Set(b)])
+  })
+
+  it('leaves an ordinary mixed change exactly as it was', async () => {
+    const dir = await repo()
+    writeFileSync(join(dir, 'tracked.md'), 'after\n')
+    writeFileSync(join(dir, 'added.md'), 'new\n')
+    writeFileSync(join(dir, 'doomed.md'), 'x\n')
+    await run('git', ['-C', dir, 'add', 'doomed.md'])
+    await run('git', ['-C', dir, 'commit', '-qm', 'doomed'])
+    rmSync(join(dir, 'doomed.md'))
+
+    const changed = await new ClonedTree(dir, 'o/r').changes()
+    expect(changed.find((c) => c.path === 'tracked.md')?.kind).toBe('modified')
+    expect(changed.find((c) => c.path === 'added.md')?.kind).toBe('added')
+    expect(changed.find((c) => c.path === 'doomed.md')).toEqual({
+      path: 'doomed.md',
+      content: '',
+      kind: 'deleted',
+    })
+  })
+})
+
+describe('every removal is checked against the tree it is laid over', () => {
+  /**
+   * The mirror of `deleteModify`: the **artifact** branch drops the file and the base edits it,
+   * so the merge leaves `DU` and the copy on disk is the base's. HEAD — the artifact branch —
+   * does not hold the path at all.
+   */
+  async function artifactDeletedBaseModified(): Promise<string> {
+    const origin = tempDir('igor-tree-du-')
+    const git = (...args: string[]): Promise<unknown> => run('git', ['-C', origin, ...args])
+    await git('init', '-q', '-b', 'main', '.')
+    await git('config', 'user.email', 't@example.invalid')
+    await git('config', 'user.name', 'test')
+    writeFileSync(join(origin, 'X.ts'), 'alpha\n')
+    writeFileSync(join(origin, 'kept.ts'), 'stays\n')
+    await git('add', '-A')
+    await git('commit', '-qm', 'base')
+    await git('checkout', '-qb', 'artifact')
+    await git('rm', '-q', 'X.ts')
+    await git('commit', '-qm', 'the artifact drops it')
+    await git('checkout', '-q', 'main')
+    writeFileSync(join(origin, 'X.ts'), 'alpha, edited by the base\n')
+    await git('commit', '-qam', 'the base edits it')
+
+    const clone = tempDir('igor-tree-duc-')
+    await run('git', ['clone', '-q', '--depth', '1', '--branch', 'artifact', `file://${origin}`, clone])
+    return clone
+  }
+
+  it('owes no removal for a path the artifact branch had already deleted', async () => {
+    // `DU` — deleted by us, modified by them. `conflictPrompt` tells the worker to "delete it to
+    // accept the base's removal", and deleting the base's copy here is the same gesture, so a
+    // worker following the instruction reaches this. The unmerged branch of the content read's
+    // catch reported it as a deletion without asking about HEAD, and HEAD is what `base_tree`
+    // is: the tree API refuses a removal of a path it does not hold with `422
+    // GitRPC::BadObjectState`, refusing the whole request, so `kept.ts` would not publish either.
+    const clone = await artifactDeletedBaseModified()
+    const tree = new ClonedTree(clone, 'o/r')
+    const merge = await tree.merge('main')
+    expect(merge.conflicts).toEqual(['X.ts'])
+
+    rmSync(join(clone, 'X.ts'))
+    writeFileSync(join(clone, 'kept.ts'), 'the worker also did some work\n')
+    const changed = await tree.changes()
+
+    expect(changed.filter((c) => c.kind === 'deleted')).toEqual([])
+    expect(carried(changed).removed).toEqual([])
+    expect(changed.find((c) => c.path === 'kept.ts')?.content).toBe('the worker also did some work\n')
+  })
+
+  it('owes no removal for an intent-to-add path deleted before it was committed', async () => {
+    // `git add -N n.ts` then deleting the file prints ` D n.ts` — an index column of *space*,
+    // byte for byte the shape a tracked file's unstaged deletion has, for a path HEAD has never
+    // held. No flag distinguishes the two, and `--porcelain=v2` does not either: it reports
+    // `100644` and the empty blob's sha for the intent-to-add path rather than zeros.
+    const dir = await repo()
+    writeFileSync(join(dir, 'n.ts'), 'never committed\n')
+    await run('git', ['-C', dir, 'add', '-N', 'n.ts'])
+    unlinkSync(join(dir, 'n.ts'))
+
+    const changed = await new ClonedTree(dir, 'o/r').changes()
+    expect(changed).toEqual([])
+  })
+
+  it('checks more removals than one command line can carry', async () => {
+    // The check is one process per `PATHSPEC_BUDGET` of names rather than one per run, so a
+    // change big enough to overflow `ARG_MAX` has to split rather than fail with `E2BIG` — and
+    // every batch's answers have to reach the same set, or the removals in the later ones are
+    // dropped as paths HEAD does not hold.
+    const dir = await repo()
+    const many = Array.from({ length: 600 }, (_, n) => `d/${String(n).padStart(4, '0')}-${'x'.repeat(200)}.md`)
+    mkdirSync(join(dir, 'd'))
+    for (const name of many) writeFileSync(join(dir, name), 'body\n')
+    await run('git', ['-C', dir, 'add', '-A'])
+    await run('git', ['-C', dir, 'commit', '-qm', 'many'])
+    for (const name of many) unlinkSync(join(dir, name))
+
+    const changed = await new ClonedTree(dir, 'o/r').changes()
+    expect(changed.filter((c) => c.kind === 'deleted').map((c) => c.path).sort()).toEqual([...many].sort())
+  })
+
+  /**
+   * Puts `name` into HEAD with those exact bytes. `update-index` is fed from **stdin** because
+   * argv is not a byte-exact channel on darwin — git precomposes it, so a decomposed name passed
+   * as an argument would land in the tree composed and the fixture would test nothing.
+   */
+  function commitUnder(dir: string, name: Buffer): void {
+    writeFileSync(join(dir, 'blob-source'), 'body\n')
+    const blob = execFileSync('git', ['-C', dir, 'hash-object', '-w', 'blob-source']).toString().trim()
+    unlinkSync(join(dir, 'blob-source'))
+    execFileSync('git', ['-C', dir, 'update-index', '-z', '--index-info'], {
+      input: Buffer.concat([Buffer.from(`100644 ${blob}\t`), name, Buffer.from([0])]),
+    })
+    execFileSync('git', ['-C', dir, 'commit', '-qm', 'under that name'])
+  }
+
+  it('checks a decomposed name against the bytes HEAD holds, not the ones git would compose', async () => {
+    // **The pathspec is a channel, and darwin normalises it.** `core.precomposeunicode` is on by
+    // default there, and git precomposes `argv` before parsing it — so `:(literal)` over a name
+    // HEAD holds in decomposed form matches nothing, the check says HEAD lacks a path it has, and
+    // a legitimate removal is dropped in silence. On a `UD` path that restores what the base
+    // deleted the moment the artifact merges, which is what the first requirement exists against.
+    //
+    // git honours the setting only on darwin builds, so this is a real red there and green
+    // everywhere else; it is set explicitly so the fixture does not depend on the default.
+    const dir = await repo()
+    await run('git', ['-C', dir, 'config', 'core.precomposeunicode', 'true'])
+    const decomposed = Buffer.from('cafe\u0301.md', 'utf8')
+    commitUnder(dir, decomposed)
+
+    const changed = await new ClonedTree(dir, 'o/r').changes()
+    expect(changed).toEqual([{ path: decomposed.toString('utf8'), content: '', kind: 'deleted' }])
+  })
+
+  it('publishes against the commit the tree was cut from, conflicted merge and all', async () => {
+    // The check is only the right one while HEAD is what both publishing paths lay their tree
+    // over: `commitOnBranch` over `parents[0]`, which is `MergeState.head`, and `produce` over
+    // `WorkingTree.head()`. `merge --no-commit` is what keeps the two the same, and a conflict
+    // does not move HEAD either — git writes `MERGE_HEAD` and leaves HEAD alone.
+    const clone = await artifactDeletedBaseModified()
+    const tree = new ClonedTree(clone, 'o/r')
+    const merge = await tree.merge('main')
+
+    expect(await tree.head()).toBe(merge.head)
   })
 })
