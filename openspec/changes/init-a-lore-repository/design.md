@@ -27,9 +27,15 @@ Three answers:
   the pull request number, which is why it needed no amendment when #88 merged — and why it stays
   correct if a future change ever makes a removal stop surviving again.
 
-The requirement states the condition ("where a removal a worker makes does not yet survive into
-the published artifact") rather than the pull request, because a spec that names an open PR
-goes stale the day it merges.
+The requirement states the condition ("where a removal a worker makes does not survive into the
+published artifact") rather than the pull request, because a spec that names an open PR goes
+stale the day it merges.
+
+**It says "does not", not "does not yet".** A requirement states what must be true, not where a
+project has got to. *Yet* encodes a one-way progression — not now, but soon — and that is the
+pull-request thinking this phrasing exists to avoid, smuggled back in one word. Were the hazard to
+return, removals would not *yet* fail to survive; they would fail again, and a clause reading as a
+description of a past state is one a reader discounts.
 
 ## `init-workflow` is folded into `init`
 

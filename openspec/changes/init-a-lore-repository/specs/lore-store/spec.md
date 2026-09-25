@@ -25,7 +25,7 @@ reach. It SHALL carry:
   unrelated add and delete.
 - `git log:*`, `git show:*` and `git blame:*` — why the code is as it is.
 
-Where a removal a worker makes does not yet survive into the published artifact, `git rm:*` and
+Where a removal a worker makes does not survive into the published artifact, `git rm:*` and
 `git mv:*` SHALL ship commented, carrying a note naming what unlocks them. Granting a command
 whose effect is silently dropped spends a seat on work that never arrives and says nothing.
 
