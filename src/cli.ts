@@ -20,7 +20,10 @@ import { reconcile, promoteInPlace, renderReconciliation } from './reconcile.js'
 import { GitHubError } from './github.js'
 import { claimRequested, contradictoryRunFlags } from './flags.js'
 import { explainRole, loadRole, rolesFrom, RoleError } from './role.js'
-import { catchUpItem, planCycle, runItem, UNTRIAGED_NO_SEAT, type CycleReport } from './loop.js'
+import {
+  catchUpItem, planCycle, runItem, UNTRIAGED_NO_SEAT, wentSilent,
+  type CycleReport, type ItemRun,
+} from './loop.js'
 import { renderProgress } from './execute.js'
 import { serve, untilSignalled } from './serve.js'
 import { GitHubTracker, GitHubCodeHost } from './github-adapter.js'
@@ -38,6 +41,17 @@ import { repoFromCheckout } from './github.js'
 import { staleBuildWarning } from './staleness.js'
 import { provenanceFromCitations, ProvenanceInputError } from './entry.js'
 import type { Entry, Status } from './entry.js'
+
+/**
+ * What to print about a run that held a claim and left nothing on the item.
+ *
+ * Names the reason where the tracker gave one: this line is the only place a handoff nobody
+ * could post is visible at all, and "that is a bug" alone sends the reader to look at the Igor
+ * when the tracker was simply down.
+ */
+function silenceWarning(run: ItemRun): string {
+  return `! held a claim and left no message — that is a bug${run.silence === undefined ? '' : `: ${run.silence}`}`
+}
 
 /** The destination's single on-push job, named for what it runs. */
 const WORKFLOW_FILE = 'reconcile-on-merge.yml'
@@ -437,9 +451,7 @@ program
         process.stdout.write(spent === undefined ? '  cost not reported\n' : `  cost $${spent.toFixed(4)}\n`)
         if (run.execution.artifact) process.stdout.write(`  ${run.execution.artifact.url}\n`)
       }
-      if (!run.spoke && run.outcome !== 'refused' && run.outcome !== 'lost') {
-        process.stdout.write('  WARNING: held a claim and left no message — that is a bug\n')
-      }
+      if (wentSilent(run)) process.stdout.write(`  ${silenceWarning(run)}\n`)
       return run
     }
 
@@ -464,6 +476,7 @@ program
         const gate = await gateFor()
         const run = await catchUpItem(deps, item, role, identity, { budget: gate, store })
         process.stdout.write(`  ${run.outcome}: ${run.reason}\n`)
+        if (wentSilent(run)) process.stdout.write(`  ${silenceWarning(run)}\n`)
         if (run.execution) await record(item, run.execution, gate.seat)
         return
       }
@@ -504,6 +517,7 @@ program
       const gate = await gateFor()
       const run = await catchUpItem(deps, c.candidate, role, identity, { budget: gate, store })
       process.stdout.write(`  ${c.candidate.id}: ${run.reason}\n`)
+      if (wentSilent(run)) process.stdout.write(`  ${silenceWarning(run)}\n`)
       if (shouldDefer(run.outcome, run.handoff, run.cures)) {
         await noteHandoff(destination, c.candidate, run.reason).catch(() => undefined)
       }
@@ -571,6 +585,9 @@ program
             break
           case 'worked': {
             say(`  ${e.run.outcome}: ${e.run.reason}`)
+            // Unattended for hours is where a claim nobody answered goes unnoticed longest, so
+            // the same warning the one-shot path prints belongs here too.
+            if (wentSilent(e.run)) say(`  ${silenceWarning(e.run)}`)
             if (e.run.execution) void record(e.item, e.run.execution, e.seat)
             break
           }

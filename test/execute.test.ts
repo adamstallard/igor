@@ -121,7 +121,7 @@ function fakeProvider(
   return { provider, log }
 }
 
-function fakeCodeHost(opts: { caughtUp?: CatchUp[] } = {}): {
+function fakeCodeHost(opts: { caughtUp?: CatchUp[]; produceThrows?: Error } = {}): {
   host: CodeHost
   seen: ArtifactRequest[]
   resolved: ResolutionRequest[]
@@ -134,6 +134,7 @@ function fakeCodeHost(opts: { caughtUp?: CatchUp[] } = {}): {
   const host: CodeHost = {
     name: 'fake',
     produce: async (r): Promise<Artifact> => {
+      if (opts.produceThrows) throw opts.produceThrows
       seen.push(r)
       return { kind: 'pull-request', ref: '#42', url: 'https://example.test/42' }
     },
@@ -233,6 +234,59 @@ describe('the working-tree seam', () => {
     const seenBySecond = await withTree(provider, 'o/r', async (t) => existsSync(join(t.path, 'leftover.txt')))
     expect(seenBySecond).toBe(false)
     expect(first).not.toBe('')
+  })
+})
+
+describe('a run ends in a result, never in a throw', () => {
+  // `withTree` releases the tree and lets the error through, which is right for a working-tree
+  // utility and wrong for a claimed item: the caller holding the claim owes it a handoff, and
+  // an error that leaves `execute` altogether never reaches the switch that posts one — #128.
+
+  it('reports a publish that threw as a failure rather than escaping', async () => {
+    const { provider, log } = fakeProvider([{ path: 'a.ts', kind: 'modified', content: 'fixed' }])
+    const { host } = fakeCodeHost({ produceThrows: new Error('could not create pull request: bad credentials') })
+    const { t } = fakeTracker()
+
+    const r = await execute(provider, t, host, candidate(), role(), {
+      worker: async () => ({ result: 'Fixed it.', total_cost_usd: 0.02 }),
+    })
+
+    expect(r.outcome).toBe('failed')
+    expect(r.reason).toContain('bad credentials')
+    // Still released: the guarantee this adds is about the item, not about the tree.
+    expect(log.released).toBe(1)
+  })
+
+  it('reports a tree that could never be provisioned as a failure too', async () => {
+    // Provisioning happens before the block that releases, so this is the throw a catch inside
+    // the working-tree callback would not see.
+    const { provider } = fakeProvider([], { failProvision: true })
+    const { host } = fakeCodeHost()
+    const { t } = fakeTracker()
+
+    const r = await execute(provider, t, host, candidate(), role(), {
+      worker: async () => ({ result: 'Fixed it.', total_cost_usd: 0.02 }),
+    })
+
+    expect(r.outcome).toBe('failed')
+    expect(r.reason).toContain('cannot clone')
+  })
+
+  it('does not claim a cost or a transcript it never saw', async () => {
+    // A crash out of the publish has spent real money and left a worker's account behind, and
+    // neither survived the throw. Zero would read as a free run; an empty transcript is what
+    // every other unreported path already carries.
+    const { provider } = fakeProvider([{ path: 'a.ts', kind: 'modified', content: 'fixed' }])
+    const { host } = fakeCodeHost({ produceThrows: new Error('bad credentials') })
+    const { t } = fakeTracker()
+
+    const r = await execute(provider, t, host, candidate(), role(), {
+      worker: async () => ({ result: 'Fixed it.', total_cost_usd: 0.02 }),
+    })
+
+    expect(r.costUsd).toBeUndefined()
+    expect(r.transcript).toBe('')
+    expect(r.changed).toEqual([])
   })
 })
 

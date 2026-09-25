@@ -70,6 +70,13 @@ export interface ExecutionResult {
   /** Whether `artifact` was brought up to date rather than opened by this run. */
   caughtUp?: boolean
   /**
+   * The run ended in an error nothing along the way classified, so how far it got is not
+   * known. Only ever set with `outcome: 'failed'`, and read by `stepsFrom`: an `artifact`
+   * beside this is where to go and look, not something this run can claim to have opened or
+   * brought up to date.
+   */
+  unhandled?: true
+  /**
    * Whether a worker was handed a conflict and resolved it. False on a catch-up whose merge
    * came out clean, where claiming a resolution would claim work nobody did.
    */
@@ -1185,6 +1192,11 @@ export function branchFor(role: Role, candidate: Candidate, prefix = 'igor'): st
 
 /**
  * Runs one claimed item end to end. The tree is released whatever happens, including a throw.
+ *
+ * **Always resolves.** Every way this can end is one of the outcomes, and an error nothing
+ * along the way handles becomes `failed` rather than leaving here. The caller holds a claim
+ * that told other people to stand off, and an escaping error skips the switch that would post
+ * a handoff — the tree is released and the item sits assigned with nothing said on it.
  */
 export async function execute(
   provider: TreeProvider,
@@ -1206,7 +1218,8 @@ export async function execute(
   const linkage = tracker.linkage(candidate)
   const artifact = options.catchUp
 
-  return withTree(
+  try {
+  return await withTree(
     provider,
     candidate.repo,
     async (tree: WorkingTree) => {
@@ -1732,6 +1745,36 @@ export async function execute(
     },
     artifact?.branch,
   )
+  } catch (error) {
+    // Outside `withTree` rather than inside its callback, because provisioning throws before
+    // the callback runs: a clone that cannot be made is the failure a catch in there misses.
+    //
+    // Most of what the run learned is out of reach — the transcript, the spend and the changed
+    // files live in the callback's scope and went with the throw — so the result claims none
+    // of it. `costUsd` undefined rather than zero: a crash out of the publish has already paid
+    // for a worker, and zero would read as a run that was free. `cures` is the exception, and
+    // deliberately: a key is minted by the code enforcing the constraint it names, and a wall
+    // the run met is still a wall whatever killed the run afterwards.
+    return {
+      outcome: 'failed' as const,
+      // A catch-up was handed an artifact that already existed, and on this path the throw may
+      // have landed either side of publishing to it. Naming it sends whoever picks this up to
+      // look before starting over, on top of a resolution that may already be on the branch.
+      ...(artifact === undefined
+        ? {}
+        : { artifact: { kind: 'pull-request' as const, ref: artifact.ref, url: artifact.url } }),
+      unhandled: true as const,
+      changed: [],
+      refusals,
+      transcript: '',
+      costUsd: undefined,
+      ...cured(),
+      // The error and nothing else. What is unknown about the artifact is said once, by the
+      // handoff, which has the url to point at; saying it here too puts it twice in one
+      // comment.
+      reason: `the run ended in an error nothing handled — ${error instanceof Error ? error.message : String(error)}`,
+    }
+  }
 }
 
 /**

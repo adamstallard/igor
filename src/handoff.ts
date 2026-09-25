@@ -64,6 +64,12 @@ export interface Handoff {
   remaining: string[]
   suggested: string[]
   artifact?: Artifact
+  /**
+   * The run ended in an error nothing classified, so `artifact` is somewhere to look rather
+   * than something this run left work on. Without it a crash before the clone even existed
+   * still reads "continue from it rather than starting over".
+   */
+  unhandled?: true
 }
 
 const MINUTE = 60_000
@@ -126,8 +132,10 @@ export function stepsFrom(
   if (written.length > 0) done.push(`changed ${written.length} file${written.length === 1 ? '' : 's'}`)
   if (removed.length > 0) done.push(`removed ${removed.length} file${removed.length === 1 ? '' : 's'}`)
   // An artifact that already existed was brought up to date, not opened — saying otherwise
-  // tells the reader a pull request they have been reviewing for a week is new.
-  if (result.artifact) {
+  // tells the reader a pull request they have been reviewing for a week is new. A run that
+  // ended in an error nothing classified gets neither sentence: it carries an artifact to say
+  // where to look, and both of these would claim it did something to it.
+  if (result.artifact && result.unhandled !== true) {
     done.push(
       result.caughtUp === true
         ? `brought ${result.artifact.ref} up to date`
@@ -154,12 +162,22 @@ export function stepsFrom(
       // An artifact means the edits reached it. Telling somebody the work is gone in the same
       // message that links to it is wrong twice, and it is the catch-up paths that get here
       // holding one: they publish and then discover the resolution did not take.
+      //
+      // A run that ended in an error nothing classified says so instead, because it is the one
+      // case that cannot tell whether the publish landed. Publishing is several writes — a
+      // branch, a pull request, a review request — and dying on the last of them leaves the
+      // first two on the remote with nothing carrying their names back. "Nothing was produced"
+      // sends that reader to start over into a branch that already exists.
       remaining.push(
-        result.artifact !== undefined
-          ? `what was published is on ${result.artifact.ref}; the rest needs a person`
-          : result.changed.length > 0
-            ? 'the changes were made but never published, so they are gone with the working copy'
-            : 'all of it — nothing usable was produced',
+        result.unhandled === true
+          ? result.artifact !== undefined
+            ? `what reached ${result.artifact.ref} is not known — look at ${result.artifact.url} before starting over`
+            : 'how far it got is not known — look for a branch or a pull request on this item before starting over'
+          : result.artifact !== undefined
+            ? `what was published is on ${result.artifact.ref}; the rest needs a person`
+            : result.changed.length > 0
+              ? 'the changes were made but never published, so they are gone with the working copy'
+              : 'all of it — nothing usable was produced',
       )
       break
   }
@@ -280,8 +298,11 @@ export function composeHandoff(role: Role, candidate: Candidate, handoff: Handof
     handoff.suggested.length > 0 ? `${handoff.suggested.join(' or ')} could pick this up.` : ''
 
   // Most handoffs happen before anything was produced, where a sectioned report is seven
-  // headings around two facts. Expand only when there is something to expand about.
-  const substantive = handoff.done.length > 1 || handoff.artifact !== undefined
+  // headings around two facts. Expand only when there is something to expand about — and an
+  // artifact nobody can say was reached is not something to expand about: the sections would
+  // be a one-item "Done" and a "Partial work" line asserting the very thing that is unknown.
+  const substantive =
+    handoff.done.length > 1 || (handoff.artifact !== undefined && handoff.unhandled !== true)
   if (!substantive) {
     const nothing = handoff.remaining[0] ?? 'nothing was done'
     return [`**${role.name}** released this — ${why}.`, '', `Still to do: ${nothing}.`, who]
@@ -374,6 +395,7 @@ export async function handOffFrom(
       remaining,
       suggested: suggest(role, candidate, identity),
       ...(result?.artifact ? { artifact: result.artifact } : {}),
+      ...(result?.unhandled === true ? { unhandled: true as const } : {}),
     },
     now,
   )
