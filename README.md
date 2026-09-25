@@ -87,8 +87,9 @@ npm run build
 npm link          # puts `igor` on your PATH
 ```
 
-`npm unlink -g igor` removes it. Without linking, `npm run igor -- <command>` from the clone
-does the same thing and needs no build.
+`npm unlink -g igor-lore` removes it — npm knows the package by its name, not by the command
+it installs. Without linking, `npm run igor -- <command>` from the clone does the same thing
+and needs no build.
 
 Every command below assumes `igor` is on your path, and that you are running it inside the
 lore repository it works from. Igor finds its configuration by walking up from the working
@@ -232,8 +233,9 @@ repository.
    igor run <role> --plan     # what it would claim, claiming nothing
    ```
 
-   `--plan` claims nothing and posts nothing. It is not free: triage is a model call, measured
-   around four cents for a nine-candidate cycle.
+   That run claims nothing, posts nothing, and writes nothing: the discovery watermark stays
+   where it was, so looking at the backlog does not consume it. It is not free: triage is a
+   model call, measured around four cents for a nine-candidate cycle.
 
 4. **Leave it running.** Everything above is a command you run once; finding your own work is
    a loop.
@@ -480,13 +482,14 @@ would be worse than admitting it:
 ## Status
 
 Working end to end against live repositories: discovery, triage, claiming, execution, handoff,
-budget, and a loop that runs on an interval. Verified by real runs that opened real pull
-requests and, more usefully, by runs that correctly declined to.
+budget, lore fired into the worker's context per item, and a loop that runs on an interval.
+Verified by real runs that opened real pull requests and, more usefully, by runs that
+correctly declined to.
 
-Not built: any tracker but GitHub, lore retrieval (nothing reads the lore yet), conversation
-beyond `stop`, and concurrent Igors. Linear looks strictly better than GitHub for claiming —
-app identities cost no seat and there is a parallel `delegate` field — but that rests on an
-untested assumption about whether an app may delegate to itself.
+Not built: any tracker but GitHub, conversation beyond `stop`, and concurrent Igors. Linear
+looks strictly better than GitHub for claiming — app identities cost no seat and there is a
+parallel `delegate` field — but that rests on an untested assumption about whether an app may
+delegate to itself.
 
 Every interval is still a guess. See the costs section for what has actually been measured.
 
