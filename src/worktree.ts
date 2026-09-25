@@ -121,30 +121,18 @@ async function run(cmd: string, args: readonly string[], cwd?: string): Promise<
 export interface StatusRecord {
   flags: string
   path: Buffer
-  /** Where a rename or a copy came from, which git writes as the record after it. */
-  from?: Buffer
 }
 
 /**
- * Flags whose record carries a second one after it, holding the path it came from. `R` and `C`
- * are the only porcelain v1 letters that mean rename or copy, so matching either column is
- * exact rather than a guess at the shape.
+ * An index column meaning the index holds this path and HEAD does not, so no tree the artifact
+ * is published against holds it either.
+ *
+ * `A` alone, because `changes()` reads with `--no-renames` and porcelain then emits no `R` and
+ * no `C` in either column. The rename and copy letters were here while the parser paired a
+ * rename's two records, and matching a letter that cannot arrive would leave dead alternation
+ * in the one guard standing between a fold-free read and a refused publish.
  */
-const PAIRED = /[RC]/
-
-/**
- * A rename among those, as against a copy: the path it came from is gone and the artifact owes
- * a removal of it. A copy's source is still on disk.
- */
-const RENAME = /R/
-
-/**
- * An index column that means the index has this path and HEAD does not — staged as new, or the
- * destination of a staged rename or copy. Git reports a rename onto a path HEAD already holds
- * as `M` on that path and `D` on the old one, so an `R` or `C` destination is never one of
- * HEAD's.
- */
-const INDEX_NEW = /^[ARC]/
+const INDEX_NEW = /^A/
 
 /**
  * Splits `git status -z` output into records without decoding any name.
@@ -166,21 +154,12 @@ export function statusRecords(status: Buffer): StatusRecord[] {
   const records: StatusRecord[] = []
   for (let i = 0; i < entries.length; i += 1) {
     const flags = entries[i]!.subarray(0, 2).toString('latin1')
-    // A rename or a copy is **two** records: the new path, then the original alone on the next
-    // one. Read as a status line that second record is a path sliced out of the middle of a
-    // filename, so the original is reported as neither changed nor deleted — and a resolution,
-    // which lays its files over the tree the branch already has, keeps the old path and
-    // publishes the file twice. A merge is where renames arrive, so this is the ordinary case
-    // rather than an exotic one.
-    //
-    // **Both columns.** The flags are `XY` — the index, then the work tree — and either may
-    // carry the marker: ` R new\0old\0` is what git writes for a rename whose destination is
-    // in the index as intent-to-add while the source deletion is unstaged, which `git add -N`
-    // on the destination produces. Read from the index column alone that pair comes apart, and
-    // the old path is parsed as a status line whose flags are its own first two bytes.
+    // One record per entry, and no record carries a second. A rename or a copy would arrive as
+    // two — the new path, then the original alone — and reading that second one as a status
+    // line takes a path out of the middle of a filename. `changes()` reads with `--no-renames`
+    // so porcelain emits neither, and a rename arrives as an ordinary removal and addition.
     const path = entries[i]!.subarray(3)
-    const from = PAIRED.test(flags) ? entries[++i] : undefined
-    records.push({ flags, path, ...(from === undefined ? {} : { from }) })
+    records.push({ flags, path })
   }
   return records
 }
@@ -275,32 +254,34 @@ export class ClonedTree implements WorkingTree {
   async changes(): Promise<ChangedFile[]> {
     // Read from the tree, never from what the worker said it did. A worker that reports a
     // change it did not make, or omits one it did, cannot mislead the artifact this way.
+    //
     // `-uall`, because porcelain otherwise collapses an untracked directory to one entry —
     // `?? openspec/` rather than the files under it. Reading that path throws EISDIR, the
     // catch below skips it, and every file a worker created in a new directory is lost from
     // the artifact without a word. Spec deltas are always new files in new directories.
-    const status = await runBytes('git', ['-C', this.path, 'status', '--porcelain', '-z', '-uall'])
+    //
+    // `--no-renames`, because detection folds two changed paths into one record and a fold
+    // **loses** a path from the input rather than misreading one that is present. Where a
+    // conflicted merge leaves one path unmerged and the worker deletes another that resembles
+    // it, the pair is reported as a rename of the unmerged path and the deletion is absent from
+    // the output entirely — nothing downstream can recover what was never read. Off, the same
+    // two paths arrive as a removal and an addition, which is the shape the artifact wants
+    // anyway: the tree API removes a path or adds one and has no notion of a move.
+    const status = await runBytes('git', [
+      '-C',
+      this.path,
+      'status',
+      '--porcelain',
+      '-z',
+      '-uall',
+      '--no-renames',
+    ])
     const out: ChangedFile[] = []
 
     const records = statusRecords(status)
-    // **A work tree column rename names its source as the index holds it, not as HEAD does.**
-    // A merge brings a rename in fully staged; a worker that then moves that file again with an
-    // ordinary `mv` makes the merge's own destination the source of the second pair, and a file
-    // staged and then moved does the same. Removing such a path lays a tree entry with no blob
-    // behind it over a base that never had the path at all.
-    //
-    // Keyed in `latin1`, which is byte for byte: a name that is not text must not collide with
-    // another through the U+FFFD both decode to.
-    const indexOnly = new Set(
-      records.filter((r) => INDEX_NEW.test(r.flags)).map((r) => r.path.toString('latin1')),
-    )
 
-    for (const { flags, path, from } of records) {
+    for (const { flags, path } of records) {
       const code = flags.trim()
-      const source = from !== undefined && from.length > 0 ? from : undefined
-      if (RENAME.test(flags) && source !== undefined && !indexOnly.has(source.toString('latin1'))) {
-        out.push({ ...named(source), content: '', kind: 'deleted' })
-      }
       if (path.length === 0) continue
       // The name the artifact would publish under, and the bytes beside it where that name is
       // not the one on disk. Nothing is dropped here: the publishing path decides what to do
@@ -308,6 +289,15 @@ export class ClonedTree implements WorkingTree {
       // still owes an account of what changed.
       const name = named(path)
       if (!UNMERGED.test(flags) && GONE.test(flags)) {
+        // **Owe no removal for a path the run's own index invented.** An index column saying the
+        // index has this path and HEAD does not means no tree the artifact is published against
+        // ever held it — the destination of a rename since moved again, or a staged addition the
+        // worker then deleted. The tree API refuses a removal of a path `base_tree` does not
+        // hold with `422 GitRPC::BadObjectState`, and refuses the *whole* tree request: nothing
+        // publishes, not even the changes that were correct. Under `--no-renames` the only shape
+        // this reaches is `AD`, since no `R` or `C` record is emitted and `A ` and `AM` are
+        // additions that never reach the gone-check.
+        if (INDEX_NEW.test(flags)) continue
         out.push({ ...name, content: '', kind: 'deleted' })
         continue
       }

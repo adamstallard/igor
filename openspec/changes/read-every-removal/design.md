@@ -282,3 +282,35 @@ a surprise rather than a known gap.
   rename stops arriving as one record and arrives as two. Measured to fall through the existing
   branches to the same `ChangedFile` list, but it is a change to the common path taken for the
   sake of an uncommon one, and the test suite is the thing that has to say so.
+
+## What the pairing settled to, after #114 landed
+
+[#114](https://github.com/adamstallard/igor/pull/114) merged as `49e0866` before this was
+implemented, so `tasks.md` 5.2 applied rather than 5.3's fallback. Its six behavioural tests were
+run against the flag and the guard first, as 5.1 requires, and they are what made the deletion
+safe to take.
+
+**Two of them failed on the first run, and neither was a lost behaviour.** Both pinned the shape
+the pairing produced rather than the property they exist to protect:
+
+- A rename's destination is now `added` rather than `modified`. Its index column really is `A`;
+  under the pairing it carried `R`, which is neither, and fell to the `modified` default. Nothing
+  distinguishes the two downstream — `carried()` asks only whether a change is `deleted` — and the
+  new label is the accurate one.
+- A staged rename's two entries now arrive in git's own order, destination before source, rather
+  than deletion-first as the pairing emitted them. Array order reaches no consumer.
+
+The property each test protects — the old path reported deleted, and no `-001.md` invented from a
+second record — holds in both cases and is asserted unchanged.
+
+**Deleted:** `PAIRED`, `RENAME`, `indexOnly`, the `from`/`++i` pairing in `statusRecords`, and
+`StatusRecord.from`, along with the three unit tests that drove the pairing with synthetic `R`
+buffers. Those tests were the mechanism's own and could not outlive it; the six behavioural tests
+are what now pins the outcome.
+
+**`INDEX_NEW` narrowed from `/^[ARC]/` to `/^A/`.** It stays as the gone-check's guard, as 5.2
+says, but porcelain emits no `R` and no `C` under the flag, so two thirds of its alternation could
+never match. Dead alternation in the one guard standing between a fold-free read and a refused
+publish is a trap for the next reader, who has to work out for themselves that the letters are
+unreachable. If the preference is to keep the wider pattern with a comment instead, it is a
+one-character change.

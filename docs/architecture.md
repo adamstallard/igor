@@ -1467,6 +1467,32 @@ execution obtains a disposable working tree through one provisioning function an
 nothing about its shape — not a clone, not a worktree. The shared object store above is then a
 swap behind that function rather than a change to how execution is written.
 
+### 6.7.2a The tree is read with rename detection off
+
+`changes()` reads `git status --porcelain -z -uall --no-renames`. Detection folds two changed
+paths into one record, and a fold **loses a path from the input** rather than misreading one that
+is present — which is a different kind of defect from every other one this function has had, all
+of which were misreadings of a record that was there. Where a conflicted merge leaves one path
+unmerged and the worker deletes another that resembles it, the pair is reported as a rename of the
+unmerged path and the deletion is absent from the output entirely. Nothing downstream can recover
+what was never read, so no cross-check placed after the read can fix it.
+
+Off, the same two paths arrive as a removal and an addition, which is the shape the artifact wants
+anyway: the tree API removes a path or adds one and has no notion of a move.
+
+The read also **owes no removal for a path the run's own index invented**. An index column saying
+the index holds a path and HEAD does not means no tree the artifact is published against ever held
+it — a rename destination since moved again, or a staged addition the worker then deleted. The tree
+API refuses a removal of a path `base_tree` does not hold with `422 GitRPC::BadObjectState`, and
+refuses the whole tree request, so one invented entry costs the run everything the worker produced.
+Under `--no-renames` the only status shape that reaches the guard is `AD`.
+
+Two paths to the same 422 remain open and are recorded rather than assumed:
+[#121](https://github.com/adamstallard/igor/issues/121), where an intent-to-add path deleted before
+commit reports an index column of space and so is invisible to the guard, and
+[#122](https://github.com/adamstallard/igor/issues/122), where the base branch deletes a path while
+the worker runs and the worker deletes it too.
+
 ### 6.7.3 A binary in an artifact is corrupted, not dropped — **known, and deliberately unguarded**
 
 Changes are read out of the tree as UTF-8 and published as blobs declared UTF-8. Reading a file
