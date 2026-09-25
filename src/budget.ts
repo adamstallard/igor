@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import type { NoFigure, Observation, SeatBound, SeatBounds } from './capacity.js'
 import { keyCheck } from './keys.js'
@@ -160,6 +161,173 @@ export async function resolveToken(
   return undefined
 }
 
+/**
+ * Which credential a run used, in a form safe to commit.
+ *
+ * `executions.ndjson` is published to the destination, so nothing derived from a token may be
+ * reversible. A full SHA-256 is not: the token is high-entropy, so there is nothing to guess
+ * back from the digest. A prefix or a suffix would be — it is credential material itself, and a
+ * few characters of a secret in a repository is a few characters an attacker no longer needs.
+ *
+ * Hex in full, never truncated. A short digest is cheap to collide, and a collision here reads
+ * as "the same credential resolved", which is the one thing the breaker clears on.
+ */
+export function fingerprintToken(token: string): string {
+  return createHash('sha256').update(token, 'utf8').digest('hex')
+}
+
+/**
+ * What a seat naming no token source spends: whatever login the environment already holds.
+ *
+ * `workerEnv` forwards exactly these, so a run on such a seat is attributable after all — and
+ * without a digest the breaker could never count its rejections, which leaves the loop this
+ * exists to break standing for the whole configuration the forwarding supports.
+ */
+export const AMBIENT_TOKENS = ['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY'] as const
+
+/**
+ * The ambient credential, named, or nothing where the environment names none.
+ *
+ * Over the whole set rather than whichever one the provider turns out to prefer: replacing
+ * either is a new credential, and a digest of the set changes for both. A login the environment
+ * does not carry at all — a signed-in `~/.claude` under the forwarded `HOME` — is not guessed
+ * at. Nothing local names it, so no rejection can be attributed to it.
+ */
+export function ambientFingerprint(env: NodeJS.ProcessEnv): string | undefined {
+  const held = AMBIENT_TOKENS.filter((name) => env[name] !== undefined && env[name] !== '')
+  if (held.length === 0) return undefined
+  return fingerprintToken(held.map((name) => `${name}=${env[name] ?? ''}`).join('\n'))
+}
+
+/**
+ * The key a run mints where the provider rejected the seat's credential outright.
+ *
+ * A cure key because a person changing a credential is what ends it, and naming one is what
+ * keeps the item out of the deferral store: the item was never the problem, and parking it
+ * behind a token nobody has been told to replace loses it.
+ */
+export function credentialCure(seat: string): string {
+  return `seat:${seat}:credential`
+}
+
+/**
+ * How many consecutive rejections take a seat out of rotation.
+ *
+ * Provisional: no breaker has tripped yet. The unit of cost is a burned item, so this is the
+ * price of being sure — one is a blip, two can be coincidence, three items is a tolerable
+ * one-off against a working seat wrongly held back.
+ */
+export const BREAKER_TRIP_AFTER = 3
+
+/**
+ * How long the seat is held after the trip, doubling with each rejection past it and capped.
+ *
+ * Provisional, like the count above. Not a fixed wait: a revoked token stays revoked for days,
+ * and an hourly retry burns twenty-four items a day indefinitely where doubling burns about six
+ * in total. A provider outage still clears in fifteen minutes, which is the case the cooldown
+ * exists for.
+ */
+export const BREAKER_FIRST_COOLDOWN_MS = 15 * 60_000
+export const BREAKER_MAX_COOLDOWN_MS = 6 * 60 * 60_000
+
+/** 15m, 30m, 1h, 2h, 4h, then the cap. Counted from the trip, so the first wait is the shortest. */
+function cooldownMs(rejections: number): number {
+  const doublings = Math.max(0, rejections - BREAKER_TRIP_AFTER)
+  return Math.min(BREAKER_FIRST_COOLDOWN_MS * 2 ** doublings, BREAKER_MAX_COOLDOWN_MS)
+}
+
+/**
+ * What the execution log says about the credential resolving for a seat right now.
+ *
+ * Derived, with no store of its own and so nothing to keep in sync: the rejections are already
+ * on the rows, each carrying the fingerprint of the credential it was rejected for, and a
+ * credential that has been replaced is a different fingerprint on the next row.
+ */
+export interface CredentialBreaker {
+  seat: string
+  /** Consecutive rejections of *this* fingerprint, counted back from the newest row. */
+  rejections: number
+  /** The newest of them, which the cooldown runs from. */
+  since: string
+  /** When one run is let through to find out. Absent below the trip count. */
+  retryAt?: string
+  /** Whether the gate must pass the seat over at the moment it was asked. */
+  tripped: boolean
+  /** For a person: what happened and what ends it. */
+  why: string
+}
+
+/**
+ * Whether the provider has been rejecting this seat's current credential, and for how long.
+ *
+ * Trailing means consecutive from the newest row backwards, and nothing else will do: a count
+ * over the whole log never falls again, so the half-open run below could succeed and leave the
+ * seat tripped forever. Any row that is not a rejection of this fingerprint ends the run —
+ * which is how a successful probe closes the breaker, and how a replaced credential clears it
+ * without anybody saying so.
+ *
+ * Per seat, not per seat and role: the provider rejects a credential for every role drawing on
+ * it, and counting per role would let three roles each burn `BREAKER_TRIP_AFTER` items
+ * discovering the same dead token.
+ *
+ * Undefined where nothing is known — no fingerprint resolved, or no rejection on record. A seat
+ * naming no token source resolves none, and a rejection could not be attributed to a credential
+ * it does not hold.
+ */
+export function credentialBreaker(
+  records: readonly SpendRecord[],
+  seat: string,
+  fingerprint: string | undefined,
+  now: number = Date.now(),
+): CredentialBreaker | undefined {
+  if (fingerprint === undefined) return undefined
+  const key = credentialCure(seat)
+  let rejections = 0
+  let since: string | undefined
+  for (let i = records.length - 1; i >= 0; i--) {
+    const record = records[i]
+    if (record === undefined || record.seat !== seat) continue
+    const rejected = record.cures?.includes(key) === true && record.tokenFingerprint === fingerprint
+    // The timestamp is as required as the key: a cooldown measured from a moment nothing can
+    // place never expires, and a seat that never comes back is worse than one that burns an
+    // item. Such a row ends the run rather than extending it.
+    if (!rejected || !Number.isFinite(Date.parse(record.at))) break
+    rejections++
+    since ??= record.at
+  }
+  if (since === undefined) return undefined
+
+  if (rejections < BREAKER_TRIP_AFTER) {
+    return {
+      seat,
+      rejections,
+      since,
+      tripped: false,
+      why:
+        `the provider rejected this credential on the last ${rejections} ` +
+        `run${rejections === 1 ? '' : 's'}, short of the ${BREAKER_TRIP_AFTER} that hold the seat`,
+    }
+  }
+
+  const retryAt = new Date(Date.parse(since) + cooldownMs(rejections)).toISOString()
+  // Half-open: past the hour, exactly one run goes through, and the row it writes answers for
+  // itself — a success ends the trailing run above, a rejection lengthens the next wait. This is
+  // what recovers a provider outage with nobody watching, and why classifying perfectly is not
+  // required of the 401 that starts it.
+  const tripped = now < Date.parse(retryAt)
+  return {
+    seat,
+    rejections,
+    since,
+    retryAt,
+    tripped,
+    why:
+      `the provider rejected this credential on the last ${rejections} runs, the most recent at ` +
+      `${since}. ${tripped ? `Held until ${retryAt}` : 'One run is being let through to find out'}; ` +
+      `resolving a different credential for this seat clears it, and nothing else does`,
+  }
+}
+
 /** Ordered. The order is the allocation mechanism: dedicated capacity drains first. */
 export interface Pool {
   id: string
@@ -194,6 +362,10 @@ export interface SpendRecord {
   seat?: string
   role?: string
   costUsd?: number
+  /** Cure keys the run minted. `credentialCure` among them is what the breaker counts. */
+  cures?: readonly string[]
+  /** Which credential the run authenticated with, where a cure key names the credential. */
+  tokenFingerprint?: string
 }
 
 const LINE = /^Current (session|week)(?:\s*\(([^)]+)\))?:\s*(\d+(?:\.\d+)?)%\s*used(?:\s*·\s*resets\s+(.+?))?\s*$/gim
@@ -267,13 +439,30 @@ export async function readUsage(
   run: (env: NodeJS.ProcessEnv) => Promise<string> = runUsage,
   describe: (env: NodeJS.ProcessEnv) => Promise<AuthContext | undefined> = runAuthStatus,
 ): Promise<Usage> {
-  const childEnv = { ...env }
   let token: string | undefined
   try {
     token = await resolveToken(seat, env)
   } catch (e) {
     throw new BudgetError(`seat "${seat.id}" ${(e as Error).message}`)
   }
+  return usageUnder(token, env, run, describe, seat.id)
+}
+
+/**
+ * The reading itself, once the credential is in hand.
+ *
+ * Split from the resolution above so `readAllSeats` can resolve once and keep the fingerprint
+ * of what it resolved. A second resolution would be a second `token_command` — a vault round
+ * trip, or a prompt — per seat per cycle, for a string the first call already had.
+ */
+async function usageUnder(
+  token: string | undefined,
+  env: NodeJS.ProcessEnv,
+  run: (env: NodeJS.ProcessEnv) => Promise<string> = runUsage,
+  describe: (env: NodeJS.ProcessEnv) => Promise<AuthContext | undefined> = runAuthStatus,
+  seatId: string,
+): Promise<Usage> {
+  const childEnv = { ...env }
   if (token !== undefined) childEnv['CLAUDE_CODE_OAUTH_TOKEN'] = token
 
   // Outside the try: a command that failed to run is already its own message, and running it
@@ -286,7 +475,7 @@ export async function readUsage(
     const auth = await describe(childEnv)
     if (auth === undefined || hasSubscription(auth)) throw error
     throw new SeatUnmeasurableError(
-      `seat "${seat.id}" is authenticated${auth.authMethod === undefined ? '' : ` as ${auth.authMethod}`} ` +
+      `seat "${seatId}" is authenticated${auth.authMethod === undefined ? '' : ` as ${auth.authMethod}`} ` +
         `but its credential carries no subscription, and a window is only ever reported against ` +
         `one. The seat can still spend; it cannot be measured.`,
     )
@@ -340,6 +529,10 @@ export interface SeatUsage {
    *  and a derived bound applies. Unset for every other failure, where the credential itself is
    *  in doubt and nothing a record says makes the seat safe to spend. */
   unmeasured?: boolean
+  /** Which credential resolved for this seat, so the gate can tell the one the provider has
+   *  been rejecting from the one somebody replaced it with. Absent where the seat names no
+   *  token source, or where resolving it failed. */
+  fingerprint?: string
 }
 
 /** Tolerates individual failures, so one bad token does not blind the whole report. */
@@ -351,11 +544,24 @@ export async function readAllSeats(
 ): Promise<SeatUsage[]> {
   return Promise.all(
     seats.map(async (seat) => {
+      // Resolved here rather than inside the reading, because the fingerprint has to survive a
+      // reading that throws: the seat this exists for is exactly the one whose credential
+      // answers nothing, and its reading always throws.
+      let token: string | undefined
       try {
-        return { seat, usage: await readUsage(seat, env, run, describe) }
+        token = await resolveToken(seat, env)
+      } catch (e) {
+        return { seat, error: `seat "${seat.id}" ${(e as Error).message}` }
+      }
+      // A seat naming no source falls through to the ambient login, exactly as the worker does.
+      const digest = token === undefined ? ambientFingerprint(env) : fingerprintToken(token)
+      const fingerprint = digest === undefined ? {} : { fingerprint: digest }
+      try {
+        return { seat, ...fingerprint, usage: await usageUnder(token, env, run, describe, seat.id) }
       } catch (e) {
         return {
           seat,
+          ...fingerprint,
           error: e instanceof Error ? e.message : String(e),
           ...(e instanceof SeatUnmeasurableError ? { unmeasured: true } : {}),
         }
@@ -445,11 +651,12 @@ export function roleSharePercent(
  * `no-figure` to `igor observe` or a declared capacity, `share` to the role's own ceiling —
  * and telling a caller only that no seat was chosen sends them to the wrong one.
  *
- * Open rather than closed: `capacity-from-observation` §5 named three states, the code holds
- * more, and a credential the provider has rejected (#56) is a member added here with a case
- * added wherever this is switched on.
+ * Open rather than closed: `capacity-from-observation` §5 named three states and the code holds
+ * more. `credential` and `rejected` are the pair that most needs keeping apart — one is a token
+ * this machine could not read, the other a token the provider read and refused, and they are
+ * fixed by different people in different places.
  */
-export type SeatVerdict = 'chosen' | 'absent' | 'credential' | 'no-figure' | 'spent' | 'share'
+export type SeatVerdict = 'chosen' | 'absent' | 'credential' | 'rejected' | 'no-figure' | 'spent' | 'share'
 
 export interface Choice {
   seat?: Seat
@@ -614,6 +821,7 @@ export function chooseSeat(
   records: readonly SpendRecord[],
   role: { name: string; budgetShare?: number },
   bounds: SeatBounds = new Map(),
+  now: number = Date.now(),
 ): Choice {
   const considered: Choice['considered'] = []
 
@@ -621,6 +829,15 @@ export function chooseSeat(
     const reading = readings.find((r) => r.seat.id === id)
     if (reading === undefined) {
       considered.push({ seat: id, why: 'declared in the pool but not among the seats', verdict: 'absent' })
+      continue
+    }
+    // Ahead of everything a reading says, and on both paths. Nothing local separates a revoked
+    // token from a working one — `/usage` and `claude auth status` answer identically for either
+    // — so the only account of a credential the provider refuses is the record of runs it
+    // refused, and a seat chosen on a reading that cannot see that claims an item and burns it.
+    const breaker = credentialBreaker(records, id, reading.fingerprint, now)
+    if (breaker?.tripped === true) {
+      considered.push({ seat: id, why: breaker.why, verdict: 'rejected' })
       continue
     }
     if (reading.usage === undefined) {
@@ -897,7 +1114,10 @@ export function budgetGate(
     }
   }
 
-  const choice = chooseSeat(pool, readings, records, role, bounds)
+  // One clock for the whole gate. `now` is an instant string, and a caller that passed
+  // something unparseable gets the real clock rather than a breaker that never expires.
+  const at = Date.parse(now)
+  const choice = chooseSeat(pool, readings, records, role, bounds, Number.isFinite(at) ? at : Date.now())
   if (choice.seat === undefined) {
     // A seat that could be read answers for itself, in the provider's own words. Only where
     // none did does the figure come from `bounds`, which is the whole pool on the #30
@@ -973,8 +1193,11 @@ export function budgetGate(
  * instance or a declared capacity — so a report that merges any two of them sends somebody to
  * fix the wrong thing.
  *
- * Open rather than closed, like `SeatVerdict`: a credential the provider has rejected (#56) is
- * a member added here and a case added in `describeWindow`.
+ * Open rather than closed, like `SeatVerdict` — but a credential the provider has rejected is
+ * not a member of it. That is a fact about the seat, true of every window at once and of a seat
+ * with no window figures at all, and writing it into both rows would state it twice and imply a
+ * per-window answer that does not exist. It gets a line of the seat's own, as an unreadable
+ * credential already does.
  */
 export type WindowState = 'spent' | 'at-bound' | 'bounded' | 'unobserved' | 'unmeasured'
 
@@ -1186,6 +1409,7 @@ export function renderBudget(
   readings: readonly SeatUsage[],
   bounds: SeatBounds = new Map(),
   observations: readonly Observation[] = [],
+  breakers: ReadonlyMap<string, CredentialBreaker> = new Map(),
 ): string {
   if (readings.length === 0) return 'no seats configured\n'
   /** One window's row. An absent figure prints as a dash rather than a blank, so a column with
@@ -1200,6 +1424,15 @@ export function renderBudget(
     `${c.resets ?? '—'}  ${c.state}`
   const heading = { used: 'used', reserve: 'reserve', headroom: 'headroom', resets: 'resets', state: '' }
   const lines = [row('seat', 'window', heading).trimEnd()]
+  /**
+   * A seat held out of rotation, said once under its rows rather than in each of them: the
+   * provider refuses a credential for the whole seat, and the headroom above is real and
+   * unspendable rather than wrong.
+   */
+  const rejected = (id: string): string[] => {
+    const breaker = breakers.get(id)
+    return breaker?.tripped !== true ? [] : [`${''.padEnd(WIDTH.seat)} !  out of rotation: ${breaker.why}`]
+  }
 
   for (const r of readings) {
     if (r.usage === undefined) {
@@ -1211,6 +1444,11 @@ export function renderBudget(
           `${r.seat.id.padEnd(WIDTH.seat)} —  credential unreadable, so the seat is passed over whatever is ` +
             `recorded of it: ${r.error ?? 'unreadable'}`,
         )
+        // Said here too, and not only where a reading came back. A credential the provider
+        // refuses frequently fails the reading outright — `/usage` exits non-zero and never
+        // reaches the diagnosis that would call the seat unmeasurable — and "unreadable" about a
+        // token this machine read well enough to hash sends its operator to the wrong fix.
+        lines.push(...rejected(r.seat.id))
         continue
       }
       for (const w of ['session', 'week'] as Window[]) {
@@ -1236,6 +1474,7 @@ export function renderBudget(
         )
       }
       lines.push(`${''.padEnd(WIDTH.seat)} !  the rows above are derived, not read: ${r.error ?? 'unreadable'}`)
+      lines.push(...rejected(r.seat.id))
       continue
     }
     for (const w of ['session', 'week'] as Window[]) {
@@ -1256,16 +1495,76 @@ export function renderBudget(
           `${percent(m.percentUsed).padStart(WIDTH.used)}`,
       )
     }
-    // Reading a seat inherits this process's environment, so a keychain or an ambient login
-    // answers for it — and a worker's does not, being written out rather than inherited. A
-    // seat with no token source therefore reports healthy here and cannot pay for a single
-    // item, which is the one misconfiguration this command would otherwise conceal.
-    if (r.seat.tokenEnv === undefined && r.seat.tokenFile === undefined && r.seat.tokenCommand === undefined) {
+    // Reading a seat inherits this process's environment, so a keychain or an interactive login
+    // answers for it — and a worker's does not, being written out rather than inherited. Such a
+    // seat reports healthy here and cannot pay for a single item, which is the one
+    // misconfiguration this command would otherwise conceal.
+    //
+    // Asked of the fingerprint rather than of the token fields. A seat naming no source still
+    // spends whatever `AMBIENT_TOKENS` holds, which `workerEnv` forwards and `ambientFingerprint`
+    // names; telling its operator it cannot pay contradicts the rejection line beneath it and
+    // sends them to add a token source when the credential to replace is already named.
+    if (r.fingerprint === undefined) {
       lines.push(
-        `${''.padEnd(WIDTH.seat)} !  readable here but cannot pay: no token source, and a worker ` +
-          `inherits nothing. See docs/seats.md.`,
+        `${''.padEnd(WIDTH.seat)} !  readable here but cannot pay: no token source and nothing ` +
+          `ambient to inherit. See docs/seats.md.`,
       )
     }
+    lines.push(...rejected(r.seat.id))
+  }
+  return `${lines.join('\n')}\n`
+}
+
+/**
+ * Every seat's breaker, by seat id, from one read of the execution log.
+ *
+ * Seats with nothing on record are left out rather than given an empty entry: absence is the
+ * ordinary state, and a map holding one entry per seat says nothing a lookup does not.
+ */
+export function breakersFor(
+  readings: readonly SeatUsage[],
+  records: readonly SpendRecord[],
+  now: number = Date.now(),
+): Map<string, CredentialBreaker> {
+  const out = new Map<string, CredentialBreaker>()
+  for (const r of readings) {
+    const breaker = credentialBreaker(records, r.seat.id, r.fingerprint, now)
+    if (breaker !== undefined) out.set(r.seat.id, breaker)
+  }
+  return out
+}
+
+/**
+ * What the breaker is doing, for an operator who has just replaced a token and wants to know
+ * whether it took.
+ *
+ * Reports and does not reset, because there is nothing here that resetting would say: the
+ * breaker clears when a different credential resolves, which is what fixing it consists of. A
+ * command that cleared it on being asked would clear it for an operator who believed they had
+ * fixed the token and had not, and the next three items would pay for the belief.
+ *
+ * The fingerprint is printed whole. It is a SHA-256 of a high-entropy secret, so it discloses
+ * nothing, and comparing it against the one on the log rows is the point of printing it.
+ */
+export function renderCredentials(
+  readings: readonly SeatUsage[],
+  breakers: ReadonlyMap<string, CredentialBreaker>,
+): string {
+  if (readings.length === 0) return 'no seats configured\n'
+  const lines = [
+    `credential breakers — a seat is held after ${BREAKER_TRIP_AFTER} consecutive rejections, and ` +
+      `resolving a different credential for it is the only thing that clears one`,
+  ]
+  for (const r of readings) {
+    const breaker = breakers.get(r.seat.id)
+    const state =
+      r.fingerprint === undefined
+        ? 'no credential resolved, so no rejection can be attributed to one'
+        : breaker === undefined
+          ? 'clear — no rejection of this credential on record'
+          : breaker.why
+    lines.push(`${r.seat.id.padEnd(WIDTH.seat)} ${r.fingerprint ?? '—'}`)
+    lines.push(`${''.padEnd(WIDTH.seat)} ${state}`)
   }
   return `${lines.join('\n')}\n`
 }

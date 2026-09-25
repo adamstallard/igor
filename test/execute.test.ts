@@ -21,6 +21,7 @@ import {
   describeCommand, refusalPath,
   type ExecutionResult, type Progress, type WorkerEvent, type WorkerRunner,
 } from '../src/execute.js'
+import { fingerprintToken } from '../src/budget.js'
 import { CAPACITY_PATH } from '../src/capacity.js'
 import { withTree, type ChangedFile, type TreeProvider, type WorkingTree } from '../src/worktree.js'
 import { tempDir } from './tmp.js'
@@ -1205,7 +1206,7 @@ describe('the worker is given an environment rather than inheriting one', () => 
   })
 
   it('passes what a toolchain needs to reach the network', async () => {
-    const env = await workerEnv(undefined, {
+    const { env } = await workerEnv(undefined, {
       PATH: '/usr/bin',
       HOME: '/home/igor',
       HTTPS_PROXY: 'http://proxy:3128',
@@ -1229,15 +1230,15 @@ describe('the worker is given an environment rather than inheriting one', () => 
   it('reads the token from a file or a command just as well', async () => {
     const path = join(tempDir('igor-test-token-'), 'token')
     writeFileSync(path, 'tok-from-file')
-    const env = await workerEnv({ tokenFile: path }, { PATH: '/usr/bin' })
+    const { env } = await workerEnv({ tokenFile: path }, { PATH: '/usr/bin' })
     expect(env['CLAUDE_CODE_OAUTH_TOKEN']).toBe('tok-from-file')
 
     const cmd = await workerEnv({ tokenCommand: 'printf tok-from-cmd' }, { PATH: '/usr/bin' })
-    expect(cmd['CLAUDE_CODE_OAUTH_TOKEN']).toBe('tok-from-cmd')
+    expect(cmd.env['CLAUDE_CODE_OAUTH_TOKEN']).toBe('tok-from-cmd')
   })
 
   it('leaves the worker on the ambient login where no seat names a token', async () => {
-    const env = await workerEnv(undefined, { PATH: '/usr/bin', CLAUDE_CODE_OAUTH_TOKEN: 'ambient' })
+    const { env } = await workerEnv(undefined, { PATH: '/usr/bin', CLAUDE_CODE_OAUTH_TOKEN: 'ambient' })
     expect(env['CLAUDE_CODE_OAUTH_TOKEN']).toBe('ambient')
   })
 
@@ -2552,6 +2553,185 @@ describe('a refusal leaves the envelope behind, not only the verdict', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+/**
+ * A 401 is not a limit and must never be read as one: `usageLimit` would park the item, capture
+ * an envelope into `refusals/`, and record a capacity observation at 100% off an authentication
+ * failure. What it is instead is the one structured signal that separates a revoked credential
+ * from a working one, which nothing local can do — #56.
+ */
+describe('a credential the provider refuses names itself, and names which credential', () => {
+  const CREDENTIALS = {
+    is_error: true,
+    api_error_status: 401,
+    terminal_reason: 'api_error',
+    result: 'Failed to authenticate. API Error: 401 Invalid bearer token',
+  }
+  const TOKEN = 'sk-ant-oat01-revoked'
+
+  beforeEach(() => {
+    ledger.records.length = 0
+    ledger.paths.length = 0
+    ledger.files.length = 0
+    ledger.documents.length = 0
+    ledger.tick = undefined
+  })
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  const ran = async (output: Record<string, unknown>, opts: { seat?: string | null; thrown?: boolean } = {}) => {
+    vi.stubEnv('IGOR_SEAT_401', TOKEN)
+    const { provider } = fakeProvider([])
+    const { host } = fakeCodeHost()
+    const { t } = fakeTracker()
+    const item = candidate()
+    const seat = opts.seat === undefined ? 'fleet-1' : opts.seat
+    const result = await execute(provider, t, host, item, role(), {
+      seatToken: { tokenEnv: 'IGOR_SEAT_401' },
+      ...(seat === null ? {} : { seat }),
+      worker: async () => {
+        if (opts.thrown === false) return output
+        throw new ExecutionError('worker exited 1', output)
+      },
+    })
+    await recordExecution('acme/lore', item, role(), result, seat ?? undefined)
+    return result
+  }
+  const row = () => (ledger.records.filter((_, i) => ledger.paths[i] === 'executions.ndjson')[0] ?? {})
+  const captures = () => ledger.documents.filter((_, i) => (ledger.files[i] ?? '').startsWith('refusals/'))
+
+  it('mints the seat key off the provider’s own field, with the credential hashed beside it', async () => {
+    const result = await ran(CREDENTIALS)
+
+    expect(result.cures).toContain('seat:fleet-1:credential')
+    expect(result.tokenFingerprint).toBe(fingerprintToken(TOKEN))
+    expect(row()['cures']).toContain('seat:fleet-1:credential')
+    expect(row()['tokenFingerprint']).toBe(fingerprintToken(TOKEN))
+    // A hash, and never the credential or any part of it: this row is committed to the
+    // destination, where a prefix of a secret is a prefix an attacker no longer has to guess.
+    expect(JSON.stringify(row())).not.toContain(TOKEN)
+  })
+
+  it('stays an ordinary failure, with no refusal captured and no capacity invented', async () => {
+    const result = await ran(CREDENTIALS)
+
+    expect(result.outcome).toBe('failed')
+    expect(captures()).toEqual([])
+    expect(ledger.records.filter((_, i) => ledger.paths[i] === CAPACITY_PATH)).toEqual([])
+  })
+
+  it('names it on a run the worker returned rather than threw, which exits zero', async () => {
+    // The CLI reports a refused credential in the envelope, and a run that made no changes
+    // settles as `nothing-to-do` without passing the throw path at all.
+    const result = await ran(CREDENTIALS, { thrown: false })
+
+    expect(result.outcome).toBe('nothing-to-do')
+    expect(result.cures).toContain('seat:fleet-1:credential')
+  })
+
+  it('names nothing on a run that finished, whatever status its envelope repeats', async () => {
+    // Asked exactly as `usageLimit` asks it. A status a run met, retried past and finished
+    // around is history rather than the reason it stopped — and minting off it would hold a
+    // seat that is working, then re-trip on every successful probe and never let go.
+    const { provider } = fakeProvider(edited)
+    const { host } = fakeCodeHost()
+    const { t } = fakeTracker()
+    const item = candidate()
+    vi.stubEnv('IGOR_SEAT_401', TOKEN)
+    const result = await execute(provider, t, host, item, role(), {
+      seat: 'fleet-1',
+      seatToken: { tokenEnv: 'IGOR_SEAT_401' },
+      worker: async () => ({ ...CREDENTIALS, is_error: false, result: 'Fixed it.' }),
+    })
+    await recordExecution('acme/lore', item, role(), result, 'fleet-1')
+
+    expect(result.outcome).toBe('produced')
+    expect(result.cures ?? []).not.toContain('seat:fleet-1:credential')
+    expect(row()['tokenFingerprint']).toBeUndefined()
+  })
+
+  it('asks a run that exited zero to have said it errored, not merely to have not denied it', async () => {
+    // The two paths carry different evidence and are asked different questions. A non-zero exit
+    // has already said the run did not finish, so an envelope that says nothing about erroring is
+    // still a failure there. Exit zero says the opposite, and holding a seat that is publishing
+    // pull requests is the failure this must never commit.
+    const { provider } = fakeProvider(edited)
+    const { host } = fakeCodeHost()
+    const { t } = fakeTracker()
+    const item = candidate()
+    vi.stubEnv('IGOR_SEAT_401', TOKEN)
+    const { is_error: _unsaid, ...silent } = CREDENTIALS
+    const produced = await execute(provider, t, host, item, role(), {
+      seat: 'fleet-1',
+      seatToken: { tokenEnv: 'IGOR_SEAT_401' },
+      worker: async () => ({ ...silent, result: 'Fixed it.', total_cost_usd: 0.02 }),
+    })
+    expect(produced.outcome).toBe('produced')
+    expect(produced.cures ?? []).not.toContain('seat:fleet-1:credential')
+
+    // And the throw path is untouched: there, saying nothing about erroring is still a failure.
+    const thrown = await ran(silent)
+    expect(thrown.cures).toContain('seat:fleet-1:credential')
+  })
+
+  it('names nothing for a failure that is not a credential rejection', async () => {
+    // The failure that would take a working seat out of rotation, which is worse than the bug
+    // being fixed. A 500 is the provider failing, not refusing.
+    const result = await ran({ is_error: true, api_error_status: 500, result: 'API Error: 500' })
+
+    expect(result.cures ?? []).not.toContain('seat:fleet-1:credential')
+    expect(result.tokenFingerprint).toBeUndefined()
+    expect(row()['tokenFingerprint']).toBeUndefined()
+  })
+
+  it('names no seat where the run was given none, since the key is about a seat', async () => {
+    const result = await ran(CREDENTIALS, { seat: null })
+
+    expect(result.cures ?? []).toEqual([])
+    expect(result.tokenFingerprint).toBeUndefined()
+  })
+
+  it('names the credential even where the seat names no token source and runs on the ambient one', async () => {
+    // `workerEnv` forwards the ambient login for such a seat, so the run is attributable — and a
+    // rejection row carrying no fingerprint is one the breaker can never count, which leaves
+    // #56's loop standing for the whole configuration that forwarding exists to support.
+    vi.stubEnv('CLAUDE_CODE_OAUTH_TOKEN', 'ambient-one')
+    const { provider } = fakeProvider([])
+    const { host } = fakeCodeHost()
+    const { t } = fakeTracker()
+    const item = candidate()
+    const result = await execute(provider, t, host, item, role(), {
+      seat: 'fleet-1',
+      worker: async () => {
+        throw new ExecutionError('worker exited 1', CREDENTIALS)
+      },
+    })
+    await recordExecution('acme/lore', item, role(), result, 'fleet-1')
+
+    expect(result.cures).toContain('seat:fleet-1:credential')
+    expect(row()['tokenFingerprint']).toMatch(/^[0-9a-f]{64}$/)
+    expect(JSON.stringify(row())).not.toContain('ambient-one')
+  })
+
+  it('publishes the fingerprint only beside the key that reads it', async () => {
+    // Every other row would carry a digest nothing looks at, on a log committed to a repository.
+    const { provider } = fakeProvider(edited)
+    const { host } = fakeCodeHost()
+    const { t } = fakeTracker()
+    const item = candidate()
+    vi.stubEnv('IGOR_SEAT_401', TOKEN)
+    const result = await execute(provider, t, host, item, role(), {
+      seat: 'fleet-1',
+      seatToken: { tokenEnv: 'IGOR_SEAT_401' },
+      worker: async () => ({ result: 'Fixed it.', total_cost_usd: 0.02 }),
+    })
+    await recordExecution('acme/lore', item, role(), result, 'fleet-1')
+
+    expect(result.tokenFingerprint).toBeUndefined()
+    expect(row()['tokenFingerprint']).toBeUndefined()
   })
 })
 

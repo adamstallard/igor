@@ -30,7 +30,9 @@ import { noteHandoff, shouldDefer } from './deferred.js'
 import { noCapacity } from './handoff.js'
 import { CloneProvider } from './worktree.js'
 import { TriageError } from './triage.js'
-import { BudgetError, budgetGate, loadSpend, percent, readAllSeats, renderBudget } from './budget.js'
+import {
+  BudgetError, breakersFor, budgetGate, loadSpend, percent, readAllSeats, renderBudget, renderCredentials,
+} from './budget.js'
 import { boundsForSeats, loadObservations, observeSeat, seatToObserve } from './capacity.js'
 import { wire } from './wiring.js'
 import { readLog } from './state.js'
@@ -597,7 +599,13 @@ program
 program
   .command('budget')
   .description('What each seat has left — read live where it can be, derived from observation where it cannot')
-  .action(async () => {
+  .option(
+    '--credentials',
+    'Also print each seat\'s credential breaker: which credential resolves, how many runs the ' +
+      'provider refused it on, and when one is let through. Reports only — a breaker clears when ' +
+      'a different credential resolves',
+  )
+  .action(async (options: { credentials?: boolean }) => {
     const config = loadConfig(program.opts()['config'])
     const repo = await repoFromCheckout(config.destination)
     const [readings, spend, observations] = await Promise.all([
@@ -609,7 +617,9 @@ program
     // and so that a seat nothing can read is reported in the state it is actually in rather
     // than as one broken line.
     const bounds = boundsForSeats(observations, spend, config.budget.seats)
-    process.stdout.write(renderBudget(readings, bounds, observations))
+    const breakers = breakersFor(readings, spend)
+    process.stdout.write(renderBudget(readings, bounds, observations, breakers))
+    if (options.credentials === true) process.stdout.write(`\n${renderCredentials(readings, breakers)}`)
     for (const pool of config.budget.pools) {
       const gate = budgetGate(config.budget, { name: '(any role)', seat: `pool:${pool.id}` }, readings, spend, bounds)
       process.stdout.write(`\npool ${pool.id}: ${gate.reason}\n`)
