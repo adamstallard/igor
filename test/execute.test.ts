@@ -2,7 +2,17 @@ import { chmodSync, mkdtempSync, writeFileSync, existsSync, mkdirSync } from 'no
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Artifact, ArtifactRequest, Candidate, ClaimVerdict, CodeHost, Tracker } from '../src/adapter.js'
+import type {
+  Artifact,
+  ArtifactRequest,
+  Candidate,
+  CatchUp,
+  CatchUpRequest,
+  ClaimVerdict,
+  CodeHost,
+  ResolutionRequest,
+  Tracker,
+} from '../src/adapter.js'
 import type { Role } from '../src/role.js'
 import {
   ABSOLUTE_CEILING_MS, branchFor, claudeWorker, complete, DENIED_COMMAND_LIMIT, denialsFrom, describeTool, execute,
@@ -81,8 +91,14 @@ const role = (over: Partial<Role> = {}): Role =>
     ...over,
   }) as Role
 
+/** The commit every fake tree here was cut from, and what the artifact must be published over. */
+const CLONE_SHA = 'clonesha'
+
 /** A provider whose trees are plain directories, so the seam is testable without a network. */
-function fakeProvider(changes: ChangedFile[], opts: { failProvision?: boolean } = {}) {
+function fakeProvider(
+  changes: ChangedFile[],
+  opts: { failProvision?: boolean; noHead?: boolean } = {},
+) {
   const log = { provisioned: 0, released: 0, paths: [] as string[] }
   const provider: TreeProvider = {
     name: 'fake',
@@ -95,6 +111,7 @@ function fakeProvider(changes: ChangedFile[], opts: { failProvision?: boolean } 
         path,
         repo: 'o/r',
         changes: async () => changes,
+        ...(opts.noHead === true ? {} : { head: async () => CLONE_SHA }),
         release: async () => {
           log.released++
         },
@@ -105,16 +122,32 @@ function fakeProvider(changes: ChangedFile[], opts: { failProvision?: boolean } 
   return { provider, log }
 }
 
-function fakeCodeHost(): { host: CodeHost; seen: ArtifactRequest[] } {
+function fakeCodeHost(opts: { caughtUp?: CatchUp[] } = {}): {
+  host: CodeHost
+  seen: ArtifactRequest[]
+  resolved: ResolutionRequest[]
+  asked: CatchUpRequest[]
+} {
   const seen: ArtifactRequest[] = []
+  const resolved: ResolutionRequest[] = []
+  const asked: CatchUpRequest[] = []
+  const answers = [...(opts.caughtUp ?? [])]
   const host: CodeHost = {
     name: 'fake',
     produce: async (r): Promise<Artifact> => {
       seen.push(r)
       return { kind: 'pull-request', ref: '#42', url: 'https://example.test/42' }
     },
+    catchUp: async (r): Promise<CatchUp> => {
+      asked.push(r)
+      return answers.shift() ?? { outcome: 'already-current' }
+    },
+    resolve: async (r): Promise<string> => {
+      resolved.push(r)
+      return 'resolvedsha'
+    },
   }
-  return { host, seen }
+  return { host, seen, resolved, asked }
 }
 
 function fakeTracker() {
@@ -551,6 +584,89 @@ describe('which pull request is preferred is stated rather than inferred', () =>
     expect(result.outcome).toBe('refused')
     expect(result.reason).toMatch(/may not open a pull request/)
     expect(seen).toEqual([])
+  })
+})
+
+describe('a file whose name did not survive being decoded', () => {
+  beforeEach(() => {
+    ledger.records.length = 0
+    ledger.files.length = 0
+  })
+
+  const bytes = Buffer.from([0x63, 0x61, 0x66, 0xe9, 0x2e, 0x6d, 0x64])
+
+  /** What `changes()` reports for a file git named in bytes that are not valid UTF-8. */
+  const unnameable: ChangedFile[] = [
+    { path: 'src/a.ts', content: 'fixed', kind: 'modified' },
+    { path: bytes.toString('utf8'), content: 'notes\n', kind: 'modified', rawName: bytes },
+  ]
+
+  async function publish(changes: ChangedFile[]) {
+    const { provider } = fakeProvider(changes)
+    const { host, seen } = fakeCodeHost()
+    const { t } = fakeTracker()
+    const result = await execute(provider, t, host, candidate(), role(), {
+      worker: async () => ({ result: 'Fixed it.', total_cost_usd: 0.02 }),
+    })
+    return { result, seen }
+  }
+
+  it('publishes nothing rather than publishing at the decoded spelling', async () => {
+    // Published at the U+FFFD spelling a modified file lands at a path no file on disk has,
+    // so the branch carries it twice; a deletion removes nothing; and two names differing
+    // only in those bytes collide on one path. The bytes are in hand by this point, and
+    // throwing them away at the last step is a stranger state than never having had them.
+    const { result, seen } = await publish(unnameable)
+    expect(result.outcome).toBe('failed')
+    expect(seen).toEqual([])
+  })
+
+  it('names the file as git wrote it, which is the whole point of having the bytes', async () => {
+    const { result } = await publish(unnameable)
+    expect(result.reason).toContain('caf\\xe9.md')
+    expect(result.reason).not.toContain('�')
+  })
+
+  it('refuses over a deletion too, where the mangled path would remove nothing', async () => {
+    const { result, seen } = await publish([
+      { path: bytes.toString('utf8'), content: '', kind: 'deleted', rawName: bytes },
+    ])
+    expect(result.outcome).toBe('failed')
+    expect(seen).toEqual([])
+  })
+
+  it('still records what the run changed, so the diff is not lost from the account', async () => {
+    const { result } = await publish(unnameable)
+    expect(result.changed).toEqual(unnameable)
+  })
+
+  it('does not let an ordinary name spell the escape of an unnameable one', async () => {
+    // A backslash is a legal byte in a filename. Rendered beside a name that was escaped into
+    // one, the two read alike, and the record cannot say which file stopped the run — the
+    // collision this refusal exists to stop, reappearing in the account of it.
+    const escaped = Buffer.from([0x61, 0xe9, 0x2e, 0x6d, 0x64])
+    const { result } = await publish([
+      { path: 'a\\xe9.md', content: 'ordinary\n', kind: 'modified' },
+      { path: escaped.toString('utf8'), content: 'notes\n', kind: 'modified', rawName: escaped },
+    ])
+    await recordExecution('acme/lore', candidate(), role(), result)
+
+    const written = ledger.records[0]?.['changed'] as string[]
+    expect(new Set(written).size).toBe(written.length)
+  })
+
+  it('writes the run record under the bytes too, not under the spelling', async () => {
+    // The reason and the record are read by the same person, one after the other. A record
+    // that spells the file with U+FFFD sends them looking for a file that is not there.
+    const { result } = await publish(unnameable)
+    await recordExecution('acme/lore', candidate(), role(), result)
+    expect(ledger.records[0]?.['changed']).toContain('modified caf\\xe9.md')
+  })
+
+  it('leaves an ordinary change alone', async () => {
+    const { result, seen } = await publish([{ path: 'src/a.ts', content: 'fixed', kind: 'modified' }])
+    expect(result.outcome).toBe('produced')
+    expect(seen).toHaveLength(1)
   })
 })
 
@@ -2616,5 +2732,107 @@ describe('a credential the provider refuses names itself, and names which creden
 
     expect(result.tokenFingerprint).toBeUndefined()
     expect(row()['tokenFingerprint']).toBeUndefined()
+  })
+})
+
+describe('an artifact carries the removals as well as the edits', () => {
+  /** One item, one set of changes, and whatever reached the code host. */
+  async function publish(changes: ChangedFile[]) {
+    const { provider } = fakeProvider(changes)
+    const { host, seen } = fakeCodeHost()
+    const { t } = fakeTracker()
+    const result = await execute(provider, t, host, candidate(), role(), {
+      worker: async () => ({ result: 'Done.', total_cost_usd: 0.01 }),
+    })
+    return { result, request: seen[0] }
+  }
+
+  it('publishes a deletion alongside the edits rather than dropping it', async () => {
+    // Dropped, the pull request looks complete and is not: the reviewer reads a refactor that
+    // still has the module it removed.
+    const { result, request } = await publish([
+      { path: 'src/a.ts', content: 'fixed', kind: 'modified' },
+      { path: 'src/gone.ts', content: '', kind: 'deleted' },
+    ])
+    expect(result.outcome).toBe('produced')
+    expect(request?.files.map((f) => f.path)).toEqual(['src/a.ts'])
+    expect(request?.deletions).toEqual(['src/gone.ts'])
+    expect(result.refusals).toEqual([])
+  })
+
+  it('publishes a change that is only deletions', async () => {
+    // The worker ran and was paid for. Refusing here spends a full run to discover a limit.
+    const { result, request } = await publish([
+      { path: 'src/gone.ts', content: '', kind: 'deleted' },
+      { path: 'test/gone.test.ts', content: '', kind: 'deleted' },
+    ])
+    expect(result.outcome).toBe('produced')
+    expect(request?.files).toEqual([])
+    expect(request?.deletions).toEqual(['src/gone.ts', 'test/gone.test.ts'])
+    expect(result.refusals).toEqual([])
+  })
+
+  it('does not send a path as both a file and a removal', async () => {
+    // A rename that leaves a re-export behind: porcelain reports the rename's original path as
+    // deleted, and the recreated file at that same path as untracked. Sent as both, one tree
+    // entry carries the path twice — the shim is dropped, or the whole publish is rejected.
+    const { request } = await publish([
+      { path: 'src/old.ts', content: '', kind: 'deleted' },
+      { path: 'src/new.ts', content: 'moved', kind: 'modified' },
+      { path: 'src/old.ts', content: 'export * from "./new.js"', kind: 'added' },
+    ])
+    expect(request?.files.map((f) => f.path)).toEqual(['src/new.ts', 'src/old.ts'])
+    expect(request?.deletions).toEqual([])
+  })
+
+  it('leaves no duplicate behind a rename', async () => {
+    // Porcelain reports a rename as the new path plus the original, and the original is a
+    // deletion. Kept, the file is in the pull request twice.
+    const { result, request } = await publish([
+      { path: 'src/new.ts', content: 'moved', kind: 'added' },
+      { path: 'src/old.ts', content: '', kind: 'deleted' },
+    ])
+    expect(result.outcome).toBe('produced')
+    expect(request?.files.map((f) => f.path)).toEqual(['src/new.ts'])
+    expect(request?.deletions).toEqual(['src/old.ts'])
+  })
+})
+
+describe('the base the artifact is laid over', () => {
+  it('is the commit the tree was cut from, not the branch head at publish time', async () => {
+    // The base branch moves while the worker runs, and a publish that re-reads its head lays
+    // the artifact over a tree the worker never saw. Where both deleted the same path, the
+    // host refuses the whole tree request — every change the run made, lost to a removal that
+    // was correct when it was read.
+    const { provider } = fakeProvider([
+      { path: 'src/a.ts', content: 'fixed', kind: 'modified' },
+      { path: 'src/gone.ts', content: '', kind: 'deleted' },
+    ])
+    const { host, seen } = fakeCodeHost()
+    const { t } = fakeTracker()
+
+    await execute(provider, t, host, candidate(), role(), {
+      worker: async () => ({ result: 'Done.', total_cost_usd: 0.01 }),
+    })
+
+    expect(seen[0]?.baseSha).toBe(CLONE_SHA)
+  })
+
+  it('is left to the host where the tree cannot say what it was cut from', async () => {
+    // `head` is optional on the same terms as `merge`, because the provider seam says nothing
+    // about how a tree is made. A provider without it publishes as it always did rather than
+    // not publishing at all.
+    const { provider } = fakeProvider([{ path: 'src/a.ts', content: 'fixed', kind: 'modified' }], {
+      noHead: true,
+    })
+    const { host, seen } = fakeCodeHost()
+    const { t } = fakeTracker()
+
+    const result = await execute(provider, t, host, candidate(), role(), {
+      worker: async () => ({ result: 'Done.', total_cost_usd: 0.01 }),
+    })
+
+    expect(result.outcome).toBe('produced')
+    expect(seen[0]).not.toHaveProperty('baseSha')
   })
 })

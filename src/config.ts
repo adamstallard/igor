@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { readFileSync, existsSync } from 'node:fs'
 import { dirname, isAbsolute, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -47,6 +48,88 @@ function requireStringArray(value: unknown, field: string): string[] {
     throw new ConfigError(`${field} must be a list of names`)
   }
   return value as string[]
+}
+
+/**
+ * Variables that answer "which repository" for somewhere other than the directory asked about.
+ * `-C <dir>` is the whole question, and an inherited `GIT_DIR` silently makes it a different one
+ * — git exports it to `filter-branch` and `submodule foreach` — so a nested store reads as a
+ * root. The ones that merely bound the search upward from `dir` are left alone: they can only
+ * cause a refusal, never an acceptance.
+ */
+const GIT_REDIRECTS = ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_COMMON_DIR']
+
+/**
+ * Where a directory sits inside its git repository: the path down from the root, with a
+ * trailing slash, and empty at the root itself.
+ *
+ * Three questions in one `rev-parse`, which answers them in the order given, one line each.
+ * `--show-prefix` alone is not enough twice over: a bare repository and anything inside a gitdir
+ * both report an empty prefix, and neither is a place a store can be. A path that git cannot be
+ * made to place at all is refused rather than read as a root.
+ *
+ * The prefix is everything after the fixed answers, with only the terminating newline taken off,
+ * because git emits the path raw and a directory's name may legally begin with a space or
+ * contain a newline. Take one line, or trim it, and the prefix names a directory that is not the
+ * store.
+ */
+function storePrefix(dir: string): string {
+  const env = { ...process.env }
+  for (const name of GIT_REDIRECTS) delete env[name]
+
+  let out: string
+  try {
+    out = execFileSync(
+      'git',
+      ['-C', dir, 'rev-parse', '--is-bare-repository', '--is-inside-work-tree', '--show-prefix'],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env },
+    )
+  } catch (e) {
+    const failure = e as { status?: number | null; stderr?: string; message?: string }
+    // A null status is a spawn that happened and produced no exit code — git absent from PATH,
+    // not executable, killed — and naming the destination there sends somebody to inspect a path
+    // that is correct. An absent status is the opposite: no spawn happened, because the
+    // destination is a string git cannot be handed, so the destination is exactly what is wrong.
+    if (failure.status === null) {
+      throw new ConfigError(
+        `git could not be run, so where ${dir} sits in its repository is unknown. Igor reads the ` +
+          `store from a git checkout, so git has to be on PATH.\n${failure.message ?? ''}`.trim(),
+      )
+    }
+    // git's own line, because exit 128 is not only "not a repository": dubious ownership on a
+    // bind mount or a CI container is a valid store that git declines to read, and the remedy is
+    // in the sentence git prints and nowhere else.
+    const said = String(failure.stderr ?? '').trim() || String(failure.message ?? '')
+    throw new ConfigError(
+      `destination ${dir} cannot be used as a store: git could not say where it sits. The store ` +
+        `is a repository of its own, at its root, and a path whose place in one cannot be read ` +
+        `must not be taken for a root.\ngit: ${said}`,
+    )
+  }
+
+  const lines = out.replace(/\n$/, '').split('\n')
+  if (lines.length < 3) {
+    // Fail closed. An answer that cannot be parsed is an unknown place, and the one outcome that
+    // must not happen is an unknown place read as the root.
+    throw new ConfigError(
+      `destination ${dir}: git answered three questions with ${lines.length} lines, so where it ` +
+        `sits in its repository is unknown and must not be taken for its root`,
+    )
+  }
+
+  if (lines[0] === 'true') {
+    throw new ConfigError(
+      `destination ${dir} is a bare git repository, which has no work tree — the store is files ` +
+        `on disk at the root of a checkout`,
+    )
+  }
+  if (lines[1] !== 'true') {
+    throw new ConfigError(
+      `destination ${dir} is inside a gitdir rather than a work tree — git ignores everything ` +
+        `under one, so nothing written there could ever be committed`,
+    )
+  }
+  return lines.slice(2).join('\n')
 }
 
 export function resolveConfig(raw: unknown, configDir: string): Config {
@@ -129,5 +212,21 @@ export function loadConfig(configPath?: string): Config {
     throw new ConfigError(`no config at ${path}`)
   }
 
-  return resolveConfig(parseYaml(readFileSync(path, 'utf8')), dirname(path))
+  const config = resolveConfig(parseYaml(readFileSync(path, 'utf8')), dirname(path))
+
+  // After `resolveConfig`, so the refusals it makes from the path alone — a missing destination,
+  // one inside the Igor installation — are answered without shelling out, and the git question is
+  // asked only of a destination that got that far.
+  const prefix = storePrefix(config.destination)
+  if (prefix !== '') {
+    throw new ConfigError(
+      `destination ${config.destination} sits at ${prefix} within its repository, not at its ` +
+        `root. A nested store takes the host repository's access, visibility and lifecycle — who ` +
+        `may push there becomes who may propose an entry, a public host makes the store public, ` +
+        `and archiving or transferring the project takes the team's lore with it — which is why ` +
+        `the root is the only place a store may be.`,
+    )
+  }
+
+  return config
 }

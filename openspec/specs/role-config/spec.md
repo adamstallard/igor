@@ -32,7 +32,9 @@ files can edit a settings file in the repository it is working, so an allowlist 
 there is one the worker can widen for itself.
 
 The claim message is not among them. It carries the stop instruction, which is the only notice
-a reader gets that stopping is possible and permitted, so it is not an org's to replace.
+a reader gets that stopping is possible and permitted, so it is not an org's to replace. A role
+that sets `claim` SHALL be refused, with the reason it may not: the guarantee is that the
+wording cannot be replaced, and dropping the key leaves whoever wrote it believing it was.
 
 #### Scenario: Well-formed role accepted
 
@@ -58,7 +60,8 @@ a reader gets that stopping is possible and permitted, so it is not an org's to 
 #### Scenario: Claim wording is not a role setting
 
 - **WHEN** a role file sets `claim`
-- **THEN** it does not become part of the effective role, and `role explain` does not report it
+- **THEN** the role is refused, and the refusal says what the claim message carries and why it
+  is not a role's to replace
 
 ### Requirement: Tracker queries pass through verbatim
 
@@ -216,4 +219,36 @@ recorded as such rather than presented as considered.
 - **WHEN** a role does not set the settle interval
 - **THEN** the inherited or default value is used
 - **AND** the effective value is visible via `role explain`
+
+### Requirement: A role file refuses a key nobody reads
+
+A role file SHALL refuse a key outside the set it declares, naming the offending key and the
+accepted ones. The refusal SHALL apply wherever a role file is read — the role asked for, the
+org base it inherits, and a parent read only for what it contributes — and SHALL extend to the
+nested mappings: `lane`, its `labels`, `paths` and `age`, and each `sources` entry.
+
+A role already refuses an action inside `allow` that it does not recognise, on the grounds that
+a typo must fail rather than silently grant nothing. The keys around it had no such rule, so
+the same typo one line higher granted nothing just as quietly.
+
+Inside `lane` it is not a setting that fails to take but a constraint that disappears. A
+misspelt `excludes` leaves a lane that admits everything its author meant to keep out, and a
+lane is where `Human` and `wontfix` are kept away from an Igor.
+
+#### Scenario: An unreadable key on a role is named
+
+- **WHEN** a role file names a key the parser does not read
+- **THEN** it is refused, naming the key and the accepted ones
+
+#### Scenario: The org base is held to the same rule
+
+- **WHEN** the org base names an unreadable key
+- **THEN** every role inheriting it is refused, rather than each quietly losing whatever it was
+  meant to set
+
+#### Scenario: A lane constraint nobody reads is refused
+
+- **WHEN** a lane names `exclude` in place of `excludes`, or any other key the parser does not
+  read
+- **THEN** it is refused, rather than producing a lane missing that constraint
 

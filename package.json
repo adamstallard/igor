@@ -18,6 +18,7 @@
   ],
   "scripts": {
     "build": "tsc",
+    "postbuild": "chmod +x dist/cli.js",
     "prepack": "rm -rf dist && npm run build",
     "test": "vitest run",
     "test:watch": "vitest",

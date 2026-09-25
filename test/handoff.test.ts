@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { Candidate, Tracker } from '../src/adapter.js'
 import type { ExecutionResult } from '../src/execute.js'
 import type { Role } from '../src/role.js'
-import { composeHandoff, handOffFrom, stepsFrom, suggest, type HandoffReason } from '../src/handoff.js'
+import { composeHandoff, handOffFrom, noCapacity, stepsFrom, suggest, type HandoffReason } from '../src/handoff.js'
 import { shouldDefer } from '../src/deferred.js'
 
 const NOW = Date.parse('2026-09-13T12:00:00Z')
@@ -86,6 +86,48 @@ describe('composed from state, never from a model', () => {
       NOW,
     )
     expect(remaining[0]).toContain('role may not open one')
+  })
+
+  it('counts a removal as work rather than as nothing', () => {
+    // A run whose every change was a removal publishes a pull request. Counted only as edits,
+    // the handoff says a draft was opened over no changes at all.
+    const { done } = stepsFrom(
+      CLAIMED,
+      result({ changed: [{ path: 'src/gone.ts', content: '', kind: 'deleted' }] }),
+      NOW,
+    )
+    expect(done).toEqual(['claimed this 12 minutes ago', 'removed 1 file', 'opened #9 as a draft'])
+  })
+
+  it('counts what the artifact carries, not what git reported twice', () => {
+    // A path written back after being removed is two records for one file. Counted as both,
+    // the handoff sends the reader looking for a deletion that is not in the diff.
+    const { done } = stepsFrom(
+      CLAIMED,
+      result({
+        changed: [
+          { path: 'src/a.ts', content: '', kind: 'deleted' },
+          { path: 'src/a.ts', content: 'rewritten', kind: 'added' },
+        ],
+      }),
+      NOW,
+    )
+    expect(done).toEqual(['claimed this 12 minutes ago', 'changed 1 file', 'opened #9 as a draft'])
+  })
+
+  it('says a removal that was never published is gone too', () => {
+    // The alternative branch reads "nothing usable was produced", one line under a Done list
+    // that has just said a file was removed.
+    const { remaining } = stepsFrom(
+      CLAIMED,
+      result({
+        outcome: 'failed',
+        artifact: undefined,
+        changed: [{ path: 'src/gone.ts', content: '', kind: 'deleted' }],
+      }),
+      NOW,
+    )
+    expect(remaining.join(' ')).toMatch(/never published.*gone with the working copy/)
   })
 
   it('does not claim files were changed when none were', () => {
@@ -346,5 +388,31 @@ describe('finding nothing is a result, not a breakdown', () => {
   it('still says what it did and what is left', () => {
     expect(text).toMatch(/found nothing it could usefully change/)
     expect(text).toMatch(/needs a person to look/)
+  })
+})
+
+describe('the same sentence where nothing was claimed', () => {
+  // A cycle that triaged nothing has no item to hand back and no seat to name, and still owes
+  // the reader what a handoff owes them. One composer, so the two cannot come to disagree.
+  const resetAt = new Date(NOW + 3 * 3600_000).toISOString()
+
+  it('states the hour without naming a seat that ran out', () => {
+    const text = noCapacity({ blocked: 'spent', resetAt }, NOW)
+    expect(text).toBe('the budget is used up, back at 2026-09-13 15:00 UTC (in about 3 hours)')
+  })
+
+  it('hedges a derived hour here too', () => {
+    expect(noCapacity({ blocked: 'spent', resetAt, resetApproximate: true }, NOW)).toContain('back around')
+  })
+
+  it('sends an unusable pool somewhere other than to look at spend', () => {
+    const text = noCapacity({ blocked: 'absent' }, NOW)
+    expect(text).toContain('not declared')
+    expect(text).not.toContain('is used up')
+    expect(text).not.toMatch(/not known/)
+  })
+
+  it('says the hour is unknown rather than inventing one', () => {
+    expect(noCapacity({ blocked: 'spent' }, NOW)).toMatch(/not known/)
   })
 })

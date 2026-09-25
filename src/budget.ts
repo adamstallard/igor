@@ -694,6 +694,25 @@ function poolVerdict(considered: Choice['considered']): SeatVerdict | undefined 
 export const NO_CAPACITY_FIGURE = 'no capacity figure exists for it'
 
 /**
+ * Whether the gate may spend against this bound, asked at the precision the report prints.
+ *
+ * `(1 - reserve) * capacity` multiplies two binaries, and at a 0.08 reserve against a $20
+ * capacity with $18.40 spent the remainder lands on 3.55e-15 rather than on nothing. A bare
+ * `> 0` hands the seat over while its row reads `$0.00` headroom and its note reads `$0.00
+ * left` — the report and the gate saying opposite things about the same seat, with nothing
+ * on the row to show it. Rounding here and printing there round the same, so a remainder too
+ * small to print is refused as the nothing it prints as.
+ *
+ * The residue here is not only the float noise the percent path had: a genuine remainder under
+ * half a cent is refused with it. Printing that instead — `<$0.01` where the column now says
+ * `$0.00`, and keeping the raw comparison — forfeits nothing, at the cost of a dollar column
+ * that is no longer a fixed two decimals and a figure that cannot be added up. What is
+ * forfeited falls inside the reserve, which is what a reserve is for.
+ */
+export const hasBoundHeadroom = (allowanceUsd: number, spentUsd: number): boolean =>
+  Number((allowanceUsd - spentUsd).toFixed(MONEY_DP)) > 0
+
+/**
  * One window of a seat with no reading, judged against what was derived for it.
  *
  * A reserve is a fraction of capacity, so with no capacity figure it expresses no quantity at
@@ -707,6 +726,8 @@ function derivedWindow(
   window: Window,
   bound: SeatBound | undefined,
 ): {
+  /** The raw remainder, as `seatStatus` keeps its raw subtraction: only the decision rounds.
+   *  Returned only where `hasBoundHeadroom` already found a printable cent in it. */
   remainingUsd?: number
   blocked?: string
   /** Which of the two ways to be blocked this is, so a caller never reads it out of `blocked`. */
@@ -722,7 +743,8 @@ function derivedWindow(
   // handoff states has to outlast everything that is.
   const capacity = bound?.capacity
   const allowance = capacity === undefined ? undefined : (1 - seat.reserve) * capacity.capacityUsd
-  const overBound = capacity !== undefined && allowance !== undefined && allowance - capacity.spentUsd <= 0
+  const overBound =
+    capacity !== undefined && allowance !== undefined && !hasBoundHeadroom(allowance, capacity.spentUsd)
   const overWhy =
     capacity === undefined || allowance === undefined
       ? ''
@@ -1194,7 +1216,10 @@ export interface WindowReport {
   note: string
 }
 
-const money = (n: number): string => `$${n.toFixed(2)}`
+/** Where every printed dollar figure is rounded, and where `hasBoundHeadroom` asks its question. */
+const MONEY_DP = 2
+
+const money = (n: number): string => `$${n.toFixed(MONEY_DP)}`
 
 /** Where every printed percentage is rounded, and where `hasHeadroom` asks its question. */
 const PERCENT_DP = 4
@@ -1265,7 +1290,8 @@ export function describeWindow(seat: Seat, window: Window, bound: SeatBound | un
   // no boundary, so it clears by dollars ageing out rather than at an instant, and a handoff
   // that named one would be promising something. A report showing the hour the refusal itself
   // ends, beside the spend that is ageing, withholds nothing and invents nothing.
-  const overBound = capacity !== undefined && allowance !== undefined && allowance - capacity.spentUsd <= 0
+  const overBound =
+    capacity !== undefined && allowance !== undefined && !hasBoundHeadroom(allowance, capacity.spentUsd)
   const overWhy =
     capacity === undefined || allowance === undefined
       ? ''
@@ -1333,8 +1359,7 @@ export function describeWindow(seat: Seat, window: Window, bound: SeatBound | un
     }
   }
 
-  const remaining = allowance - capacity.spentUsd
-  if (remaining <= 0) {
+  if (!hasBoundHeadroom(allowance, capacity.spentUsd)) {
     return {
       state: 'at-bound',
       usable: false,
@@ -1344,6 +1369,7 @@ export function describeWindow(seat: Seat, window: Window, bound: SeatBound | un
       note: `at its bound — ${overWhy}; ${rests}`,
     }
   }
+  const remaining = allowance - capacity.spentUsd
   return {
     state: 'bounded',
     usable: true,

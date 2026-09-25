@@ -7,12 +7,28 @@
  * though only GitHub ships now.
  */
 
+/**
+ * Whether an artifact still merges into its base.
+ *
+ * `unknown` is its own answer and not a pessimistic `conflicting`. GitHub computes
+ * mergeability asynchronously and answers `null` until it has, so a first ask on a freshly
+ * pushed branch reports nothing — and reading that as a conflict would send a worker at every
+ * artifact the moment it was opened.
+ */
+export type Mergeability = 'clean' | 'conflicting' | 'unknown'
+
 /** Work already underway on an item — the reason to leave it alone. */
 export interface InFlight {
   kind: 'pull-request' | 'branch'
   ref: string
   url: string
   draft: boolean
+  /** Who opened it, so an Igor can tell its own artifact from one it must not touch. */
+  author: string
+  mergeable: Mergeability
+  /** The branch the artifact is on, and the branch it merges into. */
+  branch: string
+  base: string
 }
 
 /**
@@ -119,9 +135,20 @@ export interface ArtifactRequest {
   repo: string
   branch: string
   base?: string
+  /**
+   * The commit the artifact is laid over, where the caller knows it — the sha the worker's tree
+   * was cut from. Left out, the host reads `base`'s head instead, which is the same sha only if
+   * the branch did not move while the worker ran.
+   */
+  baseSha?: string
   title: string
   body: string
   files: { path: string; content: string }[]
+  /**
+   * Paths the work removed. Left out, the artifact looks complete to a reviewer and is not —
+   * a refactor still carrying the module it removes, a rename with the file in two places.
+   */
+  deletions: readonly string[]
   reviewers?: string[]
   draft: boolean
 }
@@ -132,9 +159,55 @@ export interface Artifact {
   url: string
 }
 
+/** What the host did when asked to bring an artifact's base into it. */
+export type CatchUp =
+  | { outcome: 'merged'; sha: string }
+  | { outcome: 'already-current' }
+  | { outcome: 'conflict' }
+
+export interface CatchUpRequest {
+  repo: string
+  /** The artifact's own branch — what the base is merged *into*, never the other way round. */
+  branch: string
+  base: string
+}
+
+/**
+ * A merge commit on a branch that already exists.
+ *
+ * Two parents, and both are load-bearing. A single-parent commit carrying resolved content
+ * leaves the merge base where it was, so the host recomputes the same conflict and the
+ * artifact goes on reporting that it cannot merge — a resolution that resolves nothing.
+ */
+export interface ResolutionRequest {
+  repo: string
+  branch: string
+  /** The artifact's head, then the base it takes in. Order is the commit's parent order. */
+  parents: readonly [string, string]
+  files: { path: string; content: string; executable?: boolean }[]
+  /**
+   * Paths the merge removed. Carried rather than dropped, because this commit names the base
+   * as a parent: a deletion left out of it is not a gap in the artifact, it is a revert of the
+   * base's deletion that lands the moment the artifact merges.
+   */
+  deletions: readonly string[]
+  message: string
+}
+
 export interface CodeHost {
   readonly name: string
   produce(request: ArtifactRequest): Promise<Artifact>
+
+  /**
+   * Asks the host to merge an artifact's base into it.
+   *
+   * Server-side because the host reports a conflict rather than producing one: the ordinary
+   * case costs one request, no clone and no worker.
+   */
+  catchUp(request: CatchUpRequest): Promise<CatchUp>
+
+  /** Puts a resolved merge on the artifact's existing branch, so its review survives. */
+  resolve(request: ResolutionRequest): Promise<string>
 }
 
 export class AdapterError extends Error {}

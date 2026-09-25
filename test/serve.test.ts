@@ -2,7 +2,16 @@ import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import type { Artifact, Candidate, ClaimVerdict, CodeHost, Tracker } from '../src/adapter.js'
+import type {
+  Artifact,
+  Candidate,
+  CatchUp,
+  CatchUpRequest,
+  ClaimVerdict,
+  CodeHost,
+  InFlight,
+  Tracker,
+} from '../src/adapter.js'
 import type { Gate } from '../src/budget.js'
 import type { CycleDeps } from '../src/loop.js'
 import type { Role } from '../src/role.js'
@@ -45,7 +54,7 @@ const issue = (n: number): Candidate =>
     idleDays: 0,
   }) as unknown as Candidate
 
-function deps(found: Candidate[], opts: { searchThrows?: boolean; verdict?: ClaimVerdict } = {}) {
+function deps(found: Candidate[], opts: { searchThrows?: boolean; verdict?: ClaimVerdict; caughtUp?: CatchUp[] } = {}) {
   let searches = 0
   const tracker: Tracker = {
     name: 'github',
@@ -63,9 +72,16 @@ function deps(found: Candidate[], opts: { searchThrows?: boolean; verdict?: Clai
     release: async () => {},
     linkage: () => 'Closes #1',
   }
+  const caughtUp: CatchUpRequest[] = []
+  const answers = [...(opts.caughtUp ?? [])]
   const codeHost: CodeHost = {
     name: 'github',
     produce: async (): Promise<Artifact> => ({ kind: 'pull-request', ref: '#9', url: 'u' }),
+    catchUp: async (r): Promise<CatchUp> => {
+      caughtUp.push(r)
+      return answers.shift() ?? { outcome: 'already-current' }
+    },
+    resolve: async (): Promise<string> => 'resolvedsha',
   }
   const trees: TreeProvider = {
     name: 'fake',
@@ -79,6 +95,7 @@ function deps(found: Candidate[], opts: { searchThrows?: boolean; verdict?: Clai
   return {
     d: { tracker, codeHost, trees, destination: 'o/lore' } as CycleDeps,
     searches: () => searches,
+    caughtUp: () => caughtUp,
   }
 }
 
@@ -227,12 +244,20 @@ describe('the budget stops the cycle, not the process', () => {
     expect(calls).toBe(3)
   })
 
-  it('says the budget is why it stopped', async () => {
+  it('says the budget is why it triaged nothing, rather than going quiet', async () => {
+    // The gate stops the cycle at the triage call, which is a spend like any other, so there
+    // is nothing to claim and no item to stop before. The cycle's own report is where an
+    // operator reads why it went quiet.
     const { d } = deps([issue(1)])
     const { events, onEvent } = collect()
-    await serve(d, role(), 'igor-bot', { ...base, maxCycles: 1, gate: async () => shut, onEvent })
-    const stopped = events.find((e) => e.kind === 'stopping')
-    expect(stopped && stopped.kind === 'stopping' && stopped.reason).toMatch(/budget is spent/)
+    const s = await serve(d, role(), 'igor-bot', { ...base, maxCycles: 1, gate: async () => shut, onEvent })
+    const planned = events.find((e) => e.kind === 'planned')
+    if (planned?.kind !== 'planned') throw new Error('the cycle produced no plan')
+    expect(planned.report.untriaged).toHaveLength(1)
+    expect(planned.report.heldPool).toBeDefined()
+    expect(planned.report.triaged).toBe(0)
+    expect(events.some((e) => e.kind === 'working')).toBe(false)
+    expect(s.worked).toBe(0)
   })
 
   it('stops between items when asked to shut down mid-cycle', async () => {
@@ -323,8 +348,10 @@ describe('the loop records what it handed back', () => {
     const { events, onEvent } = collect()
     // Open when the loop asks, so the item is started, and shut when the claim is held — which
     // is the only path that produces a budget handoff rather than stopping the cycle.
+    // Three readings: the seat triage spends from, the one before the item is started, and
+    // the one inside the run. Only the last is shut.
     let checks = 0
-    const fading: Gate = { exhausted: () => checks++ > 0, seat: 'igor-1', reason: 'spent' }
+    const fading: Gate = { exhausted: () => checks++ > 1, seat: 'igor-1', reason: 'spent' }
     await serve(d, role(), 'igor-bot', { ...base, maxCycles: 1, note: n.note, onEvent, gate: async () => fading })
     const worked = events.find((e) => e.kind === 'worked')
     expect(worked?.kind === 'worked' && worked.run.handoff).toBe('budget')
@@ -365,3 +392,59 @@ describe('the loop records what it handed back', () => {
   })
 })
 
+
+/** An issue whose own artifact stopped merging — the state #21 sat in, unnoticed. */
+const rotting = (n: number, over: Partial<InFlight> = {}): Candidate => ({
+  ...issue(n),
+  inFlight: {
+    kind: 'pull-request',
+    ref: `#${n}1`,
+    url: `https://example.test/${n}1`,
+    draft: true,
+    author: 'igor-bot',
+    mergeable: 'conflicting',
+    branch: `igor/triage/${n}-issue`,
+    base: 'main',
+    ...over,
+  },
+})
+
+describe('a published artifact that stopped merging', () => {
+  it('is caught up with no worker and no model call', async () => {
+    // Asserted as an absence rather than described. This is the property that makes the check
+    // cheap enough to run on every artifact on every cycle: a triage stub that is never asked,
+    // and a tree provider that would throw if anything tried to provision one.
+    let triaged = 0
+    const { d, caughtUp } = deps([rotting(7)], { caughtUp: [{ outcome: 'merged', sha: 'mergesha' }] })
+    d.trees = {
+      name: 'exploding',
+      provision: async () => { throw new Error('a clean catch-up must never provision a tree') },
+    }
+
+    const s = await serve(d, role(), 'igor-bot', {
+      ...base,
+      maxCycles: 1,
+      worker: async () => { throw new Error('a clean catch-up must never run a worker') },
+      triage: async (cs) => {
+        triaged += cs.length
+        return { results: [], costUsd: 0, costUnreported: 0, failures: [] }
+      },
+    })
+
+    expect(s.failures).toBe(0)
+    expect(triaged).toBe(0)
+    expect(s.costUsd).toBe(0)
+    expect(caughtUp()).toEqual([{ repo: 'o/r', branch: 'igor/triage/7-issue', base: 'main' }])
+  })
+
+  it('counts against the same budget gate as any other work', async () => {
+    // Free on the quiet path and a worker on the conflicting one, and only the gate knows
+    // which it will be. An Igor with nothing to spend stops before finding out.
+    const { d, caughtUp } = deps([rotting(7)])
+    const { events, onEvent } = collect()
+    await serve(d, role(), 'igor-bot', { ...base, maxCycles: 1, gate: async () => shut, onEvent })
+
+    expect(caughtUp()).toEqual([])
+    expect(events.filter((e) => e.kind === 'stopping')).toHaveLength(1)
+  })
+})
