@@ -1,8 +1,9 @@
 #!/usr/bin/env node
-import { copyFileSync, existsSync, mkdirSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { existsSync } from 'node:fs'
+import { join, resolve } from 'node:path'
 import { Command } from 'commander'
-import { loadConfig, igorRoot, ConfigError } from './config.js'
+import { loadConfig, ConfigError } from './config.js'
+import { initialize, renderInit, InitError, INIT_TARGETS } from './init.js'
 import { uniqueId } from './id.js'
 import { scoreEntry } from './scoring.js'
 import {
@@ -17,7 +18,7 @@ import {
 } from './store.js'
 import { eligibleToPropose, idsOnDefaultBranch, propose, upstreamHoldsTheName, ProposeError } from './propose.js'
 import { reconcile, promoteInPlace, renderReconciliation } from './reconcile.js'
-import { GitHubError } from './github.js'
+import { GhError } from './gh.js'
 import { claimRequested, contradictoryRunFlags } from './flags.js'
 import { explainRole, loadRole, rolesFrom, RoleError } from './role.js'
 import { catchUpItem, planCycle, runItem, UNTRIAGED_NO_SEAT, type CycleReport } from './loop.js'
@@ -38,9 +39,6 @@ import { repoFromCheckout } from './github.js'
 import { staleBuildWarning } from './staleness.js'
 import { provenanceFromCitations, ProvenanceInputError } from './entry.js'
 import type { Entry, Status } from './entry.js'
-
-/** The destination's single on-push job, named for what it runs. */
-const WORKFLOW_FILE = 'reconcile-on-merge.yml'
 
 function today(): string {
   return new Date().toISOString().slice(0, 10)
@@ -249,25 +247,18 @@ program
   })
 
 program
-  .command('init-workflow')
-  .description('Write the merge-triggered reconciliation workflow into the destination')
-  .option('--force', 'overwrite an existing workflow')
+  .command('init')
+  .description('Write the files a lore repository needs into the repository you are standing in')
+  .option(
+    '--force [target...]',
+    `overwrite exactly the targets named: ${INIT_TARGETS.join(', ')}`,
+  )
+  // No config is loaded: init runs where there is not one yet, and writes it. A `--config` on
+  // the invocation is refused rather than ignored — see `initialize`.
   .action((opts) => {
-    const config = loadConfig(program.opts()['config'])
-    const source = join(igorRoot(), 'templates', WORKFLOW_FILE)
-    const target = join(config.destination, '.github', 'workflows', WORKFLOW_FILE)
-    if (existsSync(target) && !opts.force) {
-      throw new StoreError(`${target} already exists — pass --force to overwrite`)
-    }
-    mkdirSync(dirname(target), { recursive: true })
-    copyFileSync(source, target)
+    const config = program.opts()['config'] as string | undefined
     process.stdout.write(
-      `${target}\n\nCommit and push it. Exactly one job may promote lore on push: two of them\n` +
-        `race on the same commit and disagree about what a reviewer deleted, so delete any\n` +
-        `other workflow in .github/workflows that promotes or reconciles lore.\n\n` +
-        `If the default branch is protected, add the GitHub Actions actor to the ruleset's\n` +
-        `bypass list, or this workflow's own push is blocked by the same rule it exists to\n` +
-        `work around.\n`,
+      renderInit(initialize(process.cwd(), { force: opts.force, ...(config === undefined ? {} : { config }) })),
     )
   })
 
@@ -648,7 +639,10 @@ try {
     error instanceof ConfigError ||
     error instanceof StoreError ||
     error instanceof ProposeError ||
-    error instanceof GitHubError ||
+    error instanceof InitError ||
+    // The superclass of GitHubError and StateError both: every one of these carries a sentence
+    // written to be read, and a host where `gh` is missing prints it rather than a stack trace.
+    error instanceof GhError ||
     error instanceof RoleError ||
     error instanceof TriageError ||
     error instanceof BudgetError ||
