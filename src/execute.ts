@@ -239,8 +239,9 @@ export function conflictPrompt(candidate: Candidate, artifact: InFlight, paths: 
     'result. Say so plainly and change nothing if a conflict needs a decision only a person',
     'can make.',
     '',
-    'A conflicted file with no markers in it is one side deleting what the other edited. Keep',
-    `the file to keep the artifact's version; delete it to accept ${artifact.base}'s removal.`,
+    'A conflicted file with no markers in it is one side deleting what the other edited. The copy',
+    'left on disk is the side that survived the delete — keep it to take that side, or delete it to',
+    'take the deletion.',
   ].join('\n')
 }
 
