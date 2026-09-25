@@ -20,9 +20,19 @@
 - [ ] 2.2 `git rm:*` and `git mv:*` ship **live**: #88 merged and archived, so a worker's removal
       now reaches the artifact and the requirement's condition is met. Comment them only if that
       stops being true
-- [ ] 2.3 The `commands` block opens with one line of **model**, above the per-line reasons:
-      Igor reads the working directory and publishes it, so nothing here needs to stage or
-      commit. The absences then explain themselves. **Not a warning** — see `design.md`
+- [ ] 2.3 The `commands` block opens with the model, above the per-line reasons, **verbatim**:
+
+      ```yaml
+      # Igor reads this working directory and publishes what it finds, so nothing below needs
+      # to stage or commit. A file the worker writes is read as untracked; `git rm` and
+      # `git mv` stage themselves; and a committed change is one `git status` no longer
+      # reports, so committing hides the worker's own work rather than finishing it.
+      commands:
+      ```
+
+      The absences then explain themselves. **Not a warning** — see `design.md`. Reword only
+      if it is wrong, not to make it shorter: the last clause is the one that stops an operator
+      reaching for `git commit`, and it is the reason the requirement does not give
 - [ ] 2.4 A test that the shipped template loads as a role and merges as an org base, so it
       cannot rot into a file that no longer parses
 - [ ] 2.5 A test asserting the exclusions by name — nothing in the shipped list commits, pushes,
