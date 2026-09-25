@@ -45,8 +45,7 @@ Three reasons to keep it were considered, and all three fail:
   served by the next point.
 - **A workflow deleted or superseded needs writing again.** Discharged by skip-and-continue:
   re-running `init` where the config and org role are present but the workflow is not writes the
-  workflow and leaves the rest alone, which is a scenario in this delta. `--only` narrows that
-  to a single target for an operator who wants to be certain.
+  workflow and leaves the rest alone, which is a scenario in this delta.
 - **`--config` can target a store you are not standing in, and `init` cannot.** True in
   mechanism, empty in motivation. Writing the workflow copies a file into
   `<destination>/.github/workflows/`, so the destination is already a checkout on disk, and
@@ -62,6 +61,28 @@ nobody needs twice.
 
 The direction still matters: one code path writes `.github/workflows/reconcile-on-merge.yml`,
 and after this change `init` owns it outright.
+
+## `--only` is what makes `--force` usable
+
+Skip-and-continue covers a target that is *absent*. It cannot cover one that is **stale**, and the
+workflow is the only target that can go stale: it is the one file of the four that Igor owns rather
+than the operator. The configuration holds reviewers, experts and seats; the org role holds the
+action space; the role stub is a starting point. Igor writes those once and has no further opinion.
+The workflow is a shipped artifact in `templates/`, taken wholesale, and it changes when Igor
+changes — `promote-on-merge.yml` became `reconcile-on-merge.yml`, and the job it runs went from
+`promote` to `reconcile`.
+
+So *replace the workflow from the current template, leave my files alone* recurs for the life of a
+store. `--force` alone cannot express it: it is all-or-nothing across the targets being written, so
+without `--only` it overwrites a hand-edited configuration to refresh one generated file. `--only
+workflow --force` is the whole reason the option is worth having, and the narrower reading — a
+convenience for an operator who wants to be sure — is not.
+
+**The case with no other answer** is a template whose *content* changes under the same filename.
+Skip-and-continue passes over it as present, so nothing reports it and nothing replaces it, and the
+store keeps running a superseded job indefinitely. Detecting that a workflow differs from the
+shipped template belongs with [#110](https://github.com/adamstallard/igor/issues/110); writing the
+replacement once detected is this option.
 
 ## Skip and continue, rather than refuse the whole run
 
