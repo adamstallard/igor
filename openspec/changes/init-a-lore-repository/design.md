@@ -136,6 +136,23 @@ the publishing path makes on its behalf* — is exactly right for `git push:*` a
 argument. For `git commit:*` alone there is no security question: it is self-defeating. Both
 belong, and they are different.
 
+## What the implementation found: the shipped `commands` is a ceiling
+
+`capabilitiesOf` refuses a role whose `commands` is not a verbatim subset of what it inherits, and
+the org file is what every role in a store inherits. So the shipped list is not a starting point a
+role can add to — it is the most any Igor in that store will ever be able to run.
+
+That decides where a team's own build and test commands go. They cannot go on a role, because a
+role listing `npm test:*` that `roles/org.yaml` does not list is refused as widening; they have to
+go in the org file. The template therefore carries them **commented, with the reason**, rather
+than shipping them live: only the team knows what they are, and `npm test` is whatever their
+`package.json` says it is — a file the worker can edit, run with the seat's token in its
+environment, which is the same objection that excludes `node:*` and `sh`.
+
+The README's role example lists `npm test:*`, and did so before this change. It is now shown
+beneath an org example that lists it too, because the pair is what makes the narrowing rule
+legible — and because copying the role alone into an initialized store is a `RoleError`.
+
 ## Not a design decision: the `commands` list
 
 The default action space and its exclusions are in the requirement, not here. What a worker

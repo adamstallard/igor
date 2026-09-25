@@ -856,6 +856,12 @@ one. Narrowing means an entry the parent already lists, verbatim: deciding wheth
 is narrower than an inherited `npm *` is a matcher, and the same reasoning that gets one command
 past the check gets every command past it.
 
+A setup starts from `templates/org.yaml`, which `igor init` writes as the store's `roles/org.yaml`:
+the entries a worker's own tools cannot reach — `git rm` and `git mv`, since no file tool deletes,
+and `git log`, `git show` and `git blame` — with the project's own build and test commands left
+commented, because only the team knows what they are. It is the org file that has to carry them:
+a role may narrow what it inherits, so a command listed there and nowhere above it is refused.
+
 **Legibility is a standing constraint, not a finishing touch.** People read these, and so do
 models writing them — a flat obvious schema is easier to generate correctly than a nested one
 with implicit structure. Every level of nesting should have to earn itself.

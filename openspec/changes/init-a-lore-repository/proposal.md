@@ -69,11 +69,9 @@ worker keeps Read, Edit, Write, Grep and Glob regardless.
 **`git rm:*` and `git mv:*` are only useful once a removal survives publication.** Before
 [#88](https://github.com/adamstallard/igor/pull/88), a worker could produce a deletion and the
 publish path dropped it — the work done, the seat spent, and nothing in the artifact saying a
-file was meant to go. So the requirement makes those two entries conditional: active where a
-removal reaches the artifact, and otherwise shipped commented with a note naming what unlocks
-them. **#88 has merged and archived, so the condition is met and they ship live.** The
-conditional wording stays because it is what kept the requirement correct across that landing.
-`design.md` argues the fork.
+file was meant to go. They ship **live and unconditionally**: `task-execution` owns whether a
+removal survives, in requirements with tests behind them, so a second statement of the same
+property here would be a contingency nobody would execute. `design.md` argues the fork.
 
 **Three things it must not do**, all requirement-level:
 

@@ -112,51 +112,55 @@ The state branch lives here too, so it has to be a repository the Igor can push 
    Public or private both work. Public means the `publicStore` guard refuses entries whose
    provenance cites a private repository, which is the point of it.
 
-2. **Copy the config and commit it.**
+2. **Run `igor init` inside it**, the way you would `git init`.
 
    ```sh
-   cp path/to/igor/igor.config.example.yaml igor.config.yaml
+   igor init
    ```
 
-   Set `destination: .`, list `reviewers` and `experts`. Igor finds it by searching upward
-   from wherever it runs, so anywhere in the repository works. Commit it — who reviews and
-   who counts as an expert are shared decisions, and uncommitted they drift between whoever
-   runs the tool until an entry scores differently depending on whose machine computed it.
-   Nothing in the file is secret: `token_env` names a variable rather than holding a token.
+   It writes four files at the root of the repository you are standing in: `igor.config.yaml`
+   with `destination: .`; `roles/org.yaml`, the action space every role inherits and the one
+   file nobody should be writing from nothing; a `roles/maintenance.yaml` stub; and
+   `.github/workflows/reconcile-on-merge.yml`. A file already there is named and left exactly
+   as it is while the rest are still written, so running it again after adding a role is safe
+   and adds only what is missing.
 
-3. **Write `roles/org.yaml` and one role.** The org file holds what every role inherits — the
-   action space, the completion behaviour, the lane exclusions, standing instructions. A role
-   names its `sources` and narrows whatever it needs to. See [Roles](#roles).
+   Then fill in what only you know, which it names on the way out: `reviewers`, `experts` and
+   a seat in `igor.config.yaml`, and `sources` in the role. Commit the lot — who reviews, who
+   counts as an expert and whose subscription pays are shared decisions, and uncommitted they
+   drift between whoever runs the tool until an entry scores differently depending on whose
+   machine computed it. Nothing in the file is secret: `token_env` names a variable rather
+   than holding a token.
+
+   **The workflow is what makes promotion not depend on remembering.** Without it, promotion
+   waits for someone with Igor installed to run `reconcile`, so a teammate can merge lore that
+   then silently never fires. The job runs the same `reconcile` you would run locally, so it
+   promotes what merged and records what a reviewer deleted — run `reconcile` yourself on a
+   store without the workflow, or to read the report of proposals that have gone quiet.
+   Exactly one job may promote lore on push: two of them race on the same commit and disagree
+   about what a reviewer deleted, so delete any other workflow in `.github/workflows` that
+   promotes or reconciles lore. Where a later Igor ships a new version of that file,
+   `igor init --force workflow` replaces it and touches nothing else you have written.
+
+3. **Branch protection, from the first commit.** Enable **"require a pull request before
+   merging"** — it still lets an author merge their own proposal and only blocks direct pushes
+   to `main`. Do **not** enable **"require approvals"**: GitHub refuses to let anyone approve
+   their own pull request, so that setting hard-blocks a solo maintainer with no workaround.
+
+   This is not a courtesy between collaborators, and a single-writer store needs it too.
+   Promotion works by reconciling pull requests, so **an entry committed straight to `main`
+   has nothing to promote it**: it stays `provisional`, and only `active` entries fire.
+   Nothing reports it. You find out when lore you wrote never shows up in a prompt. For one
+   already on `main` that way, `igor promote --by <you>` sets it active in place and records
+   you as having approved it — a repair, run by hand.
+
+4. **Add the GitHub Actions actor to the ruleset's bypass list**, if the default branch is
+   protected — or the reconciliation workflow's own push is blocked by the same rule it exists
+   to work around.
 
 `entries/` and the state branch are created when first needed; neither wants making by hand.
-
-**Branch protection, from the first commit.** Enable **"require a pull request before
-merging"** — it still lets an author merge their own proposal and only blocks direct pushes to
-`main`. Do **not** enable **"require approvals"**: GitHub refuses to let anyone approve their
-own pull request, so that setting hard-blocks a solo maintainer with no workaround.
-
-This is not a courtesy between collaborators, and a single-writer store needs it too.
-Promotion works by reconciling pull requests, so **an entry committed straight to `main` has
-nothing to promote it**: it stays `provisional`, and only `active` entries fire. Nothing
-reports it. You find out when lore you wrote never shows up in a prompt. For one already on
-`main` that way, `igor promote --by <you>` sets it active in place and records you as having
-approved it — a repair, run by hand.
-
-**Merge-triggered reconciliation, at the same time.** Without it, promotion depends on someone
-having igor installed and remembering to run `reconcile` — so a teammate can merge lore that
-then silently never fires.
-
-```sh
-igor init-workflow
-```
-
-That writes `.github/workflows/reconcile-on-merge.yml` into the destination. Commit it. **If the
-branch is protected, add the GitHub Actions actor to the ruleset's bypass list**, or the
-workflow's own push is blocked by the same rule it exists to work around.
-
-The job runs the same `reconcile` you would run locally, so it promotes what merged and records
-what a reviewer deleted. Run `reconcile` yourself on a store without the workflow, or to read
-the report of proposals that have gone quiet.
+`igor init` does not touch repository settings, which is why steps 3 and 4 are yours: a
+command whose job is writing files must not decide who may push to `main`.
 
 None of this needs a credential — authoring lore, proposing it and reviewing it work on a clone
 and a `git` push. Credentials are what [Running an Igor](#running-an-igor) adds.
@@ -307,6 +311,32 @@ It declares `extends`, `seat`, `sources`, `lane`, `instructions`, `completion`, 
 `commands`, `budget_share` and `reviewers`. Roles compose, and a role may narrow what it
 inherits but never widen it — `igor role explain <name>` prints the effective merge with the
 level each value came from.
+
+`roles/org.yaml` is the base every other role inherits without saying so, and it is where the
+action space is decided for the whole team. `igor init` writes it with the git entries filled
+in and your own build and test commands left commented, because a role may only narrow what it
+inherits: a command named on a role and nowhere above it is refused rather than granted.
+
+```yaml igor:role
+# roles/org.yaml
+allow: [draft-pr, comment, unassign]
+completion: unassign
+commands:
+  - "git rm:*"                        # the only way to remove or rename a tracked file
+  - "git mv:*"                        # stages both sides, so the change reads as a rename
+  - "git log:*"                       # why the code is as it is
+  - "git show:*"
+  - "git blame:*"
+  - "npm test:*"                      # yours, and here rather than on the role below
+  - "npx tsc --noEmit"
+lane:
+  labels:
+    excludes: [Human, wontfix]        # nothing below can drop an exclusion
+instructions: |
+  Leave the working directory as the change you would open yourself.
+```
+
+A role beside it names where to look and narrows the rest:
 
 ```yaml igor:role
 # roles/frontend.yaml
