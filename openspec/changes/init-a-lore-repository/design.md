@@ -34,8 +34,7 @@ goes stale the day it merges.
 ## `init-workflow` is folded into `init`
 
 `init` writes the workflow, so keeping `init-workflow` would leave two ways to write one file.
-It is retired, and `init --only <target…>` replaces it — the same shape `promote --only` already
-has in this CLI.
+It is retired, and `init --force workflow` replaces it — naming the one target to overwrite.
 
 Three reasons to keep it were considered, and all three fail:
 
@@ -62,7 +61,7 @@ nobody needs twice.
 The direction still matters: one code path writes `.github/workflows/reconcile-on-merge.yml`,
 and after this change `init` owns it outright.
 
-## `--only` is what makes `--force` usable
+## `--force` takes its targets, and there is no unforced way to name one
 
 Skip-and-continue covers a target that is *absent*. It cannot cover one that is **stale**, and the
 workflow is the only target that can go stale: it is the one file of the four that Igor owns rather
@@ -73,32 +72,43 @@ changes — `promote-on-merge.yml` became `reconcile-on-merge.yml`, and the job 
 `promote` to `reconcile`.
 
 So *replace the workflow from the current template, leave my files alone* recurs for the life of a
-store. `--force` alone cannot express it: it is all-or-nothing across the targets being written, so
-without `--only` it overwrites a hand-edited configuration to refresh one generated file. `--only
-workflow --force` is the whole reason the option is worth having, and the narrower reading — a
-convenience for an operator who wants to be sure — is not.
+store, and it is the only thing a flag is needed for.
+
+**Two flags were considered and collapsed into one.** An earlier draft had `--only <target…>` to
+narrow and `--force` to overwrite. That pairing has a combination that cannot be right: for an
+absent target the plain run already writes it and names what it skipped, so `--only` without
+`--force` either does nothing or duplicates the plain run. Making `--only` imply overwriting was
+rejected — *only* reads as narrowing, narrowing flags do not destroy things, and someone typing it
+to make sure they had a configuration would silently lose their reviewers, experts and seats.
+
+So the scoping moved onto the destructive word: `--force <target…>`, which overwrites exactly what
+it names and touches nothing else. **Bare `--force` is refused rather than meaning all four.**
+Replacing the configuration, the org role, the role stub and the workflow together is starting
+over, which is a deletion followed by a plain run; a flag that does it by omission is a flag that
+does it by accident, and the file it destroys is the one holding values nobody can regenerate.
 
 **The case with no other answer** is a template whose *content* changes under the same filename.
 Skip-and-continue passes over it as present, so nothing reports it and nothing replaces it, and the
 store keeps running a superseded job indefinitely. Detecting that a workflow differs from the
 shipped template belongs with [#110](https://github.com/adamstallard/igor/issues/110); writing the
-replacement once detected is this option.
+replacement once detected is `--force workflow`.
 
 ## Skip and continue, rather than refuse the whole run
 
 `init-workflow` refuses outright when its one target exists. With four targets that shape
 would mean a repository that has a config and nothing else can never be initialized without
-`--force`, and `--force` over four files to get three is how a hand-edited config gets
-overwritten.
+`--force`, and forcing four files to get three is how a hand-edited config gets overwritten.
 
 So each target is decided separately: write it if absent, name it if present, and succeed
 either way. The failure this avoids is the common one — a second run after adding a role — and
 the case it gives up, a run that quietly does nothing because everything was already there, is
 covered by naming every skip.
 
-`--force` keeps the meaning `init-workflow` gave it: overwrite rather than skip. It is
-all-or-nothing across the targets the run is writing — all four by default, or the ones `--only`
-named — because a per-file force is a flag nobody can hold in their head.
+`--force` keeps the meaning `init-workflow` gave it — overwrite rather than skip — but not its
+scope: it applies to the targets it names and to nothing else. The earlier note here said a
+per-file force is a flag nobody can hold in their head. That was inherited from a command with one
+file, where the distinction did not arise; with four it is the all-or-nothing version that nobody
+should hold, because it destroys three files to refresh one.
 
 ## Not a design decision: the `commands` list
 

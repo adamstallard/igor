@@ -32,10 +32,10 @@
 - [ ] 3.2 The config at the repository root with `destination: .`; refuse outside a repository,
       and refuse inside Igor's own installation, where the config would be one the loader is
       already obliged to reject
-- [ ] 3.3 Per-file skip: name what was there, write what was not, succeed; `--force` overwrites,
-      all-or-nothing across the targets the run is writing
-- [ ] 3.4 `--only <target…>` selects which of the four to write, the shape `promote --only` has;
-      without it, all four
+- [ ] 3.3 Per-file skip: name what was there, write what was not, succeed
+- [ ] 3.4 `--force <target…>` overwrites exactly the named targets and leaves the rest untouched;
+      given no target it refuses and lists the target names. Settle the four names while
+      implementing — `config`, `org-role`, `role-stub`, `workflow` unless something reads better
 - [ ] 3.5 Retire `init-workflow` (`src/cli.ts`): the workflow writer becomes a function `init`
       calls, so one code path writes `reconcile-on-merge.yml` and there is no second command
       writing it
@@ -48,7 +48,7 @@
 
 - [ ] 4.1 README **Setting up a lore repository**: steps 2, 3 and 5 collapse into `igor init`;
       steps 1, 4 and 6 stay manual. The `igor init-workflow` block goes, since the command does
-      — name `init --only workflow` where re-running that piece alone is worth mentioning
+      — name `init --force workflow` where replacing that piece alone is worth mentioning
 - [ ] 4.2 README **Roles**: show the org file. It shows a role example and never an org file,
       which is why the file holding `commands` is the one with no starting point
 - [ ] 4.3 `docs/architecture.md` §5.0.3: a sentence in the `commands` paragraph naming

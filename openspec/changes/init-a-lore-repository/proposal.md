@@ -46,7 +46,7 @@ added `lore-store` requirements.
   `completion` and the lane exclusions;
 - one role stub whose `sources` is commented, because nobody can guess the query;
 - the reconciliation workflow, at the path `init-workflow` writes today. That command is
-  **retired**: `init --only workflow` re-runs that piece alone.
+  **retired**: `init --force workflow` replaces that piece alone.
 
 `templates/` is already in `package.json`'s `files`, so a new template ships on npm with no
 other change, and the workflow writer already reads from `join(igorRoot(), 'templates', …)`.
@@ -87,8 +87,8 @@ conditional wording stays because it is what kept the requirement correct across
   `main`. It prints what remains; checking it belongs with
   [#110](https://github.com/adamstallard/igor/issues/110).
 - **It must not overwrite.** Each existing file is skipped and named, the rest are still
-  written, and the run succeeds — so re-running after adding a role is safe. `--force`
-  overwrites, all-or-nothing across the targets being written.
+  written, and the run succeeds — so re-running after adding a role is safe. `--force <target…>`
+  overwrites exactly what it names and nothing else, and refuses when given no target.
 
 **And it says what it cannot do.** `reviewers`, `experts`, the seat with its token source, and
 a role's `sources` query are things only the operator knows. `init` gets them from *write three
@@ -128,7 +128,7 @@ requirements rather than on a sibling.
   operator copied out of a role example. An Igor set up this way can remove and rename files
   and read history, and still cannot commit, push, or run an interpreter with the seat's token
   in its environment.
-- **`init-workflow` is retired**, replaced by `init --only workflow`. Nothing else existing
+- **`init-workflow` is retired**, replaced by `init --force workflow`. Nothing else existing
   changes behaviour, and no config that loads today stops loading. Retiring it costs nothing
   now and would cost something later: Igor is unpublished, so the only store that predates
   `init` is the one this repository's author runs, and re-running `init` there writes what is

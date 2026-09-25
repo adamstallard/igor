@@ -4,10 +4,10 @@
 
 An `init` command SHALL write, into an existing repository, every file a lore repository needs
 that Igor can write without knowing anything only the operator knows: the configuration, the
-org-level role, one role stub, and the merge-triggered reconciliation workflow. It SHALL accept
-an option naming which targets to write, so one piece can be re-run by itself; the separate
-command that wrote the workflow alone SHALL be retired, because two ways to write one file is
-one too many once `init` can write it alone.
+org-level role, one role stub, and the merge-triggered reconciliation workflow. Each SHALL be
+nameable as a target, so that one can be replaced by itself; the separate command that wrote the
+workflow alone SHALL be retired, because two ways to write one file is one too many once `init`
+can write it alone.
 
 The configuration SHALL be written at the **root of the enclosing repository** and SHALL set
 `destination: .`, because the store is at its repository's root and a destination resolving
@@ -61,11 +61,19 @@ runnable is how an operator finds out by watching nothing happen.
   directory
 - **AND** the `destination: .` it sets therefore resolves to a root the store accepts
 
-#### Scenario: One target written alone
+#### Scenario: One target replaced, the rest untouched
 
-- **WHEN** a repository needs only the reconciliation workflow written
-- **THEN** naming that target writes it and nothing else
-- **AND** the targets not named are left as they are, whether or not they are present
+- **WHEN** a store's reconciliation workflow has been superseded by a newer shipped one, and the
+  workflow is named as the target to overwrite
+- **THEN** the workflow is replaced from what ships with Igor
+- **AND** the configuration, the org role and the role stub are left exactly as they are, whether
+  or not each is present
+
+#### Scenario: Overwriting without naming a target
+
+- **WHEN** an overwrite is asked for with no target named
+- **THEN** the run refuses and says which targets can be named
+- **AND** nothing is written
 
 #### Scenario: The worker can remove, rename and read history
 
@@ -118,8 +126,15 @@ who may push to the default branch. It SHALL print what remains to be set by han
 
 It SHALL NOT overwrite a file that is already there. Each existing target SHALL be skipped and
 named, every other target SHALL still be written, and the run SHALL succeed — so a second run
-after a role has been added is safe, and adds only what is missing. An explicit force option
-SHALL overwrite, all-or-nothing across the targets the run is writing.
+after a role has been added is safe, and adds only what is missing.
+
+**Overwriting SHALL be possible only for named targets.** A force option SHALL take the targets it
+applies to, overwrite exactly those, and leave every other target untouched whether present or
+absent. It SHALL refuse when given no target, rather than overwriting all four: replacing the
+configuration, the org role, the role stub and the workflow together is starting over, which is a
+deletion followed by a plain run, and it is not what someone reaches for a flag to do. Filling in
+what is missing is what the plain run is for, so there is no unforced way to name a subset — a
+narrowing that could not overwrite would either do nothing or duplicate the plain run.
 
 #### Scenario: Run where there is no repository
 
