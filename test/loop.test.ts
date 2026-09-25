@@ -15,7 +15,7 @@ import type { Role } from '../src/role.js'
 import type { TreeProvider, WorkingTree, ChangedFile, MergeState } from '../src/worktree.js'
 import {
   catchUpItem, declineReason, dropDeferred, dropStopped, oneFetchPerItem, recordDecisions, runItem,
-  type CommentSource, type CycleReport, type ItemDeps,
+  wentSilent, type CommentSource, type CycleReport, type ItemDeps,
 } from '../src/loop.js'
 import { defer, NO_DEFERRALS, shouldDefer } from '../src/deferred.js'
 import { ExecutionError } from '../src/execute.js'
@@ -34,6 +34,17 @@ function deps(opts: {
   verdicts?: ClaimVerdict[]
   claimSticks?: boolean
   changes?: ChangedFile[]
+  /** The code host rejects the publish, which is the escape #128 is about. */
+  produceThrows?: Error
+  /**
+   * The host opens the pull request and then fails — what a `produce` that makes the branch,
+   * the pull request and the review request in three writes does when the last one is refused.
+   */
+  produceCreatesThenThrows?: Error
+  /** The tracker stops taking comments once the claim is announced, so the handoff cannot post. */
+  reportThrowsAfterClaim?: Error
+  /** Provisioning fails, so the throw happens before any work is attempted. */
+  provisionThrows?: Error
 } = {}) {
   const posts: string[] = []
   const released: string[] = []
@@ -48,7 +59,10 @@ function deps(opts: {
     claim: async () => opts.claimSticks ?? true,
     commentsSince: async () => [],
     verifyClaim: async () => verdicts[Math.min(i++, verdicts.length - 1)]!,
-    report: async (_c, m) => { posts.push(m) },
+    report: async (_c, m) => {
+      if (opts.reportThrowsAfterClaim && posts.length > 0) throw opts.reportThrowsAfterClaim
+      posts.push(m)
+    },
     release: async (_c, as) => { released.push(as) },
     linkage: () => 'Closes #7',
   }
@@ -59,7 +73,9 @@ function deps(opts: {
   const codeHost: CodeHost = {
     name: 'fake',
     produce: async (r): Promise<Artifact> => {
+      if (opts.produceThrows) throw opts.produceThrows
       produced.push(r)
+      if (opts.produceCreatesThenThrows) throw opts.produceCreatesThenThrows
       return { kind: 'pull-request', ref: '#9', url: 'https://example.test/9' }
     },
     catchUp: async (r): Promise<CatchUp> => {
@@ -76,6 +92,7 @@ function deps(opts: {
   const trees: TreeProvider = {
     name: 'fake',
     provision: async (_repo, ref): Promise<WorkingTree> => {
+      if (opts.provisionThrows) throw opts.provisionThrows
       provisioned.push(ref)
       return {
         path: tempDir('igor-loop-'),
@@ -195,6 +212,80 @@ describe('an Igor never goes silent on something it claimed', () => {
     expect(r.spoke).toBe(true)
     expect(r.handoff).toBe('failure')
     expect(posts.at(-1)).toMatch(/will not retry/i)
+  })
+
+  it('hands off when publishing throws, rather than releasing the tree and going quiet', async () => {
+    // The claim told other people to stand off, so an error nothing along the way handles owes
+    // the same handoff as one the run classified itself. Left to escape, it releases the tree
+    // and leaves the item assigned with not a word on it — #128.
+    const { d, posts, released } = deps({
+      changes: [{ path: 'src/a.ts', content: 'fixed', kind: 'modified' }],
+      produceThrows: new Error('could not create pull request: bad credentials'),
+    })
+    const r = await runItem(d, candidate(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+
+    expect(r.outcome).toBe('handed-off')
+    expect(r.spoke).toBe(true)
+    expect(r.handoff).toBe('failure')
+    expect(posts.at(-1)).toContain('bad credentials')
+    expect(released).toEqual(['igor-bot'])
+    // Nothing minted a cure on this run, so there is none to carry and the item defers rather
+    // than coming straight back to the same error. A run that *did* meet a wall before
+    // crashing carries its key out, as every sibling failure does.
+    expect(r.cures).toEqual([])
+    expect(shouldDefer(r.outcome, r.handoff, r.cures)).toBe(true)
+  })
+
+  it('does not say nothing was produced when the publish died part-way through', async () => {
+    // `produce` is three writes: the branch, the pull request, then the review request. A
+    // reviewer who is not a collaborator fails the third with a 422, and the branch and the
+    // pull request are already there. Nothing reaches the run to say so, which is exactly why
+    // the sentence must not claim either way — a reader told nothing was produced starts over
+    // and collides with the branch that exists.
+    const { d, posts, produced } = deps({
+      changes: [{ path: 'src/a.ts', content: 'fixed', kind: 'modified' }],
+      produceCreatesThenThrows: new Error('422 Reviews may only be requested from collaborators'),
+    })
+    const r = await runItem(d, candidate(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+
+    expect(produced).toHaveLength(1)
+    expect(r.outcome).toBe('handed-off')
+    expect(posts.at(-1)).not.toContain('nothing usable was produced')
+    expect(posts.at(-1)).toContain('how far it got is not known')
+    expect(posts.at(-1)).toContain('before starting over')
+  })
+
+  it('hands off when the tree cannot be provisioned, which throws before any work starts', async () => {
+    // The clone happens outside the block that releases it, so this is the one throw a catch
+    // inside the working-tree callback would still let past.
+    const { d, posts, released } = deps({ provisionThrows: new Error('cannot clone o/r') })
+    const r = await runItem(d, candidate(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+
+    expect(r.outcome).toBe('handed-off')
+    expect(r.spoke).toBe(true)
+    expect(posts.at(-1)).toContain('cannot clone o/r')
+    expect(released).toEqual(['igor-bot'])
+  })
+
+  it('records that the handoff could not be posted rather than throwing over it', async () => {
+    // The answer to "what if the handoff itself fails" is not a second catch that swallows:
+    // `handOff` already keeps the failure and releases anyway, because holding a claim the
+    // Igor has abandoned is worse than an unexplained release. What was missing is anybody
+    // hearing about it, so the run carries the reason and `spoke` stays false.
+    const { d, posts, released } = deps({
+      changes: [{ path: 'src/a.ts', content: 'fixed', kind: 'modified' }],
+      produceThrows: new Error('could not create pull request: bad credentials'),
+      reportThrowsAfterClaim: new Error('tracker returned 503'),
+    })
+    const r = await runItem(d, candidate(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+
+    expect(r.outcome).toBe('handed-off')
+    expect(r.spoke).toBe(false)
+    expect(r.silence).toContain('tracker returned 503')
+    // The claim comment and nothing after it, which is the state the run has to report.
+    expect(posts).toHaveLength(1)
+    expect(released).toEqual(['igor-bot'])
+    expect(wentSilent(r)).toBe(true)
   })
 
   it('explains itself even when it found nothing to change', async () => {
@@ -882,6 +973,9 @@ describe('catching an artifact of its own back up', () => {
       const { d, posts, released } = deps({ caughtUp: [outcome] })
       const run = await catchUpItem(d, stale(), role(), 'igor-bot')
       expect(posts).toEqual([])
+      // Saying nothing here is a state, not a bug. Anything watching a run for a claim left
+      // silent has to agree, or the cheap path warns about itself every cycle.
+      expect(wentSilent(run)).toBe(false)
       expect(released).toEqual([])
       expect(run.spoke).toBe(false)
     }
@@ -927,6 +1021,55 @@ describe('catching an artifact of its own back up', () => {
         message: 'Merge main into igor/triage/7-a-bug',
       },
     ])
+  })
+
+  it('does not say the work is gone when a crash came after the resolution was published', async () => {
+    // `resolve` puts the merge commit on the branch and the check after it throws. Saying
+    // "nothing usable was produced" in the same comment that admits it does not know is wrong
+    // twice, and it sends whoever picks this up to start over on top of a resolution that is
+    // already there.
+    const { d, resolved, posts } = deps({
+      caughtUp: [{ outcome: 'conflict' }],
+      merge: conflicted,
+      changes: [{ path: 'src/a.ts', content: 'resolved\n', kind: 'modified' }],
+    })
+    const asked = d.codeHost.catchUp
+    let calls = 0
+    d.codeHost.catchUp = async (r) => {
+      calls++
+      if (calls > 1) throw new Error('502 from the code host')
+      return asked(r)
+    }
+    const run = await catchUpItem(d, stale(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+
+    expect(resolved).toHaveLength(1)
+    expect(run.outcome).toBe('handed-off')
+    expect(run.spoke).toBe(true)
+    expect(posts.at(-1)).not.toContain('nothing usable was produced')
+    // The link rides in the sentence, so the instruction to look is actionable.
+    expect(posts.at(-1)).toContain(
+      'what reached #21 is not known — look at https://example.test/21 before starting over',
+    )
+    // And no claim about what this run did to it, either way.
+    expect(posts.at(-1)).not.toContain('brought #21 up to date')
+    expect(posts.at(-1)).not.toContain('opened #21 as a draft')
+  })
+
+  it('does not claim it left partial work on a catch-up that never got a clone', async () => {
+    // The other side of the same unknown: the artifact is named so somebody looks, and naming
+    // it must not become a claim that this run put something there. Nothing ran at all here.
+    const { d, posts, resolved } = deps({
+      caughtUp: [{ outcome: 'conflict' }],
+      provisionThrows: new Error('cannot clone o/r'),
+    })
+    const run = await catchUpItem(d, stale(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+
+    expect(run.outcome).toBe('handed-off')
+    expect(resolved).toEqual([])
+    expect(posts.at(-1)).not.toContain('Partial work')
+    expect(posts.at(-1)).not.toContain('continue from it rather than starting over')
+    // The link still goes out, because "look before starting over" needs somewhere to look.
+    expect(posts.at(-1)).toContain('https://example.test/21')
   })
 
   it('hands off rather than publishing a tree the worker left markers in', async () => {

@@ -2,7 +2,7 @@ import type { Candidate, CodeHost, Comment, Tracker } from './adapter.js'
 import type { Gate, SeatVerdict } from './budget.js'
 import { checkpoint, eligibleAfterStop, stopReceipt, takeClaim, type ClaimOptions } from './claiming.js'
 import { complete, execute, workerEnv, type ExecuteOptions, type ExecutionResult } from './execute.js'
-import { handOffFrom, type HandoffReason } from './handoff.js'
+import { handOffFrom, type HandoffOutcome, type HandoffReason } from './handoff.js'
 import type { Role } from './role.js'
 import type { TreeProvider } from './worktree.js'
 import { appendRecord } from './state.js'
@@ -87,6 +87,13 @@ export interface ItemRun {
    * nothing on purpose, so there it is a state.
    */
   spoke: boolean
+  /**
+   * Why nothing was said, on the runs where the handoff itself could not be posted. Present
+   * only alongside `spoke: false`, and the reason it is carried rather than dropped: posting
+   * is the last thing standing between a claim and silence, so the one failure nobody can be
+   * told about on the item has to travel out to whoever is watching the run.
+   */
+  silence?: string
   /** Why it was handed back, where it was — a budget handoff says nothing about the item. */
   handoff?: HandoffReason['kind']
   /**
@@ -114,6 +121,36 @@ export interface RunOptions extends ExecuteOptions {
     blocked?: SeatVerdict
     passedOver?: readonly { seat: string; verdict: SeatVerdict }[]
   }
+}
+
+/**
+ * What a handoff that could not be posted leaves behind.
+ *
+ * `handOff` catches the rejection, records it and releases the claim anyway — holding a claim
+ * an Igor has abandoned is worse than an unexplained release. Nothing here re-decides that;
+ * this only stops the reason being dropped on the floor, which is what made a failed post
+ * indistinguishable from a successful one anywhere but `spoke`.
+ */
+function unsaid(out: HandoffOutcome): { silence?: string } {
+  if (out.posted) return {}
+  // Empty as well as absent: a rejection whose message is a blank string still has to read as
+  // a rejection, not as a run that spoke.
+  const why = out.error === undefined || out.error === '' ? 'the tracker gave no reason' : out.error
+  return { silence: why }
+}
+
+/**
+ * A claim was taken and nothing was left on the item — the one outcome the claim protocol does
+ * not permit, since the claim told other people to stand off.
+ *
+ * The three exclusions are outcomes that never took a claim, not outcomes excused from the
+ * rule: a refusal never told anyone to stand off, a loss means somebody else is visibly on it,
+ * and a clean catch-up claims nothing and says nothing on purpose. Lives here rather than at
+ * each place that warns, because a second copy of this list is how the quiet catch-up starts
+ * reporting itself as a bug every cycle.
+ */
+export function wentSilent(run: ItemRun): boolean {
+  return !run.spoke && run.outcome !== 'refused' && run.outcome !== 'lost' && run.outcome !== 'caught-up'
 }
 
 export async function runItem(
@@ -167,7 +204,7 @@ export async function runItem(
     const out = await handOffFrom(tracker, candidate, role, identity, claim.claimedAt, reason)
     return {
       outcome: 'handed-off', candidate, reason: 'budget exhausted before starting',
-      costUsd: 0, spoke: out.posted, handoff: 'budget', cures: [],
+      costUsd: 0, spoke: out.posted, ...unsaid(out), handoff: 'budget', cures: [],
     }
   }
 
@@ -248,7 +285,7 @@ export async function runItem(
       )
       return {
         outcome: 'handed-off', candidate, reason: execution.reason, execution,
-        costUsd: execution.costUsd, spoke: out.posted, handoff: 'failure', cures,
+        costUsd: execution.costUsd, spoke: out.posted, ...unsaid(out), handoff: 'failure', cures,
       }
     }
 
@@ -265,7 +302,7 @@ export async function runItem(
       const out = await handOffFrom(tracker, candidate, role, identity, claim.claimedAt, reason, execution)
       return {
         outcome: 'handed-off', candidate, reason: execution.reason, execution,
-        costUsd: execution.costUsd, spoke: out.posted, handoff: 'budget', cures: execution.cures ?? [],
+        costUsd: execution.costUsd, spoke: out.posted, ...unsaid(out), handoff: 'budget', cures: execution.cures ?? [],
       }
     }
 
@@ -288,7 +325,7 @@ export async function runItem(
       const out = await handOffFrom(tracker, candidate, role, identity, claim.claimedAt, reason, execution)
       return {
         outcome: 'handed-off', candidate, reason: execution.reason, execution,
-        costUsd: execution.costUsd, spoke: out.posted, handoff: reason.kind, cures,
+        costUsd: execution.costUsd, spoke: out.posted, ...unsaid(out), handoff: reason.kind, cures,
       }
     }
   }
