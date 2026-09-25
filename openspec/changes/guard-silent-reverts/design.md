@@ -16,7 +16,20 @@ Both of the proven instances are that shape reached two ways: one through a dele
 dropped, one through a status code (`MD`) that matched no branch and threw on read. A third of
 the same class — a rename's second porcelain record parsed as a status line, leaving the old
 path in the tree and publishing the file twice — was fixed inside the original feature commit's
-own bug-hunter iterations. Three reachings of one shape is the argument for guarding the shape.
+own bug-hunter iterations. **That mechanism no longer exists**: #118 reads the tree with
+`--no-renames` and deleted the pairing outright, so porcelain emits no record of that shape for
+anything to misparse. The instance happened; the code it happened in is gone, and a reader going
+looking for it will not find it.
+
+**The class has been probed much harder since this was written, and every probe found another
+route.** #118 closed a path the run's own index invented, an intent-to-add path deleted before
+commit, an unmerged path whose own side had deleted it, and the base branch moving underneath the
+publish — four more ways for the artifact not to match what the worker did. It closed them only
+after three route-specific guards had each missed the next case, and only by replacing all three
+with one check asking the requirement's own question rather than a proxy for it.
+
+That is this change's own argument, learned again independently and at a cost. Reaching one shape
+by that many routes is why the shape is guarded rather than the instance.
 
 ## Decisions
 
