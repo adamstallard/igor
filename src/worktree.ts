@@ -24,7 +24,7 @@ export const TREE_PREFIX = 'igor-tree-'
 export interface ChangedFile {
   path: string
   content: string
-  /** A deletion is reported but cannot be carried by the tree-API artifact path. */
+  /** A deletion carries no content, and a binary is not reported at all. */
   kind: 'added' | 'modified' | 'deleted'
   /**
    * Whether the file is executable. Only a resolution reads it: it lays blobs over a tree the
@@ -38,6 +38,30 @@ export interface ChangedFile {
    * Its presence is the signal that this entry must not be published: see `named`.
    */
   rawName?: Buffer
+}
+
+/**
+ * Splits what the tree reported into what an artifact carries.
+ *
+ * A path can be reported both ways at once: a file removed with git and written back again is
+ * a deletion record and an addition record for the one path. The file on disk wins, because a
+ * tree carries each path once — a removal sent beside its own blob either drops the file from
+ * the artifact or has the host reject the whole tree.
+ *
+ * Shared rather than applied twice, because the second place to apply it is whatever tells a
+ * person what the run did, and a count that disagrees with the artifact sends them looking for
+ * a deletion that is not in the diff.
+ */
+export function carried(changed: readonly ChangedFile[]): {
+  written: ChangedFile[]
+  removed: string[]
+} {
+  const written = changed.filter((c) => c.kind !== 'deleted')
+  const paths = new Set(written.map((c) => c.path))
+  return {
+    written,
+    removed: changed.filter((c) => c.kind === 'deleted' && !paths.has(c.path)).map((c) => c.path),
+  }
 }
 
 /** What a merge left behind, and the two commits a resolution of it has to be parented on. */
@@ -54,6 +78,17 @@ export interface WorkingTree {
   readonly repo: string
   /** Files the worker touched, read back from the tree rather than from what it claimed. */
   changes(): Promise<ChangedFile[]>
+  /**
+   * The commit this tree was cut from, which is the tree an artifact built from it must be
+   * laid over. Re-reading the branch head at publish time instead opens a window the length of
+   * a worker run: a path the base branch deletes inside it, and the worker deletes too, is
+   * published as a removal of a path the base tree no longer holds, and the host refuses the
+   * whole request with `422 GitRPC::BadObjectState`.
+   *
+   * Optional on the same terms as `merge`: `TreeProvider` says nothing about how a tree is
+   * made, and a publisher that is not given one falls back to reading the branch head.
+   */
+  head?(): Promise<string>
   /**
    * Merges `ref` in without committing, leaving conflict markers where it conflicts.
    *
@@ -97,8 +132,75 @@ async function run(cmd: string, args: readonly string[], cwd?: string): Promise<
 export interface StatusRecord {
   flags: string
   path: Buffer
-  /** Where a rename or a copy came from, which git writes as the record after it. */
-  from?: Buffer
+}
+
+/** Splits `-z` output into its entries, dropping the empty one every trailing NUL leaves. */
+function nulSeparated(out: Buffer): Buffer[] {
+  const entries: Buffer[] = []
+  for (let at = 0; at < out.length; ) {
+    const nul = out.indexOf(0, at)
+    const end = nul === -1 ? out.length : nul
+    if (end > at) entries.push(out.subarray(at, end))
+    at = end + 1
+  }
+  return entries
+}
+
+/**
+ * How many bytes of pathspec go into one `ls-tree`. Well under `ARG_MAX` — 1 MiB on darwin, and
+ * Linux caps a single argument at 128 KiB regardless of the total.
+ */
+const PATHSPEC_BUDGET = 100_000
+
+/**
+ * Which of `paths` the tree's own HEAD holds — the one question a removal has to answer, asked
+ * of the tree an artifact is laid over rather than of a status flag that stands in for it.
+ *
+ * **Keyed by the bytes git wrote, not by the decoded name.** Two names differing only in bytes
+ * that do not decode share one string, so a set keyed on the string answers for one of them
+ * with the other's entry.
+ *
+ * One process per `PATHSPEC_BUDGET` of names, and none at all where nothing is being removed:
+ * the cost is proportional to the removals in hand, not to the size of the repository.
+ */
+async function heldByHead(treePath: string, paths: readonly Buffer[]): Promise<Set<string>> {
+  // `:(literal)`, because a pathspec is a glob otherwise: `foo*` would match `foobar` and call a
+  // path HEAD does not hold held, while `a[b].txt` would match nothing and call a path it does
+  // hold absent. Joined in bytes, like `inside`, so the prefix cannot disturb the name.
+  //
+  // Every caller filters out names that are not text first. `spawn` takes arguments as strings
+  // and writes them to `argv` as UTF-8, so bytes that did not decode cannot make the trip — they
+  // would arrive as U+FFFD, match nothing, and turn a removal into a silent omission.
+  const specs = paths.map((p) => Buffer.concat([Buffer.from(':(literal)'), p]).toString('utf8'))
+  const held = new Set<string>()
+  for (let at = 0; at < specs.length; ) {
+    const batch: string[] = []
+    for (let bytes = 0; at < specs.length; at += 1) {
+      bytes += Buffer.byteLength(specs[at]!) + 1
+      if (bytes > PATHSPEC_BUDGET && batch.length > 0) break
+      batch.push(specs[at]!)
+    }
+    const listed = await runBytes('git', [
+      '-C',
+      treePath,
+      // **A pathspec is a channel, and darwin normalises it.** `core.precomposeunicode` is on by
+      // default there and git precomposes `argv` before parsing it, so a name HEAD holds in
+      // decomposed form is matched by no pathspec at all — the check would say HEAD lacks a path
+      // it has, and drop a legitimate removal in silence. Off, the bytes are compared as written.
+      '-c',
+      'core.precomposeunicode=false',
+      'ls-tree',
+      'HEAD',
+      '-z',
+      '-r',
+      '--name-only',
+      '--full-tree',
+      '--',
+      ...batch,
+    ])
+    for (const name of nulSeparated(listed)) held.add(name.toString('latin1'))
+  }
+  return held
 }
 
 /**
@@ -111,28 +213,16 @@ export interface StatusRecord {
  * Exported so the parse can be tested against byte sequences no filesystem here will hold.
  */
 export function statusRecords(status: Buffer): StatusRecord[] {
-  const entries: Buffer[] = []
-  for (let at = 0; at < status.length; ) {
-    const nul = status.indexOf(0, at)
-    const end = nul === -1 ? status.length : nul
-    if (end > at) entries.push(status.subarray(at, end))
-    at = end + 1
-  }
+  const entries = nulSeparated(status)
   const records: StatusRecord[] = []
   for (let i = 0; i < entries.length; i += 1) {
     const flags = entries[i]!.subarray(0, 2).toString('latin1')
-    // A rename or a copy is **two** records: the new path, then the original alone on the next
-    // one. Read as a status line that second record is a path sliced out of the middle of a
-    // filename, so the original is reported as neither changed nor deleted — and a resolution,
-    // which lays its files over the tree the branch already has, keeps the old path and
-    // publishes the file twice. A merge is where renames arrive, so this is the ordinary case
-    // rather than an exotic one.
-    //
-    // Only the index column is read, so a rename git has not staged — ` R`, which `git add -N`
-    // on the destination produces — is still left unpaired: issue #96.
+    // One record per entry, and no record carries a second. A rename or a copy would arrive as
+    // two — the new path, then the original alone — and reading that second one as a status
+    // line takes a path out of the middle of a filename. `changes()` reads with `--no-renames`
+    // so porcelain emits neither, and a rename arrives as an ordinary removal and addition.
     const path = entries[i]!.subarray(3)
-    const from = flags.startsWith('R') || flags.startsWith('C') ? entries[++i] : undefined
-    records.push({ flags, path, ...(from === undefined ? {} : { from }) })
+    records.push({ flags, path })
   }
   return records
 }
@@ -227,18 +317,60 @@ export class ClonedTree implements WorkingTree {
   async changes(): Promise<ChangedFile[]> {
     // Read from the tree, never from what the worker said it did. A worker that reports a
     // change it did not make, or omits one it did, cannot mislead the artifact this way.
+    //
     // `-uall`, because porcelain otherwise collapses an untracked directory to one entry —
     // `?? openspec/` rather than the files under it. Reading that path throws EISDIR, the
     // catch below skips it, and every file a worker created in a new directory is lost from
     // the artifact without a word. Spec deltas are always new files in new directories.
-    const status = await runBytes('git', ['-C', this.path, 'status', '--porcelain', '-z', '-uall'])
+    //
+    // `--no-renames`, because detection folds two changed paths into one record and a fold
+    // **loses** a path from the input rather than misreading one that is present. Where a
+    // conflicted merge leaves one path unmerged and the worker deletes another that resembles
+    // it, the pair is reported as a rename of the unmerged path and the deletion is absent from
+    // the output entirely — nothing downstream can recover what was never read. Off, the same
+    // two paths arrive as a removal and an addition, which is the shape the artifact wants
+    // anyway: the tree API removes a path or adds one and has no notion of a move.
+    const status = await runBytes('git', [
+      '-C',
+      this.path,
+      'status',
+      '--porcelain',
+      '-z',
+      '-uall',
+      '--no-renames',
+    ])
     const out: ChangedFile[] = []
 
-    for (const { flags, path, from } of statusRecords(status)) {
+    const records = statusRecords(status)
+
+    // **Every removal is checked against the tree it will be laid over, before it is one.** Both
+    // publishing paths lay their tree over the commit this clone holds — `commitOnBranch` over
+    // `parents[0]`, which is the HEAD `merge()` read before merging, and `produce` over
+    // `head()` — and `merge --no-commit` leaves HEAD where it was, conflict or no conflict. So
+    // HEAD is `base_tree`, and the tree API refuses a removal of a path `base_tree` does not
+    // hold with `422 GitRPC::BadObjectState`, refusing the *whole* request: nothing publishes,
+    // not even the changes that were correct.
+    //
+    // Asked of HEAD rather than of the status flags, because no flag answers it. An index column
+    // of `A` says the path is the run's own invention, but an intent-to-add path deleted before
+    // it was committed prints a column of *space*, indistinguishable from a tracked file's
+    // unstaged deletion; and the unmerged codes whose "ours" side HEAD never had — `DD`, `DU`,
+    // `AA`, `AU`, `UA` — are told from `UD` and `UU`, which it did, only by the tree.
+    //
+    // A name that is not text is checked by nobody and kept: `spawn` cannot carry those bytes in
+    // `argv`, and dropping the removal would turn a refusal that names the file into an omission.
+    // Such a run never publishes — execution stops on any `rawName` before it builds a tree.
+    const checkable = records.flatMap(({ flags, path }) =>
+      path.length > 0 && (GONE.test(flags) || UNMERGED.test(flags)) && named(path).rawName === undefined
+        ? [path]
+        : [],
+    )
+    const inHead = checkable.length === 0 ? new Set<string>() : await heldByHead(this.path, checkable)
+    const removable = (name: { rawName?: Buffer }, path: Buffer): boolean =>
+      name.rawName !== undefined || inHead.has(path.toString('latin1'))
+
+    for (const { flags, path } of records) {
       const code = flags.trim()
-      if (flags.startsWith('R') && from !== undefined && from.length > 0) {
-        out.push({ ...named(from), content: '', kind: 'deleted' })
-      }
       if (path.length === 0) continue
       // The name the artifact would publish under, and the bytes beside it where that name is
       // not the one on disk. Nothing is dropped here: the publishing path decides what to do
@@ -246,6 +378,7 @@ export class ClonedTree implements WorkingTree {
       // still owes an account of what changed.
       const name = named(path)
       if (!UNMERGED.test(flags) && GONE.test(flags)) {
+        if (!removable(name, path)) continue
         out.push({ ...name, content: '', kind: 'deleted' })
         continue
       }
@@ -260,7 +393,12 @@ export class ClonedTree implements WorkingTree {
         // worker that was told not to run git can say "honour the deletion" — and read as an
         // unreadable file it says nothing at all, so the resolution keeps the artifact's copy
         // and the base's deletion comes back the moment the artifact merges.
+        //
+        // `DU` is the shape that makes the HEAD check load-bearing here rather than tidy: the
+        // artifact branch deleted the path, so HEAD never held it, and the base's copy sitting
+        // in the tree is exactly what `conflictPrompt` invites the worker to remove.
         if (UNMERGED.test(flags)) {
+          if (!removable(name, path)) continue
           out.push({ ...name, content: '', kind: 'deleted' })
           continue
         }
@@ -278,6 +416,15 @@ export class ClonedTree implements WorkingTree {
       })
     }
     return out
+  }
+
+  /**
+   * The clone's own commit, which stays the one it was cut from for the whole run: the worker
+   * edits the working tree and Igor publishes, and `merge` brings its side in without
+   * committing.
+   */
+  async head(): Promise<string> {
+    return (await run('git', ['-C', this.path, 'rev-parse', 'HEAD'])).trim()
   }
 
   /**

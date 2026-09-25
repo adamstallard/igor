@@ -4,7 +4,15 @@ import type { Artifact, Candidate, ClaimVerdict, CodeHost, InFlight, Tracker } f
 import { resolveToken, type TokenSource, type Window } from './budget.js'
 import { recordObservation, WINDOW_LENGTH } from './capacity.js'
 import type { Action, Role } from './role.js'
-import { showName, withTree, type ChangedFile, type MergeState, type TreeProvider, type WorkingTree } from './worktree.js'
+import {
+  carried,
+  showName,
+  withTree,
+  type ChangedFile,
+  type MergeState,
+  type TreeProvider,
+  type WorkingTree,
+} from './worktree.js'
 import { appendRecord, STATE_BRANCH, writeState } from './state.js'
 
 /**
@@ -231,8 +239,9 @@ export function conflictPrompt(candidate: Candidate, artifact: InFlight, paths: 
     'result. Say so plainly and change nothing if a conflict needs a decision only a person',
     'can make.',
     '',
-    'A conflicted file with no markers in it is one side deleting what the other edited. Keep',
-    `the file to keep the artifact's version; delete it to accept ${artifact.base}'s removal.`,
+    'Where a conflicted file has no markers because one side deleted what the other edited, the',
+    'copy left on disk is the side that survived the delete — keep it to take that side, or delete',
+    'it to take the deletion.',
   ].join('\n')
 }
 
@@ -1559,34 +1568,18 @@ export async function execute(
       }
     }
 
-    // A deletion reaches an artifact's own branch but not a new one: a resolution moves a ref
-    // it can drop a path from, while `produce` builds its commit out of files alone.
-    const deletions = changed.filter((c) => c.kind === 'deleted').map((c) => c.path)
-    if (artifact === undefined) {
-      for (const path of deletions) {
-        refusals.push({ action: 'draft-pr', why: `deleting ${path} is not supported yet` })
-      }
-    }
-    const files = changed
-      .filter((c) => c.kind !== 'deleted')
-      .map((c) => ({
-        path: c.path,
-        content: c.content,
-        // Carried only onto a branch that already has the path; `produce` builds a new tree,
-        // where every file is new and there is no mode to preserve.
-        ...(artifact !== undefined && c.executable === true ? { executable: true } : {}),
-      }))
-    if (files.length === 0 && (artifact === undefined || deletions.length === 0)) {
-      return {
-        outcome: 'refused' as const,
-        changed,
-        refusals,
-        transcript,
-        ...kept,
-        ...cured(),
-        reason: 'the only changes were deletions, which cannot be published yet',
-      }
-    }
+    // Both publishing paths build their tree from the same call, so a removal rides either one
+    // as an entry over the base tree with no blob behind it. Nothing needs guarding against
+    // both coming out empty: a removal is only dropped in favour of a file at that same path,
+    // and an empty `changed` returned above.
+    const { written, removed: deletions } = carried(changed)
+    const files = written.map((c) => ({
+      path: c.path,
+      content: c.content,
+      // Carried only onto a branch that already has the path; `produce` builds a new tree,
+      // where every file is new and there is no mode to preserve.
+      ...(artifact !== undefined && c.executable === true ? { executable: true } : {}),
+    }))
 
     // The resolution goes on the branch that exists, with both sides as parents. A one-parent
     // commit carrying the same content leaves the merge base where it was, so the host
@@ -1696,12 +1689,19 @@ export async function execute(
     const lost = status === 'lost'
 
     options.onPublish?.()
+    // Laid over the commit the tree was cut from rather than the base branch's head now.
+    // Reaching here means `artifact` is undefined — a defined one has a merge and takes the
+    // resolution path above — so the tree was cloned at no ref, which is the same default
+    // branch the pull request is opened against.
+    const baseSha = await tree.head?.()
     const opened = await codeHost.produce({
       repo: candidate.repo,
       branch: branchFor(role, candidate, options.branchPrefix),
+      ...(baseSha === undefined ? {} : { baseSha }),
       title: candidate.title,
       body: prBody(linkage, transcript, candidate, options.store),
       files,
+      deletions,
       reviewers: lost ? [] : role.reviewers,
       // Reversible by default: a draft asks for review rather than announcing completion.
       draft: lost || wanted === 'draft-pr',
