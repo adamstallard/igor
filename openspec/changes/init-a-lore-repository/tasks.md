@@ -6,8 +6,8 @@
 - [x] 1.3 The root-of-the-repository clause, so the config `init` writes is not one
       [#111](https://github.com/adamstallard/igor/pull/111) refuses from a subdirectory
 - [x] 1.4 `design.md` for the three choices with live alternatives: shipping `git rm:*` before
-      [#88](https://github.com/adamstallard/igor/pull/88), keeping `init-workflow`, and skipping
-      per file rather than refusing the run
+      [#88](https://github.com/adamstallard/igor/pull/88), folding `init-workflow` into `init`,
+      and skipping per file rather than refusing the run
 - [x] 1.5 Capability chosen against the discriminator — which requirements in force would have
       to be reworded — and the reasoning recorded in `proposal.md`
 
@@ -33,18 +33,22 @@
       and refuse inside Igor's own installation, where the config would be one the loader is
       already obliged to reject
 - [ ] 3.3 Per-file skip: name what was there, write what was not, succeed; `--force` overwrites,
-      the shape `init-workflow` has
-- [ ] 3.4 It calls the existing workflow writer rather than copying the file itself, so one code
-      path writes `reconcile-on-merge.yml`
-- [ ] 3.5 The closing report: the four values only the operator knows, plus branch protection and
+      all-or-nothing across the targets the run is writing
+- [ ] 3.4 `--only <target…>` selects which of the four to write, the shape `promote --only` has;
+      without it, all four
+- [ ] 3.5 Retire `init-workflow` (`src/cli.ts`): the workflow writer becomes a function `init`
+      calls, so one code path writes `reconcile-on-merge.yml` and there is no second command
+      writing it
+- [ ] 3.6 The closing report: the four values only the operator knows, plus branch protection and
       the Actions bypass as what remains
-- [ ] 3.6 Tests for each scenario in the delta, including the partial re-run and the
+- [ ] 3.7 Tests for each scenario in the delta, including the partial re-run and the
       subdirectory case
 
 ## 4. Documentation
 
-- [ ] 4.1 README **Setting up a lore repository**: steps 2 and 3 become `igor init`, step 5 is
-      subsumed while the command stays, steps 1, 4 and 6 stay manual
+- [ ] 4.1 README **Setting up a lore repository**: steps 2, 3 and 5 collapse into `igor init`;
+      steps 1, 4 and 6 stay manual. The `igor init-workflow` block goes, since the command does
+      — name `init --only workflow` where re-running that piece alone is worth mentioning
 - [ ] 4.2 README **Roles**: show the org file. It shows a role example and never an org file,
       which is why the file holding `commands` is the one with no starting point
 - [ ] 4.3 `docs/architecture.md` §5.0.3: a sentence in the `commands` paragraph naming

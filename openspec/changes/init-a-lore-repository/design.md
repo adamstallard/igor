@@ -31,22 +31,41 @@ The requirement states the condition ("where a removal a worker makes does not y
 the published artifact") rather than the pull request, because a spec that names an open PR
 goes stale the day it merges.
 
-## `init-workflow` stays a command
+## `init-workflow` is folded into `init`
 
-`init` writes the workflow, so folding `init-workflow` into it would leave one way to do it.
-Rejected: every repository set up before `init` exists still needs that one file, and a repository
-whose workflow was deleted or superseded needs it again. Re-running `init` for it is
-harmless — it skips what is there and writes what is not — but only because of the
-skip-and-continue rule below, and a command that exists is a smaller promise than a refusal
-shape holding it up.
+`init` writes the workflow, so keeping `init-workflow` would leave two ways to write one file.
+It is retired, and `init --only <target…>` replaces it — the same shape `promote --only` already
+has in this CLI.
 
-The direction matters too: `init` calls the workflow writer, not the reverse. One code path
-writes `.github/workflows/reconcile-on-merge.yml` and it is the one that already exists,
-with its own output about racing jobs and the bypass list.
+Three reasons to keep it were considered, and all three fail:
+
+- **Repositories set up before `init` existed still need that one file.** Void. `init` ships
+  before Igor is installable from anywhere but a clone, so by the time anyone can set up a
+  store, `init` exists. Exactly one store predates it — this repository's author's — and it is
+  served by the next point.
+- **A workflow deleted or superseded needs writing again.** Discharged by skip-and-continue:
+  re-running `init` where the config and org role are present but the workflow is not writes the
+  workflow and leaves the rest alone, which is a scenario in this delta. `--only` narrows that
+  to a single target for an operator who wants to be certain.
+- **`--config` can target a store you are not standing in, and `init` cannot.** True in
+  mechanism, empty in motivation. Writing the workflow copies a file into
+  `<destination>/.github/workflows/`, so the destination is already a checkout on disk, and
+  `cd` into it reaches the same config by upward search — the two are interchangeable by
+  construction. They diverge only for a config living outside its destination, which the README
+  argues against: a config not committed alongside the store drifts between whoever runs the
+  tool until an entry scores differently depending on whose machine computed it.
+
+**And the thing being re-run happens once per team.** The workflow goes in the lore store, not
+in each repository an Igor watches — those are read through the tracker's API and have nothing
+installed in them. A dedicated top-level command for a file written once per store is a command
+nobody needs twice.
+
+The direction still matters: one code path writes `.github/workflows/reconcile-on-merge.yml`,
+and after this change `init` owns it outright.
 
 ## Skip and continue, rather than refuse the whole run
 
-`init-workflow` refuses outright when its one target exists. With four targets the same shape
+`init-workflow` refuses outright when its one target exists. With four targets that shape
 would mean a repository that has a config and nothing else can never be initialized without
 `--force`, and `--force` over four files to get three is how a hand-edited config gets
 overwritten.
@@ -56,8 +75,9 @@ either way. The failure this avoids is the common one — a second run after add
 the case it gives up, a run that quietly does nothing because everything was already there, is
 covered by naming every skip.
 
-`--force` keeps `init-workflow`'s meaning: overwrite rather than skip. It is all-or-nothing
-across the four files, because a per-file force is a flag nobody can hold in their head.
+`--force` keeps the meaning `init-workflow` gave it: overwrite rather than skip. It is
+all-or-nothing across the targets the run is writing — all four by default, or the ones `--only`
+named — because a per-file force is a flag nobody can hold in their head.
 
 ## Not a design decision: the `commands` list
 

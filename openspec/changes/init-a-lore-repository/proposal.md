@@ -45,11 +45,11 @@ added `lore-store` requirements.
 - `roles/org.yaml` from a new `templates/org.yaml`, carrying a real `commands` list, `allow`,
   `completion` and the lane exclusions;
 - one role stub whose `sources` is commented, because nobody can guess the query;
-- the reconciliation workflow, by the path `init-workflow` already writes. `init-workflow`
-  **stays** as a command, for re-running that piece alone.
+- the reconciliation workflow, at the path `init-workflow` writes today. That command is
+  **retired**: `init --only workflow` re-runs that piece alone.
 
 `templates/` is already in `package.json`'s `files`, so a new template ships on npm with no
-other change, and `init-workflow` already reads from `join(igorRoot(), 'templates', …)`.
+other change, and the workflow writer already reads from `join(igorRoot(), 'templates', …)`.
 
 **The default `commands` list, and why each entry.** What a worker's own tools cannot do:
 
@@ -88,7 +88,7 @@ conditional wording stays because it is what kept the requirement correct across
   [#110](https://github.com/adamstallard/igor/issues/110).
 - **It must not overwrite.** Each existing file is skipped and named, the rest are still
   written, and the run succeeds — so re-running after adding a role is safe. `--force`
-  overwrites, the shape `init-workflow` already has.
+  overwrites, all-or-nothing across the targets being written.
 
 **And it says what it cannot do.** `reviewers`, `experts`, the seat with its token source, and
 a role's `sources` query are things only the operator knows. `init` gets them from *write three
@@ -128,8 +128,11 @@ requirements rather than on a sibling.
   operator copied out of a role example. An Igor set up this way can remove and rename files
   and read history, and still cannot commit, push, or run an interpreter with the seat's token
   in its environment.
-- Nothing existing changes behaviour. `init-workflow` keeps its name, its `--force` and its
-  output; no config that loads today stops loading.
+- **`init-workflow` is retired**, replaced by `init --only workflow`. Nothing else existing
+  changes behaviour, and no config that loads today stops loading. Retiring it costs nothing
+  now and would cost something later: Igor is unpublished, so the only store that predates
+  `init` is the one this repository's author runs, and re-running `init` there writes what is
+  missing and names what is not.
 - Documentation follows in this change's tasks: the README's setup section collapses, its
   **Roles** section gains the org file it has never shown, and `architecture.md` §5.0.3 points
   at the shipped template from the paragraph that already explains `commands`.

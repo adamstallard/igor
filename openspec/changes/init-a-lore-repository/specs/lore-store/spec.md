@@ -4,9 +4,10 @@
 
 An `init` command SHALL write, into an existing repository, every file a lore repository needs
 that Igor can write without knowing anything only the operator knows: the configuration, the
-org-level role, one role stub, and the merge-triggered reconciliation workflow. Writing the
-workflow SHALL NOT retire the command that writes it alone, so that piece can be re-run by
-itself against a repository set up before it existed.
+org-level role, one role stub, and the merge-triggered reconciliation workflow. It SHALL accept
+an option naming which targets to write, so one piece can be re-run by itself; the separate
+command that wrote the workflow alone SHALL be retired, because two ways to write one file is
+one too many once `init` can write it alone.
 
 The configuration SHALL be written at the **root of the enclosing repository** and SHALL set
 `destination: .`, because the store is at its repository's root and a destination resolving
@@ -60,10 +61,11 @@ runnable is how an operator finds out by watching nothing happen.
   directory
 - **AND** the `destination: .` it sets therefore resolves to a root the store accepts
 
-#### Scenario: The workflow command survives
+#### Scenario: One target written alone
 
-- **WHEN** a repository set up before `init` existed needs only the reconciliation workflow
-- **THEN** the command that writes the workflow alone still exists and still writes it
+- **WHEN** a repository needs only the reconciliation workflow written
+- **THEN** naming that target writes it and nothing else
+- **AND** the targets not named are left as they are, whether or not they are present
 
 #### Scenario: The worker can remove, rename and read history
 
@@ -117,7 +119,7 @@ who may push to the default branch. It SHALL print what remains to be set by han
 It SHALL NOT overwrite a file that is already there. Each existing target SHALL be skipped and
 named, every other target SHALL still be written, and the run SHALL succeed — so a second run
 after a role has been added is safe, and adds only what is missing. An explicit force option
-SHALL overwrite, the shape the workflow command already has.
+SHALL overwrite, all-or-nothing across the targets the run is writing.
 
 #### Scenario: Run where there is no repository
 
