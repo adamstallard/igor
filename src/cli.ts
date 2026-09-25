@@ -18,7 +18,7 @@ import {
 } from './store.js'
 import { eligibleToPropose, idsOnDefaultBranch, propose, upstreamHoldsTheName, ProposeError } from './propose.js'
 import { reconcile, promoteInPlace, renderReconciliation } from './reconcile.js'
-import { GitHubError } from './github.js'
+import { GhError } from './gh.js'
 import { claimRequested, contradictoryRunFlags } from './flags.js'
 import { explainRole, loadRole, rolesFrom, RoleError } from './role.js'
 import { catchUpItem, planCycle, runItem, UNTRIAGED_NO_SEAT, type CycleReport } from './loop.js'
@@ -640,7 +640,9 @@ try {
     error instanceof StoreError ||
     error instanceof ProposeError ||
     error instanceof InitError ||
-    error instanceof GitHubError ||
+    // The superclass of GitHubError and StateError both: every one of these carries a sentence
+    // written to be read, and a host where `gh` is missing prints it rather than a stack trace.
+    error instanceof GhError ||
     error instanceof RoleError ||
     error instanceof TriageError ||
     error instanceof BudgetError ||
