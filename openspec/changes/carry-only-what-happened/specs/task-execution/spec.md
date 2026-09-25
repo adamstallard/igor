@@ -2,8 +2,15 @@
 
 ### Requirement: The artifact carries no change the worker did not make
 
-An artifact SHALL carry an entry only for a change the worker actually made. A file the worker
-did not touch SHALL NOT appear in it, and one file on disk SHALL NOT produce two entries.
+An artifact SHALL carry an entry only for a change the worker actually made. A path the worker
+did not touch SHALL NOT appear in it, and one path on disk SHALL NOT produce two entries.
+
+**Path, not file.** A tree holds entries that are not regular files — a submodule is a gitlink, a
+directory on disk and a commit entry in the tree. Phrased over files, this requirement would be
+read at archive time as not reaching one
+([#127](https://github.com/adamstallard/igor/issues/127): an unmerged submodule is reported as a
+deletion because reading it throws, so the artifact drops it on a run where the worker touched
+nothing). That is the failure this requirement is about, reached by something that is not a file.
 
 **This is the other half of a symmetry that is currently one-sided.** *The artifact carries every
 change the worker made, including removals* says nothing may be lost, and *No removal is published
@@ -28,13 +35,20 @@ complete to a reviewer and is not"* was written about, reached from the other di
 
 #### Scenario: A file the worker did not touch
 
-- **WHEN** reading the working tree offers a change to a file the worker did not edit, create or
+- **WHEN** reading the working tree offers a change to a path the worker did not edit, create or
   remove
 - **THEN** the artifact carries no entry for it
 
-#### Scenario: One file on disk, one entry
+#### Scenario: A path that is not a regular file
 
-- **WHEN** one file on disk is reported by two records that differ only in how its name is spelled
+- **WHEN** a path the worker did not touch cannot be read because it is not a regular file — a
+  submodule's gitlink being the case that reaches this
+- **THEN** the artifact carries no entry for it, and no removal of it
+- **AND** failing to read a path is not by itself evidence that the worker removed it
+
+#### Scenario: One path on disk, one entry
+
+- **WHEN** one path on disk is reported by two records that differ only in how its name is spelled
 - **THEN** the artifact carries a single entry for it
 - **AND** the content published is what that file holds
 

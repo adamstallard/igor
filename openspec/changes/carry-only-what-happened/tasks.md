@@ -42,8 +42,20 @@
 - [ ] 4.6 Where the platform decides the behaviour, say so in the test rather than skipping
       silently on the other one
 
-## 5. Documentation
+## 5. The submodule route
 
-- [ ] 5.1 `docs/architecture.md` §6.7.2a already describes how the tree is read and what it owes.
+- [ ] 5.1 [#127](https://github.com/adamstallard/igor/issues/127): an unmerged submodule is a
+      gitlink, so `readFile` throws `EISDIR` and the unmerged branch of the catch records a
+      deletion. The artifact drops a submodule on a run where the worker touched nothing. This
+      requirement covers it, so it is closed here rather than filed as work against nothing
+- [ ] 5.2 Distinguish *gone from disk* from *present but unreadable* before concluding a deletion.
+      The unmerged branch exists because a worker removing a marker-free conflicted file is the
+      only way it can say *honour the deletion*; the branch is right and cannot currently tell a
+      removed file from a directory it could never read
+- [ ] 5.3 Check the same catch for any other unreadable unmerged path it mis-reads the same way
+
+## 6. Documentation
+
+- [ ] 6.1 `docs/architecture.md` §6.7.2a already describes how the tree is read and what it owes.
       Add what it does not owe: an entry for a file nobody touched, and the normalisation that
       made that reachable

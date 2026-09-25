@@ -51,6 +51,18 @@ repository has now made twice — stating a rule over rename *pairs* when the pa
 deleted, and scoping a flag by a target when the scope could not be decided. Two requirements, two
 criteria, cross-referenced.
 
+## A second route, found after this was written
+
+[#127](https://github.com/adamstallard/igor/issues/127): an unmerged **submodule** is a gitlink, so
+`readFile` throws `EISDIR` and the unmerged branch of the catch records a deletion. The artifact
+drops a submodule on a run where the worker touched nothing, and nothing refuses it — the path *is*
+in the base tree, so #118's check passes it through, and a reviewer sees a pointer removed that
+looks deliberate.
+
+It is the same requirement, reached by something that is not a regular file, which is why the
+requirement is phrased over **paths**. It closes here rather than being filed as work against no
+requirement.
+
 ## Impact
 
 - An artifact stops being able to carry a file nobody edited. Today nothing prevents it and nothing
