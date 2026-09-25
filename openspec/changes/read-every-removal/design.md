@@ -217,10 +217,11 @@ outcome.
 
 Three ways to publish a removal of a path the base tree does not hold survived the guard as first
 written. None was created by this change, and all three are what the second requirement is worded
-broadly enough to cover. One is closed below; the second is filed; the third was found reviewing
-the fix for the first and is not filed yet.
+broadly enough to cover. All three are now closed: the first below by publishing against the sha
+the tree was cut from, the other two by *The proxies collapse into one test* at the end of this
+file, which also deletes the guard this section is written around.
 
-### The index column does not always say what the index knows
+### The index column does not always say what the index knows — **closed, [#121](https://github.com/adamstallard/igor/issues/121)**
 
 The guard reads the index column, and `git add -N n.txt` followed by deleting the file prints:
 
@@ -297,7 +298,7 @@ on the item with no handoff note, so it is not free. Recorded as a known edge ra
 because guarding it means recording the sha when the tree is provisioned, and that is a change to
 the tree seam rather than to the publish.
 
-#### The unmerged branch of the read owes a removal it cannot check — **found here, not filed**
+#### The unmerged branch of the read owes a removal it cannot check — **closed here**
 
 The guard sits on the gone-check, and the gone-check is not the only place `changes()` emits a
 deletion. The `catch` around the content read emits one for **any** unmerged record whose file is
@@ -312,11 +313,12 @@ it and the record is still `DU`. `changes()` returns one `deleted` entry, `carri
 by the route the guard does not cover. `DD`, `AA` and `AU` are the other unmerged codes whose
 "ours" side is absent from HEAD.
 
-It is not this change's doing — the catch and the `UNMERGED` test both predate it — and closing it
-is not the same kind of edit as the guard above: the gone-check guard declines a removal nobody
-asked for, while here the worker did ask, and what to do instead is a question about the `DU`
-orientation that the requirement does not answer. It belongs in its own change, and the second
-requirement is unconditional, so **this one cannot archive with it open**.
+It is not this change's doing — the catch and the `UNMERGED` test both predate it. It read at first
+as a different kind of edit from the gone-check guard: there the worker asked for nothing, here it
+asked, and what to do instead looked like a question about the `DU` orientation the requirement does
+not answer. It is not. The worker asking changes who is owed an explanation, not what is true of
+`base_tree`, and a removal of a path `base_tree` does not hold is refused whoever asked for it.
+Closed below, by the same test that closes #121.
 
 #### `commitOnBranch` does not have this window
 
@@ -392,3 +394,143 @@ never match. Dead alternation in the one guard standing between a fold-free read
 publish is a trap for the next reader, who has to work out for themselves that the letters are
 unreachable. If the preference is to keep the wider pattern with a comment instead, it is a
 one-character change.
+
+## The proxies collapse into one test
+
+Three guards were written against *"no removal is published for a path the base does not hold"*,
+and each asked the requirement's question by a proxy:
+
+| guard | proxy | what it missed |
+| --- | --- | --- |
+| `INDEX_NEW` on the gone-check | an index column of `A` | ` D n` — an intent-to-add path deleted before commit, whose index column is a **space** ([#121](https://github.com/adamstallard/igor/issues/121)) |
+| the `UNMERGED` test before the gone-check | "unmerged means the file is still wanted" | nothing; it is the *catch* that emits the removal, and it asks nothing at all |
+| publishing against `head()` rather than the branch tip | the base cannot move under the publish | a path HEAD never held, which no amount of pinning the base fixes |
+
+The pattern is the same each time. A status flag describes *how the index got into this state*,
+and the tree API's question is *what is in this tree* — so every guard built on flags is an
+enumeration of the ways a path can come to be absent from HEAD, and an enumeration is only ever
+complete until the next shape turns up. Two turned up in one review.
+
+**The replacement asks the question itself.** Before the loop, every record matching `GONE` or
+`UNMERGED` — the superset of paths that could become a removal — goes into one
+`git ls-tree HEAD -z -r --name-only --full-tree -- :(literal)<path>…`, and both places a removal is
+emitted test the answer. Nothing infers; the tree is read.
+
+### Why this is cheap, against the assumption #121 was deferred under
+
+#121 was filed rather than closed on the belief that "a tree lookup per publish is a large cost".
+It is not, and the three things that make it small were each checked:
+
+- **Local, not network.** `ls-tree` reads the clone's own object store. The publish-time reads this
+  change removed were round-trips to GitHub; this one is not a read of that kind.
+- **Proportional to the removals in hand.** The pathspec limits it. A run with no removals makes no
+  call at all, which is most runs; a run removing one path lists one entry, not the repository.
+- **One process, not one per path**, batched at 100 kB of pathspec so a change larger than `ARG_MAX`
+  splits rather than failing with `E2BIG`. Measured: 600 removals with 200-byte names split 452 and
+  148.
+
+### Why HEAD is the right tree, verified rather than assumed
+
+Read out of `src/github.ts` rather than from the issue: `commitOnBranch` sends `base_tree: first`,
+where `first` is `parents[0]`; `createBranchWithFiles` sends `base_tree: baseSha`, where `baseSha`
+is `request.baseSha ?? branchSha(...)`. Tracing the two callers in `src/execute.ts`, `parents[0]`
+is `merge.head` and `request.baseSha` is `await tree.head?.()`. `merge()` takes `head` from
+`rev-parse HEAD` **before** merging, and `git merge --no-commit` leaves HEAD alone — measured again
+here on a conflicted merge, which writes `MERGE_HEAD` and moves nothing, and now pinned by
+`'publishes against the commit the tree was cut from, conflicted merge and all'`.
+
+So HEAD is `base_tree` on both paths, and the check is the same check the host will make.
+
+Two places it would not be, both already known and neither reachable:
+
+- **A worker that ran `git commit`** moves HEAD. Nothing grants that command, and such a run already
+  fails loudly on a `base_tree` the remote cannot resolve — see the `git commit` edge above.
+- **A tree with no commit at all** has no `HEAD` to list, so `ls-tree` fails and `changes()` throws
+  where it used to return. It is reached only by a removal candidate in a repository with no
+  commits, which is a clone of an empty repository — one with nothing to work on, and whose
+  `head()` already throws on the publishing side. Loud, and left loud.
+- **A tree that offers no `head()`** leaves `produce` falling back to `branchSha`. `ClonedTree` is
+  the only implementation and it has one; a provider that does not would want its own answer to
+  this, which is why the fallback stays optional on the same terms as `merge()`.
+
+### Every unmerged code, by the one test
+
+The test gets the whole family right without naming any of it, which is the point:
+
+| code | HEAD's side | removal |
+| --- | --- | --- |
+| `DU`, `DD` | deleted by us — absent | correctly dropped |
+| `AA`, `AU`, `UA` | added by one side — absent from HEAD | correctly dropped |
+| `UD`, `UU` | present in HEAD | correctly published |
+
+`UD` is the ordinary delete/modify the worker resolves by deleting the file, and the requirement it
+serves — the base's deletion must not come back — is unaffected. Its test is unchanged.
+
+### The pathspec is a channel, and a channel normalises
+
+Asking HEAD the question directly still has to *carry* the name to git, and the carrier is not
+byte-exact. Two ways it is not, one measured only after the mechanism was written:
+
+- **darwin precomposes `argv`.** `git clone` and `git init` set `core.precomposeunicode=true`
+  there, and git then precomposes command-line arguments before parsing them. A name HEAD holds in
+  decomposed form is matched by **no pathspec at all** — `:(literal)cafe<U+0301>.md` arrives as
+  `café.md` and misses, so the check says HEAD lacks a path it has and the removal is dropped in
+  silence. On a `UD` path that restores what the base deleted the moment the artifact merges,
+  which is the failure the *first* requirement exists against, reintroduced by the fix for the
+  second. Measured on git 2.54.0: `git status -z` reports the decomposed bytes, `ls-tree` with the
+  literal pathspec returns nothing, and `-c core.precomposeunicode=false` on the same command
+  returns the entry. That flag is the fix, and it is on the `ls-tree` call alone — the status read
+  must keep the platform's own normalisation, because what is compared is status's bytes against
+  HEAD's.
+- **Node writes `argv` as UTF-8.** Bytes that do not decode cannot make the trip at all, whatever
+  git does with them. That one is not fixable through this channel, and is handled below.
+
+**Rejected: `git cat-file --batch-check -Z` over stdin.** It is the byte-exact channel — stdin is
+not precomposed and carries any byte — and it would close both hazards, drop the batching and the
+`rawName` exemption, and use one process however many paths there are. Verified working here: a
+decomposed name and a name containing `0xe9` both resolve, and an absent path answers `missing`.
+Rejected anyway, because `-Z` needs git 2.42 and a `TreeError` from `runBytes` escapes `execute` as
+a throw with no handoff note — so an older git would fail every run that removes anything, totally
+and with no record on the item, in exchange for **no behavioural difference**: a name that is not
+text already fails the run at `unnameable` before a tree is built. A deployment cliff bought with
+tidiness. **Where that stops applying:** if a second normalisation of `argv` is ever found, or if
+something downstream learns to publish a name that is not text, the channel is the thing to change
+and this is the change to make.
+
+### A name that is not text is kept, unchecked
+
+`spawn` takes arguments as strings and writes `argv` as UTF-8, so a name carrying bytes that do not
+decode cannot be put in a pathspec: it arrives as U+FFFD, matches nothing, and the removal would be
+dropped. Measured in Node rather than assumed — `Buffer.from('\xe9', 'latin1')` reaches the child as
+`c3 a9`. **APFS will not hold such a name, so no test on this machine can catch it**, which is why
+it is decided here rather than left to the suite.
+
+Such entries skip the check and keep their removal. Nothing is lost by it: `changes()` already
+promises that nothing is dropped at this layer, and `src/execute.ts` stops the run on any `rawName`
+before it builds a tree, naming the file by its bytes. Dropping the removal instead would convert a
+refusal that names the file into a silent omission — the exact failure this whole change exists
+against.
+
+The set of paths HEAD holds is keyed `latin1` for the same reason the deleted `indexOnly` set was:
+two names differing only in bytes that do not decode share one string, so a set keyed on the
+decoded name answers for one of them with the other's entry.
+
+**One behaviour changes direction here, and it is the better failure.** `INDEX_NEW` skipped an `AD`
+record silently, whatever its name; the exemption pushes that record's removal instead, so
+`unnameable` fires and the whole run refuses with the file named in bytes. Reachable on Linux — a
+worker that creates such a file, stages it and deletes it — and not on APFS, which will not hold
+the name. A silent skip became a loud refusal, which is this design's stated preference, but it is
+a change rather than a tidy-up and is written down as one.
+
+### `INDEX_NEW` is deleted
+
+It was the proxy, and the HEAD check subsumes it. Confirmed by mutation rather than by reading:
+with the HEAD check removed, the three tests `INDEX_NEW` existed for — the chain rename, the rename
+source only the index ever had, and the file staged and then moved — go red alongside the two new
+ones, and nothing else in the suite does. `grep` finds no other caller.
+
+### What the suite said
+
+37 files, 1180 tests before; 37 files, 1185 after, with **no existing test changed**. That is the
+evidence that no legitimate removal is dropped: every removal the suite asserts on is a removal of a
+path HEAD holds, and they all still arrive.

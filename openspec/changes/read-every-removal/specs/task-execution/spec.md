@@ -74,9 +74,16 @@ removal of a path that tree no longer holds. Publishing over an older base is wh
 catch-up merge exists for; publishing over a base nobody read the work against is not.
 
 Where reading the working tree offers a removal of a path the base does not hold, execution SHALL
-NOT publish it. Such a path is not a change the worker made: the run's own index brought it into
-being — as the destination of a rename that was then moved again, or as a staged addition the
-worker then deleted — and no tree the artifact is published against ever had it.
+NOT publish it. **Whether the worker asked for the removal makes no difference.** Sometimes it did
+not — the run's own index brought the path into being, as the destination of a rename that was then
+moved again, or as a staged addition the worker then deleted. Sometimes it did: a merge can leave a
+path in the tree that the artifact's own side had deleted, and removing it is the resolution the
+worker is invited to make. Either way no tree the artifact is published against ever held the path,
+and the host refuses the removal the same.
+
+**So the obligation is a question about the tree, not about the status of the path.** A mechanism
+that decides from how the path came to be in its current state is enumerating the ways a path can be
+absent from the base, and is complete only until the next one is found.
 
 **This is the opposite half of the requirement above it.** That one says the read may not lose a
 removal; this one says it may not invent one. A mechanism satisfying either by breaking the other
@@ -105,6 +112,14 @@ obligation is stated rather than left to whichever mechanism reads the tree.
 - **AND** the artifact carries the final path
 - **AND** no removal is published for the intermediate name
 - **AND** the artifact is published, rather than the whole tree request being refused
+
+#### Scenario: A removal the worker did ask for is not published where the base lacks the path
+
+- **WHEN** a conflicted merge leaves in the tree a path the artifact's own side had deleted and the
+  base had modified, and the worker deletes it to accept the artifact's deletion
+- **THEN** no removal of it is published
+- **AND** the artifact is published, rather than the whole tree request being refused
+- **AND** the rest of what the worker changed is in it
 
 #### Scenario: A publish is not lost to a removal nobody asked for
 

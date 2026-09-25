@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process'
+import { execFile, execFileSync } from 'node:child_process'
 import { mkdirSync, renameSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
@@ -626,5 +626,131 @@ describe('a fold cannot lose a removal', () => {
       content: '',
       kind: 'deleted',
     })
+  })
+})
+
+describe('every removal is checked against the tree it is laid over', () => {
+  /**
+   * The mirror of `deleteModify`: the **artifact** branch drops the file and the base edits it,
+   * so the merge leaves `DU` and the copy on disk is the base's. HEAD — the artifact branch —
+   * does not hold the path at all.
+   */
+  async function artifactDeletedBaseModified(): Promise<string> {
+    const origin = tempDir('igor-tree-du-')
+    const git = (...args: string[]): Promise<unknown> => run('git', ['-C', origin, ...args])
+    await git('init', '-q', '-b', 'main', '.')
+    await git('config', 'user.email', 't@example.invalid')
+    await git('config', 'user.name', 'test')
+    writeFileSync(join(origin, 'X.ts'), 'alpha\n')
+    writeFileSync(join(origin, 'kept.ts'), 'stays\n')
+    await git('add', '-A')
+    await git('commit', '-qm', 'base')
+    await git('checkout', '-qb', 'artifact')
+    await git('rm', '-q', 'X.ts')
+    await git('commit', '-qm', 'the artifact drops it')
+    await git('checkout', '-q', 'main')
+    writeFileSync(join(origin, 'X.ts'), 'alpha, edited by the base\n')
+    await git('commit', '-qam', 'the base edits it')
+
+    const clone = tempDir('igor-tree-duc-')
+    await run('git', ['clone', '-q', '--depth', '1', '--branch', 'artifact', `file://${origin}`, clone])
+    return clone
+  }
+
+  it('owes no removal for a path the artifact branch had already deleted', async () => {
+    // `DU` — deleted by us, modified by them. `conflictPrompt` tells the worker to "delete it to
+    // accept the base's removal", and deleting the base's copy here is the same gesture, so a
+    // worker following the instruction reaches this. The unmerged branch of the content read's
+    // catch reported it as a deletion without asking about HEAD, and HEAD is what `base_tree`
+    // is: the tree API refuses a removal of a path it does not hold with `422
+    // GitRPC::BadObjectState`, refusing the whole request, so `kept.ts` would not publish either.
+    const clone = await artifactDeletedBaseModified()
+    const tree = new ClonedTree(clone, 'o/r')
+    const merge = await tree.merge('main')
+    expect(merge.conflicts).toEqual(['X.ts'])
+
+    rmSync(join(clone, 'X.ts'))
+    writeFileSync(join(clone, 'kept.ts'), 'the worker also did some work\n')
+    const changed = await tree.changes()
+
+    expect(changed.filter((c) => c.kind === 'deleted')).toEqual([])
+    expect(carried(changed).removed).toEqual([])
+    expect(changed.find((c) => c.path === 'kept.ts')?.content).toBe('the worker also did some work\n')
+  })
+
+  it('owes no removal for an intent-to-add path deleted before it was committed', async () => {
+    // `git add -N n.ts` then deleting the file prints ` D n.ts` — an index column of *space*,
+    // byte for byte the shape a tracked file's unstaged deletion has, for a path HEAD has never
+    // held. No flag distinguishes the two, and `--porcelain=v2` does not either: it reports
+    // `100644` and the empty blob's sha for the intent-to-add path rather than zeros.
+    const dir = await repo()
+    writeFileSync(join(dir, 'n.ts'), 'never committed\n')
+    await run('git', ['-C', dir, 'add', '-N', 'n.ts'])
+    unlinkSync(join(dir, 'n.ts'))
+
+    const changed = await new ClonedTree(dir, 'o/r').changes()
+    expect(changed).toEqual([])
+  })
+
+  it('checks more removals than one command line can carry', async () => {
+    // The check is one process per `PATHSPEC_BUDGET` of names rather than one per run, so a
+    // change big enough to overflow `ARG_MAX` has to split rather than fail with `E2BIG` — and
+    // every batch's answers have to reach the same set, or the removals in the later ones are
+    // dropped as paths HEAD does not hold.
+    const dir = await repo()
+    const many = Array.from({ length: 600 }, (_, n) => `d/${String(n).padStart(4, '0')}-${'x'.repeat(200)}.md`)
+    mkdirSync(join(dir, 'd'))
+    for (const name of many) writeFileSync(join(dir, name), 'body\n')
+    await run('git', ['-C', dir, 'add', '-A'])
+    await run('git', ['-C', dir, 'commit', '-qm', 'many'])
+    for (const name of many) unlinkSync(join(dir, name))
+
+    const changed = await new ClonedTree(dir, 'o/r').changes()
+    expect(changed.filter((c) => c.kind === 'deleted').map((c) => c.path).sort()).toEqual([...many].sort())
+  })
+
+  /**
+   * Puts `name` into HEAD with those exact bytes. `update-index` is fed from **stdin** because
+   * argv is not a byte-exact channel on darwin — git precomposes it, so a decomposed name passed
+   * as an argument would land in the tree composed and the fixture would test nothing.
+   */
+  function commitUnder(dir: string, name: Buffer): void {
+    writeFileSync(join(dir, 'blob-source'), 'body\n')
+    const blob = execFileSync('git', ['-C', dir, 'hash-object', '-w', 'blob-source']).toString().trim()
+    unlinkSync(join(dir, 'blob-source'))
+    execFileSync('git', ['-C', dir, 'update-index', '-z', '--index-info'], {
+      input: Buffer.concat([Buffer.from(`100644 ${blob}\t`), name, Buffer.from([0])]),
+    })
+    execFileSync('git', ['-C', dir, 'commit', '-qm', 'under that name'])
+  }
+
+  it('checks a decomposed name against the bytes HEAD holds, not the ones git would compose', async () => {
+    // **The pathspec is a channel, and darwin normalises it.** `core.precomposeunicode` is on by
+    // default there, and git precomposes `argv` before parsing it — so `:(literal)` over a name
+    // HEAD holds in decomposed form matches nothing, the check says HEAD lacks a path it has, and
+    // a legitimate removal is dropped in silence. On a `UD` path that restores what the base
+    // deleted the moment the artifact merges, which is what the first requirement exists against.
+    //
+    // git honours the setting only on darwin builds, so this is a real red there and green
+    // everywhere else; it is set explicitly so the fixture does not depend on the default.
+    const dir = await repo()
+    await run('git', ['-C', dir, 'config', 'core.precomposeunicode', 'true'])
+    const decomposed = Buffer.from('cafe\u0301.md', 'utf8')
+    commitUnder(dir, decomposed)
+
+    const changed = await new ClonedTree(dir, 'o/r').changes()
+    expect(changed).toEqual([{ path: decomposed.toString('utf8'), content: '', kind: 'deleted' }])
+  })
+
+  it('publishes against the commit the tree was cut from, conflicted merge and all', async () => {
+    // The check is only the right one while HEAD is what both publishing paths lay their tree
+    // over: `commitOnBranch` over `parents[0]`, which is `MergeState.head`, and `produce` over
+    // `WorkingTree.head()`. `merge --no-commit` is what keeps the two the same, and a conflict
+    // does not move HEAD either — git writes `MERGE_HEAD` and leaves HEAD alone.
+    const clone = await artifactDeletedBaseModified()
+    const tree = new ClonedTree(clone, 'o/r')
+    const merge = await tree.merge('main')
+
+    expect(await tree.head()).toBe(merge.head)
   })
 })

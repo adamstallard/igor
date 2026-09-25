@@ -1467,7 +1467,7 @@ execution obtains a disposable working tree through one provisioning function an
 nothing about its shape — not a clone, not a worktree. The shared object store above is then a
 swap behind that function rather than a change to how execution is written.
 
-### 6.7.2a The tree is read with rename detection off
+### 6.7.2a The tree is read with rename detection off, and every removal is checked against HEAD
 
 `changes()` reads `git status --porcelain -z -uall --no-renames`. Detection folds two changed
 paths into one record, and a fold **loses a path from the input** rather than misreading one that
@@ -1480,12 +1480,24 @@ what was never read, so no cross-check placed after the read can fix it.
 Off, the same two paths arrive as a removal and an addition, which is the shape the artifact wants
 anyway: the tree API removes a path or adds one and has no notion of a move.
 
-The read also **owes no removal for a path the run's own index invented**. An index column saying
-the index holds a path and HEAD does not means no tree the artifact is published against ever held
-it — a rename destination since moved again, or a staged addition the worker then deleted. The tree
-API refuses a removal of a path `base_tree` does not hold with `422 GitRPC::BadObjectState`, and
-refuses the whole tree request, so one invented entry costs the run everything the worker produced.
-Under `--no-renames` the only status shape that reaches the guard is `AD`.
+**Every removal is checked against HEAD before it enters the change list.** The tree API refuses a
+removal of a path `base_tree` does not hold with `422 GitRPC::BadObjectState`, and refuses the whole
+tree request, so one such entry costs the run everything the worker produced. One batched,
+pathspec-limited `git ls-tree HEAD` answers for all of them, run only where there is a removal to
+check: the cost is local and proportional to the removals in hand, not to the size of the repository.
+It runs with `core.precomposeunicode=false`, because darwin otherwise precomposes the pathspec and a
+name HEAD holds in decomposed form is matched by nothing.
+
+The check is on HEAD rather than on the status flags because no flag answers the question. An index
+column of `A` says the path is the run's own invention, but an intent-to-add path deleted before it
+was committed prints a column of *space*, indistinguishable from a tracked file's unstaged deletion;
+and the unmerged codes whose "ours" side HEAD never held — `DD`, `DU`, `AA`, `AU`, `UA` — are told
+apart from `UD` and `UU`, which it did, only by the tree. Both places a removal is emitted are
+covered: the gone-check and the unmerged branch of the content read's catch.
+
+A name that is not text is kept unchecked, because `spawn` writes `argv` as UTF-8 and those bytes
+cannot make the trip. Nothing is lost by it: execution stops on any such name before it builds a
+tree, and the handoff names the file by its bytes.
 
 **The base is the commit the tree was cut from**, not the branch head at publish time. A tree
 offers it through `WorkingTree.head()`, and execution passes it to the host as
@@ -1496,12 +1508,13 @@ deleted too, was published as a removal of a path the base tree no longer held �
 cost a round-trip to buy that window. The artifact is laid over a base that may since have moved,
 which is an ordinary pull request branch and what the catch-up merge is for.
 
-Two paths to the same 422 remain open and are recorded rather than assumed:
-[#121](https://github.com/adamstallard/igor/issues/121), where an intent-to-add path deleted before
-commit reports an index column of space and so is invisible to the guard; and the unmerged branch
-of the same read, which emits a deletion for any unmerged path the worker removed and asks nothing
-about HEAD — so a `DU` path, one the artifact branch itself deleted and the base modified, is
-published as a removal of a path `parents[0]` never held.
+Asking HEAD directly is what closed the last two routes to that 422, both of which had survived
+guards written against the status flags:
+[#121](https://github.com/adamstallard/igor/issues/121), the intent-to-add path deleted before
+commit, and the `DU` path the artifact branch itself deleted and the base modified — which a worker
+reaches by following the conflict prompt's own instruction to delete the file to accept the base's
+removal. **The one case where HEAD is not the base** is a worker that ran `git commit`: nothing
+grants that command, and such a run already fails loudly on a `base_tree` the host cannot resolve.
 
 ### 6.7.3 A binary in an artifact is corrupted, not dropped — **known, and deliberately unguarded**
 
