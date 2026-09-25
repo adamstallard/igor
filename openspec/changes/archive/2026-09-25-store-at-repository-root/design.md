@@ -175,7 +175,9 @@ submodule has its own remote and its own permissions. Recorded rather than silen
 
 **`resolveConfig` is not covered.** Stated above, repeated here because it is the other thing a
 reader will want to find in one place: the refusal is in `loadConfig`, so the exported
-`resolveConfig` does not make it.
+`resolveConfig` does not make it. Unreachable while Igor is unpublished and filed as
+[#119](https://github.com/adamstallard/igor/issues/119), because publishing is what makes a
+library caller possible and an archived design note is not something anything surfaces.
 
 ## What the bug hunt changed, and what it left
 
