@@ -10,12 +10,13 @@ import type {
   CatchUpRequest,
   ClaimVerdict,
   CodeHost,
+  InFlight,
   ResolutionRequest,
   Tracker,
 } from '../src/adapter.js'
 import type { Role } from '../src/role.js'
 import {
-  ABSOLUTE_CEILING_MS, branchFor, claudeWorker, complete, DENIED_COMMAND_LIMIT, denialsFrom, describeTool, execute,
+  ABSOLUTE_CEILING_MS, branchFor, claudeWorker, complete, conflictPrompt, DENIED_COMMAND_LIMIT, denialsFrom, describeTool, execute,
   ExecutionError, limitWindow, MODEL_SILENCE_MS, permits, prBody, PR_BODY_LIMIT, recordExecution, renderProgress, spendByModel, stripLinkage,
   TOOL_SILENCE_MS, usageLimit, watchWorker, workerEnv, workerPrompt, workerSystemPrompt,
   describeCommand, refusalPath,
@@ -332,6 +333,51 @@ describe('the trusted channel', () => {
 
   it('truncates a very long body rather than paying for all of it', () => {
     expect(workerPrompt(candidate({ body: 'x'.repeat(20000) }), 'Closes #7')).toContain('[truncated]')
+  })
+})
+
+describe('the conflict a worker is handed when one side deleted the file', () => {
+  const artifact = (): InFlight => ({
+    kind: 'pull-request',
+    ref: '#42',
+    url: 'https://example.test/42',
+    draft: false,
+    author: 'igor-bot',
+    mergeable: 'conflicting',
+    branch: 'igor/triage/7-timestamps',
+    base: 'main',
+  })
+
+  /** The marker-free paragraph alone, unwrapped, so an assertion reads the prose not the layout. */
+  const markerFree = (): string =>
+    (conflictPrompt(candidate(), artifact(), ['doomed.ts']).split('\n\n').at(-1) ?? '').replace(/\s+/g, ' ')
+
+  it('points at the copy left on disk rather than assuming the artifact is the side that survived', () => {
+    // Git leaves the surviving side in the tree whichever side deleted, so on `DU` — the
+    // artifact deleted, the base edited — the copy sitting there is the *base's*. A sentence
+    // that names the artifact as the side on disk is backwards in both directions there:
+    // keeping the file keeps the base's copy, and the base removed nothing to accept.
+    const p = markerFree()
+    expect(p).toMatch(/copy left on disk is the side that survived/i)
+    // Conditional, not a claim about every marker-free conflict. A binary, a path with `-merge`
+    // set, and a submodule's gitlink all conflict without markers and none of them is one side
+    // deleting what the other edited — asserted as a fact, the sentence lies to the worker in
+    // each, and the advice under it describes a choice that is not on offer.
+    expect(p).toMatch(/^Where a conflicted file has no markers because one side deleted/)
+    expect(p).not.toMatch(/keep the artifact's version/i)
+    expect(p).not.toMatch(/accept main's removal/i)
+  })
+
+  it('says it in terms that hold whichever side deleted, naming neither the artifact nor the base', () => {
+    // One sentence covering two orientations works only while it names no side: name one
+    // and it is written for that orientation and wrong for the other.
+    const p = markerFree()
+    expect(p).not.toMatch(/artifact/i)
+    expect(p).not.toMatch(/\bmain\b/)
+  })
+
+  it('offers both moves, so the worker can take the deletion as well as the surviving copy', () => {
+    expect(markerFree()).toMatch(/delete it to take the deletion/i)
   })
 })
 
