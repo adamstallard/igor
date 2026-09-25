@@ -348,6 +348,26 @@ describe('bringing a base into an artifact tree', () => {
     expect(merge.baseChanges.find((c) => c.path === 'moved.txt')?.before).toBeUndefined()
   })
 
+  it('says what the repository itself keeps at a path, on both sides of a merge', async () => {
+    // The question a file the loop reads out of the tree has to answer: a committed copy is on
+    // disk in every fresh clone, and read as the worker's it speaks for every run.
+    const { clone, origin } = await conflicting()
+    const git = (...args: string[]) => run('git', ['-C', origin, ...args])
+    writeFileSync(join(origin, 'kept.json'), 'the base keeps this\n')
+    await git('add', '-A')
+    await git('commit', '-qm', 'the base keeps a file there')
+
+    const tree = new ClonedTree(clone, 'o/r')
+    expect(await tree.committed('untouched.txt')).toEqual([blobSha('quiet\n')])
+    // Nothing yet from the side being brought in: the merge has not run.
+    expect(await tree.committed('kept.json')).toEqual([])
+    await tree.merge('main')
+    expect(await tree.committed('kept.json')).toEqual([blobSha('the base keeps this\n')])
+
+    // A path neither side holds — the ordinary case, where the worker's file is its own word.
+    expect(await tree.committed('.igor/reverts.json')).toEqual([])
+  })
+
   it("reports a merge git refused to attempt in git's own words", async () => {
     // Anything read off the two commits has to come after the merge: `merge-base` on unrelated
     // histories exits non-zero with an empty stderr, so asking it first replaces the sentence

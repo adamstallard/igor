@@ -1281,6 +1281,11 @@ export function undone(
   const removed = new Set(deletions)
   const out: Undone[] = []
   for (const change of baseChanges) {
+    // The declaration is read out of the tree and never published, so the base's own change to
+    // that path is dropped from every resolution by construction. Read as a revert it refuses
+    // every catch-up on a repository that keeps a file there, and a worker cannot declare a
+    // path the merge did not conflict on.
+    if (change.path === DECLARATION_PATH && change.rawName === undefined) continue
     // Declarations name a path as a string, and so do the published files: a name that is not
     // text can be neither. Such a path is compared on what head holds against what the base
     // does, which needs no name at all — and a resolution that touched one stops before here.
@@ -1607,9 +1612,17 @@ export async function execute(
     // Off the disk rather than out of the change list, because a repository that ignores the
     // directory — this one does — reports the file in no status, and the channel would be dead
     // exactly where Igor works on itself. Every way of not being there reads as no declaration.
-    const declared = declarations(
-      await readFile(join(tree.path, DECLARATION_PATH), 'utf8').catch(() => ''),
-    )
+    //
+    // **And only where the repository keeps no copy of its own there.** A committed declaration
+    // is on disk in every fresh clone, so taken as the worker's it speaks for every run that
+    // ever reads it — and the run then reports, on the item and in its record, a declaration
+    // nobody made. A tree that cannot answer which it is cannot tell them apart either.
+    const wrote = await readFile(join(tree.path, DECLARATION_PATH), 'utf8').catch(() => '')
+    const keeps = tree.committed === undefined ? undefined : await tree.committed(DECLARATION_PATH)
+    const declared =
+      wrote === '' || keeps === undefined || keeps.some((sha) => sameBlob(wrote, sha))
+        ? []
+        : declarations(wrote)
 
     // Read before anything is decided, not merely before publishing: a stop during a run that
     // changed nothing is still a stop, and owes a receipt rather than a handoff.

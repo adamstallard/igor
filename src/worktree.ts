@@ -147,6 +147,18 @@ export interface WorkingTree {
    * off rather than guessing at a resolution it has no way to compute.
    */
   merge?(ref: string): Promise<MergeState>
+  /**
+   * The blobs the commits this tree sits on hold at `path` — its own head, and the commit a
+   * merge brought in where one is in progress.
+   *
+   * Asked about a file the loop reads out of the tree and never publishes. Such a file is the
+   * worker's word only where the repository does not keep one at that path: a committed copy is
+   * on disk in every fresh clone, and read as this run's it speaks for every run forever.
+   *
+   * Optional on the same terms as `merge`. A caller that cannot get an answer has no way to
+   * tell the two apart and must not take the file as the worker's.
+   */
+  committed?(path: string): Promise<string[]>
   release(): Promise<void>
 }
 
@@ -567,6 +579,17 @@ export class ClonedTree implements WorkingTree {
         ...(ourSide === undefined ? {} : { head: ourSide }),
       }
     })
+  }
+
+  async committed(path: string): Promise<string[]> {
+    const shas: string[] = []
+    for (const commit of ['HEAD', 'MERGE_HEAD']) {
+      // `rev-parse <commit>:<path>` names the blob or exits non-zero, which is the whole
+      // question. `MERGE_HEAD` is absent outside a merge, and that is one of the ways.
+      const sha = await run('git', ['-C', this.path, 'rev-parse', `${commit}:${path}`]).catch(() => '')
+      if (sha.trim() !== '') shas.push(sha.trim())
+    }
+    return shas
   }
 
   /** Idempotent, because release runs from a finally that may also run on an already-failed path. */

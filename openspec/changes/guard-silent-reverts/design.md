@@ -210,6 +210,18 @@ worker resolves by keeping the file, which `conflictPrompt` explicitly invites, 
 unremarked. A deletion has no content to combine with, so the erosion this design declines to
 catch has no instance here: present or absent, and present is the revert.
 
+**A declaration is the worker's word only where the repository keeps none.** Reading the file
+off disk answers the ignored case and opens another: a `.igor/reverts.json` the repository
+*tracks* is on disk in every fresh clone, so read as this run's it authorizes the same revert on
+every run that ever sees it — and the run then states, on the item and in its record, a
+declaration nobody made. That is the audit trail this change exists to produce saying the
+opposite of what happened, and it needs no attacker. The tree is asked what its two commits hold
+at that path, and a file matching either is the repository's rather than the worker's; a tree
+that cannot answer cannot tell them apart, so it yields no declaration. The same reserved path is
+skipped in the comparison, because it is taken out of the changes and so dropped from every
+resolution by construction — flagged as a revert it would refuse every catch-up on a repository
+that keeps a file there, undeclarably.
+
 **The guard is bounded by what a published tree can carry, and says so loudly.** `git diff --raw`
 sees every path git tracks; `changes()` reads regular UTF-8 files and `resolve` sends `100644`
 blobs. A symlink to a directory, a dangling symlink and a submodule the base bumped are therefore
@@ -218,3 +230,20 @@ catch-up there is no worker to declare them. Those resolutions refuse rather tha
 silent revert, which is the requirement holding; that they cannot be published at all is
 [#134](https://github.com/adamstallard/igor/issues/134), and it needs the other half of the
 problem — a tree read and a publish that carry non-blob paths.
+
+## What the comparison was measured against
+
+`undone()` was checked against an independently computed oracle over 120 randomized scenarios:
+six paths, each with its own base action and branch action drawn from {none, edit, edit
+elsewhere, delete, add}, driven through a real merge and a simulated worker that then touched
+every path — deleting, resolving, restoring the merge-base text, keeping either side, or leaving
+it alone — with the whole `changes()` → reserved-path filter → `carried()` → `undone()` pipeline
+in between. The oracle read `git ls-tree -r` of the merge base, the base and head, built the tree
+`resolve` would publish, and stated the three clauses separately. **Zero disagreements.** An
+earlier run of the same harness reported five, all of them the oracle still encoding the single
+content comparison this design replaced.
+
+**The mode-only skip is load-bearing rather than tidy.** A chmod on the base gives
+`before === after === head`, so without it the rewrite clause compares head's blob to the merge
+base's, finds them equal, and refuses every resolution that so much as leaves the file alone. A
+chmod *with* a content change has different blobs and is not swallowed by it.

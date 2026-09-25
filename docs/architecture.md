@@ -1548,6 +1548,14 @@ entry per path, naming the blob the base holds or `deleted` where it deleted the
 loop reads it out of the change list and never publishes it. A declaration committed onto the
 artifact would be a standing permission outliving the run that made it.
 
+It is the worker's word only where the repository keeps no file there: a committed
+`.igor/reverts.json` is on disk in every fresh clone, and read as this run's it would authorize
+the same revert on every run and have each one report a declaration nobody made. The tree is
+asked what its two commits hold at the path, and one that cannot answer yields no declaration.
+For the same reason the path is skipped in the comparison — taken out of the changes, it is
+dropped from every resolution by construction, and flagged as a revert it would refuse every
+catch-up on a repository that keeps a file there.
+
 Three properties keep it from becoming the field that gets defaulted on. **It can never be
 blanket**: no wildcard, no per-resolution flag, nothing a role or an org config can set, so the
 permission is retaken for each resolution. **It names what it overrides**, so a declaration whose

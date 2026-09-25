@@ -38,6 +38,10 @@ function deps(opts: {
   changes?: ChangedFile[]
   /** What the worker left at `DECLARATION_PATH` in the tree, which is read off disk. */
   declaration?: string
+  /** What the repository itself keeps at that path, which is on disk in every fresh clone. */
+  tracked?: string
+  /** A tree that cannot say what the repository keeps, as a provider without git could not. */
+  cannotTell?: boolean
 } = {}) {
   const posts: string[] = []
   const released: string[] = []
@@ -92,6 +96,12 @@ function deps(opts: {
         path,
         repo: 'o/r',
         changes: async () => opts.changes ?? [],
+        ...(opts.cannotTell === true
+          ? {}
+          : {
+              committed: async (at: string) =>
+                opts.tracked !== undefined && at === DECLARATION_PATH ? [blobSha(opts.tracked)] : [],
+            }),
         ...(opts.merge === undefined
           ? {}
           : {
@@ -1260,6 +1270,77 @@ describe('a base change is undone only where the resolution says so', () => {
     expect(run.outcome).toBe('produced')
     expect(resolved).toHaveLength(1)
     expect(run.execution?.changed.map((c) => c.path)).not.toContain(DECLARATION_PATH)
+  })
+
+  it('does not take a declaration the repository keeps as something this run said', async () => {
+    // A committed declaration is on disk in every fresh clone, so read as the worker's it
+    // authorizes the same revert on every run that ever reads it — and the run then reports a
+    // declaration nobody made, which is the audit trail the guard exists to produce saying the
+    // opposite of what happened.
+    const committed = declares({ path: 'src/gone.ts', discards: 'deleted' })
+    const { d, resolved, posts } = deps({
+      caughtUp: [{ outcome: 'conflict' }],
+      merge: merging(rewritten('src/a.ts'), removed('src/gone.ts')),
+      changes: [resolvedConflict],
+      declaration: committed,
+      tracked: committed,
+    })
+    const run = await catchUpItem(d, stale(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+
+    expect(resolved).toEqual([])
+    expect(run.reason).toContain('src/gone.ts')
+    expect(posts.join(' ')).not.toContain('as declared')
+  })
+
+  it('takes a declaration the worker wrote over one the repository keeps at the same path', async () => {
+    const { d, resolved } = deps({
+      caughtUp: [{ outcome: 'conflict' }, { outcome: 'already-current' }],
+      merge: merging(rewritten('src/a.ts'), removed('src/gone.ts')),
+      changes: [resolvedConflict],
+      declaration: declares({ path: 'src/gone.ts', discards: 'deleted' }),
+      tracked: declares({ path: 'src/elsewhere.ts', discards: 'deleted' }),
+    })
+    const run = await catchUpItem(d, stale(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+
+    expect(run.outcome).toBe('produced')
+    expect(run.execution?.reverts).toEqual(['src/gone.ts, which the base deleted'])
+  })
+
+  it('takes no declaration from a tree that cannot say what the repository keeps', async () => {
+    // The two files are the same bytes in the same place; only the tree can say which is which.
+    // Unanswered, the file is not the worker's word, because the other reading authorizes a
+    // revert on every run and says a person meant it.
+    const { d, resolved } = deps({
+      caughtUp: [{ outcome: 'conflict' }],
+      merge: merging(rewritten('src/a.ts'), removed('src/gone.ts')),
+      changes: [resolvedConflict],
+      declaration: declares({ path: 'src/gone.ts', discards: 'deleted' }),
+      cannotTell: true,
+    })
+    const run = await catchUpItem(d, stale(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+
+    expect(resolved).toEqual([])
+    expect(run.reason).toContain('src/gone.ts')
+  })
+
+  it('publishes where the base itself changed the declaration file', async () => {
+    // The path is taken out of the changes and never published, so the base's own change to it
+    // is dropped from the resolution by construction. Flagged as a revert it would refuse every
+    // catch-up on that repository, and no worker could declare a path it is not conflicted on.
+    const { d, resolved } = deps({
+      caughtUp: [{ outcome: 'conflict' }, { outcome: 'already-current' }],
+      merge: merging(rewritten('src/a.ts'), {
+        path: DECLARATION_PATH,
+        before: blobSha('{"reverts":[]}\n'),
+        after: blobSha('{"reverts":[{"path":"x","discards":"deleted"}]}\n'),
+        head: blobSha('{"reverts":[]}\n'),
+      }),
+      changes: [resolvedConflict],
+    })
+    const run = await catchUpItem(d, stale(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+
+    expect(run.outcome).toBe('produced')
+    expect(resolved).toHaveLength(1)
   })
 
   it('refuses a file kept against a deletion the base made, whatever it now holds', async () => {
