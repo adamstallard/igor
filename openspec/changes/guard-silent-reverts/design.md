@@ -150,6 +150,40 @@ is not the post-publish re-ask in another guise: that asks the host whether the 
 and a revert merges perfectly cleanly. It also runs where the re-ask does not — a claim lost
 mid-execution publishes the resolution and returns before asking anything.
 
+### `<base-versions>` stays bounded to the conflicted paths
+
+A declaration names a path **and the base state it discards**, and the state is the half a worker
+cannot read: it is handed files, not git, and told to run none. So the prompt supplies it, for the
+conflicted paths only. The bound is a prompt-size decision — the base's diff since the merge base
+is unbounded, and a stale branch would put thousands of lines in front of a worker told not to
+touch files the merge did not conflict on.
+
+The consequence is that a revert of an **unconflicted** base change can only ever be refused: the
+worker has no token to quote, and a declaration whose named state is not what the base holds
+authorises nothing. That consequence is now chosen rather than inherited, and it stands.
+
+**What reaches it, because two readings of this are wrong and both are tempting.** An unconflicted
+base change does **not** normally arrive here. `merge --no-commit` stages what it brought in
+cleanly, so `changes()` reports those paths with the base's content and `undone()` finds them in
+`written` — the `change.head` fallback is never taken and nothing is flagged. `test/worktree.test.ts`
+pins exactly this: *"the merge stages what it brought in cleanly too, and the resolution has to
+carry it: publishing only the conflicted file would drop the rest of the base's commit."*
+
+So the fallback is reached only where the resolution publishes something **other** than the merge
+result for that path — the worker edited it, or removed it. Which means touching a file the merge
+did not conflict on, against its instructions. Refusing there is the guard working, not a gap in
+it.
+
+**What would reverse this.** *"Do not touch files the merge did not conflict on"* is a heuristic,
+not a law: resolving a conflict in one file can legitimately require an edit in another. Where that
+is correct the worker is refused with no way to declare it. If refusals naming an unconflicted path
+turn out to be real rather than theoretical — and the refusal already records the path, so the
+evidence collects itself — the listing should widen under a bound rather than stay closed.
+
+Recorded here rather than left open as [#131](https://github.com/adamstallard/igor/issues/131),
+because the answer is *leave it as it is*, and an issue whose answer is that becomes work that
+looks outstanding.
+
 ## Roads not taken
 
 **No escape at all.** Every revert hands off; a person decides. Its case, intact: the injection
