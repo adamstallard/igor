@@ -42,9 +42,12 @@
 
 - [x] 4.1 Land after [#114](https://github.com/adamstallard/igor/pull/114), which touches the same
       function — merged as `49e0866`
-- [ ] 4.2 Land after [#118](https://github.com/adamstallard/igor/pull/118), whose implementation
-      deletes the pairing this function currently has. Implementing before it means writing against
-      a shape that is about to go
+- [x] 4.2 Land after [#118](https://github.com/adamstallard/igor/pull/118) — merged as `50e9d9c`
+      and archived. The pairing is gone, so this can be written against the shape that is there.
+      Note what #118 left in the same loop: every candidate removal is now checked against HEAD
+      before it enters the change list, at both emit sites. That guard and this one are adjacent
+      and answer different questions — it asks whether the base tree holds the path, this asks
+      whether the path could be read at all — so neither subsumes the other
 - [ ] 4.3 Nothing here gates [#112](https://github.com/adamstallard/igor/pull/112). That change's
       `git rm:*` condition is about a removal not surviving; here the removal survives and
       something else does not
