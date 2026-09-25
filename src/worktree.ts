@@ -126,6 +126,27 @@ export interface StatusRecord {
 }
 
 /**
+ * Flags whose record carries a second one after it, holding the path it came from. `R` and `C`
+ * are the only porcelain v1 letters that mean rename or copy, so matching either column is
+ * exact rather than a guess at the shape.
+ */
+const PAIRED = /[RC]/
+
+/**
+ * A rename among those, as against a copy: the path it came from is gone and the artifact owes
+ * a removal of it. A copy's source is still on disk.
+ */
+const RENAME = /R/
+
+/**
+ * An index column that means the index has this path and HEAD does not — staged as new, or the
+ * destination of a staged rename or copy. Git reports a rename onto a path HEAD already holds
+ * as `M` on that path and `D` on the old one, so an `R` or `C` destination is never one of
+ * HEAD's.
+ */
+const INDEX_NEW = /^[ARC]/
+
+/**
  * Splits `git status -z` output into records without decoding any name.
  *
  * A filename is bytes, and on ext4 the only ones it may not contain are `/` and NUL — which is
@@ -152,10 +173,13 @@ export function statusRecords(status: Buffer): StatusRecord[] {
     // publishes the file twice. A merge is where renames arrive, so this is the ordinary case
     // rather than an exotic one.
     //
-    // Only the index column is read, so a rename git has not staged — ` R`, which `git add -N`
-    // on the destination produces — is still left unpaired: issue #96.
+    // **Both columns.** The flags are `XY` — the index, then the work tree — and either may
+    // carry the marker: ` R new\0old\0` is what git writes for a rename whose destination is
+    // in the index as intent-to-add while the source deletion is unstaged, which `git add -N`
+    // on the destination produces. Read from the index column alone that pair comes apart, and
+    // the old path is parsed as a status line whose flags are its own first two bytes.
     const path = entries[i]!.subarray(3)
-    const from = flags.startsWith('R') || flags.startsWith('C') ? entries[++i] : undefined
+    const from = PAIRED.test(flags) ? entries[++i] : undefined
     records.push({ flags, path, ...(from === undefined ? {} : { from }) })
   }
   return records
@@ -258,10 +282,24 @@ export class ClonedTree implements WorkingTree {
     const status = await runBytes('git', ['-C', this.path, 'status', '--porcelain', '-z', '-uall'])
     const out: ChangedFile[] = []
 
-    for (const { flags, path, from } of statusRecords(status)) {
+    const records = statusRecords(status)
+    // **A work tree column rename names its source as the index holds it, not as HEAD does.**
+    // A merge brings a rename in fully staged; a worker that then moves that file again with an
+    // ordinary `mv` makes the merge's own destination the source of the second pair, and a file
+    // staged and then moved does the same. Removing such a path lays a tree entry with no blob
+    // behind it over a base that never had the path at all.
+    //
+    // Keyed in `latin1`, which is byte for byte: a name that is not text must not collide with
+    // another through the U+FFFD both decode to.
+    const indexOnly = new Set(
+      records.filter((r) => INDEX_NEW.test(r.flags)).map((r) => r.path.toString('latin1')),
+    )
+
+    for (const { flags, path, from } of records) {
       const code = flags.trim()
-      if (flags.startsWith('R') && from !== undefined && from.length > 0) {
-        out.push({ ...named(from), content: '', kind: 'deleted' })
+      const source = from !== undefined && from.length > 0 ? from : undefined
+      if (RENAME.test(flags) && source !== undefined && !indexOnly.has(source.toString('latin1'))) {
+        out.push({ ...named(source), content: '', kind: 'deleted' })
       }
       if (path.length === 0) continue
       // The name the artifact would publish under, and the bytes beside it where that name is

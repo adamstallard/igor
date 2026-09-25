@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { describe, expect, it } from 'vitest'
@@ -321,6 +321,87 @@ describe('what a rename and a file mode survive', () => {
     await run('git', ['-C', dir, 'mv', 'tracked.md', 'renamed.md'])
     const changed = await new ClonedTree(dir, 'o/r').changes()
     expect(changed.map((c) => c.path)).not.toContain('acked.md')
+  })
+
+  it('reports the old path of a rename the index has not staged as deleted', async () => {
+    // Porcelain is `XY`: the index column and the work tree one. A rename whose destination is
+    // in the index as intent-to-add and whose source deletion is unstaged reads ` R`, and the
+    // two-path form is the same — `git add -N -- $(git ls-files -o --exclude-standard)`, the
+    // idiom for making `git diff` show new files, is what produces it.
+    //
+    // The old path is named `ADR-001.md` because reading the second record as a status line
+    // takes its first two bytes for flags: `AD` is a deletion by shape, so the miss does not
+    // merely drop the old path, it publishes a removal of `-001.md`, which no worker named and
+    // no tree has.
+    const dir = await repo()
+    writeFileSync(join(dir, 'ADR-001.md'), 'decision\n')
+    await run('git', ['-C', dir, 'add', 'ADR-001.md'])
+    await run('git', ['-C', dir, 'commit', '-qm', 'adr'])
+    renameSync(join(dir, 'ADR-001.md'), join(dir, 'NEW-001.md'))
+    await run('git', ['-C', dir, 'add', '-N', 'NEW-001.md'])
+
+    const changed = await new ClonedTree(dir, 'o/r').changes()
+    expect(changed).toEqual([
+      { path: 'ADR-001.md', content: '', kind: 'deleted' },
+      { path: 'NEW-001.md', content: 'decision\n', kind: 'modified' },
+    ])
+  })
+
+  it('pairs a rename the work tree column reports, and a copy in either column', () => {
+    const pair = (flags: string, to: string, from: string): Buffer =>
+      Buffer.concat([Buffer.from(`${flags} ${to}\0${from}\0`, 'latin1')])
+    const records = statusRecords(
+      Buffer.concat([pair(' R', 'new.md', 'old.md'), pair(' C', 'copy.md', 'source.md')]),
+    )
+    expect(records.map((r) => [r.flags, r.path.toString(), r.from?.toString()])).toEqual([
+      [' R', 'new.md', 'old.md'],
+      [' C', 'copy.md', 'source.md'],
+    ])
+  })
+
+  it('leaves the source of a copy in place rather than deleting it', async () => {
+    // A copy is the one two-path shape whose source is still there, so the pair is read for the
+    // name it came from and no removal is owed. `status.renames=copies` is what makes git look
+    // for one, and it only looks at sources the same change touched.
+    const dir = await repo()
+    writeFileSync(join(dir, 'tracked.md'), 'aaa\nbbb\nccc\nddd\neee\n')
+    await run('git', ['-C', dir, 'commit', '-qam', 'longer'])
+    await run('git', ['-C', dir, 'config', 'status.renames', 'copies'])
+    writeFileSync(join(dir, 'copy.md'), 'aaa\nbbb\nccc\nddd\neee\n')
+    writeFileSync(join(dir, 'tracked.md'), 'aaa\nbbb\nccc\nddd\neee\nfff\n')
+    await run('git', ['-C', dir, 'add', '-A'])
+
+    const changed = await new ClonedTree(dir, 'o/r').changes()
+    expect(changed.filter((c) => c.kind === 'deleted')).toEqual([])
+    expect(changed.map((c) => c.path).sort()).toEqual(['copy.md', 'tracked.md'])
+  })
+
+  it('owes no removal for a rename source only the index ever had', async () => {
+    // A work tree column rename names its source as the **index** holds it, not as HEAD does.
+    // A merge brings a rename in fully staged, and a worker that moves that file again with an
+    // ordinary `mv` leaves the merge's own destination as the source of the second pair — a
+    // path no tree has. Removing it lays an entry with no blob over a base that never had one.
+    const dir = await repo()
+    await run('git', ['-C', dir, 'mv', 'tracked.md', 'staged.md'])
+    renameSync(join(dir, 'staged.md'), join(dir, 'final.md'))
+    await run('git', ['-C', dir, 'add', '-N', 'final.md'])
+
+    const changed = await new ClonedTree(dir, 'o/r').changes()
+    expect(changed.filter((c) => c.kind === 'deleted').map((c) => c.path)).toEqual(['tracked.md'])
+    expect(changed.find((c) => c.path === 'final.md')?.content).toBe('before\n')
+  })
+
+  it('owes no removal for a file the worker staged and then moved', async () => {
+    // The same rule through the index column's `A`: the source of the pair is a path the worker
+    // created inside this change, so nothing in the base tree is owed a removal at all.
+    const dir = await repo()
+    writeFileSync(join(dir, 'draft.md'), 'draft\n')
+    await run('git', ['-C', dir, 'add', 'draft.md'])
+    renameSync(join(dir, 'draft.md'), join(dir, 'final.md'))
+    await run('git', ['-C', dir, 'add', '-N', 'final.md'])
+
+    const changed = await new ClonedTree(dir, 'o/r').changes()
+    expect(changed.filter((c) => c.kind === 'deleted')).toEqual([])
   })
 
   it('reports an executable file as executable', async () => {
