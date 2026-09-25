@@ -17,9 +17,8 @@
       instructions, each line carrying why it is there. The template may land before the command
       does; a `cp templates/org.yaml roles/org.yaml` step in the README must not, because `init`
       would delete it again
-- [ ] 2.2 `git rm:*` and `git mv:*` ship **live**: #88 merged and archived, so a worker's removal
-      now reaches the artifact and the requirement's condition is met. Comment them only if that
-      stops being true
+- [ ] 2.2 `git rm:*` and `git mv:*` ship **live** and unconditionally. The requirement that once
+      made them conditional is gone; `task-execution` owns whether a removal survives
 - [ ] 2.3 The `commands` block opens with the model, above the per-line reasons, **verbatim**:
 
       ```yaml

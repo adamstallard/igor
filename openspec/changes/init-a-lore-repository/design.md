@@ -1,41 +1,35 @@
 # Design
 
-The requirements say what `init` writes and what it leaves alone. Three things about *how* had
+The requirements say what `init` writes and what it leaves alone. Five things about *how* had
 more than one defensible answer, and the rejected ones are worth having in writing.
 
-## Shipping `git rm:*` before a removal can be published
+## Why the shipped `commands` carries `git rm:*` and `git mv:*`
 
 A worker with `git rm:*` can delete a file. The publishing path used to drop the deletion: the
 worker did the work, the seat was spent, the artifact arrived without the removal, and nothing
-in it said a file was meant to go. [#88](https://github.com/adamstallard/igor/pull/88) is the
-change that makes a removal survive, and it has merged and archived — so the condition below is
-met and the two entries ship live. The fork is recorded because the requirement is written to
-outlive it.
+in it said a file was meant to go. [#88](https://github.com/adamstallard/igor/pull/88) made a
+removal survive, and everything since has kept it that way: #118 closed the fold that lost one
+during a conflicted merge, and the routes by which the tree API refused a whole publish.
 
-Three answers:
+**Why the list carries them at all.** Granting a command whose effect is silently dropped spends
+a seat on work that never arrives and says nothing. An operator who follows the setup exactly
+would get an Igor that appears able to delete a file and finds out from a diff that is missing
+one. That is the argument for `git rm:*` and `git mv:*` being in the shipped list rather than
+left out, and it is why they are the two entries worth explaining.
 
-- **Ship the two entries active anyway.** Rejected. The failure is silent and it costs money to
-  reach. An operator who follows the setup exactly gets an Igor that appears to be able to
-  delete a file, and finds out from a diff that is missing one.
-- **Block this change on #88.** Rejected as a dependency, not as an outcome. The rest of `init`
-  — the config at the root, the org role, the workflow, the refusals — is useful now and has
-  nothing to do with removals. Making the whole command wait on an unrelated pull request buys
-  one accurate default at the cost of everything else.
-- **Ship them commented, with a note naming what unlocks them.** Taken, and already discharged:
-  #88 landed before this was implemented, so the condition in the requirement is satisfied and
-  the two entries ship live. The requirement is written against the condition rather than against
-  the pull request number, which is why it needed no amendment when #88 merged — and why it stays
-  correct if a future change ever makes a removal stop surviving again.
+**A conditional requirement stood here and has been removed.** It said the two entries SHALL ship
+commented where a removal does not survive into the published artifact. It was written while #88
+was open, when `init` might genuinely have shipped first, and it was phrased as a condition rather
+than against a pull request so it would not go stale the day #88 merged. It did its job: the
+condition was wrong twice in one day and the text needed no amendment either time.
 
-The requirement states the condition ("where a removal a worker makes does not survive into the
-published artifact") rather than the pull request, because a spec that names an open PR goes
-stale the day it merges.
-
-**It says "does not", not "does not yet".** A requirement states what must be true, not where a
-project has got to. *Yet* encodes a one-way progression — not now, but soon — and that is the
-pull-request thinking this phrasing exists to avoid, smuggled back in one word. Were the hazard to
-return, removals would not *yet* fail to survive; they would fail again, and a clause reading as a
-description of a past state is one a reader discounts.
+It is gone because `task-execution` now owns the property outright — *the artifact carries every
+change the worker made, including removals*, *no removal is lost to a read that folds two changed
+paths into one*, *no removal is published for a path the base does not hold* — with tests behind
+them. A regression violates those, in the capability where the behaviour lives. The clause here
+was a second statement of the same property, in a different capability, phrased as a contingency
+nobody would execute: if removals broke, the answer is to fix them, not to ship a release whose
+scaffolding withholds `git rm`.
 
 ## `init-workflow` is folded into `init`
 

@@ -73,16 +73,9 @@ runnable is how an operator finds out by watching nothing happen.
 
 #### Scenario: The worker can remove, rename and read history
 
-- **WHEN** an Igor runs under the org role as shipped, in a setup where a removal reaches the
-  published artifact
+- **WHEN** an Igor runs under the org role as shipped
 - **THEN** its worker may remove and rename tracked files through git, and may read the
   repository's history
-
-#### Scenario: Removal commands wait for removals to be publishable
-
-- **WHEN** a removal a worker makes does not survive into the published artifact
-- **THEN** the shipped `git rm:*` and `git mv:*` entries are commented
-- **AND** a note beside them names what unlocks them
 
 #### Scenario: The worker cannot publish for itself
 
