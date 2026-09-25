@@ -842,10 +842,11 @@ export interface Gate {
    */
   token?: TokenSource
   resetAt?: string
-  /** `resetAt` is not a return the provider stated: a cadence ceiling where a refusal named
-   *  none, or the week where both of a readable seat's windows are shut and the week is
-   *  preferred over the session. It can be late or early, so the handoff hedges the hour
-   *  rather than bounding it. */
+  /** No reset the provider stated fixes `resetAt`: a cadence ceiling where a refusal named
+   *  none, or one window's hour named while another window also holding the seat named no
+   *  return. It can be late or early, so the handoff hedges the hour rather than bounding it.
+   *  A boundary tiled from a stated reset, and the later of two stated hours, are not marked:
+   *  both are as exact as the reset they came from. */
   resetApproximate?: boolean
   /**
    * Why nothing was chosen, where nothing was. Absent on a gate that is not exhausted.
@@ -914,19 +915,41 @@ export function budgetGate(
         (w) => !hasHeadroom(seatStatus(reading.seat, usage, w)),
       )
       if (shut.length === 0) return []
-      const resets = shut.map((w) => limitFor(usage, w).resetsAt)
-      // The week is answered for first below, so a shut week with no reset takes the seat off
-      // the clock entirely, as it already does on the derived path. Falling through to the
-      // session's would state the hour one window opens while the week still holds the seat,
-      // which is early by up to a week. A shut session with no reset is no such problem: the
-      // week's stated hour is either the later of the two or under a session-length early.
-      if (resets[0] === undefined) return []
-      // Where both windows are shut the seat returns on the later, which the week almost
-      // always is. The week is taken by preference rather than by comparing the two hours: it
-      // is wrong only inside the last session of one, so it errs by under five hours where
-      // naming the session errs by up to a week, the same direction. A preference is not a
-      // reading, which is what `estimated` marks here.
-      return [{ resetAt: resets[0]!, estimated: shut.length > 1 }]
+      if (shut.length === 1) {
+        // One window holds the seat, so its own hour is the seat's, stated flatly. A window
+        // that named none leaves nothing to state.
+        const only = limitFor(usage, shut[0]!).resetsAt
+        return only === undefined ? [] : [{ resetAt: only, estimated: false }]
+      }
+
+      const weekReset = limitFor(usage, 'week').resetsAt
+      const sessionReset = limitFor(usage, 'session').resetsAt
+      // A shut week that named no return takes the seat off the clock entirely, as it already
+      // does on the derived path. Falling through to the session's would state the hour one
+      // window opens while the week still holds the seat, which is early by up to a week.
+      if (weekReset === undefined) return []
+
+      // Both windows are shut, so the seat is back once the later of the two clears —
+      // whichever window that is, rather than the week for being the week. Ordered as
+      // instants and never as text: these are provider phrases, and `"Friday 9am"` sorts
+      // before an ISO reading as a string and after it as a moment. Comparing two stated
+      // hours yields one of them, so the answer is the provider's own and is not hedged.
+      const weekAt = resetInstant(weekReset, now)
+      const sessionAt = sessionReset === undefined ? undefined : resetInstant(sessionReset, now)
+      if (sessionReset !== undefined && weekAt !== undefined && sessionAt !== undefined) {
+        return [
+          { resetAt: Temporal.Instant.compare(sessionAt, weekAt) > 0 ? sessionReset : weekReset, estimated: false },
+        ]
+      }
+      // Nothing to order against: one of the two named no return, or named one that places
+      // nowhere. The week's hour stands, hedged — a session that named no reset is still
+      // bounded by its own cadence, so the week is either the later of the two or under a
+      // session-length early.
+      //
+      // Do not fold this into the comparison for symmetry. A week carries no such bound,
+      // which is why a shut week naming none takes the seat off the clock instead, and what
+      // an unplaceable return yields is argued on its own grounds.
+      return [{ resetAt: weekReset, estimated: true }]
     })
     // Every seat's return in one race, however it was arrived at, because the first seat back
     // is the first Igor back. A reading answers for its own seat in the provider's words and a
