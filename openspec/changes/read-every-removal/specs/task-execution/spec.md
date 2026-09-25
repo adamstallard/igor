@@ -88,7 +88,8 @@ obligation is stated rather than left to whichever mechanism reads the tree.
 - **WHEN** reading the working tree offers a removal of a path that is absent from the tree the
   artifact is published against, because the run's index brought that path into being
 - **THEN** no removal of it is published
-- **AND** the removals of paths the base does hold are published as before
+- **AND** the artifact is published, rather than the whole tree request being refused
+- **AND** the removals of paths the base does hold are carried as before
 
 #### Scenario: A rename moved on a second time removes the original and nothing else
 
@@ -97,8 +98,10 @@ obligation is stated rather than left to whichever mechanism reads the tree.
 - **THEN** the artifact no longer carries the original path
 - **AND** the artifact carries the final path
 - **AND** no removal is published for the intermediate name
+- **AND** the artifact is published, rather than the whole tree request being refused
 
 #### Scenario: A publish is not lost to a removal nobody asked for
 
 - **WHEN** a run's changes include a removal of a path the base does not hold
-- **THEN** the rest of the run's changes are still published
+- **THEN** the artifact is published, rather than the whole tree request being refused
+- **AND** every change the worker made that the base can carry is in it
