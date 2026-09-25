@@ -187,3 +187,34 @@ is still a gap: the human's answer goes nowhere an Igor can read. A lore entry s
 artifact is the shape that could carry it, and it is exactly the blanket, standing form this
 design refuses within a run — so it belongs in its own change, argued on its own, rather than
 smuggled in as a durability improvement on a field that is meant not to last.
+
+## What the implementation found
+
+Three things the measurement said that this design did not, recorded here rather than only in
+the pull request, because they are what the next person touching this area needs.
+
+**The declaration is read off disk, not out of the change list.** "A file the worker writes into
+the tree and the loop reads" was written as though the loop's one read of the tree would report
+it. It does not: `changes()` runs `git status --porcelain -uall`, which says nothing about an
+ignored path, and igor's own `.gitignore` covers `.igor/`. Read through the change list the
+channel is dead exactly where an Igor works on itself, and *every* declared revert refuses —
+which is the "no escape at all" road this design rejected, reached by accident. The loop reads
+the path directly and still strips it from the changes, so a repository that does not ignore it
+publishes nothing either.
+
+**A deletion is undone by presence, not by the merge base's own content.** The comparison was
+first written as one rule — published content equals the merge base — which reads the deletion
+clause out of the requirement. It made the guard fire only where head still held the merge-base
+blob, which is to say only on a deletion nobody meant to drop; the delete/modify conflict a
+worker resolves by keeping the file, which `conflictPrompt` explicitly invites, went through
+unremarked. A deletion has no content to combine with, so the erosion this design declines to
+catch has no instance here: present or absent, and present is the revert.
+
+**The guard is bounded by what a published tree can carry, and says so loudly.** `git diff --raw`
+sees every path git tracks; `changes()` reads regular UTF-8 files and `resolve` sends `100644`
+blobs. A symlink to a directory, a dangling symlink and a submodule the base bumped are therefore
+dropped from the published tree and flagged, correctly, as undone base changes — and on a clean
+catch-up there is no worker to declare them. Those resolutions refuse rather than publishing a
+silent revert, which is the requirement holding; that they cannot be published at all is
+[#134](https://github.com/adamstallard/igor/issues/134), and it needs the other half of the
+problem — a tree read and a publish that carry non-blob paths.

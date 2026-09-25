@@ -1516,6 +1516,59 @@ reaches by following the conflict prompt's own instruction to delete the file to
 removal. **The one case where HEAD is not the base** is a worker that ran `git commit`: nothing
 grants that command, and such a run already fails loudly on a `base_tree` the host cannot resolve.
 
+### 6.7.2b A resolution may not undo what the base did, unless it says so
+
+A resolution is published as a commit with two parents — the artifact's head and the base it
+takes in — so its tree *is* the merge result. A path the resolution never mentions is therefore
+not neutral: the merge result keeps the artifact's copy, and the base's change to that path is
+gone the moment the artifact merges. **Review cannot catch it.** A reverted deletion reads as the
+file still being there and a reverted rewrite as the file being unchanged; both are absences, and
+the diff against the base looks unremarkable.
+
+Before the commit, `undone()` compares three blobs per path the base changed since the merge
+base: what stood there then, what the base holds now, and what this commit would publish — the
+resolution's own file, its own deletion, or, for a path it never mentions, head's copy. A path
+is undone where what publishes is exactly what stood at the merge base while the base holds
+something else, absence counting as a state on both sides. One comparison of outcomes, with no
+branch per shape: taking the base's side, combining both sides, honouring a deletion the base
+made and meeting a change the artifact had already made all restore nothing and pass unremarked.
+The three blobs are read in `merge()` as two `--raw` diffs off the merge base, because a released
+tree can answer for none of them.
+
+**A guard per route is a guard that misses the next route**, which this codebase has now learned
+twice: [#118](https://github.com/adamstallard/igor/issues/118) replaced three route-specific
+removal checks with one that asks HEAD the requirement's own question, and the two instances
+behind this one — a dropped deletion and a status code that threw on read — are the same outcome
+reached two ways. This check sits downstream of that read and does not repeat it: `changes()`
+owes it a change list, and the comparison is against the tree that list would publish.
+
+**An undone base change is publishable where the resolution declares the path.** The worker
+writes `.igor/reverts.json` into the tree — `{"reverts": [{"path": …, "discards": …}]}`, one
+entry per path, naming the blob the base holds or `deleted` where it deleted the path — and the
+loop reads it out of the change list and never publishes it. A declaration committed onto the
+artifact would be a standing permission outliving the run that made it.
+
+Three properties keep it from becoming the field that gets defaulted on. **It can never be
+blanket**: no wildcard, no per-resolution flag, nothing a role or an org config can set, so the
+permission is retaken for each resolution. **It names what it overrides**, so a declaration whose
+state the base does not hold authorizes nothing, and one written for a path cannot travel to
+another. **A declared revert is still reported** — on the commit, on the item, and in the run
+record — because almost the whole value of the guard is that an undone base change stops being
+invisible.
+
+**The channel is one untrusted text can reach, and that is an accepted cost.** A worker reads the
+item, the diff and the conflicting content; an injection that can produce the revert can produce
+the declaration beside it. What the reporting buys is not prevention — it is that the revert
+names itself and the change it discarded, so the attack is attributable rather than silent. The
+alternative, refusing every revert, leaves a legitimate one no path through an Igor at all; the
+case for it is in `guard-silent-reverts`'s `design.md` rather than smoothed over here.
+
+Two false negatives are known and accepted. **Partial erosion** — content matching neither side —
+is a resolution rather than a revert, because nothing distinguishes it from a legitimate
+combination. And a **binary** read as UTF-8 (§6.7.3) can never hash to the blob the merge base
+holds, so a binary restored to it reads as not a revert; that falls with the corruption above it
+rather than separately.
+
 ### 6.7.3 A binary in an artifact is corrupted, not dropped — **known, and deliberately unguarded**
 
 Changes are read out of the tree as UTF-8 and published as blobs declared UTF-8. Reading a file

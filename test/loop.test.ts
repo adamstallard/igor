@@ -1,3 +1,5 @@
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type {
   Artifact,
@@ -12,13 +14,13 @@ import type {
   Tracker,
 } from '../src/adapter.js'
 import type { Role } from '../src/role.js'
-import type { TreeProvider, WorkingTree, ChangedFile, MergeState } from '../src/worktree.js'
+import { blobSha, type TreeProvider, type WorkingTree, type ChangedFile, type MergeState, type BaseChange } from '../src/worktree.js'
 import {
   catchUpItem, declineReason, dropDeferred, dropStopped, oneFetchPerItem, recordDecisions, runItem,
   type CommentSource, type CycleReport, type ItemDeps,
 } from '../src/loop.js'
 import { defer, NO_DEFERRALS, shouldDefer } from '../src/deferred.js'
-import { ExecutionError } from '../src/execute.js'
+import { DECLARATION_PATH, ExecutionError } from '../src/execute.js'
 import { budgetGate } from '../src/budget.js'
 import { tempDir } from './tmp.js'
 
@@ -34,6 +36,8 @@ function deps(opts: {
   verdicts?: ClaimVerdict[]
   claimSticks?: boolean
   changes?: ChangedFile[]
+  /** What the worker left at `DECLARATION_PATH` in the tree, which is read off disk. */
+  declaration?: string
 } = {}) {
   const posts: string[] = []
   const released: string[] = []
@@ -77,8 +81,15 @@ function deps(opts: {
     name: 'fake',
     provision: async (_repo, ref): Promise<WorkingTree> => {
       provisioned.push(ref)
+      const path = tempDir('igor-loop-')
+      // Written where a worker writes it, because that is where it is read from: a repository
+      // that ignores the directory — igor's own does — reports the file in no status.
+      if (opts.declaration !== undefined) {
+        mkdirSync(join(path, dirname(DECLARATION_PATH)), { recursive: true })
+        writeFileSync(join(path, DECLARATION_PATH), opts.declaration)
+      }
       return {
-        path: tempDir('igor-loop-'),
+        path,
         repo: 'o/r',
         changes: async () => opts.changes ?? [],
         ...(opts.merge === undefined
@@ -861,7 +872,18 @@ const stale = (over: Partial<InFlight> = {}): Candidate =>
     },
   })
 
-const conflicted: MergeState = { conflicts: ['src/a.ts'], head: 'headsha', broughtIn: 'basesha' }
+/**
+ * A conflict on one path, with the base's own change to it in hand — the shape every
+ * resolution is checked against, rather than an empty base diff no conflicted merge produces.
+ */
+const conflicted: MergeState = {
+  conflicts: ['src/a.ts'],
+  head: 'headsha',
+  broughtIn: 'basesha',
+  baseChanges: [
+    { path: 'src/a.ts', before: blobSha('base\n'), after: blobSha('theirs\n'), head: blobSha('ours\n') },
+  ],
+}
 
 describe('catching an artifact of its own back up', () => {
   it('asks the code host to merge, and finishes there when that is clean', async () => {
@@ -979,7 +1001,7 @@ describe('catching an artifact of its own back up', () => {
     let ran = 0
     const { d, resolved } = deps({
       caughtUp: [{ outcome: 'conflict' }, { outcome: 'already-current' }],
-      merge: { conflicts: [], head: 'headsha', broughtIn: 'basesha' },
+      merge: { conflicts: [], head: 'headsha', broughtIn: 'basesha', baseChanges: [] },
       changes: [{ path: 'src/a.ts', content: 'merged\n', kind: 'modified' }],
     })
     const run = await catchUpItem(d, stale(), role(), 'igor-bot', {
@@ -1075,7 +1097,7 @@ describe('what a resolution is allowed to publish', () => {
     // becomes a claim, a handoff comment and a deferral on an artifact that merges fine.
     const { d, resolved, posts } = deps({
       caughtUp: [{ outcome: 'conflict' }],
-      merge: { conflicts: [], head: 'headsha', broughtIn: 'basesha' },
+      merge: { conflicts: [], head: 'headsha', broughtIn: 'basesha', baseChanges: [] },
       changes: [],
     })
     const run = await catchUpItem(d, stale(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
@@ -1100,6 +1122,422 @@ describe('what a resolution is allowed to publish', () => {
     expect(resolved).toEqual([])
     expect(run.outcome).toBe('handed-off')
     expect(run.reason).toContain('#21')
+  })
+})
+
+describe('a base change is undone only where the resolution says so', () => {
+  // Three contents and the blobs they hash to: what stood at the merge base, what the base
+  // holds now, and what the artifact's own branch holds. A resolution publishing the first of
+  // these for a path the base changed is the revert this guard is for.
+  const BASE = 'base\n'
+  const THEIRS = 'theirs\n'
+  const OURS = 'ours\n'
+
+  /** A path the base rewrote and the artifact also touched: the ordinary conflicted file. */
+  const rewritten = (path: string): BaseChange => ({
+    path,
+    before: blobSha(BASE),
+    after: blobSha(THEIRS),
+    head: blobSha(OURS),
+  })
+
+  /** A path the base deleted, which the artifact's branch still holds untouched. */
+  const removed = (path: string): BaseChange => ({ path, before: blobSha(BASE), head: blobSha(BASE) })
+
+  const merging = (...baseChanges: BaseChange[]): MergeState => ({
+    conflicts: ['src/a.ts'],
+    head: 'headsha',
+    broughtIn: 'basesha',
+    baseChanges,
+  })
+
+  /** What the worker writes to say it meant to drop a base change. */
+  const declares = (...reverts: { path: string; discards: string }[]): string =>
+    JSON.stringify({ reverts })
+
+  /** The same file arriving through the change list, where the repository does not ignore it. */
+  const declaring = (...reverts: { path: string; discards: string }[]): ChangedFile => ({
+    path: DECLARATION_PATH,
+    content: declares(...reverts),
+    kind: 'added',
+  })
+
+  /** A resolution the guard has nothing to say about, so a test can carry one and mean it. */
+  const resolvedConflict: ChangedFile = { path: 'src/a.ts', content: 'ours\ntheirs\n', kind: 'modified' }
+
+  it('refuses a resolution that republishes a file as it stood before the base rewrote it', async () => {
+    // The published tree is the artifact's head with the resolution laid over it, so content
+    // equal to the merge base is not a gap in the resolution — it is the base's rewrite gone,
+    // and it lands the moment the artifact merges.
+    const { d, resolved, posts } = deps({
+      caughtUp: [{ outcome: 'conflict' }],
+      merge: merging(rewritten('src/a.ts')),
+      changes: [{ path: 'src/a.ts', content: BASE, kind: 'modified' }],
+    })
+    const run = await catchUpItem(d, stale(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+
+    expect(resolved).toEqual([])
+    expect(run.outcome).toBe('handed-off')
+    expect(run.reason).toContain('src/a.ts')
+    expect(posts.join(' ')).toContain('src/a.ts')
+  })
+
+  it('refuses a resolution that keeps a file the base deleted', async () => {
+    // Nothing in the change list names the path: a worker that restores head's own copy
+    // leaves a tree that differs from head in nothing, so the revert is invisible in exactly
+    // the input the resolution is built from.
+    const { d, resolved } = deps({
+      caughtUp: [{ outcome: 'conflict' }],
+      merge: merging(rewritten('src/a.ts'), removed('src/gone.ts')),
+      changes: [resolvedConflict],
+    })
+    const run = await catchUpItem(d, stale(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+
+    expect(resolved).toEqual([])
+    expect(run.outcome).toBe('handed-off')
+    expect(run.reason).toContain('src/gone.ts')
+    expect(run.reason).toContain('deleted')
+  })
+
+  it('refuses a rename the base made and the resolution publishes the old side of', async () => {
+    // A rename arrives as a removal and an addition, so the new path rides along with the
+    // merge and only the old one is restored — the file is then published twice under two
+    // names, which reads in review as nothing having happened to it.
+    const { d, resolved } = deps({
+      caughtUp: [{ outcome: 'conflict' }],
+      merge: merging(rewritten('src/a.ts'), removed('src/old.ts'), {
+        path: 'src/new.ts',
+        after: blobSha(BASE),
+      }),
+      changes: [resolvedConflict, { path: 'src/new.ts', content: BASE, kind: 'added' }],
+    })
+    const run = await catchUpItem(d, stale(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+
+    expect(resolved).toEqual([])
+    expect(run.reason).toContain('src/old.ts')
+    expect(run.reason).not.toContain('src/new.ts')
+  })
+
+  it('publishes the same two where the resolution declares them, and says so', async () => {
+    const { d, resolved, posts } = deps({
+      caughtUp: [{ outcome: 'conflict' }, { outcome: 'already-current' }],
+      merge: merging(rewritten('src/a.ts'), removed('src/gone.ts')),
+      changes: [{ path: 'src/a.ts', content: BASE, kind: 'modified' }],
+      declaration: declares(
+        { path: 'src/a.ts', discards: blobSha(THEIRS) },
+        { path: 'src/gone.ts', discards: 'deleted' },
+      ),
+    })
+    const run = await catchUpItem(d, stale(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+
+    expect(run.outcome).toBe('produced')
+    expect(resolved).toHaveLength(1)
+    // On the resolution itself, because the commit is what review reads and an undone base
+    // change leaves no other trace in it.
+    expect(resolved[0]?.message).toContain('src/a.ts')
+    expect(resolved[0]?.message).toContain(blobSha(THEIRS))
+    expect(resolved[0]?.message).toContain('src/gone.ts')
+    // And with the run, in the place a refusal would have been reported.
+    expect(run.execution?.reverts).toEqual([
+      `src/a.ts (base blob ${blobSha(THEIRS)})`,
+      'src/gone.ts, which the base deleted',
+    ])
+    expect(posts.join(' ')).toContain('src/a.ts')
+  })
+
+  it('reads the declaration out of the tree rather than out of the change list', async () => {
+    // A repository that ignores the directory reports the file in no status — igor's own
+    // `.gitignore` covers `.igor/` — so a channel read from the change list is dead exactly
+    // where an Igor works on itself, and every declared revert refuses.
+    const { d, resolved } = deps({
+      caughtUp: [{ outcome: 'conflict' }, { outcome: 'already-current' }],
+      merge: merging(rewritten('src/a.ts')),
+      changes: [{ path: 'src/a.ts', content: BASE, kind: 'modified' }],
+      declaration: declares({ path: 'src/a.ts', discards: blobSha(THEIRS) }),
+    })
+    const run = await catchUpItem(d, stale(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+
+    expect(run.outcome).toBe('produced')
+    expect(resolved).toHaveLength(1)
+    expect(run.execution?.changed.map((c) => c.path)).not.toContain(DECLARATION_PATH)
+  })
+
+  it('refuses a file kept against a deletion the base made, whatever it now holds', async () => {
+    // A delete/modify conflict leaves the surviving copy on disk and the instructions invite
+    // keeping it. The path is then present where the base deleted it, which undoes the
+    // deletion — and asking for the merge base's own content there would catch only the
+    // deletion nobody meant to drop, never the one a worker chose.
+    const { d, resolved } = deps({
+      caughtUp: [{ outcome: 'conflict' }],
+      merge: merging(rewritten('src/a.ts'), { path: 'src/kept.ts', before: blobSha(BASE), head: blobSha(OURS) }),
+      changes: [resolvedConflict, { path: 'src/kept.ts', content: OURS, kind: 'modified' }],
+    })
+    const run = await catchUpItem(d, stale(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+
+    expect(resolved).toEqual([])
+    expect(run.reason).toContain('src/kept.ts')
+    expect(run.reason).toContain('deleted')
+  })
+
+  it('publishes that same kept file where the resolution declares the deletion it discards', async () => {
+    const { d, resolved } = deps({
+      caughtUp: [{ outcome: 'conflict' }, { outcome: 'already-current' }],
+      merge: merging(rewritten('src/a.ts'), { path: 'src/kept.ts', before: blobSha(BASE), head: blobSha(OURS) }),
+      changes: [resolvedConflict, { path: 'src/kept.ts', content: OURS, kind: 'modified' }],
+      declaration: declares({ path: 'src/kept.ts', discards: 'deleted' }),
+    })
+    const run = await catchUpItem(d, stale(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+
+    expect(run.outcome).toBe('produced')
+    expect(resolved[0]?.message).toContain('src/kept.ts')
+    expect(run.execution?.reverts).toEqual(['src/kept.ts, which the base deleted'])
+  })
+
+  it('refuses where one of two reverts is declared, naming only the undeclared path', async () => {
+    const { d, resolved } = deps({
+      caughtUp: [{ outcome: 'conflict' }],
+      merge: merging(rewritten('src/a.ts'), removed('src/gone.ts')),
+      changes: [{ path: 'src/a.ts', content: BASE, kind: 'modified' }],
+      declaration: declares({ path: 'src/a.ts', discards: blobSha(THEIRS) }),
+    })
+    const run = await catchUpItem(d, stale(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+
+    expect(resolved).toEqual([])
+    expect(run.reason).toContain('src/gone.ts')
+    expect(run.reason).not.toContain('src/a.ts')
+  })
+
+  it('does not let a declaration cover a second path that discards the same state', async () => {
+    // A declaration is a permission for one path. Two paths the base deleted discard the
+    // identical state, so matching on the state alone would have one entry authorize both.
+    const { d, resolved } = deps({
+      caughtUp: [{ outcome: 'conflict' }],
+      merge: merging(rewritten('src/a.ts'), removed('src/gone.ts'), removed('src/also-gone.ts')),
+      changes: [resolvedConflict],
+      declaration: declares({ path: 'src/gone.ts', discards: 'deleted' }),
+    })
+    const run = await catchUpItem(d, stale(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+
+    expect(resolved).toEqual([])
+    expect(run.reason).toContain('src/also-gone.ts')
+  })
+
+  it('refuses a declaration naming a base state the base does not hold', async () => {
+    // A declaration is a statement about one specific change. Naming a state the base moved
+    // off is a statement about some other one, and it authorizes nothing — which is what
+    // stops a declaration written early in a run from covering what became true after it.
+    const { d, resolved } = deps({
+      caughtUp: [{ outcome: 'conflict' }],
+      merge: merging(rewritten('src/a.ts')),
+      changes: [{ path: 'src/a.ts', content: BASE, kind: 'modified' }],
+      declaration: declares({ path: 'src/a.ts', discards: blobSha('something the base moved off\n') }),
+    })
+    const run = await catchUpItem(d, stale(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+
+    expect(resolved).toEqual([])
+    expect(run.reason).toContain('src/a.ts')
+  })
+
+  it('refuses a declaration that names no path, however it tries to say everything', async () => {
+    // The blanket form is the one that gets set once and forgotten, so there is none to
+    // parse: a wildcard, a whole-resolution flag and an entry with no path alike authorize
+    // nothing, and every revert is handed off as if undeclared.
+    for (const reverts of [
+      [{ path: '*', discards: blobSha(THEIRS) }],
+      [{ path: '', discards: blobSha(THEIRS) }],
+      [{ discards: blobSha(THEIRS) } as unknown as { path: string; discards: string }],
+    ]) {
+      const { d, resolved } = deps({
+        caughtUp: [{ outcome: 'conflict' }],
+        merge: merging(rewritten('src/a.ts')),
+        changes: [{ path: 'src/a.ts', content: BASE, kind: 'modified' }],
+        declaration: declares(...reverts),
+      })
+      const run = await catchUpItem(d, stale(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+      expect(resolved).toEqual([])
+      expect(run.reason).toContain('src/a.ts')
+    }
+
+    // The same, for a declaration that is not the documented shape at all.
+    const { d, resolved } = deps({
+      caughtUp: [{ outcome: 'conflict' }],
+      merge: merging(rewritten('src/a.ts')),
+      changes: [{ path: 'src/a.ts', content: BASE, kind: 'modified' }],
+      declaration: '{"all": true}',
+    })
+    expect((await catchUpItem(d, stale(), role(), 'igor-bot', { ...noWait, worker: busyWorker })).outcome)
+      .toBe('handed-off')
+    expect(resolved).toEqual([])
+  })
+
+  it('publishes unremarked where a declaration names a path that is not being reverted', async () => {
+    const { d, resolved } = deps({
+      caughtUp: [{ outcome: 'conflict' }, { outcome: 'already-current' }],
+      merge: merging(rewritten('src/a.ts')),
+      changes: [resolvedConflict],
+      declaration: declares({ path: 'src/a.ts', discards: blobSha(THEIRS) }),
+    })
+    const run = await catchUpItem(d, stale(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+
+    expect(run.outcome).toBe('produced')
+    expect(resolved[0]?.message).toBe('Merge main into igor/triage/7-a-bug')
+    expect(run.execution?.reverts).toBeUndefined()
+  })
+
+  it('publishes a resolution that keeps what the base did, however it keeps it', async () => {
+    // Taking the base's side, combining both sides, and honouring a deletion the base made
+    // restore nothing. The comparison reads outcomes, so none of the three needs a word.
+    const cases: { what: string; base: BaseChange[]; changes: ChangedFile[] }[] = [
+      {
+        what: "the base's side",
+        base: [rewritten('src/a.ts')],
+        changes: [{ path: 'src/a.ts', content: THEIRS, kind: 'modified' }],
+      },
+      {
+        what: 'both sides',
+        base: [rewritten('src/a.ts')],
+        changes: [{ path: 'src/a.ts', content: `${OURS}${THEIRS}`, kind: 'modified' }],
+      },
+      {
+        what: "the base's deletion",
+        base: [rewritten('src/a.ts'), removed('src/gone.ts')],
+        changes: [resolvedConflict, { path: 'src/gone.ts', content: '', kind: 'deleted' }],
+      },
+    ]
+    for (const { what, base, changes } of cases) {
+      const { d, resolved, posts } = deps({
+        caughtUp: [{ outcome: 'conflict' }, { outcome: 'already-current' }],
+        merge: merging(...base),
+        changes,
+      })
+      const run = await catchUpItem(d, stale(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+      expect(run.outcome, what).toBe('produced')
+      expect(resolved, what).toHaveLength(1)
+      expect(resolved[0]?.message, what).toBe('Merge main into igor/triage/7-a-bug')
+      expect(posts.join(' '), what).not.toContain('would undo')
+    }
+  })
+
+  it('publishes where all the base changed about a path was its mode', async () => {
+    // The same blob on both sides is a mode change, and this comparison reads content. Read as
+    // a restoration it would refuse every resolution that so much as leaves the file alone.
+    const { d, resolved } = deps({
+      caughtUp: [{ outcome: 'conflict' }, { outcome: 'already-current' }],
+      merge: merging(rewritten('src/a.ts'), {
+        path: 'run.sh',
+        before: blobSha('#!/bin/sh\n'),
+        after: blobSha('#!/bin/sh\n'),
+        head: blobSha('#!/bin/sh\n'),
+      }),
+      changes: [resolvedConflict],
+    })
+    const run = await catchUpItem(d, stale(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+
+    expect(run.outcome).toBe('produced')
+    expect(resolved).toHaveLength(1)
+  })
+
+  it('publishes a path the base changed that the artifact branch already matched', async () => {
+    // Both sides arrived at the same content, so keeping head's copy keeps the base's change
+    // rather than undoing it. Comparing content rather than which paths were touched is what
+    // makes this fall out instead of needing a case of its own.
+    const { d, resolved } = deps({
+      caughtUp: [{ outcome: 'conflict' }, { outcome: 'already-current' }],
+      merge: merging(rewritten('src/a.ts'), {
+        path: 'src/same.ts',
+        before: blobSha(BASE),
+        after: blobSha(THEIRS),
+        head: blobSha(THEIRS),
+      }),
+      changes: [resolvedConflict],
+    })
+    const run = await catchUpItem(d, stale(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+
+    expect(run.outcome).toBe('produced')
+    expect(resolved).toHaveLength(1)
+  })
+
+  it('publishes no declaration onto the branch, declared or not', async () => {
+    // A declaration committed onto the artifact would be a standing permission outliving the
+    // run that made it, so it is read out of the tree and never laid over it.
+    for (const reverts of [
+      [{ path: 'src/a.ts', discards: blobSha(THEIRS) }],
+      [{ path: 'src/untouched.ts', discards: blobSha(THEIRS) }],
+    ]) {
+      const { d, resolved } = deps({
+        caughtUp: [{ outcome: 'conflict' }, { outcome: 'already-current' }],
+        merge: merging(rewritten('src/a.ts')),
+        // Both routes at once: on disk, where it is read, and in the change list, which is
+        // what a repository that does not ignore the directory reports.
+        changes: [{ path: 'src/a.ts', content: BASE, kind: 'modified' }, declaring(...reverts)],
+        declaration: declares(...reverts),
+      })
+      await catchUpItem(d, stale(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+      for (const request of resolved) {
+        expect(request.files.map((f) => f.path)).not.toContain(DECLARATION_PATH)
+        expect(request.deletions).not.toContain(DECLARATION_PATH)
+      }
+    }
+  })
+
+  it('refuses before the host is asked to do anything at all', async () => {
+    // The refusal is a decision about the commit, so it precedes it: not the post-publish
+    // re-ask in another guise, which asks whether the branch merges — and a revert merges
+    // perfectly cleanly.
+    const { d, resolved, asked } = deps({
+      caughtUp: [{ outcome: 'conflict' }],
+      merge: merging(rewritten('src/a.ts')),
+      changes: [{ path: 'src/a.ts', content: BASE, kind: 'modified' }],
+    })
+    const run = await catchUpItem(d, stale(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+
+    expect(resolved).toEqual([])
+    // The one ask is the question that sent this down the resolution path in the first place.
+    expect(asked).toHaveLength(1)
+    expect(run.outcome).toBe('handed-off')
+  })
+
+  it('holds where the claim was lost mid-execution, which publishes and returns', async () => {
+    // That path publishes before the post-publish re-ask and returns, so a guard living
+    // anywhere after the commit does not run on it at all.
+    const { d, resolved } = deps({
+      caughtUp: [{ outcome: 'conflict' }, { outcome: 'already-current' }],
+      merge: merging(rewritten('src/a.ts')),
+      changes: [{ path: 'src/a.ts', content: BASE, kind: 'modified' }],
+      verdicts: [{ status: 'held' }, { status: 'lost', by: 'alice' }],
+    })
+    const run = await catchUpItem(d, stale(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+
+    expect(resolved).toEqual([])
+    expect(run.outcome).not.toBe('produced')
+  })
+
+  it('catches both instances from PR #64 as published trees rather than as status codes', async () => {
+    // Each was a different route to one outcome: a path the base changed, published as the
+    // artifact's older copy. A guard per route is a guard that misses the next route, so
+    // both are stated as the tree that would have been published.
+    const instances: { what: string; changes: ChangedFile[]; names: string }[] = [
+      // The base deleted a path and the resolution's change list lost the deletion.
+      { what: 'a dropped deletion', changes: [resolvedConflict], names: 'src/gone.ts' },
+      // The merge staged the base's rewrite, the worker removed the file, and the record was
+      // skipped — so the resolution mentions the path nowhere and head's older copy stands.
+      { what: 'a skipped record', changes: [resolvedConflict], names: 'src/stale.ts' },
+    ]
+    for (const { what, changes, names } of instances) {
+      const { d, resolved } = deps({
+        caughtUp: [{ outcome: 'conflict' }],
+        merge: merging(rewritten('src/a.ts'), removed('src/gone.ts'), {
+          path: 'src/stale.ts',
+          before: blobSha(BASE),
+          after: blobSha(THEIRS),
+          head: blobSha(BASE),
+        }),
+        changes,
+      })
+      const run = await catchUpItem(d, stale(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+      expect(resolved, what).toEqual([])
+      expect(run.reason, what).toContain(names)
+    }
   })
 })
 
@@ -1144,7 +1582,7 @@ describe('markers and silence after a claim was taken', () => {
     // exemption — that path never claims anything.
     const { d, posts } = deps({
       caughtUp: [{ outcome: 'conflict' }],
-      merge: { conflicts: [], head: 'headsha', broughtIn: 'basesha' },
+      merge: { conflicts: [], head: 'headsha', broughtIn: 'basesha', baseChanges: [] },
       changes: [],
     })
     const run = await catchUpItem(d, stale(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
@@ -1182,7 +1620,7 @@ describe('what the note on the item claims', () => {
     let ran = 0
     const { d, posts } = deps({
       caughtUp: [{ outcome: 'conflict' }, { outcome: 'already-current' }],
-      merge: { conflicts: [], head: 'headsha', broughtIn: 'basesha' },
+      merge: { conflicts: [], head: 'headsha', broughtIn: 'basesha', baseChanges: [] },
       changes: [{ path: 'src/a.ts', content: 'merged\n', kind: 'modified' }],
     })
     const run = await catchUpItem(d, stale(), role(), 'igor-bot', {

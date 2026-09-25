@@ -375,14 +375,25 @@ export async function catchUpItem(
     await deps.tracker
       .report(
         candidate,
-        run.execution?.conflictResolved === true
+        (run.execution?.conflictResolved === true
           ? resolvedNote(role, artifact.ref, artifact.url, artifact.base)
-          : broughtCurrentNote(role, artifact.ref, artifact.url, artifact.base),
+          : broughtCurrentNote(role, artifact.ref, artifact.url, artifact.base)) +
+          undoneNote(run.execution?.reverts),
       )
       .catch(() => undefined)
   }
   return run
 }
+
+/**
+ * What a resolution undid on purpose, where it undid anything.
+ *
+ * A declaration is not an exemption from being seen: the same sentence a refusal would have
+ * put on the item says what was dropped instead, because an undone base change is invisible in
+ * the diff whether or not somebody meant it.
+ */
+export const undoneNote = (reverts: readonly string[] = []): string =>
+  reverts.length === 0 ? '' : ` It drops what the base did to ${reverts.join(', ')}, as declared.`
 
 /** Short on purpose: the diff is on the artifact, and this is a pointer rather than a report. */
 export function resolvedNote(role: Role, ref: string, url: string, base: string): string {

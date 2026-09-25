@@ -19,11 +19,11 @@ import {
   ABSOLUTE_CEILING_MS, branchFor, claudeWorker, complete, conflictPrompt, DENIED_COMMAND_LIMIT, denialsFrom, describeTool, execute,
   ExecutionError, limitWindow, MODEL_SILENCE_MS, permits, prBody, PR_BODY_LIMIT, recordExecution, renderProgress, spendByModel, stripLinkage,
   TOOL_SILENCE_MS, usageLimit, watchWorker, workerEnv, workerPrompt, workerSystemPrompt,
-  describeCommand, refusalPath,
+  describeCommand, refusalPath, declarations, DECLARATION_PATH,
   type ExecutionResult, type Progress, type WorkerEvent, type WorkerRunner,
 } from '../src/execute.js'
 import { CAPACITY_PATH } from '../src/capacity.js'
-import { withTree, type ChangedFile, type TreeProvider, type WorkingTree } from '../src/worktree.js'
+import { blobSha, withTree, type BaseChange, type ChangedFile, type TreeProvider, type WorkingTree } from '../src/worktree.js'
 import { tempDir } from './tmp.js'
 
 const MINUTE = 60 * 1000
@@ -313,6 +313,80 @@ describe('rendering a command pattern for the worker', () => {
   })
 })
 
+describe('what a worker is told about undoing the base', () => {
+  const artifact = (): InFlight => ({
+    kind: 'pull-request',
+    ref: '#42',
+    url: 'https://example.test/42',
+    draft: false,
+    author: 'igor-bot',
+    mergeable: 'conflicting',
+    branch: 'igor/triage/7-timestamps',
+    base: 'main',
+  })
+
+  const base: BaseChange[] = [
+    { path: 'src/a.ts', before: blobSha('base\n'), after: blobSha('theirs\n'), head: blobSha('ours\n') },
+    { path: 'src/gone.ts', before: blobSha('base\n'), head: blobSha('base\n') },
+  ]
+
+  it('names the file to write, what it is for, and what leaving it out costs', () => {
+    // A channel a worker is not told about is a guard that only ever refuses: every
+    // legitimate revert becomes a handoff, whatever the worker meant.
+    const p = conflictPrompt(candidate(), artifact(), ['src/a.ts'], base)
+    expect(p).toContain(DECLARATION_PATH)
+    expect(p).toMatch(/hands the item to a\s+person/)
+    expect(p).toContain('"reverts"')
+  })
+
+  it('gives the base state to quote for each conflicted path, and for no other', () => {
+    // The state is the half of a declaration a worker cannot read off the tree — it is not
+    // given git — and a declaration naming the wrong one authorizes nothing. Only the
+    // conflicted paths, because the base's diff as a whole is unbounded.
+    const p = conflictPrompt(candidate(), artifact(), ['src/a.ts'], base)
+    expect(p).toContain(`- src/a.ts: ${blobSha('theirs\n')}`)
+    expect(p).not.toContain('src/gone.ts')
+  })
+
+  it('says a deleted path is deleted rather than naming a blob that does not exist', () => {
+    const p = conflictPrompt(candidate(), artifact(), ['src/gone.ts'], base)
+    expect(p).toContain('- src/gone.ts: deleted')
+  })
+
+  it('leaves the marker-free paragraph last, where the rest of this prompt puts it', () => {
+    // That paragraph is the last thing a worker reads before it resolves a delete/modify
+    // conflict, and the tests above it read it by position. The declaration goes before it.
+    const p = conflictPrompt(candidate(), artifact(), ['src/a.ts'], base)
+    expect(p.split('\n\n').at(-1)).toMatch(/^Where a conflicted file has no markers/)
+  })
+})
+
+describe('reading a declaration a worker wrote', () => {
+  it('takes the entries it can read and nothing else', () => {
+    const sha = blobSha('theirs\n')
+    expect(declarations(JSON.stringify({ reverts: [{ path: 'a.ts', discards: sha }] })))
+      .toEqual([{ path: 'a.ts', discards: sha }])
+  })
+
+  it('authorizes nothing where the file is not readable as a declaration', () => {
+    // Every unreadable shape yields no declaration rather than an error: the consequence of
+    // having none is a refusal naming the paths, which is what an unreadable file deserves.
+    for (const content of [
+      'not json at all',
+      '[]',
+      '{"reverts": {}}',
+      '{"all": true}',
+      '{"reverts": [{"path": "*", "discards": "abc"}]}',
+      '{"reverts": [{"path": "  ", "discards": "abc"}]}',
+      '{"reverts": [{"discards": "abc"}]}',
+      '{"reverts": [{"path": "a.ts"}]}',
+      '{"reverts": [null]}',
+    ]) {
+      expect(declarations(content), content).toEqual([])
+    }
+  })
+})
+
 describe('the trusted channel', () => {
   it('fences the item and says it is data', () => {
     const s = workerSystemPrompt(role(), ['draft-pr'])
@@ -540,6 +614,24 @@ describe('the pull request and the ledger point at one transcript', () => {
     const record = ledger.records[0] ?? {}
     expect('costUsd' in record).toBe(false)
     expect(record['usage']).toEqual({ assistantTurns: 3, cacheReadTokensPeak: 3000 })
+  })
+
+  it('records what a published resolution undid, which its diff cannot show', async () => {
+    // A restored deletion reads in the diff as the file still being there, so the record is
+    // the only place an undone base change is legible at all — and a declaration is meant to
+    // make it a statement rather than an exemption from being seen.
+    const { item, result } = await run()
+    const reverts = ['src/a.ts (base blob 0f1e2d)', 'src/gone.ts, which the base deleted']
+    await recordExecution('acme/lore', item, role(), { ...result, reverts })
+
+    expect(ledger.records[0]?.['reverts']).toEqual(reverts)
+  })
+
+  it('leaves the field out of a run that undid nothing', async () => {
+    const { item, result } = await run()
+    await recordExecution('acme/lore', item, role(), result)
+
+    expect('reverts' in (ledger.records[0] ?? {})).toBe(false)
   })
 
   it('records the figure where the worker reported one', async () => {
