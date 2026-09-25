@@ -75,10 +75,15 @@ function silent(from: string, silence: GitSilence): InitError {
         `the store in a git checkout, so git has to be on PATH.\n${silence.said}`.trim(),
     )
   }
+  // Not "there is no repository": exit 128 is also a checkout git declines to read — dubious
+  // ownership on a bind mount or in a CI container — where saying there is none sends somebody to
+  // create a repository they already have, one line above git's own remedy for what is wrong.
   return new InitError(
-    `${from} is not inside a git repository, and init writes into one that already exists.\n` +
-      `Creating the repository is not init's job — that is \`gh repo create\` and a clone, and ` +
-      `a scaffolder that makes repositories is a different and more dangerous tool.\n` +
+    `init wrote nothing: git could not say what repository ${from} is in.\n` +
+      `If there is none, that is the answer — init writes into a repository that already exists ` +
+      `and does not create one, which is \`gh repo create\` and a clone, and a scaffolder that ` +
+      `makes repositories is a different and more dangerous tool. If there is one, git declined ` +
+      `to read it, and the remedy is in its line below and nowhere else.\n` +
       `git: ${silence.said}`,
   )
 }

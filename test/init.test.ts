@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { parse as parseYaml } from 'yaml'
 import {
   igorRoot,
@@ -294,12 +294,15 @@ describe('overwriting', () => {
 })
 
 describe('where init refuses to write at all', () => {
+  afterEach(() => vi.unstubAllEnvs())
+
   it('refuses outside a repository, and says creating one is not its job', () => {
     const outside = realpathSync(tempDir('igor-init-bare-'))
 
     expect(() => initialize(outside)).toThrow(InitError)
-    expect(() => initialize(outside)).toThrow(/not inside a git repository/)
-    expect(() => initialize(outside)).toThrow(/not init's job/)
+    expect(() => initialize(outside)).toThrow(/could not say what repository/)
+    expect(() => initialize(outside)).toThrow(/does not create one/)
+    expect(() => initialize(outside)).toThrow(/gh repo create/)
     expect(existsSync(join(outside, DEFAULT_CONFIG_FILENAME))).toBe(false)
   })
 
@@ -310,6 +313,28 @@ describe('where init refuses to write at all', () => {
     // other: a scaffolder that got this far would leave a team's files in the shared tool.
     expect(existsSync(join(igorRoot(), ROLES_DIR))).toBe(false)
     expect(existsSync(join(igorRoot(), DEFAULT_CONFIG_FILENAME))).toBe(false)
+  })
+
+  it('does not call a checkout git declined to read a missing repository', () => {
+    // Exit 128 is not only "no repository": dubious ownership on a bind mount or a CI container
+    // is a checkout that is perfectly fine and that git will not read until it is told to. Saying
+    // there is none sends the operator to `gh repo create` for a repository they already have,
+    // one line above git's own remedy for the thing actually wrong.
+    const root = repo()
+    vi.stubEnv('GIT_TEST_ASSUME_DIFFERENT_OWNER', '1')
+
+    let message = ''
+    try {
+      initialize(root)
+    } catch (error) {
+      message = (error as Error).message
+    }
+
+    expect(message).toMatch(/could not say what repository/)
+    expect(message).not.toMatch(/is not inside a git repository/)
+    // The remedy git printed, which is the only place it exists.
+    expect(message).toMatch(/safe\.directory/)
+    expect(existsSync(paths(root).config)).toBe(false)
   })
 
   it('refuses a config path it cannot honour rather than writing somewhere else', () => {
