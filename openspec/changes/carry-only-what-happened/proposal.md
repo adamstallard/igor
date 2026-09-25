@@ -45,8 +45,16 @@ The removal requirement asks **whether the tree being laid over holds the path**
 right there, and wrong here: an invented addition names a path the base *does* hold, or holds under
 a spelling that compares unequal. Asking that question of an addition answers nothing.
 
-A single requirement covering both would therefore have to be phrased loosely enough to cover two
-different tests, and a requirement that is looser than the thing it replaces is the failure this
+**And the general form is not merely looser — it is false.** Take *the artifact carries what the
+worker did, and nothing else*. On a `DU` conflict the worker genuinely deletes a file: it is on
+disk, `conflictPrompt` tells it to remove it, it removes it. That is unambiguously a change the
+worker made. But *No removal is published for a path the base does not hold* requires the artifact
+**not** to carry it, because the artifact branch already lacks the path. So the general rule would
+demand publishing the exact removal the other requirement forbids, and that is the `422` which
+loses the run. It does not subsume the removal requirement; it contradicts it.
+
+A single requirement covering both would therefore also have to be phrased loosely enough to cover
+two different tests, and a requirement that is looser than the thing it replaces is the failure this
 repository has now made twice — stating a rule over rename *pairs* when the pairing was about to be
 deleted, and scoping a flag by a target when the scope could not be decided. Two requirements, two
 criteria, cross-referenced.
