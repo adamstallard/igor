@@ -140,7 +140,7 @@ reached the gone-check. So the guard changes the reading of exactly one status s
 | the #116 fold | ` D b.md`, `UD c.md` | removes `b` | removes `b` — index column is a space |
 | `git add -N n && rm n` | ` D n` | removes `n` | removes `n` — **see the residual below** |
 | an unstaged or staged plain deletion | ` D p`, `D  q` | removes it | removes it |
-| a worker deleting the conflicted path | `DU f` | `UNMERGED` first, deletion by the catch | unchanged |
+| a worker deleting the conflicted path | `DU f` | `UNMERGED` first, deletion by the catch | unchanged — and **wrong for `DU`**, see the third residual |
 
 Nothing legitimate is skipped, and the argument is short enough to state rather than sample:
 
