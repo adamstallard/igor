@@ -116,6 +116,32 @@ per-file force is a flag nobody can hold in their head. That was inherited from 
 file, where the distinction did not arise; with four it is the all-or-nothing version that nobody
 should hold, because it destroys three files to refresh one.
 
+## The template explains the model rather than warning against the absences
+
+`commands` is a list of what a worker may run, and its interesting content is what is missing.
+The obvious way to handle that is a warning — *do not add `git commit`, it will break your runs* —
+and it is the wrong one.
+
+**Committing is already forbidden three times over.** The standing instructions every worker
+receives say it (`src/execute.ts:144`: *"Edit files in the working directory; do not commit, push,
+or open"*), `conflictPrompt` repeats it for the resolution path (*"do not run git — the loop
+publishes the"*), and the requirement above excludes `git commit:*` by name. A fourth restatement
+in the template is the one people stop reading, and a file of prohibitions reads as a list of
+things that are nearly allowed.
+
+**One line of model does more.** *Igor reads the working directory and publishes it, so nothing
+here needs to stage or commit.* An operator who has read that does not reach for `git add` or
+`git commit`, because they can see there is nothing for either to do — a new file is read as
+untracked, `git rm` and `git mv` stage themselves, and a change that is committed is a change
+`git status` no longer reports, so committing **hides the worker's own work** rather than
+finishing it.
+
+That last point is also the honest reason `git commit:*` is excluded, and it is not the one the
+requirement gives. The requirement's reason — *a worker that can push routes around every check
+the publishing path makes on its behalf* — is exactly right for `git push:*` and is a security
+argument. For `git commit:*` alone there is no security question: it is self-defeating. Both
+belong, and they are different.
+
 ## Not a design decision: the `commands` list
 
 The default action space and its exclusions are in the requirement, not here. What a worker
