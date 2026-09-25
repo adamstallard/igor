@@ -37,11 +37,20 @@ needs the working tree itself. Three routes, three fixes.
 
 ## What Changes
 
-One **added** `task-execution` requirement: a rename reaches the artifact whole or not at all, and
-a half that cannot be read stops the publish rather than being dropped silently.
+One **added** `task-execution` requirement: a changed path execution cannot read stops the publish
+rather than being omitted from it silently.
 
-Nothing else changes. No configuration moves, no existing behaviour is altered for a rename whose
-two halves both read.
+**Stated over paths rather than over renames, deliberately.**
+[#118](https://github.com/adamstallard/igor/pull/118) switches `changes()` to `--no-renames` and
+deletes the pairing in `statusRecords` as unreachable, so after it lands a rename arrives as an
+unrelated removal and addition. The failure survives that change unaltered — the removal is
+emitted, the addition's read throws, the artifact carries a lone deletion — but a requirement
+phrased as *both halves of a pair* would not, because there would be no pair to speak of. Phrased
+over paths it holds under either reading of the working tree, and covers the same failure reached
+by an addition that stands alone.
+
+Nothing else changes. An artifact whose every changed path is readable is built exactly as it is
+today.
 
 ## Why `task-execution`, and why added rather than modified
 

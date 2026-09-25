@@ -25,20 +25,48 @@ Two weaker alternatives, for the record:
   worker meant to keep. A warning in a record nobody opens is what
   [#79](https://github.com/adamstallard/igor/issues/79) is filed about.
 - **Refuse only where the unreadable path is a rename destination, and otherwise keep today's
-  silent `continue`.** This is what the requirement says, and the scope is deliberate: an
-  unreadable file that is not half of a pair is a separate question with its own answer, and
-  widening this change to settle it would put a decision about every unreadable file inside a
-  change about renames.
+  silent `continue`.** This was the first draft's scope and it is rejected: it depends on knowing
+  which paths are halves of one change, which is exactly what #118 removes. See below.
 
-## Reading the destination before emitting the source
+## Stated over paths, not over renames
 
-The mechanism has a choice: read the destination first and emit both, or buffer the source's
-removal and flush it only once the destination is in hand.
+The first draft of this requirement said *a rename reaches the artifact whole or not at all*, and
+described an ordering within a pair: the source's removal must not be emitted before the
+destination has been read.
 
-They are equivalent in outcome; the first is preferred because it makes the invariant structural
-rather than remembered. A buffered removal is correct only for as long as every path out of the
-loop remembers to discard the buffer, and this function already has three `continue`s in one catch.
-The bug being fixed *is* an early emit surviving a path that forgot about it.
+That was written against a model [#118](https://github.com/adamstallard/igor/pull/118) removes.
+It switches `changes()` to `--no-renames`, so porcelain emits no `R` or `C` record, and its task
+5.2 deletes `PAIRED`, `RENAME`, `indexOnly` and the `from`/`++i` pairing as unreachable. After that
+a rename is an unrelated `D` and `A`, and the failure survives by a route the pairing language
+cannot describe — the removal is emitted, the addition's read throws, the artifact carries a lone
+deletion. The scope clause was worse than the rest: excluding "an unreadable file that is not half
+of a rename" is undecidable once nothing knows the two records are halves of anything.
+
+So it is phrased over paths. **A requirement states what must be true of the artifact, not what the
+parser currently looks like**, and the parser is under active change in two open pull requests.
+Phrased over paths it is correct before #118 and after it, and it needs no amendment when the
+pairing goes.
+
+The widening is real and is accepted rather than incidental: an addition that cannot be read now
+refuses too, where today it is skipped by the same bare `continue`. That is the same failure with
+one path instead of two, and carving it out would have reintroduced the dependency on knowing which
+paths belong to each other.
+
+## The mechanism, which the requirement does not fix
+
+Read every path a change touches before committing any of it to the change list, so a throw leaves
+nothing behind. Whether that is a read-first ordering or a buffer flushed on success is an
+implementation choice; the invariant is that a failure cannot leave a partial change already
+emitted. The bug being fixed *is* an early emit surviving a path that forgot about it, and this
+function has three `continue`s in one catch.
+
+## Not settled here: why the destination is unreadable
+
+A dangling symlink is the cause reachable today, because `readFile` follows the link. Reading the
+link itself rather than following it would publish it correctly — a tree can hold a symlink as mode
+`120000` with the target as content — and that is very likely a better answer for that specific
+cause. It is a different change: this one is about what happens when a path cannot be read, not
+about reducing the set of paths that cannot be.
 
 ## Not a design decision: which failures count as unreadable
 

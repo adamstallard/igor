@@ -1,34 +1,37 @@
 ## ADDED Requirements
 
-### Requirement: A rename reaches the artifact whole or not at all
+### Requirement: A path execution cannot read is never silently omitted
 
-Where execution reads a rename out of the working tree, the artifact SHALL carry both halves or
-neither. Where either half cannot be read, execution SHALL NOT publish the other, SHALL refuse the
-publish, and SHALL name the path it could not read.
+Where execution reads the working tree to build an artifact and a changed path cannot be read, it
+SHALL NOT publish an artifact that omits that path while carrying the rest. It SHALL refuse, and
+SHALL name the path it could not read.
 
-**The source's removal is the half that escapes.** A rename is read as a pair, and the source's
-removal is available before the destination's content is. Emitting it as soon as it is known means
-a destination that cannot be read leaves a removal already committed to the change list, with the
-failure reaching nothing. The removal SHALL NOT be emitted before the destination has been read.
+**The failure this prevents is a change arriving in pieces.** A rename is the case that reaches it
+today: the source's removal and the destination's content are two paths for one change, and where
+the destination cannot be read the artifact publishes the removal alone. The diff then reads as a
+deliberate deletion of a file the worker meant to keep under a new name. Nothing downstream
+objects — the source path is in the base tree, so removing it is the case the tree API accepts
+rather than the one it rejects with 422.
 
-**Nothing makes the result visible downstream, which is why it is refused here.** The source path
-is in the base tree — it is a rename of a tracked file — so removing it is the case the tree API
-accepts rather than rejects. No error arrives from publishing. The artifact carries a clean removal
-with no addition, and the diff reads as a deliberate deletion: the worker meant to keep the file
-under a new name, and review sees it deleted.
+**It is stated over paths rather than over renames on purpose.** Whether a rename reaches execution
+as one record or as an unrelated removal and addition is a detail of how the working tree is read,
+and it is a detail that changes: a read that folds renames into one record and a read that does not
+are both legitimate, and the artifact must be whole under either. A requirement phrased as *both
+halves of a pair* holds only for as long as pairs exist in the code. A requirement phrased over
+paths holds regardless, and covers the same failure reached by an addition alone.
 
-**Refused rather than published without the rename.** Dropping both halves would leave the file
-where it was and publish the rest, which loses nothing — but it publishes an artifact that does not
-carry a change the worker made, silently, and *"an artifact that carries the edits and drops the
-removals is worse than one that is not published at all: it looks complete to a reviewer and is
-not"* is the reason the in-force requirement exists. A read that failed on a file the worker just
-wrote is also a state execution does not understand, and publishing the parts it does understand
-is how a subtler version of this arrives later.
+**Refused rather than published without the path.** Omitting the unreadable path and publishing the
+rest loses nothing on disk and is therefore tempting. It is rejected on the project's own ground:
+*"an artifact that carries the edits and drops the removals is worse than one that is not published
+at all: it looks complete to a reviewer and is not."* The harm named there is silent
+incompleteness, and quietly dropping a path is silently incomplete in exactly that way. A read that
+failed on a file the worker just wrote is also a working tree execution does not understand, and
+publishing the parts it believes it understands is how a subtler instance arrives later.
 
 This composes with *The artifact carries every change the worker made, including removals* and does
 not weaken it. That requirement governs every change execution **read**, and a removal it read is
-still never dropped. This one governs the case where one half of a pair was read and the other
-could not be.
+still never dropped. This one governs the paths it could not read, which that requirement does not
+reach.
 
 #### Scenario: A rename whose destination cannot be read
 
@@ -37,19 +40,17 @@ could not be.
 - **AND** the refusal names the path that could not be read
 - **AND** the item is handed off rather than marked complete
 
-#### Scenario: The source's removal does not escape early
+#### Scenario: The removal of a rename's source does not reach the artifact alone
 
-- **WHEN** a rename's source removal is known before its destination has been read
-- **THEN** the removal does not enter the change list until the destination has been read
-  successfully
+- **WHEN** a rename's source removal is known and its destination cannot be read
+- **THEN** the artifact carries neither, whether the two arrive as one record or as two
 
-#### Scenario: A rename whose halves both read
+#### Scenario: An addition that cannot be read
 
-- **WHEN** a worker renames a file and both halves are readable
-- **THEN** the artifact carries the removal of the old path and the addition of the new one, as it
-  does today
+- **WHEN** a worker adds a file that cannot be read from the working tree
+- **THEN** nothing is published, and the refusal names the path
 
-#### Scenario: An unreadable file that is not half of a rename
+#### Scenario: Every changed path readable
 
-- **WHEN** a file that is not part of a rename cannot be read
-- **THEN** this requirement does not apply, and the existing handling stands
+- **WHEN** every path a change touches can be read
+- **THEN** the artifact carries them all, as it does today
