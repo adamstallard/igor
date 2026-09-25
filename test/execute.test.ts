@@ -90,8 +90,14 @@ const role = (over: Partial<Role> = {}): Role =>
     ...over,
   }) as Role
 
+/** The commit every fake tree here was cut from, and what the artifact must be published over. */
+const CLONE_SHA = 'clonesha'
+
 /** A provider whose trees are plain directories, so the seam is testable without a network. */
-function fakeProvider(changes: ChangedFile[], opts: { failProvision?: boolean } = {}) {
+function fakeProvider(
+  changes: ChangedFile[],
+  opts: { failProvision?: boolean; noHead?: boolean } = {},
+) {
   const log = { provisioned: 0, released: 0, paths: [] as string[] }
   const provider: TreeProvider = {
     name: 'fake',
@@ -104,6 +110,7 @@ function fakeProvider(changes: ChangedFile[], opts: { failProvision?: boolean } 
         path,
         repo: 'o/r',
         changes: async () => changes,
+        ...(opts.noHead === true ? {} : { head: async () => CLONE_SHA }),
         release: async () => {
           log.released++
         },
@@ -2608,5 +2615,44 @@ describe('an artifact carries the removals as well as the edits', () => {
     expect(result.outcome).toBe('produced')
     expect(request?.files.map((f) => f.path)).toEqual(['src/new.ts'])
     expect(request?.deletions).toEqual(['src/old.ts'])
+  })
+})
+
+describe('the base the artifact is laid over', () => {
+  it('is the commit the tree was cut from, not the branch head at publish time', async () => {
+    // The base branch moves while the worker runs, and a publish that re-reads its head lays
+    // the artifact over a tree the worker never saw. Where both deleted the same path, the
+    // host refuses the whole tree request — every change the run made, lost to a removal that
+    // was correct when it was read.
+    const { provider } = fakeProvider([
+      { path: 'src/a.ts', content: 'fixed', kind: 'modified' },
+      { path: 'src/gone.ts', content: '', kind: 'deleted' },
+    ])
+    const { host, seen } = fakeCodeHost()
+    const { t } = fakeTracker()
+
+    await execute(provider, t, host, candidate(), role(), {
+      worker: async () => ({ result: 'Done.', total_cost_usd: 0.01 }),
+    })
+
+    expect(seen[0]?.baseSha).toBe(CLONE_SHA)
+  })
+
+  it('is left to the host where the tree cannot say what it was cut from', async () => {
+    // `head` is optional on the same terms as `merge`, because the provider seam says nothing
+    // about how a tree is made. A provider without it publishes as it always did rather than
+    // not publishing at all.
+    const { provider } = fakeProvider([{ path: 'src/a.ts', content: 'fixed', kind: 'modified' }], {
+      noHead: true,
+    })
+    const { host, seen } = fakeCodeHost()
+    const { t } = fakeTracker()
+
+    const result = await execute(provider, t, host, candidate(), role(), {
+      worker: async () => ({ result: 'Done.', total_cost_usd: 0.01 }),
+    })
+
+    expect(result.outcome).toBe('produced')
+    expect(seen[0]).not.toHaveProperty('baseSha')
   })
 })

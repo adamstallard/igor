@@ -148,11 +148,11 @@ Nothing legitimate is skipped, and the argument is short enough to state rather 
   unmerged codes are `DD`, `AU`, `UD`, `UA`, `DU`, `AA` and `UU`; `AD` is not among them, and the
   four containing `A` are caught by `UNMERGED` before the gone-check, so `AD` never arrives from a
   merge state. An index-added path is therefore absent from HEAD by construction.
-- Absent from HEAD is absent from `base_tree` **on the resolution path**, which is where the
-  invented paths come from: `commitOnBranch` lays its tree over `parents[0]`, and `merge()` stops
-  before committing, so the clone's HEAD is still that same commit. On the produce path the two
-  can diverge — `produce` re-reads the base branch's sha at publish time, after the worker has
-  run — and only one direction of that divergence is harmless. Both are below.
+- Absent from HEAD is absent from `base_tree` on both publishing paths, because both lay their
+  tree over the commit the clone holds: `commitOnBranch` over `parents[0]`, which is the HEAD
+  `merge()` read before merging, and `produce` over `baseSha`, which is `WorkingTree.head()`. That
+  second one was a publish-time read of the base branch until this change closed it; the
+  measurement and the reasoning are below.
 
 ### The requirement says what must be true, not what to run
 
@@ -215,9 +215,10 @@ outcome.
 
 ## The residuals, measured and not covered
 
-Two ways to publish a removal of a path the base tree does not hold survive the guard. Both are
-what the second requirement is worded broadly enough to cover, and neither is created by this
-change.
+Three ways to publish a removal of a path the base tree does not hold survived the guard as first
+written. None was created by this change, and all three are what the second requirement is worded
+broadly enough to cover. One is closed below; the second is filed; the third was found reviewing
+the fix for the first and is not filed yet.
 
 ### The index column does not always say what the index knows
 
@@ -244,12 +245,11 @@ Three things about it:
   for the fold. Whether it is worth paying for here is a different question with a different
   measurement behind it, and it is `tasks.md`'s to answer rather than this change's to assume.
 
-### The base can move under the produce path while the worker runs
+### The base moving under the produce path — closed here, [#122](https://github.com/adamstallard/igor/issues/122)
 
-`produce` takes no base sha from the caller: `GitHubCodeHost.produce` reads
-`branchSha(repo, base)` when it publishes, and the clone the worker changed was made before the
-worker ran. So `base_tree` is the base branch as it is at publish time, and the two can differ by
-whatever landed on the base during the run.
+`produce` read `branchSha(repo, base)` when it published, and the clone the worker changed was
+made before the worker ran. So `base_tree` was the base branch as it stood at publish time, and
+the two could differ by whatever landed on the base during the run.
 
 - **Ahead by an addition is harmless**, and the guard makes it so: a path the base gained after
   the clone is not in the working tree at all, so no record can name it, so nothing is removed
@@ -258,13 +258,91 @@ whatever landed on the base during the run.
   also deleted `X` — it was in the clone — status prints ` D X`, index column a space, the
   gone-check fires, and the removal goes to a `base_tree` that no longer holds `X`.
 
-The window is the worker's run, so this is a race rather than a shape, which is why it is recorded
-here rather than guarded against on a measurement nobody has taken. Nothing about the guard
-changes: skipping an index-added path can only decline a removal, never invent one.
+**The fix is to stop making the read**, which is why it lands here rather than staying filed: a
+sha nobody re-reads cannot move between the read and the tree request. `WorkingTree` gains
+`head()`, execution passes it as `ArtifactRequest.baseSha`, and `produce` prefers it to
+`branchSha`. The window closes and a round-trip goes with it — the cost is negative, against the
+assumption this residual was filed under.
 
-Both residuals are why the second requirement says what must be true rather than what the guard
-achieves. A requirement describing only the current guard would make the next instance of the 422
-a surprise rather than a known gap.
+The fallback stays: `baseSha` is optional on the request and `head()` optional on the tree, on the
+same terms as `merge()`, because `TreeProvider` says nothing about how a tree is made.
+
+#### The clone's HEAD is the sha it was cut from, measured
+
+Publishing against it is only right if it has not moved, so it was measured rather than assumed —
+on a shallow clone, through the whole sequence a resolution run puts it through:
+
+| after | HEAD |
+| --- | --- |
+| `git clone --depth 1 --branch <ref>` | the remote branch tip |
+| `git fetch --unshallow` and `git fetch origin <base>` | unchanged |
+| `git merge --no-commit --no-ff <base>`, clean or conflicted | unchanged, `MERGE_HEAD` written |
+| the worker editing and deleting files | unchanged |
+
+`merge()` reads `rev-parse HEAD` *before* merging and returns it as `MergeState.head`, and
+`--no-commit` is what keeps the two the same afterwards — the property `'does not commit, so the
+tree holds the merge and nothing else does'` already pins, now pinned from the publishing side as
+well.
+
+**A worker that ran `git commit` is the one case where it moves**, onto a sha the remote cannot
+resolve, and the publish then fails on an unknown `base_tree`. Nothing in the repository grants
+`git commit`; reaching it needs an operator to put it in a role's `commands`. What that costs is
+worth stating exactly rather than waving away, because the obvious sentence — *such a run loses
+its committed files from `changes()` anyway* — is true of the files and false of the run: a
+**partial** commit leaves the rest dirty, and the rest used to publish against the branch head.
+So the change converts a silent partial publish into a loud refusal. Loud is the better failure
+of the two by this design's own preference, and the silent one is the class three requirements
+here already exist about — but the refusal escapes `execute` as a throw, which leaves the claim
+on the item with no handoff note, so it is not free. Recorded as a known edge rather than guarded,
+because guarding it means recording the sha when the tree is provisioned, and that is a change to
+the tree seam rather than to the publish.
+
+#### The unmerged branch of the read owes a removal it cannot check — **found here, not filed**
+
+The guard sits on the gone-check, and the gone-check is not the only place `changes()` emits a
+deletion. The `catch` around the content read emits one for **any** unmerged record whose file is
+no longer on disk, and asks nothing about HEAD. `DU` — deleted by us, modified by them — is a path
+the artifact branch itself deleted, so `parents[0]` never held it, and the worker removing the
+base's copy is exactly what `conflictPrompt` and the catch's own comment ask for.
+
+Reproduced on git 2.54.0: base holds `X.ts`, the artifact branch deletes it, the base then
+modifies it; the merge prints `DU X.ts` and leaves the base's copy in the tree; the worker removes
+it and the record is still `DU`. `changes()` returns one `deleted` entry, `carried()` puts it in
+`deletions`, and `git cat-file -e <artifact head>:X.ts` says the path is absent — the 422 shape,
+by the route the guard does not cover. `DD`, `AA` and `AU` are the other unmerged codes whose
+"ours" side is absent from HEAD.
+
+It is not this change's doing — the catch and the `UNMERGED` test both predate it — and closing it
+is not the same kind of edit as the guard above: the gone-check guard declines a removal nobody
+asked for, while here the worker did ask, and what to do instead is a question about the `DU`
+orientation that the requirement does not answer. It belongs in its own change, and the second
+requirement is unconditional, so **this one cannot archive with it open**.
+
+#### `commitOnBranch` does not have this window
+
+The issue names both publishing paths. It is right about `createBranchWithFiles` and wrong about
+`commitOnBranch`, which is why only the first is touched:
+
+- `commitOnBranch` lays its tree over `parents[0]`, and the caller's `parents[0]` is
+  `MergeState.head` — `rev-parse HEAD` in the clone, before the merge. There is no publish-time
+  read of any branch on that path, so the base it publishes against is the clone's by
+  construction.
+- What the artifact branch does during the run reaches that path at the last step instead: the
+  `PATCH refs/heads/<branch>` carries no expected sha, so a push to the artifact branch mid-run is
+  a lost update rather than a 422. A different race, unmeasured, and not this change's.
+
+### Why the requirement wants no new scenario
+
+The route is new and the obligation is not. *"A publish is not lost to a removal nobody asked
+for"* fires on a removal of a path the base does not hold, and after this the base **does** hold
+it — the scenario describes the outcome, and the outcome is unchanged. What moved is which tree
+"the base" names, so the requirement's prose gains a sentence fixing it as the tree the work was
+cut from rather than the branch head at publish time. A scenario restating that would pin the
+mechanism this change chose, which is this file's job.
+
+The remaining residual is why the second requirement says what must be true rather than what the
+guard achieves. A requirement describing only the current guard would make the next instance of
+the 422 a surprise rather than a known gap.
 
 ## Risks
 

@@ -70,13 +70,23 @@
       not this change's doing. Decide whether to close it here with a tree lookup, or file it as
       its own issue and tick this with the number — `design.md` holds the measurements, including
       that `--porcelain=v2` does not distinguish the case
-- [x] 6.2 Filed as [#122](https://github.com/adamstallard/igor/issues/122): it is a race rather
-      than a misread, and closing it is a choice between publishing against a stale base and
-      dropping a removal, neither of which this change should settle. The produce path re-reads
-      the base branch's sha at publish time, so a path the base
-      deletes while the worker runs, and the worker deletes too, reaches the same 422. Establish
-      whether the window is worth closing — passing the clone's sha as the base, or dropping a
-      removal the base tree does not hold — or file it, and tick this with the number
+- [x] 6.2 Closed here, [#122](https://github.com/adamstallard/igor/issues/122). It was filed as a
+      race the change should not settle, on the assumption that closing it meant paying for a
+      lookup. It does the opposite: the produce path re-read the base branch's sha at publish
+      time, so publishing against the sha the clone was cut from **removes** that round-trip and
+      the window with it. `WorkingTree.head()` offers the sha, execution passes it as
+      `ArtifactRequest.baseSha`, and `produce` prefers it to `branchSha`. `commitOnBranch` never
+      had the window — its `base_tree` is `parents[0]`, which is the clone's own HEAD. The
+      requirement is unconditional, so leaving this open would have left it unmet at archive
+
+- [ ] 6.3 **A third route, found reviewing 6.2's fix and not yet filed.** The guard sits on the
+      gone-check, and the `catch` around the content read emits a deletion for any unmerged record
+      whose file is gone without asking about HEAD. A `DU` path — deleted by the artifact branch,
+      modified by the base — is absent from `parents[0]`, so the worker removing the base's copy,
+      which is exactly what `conflictPrompt` asks for, publishes a removal no tree holds.
+      Reproduced end to end; `design.md` holds the measurement. The second requirement is
+      unconditional, so **this change cannot archive until this is closed or filed** — file it and
+      tick this with the number
 
 ## 7. Documentation
 

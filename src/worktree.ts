@@ -79,6 +79,17 @@ export interface WorkingTree {
   /** Files the worker touched, read back from the tree rather than from what it claimed. */
   changes(): Promise<ChangedFile[]>
   /**
+   * The commit this tree was cut from, which is the tree an artifact built from it must be
+   * laid over. Re-reading the branch head at publish time instead opens a window the length of
+   * a worker run: a path the base branch deletes inside it, and the worker deletes too, is
+   * published as a removal of a path the base tree no longer holds, and the host refuses the
+   * whole request with `422 GitRPC::BadObjectState`.
+   *
+   * Optional on the same terms as `merge`: `TreeProvider` says nothing about how a tree is
+   * made, and a publisher that is not given one falls back to reading the branch head.
+   */
+  head?(): Promise<string>
+  /**
    * Merges `ref` in without committing, leaving conflict markers where it conflicts.
    *
    * Optional, because `TreeProvider` deliberately says nothing about how a tree is made and
@@ -330,6 +341,15 @@ export class ClonedTree implements WorkingTree {
       })
     }
     return out
+  }
+
+  /**
+   * The clone's own commit, which stays the one it was cut from for the whole run: the worker
+   * edits the working tree and Igor publishes, and `merge` brings its side in without
+   * committing.
+   */
+  async head(): Promise<string> {
+    return (await run('git', ['-C', this.path, 'rev-parse', 'HEAD'])).trim()
   }
 
   /**

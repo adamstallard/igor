@@ -67,6 +67,12 @@ a resolution commits onto, or the base branch a new artifact is cut from. *"A ba
 undone only where the resolution says so"* is about the second; this requirement is about the
 first.
 
+**And it is the tree the work was cut from**, not the branch as it stands when the artifact is
+published. A branch head read at publish time is a different tree whenever the branch moved while
+the work was being done, so a removal that was correct against what the worker saw arrives as a
+removal of a path that tree no longer holds. Publishing over an older base is what the artifact's
+catch-up merge exists for; publishing over a base nobody read the work against is not.
+
 Where reading the working tree offers a removal of a path the base does not hold, execution SHALL
 NOT publish it. Such a path is not a change the worker made: the run's own index brought it into
 being — as the destination of a rename that was then moved again, or as a staged addition the

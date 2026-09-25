@@ -1487,11 +1487,21 @@ API refuses a removal of a path `base_tree` does not hold with `422 GitRPC::BadO
 refuses the whole tree request, so one invented entry costs the run everything the worker produced.
 Under `--no-renames` the only status shape that reaches the guard is `AD`.
 
+**The base is the commit the tree was cut from**, not the branch head at publish time. A tree
+offers it through `WorkingTree.head()`, and execution passes it to the host as
+`ArtifactRequest.baseSha`; the resolution path has always had it, since `commitOnBranch` lays its
+tree over `parents[0]` and that is the clone's own HEAD. Re-reading the branch head instead opened
+a window the length of a worker run — a path the base branch deleted inside it, and the worker
+deleted too, was published as a removal of a path the base tree no longer held — and reading it
+cost a round-trip to buy that window. The artifact is laid over a base that may since have moved,
+which is an ordinary pull request branch and what the catch-up merge is for.
+
 Two paths to the same 422 remain open and are recorded rather than assumed:
 [#121](https://github.com/adamstallard/igor/issues/121), where an intent-to-add path deleted before
-commit reports an index column of space and so is invisible to the guard, and
-[#122](https://github.com/adamstallard/igor/issues/122), where the base branch deletes a path while
-the worker runs and the worker deletes it too.
+commit reports an index column of space and so is invisible to the guard; and the unmerged branch
+of the same read, which emits a deletion for any unmerged path the worker removed and asks nothing
+about HEAD — so a `DU` path, one the artifact branch itself deleted and the base modified, is
+published as a removal of a path `parents[0]` never held.
 
 ### 6.7.3 A binary in an artifact is corrupted, not dropped — **known, and deliberately unguarded**
 

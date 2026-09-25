@@ -1688,9 +1688,15 @@ export async function execute(
     const lost = status === 'lost'
 
     options.onPublish?.()
+    // Laid over the commit the tree was cut from rather than the base branch's head now.
+    // Reaching here means `artifact` is undefined — a defined one has a merge and takes the
+    // resolution path above — so the tree was cloned at no ref, which is the same default
+    // branch the pull request is opened against.
+    const baseSha = await tree.head?.()
     const opened = await codeHost.produce({
       repo: candidate.repo,
       branch: branchFor(role, candidate, options.branchPrefix),
+      ...(baseSha === undefined ? {} : { baseSha }),
       title: candidate.title,
       body: prBody(linkage, transcript, candidate, options.store),
       files,

@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, renameSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { describe, expect, it } from 'vitest'
@@ -260,6 +260,20 @@ describe('bringing a base into an artifact tree', () => {
     const head = await run('git', ['-C', clone, 'rev-parse', 'HEAD'])
     const artifact = await run('git', ['-C', clone, 'rev-parse', 'artifact'])
     expect(head.stdout.trim()).toBe(artifact.stdout.trim())
+  })
+
+  it('offers the commit it was cut from, and still offers it once the merge is in', async () => {
+    // What an artifact is laid over. Re-read from the base branch at publish time it is a
+    // different sha whenever the branch moved during the run, and a removal of a path that sha
+    // no longer holds is refused with `422 GitRPC::BadObjectState` — the whole tree request.
+    const { clone, origin } = await conflicting()
+    const tree = new ClonedTree(clone, 'o/r')
+    const cutFrom = (await run('git', ['-C', origin, 'rev-parse', 'artifact'])).stdout.trim()
+    expect(await tree.head()).toBe(cutFrom)
+
+    await tree.merge('main')
+    unlinkSync(join(clone, 'untouched.txt'))
+    expect(await tree.head()).toBe(cutFrom)
   })
 
   it('reports a clean merge as no conflicts at all', async () => {
