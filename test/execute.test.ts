@@ -352,6 +352,11 @@ describe('the conflict a worker is handed when one side deleted the file', () =>
     // keeping the file keeps the base's copy, and the base removed nothing to accept.
     const p = markerFree()
     expect(p).toMatch(/copy left on disk is the side that survived/i)
+    // Conditional, not a claim about every marker-free conflict. A binary, a path with `-merge`
+    // set, and a submodule's gitlink all conflict without markers and none of them is one side
+    // deleting what the other edited — asserted as a fact, the sentence lies to the worker in
+    // each, and the advice under it describes a choice that is not on offer.
+    expect(p).toMatch(/^Where a conflicted file has no markers because one side deleted/)
     expect(p).not.toMatch(/keep the artifact's version/i)
     expect(p).not.toMatch(/accept main's removal/i)
   })
