@@ -422,6 +422,51 @@ describe('a stop gets a receipt, not a handoff', () => {
     expect(posts.at(-1)).toMatch(/stopped at bob's request/)
   })
 
+  it('corrects the receipt where the stand-down did not clear the holder', async () => {
+    // The receipt ends "and released this". Where the surface answered and the holder field
+    // did not clear, that is false on an item somebody is reading — and it is the last thing
+    // said unless the correction comes after it.
+    const { d, posts } = deps({
+      changes: [],
+      verdicts: [{ status: 'held' }, { status: 'stopped', by: 'bob' }],
+      releaseLeavesHolder: true,
+    })
+    const r = await runItem(d, candidate(), role(), 'igor-bot', { ...noWait, worker: idleWorker })
+
+    expect(r.outcome).toBe('stopped')
+    expect(posts.at(-2)).toMatch(/stopped at bob's request/)
+    expect(posts.at(-1)).toBe(stillAssigned())
+  })
+
+  it('corrects the hand-over note where the stand-down did not clear the holder', async () => {
+    // A loss does not cut a run short, so reaching here means it published and there is a
+    // hand-over note to correct. Without this, the item says somebody else has it while this
+    // Igor's name is still on it, and nothing accounts for the second one.
+    const { d, posts } = deps({
+      changes: [{ path: 'src/a.ts', content: 'fixed', kind: 'modified' }],
+      verdicts: [{ status: 'held' }, { status: 'lost', by: 'alice' }],
+      releaseLeavesHolder: true,
+    })
+    const r = await runItem(d, candidate(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+
+    expect(r.outcome).toBe('lost')
+    expect(r.spoke).toBe(true)
+    expect(posts.at(-1)).toBe(stillAssigned())
+  })
+
+  it('stays silent on a lost claim it did release, as before', async () => {
+    // The pole for both: a clean stand-down adds nothing, or every stop and every lost item
+    // gains a comment that says only that the ordinary thing happened.
+    const { d, posts } = deps({
+      changes: [{ path: 'src/a.ts', content: 'fixed', kind: 'modified' }],
+      verdicts: [{ status: 'held' }, { status: 'lost', by: 'alice' }],
+    })
+    const r = await runItem(d, candidate(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+
+    expect(r.outcome).toBe('lost')
+    expect(posts.some((m) => m === stillAssigned())).toBe(false)
+  })
+
   it('on a stop during a run that changed nothing', async () => {
     // Nothing to publish is no excuse for skipping the claim read: a stop answered with a
     // handoff names reviewers at whoever just said stop, and then holds the item down as

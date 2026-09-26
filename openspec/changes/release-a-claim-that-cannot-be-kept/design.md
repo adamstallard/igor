@@ -5,8 +5,9 @@
 Three sites had the same defect and were fixed separately. The question this change had to answer
 is whether to keep doing that.
 
-**Guarding each call** is what produced three issues. `docs/architecture.md:1538` already records
-the lesson under a different name — *a guard per route is a guard that misses the next route* —
+**Guarding each call** is what produced three issues. The same lesson is argued in `undone()`'s
+docstring on [#103](https://github.com/adamstallard/igor/pull/103) — *a guard written per route is
+a guard that misses the next one*, about a comparison rather than a claim, and **not yet merged** —
 and this is that failure at one altitude up: the rule was enforced per call site while the
 requirement was about a state.
 
@@ -102,7 +103,7 @@ it was*. The lesson stops there — the holder is right for composing the handof
 is for.
 
 **Rejected: an HTTP status table** — 4xx as the item's fault, 5xx and 429 as the surface's. That is
-the guard-per-route failure this file already quotes from `docs/architecture.md:1538`, one layer
+the guard-per-route failure quoted above, one layer
 down: the next status code falls through it. Telling the two apart needs a distinction the adapters
 do not currently draw, which is why `surfaceFailed` is still unconditional in that handler, and why
 `serve` counts the flag rather than trusting any one instance of it.

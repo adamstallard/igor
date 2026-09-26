@@ -76,6 +76,19 @@
 - [ ] 8.1 [#132](https://github.com/adamstallard/igor/issues/132) — the stop receipt still writes
       `spoke: true` whatever the report did. Same requirement, a site this change does not reach
 - [ ] 8.2 File the third escape found while fixing #129 as its own issue if it is not closed here
+- [ ] 8.3a **`handOff`'s `posted` no longer means what `spoke` promises.** Dropping the
+      `&& posted` guard lets a correction land while `posted` stays false, so `spoke` is false on
+      an item that did get a message and `src/cli.ts:440` prints its "left no message" warning
+      wrongly. One stdout line; nothing on the item is wrong. Same defect as
+      [#132](https://github.com/adamstallard/igor/issues/132) at a second site — `spoke` derived
+      from one call's success rather than from what the item ended up with — and the fix is the
+      same piece of work: a fact on `HandoffOutcome`, and `spoke`'s derivation at five sites
+- [ ] 8.4 **An outage confined to the unassign endpoint never trips the breaker.** `handOff`
+      swallows a `release` throw and returns without `surfaceFailed`, which resets the counter, so
+      a pool alternating published and handed-off items never reaches two. Measured on six items
+      with that endpoint down: `failures: 0`. Kept as it is deliberately, argued in `design.md` —
+      each item still prints its own refusal reason, and the shapes a counter cannot separate are
+      what 8.3 is really about
 - [ ] 8.3 **A deterministic item fault still re-spends.** The counter stops a wedged item from
       ending every cycle, but the claim is released rather than held, so the item returns next
       cycle and the worker runs on it again. Before this change the held claim screened it out.

@@ -293,16 +293,23 @@ async function runClaimedItem(
     case 'refused': {
       // The claim went away mid-execution. A stop, most likely — so a receipt, not a handoff.
       const verdict = await checkpoint(tracker, claim, identity)
+      let stoodDown = true
       if (verdict.status === 'stopped' || verdict.status === 'lost') {
         // Released before anything is said, so the receipt is true by the time it can be read.
         // `takeClaim` does this for a stand-down inside the settle window; standing down later
         // is the same obligation, and skipping it left the Igor's name on an item it had just
         // announced it was releasing.
-        await tracker.release(candidate, identity).catch(() => undefined)
+        //
+        // The answer is kept, not discarded: the receipt below ends "and released this", and
+        // where the holder did not clear that sentence is false on an item somebody is reading.
+        stoodDown = await tracker.release(candidate, identity).then((clear) => clear, () => false)
       }
       if (verdict.status === 'stopped') {
         const artifact = execution.artifact ? execution.artifact.url : undefined
         await tracker.report(candidate, stopReceipt(role, verdict, artifact)).catch(() => undefined)
+        // After the receipt, never before it: a correction posted first corrects nothing and
+        // leaves the false clause as the last word.
+        if (!stoodDown) await tracker.report(candidate, stillAssigned()).catch(() => undefined)
         return {
           outcome: 'stopped', candidate, reason: execution.reason, execution,
           costUsd: execution.costUsd, spoke: true, cures: execution.cures ?? [],
@@ -312,13 +319,20 @@ async function runClaimedItem(
         // Silent where there is nothing to hand over: whoever took it is visibly on it, and a
         // message would only tell them what they just did. A draft left behind is different —
         // unannounced, it is work nobody knows exists.
+        // …and where the release did not take, never silent: this Igor's name is still on it
+        // beside whoever took it, and nothing else on the item accounts for the second one.
         const artifact = execution.artifact
         if (artifact !== undefined) {
           await tracker.report(candidate, handOverNote(role, verdict.by, artifact.url)).catch(() => undefined)
         }
+        // A correction, never the standalone: a loss does not cut a run short — only a stop
+        // does — so reaching here means the run finished and published, and there is always a
+        // hand-over note above this to correct. `takeClaim` owns the standalone, for a loss
+        // found in the settle window where nothing has been said.
+        if (!stoodDown) await tracker.report(candidate, stillAssigned()).catch(() => undefined)
         return {
           outcome: 'lost', candidate, reason: execution.reason, execution,
-          costUsd: execution.costUsd, spoke: artifact !== undefined, cures: execution.cures ?? [],
+          costUsd: execution.costUsd, spoke: artifact !== undefined || !stoodDown, cures: execution.cures ?? [],
         }
       }
       // Still held, so the refusal was the action space rather than the claim: that is a
