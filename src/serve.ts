@@ -140,8 +140,15 @@ export async function serve(
         emit({ kind: 'worked', item: candidate, run, ...(gate.seat === undefined ? {} : { seat: gate.seat }) })
       }
     } catch (error) {
-      // A cycle is allowed to fail. Nothing here is holding a claim — `runItem` owns that, and
-      // it hands off from inside its own error handling — so the next cycle simply retries.
+      // A cycle is allowed to fail, and the next one simply retries.
+      //
+      // **This catch cannot tell a cycle that failed holding nothing from one that failed
+      // holding an item.** It reports the cycle, so an operator sees a cycle-level error string
+      // and never the item-level silence underneath it. `takeClaim` will not arrive here
+      // holding a claim it took — its guard covers the assignment call through the verdict,
+      // releasing and refusing rather than propagating. Everything after it can: `runItem` has
+      // no handler of its own. So any path that throws while holding a claim must release it
+      // itself; nothing here will.
       summary.failures += 1
       emit({ kind: 'cycle-failed', cycle, error: error instanceof Error ? error : new Error(String(error)) })
     }

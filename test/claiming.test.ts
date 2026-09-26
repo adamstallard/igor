@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Candidate, ClaimVerdict, Tracker } from '../src/adapter.js'
 import type { Role } from '../src/role.js'
-import { checkpoint, claimMessage, eligibleAfterStop, stopReceipt, takeClaim } from '../src/claiming.js'
+import { checkpoint, claimMessage, claimWithdrawn, eligibleAfterStop, stopReceipt, takeClaim } from '../src/claiming.js'
 import { isGoAhead, isStop } from '../src/signals.js'
 
 const NOW = Date.parse('2026-09-13T12:00:00Z')
@@ -31,12 +31,30 @@ const role = (over: Partial<Role> = {}): Role =>
 interface Log {
   claimed: string[]
   reported: string[]
+  /** Every message `report` was called with, including those the call then refused. */
+  reportAttempts: string[]
   released: string[]
   verifiedSince: string[]
 }
 
-function tracker(verdict: ClaimVerdict, opts: { claimSticks?: boolean; native?: boolean } = {}) {
-  const log: Log = { claimed: [], reported: [], released: [], verifiedSince: [] }
+function tracker(
+  verdict: ClaimVerdict,
+  opts: {
+    claimSticks?: boolean
+    /** The assignment the surface recorded before the call failed — the same shape as below. */
+    claimThrows?: boolean
+    native?: boolean
+    /** A surface that is simply down: every call fails, the withdrawal included. */
+    reportThrows?: boolean
+    /** A write the surface accepted and a client that threw anyway — a timeout, a killed `gh`. */
+    reportPostsThenThrows?: boolean
+    /** A transient 503, up again by the next call. */
+    reportFailsOnce?: boolean
+    verifyThrows?: boolean
+    releaseThrows?: boolean
+  } = {},
+) {
+  const log: Log = { claimed: [], reported: [], reportAttempts: [], released: [], verifiedSince: [] }
   const t: Tracker = {
     name: 'fake',
     nativeHolderField: opts.native ?? true,
@@ -44,17 +62,26 @@ function tracker(verdict: ClaimVerdict, opts: { claimSticks?: boolean; native?: 
     search: async () => [],
     claim: async (_c, as) => {
       log.claimed.push(as)
+      if (opts.claimThrows === true) throw new Error('503 from the tracker')
       return opts.claimSticks ?? true
     },
     commentsSince: async () => [],
     verifyClaim: async (_c, _as, since) => {
       log.verifiedSince.push(since)
+      if (opts.verifyThrows === true) throw new Error('503 from the tracker')
       return verdict
     },
     report: async (_c, m) => {
+      log.reportAttempts.push(m)
+      if (opts.reportThrows === true) throw new Error('503 from the tracker')
+      if (opts.reportFailsOnce === true && log.reportAttempts.length === 1) {
+        throw new Error('503 from the tracker')
+      }
       log.reported.push(m)
+      if (opts.reportPostsThenThrows === true) throw new Error('503 from the tracker')
     },
     release: async (_c, as) => {
+      if (opts.releaseThrows === true) throw new Error('503 from the tracker')
       log.released.push(as)
     },
     linkage: () => 'Closes #7',
@@ -122,6 +149,130 @@ describe('taking a claim', () => {
   })
 })
 
+describe('a claim taken and not finished', () => {
+  // The window from the assignment call to the claim being verified. A throw anywhere inside
+  // it must not escape `takeClaim`: that leaves the item assigned with nothing said on it —
+  // the one state a claim exists to prevent, and an ordinary tracker 503 reaches it. The
+  // assignment call is inside, because a surface can apply it and fail on the way home.
+
+  it('releases and refuses when the assignment call itself failed', async () => {
+    // The surface can record the holder field and the call still fail on the way home, so a
+    // throw from the assignment leaves the item held exactly as a throw after it does.
+    const { t, log } = tracker({ status: 'held' }, { claimThrows: true })
+    const r = await takeClaim(t, candidate(), role(), 'igor-bot', opts)
+
+    expect(r.outcome).toBe('refused')
+    expect(log.released).toEqual(['igor-bot'])
+    // Nothing had been said at that point, so there is nothing on the item to withdraw.
+    expect(log.reported).toEqual([])
+  })
+
+  it('releases and refuses when the claim cannot be announced', async () => {
+    const { t, log } = tracker({ status: 'held' }, { reportThrows: true })
+    const r = await takeClaim(t, candidate(), role(), 'igor-bot', opts)
+
+    expect(r.outcome).toBe('refused')
+    expect(log.claimed).toEqual(['igor-bot'])
+    expect(log.released).toEqual(['igor-bot'])
+    // The withdrawal is attempted and goes out over the same call that just failed, so a
+    // surface that is down stays silent. Asserted over the attempts, because an empty
+    // `reported` is what this fake produces whatever `takeClaim` does.
+    expect(log.reportAttempts).toEqual([claimMessage(role(), 'igor-bot'), claimWithdrawn(role())])
+    expect(log.reported).toEqual([])
+    expect(r.reason).toContain('503')
+  })
+
+  it('withdraws where the claim message failed and the surface then recovered', async () => {
+    // The withdrawal goes wherever the claim message *may* have landed, so a transient failure
+    // leaves a withdrawal on an item nobody saw a claim on. That is the cheaper side of the
+    // trade: the other side is a claim message nobody withdraws.
+    const { t, log } = tracker({ status: 'held' }, { reportFailsOnce: true })
+    const r = await takeClaim(t, candidate(), role(), 'igor-bot', opts)
+
+    expect(r.outcome).toBe('refused')
+    expect(log.released).toEqual(['igor-bot'])
+    expect(log.reported).toEqual([claimWithdrawn(role())])
+  })
+
+  it('releases, withdraws and refuses when the claim cannot be verified', async () => {
+    const { t, log } = tracker({ status: 'held' }, { verifyThrows: true })
+    const r = await takeClaim(t, candidate(), role(), 'igor-bot', opts)
+
+    expect(r.outcome).toBe('refused')
+    expect(log.released).toEqual(['igor-bot'])
+    // The claim comment did land, so the item carries "working on it" over an unassigned
+    // issue unless the release says otherwise.
+    expect(log.reported[0]).toContain('picked this up')
+    expect(log.reported[1]).toBe(claimWithdrawn(role()))
+  })
+
+  it('still refuses where there is no holder field to release', async () => {
+    const { t, log } = tracker({ status: 'held' }, { native: false, verifyThrows: true })
+    const r = await takeClaim(t, candidate(), role(), 'igor-bot', opts)
+
+    expect(r.outcome).toBe('refused')
+    expect(log.claimed).toEqual([])
+    // Released even though no holder field was ever set: the surface may express a release
+    // some other way, and the adapter is the only thing that knows.
+    expect(log.released).toEqual(['igor-bot'])
+    expect(log.reported[1]).toBe(claimWithdrawn(role()))
+  })
+
+  it('withdraws a claim message the surface took before the call failed', async () => {
+    // A write the tracker accepted and a client that threw on the way home. The comment is on
+    // the item, so leaving it unwithdrawn tells everyone to stand off an item nobody holds.
+    const { t, log } = tracker({ status: 'held' }, { reportPostsThenThrows: true })
+    const r = await takeClaim(t, candidate(), role(), 'igor-bot', opts)
+
+    expect(r.outcome).toBe('refused')
+    expect(log.released).toEqual(['igor-bot'])
+    expect(log.reported[0]).toContain('picked this up')
+    expect(log.reported[1]).toBe(claimWithdrawn(role()))
+  })
+
+  it('says the claim is still held when the release itself failed', async () => {
+    // The withdrawal reads "has released it". Where the release was refused too, the item is
+    // still assigned, and a run record repeating the withdrawal's claim leaves nobody to
+    // notice the name left on it.
+    const { t, log } = tracker({ status: 'held' }, { verifyThrows: true, releaseThrows: true })
+    const r = await takeClaim(t, candidate(), role(), 'igor-bot', opts)
+
+    expect(r.outcome).toBe('refused')
+    expect(log.released).toEqual([])
+    expect(r.reason).toContain('still held')
+    expect(r.reason).not.toMatch(/was released/)
+  })
+
+  it('releases before it withdraws, so nothing reads "released" while the item is still held', async () => {
+    // Between the two calls the item is briefly assigned, and the withdrawal says it has been
+    // released. Releasing first closes that window — and buys only that: where the release is
+    // refused the withdrawal posts anyway and is wrong until someone reads the run's record.
+    //
+    // `handOffFrom` orders these the other way on purpose, because a handoff explains an item
+    // that stays claimed. Aligning the two would break one of them.
+    const order: string[] = []
+    const { t } = tracker({ status: 'held' }, { verifyThrows: true })
+    const spy: Tracker = {
+      ...t,
+      report: async (_c, m) => { order.push(m === claimWithdrawn(role()) ? 'withdraw' : 'announce') },
+      release: async () => { order.push('release') },
+    }
+    await takeClaim(spy, candidate(), role(), 'igor-bot', opts)
+
+    expect(order).toEqual(['announce', 'release', 'withdraw'])
+  })
+
+  it('leaves a claim that verified cleanly exactly as it was', async () => {
+    // The negative pole: none of the above may fire on the ordinary path.
+    const { t, log } = tracker({ status: 'held' })
+    const r = await takeClaim(t, candidate(), role(), 'igor-bot', opts)
+
+    expect(r.outcome).toBe('held')
+    expect(log.released).toEqual([])
+    expect(log.reported).toHaveLength(1)
+  })
+})
+
 describe('the claim message', () => {
   it('names the Igor and tells anyone how to stop it', () => {
     const m = claimMessage(role(), 'igor-bot')
@@ -132,6 +283,17 @@ describe('the claim message', () => {
 
   it('names the account too when it differs, since one account may serve several Igors', () => {
     expect(claimMessage(role(), 'acme-igor')).toContain('acme-igor')
+  })
+})
+
+describe('the withdrawal message', () => {
+  it('is the approved wording, to the character', () => {
+    // Pinned literally. Every other assertion on this message compares it against the
+    // function that produced it, so both sides move together and a rewording is invisible.
+    expect(claimWithdrawn(role())).toBe(
+      '**triage** could not finish taking this and has released it. ' +
+        'Nothing was done, so there is nothing to clean up.',
+    )
   })
 })
 
