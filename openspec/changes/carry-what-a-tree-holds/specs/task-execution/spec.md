@@ -3,9 +3,9 @@
 ### Requirement: An artifact carries a changed path as the tree holds it
 
 Where execution reads a changed path out of the working tree, the artifact SHALL represent it as
-the tree holds it, whatever kind of entry that is — a regular file by its content, a symbolic link
-by its target, a submodule by the commit it names, and a file whose bytes are not text by those
-bytes. Where a kind cannot be represented, execution SHALL refuse and name the path rather than
+the tree holds it, whatever kind of entry that is — a regular file by the content git stores for
+it, a symbolic link by its target, a submodule by the commit it names, and a file whose bytes are
+not text by those bytes. Where a kind cannot be represented, execution SHALL refuse and name the path rather than
 publish something that differs from what the tree holds.
 
 **This is the third of three and the one that was missing.** *The artifact carries every change the
@@ -31,6 +31,16 @@ carrying the path, and the refusal is the floor beneath it rather than the answe
 a symbolic link whose content is its target, and `160000` a submodule naming a commit. The
 publishing path is not what flattens them; the read is.
 
+**A clean filter is the case that looks like no case at all.** `core.autocrlf` on the host, an
+`eol=` or `text=auto` attribute in the repository, an `ident` on the path, or any configured clean
+filter stands between the blob a commit names and the bytes checked out from it. Reading the
+checkout and publishing those bytes puts the smudged copy in the artifact, so a file nobody edited
+arrives with every line changed. Nothing about such a path looks unusual — its kind is an ordinary
+`100644`, it is valid text, and `git status` is empty — which is why it belongs with the kinds
+rather than apart from them: each is the same mistake of taking the checkout for what the tree
+holds. Unlike the four, it is not separately filed; it was found while closing the same-shaped
+hole in `guard-silent-reverts`, where a digest of the checkout was compared against a blob name.
+
 #### Scenario: A symbolic link the tree holds
 
 - **WHEN** a changed path is a symbolic link
@@ -48,6 +58,12 @@ publishing path is not what flattens them; the read is.
 - **WHEN** a changed path holds bytes that are not valid UTF-8
 - **THEN** the artifact carries those bytes
 - **AND** no replacement character reaches the published content
+
+#### Scenario: A checkout a clean filter rewrote
+
+- **WHEN** a changed path is a regular file the repository stores through a clean filter
+- **THEN** the artifact carries the content git stores for it, not the bytes in the checkout
+- **AND** a path the worker did not edit contributes no change to the artifact
 
 #### Scenario: A kind that cannot be represented
 

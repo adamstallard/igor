@@ -68,6 +68,32 @@ This is the part most likely to be got wrong quietly, because a gitlink comparis
 returns *equal* would suppress a real revert rather than invent one, and no test that does not
 specifically bump a submodule would notice.
 
+## How the content git stores is obtained
+
+A clean filter makes the checkout differ from the blob, so the read has to ask git rather than
+open the file, and the options differ in cost and in what they leave behind.
+
+`git hash-object -w --path <p> -- <p>` runs the filter and writes the result into the clone's
+object database, and `git cat-file blob <sha>` then reads the bytes back. Two commands per changed
+path and objects written into a tree that is about to be discarded, which is cheap, but it is two
+spawns for every path whether or not any filter applies.
+
+`git check-attr` and `git config` can say up front whether any filter is configured at all, which
+would let the ordinary repository — no attributes, no `autocrlf` — keep the plain read it has
+today and pay nothing. That is one question per clone rather than per path, at the price of a
+second code path that only runs where filters exist, and so only gets exercised by a test that
+configures one.
+
+Asking git for the bytes unconditionally is the shape to prefer unless the per-path cost measures
+badly, because a path that only runs under filters is a path that rots. Measure it against a
+resolution touching a realistic number of files before choosing the conditional form.
+
+This is also the one part of the requirement with no filed defect behind it, so it has no reported
+symptom to reproduce. The test has to construct the condition: `* text=auto eol=crlf` in a
+repository's own `.gitattributes` travels with the clone and needs nothing of the host, which
+makes it the trigger to build on. `test/worktree.test.ts` already has one such test, written for
+`guard-silent-reverts`.
+
 ## Retiring an accepted gap, not working around it
 
 `docs/architecture.md` §6.7.3 and accepted-gap 12 say a binary is corrupted rather than dropped,

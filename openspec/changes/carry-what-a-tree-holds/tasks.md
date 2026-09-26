@@ -32,6 +32,9 @@
 - [ ] 3.4 The mode comes from a source that gives one, and the second read disagrees with the
       first about neither names nor rename folding — see `design.md`
 - [ ] 3.5 A kind that still cannot be represented refuses, naming the path and the kind
+- [ ] 3.6 A regular file is reported as the content git stores for it, so a clean filter —
+      `core.autocrlf`, an `eol=` or `text=auto` attribute, an `ident` — does not put the smudged
+      checkout in the artifact. How those bytes are obtained is costed in `design.md`
 
 ## 4. The publish
 
@@ -50,6 +53,12 @@
       suppresses a real revert and no test that does not bump a submodule would notice
 - [ ] 5.3 A base change to a symbolic link or a submodule is no longer flagged as undone
       ([#134](https://github.com/adamstallard/igor/issues/134))
+- [ ] 5.4 Confirm `undone()` needs no change for a filtered path once the read is fixed: it
+      compares what the resolution publishes against what the base holds, and with the read
+      carrying what git stores those are the same basis. **It is wrong to "fix" the comparison
+      here** — `guard-silent-reverts` states the requirement over what is published, and a
+      comparison against the checkout would contradict its own requirement while leaving every
+      other path in the same publish smudged
 
 ## 6. Tests
 
@@ -62,7 +71,10 @@
 - [ ] 6.6 A kind that cannot be represented refuses, naming the path
 - [ ] 6.7 Every existing test over ordinary text files unchanged — that suite is the evidence the
       widening broke nothing
-- [ ] 6.8 Each of 6.1–6.6 observed red before its fix, and mutation-checked
+- [ ] 6.7a A clone whose own `.gitattributes` says `* text=auto eol=crlf` publishes nothing for a
+      path the worker never touched, and the cleaned bytes for one it did — `git status` is empty
+      in that clone, so the test has to assert on what is published rather than on what changed
+- [ ] 6.8 Each of 6.1–6.6 and 6.7a observed red before its fix, and mutation-checked
 
 ## 7. Documentation
 
