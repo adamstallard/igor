@@ -25,7 +25,7 @@
 - [ ] 2.3 The unmerged branch of that catch is untouched: it handles a different case and is
       reached by a different flag test
 - [ ] 2.4 Works whether a rename arrives as one record or as two, so it neither depends on the
-      pairing nor breaks when #118 removes it
+      pairing nor broke when #118 removed it
 
 ## 3. Tests
 
