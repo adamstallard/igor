@@ -1,9 +1,11 @@
 import { execFile, execFileSync } from 'node:child_process'
-import { mkdirSync, renameSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, renameSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { describe, expect, it } from 'vitest'
-import { carried, ClonedTree, named, quoteName, showName, statusRecords } from '../src/worktree.js'
+import {
+  blobSha, carried, ClonedTree, named, quoteName, showName, statusRecords, type BaseChange,
+} from '../src/worktree.js'
 import { tempDir } from './tmp.js'
 
 const run = promisify(execFile)
@@ -284,6 +286,150 @@ describe('bringing a base into an artifact tree', () => {
 
     const merge = await new ClonedTree(clone, 'o/r').merge('main')
     expect(merge.conflicts).toEqual([])
+  })
+
+  it('reports what the base changed since the merge base, on all three sides', async () => {
+    // The comparison a resolution is checked against needs three blobs per path, and a
+    // released tree can answer for none of them — so they are read here, where the merge is.
+    const { clone, origin } = await conflicting()
+    const git = (...args: string[]) => run('git', ['-C', origin, ...args])
+    await git('rm', '-q', 'untouched.txt')
+    await git('commit', '-qm', 'the base removed a file')
+
+    const merge = await new ClonedTree(clone, 'o/r').merge('main')
+    const change = (path: string): BaseChange | undefined => merge.baseChanges.find((c) => c.path === path)
+
+    // A path both sides rewrote: what stood before, what the base holds, what this branch holds.
+    expect(change('f.txt')).toEqual({
+      path: 'f.txt',
+      before: blobSha('one\n'),
+      after: blobSha('the base moved\n'),
+      head: blobSha('the artifact\n'),
+    })
+    // An addition has no side before it, and this branch does not hold it either.
+    expect(change('added-on-main.txt')).toEqual({ path: 'added-on-main.txt', after: blobSha('new\n') })
+    // A deletion has no side after it, and head still holds what the merge base held —
+    // which is the whole of what makes keeping the file a revert rather than a resolution.
+    expect(change('untouched.txt')).toEqual({
+      path: 'untouched.txt',
+      before: blobSha('quiet\n'),
+      head: blobSha('quiet\n'),
+    })
+    expect(merge.baseChanges).toHaveLength(3)
+  })
+
+  it('says nothing about a path only the artifact branch changed', async () => {
+    // The question is what the base did. A path this branch alone touched can revert nothing.
+    const { clone, origin } = await conflicting()
+    await run('git', ['-C', origin, 'checkout', '-q', 'artifact'])
+    writeFileSync(join(origin, 'ours-only.txt'), 'ours\n')
+    await run('git', ['-C', origin, 'add', '-A'])
+    await run('git', ['-C', origin, 'commit', '-qm', 'ours alone'])
+    await run('git', ['-C', clone, 'fetch', '-q', 'origin', 'artifact'])
+    await run('git', ['-C', clone, 'reset', '-q', '--hard', 'FETCH_HEAD'])
+
+    const merge = await new ClonedTree(clone, 'o/r').merge('main')
+    expect(merge.baseChanges.map((c) => c.path)).not.toContain('ours-only.txt')
+  })
+
+  it('reads a rename the base made as the two paths it publishes as', async () => {
+    // Rename detection folds two changed paths into one record, and the old path is exactly
+    // the one a resolution can restore. Off, it arrives as its own deletion.
+    const { clone, origin } = await conflicting()
+    const git = (...args: string[]) => run('git', ['-C', origin, ...args])
+    await git('mv', 'untouched.txt', 'moved.txt')
+    await git('commit', '-qm', 'the base moved a file')
+
+    const merge = await new ClonedTree(clone, 'o/r').merge('main')
+    const paths = merge.baseChanges.map((c) => c.path).sort()
+    expect(paths).toContain('untouched.txt')
+    expect(paths).toContain('moved.txt')
+    expect(merge.baseChanges.find((c) => c.path === 'untouched.txt')?.after).toBeUndefined()
+    expect(merge.baseChanges.find((c) => c.path === 'moved.txt')?.before).toBeUndefined()
+  })
+
+  it('puts the outbox beside the clone and sweeps it with the clone', async () => {
+    // Beside rather than inside, because the whole point is that no path a repository can
+    // commit names it. Swept with the tree, because a directory that outlived the run would
+    // carry one run's word into the next.
+    const { clone } = await conflicting()
+    const tree = new ClonedTree(clone, 'o/r')
+    mkdirSync(tree.outbox, { recursive: true })
+    // Swept from a `finally` rather than by the release under test: this path is derived, not
+    // one `tempDir` registered, so a failed expectation — or a release that throws — would
+    // otherwise strand it exactly where the sweep cannot reach it.
+    try {
+      writeFileSync(join(tree.outbox, 'reverts.json'), '{"reverts":[]}\n')
+
+      expect(tree.outbox).not.toBe(tree.path)
+      expect(tree.outbox.startsWith(`${tree.path}/`)).toBe(false)
+      expect(existsSync(tree.outbox)).toBe(true)
+
+      await tree.release()
+      expect(existsSync(tree.path)).toBe(false)
+      expect(existsSync(tree.outbox)).toBe(false)
+    } finally {
+      rmSync(tree.outbox, { recursive: true, force: true })
+    }
+  })
+
+  /**
+   * A tree and an outbox where one named directory cannot be unlinked from, so removing
+   * whichever holds it fails part way. The mode is restored whatever the test does with it.
+   */
+  function undeletable(holding: 'clone' | 'outbox'): { tree: ClonedTree; unlock: () => void } {
+    const sandbox = tempDir('igor-tree-release-')
+    const clone = join(sandbox, 'clone')
+    const outbox = join(sandbox, 'clone-outbox')
+    for (const dir of [clone, outbox]) mkdirSync(dir)
+    writeFileSync(join(clone, 'work.txt'), 'the artifact\n')
+    writeFileSync(join(outbox, 'reverts.json'), '{"reverts":[]}\n')
+    const locked = join(holding === 'clone' ? clone : outbox, 'locked')
+    mkdirSync(locked)
+    writeFileSync(join(locked, 'held'), 'x')
+    chmodSync(locked, 0o500)
+    return { tree: new ClonedTree(clone, 'o/r', outbox), unlock: () => chmodSync(locked, 0o700) }
+  }
+
+  it('removes the outbox even when the tree itself cannot be removed', async () => {
+    // The outbox is the half with nothing behind it: the startup sweep reclaims a stranded
+    // clone by name, and giving up on the first failure leaves the directory carrying a
+    // run's declaration where it will sit until somebody notices.
+    const { tree, unlock } = undeletable('clone')
+    try {
+      await expect(tree.release()).rejects.toThrow()
+      expect(existsSync(tree.outbox)).toBe(false)
+    } finally {
+      unlock()
+    }
+  })
+
+  it('removes the tree even when the outbox cannot be removed', async () => {
+    // The other direction, and the one that says both are attempted rather than that the
+    // outbox merely goes first: a checkout left behind is a whole repository on disk, and
+    // nothing about an outbox a worker made awkward should be what keeps it there.
+    const { tree, unlock } = undeletable('outbox')
+    try {
+      await expect(tree.release()).rejects.toThrow()
+      expect(existsSync(tree.path)).toBe(false)
+    } finally {
+      unlock()
+    }
+  })
+
+  it("reports a merge git refused to attempt in git's own words", async () => {
+    // Anything read off the two commits has to come after the merge: `merge-base` on unrelated
+    // histories exits non-zero with an empty stderr, so asking it first replaces the sentence
+    // that says what is wrong with an exit code.
+    const { clone, origin } = await conflicting()
+    const git = (...args: string[]) => run('git', ['-C', origin, ...args])
+    await git('checkout', '-q', '--orphan', 'unrelated')
+    await git('rm', '-rqf', '.')
+    writeFileSync(join(origin, 'elsewhere.txt'), 'a history of its own\n')
+    await git('add', '-A')
+    await git('commit', '-qm', 'unrelated')
+
+    await expect(new ClonedTree(clone, 'o/r').merge('unrelated')).rejects.toThrow(/unrelated histories/)
   })
 
   it('throws when the merge failed for a reason that is not a conflict', async () => {

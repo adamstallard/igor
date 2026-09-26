@@ -1456,7 +1456,8 @@ clone-per-task and has to unpick it.
 **Cleanup is a startup sweep, not an exit hook** — **built**. Release runs from a `finally`, which SIGKILL,
 an OOM kill and a power loss all skip, so a crashed run strands a full checkout and nothing ever
 reclaims it. `wire` removes `igor-tree-*` directories older than the worker's absolute ceiling
-plus an hour before the first cycle. Age is the only safe signal: several processes of one role
+plus an hour before the first cycle — the checkout and the `-outbox` beside it alike, because a
+run strands two directories and the one carrying its declaration is the one worth reclaiming. Age is the only safe signal: several processes of one role
 is the point of §6.7.1, so a tree that looks idle may belong to a live sibling, and the
 threshold sits above the longest a tree can be in use — the ceiling, and the clone and push
 either side of the worker — rather than close to it. A surviving tree is debris, never
@@ -1515,6 +1516,76 @@ commit, and the `DU` path the artifact branch itself deleted and the base modifi
 reaches by following the conflict prompt's own instruction to delete the file to accept the base's
 removal. **The one case where HEAD is not the base** is a worker that ran `git commit`: nothing
 grants that command, and such a run already fails loudly on a `base_tree` the host cannot resolve.
+
+### 6.7.2b A resolution may not undo what the base did, unless it says so
+
+A resolution is published as a commit with two parents — the artifact's head and the base it
+takes in — so its tree *is* the merge result. A path the resolution never mentions is therefore
+not neutral: the merge result keeps the artifact's copy, and the base's change to that path is
+gone the moment the artifact merges. **Review cannot catch it.** A reverted deletion reads as the
+file still being there and a reverted rewrite as the file being unchanged; both are absences, and
+the diff against the base looks unremarkable.
+
+Before the commit, `undone()` compares three blobs per path the base changed since the merge
+base: what stood there then, what the base holds now, and what this commit would publish — the
+resolution's own file, its own deletion, or, for a path it never mentions, head's copy. A path
+is undone where what publishes is exactly what stood at the merge base while the base holds
+something else, absence counting as a state on both sides. One comparison of outcomes, with no
+branch per shape: taking the base's side, combining both sides, honouring a deletion the base
+made and meeting a change the artifact had already made all restore nothing and pass unremarked.
+The three blobs are read in `merge()` as two `--raw` diffs off the merge base, because a released
+tree can answer for none of them.
+
+**A guard per route is a guard that misses the next route**, which this codebase has now learned
+twice: [#118](https://github.com/adamstallard/igor/issues/118) replaced three route-specific
+removal checks with one that asks HEAD the requirement's own question, and the two instances
+behind this one — a dropped deletion and a status code that threw on read — are the same outcome
+reached two ways. This check sits downstream of that read and does not repeat it: `changes()`
+owes it a change list, and the comparison is against the tree that list would publish.
+
+**An undone base change is publishable where the resolution declares the path.** The worker
+writes `reverts.json` — `{"reverts": [{"path": …, "discards": …}]}`, one entry per path, naming
+the blob the base holds or `deleted` where it deleted the path — into the run's **outbox**, and
+the loop reads it there. A declaration committed onto the artifact would be a standing
+permission outliving the run that made it.
+
+The outbox is a directory beside the clone, never inside it. The Igor makes it empty for the
+run, grants the worker that one directory with `--add-dir` — nothing outside the working
+directory is writable otherwise, measured — and removes it in the same `release()` as the tree,
+ahead of the tree and whether or not the tree's own removal succeeds. On the path that runs no
+`release()` at all, the startup sweep above reclaims it.
+So whatever is in it was put there by this run's worker, and that is the whole of how a
+declaration is known to be this run's word. A file the repository keeps cannot be one, at any
+path and however it got there: a committed declaration is on disk in every fresh clone and would
+authorize the same revert on every run, each reporting a declaration nobody made.
+
+Provenance is therefore a property of the place, never a question asked about a file. Asking it
+about a path was tried and fails wherever the filesystem's idea of a path and git's diverge — a
+symbolic link at the path or above it, a case-variant, a merge that rewrites the file — and
+wherever a clean filter or an attribute change makes a checkout differ from the blob it came
+from. No path inside the tree is reserved as a result: a file the repository keeps where the
+channel once lived is ordinary content, carried and compared like any other.
+
+Three properties keep it from becoming the field that gets defaulted on. **It can never be
+blanket**: no wildcard, no per-resolution flag, nothing a role or an org config can set, so the
+permission is retaken for each resolution. **It names what it overrides**, so a declaration whose
+state the base does not hold authorizes nothing, and one written for a path cannot travel to
+another. **A declared revert is still reported** — on the commit, on the item, and in the run
+record — because almost the whole value of the guard is that an undone base change stops being
+invisible.
+
+**The channel is one untrusted text can reach, and that is an accepted cost.** A worker reads the
+item, the diff and the conflicting content; an injection that can produce the revert can produce
+the declaration beside it. What the reporting buys is not prevention — it is that the revert
+names itself and the change it discarded, so the attack is attributable rather than silent. The
+alternative, refusing every revert, leaves a legitimate one no path through an Igor at all; the
+case for it is in `guard-silent-reverts`'s `design.md` rather than smoothed over here.
+
+Two false negatives are known and accepted. **Partial erosion** — content matching neither side —
+is a resolution rather than a revert, because nothing distinguishes it from a legitimate
+combination. And a **binary** read as UTF-8 (§6.7.3) can never hash to the blob the merge base
+holds, so a binary restored to it reads as not a revert; that falls with the corruption above it
+rather than separately.
 
 ### 6.7.3 A binary in an artifact is corrupted, not dropped — **known, and deliberately unguarded**
 

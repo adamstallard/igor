@@ -1,13 +1,17 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import type { Artifact, Candidate, ClaimVerdict, CodeHost, InFlight, Tracker } from './adapter.js'
 import { resolveToken, type TokenSource, type Window } from './budget.js'
 import { recordObservation, WINDOW_LENGTH } from './capacity.js'
 import type { Action, Role } from './role.js'
 import {
   carried,
+  sameBlob,
   showName,
   withTree,
+  type BaseChange,
   type ChangedFile,
   type MergeState,
   type TreeProvider,
@@ -74,6 +78,13 @@ export interface ExecutionResult {
    * came out clean, where claiming a resolution would claim work nobody did.
    */
   conflictResolved?: boolean
+  /**
+   * Base changes the published resolution undid, each with the state it discarded. Only a
+   * declared undo reaches here — an undeclared one publishes nothing — and it is carried so
+   * that the run record names it, because a declaration makes an undone change stated rather
+   * than invisible and silence here would give back exactly what the guard is for.
+   */
+  reverts?: string[]
   changed: ChangedFile[]
   refusals: Refusal[]
   transcript: string
@@ -219,7 +230,20 @@ export function workerPrompt(candidate: Candidate, linkage: string): string {
  * and nothing here asks the worker for a branch, a remote or a commit — so the action space
  * that bounds a steered worker is the same one it always had.
  */
-export function conflictPrompt(candidate: Candidate, artifact: InFlight, paths: readonly string[]): string {
+export function conflictPrompt(
+  candidate: Candidate,
+  artifact: InFlight,
+  outbox: string,
+  paths: readonly string[],
+  baseChanges: readonly BaseChange[] = [],
+): string {
+  const conflicted = new Set(paths)
+  // Only the conflicted paths, because those are the ones this prompt asks for a decision on
+  // and the base's diff as a whole is unbounded. Undoing anything else is refused and handed
+  // off, which is what the paragraph below says.
+  const versions = baseChanges.flatMap((c) =>
+    c.rawName === undefined && conflicted.has(c.path) ? [`- ${c.path}: ${c.after ?? 'deleted'}`] : [],
+  )
   return [
     `Resolve a merge conflict. ${artifact.base} has been merged into the branch behind ${artifact.ref},`,
     'and the merge left conflicts in the working tree.',
@@ -238,6 +262,23 @@ export function conflictPrompt(candidate: Candidate, artifact: InFlight, paths: 
     'touch files the merge did not conflict on, and do not run git — the loop publishes the',
     'result. Say so plainly and change nothing if a conflict needs a decision only a person',
     'can make.',
+    '',
+    `Dropping something ${artifact.base} did — publishing a file as it stood before the base`,
+    'touched it, or keeping a file the base deleted — stops the run and hands the item to a',
+    `person, unless you say you meant it. To say it, write this file — the whole path, which is`,
+    'outside the repository and is yours alone to write:',
+    '',
+    `  ${join(outbox, DECLARATION_FILE)}`,
+    '',
+    '  {"reverts": [{"path": "<path>", "discards": "<the base version below>"}]}',
+    '',
+    'One entry per path, spelled exactly; there is no wildcard and no entry covers a path it',
+    'does not name. It is read once this run ends and cannot reach the artifact, because it is',
+    'not in the repository. What the base holds:',
+    '',
+    '<base-versions>',
+    ...(versions.length > 0 ? versions : ['(none reported)']),
+    '</base-versions>',
     '',
     'Where a conflicted file has no markers because one side deleted what the other edited, the',
     'copy left on disk is the side that survived the delete — keep it to take that side, or delete',
@@ -819,6 +860,12 @@ export async function workerEnv(
 
 export interface WorkerInput {
   cwd: string
+  /**
+   * A directory outside `cwd` the worker may also write to, for what it has to tell Igor rather
+   * than put in the artifact. Granted explicitly, because nothing outside `cwd` is writable
+   * otherwise — measured: the same write succeeds with `--add-dir` and is refused without it.
+   */
+  outbox?: string
   system: string
   prompt: string
   model: string
@@ -899,7 +946,7 @@ function forwardTermination(): void {
 
 /** The command is a parameter so a test can drive a real stream without the real CLI. */
 export function claudeWorker(command = 'claude'): WorkerRunner {
-  return ({ cwd, system, prompt, model, limits, env, allowedTools = [], onEvent, signal }) =>
+  return ({ cwd, outbox, system, prompt, model, limits, env, allowedTools = [], onEvent, signal }) =>
     new Promise<WorkerOutput>((resolve, reject) => {
       if (signal?.aborted) return resolve({})
       const child = spawn(
@@ -928,6 +975,10 @@ export function claudeWorker(command = 'claude'): WorkerRunner {
           'acceptEdits',
           '--add-dir',
           cwd,
+          // The outbox is outside `cwd`, and `acceptEdits` alone does not reach outside it: the
+          // write is refused unless the directory is named here. One directory, made empty for
+          // this run and swept with the tree, rather than the checks lifted.
+          ...(outbox === undefined ? [] : ['--add-dir', outbox]),
         ],
         // Its own process group, so one kill reaches the tool subprocesses too. They outlive a
         // kill on the pid alone, still building and still writing to a tree about to be swept.
@@ -1167,6 +1218,126 @@ const CONFLICT_MARKER = /^(?:<{7} |\|{7} |>{7} )/m
  */
 const SEPARATOR_MARKER = /^={7}$/m
 
+/**
+ * The name a worker writes its declarations under, inside the run's outbox.
+ *
+ * The place is the whole of why the file is this run's word, so no path inside the tree is
+ * reserved: a file a repository keeps at this name, anywhere within itself, is ordinary
+ * content — carried into the artifact and compared like any other, and declaring nothing.
+ */
+export const DECLARATION_FILE = 'reverts.json'
+
+/** One path a resolution may undo, and the base state its author says they are discarding. */
+export interface Declaration {
+  path: string
+  /** The blob the base holds for that path, or `deleted` where the base deleted it. */
+  discards: string
+}
+
+/**
+ * The declarations a worker wrote, or none.
+ *
+ * Every way of being unreadable — not JSON, not the documented shape, an entry naming no path —
+ * yields no declaration rather than an error, because the consequence of having none is a
+ * refusal that names the paths. A file that cannot be read authorizes nothing, which is the
+ * outcome an unreadable one should have anyway.
+ *
+ * There is no blanket entry to parse. A path is matched exactly, so a wildcard is a declaration
+ * for a file of that name and matches nothing else; `*` alone is rejected outright so that the
+ * attempt is visibly inert rather than quietly so.
+ */
+export function declarations(content: string): Declaration[] {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(content)
+  } catch {
+    return []
+  }
+  const entries = (parsed as { reverts?: unknown })?.reverts
+  if (!Array.isArray(entries)) return []
+  return entries.flatMap((entry: unknown) => {
+    const { path, discards } = (entry ?? {}) as { path?: unknown; discards?: unknown }
+    if (typeof path !== 'string' || typeof discards !== 'string') return []
+    if (path.trim() === '' || /^[*?]+$/.test(path.trim())) return []
+    return [{ path, discards }]
+  })
+}
+
+/** A base change a resolution would undo, and whether its author wrote that down. */
+export interface Undone {
+  /**
+   * The path as a person should read it: the name itself, or — where the name is not text —
+   * its bytes inside a code span, which is the only form `showName` is safe to print in.
+   */
+  path: string
+  /** What the resolution discards: the base's blob for the path, or the base's deletion of it. */
+  discards: string
+  declared: boolean
+}
+
+/**
+ * Which of the base's changes the resolution would undo.
+ *
+ * The published tree is the artifact's head with `files` laid over it and `deletions` taken out
+ * of it, so a path the resolution never mentions publishes head's own copy. A path is undone
+ * where what publishes is exactly what stood at the merge base while the base holds something
+ * else — content equal to it, presence against a deletion, absence against an addition.
+ *
+ * One comparison of outcomes, with no branch per shape. A dropped deletion, a status code that
+ * was misread, a rename whose old path came back: each is the same published tree, and a guard
+ * written per route is a guard that misses the next one.
+ */
+export function undone(
+  baseChanges: readonly BaseChange[],
+  files: readonly { path: string; content: string }[],
+  deletions: readonly string[],
+  declared: readonly Declaration[],
+): Undone[] {
+  const written = new Map(files.map((f) => [f.path, f.content]))
+  const removed = new Set(deletions)
+  const out: Undone[] = []
+  for (const change of baseChanges) {
+    // Declarations name a path as a string, and so do the published files: a name that is not
+    // text can be neither. Such a path is compared on what head holds against what the base
+    // does, which needs no name at all — and a resolution that touched one stops before here.
+    const named = change.rawName === undefined
+    // What the base changed about this path is not its content: the same blob on both sides is
+    // a mode change, which nothing here reads. Treated as a revert it would refuse every
+    // resolution that so much as leaves the file alone.
+    if (change.before !== undefined && change.before === change.after) continue
+    const content = named ? written.get(change.path) : undefined
+    const blob = content !== undefined || (named && removed.has(change.path)) ? undefined : change.head
+    // The three clauses of the requirement, and they are not one comparison: a deletion is
+    // undone by the path being there at all, whatever it holds. Asking for the merge base's
+    // own content there would catch only the deletion nobody meant to drop, and never the
+    // delete/modify conflict a worker resolves by keeping the file — which is the shape the
+    // conflict instructions hand it.
+    const restored =
+      change.after === undefined
+        ? content !== undefined || blob !== undefined
+        : change.before === undefined
+          ? content === undefined && blob === undefined
+          : content !== undefined
+            ? sameBlob(content, change.before)
+            : blob === change.before
+    if (!restored) continue
+    const discards = change.after === undefined ? 'deleted' : change.after
+    out.push({
+      path: named ? change.path : `\`${showName(change)}\``,
+      discards,
+      // Exact on both halves: the path as written, and the base state as it actually stands.
+      // A declaration that names a state the base does not hold is a statement about some
+      // other change, and it authorizes this one no more than a declaration for another path.
+      declared: named && declared.some((d) => d.path === change.path && d.discards === discards),
+    })
+  }
+  return out
+}
+
+/** What a refusal or a published resolution says one undone path cost. */
+const undoneAs = (u: Undone): string =>
+  u.discards === 'deleted' ? `${u.path}, which the base deleted` : `${u.path} (base blob ${u.discards})`
+
 /** How long a stop can go unanswered mid-run — short enough that whoever posted it is still watching. */
 const CHECKPOINT_INTERVAL_MS = 30_000
 
@@ -1362,11 +1533,12 @@ export async function execute(
         const env = await workerEnv(options.seatToken, process.env, options.seat)
         worker = await (options.worker ?? headlessClaude)({
           cwd: tree.path,
+          outbox: tree.outbox,
           system: workerSystemPrompt(role, role.allow, options.lore ?? ''),
           prompt:
             artifact === undefined || merge === undefined
               ? workerPrompt(candidate, linkage)
-              : conflictPrompt(candidate, artifact, merge.conflicts),
+              : conflictPrompt(candidate, artifact, tree.outbox, merge.conflicts, merge.baseChanges),
           model,
           limits: { ...DEFAULT_LIMITS, ...options.limits },
           env,
@@ -1443,7 +1615,15 @@ export async function execute(
       // less, because a non-zero exit has already said the run did not finish.
       ...(worker.is_error !== false && structuralLimit(worker) ? { limitEnvelope: worker } : {}),
     }
+    // Nothing is taken out of it: the declaration channel is a directory outside the tree, so
+    // no change the worker made is Igor's own and every one of them belongs to the artifact.
     const changed = await tree.changes()
+    // Read from a directory Igor made empty for this run and granted to the worker alone, so
+    // anything here was written during this run rather than found in the clone. That is what
+    // the place settles, and it is why no question is put to git about the file. Not being
+    // there is no declaration.
+    const wrote = await readFile(join(tree.outbox, DECLARATION_FILE), 'utf8').catch(() => '')
+    const declared = wrote === '' ? [] : declarations(wrote)
 
     // Read before anything is decided, not merely before publishing: a stop during a run that
     // changed nothing is still a stop, and owes a receipt rather than a handoff.
@@ -1617,6 +1797,35 @@ export async function execute(
             unresolved.join(', '),
         }
       }
+      // What the commit would undo, asked of the tree it would publish rather than of the
+      // paths the worker touched: a revert is invisible in that list, because a path resolved
+      // to the artifact's own content differs from nothing and appears in no record of it.
+      //
+      // Before the commit unconditionally, and not merely before the re-ask below. That asks
+      // the host whether the branch merges and a revert merges perfectly cleanly, and it is
+      // skipped outright on the lost-claim path, which publishes and returns.
+      const reverts = undone(merge.baseChanges, files, deletions, declared)
+      const undeclared = reverts.filter((u) => !u.declared)
+      if (undeclared.length > 0) {
+        return {
+          outcome: 'failed' as const,
+          changed,
+          refusals,
+          transcript,
+          ...kept,
+          ...cured(),
+          reason:
+            `resolving ${artifact.ref} would undo what ${artifact.base} did to ` +
+            `${undeclared.map(undoneAs).join(', ')}, which no declaration covers, so nothing ` +
+            'was published',
+        }
+      }
+      // A declared revert is published and said out loud, in both places a refusal would have
+      // been: the commit that carries it, and the run's own record. The guard exists because
+      // an undone base change is invisible to review, and a declaration states it rather than
+      // exempting it.
+      const declaredAs = reverts.map(undoneAs)
+      const undoneRecord = declaredAs.length === 0 ? {} : { reverts: declaredAs }
       options.onPublish?.()
       await codeHost.resolve({
         repo: candidate.repo,
@@ -1624,7 +1833,11 @@ export async function execute(
         parents: [merge.head, merge.broughtIn],
         files,
         deletions,
-        message: `Merge ${artifact.base} into ${artifact.branch}`,
+        message:
+          `Merge ${artifact.base} into ${artifact.branch}` +
+          (declaredAs.length === 0
+            ? ''
+            : `\n\nDeclared undo of ${artifact.base}: ${declaredAs.join(', ')}`),
       })
       // Asked once, of the host that owns the answer: a resolution that did not actually
       // resolve is the one way this could run a worker at the same artifact every cycle
@@ -1645,6 +1858,7 @@ export async function execute(
           transcript,
           ...kept,
           ...cured(),
+          ...undoneRecord,
           reason: `lost mid-execution; brought ${artifact.ref} up to date and left it`,
         }
       }
@@ -1663,6 +1877,7 @@ export async function execute(
           transcript,
           ...kept,
           ...cured(),
+          ...undoneRecord,
           reason: `${artifact.ref} still does not merge into ${artifact.base} after the resolution was published`,
         }
       }
@@ -1676,10 +1891,14 @@ export async function execute(
         transcript,
         ...kept,
         ...cured(),
+        ...undoneRecord,
         reason:
-          merge.conflicts.length > 0
+          (merge.conflicts.length > 0
             ? `resolved a conflict on ${artifact.ref} and brought it up to date with ${artifact.base}`
-            : `brought ${artifact.ref} up to date with ${artifact.base}`,
+            : `brought ${artifact.ref} up to date with ${artifact.base}`) +
+          (declaredAs.length === 0
+            ? ''
+            : `, undoing what ${artifact.base} did to ${declaredAs.join(', ')} as declared`),
       }
     }
 
@@ -1855,6 +2074,10 @@ export async function recordExecution(
       // By the bytes where the name is not text, as the reason for refusing it names it. The
       // decoded spelling here would send a reader looking for a file that is not on disk.
       changed: result.changed.map((c) => `${c.kind} ${showName(c)}`),
+      // What the resolution undid on purpose, beside what it changed. A reverted base change
+      // is invisible in the diff — a restored deletion reads as the file still being there —
+      // so the record is where it is legible at all.
+      ...(result.reverts === undefined ? {} : { reverts: result.reverts }),
       refusals: result.refusals,
       // A run that never reported a cost records none: zero would read as a run that was free.
       ...(result.costUsd === undefined ? {} : { costUsd: Number(result.costUsd.toFixed(4)) }),
