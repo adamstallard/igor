@@ -41,19 +41,31 @@ holds a modified *Items with work already in flight are skipped*, and the archiv
 byte-identical to the in-force text in `openspec/specs/work-triage/spec.md` — prose, scenarios and
 all.
 
-`preview-persists-nothing` is an open change holding a `MODIFIED` block on exactly that
-requirement. Its implementation is merged (PR #84) but the change is not archived, so the block is
-still pending. A second open modification of the same requirement would be written against the
-in-force text, which does not contain preview's paragraph — so whichever archived second would
-silently drop the other's text. That is the invisible collision, and the reason for adding.
+`preview-persists-nothing` held a `MODIFIED` block on exactly that requirement while it was open.
+A second open modification of the same requirement would have been written against the in-force
+text, which did not then contain preview's paragraph — so whichever archived second would have
+silently dropped the other's text. That was the invisible collision, and the reason for adding.
+
+**It no longer holds.** `preview-persists-nothing` archived on 2026-09-23
+(`openspec/changes/archive/2026-09-23-preview-persists-nothing`), so its paragraph is in force and
+there is no second open modification to collide with. Rechecked 2026-09-26: no other open change
+modifies this requirement.
 
 What adding costs is that "per-source watermark" stays in force beside a requirement that narrows
 it. It is a narrowing rather than a contradiction: there is still a watermark per source, and the
 new requirement says whose. Both #99 and #70 made the same call for the same reason.
 
-**If `preview-persists-nothing` is archived before this lands**, modifying becomes available and
-is arguably cleaner, since one requirement about what the mark is keyed by reads better than two.
-It is not worth waiting for, and the addition is correct either way.
+**The condition this section wrote for has been met.** `preview-persists-nothing` archived before
+this landed, so modifying is now available and, by the argument above, arguably cleaner: one
+requirement about what the mark is keyed by reads better than two. The addition remains correct
+either way, so this is a choice rather than a defect — **left open for review, not taken here.**
+
+What the addition costs, stated once more now that it is a live choice rather than a forced one:
+`openspec/specs/work-discovery/spec.md:44` goes on saying "Discovery SHALL record a per-source
+watermark" beside a requirement that narrows it, and `openspec/specs/work-triage/spec.md:333`
+goes on saying "marks advance per source". Both are narrowings rather than contradictions — there
+is still a mark per source, and the new requirement says whose — but a reader meets the looser
+wording first.
 
 ### The role is its name, and a rename is a cold start
 
