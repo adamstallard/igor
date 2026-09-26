@@ -233,6 +233,7 @@ export function workerPrompt(candidate: Candidate, linkage: string): string {
 export function conflictPrompt(
   candidate: Candidate,
   artifact: InFlight,
+  outbox: string,
   paths: readonly string[],
   baseChanges: readonly BaseChange[] = [],
 ): string {
@@ -264,13 +265,16 @@ export function conflictPrompt(
     '',
     `Dropping something ${artifact.base} did — publishing a file as it stood before the base`,
     'touched it, or keeping a file the base deleted — stops the run and hands the item to a',
-    `person, unless you say you meant it. To say it, write ${DECLARATION_PATH} in the working`,
-    'directory:',
+    `person, unless you say you meant it. To say it, write this file — the whole path, which is`,
+    'outside the repository and is yours alone to write:',
+    '',
+    `  ${join(outbox, DECLARATION_FILE)}`,
     '',
     '  {"reverts": [{"path": "<path>", "discards": "<the base version below>"}]}',
     '',
     'One entry per path, spelled exactly; there is no wildcard and no entry covers a path it',
-    'does not name. The file is read here and never committed. What the base holds:',
+    'does not name. It is read once this run ends and cannot reach the artifact, because it is',
+    'not in the repository. What the base holds:',
     '',
     '<base-versions>',
     ...(versions.length > 0 ? versions : ['(none reported)']),
@@ -856,6 +860,12 @@ export async function workerEnv(
 
 export interface WorkerInput {
   cwd: string
+  /**
+   * A directory outside `cwd` the worker may also write to, for what it has to tell Igor rather
+   * than put in the artifact. Granted explicitly, because nothing outside `cwd` is writable
+   * otherwise — measured: the same write succeeds with `--add-dir` and is refused without it.
+   */
+  outbox?: string
   system: string
   prompt: string
   model: string
@@ -936,7 +946,7 @@ function forwardTermination(): void {
 
 /** The command is a parameter so a test can drive a real stream without the real CLI. */
 export function claudeWorker(command = 'claude'): WorkerRunner {
-  return ({ cwd, system, prompt, model, limits, env, allowedTools = [], onEvent, signal }) =>
+  return ({ cwd, outbox, system, prompt, model, limits, env, allowedTools = [], onEvent, signal }) =>
     new Promise<WorkerOutput>((resolve, reject) => {
       if (signal?.aborted) return resolve({})
       const child = spawn(
@@ -965,6 +975,10 @@ export function claudeWorker(command = 'claude'): WorkerRunner {
           'acceptEdits',
           '--add-dir',
           cwd,
+          // The outbox is outside `cwd`, and `acceptEdits` alone does not reach outside it: the
+          // write is refused unless the directory is named here. One directory, made empty for
+          // this run and swept with the tree, rather than the checks lifted.
+          ...(outbox === undefined ? [] : ['--add-dir', outbox]),
         ],
         // Its own process group, so one kill reaches the tool subprocesses too. They outlive a
         // kill on the pid alone, still building and still writing to a tree about to be swept.
@@ -1205,11 +1219,13 @@ const CONFLICT_MARKER = /^(?:<{7} |\|{7} |>{7} )/m
 const SEPARATOR_MARKER = /^={7}$/m
 
 /**
- * Where a worker writes down the base changes it means to undo. Reserved: a run's changes to
- * this path are read as declarations and never published, so a repository that keeps a file
- * here cannot have one edited by an Igor.
+ * The name a worker writes its declarations under, inside the run's outbox.
+ *
+ * The place is the whole of why the file is this run's word, so no path inside the tree is
+ * reserved: a file a repository keeps at this name, anywhere within itself, is ordinary
+ * content — carried into the artifact and compared like any other, and declaring nothing.
  */
-export const DECLARATION_PATH = '.igor/reverts.json'
+export const DECLARATION_FILE = 'reverts.json'
 
 /** One path a resolution may undo, and the base state its author says they are discarding. */
 export interface Declaration {
@@ -1281,11 +1297,6 @@ export function undone(
   const removed = new Set(deletions)
   const out: Undone[] = []
   for (const change of baseChanges) {
-    // The declaration is read out of the tree and never published, so the base's own change to
-    // that path is dropped from every resolution by construction. Read as a revert it refuses
-    // every catch-up on a repository that keeps a file there, and a worker cannot declare a
-    // path the merge did not conflict on.
-    if (change.path === DECLARATION_PATH && change.rawName === undefined) continue
     // Declarations name a path as a string, and so do the published files: a name that is not
     // text can be neither. Such a path is compared on what head holds against what the base
     // does, which needs no name at all — and a resolution that touched one stops before here.
@@ -1522,11 +1533,12 @@ export async function execute(
         const env = await workerEnv(options.seatToken, process.env, options.seat)
         worker = await (options.worker ?? headlessClaude)({
           cwd: tree.path,
+          outbox: tree.outbox,
           system: workerSystemPrompt(role, role.allow, options.lore ?? ''),
           prompt:
             artifact === undefined || merge === undefined
               ? workerPrompt(candidate, linkage)
-              : conflictPrompt(candidate, artifact, merge.conflicts, merge.baseChanges),
+              : conflictPrompt(candidate, artifact, tree.outbox, merge.conflicts, merge.baseChanges),
           model,
           limits: { ...DEFAULT_LIMITS, ...options.limits },
           env,
@@ -1603,26 +1615,14 @@ export async function execute(
       // less, because a non-zero exit has already said the run did not finish.
       ...(worker.is_error !== false && structuralLimit(worker) ? { limitEnvelope: worker } : {}),
     }
-    const read = await tree.changes()
-    // The declaration is Igor's own channel, not part of the work: taken out here, before
-    // anything counts the changes or publishes them, so no path sees a resolution the branch
-    // will not receive. A run whose only change was the declaration therefore changed nothing,
-    // and is reported as the abandoned conflict or the empty tree it is.
-    const changed = read.filter((c) => c.path !== DECLARATION_PATH || c.rawName !== undefined)
-    // Off the disk rather than out of the change list, because a repository that ignores the
-    // directory — this one does — reports the file in no status, and the channel would be dead
-    // exactly where Igor works on itself. Every way of not being there reads as no declaration.
-    //
-    // **And only where the repository keeps no copy of its own there.** A committed declaration
-    // is on disk in every fresh clone, so taken as the worker's it speaks for every run that
-    // ever reads it — and the run then reports, on the item and in its record, a declaration
-    // nobody made. A tree that cannot answer which it is cannot tell them apart either.
-    const wrote = await readFile(join(tree.path, DECLARATION_PATH), 'utf8').catch(() => '')
-    const keeps = tree.committed === undefined ? undefined : await tree.committed(DECLARATION_PATH)
-    const declared =
-      wrote === '' || keeps === undefined || keeps.some((sha) => sameBlob(wrote, sha))
-        ? []
-        : declarations(wrote)
+    // Nothing is taken out of it: the declaration channel is a directory outside the tree, so
+    // no change the worker made is Igor's own and every one of them belongs to the artifact.
+    const changed = await tree.changes()
+    // Read from a directory Igor made empty for this run and nothing else can write to, so what
+    // is here was left here by this run's worker. Provenance is a property of the place, which
+    // is why nothing has to be established about the file. Not being there is no declaration.
+    const wrote = await readFile(join(tree.outbox, DECLARATION_FILE), 'utf8').catch(() => '')
+    const declared = wrote === '' ? [] : declarations(wrote)
 
     // Read before anything is decided, not merely before publishing: a stop during a run that
     // changed nothing is still a stop, and owes a receipt rather than a handoff.

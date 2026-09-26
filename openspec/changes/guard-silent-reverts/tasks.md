@@ -23,18 +23,22 @@
 
 ## 3. The declaration
 
-- [x] 3.1 A file the worker writes into the tree at a fixed path, read by the loop: a list of
-      entries, each naming one path and the base state it discards — the base's blob sha, or
-      that the base deleted the path
+- [x] 3.1 A file the worker writes into the run's outbox — a directory beside the clone, made
+      empty for the run and swept with it — read by the loop: a list of entries, each naming one
+      path and the base state it discards, the base's blob sha or that the base deleted the path
 - [x] 3.2 An entry authorizes only where that state is what the base actually holds; otherwise
       the revert counts as undeclared
 - [x] 3.3 No blanket form: no wildcard path, no whole-resolution flag, and nothing read from
       role or org configuration. A malformed or pathless entry authorizes nothing
 - [x] 3.4 An entry naming a path that is not being reverted is inert
-- [x] 3.5 The file is removed from the changes before they are published, so no declaration
-      reaches the artifact's branch
+- [x] 3.5 No declaration reaches the artifact's branch, because the channel is not in the tree
+      the branch is published from — and so no path inside the tree is reserved
 - [x] 3.6 The worker's standing instructions for a conflict say the file exists, what it is for,
       and that leaving it out means handing off rather than publishing
+- [x] 3.7 The worker is granted the outbox explicitly, since nothing outside its working
+      directory is writable otherwise. Measured against the real CLI, both ways
+- [x] 3.8 The outbox has the same lifetime as the tree on every path that ends a run: released
+      with it, and reclaimed by the startup sweep where a crash ran no release
 
 ## 4. Publishing and refusing
 
@@ -66,6 +70,11 @@
 - [x] 5.13 The two instances from PR #64, as regressions against the guard rather than against
       their individual fixes — stated as the tree each would have published, not as the status
       codes that produced them
+- [x] 5.14 A declaration the repository itself commits into the tree authorizes nothing, and is
+      carried into the artifact as the ordinary content it is
+- [x] 5.15 The startup sweep reclaims an outbox a crashed run left beside its tree, and leaves
+      one young enough to belong to a live sibling
+- [x] 5.16 A release whose tree cannot be removed still removes the outbox
 
 ## 6. Documentation
 

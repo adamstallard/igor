@@ -1,5 +1,5 @@
 import { execFile, execFileSync } from 'node:child_process'
-import { mkdirSync, renameSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, renameSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { describe, expect, it } from 'vitest'
@@ -348,24 +348,73 @@ describe('bringing a base into an artifact tree', () => {
     expect(merge.baseChanges.find((c) => c.path === 'moved.txt')?.before).toBeUndefined()
   })
 
-  it('says what the repository itself keeps at a path, on both sides of a merge', async () => {
-    // The question a file the loop reads out of the tree has to answer: a committed copy is on
-    // disk in every fresh clone, and read as the worker's it speaks for every run.
-    const { clone, origin } = await conflicting()
-    const git = (...args: string[]) => run('git', ['-C', origin, ...args])
-    writeFileSync(join(origin, 'kept.json'), 'the base keeps this\n')
-    await git('add', '-A')
-    await git('commit', '-qm', 'the base keeps a file there')
-
+  it('puts the outbox beside the clone and sweeps it with the clone', async () => {
+    // Beside rather than inside, because the whole point is that no path a repository can
+    // commit names it. Swept with the tree, because a directory that outlived the run would
+    // carry one run's word into the next.
+    const { clone } = await conflicting()
     const tree = new ClonedTree(clone, 'o/r')
-    expect(await tree.committed('untouched.txt')).toEqual([blobSha('quiet\n')])
-    // Nothing yet from the side being brought in: the merge has not run.
-    expect(await tree.committed('kept.json')).toEqual([])
-    await tree.merge('main')
-    expect(await tree.committed('kept.json')).toEqual([blobSha('the base keeps this\n')])
+    mkdirSync(tree.outbox, { recursive: true })
+    // Swept from a `finally` rather than by the release under test: this path is derived, not
+    // one `tempDir` registered, so a failed expectation — or a release that throws — would
+    // otherwise strand it exactly where the sweep cannot reach it.
+    try {
+      writeFileSync(join(tree.outbox, 'reverts.json'), '{"reverts":[]}\n')
 
-    // A path neither side holds — the ordinary case, where the worker's file is its own word.
-    expect(await tree.committed('.igor/reverts.json')).toEqual([])
+      expect(tree.outbox).not.toBe(tree.path)
+      expect(tree.outbox.startsWith(`${tree.path}/`)).toBe(false)
+      expect(existsSync(tree.outbox)).toBe(true)
+
+      await tree.release()
+      expect(existsSync(tree.path)).toBe(false)
+      expect(existsSync(tree.outbox)).toBe(false)
+    } finally {
+      rmSync(tree.outbox, { recursive: true, force: true })
+    }
+  })
+
+  /**
+   * A tree and an outbox where one named directory cannot be unlinked from, so removing
+   * whichever holds it fails part way. The mode is restored whatever the test does with it.
+   */
+  function undeletable(holding: 'clone' | 'outbox'): { tree: ClonedTree; unlock: () => void } {
+    const sandbox = tempDir('igor-tree-release-')
+    const clone = join(sandbox, 'clone')
+    const outbox = join(sandbox, 'clone-outbox')
+    for (const dir of [clone, outbox]) mkdirSync(dir)
+    writeFileSync(join(clone, 'work.txt'), 'the artifact\n')
+    writeFileSync(join(outbox, 'reverts.json'), '{"reverts":[]}\n')
+    const locked = join(holding === 'clone' ? clone : outbox, 'locked')
+    mkdirSync(locked)
+    writeFileSync(join(locked, 'held'), 'x')
+    chmodSync(locked, 0o500)
+    return { tree: new ClonedTree(clone, 'o/r', outbox), unlock: () => chmodSync(locked, 0o700) }
+  }
+
+  it('removes the outbox even when the tree itself cannot be removed', async () => {
+    // The outbox is the half with nothing behind it: the startup sweep reclaims a stranded
+    // clone by name, and giving up on the first failure leaves the directory carrying a
+    // run's declaration where it will sit until somebody notices.
+    const { tree, unlock } = undeletable('clone')
+    try {
+      await expect(tree.release()).rejects.toThrow()
+      expect(existsSync(tree.outbox)).toBe(false)
+    } finally {
+      unlock()
+    }
+  })
+
+  it('removes the tree even when the outbox cannot be removed', async () => {
+    // The other direction, and the one that says both are attempted rather than that the
+    // outbox merely goes first: a checkout left behind is a whole repository on disk, and
+    // nothing about an outbox a worker made awkward should be what keeps it there.
+    const { tree, unlock } = undeletable('outbox')
+    try {
+      await expect(tree.release()).rejects.toThrow()
+      expect(existsSync(tree.path)).toBe(false)
+    } finally {
+      unlock()
+    }
   })
 
   it("reports a merge git refused to attempt in git's own words", async () => {

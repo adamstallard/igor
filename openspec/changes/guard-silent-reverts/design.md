@@ -244,17 +244,18 @@ worker resolves by keeping the file, which `conflictPrompt` explicitly invites, 
 unremarked. A deletion has no content to combine with, so the erosion this design declines to
 catch has no instance here: present or absent, and present is the revert.
 
-**A declaration is the worker's word only where the repository keeps none.** Reading the file
-off disk answers the ignored case and opens another: a `.igor/reverts.json` the repository
-*tracks* is on disk in every fresh clone, so read as this run's it authorizes the same revert on
-every run that ever sees it — and the run then states, on the item and in its record, a
-declaration nobody made. That is the audit trail this change exists to produce saying the
-opposite of what happened, and it needs no attacker. The tree is asked what its two commits hold
-at that path, and a file matching either is the repository's rather than the worker's; a tree
-that cannot answer cannot tell them apart, so it yields no declaration. The same reserved path is
-skipped in the comparison, because it is taken out of the changes and so dropped from every
-resolution by construction — flagged as a revert it would refuse every catch-up on a repository
-that keeps a file there, undeclarably.
+**A declaration is this run's word, and the place it is written is what says so.** A file
+anywhere in the tree can be one the repository committed: on disk in every fresh clone, read as
+this run's it authorizes the same revert on every run that ever sees it, and the run then states,
+on the item and in its record, a declaration nobody made. That is the audit trail this change
+exists to produce saying the opposite of what happened, and it needs no attacker. So the channel
+is not a path in the tree at all. The Igor makes a directory beside the clone, empty, grants the
+worker that one directory and no other, and removes it with the tree; whatever is in it
+afterwards was put there by this run's worker, because nothing else could put anything there.
+
+Nothing inside the tree is reserved as a consequence. A file the repository keeps at the path the
+channel once used is ordinary content: carried into the artifact, compared like any other path,
+and authorizing nothing.
 
 **The guard is bounded by what a published tree can carry, and says so loudly.** `git diff --raw`
 sees every path git tracks; `changes()` reads regular UTF-8 files and `resolve` sends `100644`
@@ -264,6 +265,16 @@ catch-up there is no worker to declare them. Those resolutions refuse rather tha
 silent revert, which is the requirement holding; that they cannot be published at all is
 [#134](https://github.com/adamstallard/igor/issues/134), and it needs the other half of the
 problem — a tree read and a publish that carry non-blob paths.
+
+The same bound reaches a path git does hold as an ordinary blob. `changes()` reads the checkout
+and `resolve` publishes those very bytes, so wherever a clean filter stands between the blob and
+the checkout — `core.autocrlf`, an `eol=` or `text=auto` attribute, an `ident` on the path — what
+is published is the smudged copy rather than what git would store, and the artifact carries a
+whole-file change on a file nobody edited. The comparison above is unaffected: it asks what the
+resolution publishes against what the base holds, and a smudged copy genuinely is not the content
+that stood there before, so nothing is reported as restored that was not. What suffers is the
+publish, and it is the same half of [#134](https://github.com/adamstallard/igor/issues/134) — a
+tree read that carries what the tree holds.
 
 ## What the comparison was measured against
 
@@ -282,18 +293,78 @@ content comparison this design replaced.
 base's, finds them equal, and refuses every resolution that so much as leaves the file alone. A
 chmod *with* a content change has different blobs and is not swallowed by it.
 
-**What "the repository keeps none" is measured on, and where that is wrong.** The test hashes
-the bytes on disk and looks for that name among what `rev-parse` reports for `HEAD` and
-`MERGE_HEAD`. Git does not promise the two agree on a file nobody touched: `core.autocrlf` on
-the host, an `eol=` or `text=auto` attribute in the repository, or any clean filter transforms
-content between the blob and the checkout, and the name of the working copy is then not the
-name of the blob. Measured three ways on clones whose `git status` is empty — `core.autocrlf`
-alone, `* text=auto eol=crlf` alone, an `ident` attribute on the path alone — the committed
-declaration is taken as this run's word, which is the reading this section exists to prevent.
-It is worse for `discards: "deleted"` than for a blob name, because that value names nothing
-that changes and so keeps authorizing the same undone deletion on every run.
+## Why a place, and not a question about a file
 
-`git status` compares after the filters run and `sameBlob` compares before, so the two ask
-different questions and the guard asks the wrong one. Asking git whether the path differs from
-`HEAD` or `MERGE_HEAD`, or hashing through `hash-object --path` so the filter runs, changes what
-the test is based on rather than correcting it, and is open work rather than part of this change.
+Asking whether the file on disk is the one the repository keeps is the obvious mechanism, and it
+was measured wrong five ways, each one found by fixing the last:
+
+- **A digest of the disk bytes against the blob name `rev-parse` reports.** A clean filter —
+  `core.autocrlf`, an `eol=` or `text=auto` attribute, an `ident` — stands between the blob and
+  the checkout, so the two names differ on a file nobody touched, with `git status` empty.
+- **`git hash-object --path`**, which runs the clean filter before taking the name, only moves
+  which polarity is wrong: git leaves a path whose blob already holds CRLF unnormalized, so on a
+  repository that added `* text=auto` without `git add --renormalize` the filtered name misses
+  the blob that the raw bytes match. Measured: blob and raw bytes `cd74300c`, filtered
+  `c66294bf`. The polarities are exclusive, and a path carrying `ident` and `text=auto` together
+  misses both ways at once.
+- **`git diff`, and the index behind it.** `diff-index` answers off the stat cache, so a file
+  rewritten with its own bytes reads as changed. The porcelain `diff` refreshes, but during a
+  merge it takes the worktree entry from a conflict stage, whose mode is the merge base's: on a
+  `DU` conflict where the base flipped the executable bit, git reports a mode-only difference
+  for a file the merge itself put there. `core.fileMode=false` causes that reading rather than
+  curing it.
+- **`git diff --quiet HEAD -- <path>`** sees one of the two commits, and exits zero alike for a
+  path a commit holds identically and one it does not hold at all — so in a repository that
+  ignores the directory, every declaration a worker wrote would read as the repository's own.
+- **`git cat-file --filters`**, comparing the bytes a checkout of each commit would put there
+  with the bytes that are there. It applies the attributes in force *now*, not the ones in force
+  when the file was checked out. A base branch that merges in a `.gitattributes` change makes
+  both arms produce bytes the disk does not have, and the repository's own committed declaration
+  reads as this run's word — measured on the ordinary catch-up flow, no worker involved, `git
+  status` empty. The same skew arrives from a worker-written `.gitattributes`, one inside the
+  declaration's own directory, `.git/info/attributes`, or a `.gitattributes` the merge left
+  conflicted, whose two sides git applies together.
+
+Underneath all five, provenance was being asked of a **path**, and the filesystem's idea of a
+path is not git's. The path or a parent component committed as a symbolic link, a path committed
+under another case, a declaration a clean three-way merge rewrote: each makes the two resolve
+differently with nothing to see. And `MERGE_HEAD` — the only arm that recognises a declaration
+the *base* keeps — is a file in `.git` that an ordinary `git reset` by the worker removes.
+
+A directory answers instead of a question. Provenance becomes a property of the place: one
+writer by construction, so nothing has to be established about the file, and not one of those
+failures has anywhere to live. No name is taken, so no filter can disagree with it; no commit is
+consulted, so no attribute state, index stage or pseudo-ref bears on it; the path is resolved
+once, by the only process that writes it.
+
+**Measured, because `acceptEdits` does not reach outside the working directory.** With
+`--add-dir <outbox>` the worker's write into that directory succeeds. Without it the identical
+write is refused, `permission_denials` naming `Write`. A control writing *inside* the working
+directory succeeds either way, so it is the flag that grants it and not the mode. Three runs
+against the real CLI, not a reading of the documentation — an earlier reading said the opposite.
+
+**What it costs.** The worker holds write access to one directory that is not inside the tree.
+It is made empty for the run, named by nothing the repository contains, and removed in the same
+`release()` as the clone — but it is a grant that did not exist before, and it is the reason the
+outbox must never be pointed at anywhere Igor keeps state of its own.
+
+**The lifetime the design assumed, and where the implementation did not have it.** "Removed in
+the same `release()` as the clone" was the whole of the disposal story, and it covers one of the
+two ways a run ends. A crash runs no `finally` at all — which is why the startup sweep exists —
+and the sweep's name rule is `igor-tree-` followed by what `mkdtemp` appends, so `…-outbox` never
+matched it: every crash stranded the one directory holding a declaration, permanently. And
+`release()` itself removed the clone first and stopped on its error, so a checkout a worker had
+made partly unremovable took the outbox down with it. Both are fixed here rather than recorded
+as open: the sweep matches the sibling by name, and the two removals are attempted together with
+the outbox first, since it is the half with nothing behind it. A channel whose security argument
+is "one writer, one run" needs a lifetime that ends on every path out, not only the tidy one.
+
+**What the place actually fixes, which is narrower than "one writer".** The directory settles
+*when* a write happened — during this run, by something in the worker's process tree — not where
+the bytes came from. `readFile` follows a symbolic link, and a `cp` out of the checkout writes an
+ordinary file, so a worker acting on repository content can still launder a committed declaration
+into the outbox. That is the injection class this design accepts rather than answers, and the
+guards that would close each route — `lstat` for the link, a digest for the copy — are the
+route-by-route shape [#118](https://github.com/adamstallard/igor/issues/118) already taught us
+misses the next route. What is genuinely gone is the case with no actor in it at all: a committed
+declaration that spoke for every run that ever cloned the repository, worker or no worker.

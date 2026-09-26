@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { mkdtemp, rm, readFile, stat } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, readFile, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -148,17 +148,16 @@ export interface WorkingTree {
    */
   merge?(ref: string): Promise<MergeState>
   /**
-   * The blobs the commits this tree sits on hold at `path` — its own head, and the commit a
-   * merge brought in where one is in progress.
+   * A directory the worker may write to that is not part of the repository, empty when the
+   * worker is given it and removed with the tree.
    *
-   * Asked about a file the loop reads out of the tree and never publishes. Such a file is the
-   * worker's word only where the repository does not keep one at that path: a committed copy is
-   * on disk in every fresh clone, and read as this run's it speaks for every run forever.
-   *
-   * Optional on the same terms as `merge`. A caller that cannot get an answer has no way to
-   * tell the two apart and must not take the file as the worker's.
+   * This is where a worker leaves a message for Igor rather than a change for the artifact — a
+   * declaration that it meant to undo something the base did. It is deliberately not a path in
+   * the tree: a repository can commit a file at any path inside itself, and one that is on disk
+   * in every fresh clone, read as this run's word, would speak for every run forever. Nothing
+   * but the worker writes here, so whatever is here was put here by this run.
    */
-  committed?(path: string): Promise<string[]>
+  readonly outbox: string
   release(): Promise<void>
 }
 
@@ -166,6 +165,15 @@ export interface TreeProvider {
   readonly name: string
   provision(repo: string, ref?: string): Promise<WorkingTree>
 }
+
+/**
+ * Beside the clone, never within it, so nothing the repository can name reaches it.
+ *
+ * Exported because the startup sweep has to recognise one: a crash runs no `release()`, and a
+ * name rule that knows only the clone strands the outbox — the half holding a run's
+ * declaration — where nothing will ever reclaim it.
+ */
+export const OUTBOX_SUFFIX = '-outbox'
 
 function runBytes(cmd: string, args: readonly string[], cwd?: string): Promise<Buffer> {
   return new Promise((resolve, reject) => {
@@ -370,11 +378,16 @@ export const showName = (file: Pick<ChangedFile, 'path' | 'rawName'>): string =>
 /** Exported so the change-collection rules can be tested against a real repository. */
 export class ClonedTree implements WorkingTree {
   private released = false
+  /** Beside the clone rather than inside it, so no path in the repository can name it. */
+  readonly outbox: string
 
   constructor(
     readonly path: string,
     readonly repo: string,
-  ) {}
+    outbox?: string,
+  ) {
+    this.outbox = outbox ?? `${path}${OUTBOX_SUFFIX}`
+  }
 
   async changes(): Promise<ChangedFile[]> {
     // Read from the tree, never from what the worker said it did. A worker that reports a
@@ -581,22 +594,20 @@ export class ClonedTree implements WorkingTree {
     })
   }
 
-  async committed(path: string): Promise<string[]> {
-    const shas: string[] = []
-    for (const commit of ['HEAD', 'MERGE_HEAD']) {
-      // `rev-parse <commit>:<path>` names the blob or exits non-zero, which is the whole
-      // question. `MERGE_HEAD` is absent outside a merge, and that is one of the ways.
-      const sha = await run('git', ['-C', this.path, 'rev-parse', `${commit}:${path}`]).catch(() => '')
-      if (sha.trim() !== '') shas.push(sha.trim())
-    }
-    return shas
-  }
-
   /** Idempotent, because release runs from a finally that may also run on an already-failed path. */
   async release(): Promise<void> {
     if (this.released) return
     this.released = true
-    await rm(this.path, { recursive: true, force: true })
+    // Both are attempted whichever fails, and the outbox first. A worker can leave a directory
+    // inside the checkout that nothing may unlink from, and `force` swallows only ENOENT — so
+    // removing the tree first and stopping on its error strands the outbox, the half the
+    // startup sweep is least likely to reach and the one holding this run's declaration.
+    const outcomes = await Promise.allSettled([
+      rm(this.outbox, { recursive: true, force: true }),
+      rm(this.path, { recursive: true, force: true }),
+    ])
+    const failed = outcomes.find((outcome) => outcome.status === 'rejected')
+    if (failed !== undefined) throw failed.reason
   }
 }
 
@@ -615,14 +626,19 @@ export class CloneProvider implements TreeProvider {
     const args = ['clone', '--depth', String(this.depth), '--quiet']
     if (ref !== undefined) args.push('--branch', ref)
     args.push(`https://github.com/${repo}.git`, dir)
+    // Made before the worker ever sees it and left empty: an outbox that already held something
+    // would let whatever put it there speak as this run's worker.
+    const outbox = `${dir}${OUTBOX_SUFFIX}`
     try {
       await run('gh', ['auth', 'setup-git'])
       await run('git', args)
+      await mkdir(outbox, { recursive: true })
     } catch (error) {
       await rm(dir, { recursive: true, force: true })
+      await rm(outbox, { recursive: true, force: true })
       throw error
     }
-    return new ClonedTree(dir, repo)
+    return new ClonedTree(dir, repo, outbox)
   }
 }
 

@@ -1456,7 +1456,8 @@ clone-per-task and has to unpick it.
 **Cleanup is a startup sweep, not an exit hook** — **built**. Release runs from a `finally`, which SIGKILL,
 an OOM kill and a power loss all skip, so a crashed run strands a full checkout and nothing ever
 reclaims it. `wire` removes `igor-tree-*` directories older than the worker's absolute ceiling
-plus an hour before the first cycle. Age is the only safe signal: several processes of one role
+plus an hour before the first cycle — the checkout and the `-outbox` beside it alike, because a
+run strands two directories and the one carrying its declaration is the one worth reclaiming. Age is the only safe signal: several processes of one role
 is the point of §6.7.1, so a tree that looks idle may belong to a live sibling, and the
 threshold sits above the longest a tree can be in use — the ceiling, and the clone and push
 either side of the worker — rather than close to it. A surviving tree is debris, never
@@ -1543,18 +1544,27 @@ reached two ways. This check sits downstream of that read and does not repeat it
 owes it a change list, and the comparison is against the tree that list would publish.
 
 **An undone base change is publishable where the resolution declares the path.** The worker
-writes `.igor/reverts.json` into the tree — `{"reverts": [{"path": …, "discards": …}]}`, one
-entry per path, naming the blob the base holds or `deleted` where it deleted the path — and the
-loop reads it out of the change list and never publishes it. A declaration committed onto the
-artifact would be a standing permission outliving the run that made it.
+writes `reverts.json` — `{"reverts": [{"path": …, "discards": …}]}`, one entry per path, naming
+the blob the base holds or `deleted` where it deleted the path — into the run's **outbox**, and
+the loop reads it there. A declaration committed onto the artifact would be a standing
+permission outliving the run that made it.
 
-It is the worker's word only where the repository keeps no file there: a committed
-`.igor/reverts.json` is on disk in every fresh clone, and read as this run's it would authorize
-the same revert on every run and have each one report a declaration nobody made. The tree is
-asked what its two commits hold at the path, and one that cannot answer yields no declaration.
-For the same reason the path is skipped in the comparison — taken out of the changes, it is
-dropped from every resolution by construction, and flagged as a revert it would refuse every
-catch-up on a repository that keeps a file there.
+The outbox is a directory beside the clone, never inside it. The Igor makes it empty for the
+run, grants the worker that one directory with `--add-dir` — nothing outside the working
+directory is writable otherwise, measured — and removes it in the same `release()` as the tree,
+ahead of the tree and whether or not the tree's own removal succeeds. On the path that runs no
+`release()` at all, the startup sweep above reclaims it.
+So whatever is in it was put there by this run's worker, and that is the whole of how a
+declaration is known to be this run's word. A file the repository keeps cannot be one, at any
+path and however it got there: a committed declaration is on disk in every fresh clone and would
+authorize the same revert on every run, each reporting a declaration nobody made.
+
+Provenance is therefore a property of the place, never a question asked about a file. Asking it
+about a path was tried and fails wherever the filesystem's idea of a path and git's diverge — a
+symbolic link at the path or above it, a case-variant, a merge that rewrites the file — and
+wherever a clean filter or an attribute change makes a checkout differ from the blob it came
+from. No path inside the tree is reserved as a result: a file the repository keeps where the
+channel once lived is ordinary content, carried and compared like any other.
 
 Three properties keep it from becoming the field that gets defaulted on. **It can never be
 blanket**: no wildcard, no per-resolution flag, nothing a role or an org config can set, so the

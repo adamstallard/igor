@@ -31,7 +31,15 @@ published resolution and recorded with the run. The guard exists because an undo
 is invisible to review, and a declaration converts that into a statement rather than an
 exemption from it.
 
-The declaration is carried out of the working tree and never becomes part of the artifact.
+**A declaration is this run's word, and the place it is written is what says so.** It SHALL be
+written outside the artifact's working tree, into a directory the Igor makes empty for the run,
+grants the worker alone, and removes with the tree. A file the repository itself keeps SHALL NOT
+be read as a declaration, at any path and however it got there: a repository can commit a file at
+any path inside itself, and one that is on disk in every fresh clone would authorize the same
+revert on every run that ever clones it, each reporting a declaration nobody made.
+
+No path inside the tree is reserved. A file the repository keeps at whatever path the channel
+once used is ordinary content, carried into the artifact like any other.
 
 #### Scenario: A rewrite the base made is restored without a declaration
 
@@ -82,10 +90,21 @@ The declaration is carried out of the working tree and never becomes part of the
 - **WHEN** the base deleted a path and the resolution deletes it too
 - **THEN** the resolution is published, because nothing was restored
 
+#### Scenario: A declaration the repository commits is not this run's word
+
+- **WHEN** the repository keeps a file of declarations in its own tree and no worker writes one
+  for this run
+- **THEN** the revert is treated as undeclared and the item is handed off
+
+#### Scenario: A file the repository keeps is content, not a channel
+
+- **WHEN** the tree holds a file of declarations at a path the repository tracks
+- **THEN** it is carried into the artifact like any other file, and authorizes nothing
+
 #### Scenario: The declaration does not reach the artifact
 
 - **WHEN** a resolution is published
-- **THEN** whatever carried its declarations is not part of the published commit
+- **THEN** no declaration is part of the published commit
 
 #### Scenario: The check runs before the commit, not after it
 

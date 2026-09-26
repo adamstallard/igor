@@ -1,5 +1,5 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type {
   Artifact,
@@ -20,7 +20,7 @@ import {
   type CommentSource, type CycleReport, type ItemDeps,
 } from '../src/loop.js'
 import { defer, NO_DEFERRALS, shouldDefer } from '../src/deferred.js'
-import { DECLARATION_PATH, ExecutionError } from '../src/execute.js'
+import { DECLARATION_FILE, ExecutionError } from '../src/execute.js'
 import { budgetGate } from '../src/budget.js'
 import { tempDir } from './tmp.js'
 
@@ -36,12 +36,10 @@ function deps(opts: {
   verdicts?: ClaimVerdict[]
   claimSticks?: boolean
   changes?: ChangedFile[]
-  /** What the worker left at `DECLARATION_PATH` in the tree, which is read off disk. */
+  /** What the worker left in the outbox, the one place a declaration is read from. */
   declaration?: string
-  /** What the repository itself keeps at that path, which is on disk in every fresh clone. */
+  /** A declaration the repository itself commits into the tree, which declares nothing. */
   tracked?: string
-  /** A tree that cannot say what the repository keeps, as a provider without git could not. */
-  cannotTell?: boolean
 } = {}) {
   const posts: string[] = []
   const released: string[] = []
@@ -86,22 +84,22 @@ function deps(opts: {
     provision: async (_repo, ref): Promise<WorkingTree> => {
       provisioned.push(ref)
       const path = tempDir('igor-loop-')
-      // Written where a worker writes it, because that is where it is read from: a repository
-      // that ignores the directory — igor's own does — reports the file in no status.
-      if (opts.declaration !== undefined) {
-        mkdirSync(join(path, dirname(DECLARATION_PATH)), { recursive: true })
-        writeFileSync(join(path, DECLARATION_PATH), opts.declaration)
+      const outbox = tempDir('igor-loop-outbox-')
+      // In the outbox, because that is the only place a declaration is read from and nothing
+      // but the worker can write there. Writing it at provision is the same thing to the code
+      // under test: the directory has one writer by construction.
+      if (opts.declaration !== undefined) writeFileSync(join(outbox, DECLARATION_FILE), opts.declaration)
+      // In the tree, as a repository that commits one puts it there. It is on disk in every
+      // fresh clone, and it is not a declaration.
+      if (opts.tracked !== undefined) {
+        mkdirSync(join(path, '.igor'), { recursive: true })
+        writeFileSync(join(path, '.igor/reverts.json'), opts.tracked)
       }
       return {
         path,
+        outbox,
         repo: 'o/r',
         changes: async () => opts.changes ?? [],
-        ...(opts.cannotTell === true
-          ? {}
-          : {
-              committed: async (at: string) =>
-                opts.tracked !== undefined && at === DECLARATION_PATH ? [blobSha(opts.tracked)] : [],
-            }),
         ...(opts.merge === undefined
           ? {}
           : {
@@ -1165,13 +1163,6 @@ describe('a base change is undone only where the resolution says so', () => {
   const declares = (...reverts: { path: string; discards: string }[]): string =>
     JSON.stringify({ reverts })
 
-  /** The same file arriving through the change list, where the repository does not ignore it. */
-  const declaring = (...reverts: { path: string; discards: string }[]): ChangedFile => ({
-    path: DECLARATION_PATH,
-    content: declares(...reverts),
-    kind: 'added',
-  })
-
   /** A resolution the guard has nothing to say about, so a test can carry one and mean it. */
   const resolvedConflict: ChangedFile = { path: 'src/a.ts', content: 'ours\ntheirs\n', kind: 'modified' }
 
@@ -1255,10 +1246,10 @@ describe('a base change is undone only where the resolution says so', () => {
     expect(posts.join(' ')).toContain('src/a.ts')
   })
 
-  it('reads the declaration out of the tree rather than out of the change list', async () => {
-    // A repository that ignores the directory reports the file in no status — igor's own
-    // `.gitignore` covers `.igor/` — so a channel read from the change list is dead exactly
-    // where an Igor works on itself, and every declared revert refuses.
+  it('reads the declaration out of the outbox, which no change list can carry', async () => {
+    // The channel is a directory beside the tree, so it is in no status and in no change list
+    // — and a repository that ignores a directory inside the tree, as igor's own ignores
+    // `.igor/`, can no longer kill the channel by reporting nothing.
     const { d, resolved } = deps({
       caughtUp: [{ outcome: 'conflict' }, { outcome: 'already-current' }],
       merge: merging(rewritten('src/a.ts')),
@@ -1269,21 +1260,20 @@ describe('a base change is undone only where the resolution says so', () => {
 
     expect(run.outcome).toBe('produced')
     expect(resolved).toHaveLength(1)
-    expect(run.execution?.changed.map((c) => c.path)).not.toContain(DECLARATION_PATH)
+    expect(run.execution?.changed.map((c) => c.path)).not.toContain('.igor/reverts.json')
   })
 
   it('does not take a declaration the repository keeps as something this run said', async () => {
     // A committed declaration is on disk in every fresh clone, so read as the worker's it
     // authorizes the same revert on every run that ever reads it — and the run then reports a
     // declaration nobody made, which is the audit trail the guard exists to produce saying the
-    // opposite of what happened.
-    const committed = declares({ path: 'src/gone.ts', discards: 'deleted' })
+    // opposite of what happened. It is not read, because the channel is not in the tree: the
+    // repository has nowhere to put a file that this run would speak for.
     const { d, resolved, posts } = deps({
       caughtUp: [{ outcome: 'conflict' }],
       merge: merging(rewritten('src/a.ts'), removed('src/gone.ts')),
       changes: [resolvedConflict],
-      declaration: committed,
-      tracked: committed,
+      tracked: declares({ path: 'src/gone.ts', discards: 'deleted' }),
     })
     const run = await catchUpItem(d, stale(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
 
@@ -1306,41 +1296,27 @@ describe('a base change is undone only where the resolution says so', () => {
     expect(run.execution?.reverts).toEqual(['src/gone.ts, which the base deleted'])
   })
 
-  it('takes no declaration from a tree that cannot say what the repository keeps', async () => {
-    // The two files are the same bytes in the same place; only the tree can say which is which.
-    // Unanswered, the file is not the worker's word, because the other reading authorizes a
-    // revert on every run and says a person meant it.
-    const { d, resolved } = deps({
-      caughtUp: [{ outcome: 'conflict' }],
-      merge: merging(rewritten('src/a.ts'), removed('src/gone.ts')),
-      changes: [resolvedConflict],
-      declaration: declares({ path: 'src/gone.ts', discards: 'deleted' }),
-      cannotTell: true,
-    })
-    const run = await catchUpItem(d, stale(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
-
-    expect(resolved).toEqual([])
-    expect(run.reason).toContain('src/gone.ts')
-  })
-
-  it('publishes where the base itself changed the declaration file', async () => {
-    // The path is taken out of the changes and never published, so the base's own change to it
-    // is dropped from the resolution by construction. Flagged as a revert it would refuse every
-    // catch-up on that repository, and no worker could declare a path it is not conflicted on.
+  it('carries a file the repository keeps at the old channel path like any other', async () => {
+    // No path in the tree is reserved: the channel is outside it. A repository that tracks a
+    // file here is carrying ordinary content, so the base's change to it is a base change like
+    // any other and the resolution has to carry it forward or be refused.
+    const carried = '{"reverts":[{"path":"x","discards":"deleted"}]}\n'
     const { d, resolved } = deps({
       caughtUp: [{ outcome: 'conflict' }, { outcome: 'already-current' }],
       merge: merging(rewritten('src/a.ts'), {
-        path: DECLARATION_PATH,
+        path: '.igor/reverts.json',
         before: blobSha('{"reverts":[]}\n'),
-        after: blobSha('{"reverts":[{"path":"x","discards":"deleted"}]}\n'),
+        after: blobSha(carried),
         head: blobSha('{"reverts":[]}\n'),
       }),
-      changes: [resolvedConflict],
+      changes: [resolvedConflict, { path: '.igor/reverts.json', content: carried, kind: 'modified' }],
     })
     const run = await catchUpItem(d, stale(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
 
     expect(run.outcome).toBe('produced')
-    expect(resolved).toHaveLength(1)
+    expect(resolved[0]?.files.map((f) => f.path)).toContain('.igor/reverts.json')
+    // And it declared nothing: a file in the repository is content, never this run's word.
+    expect(run.execution?.reverts ?? []).toEqual([])
   })
 
   it('refuses a file kept against a deletion the base made, whatever it now holds', async () => {
@@ -1540,7 +1516,8 @@ describe('a base change is undone only where the resolution says so', () => {
 
   it('publishes no declaration onto the branch, declared or not', async () => {
     // A declaration committed onto the artifact would be a standing permission outliving the
-    // run that made it, so it is read out of the tree and never laid over it.
+    // run that made it. It cannot reach the branch because it is not in the tree: there is no
+    // path a publish could pick it up from, rather than a path a publish has to skip.
     for (const reverts of [
       [{ path: 'src/a.ts', discards: blobSha(THEIRS) }],
       [{ path: 'src/untouched.ts', discards: blobSha(THEIRS) }],
@@ -1548,15 +1525,14 @@ describe('a base change is undone only where the resolution says so', () => {
       const { d, resolved } = deps({
         caughtUp: [{ outcome: 'conflict' }, { outcome: 'already-current' }],
         merge: merging(rewritten('src/a.ts')),
-        // Both routes at once: on disk, where it is read, and in the change list, which is
-        // what a repository that does not ignore the directory reports.
-        changes: [{ path: 'src/a.ts', content: BASE, kind: 'modified' }, declaring(...reverts)],
+        changes: [{ path: 'src/a.ts', content: BASE, kind: 'modified' }],
         declaration: declares(...reverts),
       })
       await catchUpItem(d, stale(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
       for (const request of resolved) {
-        expect(request.files.map((f) => f.path)).not.toContain(DECLARATION_PATH)
-        expect(request.deletions).not.toContain(DECLARATION_PATH)
+        expect(request.files.map((f) => f.path)).not.toContain(DECLARATION_FILE)
+        expect(request.files.some((f) => f.content.includes('"reverts"'))).toBe(false)
+        expect(request.deletions).not.toContain(DECLARATION_FILE)
       }
     }
   })
