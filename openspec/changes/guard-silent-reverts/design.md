@@ -281,3 +281,19 @@ content comparison this design replaced.
 `before === after === head`, so without it the rewrite clause compares head's blob to the merge
 base's, finds them equal, and refuses every resolution that so much as leaves the file alone. A
 chmod *with* a content change has different blobs and is not swallowed by it.
+
+**What "the repository keeps none" is measured on, and where that is wrong.** The test hashes
+the bytes on disk and looks for that name among what `rev-parse` reports for `HEAD` and
+`MERGE_HEAD`. Git does not promise the two agree on a file nobody touched: `core.autocrlf` on
+the host, an `eol=` or `text=auto` attribute in the repository, or any clean filter transforms
+content between the blob and the checkout, and the name of the working copy is then not the
+name of the blob. Measured three ways on clones whose `git status` is empty — `core.autocrlf`
+alone, `* text=auto eol=crlf` alone, an `ident` attribute on the path alone — the committed
+declaration is taken as this run's word, which is the reading this section exists to prevent.
+It is worse for `discards: "deleted"` than for a blob name, because that value names nothing
+that changes and so keeps authorizing the same undone deletion on every run.
+
+`git status` compares after the filters run and `sameBlob` compares before, so the two ask
+different questions and the guard asks the wrong one. Asking git whether the path differs from
+`HEAD` or `MERGE_HEAD`, or hashing through `hash-object --path` so the filter runs, changes what
+the test is based on rather than correcting it, and is open work rather than part of this change.
