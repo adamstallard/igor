@@ -252,11 +252,11 @@ by an implementer who finds the scenario cannot be made to pass.
 
 The branch-keyed procedure this file used to carry mostly collapses. Carrying by id touches neither
 `report.untriaged` nor the held-set computation, so the carry itself is the same code whether or not
-[#70](https://github.com/adamstallard/igor/pull/70) has landed. What still depends on #70 is only
-where the *"no verdict was reached on this candidate"* record lands: a fourth untriaged reason
-beside `OVER_LIMIT`, `UNTRIAGED_NO_SEAT` and `NO_CREDENTIAL` where #70 is in, and a destination of
-this change's own where it is not. Neither shape changes the mark, which now advances normally in
-both.
+[#70](https://github.com/adamstallard/igor/pull/70) had landed. **It has — merged 2026-09-24 — so
+the one thing that depended on it is settled**: the *"no verdict was reached on this candidate"*
+record is a fourth untriaged reason beside `OVER_LIMIT`, `UNTRIAGED_NO_SEAT` and `NO_CREDENTIAL`,
+not a destination of this change's own. The alternative shape is recorded because the choice was
+live when this was written; neither shape changes the mark, which advances normally in both.
 
 The failure entry stays either way. It is the record of the fault; the carry is the record of the
 item. Replacing one with the other loses whichever the reader needed.
@@ -286,8 +286,8 @@ is never triaged; those candidates were never skipped, so nothing in `report.ski
 for them either, and they are dropped exactly as a failed call's candidate is. It is covered by #70
 by name — its "A candidate left untriaged is not a candidate triage decided about" lists "a seat
 whose credential will not resolve" among its causes — and two in-flight requirements over one fact
-is a collision `openspec validate` cannot see. **If #70 is closed unmerged, this requirement is the
-place to widen.**
+is a collision `openspec validate` cannot see. The widening this named as a contingency — *if #70
+closed unmerged, this requirement is the place* — **does not arise: #70 merged on 2026-09-24.**
 
 **Nothing measures how often this happens.** Recorded because both earlier refusals were argued
 from a frequency nobody has counted. See the frequency premise above.
