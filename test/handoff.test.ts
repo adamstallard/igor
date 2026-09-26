@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { stillAssigned } from '../src/claiming.js'
 import type { Candidate, Tracker } from '../src/adapter.js'
 import type { ExecutionResult } from '../src/execute.js'
 import type { Role } from '../src/role.js'
@@ -33,7 +34,7 @@ const result = (over: { [K in keyof ExecutionResult]?: ExecutionResult[K] | unde
   return merged as unknown as ExecutionResult
 }
 
-function tracker(opts: { reportThrows?: boolean; releaseThrows?: boolean } = {}) {
+function tracker(opts: { reportThrows?: boolean; releaseThrows?: boolean; releaseLeavesHolder?: boolean } = {}) {
   const log = { reported: [] as string[], released: [] as string[] }
   const t: Tracker = {
     name: 'fake',
@@ -50,7 +51,9 @@ function tracker(opts: { reportThrows?: boolean; releaseThrows?: boolean } = {})
     release: async (_c, as) => {
       if (opts.releaseThrows) throw new Error('cannot unassign')
       log.released.push(as)
-      return true
+      // The surface answered, and the holder field did not clear — distinct from the throw
+      // above, which is the surface not answering at all.
+      return opts.releaseLeavesHolder !== true
     },
     linkage: () => 'Closes #7',
   }
@@ -358,6 +361,34 @@ describe('posting it', () => {
     const out = await handOffFrom(t, candidate(), role(), 'igor-bot', CLAIMED, { kind: 'budget' }, result(), NOW)
     expect(out.posted).toBe(true)
     expect(out.released).toBe(false)
+  })
+
+  it('corrects the handoff on the item, not only in the flags it returns', async () => {
+    // The handoff text says the Igor released this, and it is posted before the release is
+    // attempted — by design. Where the release then does not take, the flags told the caller
+    // and the item was left carrying the false sentence.
+    const { t, log } = tracker({ releaseThrows: true })
+    const out = await handOffFrom(t, candidate(), role(), 'igor-bot', CLAIMED, { kind: 'budget' }, result(), NOW)
+
+    expect(out.released).toBe(false)
+    expect(log.reported.at(-1)).toBe(stillAssigned())
+  })
+
+  it('reads a surface that answers "still assigned" the same as one that does not answer', async () => {
+    const { t, log } = tracker({ releaseLeavesHolder: true })
+    const out = await handOffFrom(t, candidate(), role(), 'igor-bot', CLAIMED, { kind: 'budget' }, result(), NOW)
+
+    expect(out.released).toBe(false)
+    expect(log.reported.at(-1)).toBe(stillAssigned())
+  })
+
+  it('says nothing extra where the release did take', async () => {
+    // The pole: every handoff would otherwise gain a second comment.
+    const { t, log } = tracker()
+    const out = await handOffFrom(t, candidate(), role(), 'igor-bot', CLAIMED, { kind: 'budget' }, result(), NOW)
+
+    expect(out.released).toBe(true)
+    expect(log.reported).toHaveLength(1)
   })
 
   it('still posts when the worker could not be invoked at all', async () => {

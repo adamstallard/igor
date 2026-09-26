@@ -54,7 +54,7 @@ const issue = (n: number): Candidate =>
     idleDays: 0,
   }) as unknown as Candidate
 
-function deps(found: Candidate[], opts: { searchThrows?: boolean; verdict?: ClaimVerdict; caughtUp?: CatchUp[]; provisionThrows?: boolean } = {}) {
+function deps(found: Candidate[], opts: { searchThrows?: boolean; verdict?: ClaimVerdict; caughtUp?: CatchUp[]; provisionThrows?: boolean; provisionThrowsOnce?: boolean } = {}) {
   let searches = 0
   const tracker: Tracker = {
     name: 'github',
@@ -83,10 +83,15 @@ function deps(found: Candidate[], opts: { searchThrows?: boolean; verdict?: Clai
     },
     resolve: async (): Promise<string> => 'resolvedsha',
   }
+  let provisions = 0
   const trees: TreeProvider = {
     name: 'fake',
     provision: async (): Promise<WorkingTree> => {
       if (opts.provisionThrows === true) throw new Error('disk on fire')
+      // One item wedged, the rest healthy — a deterministic item fault, not an outage.
+      if (opts.provisionThrowsOnce === true && (provisions += 1) === 1) {
+        throw new Error('422 Reference already exists')
+      }
       return {
         path: tempDir('igor-serve-'),
         repo: 'o/r',
@@ -180,8 +185,9 @@ describe('the loop keeps going', () => {
     const { d } = deps([issue(1), issue(2), issue(3)], { provisionThrows: true })
     const s = await serve(d, role(), 'igor-bot', { ...base, maxCycles: 1, onEvent })
 
-    // One item attempted, not three, and the cycle counted as failed.
-    expect(events.filter((e) => e.kind === 'working')).toHaveLength(1)
+    // Two items attempted, not three: the second consecutive failure is what ends the cycle,
+    // because one on its own does not say whether the surface or the item is at fault.
+    expect(events.filter((e) => e.kind === 'working')).toHaveLength(2)
     expect(events.filter((e) => e.kind === 'cycle-failed')).toHaveLength(1)
     expect(s.failures).toBe(1)
   })
@@ -479,7 +485,7 @@ describe('a published artifact that stopped merging', () => {
     })
     const s = await serve(d, role(), 'igor-bot', { ...base, maxCycles: 1, onEvent })
 
-    expect(events.filter((e) => e.kind === 'working')).toHaveLength(1)
+    expect(events.filter((e) => e.kind === 'working')).toHaveLength(2)
     expect(events.filter((e) => e.kind === 'cycle-failed')).toHaveLength(1)
     expect(s.failures).toBe(1)
   })
@@ -497,13 +503,29 @@ describe('a published artifact that stopped merging', () => {
     })
     const s = await serve(d, role(), 'igor-bot', { ...base, maxCycles: 1, onEvent })
 
-    expect(events.filter((e) => e.kind === 'working')).toHaveLength(1)
+    expect(events.filter((e) => e.kind === 'working')).toHaveLength(2)
     expect(events.filter((e) => e.kind === 'cycle-failed')).toHaveLength(1)
     expect(s.failures).toBe(1)
     // The item that ended the cycle is still reported as worked. `worked` is the only route
     // by which a run's execution reaches the ledger, so breaking before it would drop the
     // spend of a run that published — silently, since the cycle total is added earlier.
-    expect(events.filter((e) => e.kind === 'worked')).toHaveLength(1)
+    expect(events.filter((e) => e.kind === 'worked')).toHaveLength(2)
+  })
+
+  it('does not abandon on one failure, because one does not say whose fault it is', async () => {
+    // The pole the counter creates. A branch an earlier run orphaned makes `produce` fail
+    // `422 Reference already exists` on that item and no other, deterministically. Abandoning
+    // on the first would stop every cycle for the life of that item — and since the claim is
+    // now released rather than held, the item comes back next cycle and the worker spends on
+    // it again.
+    const events: ServeEvent[] = []
+    const onEvent = (e: ServeEvent) => events.push(e)
+    const { d } = deps([issue(1), issue(2), issue(3)], { provisionThrowsOnce: true })
+    const s = await serve(d, role(), 'igor-bot', { ...base, maxCycles: 1, onEvent })
+
+    expect(events.filter((e) => e.kind === 'working')).toHaveLength(3)
+    expect(events.filter((e) => e.kind === 'cycle-failed')).toHaveLength(0)
+    expect(s.failures).toBe(0)
   })
 
   it('abandons one cycle, not every cycle after it', async () => {
@@ -518,9 +540,10 @@ describe('a published artifact that stopped merging', () => {
     })
     const s = await serve(d, role(), 'igor-bot', { ...base, maxCycles: 2, onEvent })
 
-    // Cycle one abandons at the catch-up. Cycle two's catch-up is clean, so the claim loop
-    // runs again and abandons on its own first item: three attempts, not two.
-    expect(events.filter((e) => e.kind === 'working')).toHaveLength(3)
+    // Each cycle abandons on its own, and the next poll is the retry — so the count rises
+    // across cycles rather than the breaker latching. What matters is the second line: one
+    // failure per cycle, not one per item and not one for the process.
+    expect(events.filter((e) => e.kind === 'working')).toHaveLength(5)
     expect(s.failures).toBe(2)
   })
 })

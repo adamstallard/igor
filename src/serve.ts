@@ -89,9 +89,27 @@ export async function serve(
     //
     // Shared by both item loops rather than written into one. The catch-up loop runs first, so
     // a guard only on the second is a guard the outage never reaches.
+    //
+    // **The second one in a row ends the cycle, not the first.** Whether a failure is the
+    // surface's or the item's is not something the run can tell — `codeHost.produce` fails
+    // inside `execute` for a branch the item already owns, while a tracker refusing the
+    // completion unassign fails outside it, so neither the error nor what the run holds
+    // separates them. What does separate them is how many items they affect: an outage fails
+    // every item and a bad item fails one. Counting is that distinction, drawn from behaviour
+    // rather than from a table of error shapes — which is the guard-per-route mistake
+    // `docs/architecture.md:1538` records.
+    //
+    // Consecutive, so one wedged item does not accumulate a stop across a healthy cycle.
     let abandoned = false
+    let inARow = 0
     const abandon = (run: ItemRun): boolean => {
-      if (run.surfaceFailed !== true) return false
+      if (run.surfaceFailed !== true) {
+        inARow = 0
+        return false
+      }
+      // The first one is not reported as a cycle failure: the run reports its own reason
+      // per item, and a cycle that recovered on the next item did not fail.
+      if ((inARow += 1) < 2) return false
       abandoned = true
       summary.failures += 1
       emit({ kind: 'cycle-failed', cycle, error: new Error(run.reason) })

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Candidate, ClaimVerdict, Tracker } from '../src/adapter.js'
 import type { Role } from '../src/role.js'
-import { checkpoint, claimMessage, claimStuck, claimWithdrawn, eligibleAfterStop, stopReceipt, takeClaim } from '../src/claiming.js'
+import { checkpoint, claimMessage, claimStuck, claimWithdrawn, stillAssigned, stoodDownStuck, eligibleAfterStop, stopReceipt, takeClaim } from '../src/claiming.js'
 import { isGoAhead, isStop } from '../src/signals.js'
 
 const NOW = Date.parse('2026-09-13T12:00:00Z')
@@ -305,6 +305,36 @@ describe('a claim taken and not finished', () => {
     expect(r.outcome).toBe('held')
     expect(log.released).toEqual([])
     expect(log.reported).toHaveLength(1)
+  })
+})
+
+describe('standing down when the release does not take', () => {
+  it('corrects the stop receipt rather than leaving "released this" standing', async () => {
+    // The receipt is posted by the caller and says the claim was released. Where the holder
+    // field did not clear, that is a false sentence on an item somebody is reading.
+    const { t, log } = tracker({ status: 'stopped', by: 'alice' }, { releaseLeavesHolder: true })
+    const r = await takeClaim(t, candidate(), role(), 'igor-bot', opts)
+
+    expect(r.outcome).toBe('stopped')
+    expect(log.reported.at(-1)).toBe(stillAssigned())
+  })
+
+  it('speaks at all on a lost claim it could not give up', async () => {
+    // Standing down silently is right only while the release works: otherwise the item shows
+    // two holders and accounts for neither, and `cli.ts`'s silence warning excludes `lost`.
+    const { t, log } = tracker({ status: 'lost', by: 'bob' }, { releaseLeavesHolder: true })
+    const r = await takeClaim(t, candidate(), role(), 'igor-bot', opts)
+
+    expect(r.outcome).toBe('lost')
+    expect(log.reported.at(-1)).toBe(stoodDownStuck(role()))
+  })
+
+  it('says nothing extra where the release did clear the holder', async () => {
+    // The pole: a clean stand-down must stay silent, or every lost item gains a comment.
+    const { t, log } = tracker({ status: 'lost', by: 'bob' })
+    await takeClaim(t, candidate(), role(), 'igor-bot', opts)
+
+    expect(log.reported).toEqual([claimMessage(role(), 'igor-bot')])
   })
 })
 

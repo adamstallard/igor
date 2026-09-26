@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process'
+import { stillAssigned } from './claiming.js'
 import { randomUUID } from 'node:crypto'
 import type { Artifact, Candidate, ClaimVerdict, CodeHost, InFlight, Tracker } from './adapter.js'
 import { resolveToken, type TokenSource, type Window } from './budget.js'
@@ -1750,9 +1751,14 @@ export async function complete(
     return { action: role.completion, why: `role "${role.name}" does not permit its own completion action` }
   }
   switch (role.completion) {
-    case 'unassign':
-      await tracker.release(candidate, identity)
+    case 'unassign': {
+      // Asked of the surface, not inferred from the call returning. A completion that did not
+      // clear the holder leaves a published run reported as produced and the item still
+      // assigned to an Igor that has finished with it, with nobody told.
+      const clear = await tracker.release(candidate, identity)
+      if (!clear) await tracker.report(candidate, stillAssigned()).catch(() => undefined)
       return undefined
+    }
     case 'assign':
     case 'close':
       // Neither ships in this change; refusing loudly beats silently doing the default.

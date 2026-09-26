@@ -30,17 +30,40 @@
 ## 4. The cycle
 
 - [x] 4.1 A run says whether its cause was the surface
-- [x] 4.2 `serve` counts it, emits `cycle-failed`, and abandons the cycle
+- [x] 4.2 `serve` counts it, emits `cycle-failed`, and abandons the cycle — **on the second
+      consecutive one, not the first.** Whether a failure is the surface's or the item's cannot
+      be read off the error or off what the run holds; how many items it affects can
 - [x] 4.3 A refusal about the item does not stop the cycle
 
-## 5. The write contract
+## 5. Saying so wherever a release does not take
+
+- [x] 5a.1 The stand-down appends the correction where the holder did not clear, and speaks at
+      all on a `lost` claim it could not give up — which said nothing before
+- [x] 5a.2 `handOff` reads the answer rather than assuming it, and corrects the handoff on the
+      item rather than only in the flags it returns
+- [x] 5a.3 `complete()`'s unassign does the same, so a published run cannot report `produced`
+      while the item stays assigned with nobody told
+- [x] 5a.4 **Wording carried verbatim, approved by the reviewer.** Appended where something was
+      already said:
+
+      ```
+      This is still assigned — releasing it did not take. Unassign it to free it.
+      ```
+
+      Standalone, for a lost claim that could not be released:
+
+      ```
+      **<role>** stood down here, and could not clear its own name from it. Unassign it to free it.
+      ```
+
+## 6. The write contract
 
 - [x] 5.1 `report` answers the posted comment's identity, or `undefined` where the surface will
       not say
 - [x] 5.2 `release` answers whether the holder field is clear
 - [x] 5.3 An answer that does not carry the assignees reads as not clear, argued in `design.md`
 
-## 6. Tests
+## 7. Tests
 
 - [x] 6.1 Each failure path observed red before its fix
 - [x] 6.2 Every added test mutation-checked, including a negative pole for each
@@ -48,8 +71,12 @@
 - [x] 6.4 An ordinary refusal is not flagged as a surface failure
 - [x] 6.5 A cycle abandons on a surface failure, and does not on an item refusal
 
-## 7. What is left
+## 8. What is left
 
-- [ ] 7.1 [#132](https://github.com/adamstallard/igor/issues/132) — the stop receipt still writes
+- [ ] 8.1 [#132](https://github.com/adamstallard/igor/issues/132) — the stop receipt still writes
       `spoke: true` whatever the report did. Same requirement, a site this change does not reach
-- [ ] 7.2 File the third escape found while fixing #129 as its own issue if it is not closed here
+- [ ] 8.2 File the third escape found while fixing #129 as its own issue if it is not closed here
+- [ ] 8.3 **A deterministic item fault still re-spends.** The counter stops a wedged item from
+      ending every cycle, but the claim is released rather than held, so the item returns next
+      cycle and the worker runs on it again. Before this change the held claim screened it out.
+      Needs a decision: defer such an item, or screen it some other way

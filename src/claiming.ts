@@ -83,6 +83,28 @@ export function claimStuck(role: Role): string {
 }
 
 /** The receipt owed on a stop: what exists so far, so nobody has to go looking. */
+/**
+ * Appended wherever something has already been said and the release then did not take.
+ *
+ * A correction rather than a replacement: the sentence above it — a stop receipt, a handoff —
+ * is still true about what happened, and only its last clause about releasing is not. Says
+ * nothing about the cause, which goes to the run's record.
+ */
+export function stillAssigned(): string {
+  return 'This is still assigned — releasing it did not take. Unassign it to free it.'
+}
+
+/**
+ * Said where a claim was lost to somebody else and could not then be given up.
+ *
+ * Standing down silently is right only where the release worked: the other holder is visible
+ * and a second voice adds nothing. Where this Igor's name is still on the item, silence leaves
+ * two apparent holders and no account of the second.
+ */
+export function stoodDownStuck(role: Role): string {
+  return `**${role.name}** stood down here, and could not clear its own name from it. Unassign it to free it.`
+}
+
 export function stopReceipt(role: Role, verdict: ClaimVerdict, artifact?: string): string {
   const who = verdict.by ? ` at ${verdict.by}'s request` : ''
   const left = artifact
@@ -168,7 +190,16 @@ export async function takeClaim(
 
     // Standing down releases our own claim in both cases: someone else holding it is not a
     // reason to leave a second name on the item, and a stop must leave nothing behind.
-    await tracker.release(candidate, identity).catch(() => undefined)
+    //
+    // Where it does not take, the item keeps this Igor's name. A stop receipt is posted by the
+    // caller and says "released this", so the correction is appended here; a lost claim says
+    // nothing at all today, which is right only while the release works.
+    const stoodDown = await tracker.release(candidate, identity).then((clear) => clear, () => false)
+    if (!stoodDown) {
+      await tracker
+        .report(candidate, verdict.status === 'lost' ? stoodDownStuck(role) : stillAssigned())
+        .catch(() => undefined)
+    }
 
     return {
       outcome: verdict.status,

@@ -1,3 +1,4 @@
+import { stillAssigned } from './claiming.js'
 import type { Artifact, Candidate, Tracker } from './adapter.js'
 import type { ExecutionResult } from './execute.js'
 import type { Role } from './role.js'
@@ -339,10 +340,15 @@ export async function handOff(
 
   let released = false
   try {
-    await tracker.release(candidate, identity)
-    released = true
+    // What the surface recorded, not merely that nothing was raised. The handoff above has
+    // already said this was released, so a release that did not take leaves a false sentence
+    // on the item unless the next line corrects it.
+    released = await tracker.release(candidate, identity)
   } catch {
     // Recorded by the caller through the returned flags; nothing here can fix it.
+  }
+  if (!released && posted) {
+    await tracker.report(candidate, stillAssigned()).catch(() => undefined)
   }
 
   return { posted, released, text, ...(error === undefined ? {} : { error }) }

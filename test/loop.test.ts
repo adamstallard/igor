@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { stillAssigned } from '../src/claiming.js'
 import type {
   Artifact,
   ArtifactRequest,
@@ -363,8 +364,12 @@ describe('a claim held through a failure that is not the item\'s', () => {
     const r = await runItem(d, candidate(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
 
     expect(produced).toHaveLength(1)
-    expect(posts.at(-1)).not.toContain('the work never started')
-    expect(posts.at(-1)).toContain('https://example.test/9')
+    // The handoff itself, wherever it sits: the release failed too, so a correction saying the
+    // item is still assigned is posted after it and is legitimately the last thing said.
+    const handoff = posts.find((m) => m.includes('https://example.test/9'))
+    expect(handoff).toBeDefined()
+    expect(handoff).not.toContain('the work never started')
+    expect(posts.at(-1)).toBe(stillAssigned())
     expect(r.execution?.artifact?.url).toBe('https://example.test/9')
     expect(r.costUsd).toBe(0.02)
   })
