@@ -1,6 +1,6 @@
 import type { Candidate, CodeHost, Comment, Tracker } from './adapter.js'
 import type { Gate, SeatVerdict } from './budget.js'
-import { checkpoint, eligibleAfterStop, stopReceipt, takeClaim, type ClaimOptions } from './claiming.js'
+import { checkpoint, eligibleAfterStop, stopReceipt, takeClaim, type ClaimOptions, type ClaimResult } from './claiming.js'
 import { complete, execute, workerEnv, type ExecuteOptions, type ExecutionResult } from './execute.js'
 import { handOffFrom, type HandoffReason } from './handoff.js'
 import type { Role } from './role.js'
@@ -96,6 +96,14 @@ export interface ItemRun {
    * an action and denied a command at once, and each is a separate thing to fix.
    */
   cures: string[]
+  /**
+   * Set where the run ended because a surface did not answer, rather than because of anything
+   * about the item. Nothing here would have gone differently on another item, so a cycle that
+   * meets one stops rather than doing the same to every item left in the pool — which on a
+   * tracker outage is two comments per item per poll, indefinitely, and enough volume to trip
+   * the rate limit that caused it.
+   */
+  surfaceFailed?: true
 }
 
 export type Step = 'claiming' | 'settling' | 'working' | 'publishing' | 'completing'
@@ -139,11 +147,13 @@ export async function runItem(
     //
     // **A refused claim is not necessarily a silent one.** `takeClaim` refuses where its own
     // post-claim window threw, and that path has already released the claim and, where the
-    // claim message landed, withdrawn it out loud — so `spoke: false` below understates what
-    // was said. It is left as it is because the field's one reader (`src/cli.ts:440`) excludes
-    // `refused` anyway. That exclusion now rests on the release, not on nothing having been
-    // said: a `refused` path that ends while still holding a claim would be silent and
-    // undetected, so any new one owes its own release rather than this exemption.
+    // claim message landed, withdrawn it out loud — so it reports what it said, and that is
+    // carried through below rather than flattened to false.
+    //
+    // The field's one reader (`src/cli.ts:440`) excludes `refused` regardless, and that
+    // exclusion rests on the release rather than on nothing having been said: a `refused` path
+    // that ends while still holding a claim would be silent and undetected, so any new one
+    // owes its own release rather than this exemption.
     if (claim.outcome === 'stopped' && claim.verdict) {
       await tracker.report(candidate, stopReceipt(role, claim.verdict)).catch(() => undefined)
       return { outcome: 'stopped', candidate, reason: claim.reason, costUsd: 0, spoke: true, cures: [] }
@@ -153,10 +163,66 @@ export async function runItem(
       candidate,
       reason: claim.reason,
       costUsd: 0,
-      spoke: false,
+      spoke: claim.spoke ?? false,
       cures: [],
+      ...(claim.surfaceFailed === true ? { surfaceFailed: true as const } : {}),
     }
   }
+
+  // **Everything from here runs with the claim held**, and until now none of it was guarded:
+  // `runItem` had no handler at all, so a throw from provisioning a tree, from a checkpoint,
+  // or from the completion action left the item assigned and announced with only a
+  // cycle-level error emitted somewhere above. Issue #129's state, one layer up from the
+  // window that issue is about.
+  //
+  // The claim is given back the way any other failure gives it back — a handoff, which posts
+  // and then releases — rather than by a second vocabulary of its own. Reported as `refused`
+  // rather than `handed-off` because nothing about the item produced this: a deferral would
+  // park an item that was never the problem.
+  //
+  // **What the run had reached is carried out with it.** A throw arriving here is not always a
+  // throw from before the work: the completion action is an unassign, so the last call of a
+  // wholly successful run is a release, and a tracker that fails it lands here with a draft
+  // already open. A handoff composed without the result says "the work never started" and
+  // links the artifact nowhere, on the item where somebody is reading it.
+  //
+  // **It says how far the run got, never whose fault the throw was.** `codeHost.produce` runs
+  // inside `execute`, so an item's own `422` leaves this empty, while the tracker 503 above
+  // fills it — reading it as item-versus-surface gets both backwards.
+  const reached: { result?: ExecutionResult } = {}
+  try {
+    return await runClaimedItem(deps, candidate, role, identity, claim, options, reached)
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    const out = await handOffFrom(
+      tracker, candidate, role, identity, claim.claimedAt, { kind: 'failure', detail },
+      reached.result,
+    ).catch(() => ({ posted: false }))
+    return {
+      // The result's own figure where there is one, undefined and all: a killed worker reports
+      // no cost, and a zero would read as a run that was free.
+      outcome: 'refused', candidate, costUsd: reached.result === undefined ? 0 : reached.result.costUsd,
+      spoke: out.posted,
+      ...(reached.result === undefined ? {} : { execution: reached.result }),
+      cures: reached.result?.cures ?? [],
+      surfaceFailed: true,
+      reason: `${candidate.id} was claimed and the run could not finish: ${detail}`,
+    }
+  }
+}
+
+async function runClaimedItem(
+  deps: ItemDeps,
+  candidate: Candidate,
+  role: Role,
+  identity: string,
+  claim: ClaimResult,
+  options: RunOptions,
+  /** Filled as soon as there is one, so a throw after it still knows what the run reached. */
+  reached: { result?: ExecutionResult },
+): Promise<ItemRun> {
+  const { tracker, codeHost, trees } = deps
+  const step = options.onStep ?? (() => {})
 
   // Budget is checked after claiming and before spending, so an Igor that cannot afford the
   // work says so on the item rather than claiming and going quiet.
@@ -194,6 +260,7 @@ export async function runItem(
     onPublish: () => step('publishing'),
     claimStatus: async () => (await checkpoint(tracker, claim, identity)).status,
   })
+  reached.result = execution
 
   switch (execution.outcome) {
     case 'produced': {

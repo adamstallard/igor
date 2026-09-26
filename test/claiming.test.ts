@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Candidate, ClaimVerdict, Tracker } from '../src/adapter.js'
 import type { Role } from '../src/role.js'
-import { checkpoint, claimMessage, claimWithdrawn, eligibleAfterStop, stopReceipt, takeClaim } from '../src/claiming.js'
+import { checkpoint, claimMessage, claimStuck, claimWithdrawn, eligibleAfterStop, stopReceipt, takeClaim } from '../src/claiming.js'
 import { isGoAhead, isStop } from '../src/signals.js'
 
 const NOW = Date.parse('2026-09-13T12:00:00Z')
@@ -52,6 +52,7 @@ function tracker(
     reportFailsOnce?: boolean
     verifyThrows?: boolean
     releaseThrows?: boolean
+  releaseLeavesHolder?: boolean
   } = {},
 ) {
   const log: Log = { claimed: [], reported: [], reportAttempts: [], released: [], verifiedSince: [] }
@@ -83,7 +84,9 @@ function tracker(
     release: async (_c, as) => {
       if (opts.releaseThrows === true) throw new Error('503 from the tracker')
       log.released.push(as)
-      return true
+      // A surface that answers "still assigned" — the DELETE returned, and the holder field
+      // did not clear. Distinct from the throw above, which is the surface not answering.
+      return opts.releaseLeavesHolder !== true
     },
     linkage: () => 'Closes #7',
   }
@@ -261,6 +264,37 @@ describe('a claim taken and not finished', () => {
     await takeClaim(spy, candidate(), role(), 'igor-bot', opts)
 
     expect(order).toEqual(['announce', 'release', 'withdraw'])
+  })
+
+  it('says the item is stuck, not released, where the surface still shows the holder', async () => {
+    // The withdrawal reads "has released it". Where the release returned and the holder field
+    // did not clear, that sentence is false on an item somebody is looking at.
+    const { t, log } = tracker({ status: 'held' }, { verifyThrows: true, releaseLeavesHolder: true })
+    const r = await takeClaim(t, candidate(), role(), 'igor-bot', opts)
+
+    expect(r.outcome).toBe('refused')
+    expect(log.reported[1]).toBe(claimStuck(role()))
+    expect(log.reported[1]).not.toBe(claimWithdrawn(role()))
+    expect(r.reason).toContain('still held')
+  })
+
+  it('says the item is stuck where the release did not answer at all', async () => {
+    const { t, log } = tracker({ status: 'held' }, { verifyThrows: true, releaseThrows: true })
+    const r = await takeClaim(t, candidate(), role(), 'igor-bot', opts)
+
+    expect(r.outcome).toBe('refused')
+    expect(log.reported[1]).toBe(claimStuck(role()))
+  })
+
+  it('withdraws rather than sticking where the release did clear the holder', async () => {
+    // The negative pole for both of the above: a released claim must not read as stuck, or
+    // every failed claim would ask a person to unassign an item nobody holds.
+    const { t, log } = tracker({ status: 'held' }, { verifyThrows: true })
+    const r = await takeClaim(t, candidate(), role(), 'igor-bot', opts)
+
+    expect(r.outcome).toBe('refused')
+    expect(log.reported[1]).toBe(claimWithdrawn(role()))
+    expect(log.released).toEqual(['igor-bot'])
   })
 
   it('leaves a claim that verified cleanly exactly as it was', async () => {

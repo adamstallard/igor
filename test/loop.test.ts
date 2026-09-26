@@ -34,6 +34,13 @@ function deps(opts: {
   verdicts?: ClaimVerdict[]
   claimSticks?: boolean
   changes?: ChangedFile[]
+  /** A tree that cannot be provisioned — a network blip, an expired token, a full disk. */
+  provisionThrows?: boolean
+  /**
+   * A tracker that will not give the claim up. The completion action is an unassign, so this
+   * is what a 503 on the last call of a run that already published looks like.
+   */
+  releaseThrows?: boolean
 } = {}) {
   const posts: string[] = []
   const released: string[] = []
@@ -49,7 +56,11 @@ function deps(opts: {
     commentsSince: async () => [],
     verifyClaim: async () => verdicts[Math.min(i++, verdicts.length - 1)]!,
     report: async (_c, m) => { posts.push(m) },
-    release: async (_c, as) => { released.push(as); return true },
+    release: async (_c, as) => {
+      if (opts.releaseThrows === true) throw new Error('503 unassigning')
+      released.push(as)
+      return true
+    },
     linkage: () => 'Closes #7',
   }
   const produced: ArtifactRequest[] = []
@@ -76,6 +87,7 @@ function deps(opts: {
   const trees: TreeProvider = {
     name: 'fake',
     provision: async (_repo, ref): Promise<WorkingTree> => {
+      if (opts.provisionThrows === true) throw new Error('disk on fire')
       provisioned.push(ref)
       return {
         path: tempDir('igor-loop-'),
@@ -322,6 +334,49 @@ describe('an Igor never goes silent on something it claimed', () => {
       expect(r.spoke, c.name).toBe(true)
       expect(posts.length, c.name).toBeGreaterThan(0)
     }
+  })
+})
+
+describe('a claim held through a failure that is not the item\'s', () => {
+  it('hands the claim back when the tree cannot even be provisioned', async () => {
+    // `runItem` had no handler of its own, so this escaped with the item assigned, the claim
+    // comment on it, and only a cycle-level error above. Issue #129's state one layer up.
+    const { d, posts, released } = deps({ provisionThrows: true })
+    const r = await runItem(d, candidate(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+
+    expect(r.outcome).toBe('refused')
+    expect(r.surfaceFailed).toBe(true)
+    expect(r.spoke).toBe(true)
+    expect(released).toContain('igor-bot')
+    expect(posts.join(' ')).toContain('disk on fire')
+  })
+
+  it('keeps what the run produced when the failure comes after the work', async () => {
+    // The completion action is an unassign, so the last call of a successful run is a release
+    // — and a 503 there reaches the handler with a draft already open. A handoff composed
+    // without the result says "the work never started" beside a live pull request, links it
+    // nowhere, and reports the run as costing nothing.
+    const { d, posts, produced } = deps({
+      changes: [{ path: 'src/a.ts', content: 'fixed', kind: 'modified' }],
+      releaseThrows: true,
+    })
+    const r = await runItem(d, candidate(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+
+    expect(produced).toHaveLength(1)
+    expect(posts.at(-1)).not.toContain('the work never started')
+    expect(posts.at(-1)).toContain('https://example.test/9')
+    expect(r.execution?.artifact?.url).toBe('https://example.test/9')
+    expect(r.costUsd).toBe(0.02)
+  })
+
+  it('does not flag an ordinary refusal as a surface failure', async () => {
+    // The negative pole. `surfaceFailed` stops the whole cycle, so a refusal that is about
+    // the item must never carry it — a non-collaborator claim would otherwise halt the pool.
+    const { d } = deps({ claimSticks: false })
+    const r = await runItem(d, candidate(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+
+    expect(r.outcome).toBe('refused')
+    expect(r.surfaceFailed).toBeUndefined()
   })
 })
 

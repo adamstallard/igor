@@ -81,6 +81,23 @@ export async function serve(
     summary.cycles = cycle
     emit({ kind: 'cycle-start', cycle })
 
+    // **A surface that did not answer ends the cycle.** Nothing about the item produced it, so
+    // the next one gets the same answer — and doing that to a whole pool is two comments each
+    // per poll, for as long as the outage lasts, at a volume that is itself what trips a rate
+    // limit. Abandoning is what a throw used to do here, before the item-level paths learned to
+    // release and refuse instead of propagating.
+    //
+    // Shared by both item loops rather than written into one. The catch-up loop runs first, so
+    // a guard only on the second is a guard the outage never reaches.
+    let abandoned = false
+    const abandon = (run: ItemRun): boolean => {
+      if (run.surfaceFailed !== true) return false
+      abandoned = true
+      summary.failures += 1
+      emit({ kind: 'cycle-failed', cycle, error: new Error(run.reason) })
+      return true
+    }
+
     try {
       // Identity comes from the argument, never from the options: the two disagreeing would
       // mean the loop screening holders as one Igor and claiming as another.
@@ -113,9 +130,13 @@ export async function serve(
           await (options.note ?? noteHandoff)(deps.destination, candidate, run.reason).catch(() => undefined)
         }
         emit({ kind: 'worked', item: candidate, run, ...(gate.seat === undefined ? {} : { seat: gate.seat }) })
+        if (abandon(run)) break
       }
 
       for (const { candidate } of report.toClaim) {
+        // The outage the catch-up loop met answers every claim here the same way, and claiming
+        // is the louder of the two — a claim comment and a handoff on each.
+        if (abandoned) break
         // Checked between items rather than once per cycle: an item can take minutes, and a
         // shutdown or an exhausted budget should stop the next one rather than the next cycle.
         if (winding) {
@@ -138,17 +159,18 @@ export async function serve(
           await (options.note ?? noteHandoff)(deps.destination, candidate, run.reason).catch(() => undefined)
         }
         emit({ kind: 'worked', item: candidate, run, ...(gate.seat === undefined ? {} : { seat: gate.seat }) })
+        if (abandon(run)) break
       }
     } catch (error) {
       // A cycle is allowed to fail, and the next one simply retries.
       //
       // **This catch cannot tell a cycle that failed holding nothing from one that failed
       // holding an item.** It reports the cycle, so an operator sees a cycle-level error string
-      // and never the item-level silence underneath it. `takeClaim` will not arrive here
-      // holding a claim it took — its guard covers the assignment call through the verdict,
-      // releasing and refusing rather than propagating. Everything after it can: `runItem` has
-      // no handler of its own. So any path that throws while holding a claim must release it
-      // itself; nothing here will.
+      // and never the item-level silence underneath it. Nothing holding a claim should arrive
+      // here at all: `takeClaim` guards the assignment call through the verdict, and `runItem`
+      // guards everything after, both releasing and refusing rather than propagating. What
+      // reaches this catch is the cycle's own work — planning, triage, discovery. Any new path
+      // that can throw while holding a claim owes its own release; nothing here will do it.
       summary.failures += 1
       emit({ kind: 'cycle-failed', cycle, error: error instanceof Error ? error : new Error(String(error)) })
     }

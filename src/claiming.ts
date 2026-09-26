@@ -19,6 +19,17 @@ export interface ClaimResult {
   claimedAt: string
   verdict?: ClaimVerdict
   reason: string
+  /**
+   * Set where this refusal is about the surface rather than about the item — the tracker did
+   * not answer, so nothing here would have gone differently on any other item. A cycle that
+   * meets one stops, instead of doing the same thing to everything else in the pool.
+   */
+  surfaceFailed?: true
+  /**
+   * Whether anything was said on the item. Only a claim window that threw after announcing
+   * says anything on a refusal, and it says two things — the claim, then its withdrawal.
+   */
+  spoke?: boolean
 }
 
 /**
@@ -54,6 +65,20 @@ export function claimWithdrawn(role: Role): string {
   return (
     `**${role.name}** could not finish taking this and has released it. ` +
     `Nothing was done, so there is nothing to clean up.`
+  )
+}
+
+/**
+ * Said where the claim could not be finished **and** could not be given up either.
+ *
+ * The item still carries this Igor's name, so the withdrawal's "has released it" would be
+ * false. Naming the one action that clears it, because nothing else will: the next run cannot
+ * take an item somebody else appears to hold.
+ */
+export function claimStuck(role: Role): string {
+  return (
+    `**${role.name}** could not finish taking this and could not release it either, so it is ` +
+    `still assigned. Nothing was done. Unassign it to let another run pick it up.`
   )
 }
 
@@ -167,12 +192,25 @@ export async function takeClaim(
     // the check that would have said whether the claim still stands. What a release means on
     // a surface with no holder field is the adapter's to decide; one the surface refuses
     // lands in the second reason rather than escaping.
-    const releaseRefused = await tracker.release(candidate, identity).then(() => undefined, why)
-    if (announced) await tracker.report(candidate, claimWithdrawn(role)).catch(() => undefined)
+    // Three answers, not two. The contract distinguishes *the holder field is clear* from *the
+    // surface says it is not* from *the surface did not answer*, and only the first of those
+    // makes the withdrawal below true.
+    const stillHeld = await tracker.release(candidate, identity).then(
+      (clear) => (clear ? undefined : `the ${candidate.repo} holder field is still set`),
+      why,
+    )
+    if (announced) {
+      await tracker
+        .report(candidate, stillHeld === undefined ? claimWithdrawn(role) : claimStuck(role))
+        .catch(() => undefined)
+    }
+    const releaseRefused = stillHeld
     return {
       outcome: 'refused',
       candidate,
       claimedAt,
+      surfaceFailed: true,
+      spoke: announced,
       reason:
         releaseRefused === undefined
           ? `${identity} could not finish taking ${candidate.id}, and any claim it took ` +
