@@ -67,8 +67,8 @@ surviving the cycle.
       never prevent a cycle reaching untriaged ones, that what is shed is what has been carried
       longest, and that the cycle reports what it stopped carrying
 - [x] 4.6 Record in the proposal that `src/loop.ts:606`'s `workerEnv` throw is a second instance of
-      the same class on `main`, that #70 covers it and this change deliberately does not, and that
-      it needs a home here if #70 is closed unmerged
+      the same class on `main`, that #70 covers it and this change deliberately does not. #70
+      merged on 2026-09-24, so the contingency the proposal recorded does not arise
 - [x] 4.7 Say in the proposal why one change carries both requirements — both edit `work-discovery`,
       and `openspec validate` cannot see a collision between two open changes
 - [x] 4.8 A `design.md`, earned by this half alone: the proof that the held mark cannot satisfy the
@@ -78,8 +78,10 @@ surviving the cycle.
 ## 5. The candidate stops being lost
 
 Blocked behind the same [#65](https://github.com/adamstallard/igor/pull/65), which holds
-`src/loop.ts`. Ordering against [#70](https://github.com/adamstallard/igor/pull/70) decides where
-the "no verdict was reached" record lands, not the carry.
+`src/loop.ts` — as of 2026-09-26 so do [#103](https://github.com/adamstallard/igor/pull/103) and
+[#133](https://github.com/adamstallard/igor/pull/133). Ordering against
+[#70](https://github.com/adamstallard/igor/pull/70) decided where the "no verdict was reached"
+record lands, not the carry; it merged on 2026-09-24, so that is a fourth untriaged reason.
 
 - [ ] 5.1 A candidate whose triage call failed (`src/loop.ts:626`) reaches a destination besides
       `report.failures` that names it and says no verdict was reached

@@ -233,8 +233,9 @@ untriaged candidates are always the newest in their source, so its `> max(verdic
 exactly ties, which is what its spec says. #78's description of the watermark block is
 `origin/triage-gate`'s shape and not `main`'s. And `src/loop.ts:606`'s `workerEnv` throw is a
 second, uncovered instance of the same class on `main` which #70 claims by name and this change
-deliberately leaves to it. **If #70 is closed unmerged, that case has no home and this requirement
-is where it should be widened.**
+deliberately leaves to it. That was written with #70 in flight, against the possibility that it
+closed unmerged and the case was left homeless. **#70 merged on 2026-09-24, so it has a home and
+no widening is owed here.**
 
 ### Where each requirement lands, and why
 
