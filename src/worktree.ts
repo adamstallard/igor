@@ -154,8 +154,12 @@ export interface WorkingTree {
    * This is where a worker leaves a message for Igor rather than a change for the artifact — a
    * declaration that it meant to undo something the base did. It is deliberately not a path in
    * the tree: a repository can commit a file at any path inside itself, and one that is on disk
-   * in every fresh clone, read as this run's word, would speak for every run forever. Nothing
-   * but the worker writes here, so whatever is here was put here by this run.
+   * in every fresh clone, read as this run's word, would speak for every run forever.
+   *
+   * What the place establishes is *when* — nothing is here until this run puts it here, so no
+   * file predates the run. It does not establish where the bytes came from: a worker that can
+   * run commands can copy a committed file in. What it removes is the reading with no actor in
+   * it at all, which is the one that speaks for every future run unasked.
    */
   readonly outbox: string
   release(): Promise<void>
@@ -634,8 +638,14 @@ export class CloneProvider implements TreeProvider {
       await run('git', args)
       await mkdir(outbox, { recursive: true })
     } catch (error) {
-      await rm(dir, { recursive: true, force: true })
-      await rm(outbox, { recursive: true, force: true })
+      // Both attempted whatever either does, and the original error rethrown: a failure to
+      // clean up is not the failure an operator has to read, and a rejection on the first
+      // removal must not leave the second undone. The same shape as `release()`, because two
+      // cleanup paths that differ are how one of them gets the bug back.
+      await Promise.allSettled([
+        rm(outbox, { recursive: true, force: true }),
+        rm(dir, { recursive: true, force: true }),
+      ])
       throw error
     }
     return new ClonedTree(dir, repo, outbox)

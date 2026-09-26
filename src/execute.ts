@@ -1618,9 +1618,10 @@ export async function execute(
     // Nothing is taken out of it: the declaration channel is a directory outside the tree, so
     // no change the worker made is Igor's own and every one of them belongs to the artifact.
     const changed = await tree.changes()
-    // Read from a directory Igor made empty for this run and nothing else can write to, so what
-    // is here was left here by this run's worker. Provenance is a property of the place, which
-    // is why nothing has to be established about the file. Not being there is no declaration.
+    // Read from a directory Igor made empty for this run and granted to the worker alone, so
+    // anything here was written during this run rather than found in the clone. That is what
+    // the place settles, and it is why no question is put to git about the file. Not being
+    // there is no declaration.
     const wrote = await readFile(join(tree.outbox, DECLARATION_FILE), 'utf8').catch(() => '')
     const declared = wrote === '' ? [] : declarations(wrote)
 

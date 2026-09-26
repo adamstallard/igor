@@ -331,11 +331,18 @@ under another case, a declaration a clean three-way merge rewrote: each makes th
 differently with nothing to see. And `MERGE_HEAD` — the only arm that recognises a declaration
 the *base* keeps — is a file in `.git` that an ordinary `git reset` by the worker removes.
 
-A directory answers instead of a question. Provenance becomes a property of the place: one
-writer by construction, so nothing has to be established about the file, and not one of those
-failures has anywhere to live. No name is taken, so no filter can disagree with it; no commit is
-consulted, so no attribute state, index stage or pseudo-ref bears on it; the path is resolved
-once, by the only process that writes it.
+A directory answers instead of a question. The place settles *when*: the directory is empty
+until this run's worker is given it, so nothing in it was found in the clone, and not one of
+those failures has anywhere to live. No name is taken, so no filter can disagree with it; no
+commit is consulted, so no attribute state, index stage or pseudo-ref bears on it; the path is
+resolved by the process that reads it and never twice against two different resolvers.
+
+It does not settle *where the bytes came from*. A worker holding a `Bash(…)` grant can copy a
+committed file into the outbox, and no check on the file defeats a copy. Measured: driven
+through `execute()`, that route publishes and reports the revert as declared. What the place
+removes is the reading with **no actor in it** — a repository committing a file that speaks for
+every run that ever clones it, with nobody doing anything — and that was the whole of the hole.
+A worker that copies a declaration in has made a declaration; that is what the channel is for.
 
 **Measured, because `acceptEdits` does not reach outside the working directory.** With
 `--add-dir <outbox>` the worker's write into that directory succeeds. Without it the identical
@@ -358,6 +365,16 @@ made partly unremovable took the outbox down with it. Both are fixed here rather
 as open: the sweep matches the sibling by name, and the two removals are attempted together with
 the outbox first, since it is the half with nothing behind it. A channel whose security argument
 is "one writer, one run" needs a lifetime that ends on every path out, not only the tidy one.
+
+**What the release tests pin, and what they do not.** The pair — lock the clone and assert the
+outbox still goes, lock the outbox and assert the clone still goes — catches a sequential removal
+in either direction, an `allSettled` that swallows the error instead of raising it, and a removal
+that only attempts what already exists. It does not catch `Promise.all`, which rejects while the
+sibling removal is still in flight: measured across seven implementations, and with four thousand
+files in it the surviving directory was still on disk when the rejection arrived, five runs out of
+five. The test that would catch it asserts that one `rm` outruns another, which is a flake by
+construction — and a test that fails for reasons unrelated to its subject costs a suite more than
+this gap does. Recorded rather than written.
 
 **What the place actually fixes, which is narrower than "one writer".** The directory settles
 *when* a write happened — during this run, by something in the worker's process tree — not where
