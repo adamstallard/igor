@@ -83,6 +83,7 @@ function tracker(
     release: async (_c, as) => {
       if (opts.releaseThrows === true) throw new Error('503 from the tracker')
       log.released.push(as)
+      return true
     },
     linkage: () => 'Closes #7',
   }
@@ -255,7 +256,7 @@ describe('a claim taken and not finished', () => {
     const spy: Tracker = {
       ...t,
       report: async (_c, m) => { order.push(m === claimWithdrawn(role()) ? 'withdraw' : 'announce') },
-      release: async () => { order.push('release') },
+      release: async () => { order.push('release'); return true },
     }
     await takeClaim(spy, candidate(), role(), 'igor-bot', opts)
 

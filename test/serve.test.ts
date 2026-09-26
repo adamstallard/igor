@@ -69,7 +69,7 @@ function deps(found: Candidate[], opts: { searchThrows?: boolean; verdict?: Clai
     commentsSince: async () => [],
     verifyClaim: async () => opts.verdict ?? { status: 'held' },
     report: async () => {},
-    release: async () => {},
+    release: async () => true,
     linkage: () => 'Closes #1',
   }
   const caughtUp: CatchUpRequest[] = []

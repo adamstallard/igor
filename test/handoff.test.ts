@@ -50,6 +50,7 @@ function tracker(opts: { reportThrows?: boolean; releaseThrows?: boolean } = {})
     release: async (_c, as) => {
       if (opts.releaseThrows) throw new Error('cannot unassign')
       log.released.push(as)
+      return true
     },
     linkage: () => 'Closes #7',
   }
@@ -337,7 +338,7 @@ describe('posting it', () => {
     const spy: Tracker = {
       ...t,
       report: async () => { order.push('report') },
-      release: async () => { order.push('release') },
+      release: async () => { order.push('release'); return true },
     }
     await handOffFrom(spy, candidate(), role(), 'igor-bot', CLAIMED, { kind: 'budget' }, result(), NOW)
     expect(order).toEqual(['report', 'release'])

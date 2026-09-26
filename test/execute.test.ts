@@ -163,6 +163,7 @@ function fakeTracker() {
     report: async () => {},
     release: async (_c, as) => {
       released.push(as)
+      return true
     },
     linkage: () => 'Closes #7',
   }

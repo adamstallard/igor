@@ -49,7 +49,7 @@ function deps(opts: {
     commentsSince: async () => [],
     verifyClaim: async () => verdicts[Math.min(i++, verdicts.length - 1)]!,
     report: async (_c, m) => { posts.push(m) },
-    release: async (_c, as) => { released.push(as) },
+    release: async (_c, as) => { released.push(as); return true },
     linkage: () => 'Closes #7',
   }
   const produced: ArtifactRequest[] = []
