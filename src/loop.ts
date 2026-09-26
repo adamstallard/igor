@@ -132,10 +132,18 @@ export async function runItem(
     onSettle: () => step('settling'),
   })
   if (claim.outcome !== 'held') {
-    // Nothing was claimed, or someone else holds it. Neither owes a handoff: a refused claim
-    // means the Igor never told anyone to stand off, and a lost one means somebody else is
-    // now visibly on it. A stop gets a receipt rather than a handoff, because whoever issued
-    // it is presumably taking the work and composing a handoff would only delay the release.
+    // Nothing was claimed, someone else holds it, or the claim could not be finished. None owes
+    // a handoff: a lost claim means somebody else is now visibly on it, and a stop gets a
+    // receipt rather than a handoff, because whoever issued it is presumably taking the work
+    // and composing a handoff would only delay the release.
+    //
+    // **A refused claim is not necessarily a silent one.** `takeClaim` refuses where its own
+    // post-claim window threw, and that path has already released the claim and, where the
+    // claim message landed, withdrawn it out loud — so `spoke: false` below understates what
+    // was said. It is left as it is because the field's one reader (`src/cli.ts:440`) excludes
+    // `refused` anyway. That exclusion now rests on the release, not on nothing having been
+    // said: a `refused` path that ends while still holding a claim would be silent and
+    // undetected, so any new one owes its own release rather than this exemption.
     if (claim.outcome === 'stopped' && claim.verdict) {
       await tracker.report(candidate, stopReceipt(role, claim.verdict)).catch(() => undefined)
       return { outcome: 'stopped', candidate, reason: claim.reason, costUsd: 0, spoke: true, cures: [] }
