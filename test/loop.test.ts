@@ -42,6 +42,11 @@ function deps(opts: {
    * is what a 503 on the last call of a run that already published looks like.
    */
   releaseThrows?: boolean
+  /**
+   * A tracker that answers the release and leaves the holder field set — the surface saying
+   * no, as distinct from the surface not answering at all.
+   */
+  releaseLeavesHolder?: boolean
 } = {}) {
   const posts: string[] = []
   const released: string[] = []
@@ -60,7 +65,7 @@ function deps(opts: {
     release: async (_c, as) => {
       if (opts.releaseThrows === true) throw new Error('503 unassigning')
       released.push(as)
-      return true
+      return opts.releaseLeavesHolder !== true
     },
     linkage: () => 'Closes #7',
   }
@@ -394,6 +399,27 @@ describe('a stop gets a receipt, not a handoff', () => {
     expect(posts.at(-1)).toMatch(/stopped at bob's request/)
     expect(posts.at(-1)).not.toMatch(/Still to do/)
     expect(released).toContain('igor-bot')
+  })
+
+  it('corrects the receipt after it, not before there is anything to correct', async () => {
+    // The receipt is the false sentence — it says "released this" — and the caller posts it
+    // after `takeClaim` returns. A correction written first sits above the claim it corrects,
+    // referring to nothing, and leaves the assertion of release as the last word on the item.
+    const { d, posts } = deps({ verdicts: [{ status: 'stopped', by: 'bob' }], releaseLeavesHolder: true })
+    const r = await runItem(d, candidate(), role(), 'igor-bot', noWait)
+
+    expect(r.outcome).toBe('stopped')
+    expect(posts.findIndex((m) => m.includes('released this'))).toBeLessThan(posts.indexOf(stillAssigned()))
+    expect(posts.at(-1)).toBe(stillAssigned())
+  })
+
+  it('leaves the receipt uncorrected where the release did clear the holder', async () => {
+    // The pole: every stop would otherwise gain a second comment contradicting the first.
+    const { d, posts } = deps({ verdicts: [{ status: 'stopped', by: 'bob' }] })
+    await runItem(d, candidate(), role(), 'igor-bot', noWait)
+
+    expect(posts).not.toContain(stillAssigned())
+    expect(posts.at(-1)).toMatch(/stopped at bob's request/)
   })
 
   it('on a stop during a run that changed nothing', async () => {

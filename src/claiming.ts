@@ -26,6 +26,13 @@ export interface ClaimResult {
    */
   surfaceFailed?: true
   /**
+   * Set where standing down left the holder field set. The caller owes the correction on a
+   * `stopped` claim, because the sentence it corrects is the caller's stop receipt and a
+   * correction written before it stands above the claim it answers. A `lost` claim gets no
+   * sentence from anybody, so that one is said here and this flag only reports it.
+   */
+  releaseStuck?: true
+  /**
    * Whether anything was said on the item. Only a claim window that threw after announcing
    * says anything on a refusal, and it says two things — the claim, then its withdrawal.
    */
@@ -191,14 +198,13 @@ export async function takeClaim(
     // Standing down releases our own claim in both cases: someone else holding it is not a
     // reason to leave a second name on the item, and a stop must leave nothing behind.
     //
-    // Where it does not take, the item keeps this Igor's name. A stop receipt is posted by the
-    // caller and says "released this", so the correction is appended here; a lost claim says
-    // nothing at all today, which is right only while the release works.
+    // Where it does not take, the item keeps this Igor's name, and what is owed depends on
+    // what else will be said. A stop receipt is posted by the caller and says "released this",
+    // so the clause correcting it has to follow it and the caller is handed the flag instead.
+    // A lost claim is told nothing by anybody, so its standalone sentence is said here.
     const stoodDown = await tracker.release(candidate, identity).then((clear) => clear, () => false)
-    if (!stoodDown) {
-      await tracker
-        .report(candidate, verdict.status === 'lost' ? stoodDownStuck(role) : stillAssigned())
-        .catch(() => undefined)
+    if (!stoodDown && verdict.status === 'lost') {
+      await tracker.report(candidate, stoodDownStuck(role)).catch(() => undefined)
     }
 
     return {
@@ -206,6 +212,7 @@ export async function takeClaim(
       candidate,
       claimedAt,
       verdict,
+      ...(stoodDown ? {} : { releaseStuck: true as const }),
       reason:
         verdict.status === 'stopped'
           ? `stopped${verdict.by ? ` by ${verdict.by}` : ''}`

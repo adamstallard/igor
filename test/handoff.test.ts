@@ -34,8 +34,19 @@ const result = (over: { [K in keyof ExecutionResult]?: ExecutionResult[K] | unde
   return merged as unknown as ExecutionResult
 }
 
-function tracker(opts: { reportThrows?: boolean; releaseThrows?: boolean; releaseLeavesHolder?: boolean } = {}) {
+function tracker(
+  opts: {
+    reportThrows?: boolean
+    /** A transient refusal, up again by the next call. */
+    reportFailsOnce?: boolean
+    /** A write the surface accepted and a client that threw anyway — a timeout, a killed `gh`. */
+    reportPostsThenThrows?: boolean
+    releaseThrows?: boolean
+    releaseLeavesHolder?: boolean
+  } = {},
+) {
   const log = { reported: [] as string[], released: [] as string[] }
+  let reports = 0
   const t: Tracker = {
     name: 'fake',
     nativeHolderField: true,
@@ -45,8 +56,11 @@ function tracker(opts: { reportThrows?: boolean; releaseThrows?: boolean; releas
     commentsSince: async () => [],
     verifyClaim: async () => ({ status: 'held' }),
     report: async (_c, m) => {
+      reports += 1
       if (opts.reportThrows) throw new Error('surface unreachable')
+      if (opts.reportFailsOnce === true && reports === 1) throw new Error('503 from the surface')
       log.reported.push(m)
+      if (opts.reportPostsThenThrows === true) throw new Error('timeout after the write')
     },
     release: async (_c, as) => {
       if (opts.releaseThrows) throw new Error('cannot unassign')
@@ -380,6 +394,30 @@ describe('posting it', () => {
 
     expect(out.released).toBe(false)
     expect(log.reported.at(-1)).toBe(stillAssigned())
+  })
+
+  it('corrects a handoff the surface took and the client never saw acknowledged', async () => {
+    // Whether the correction is owed turns on whether the handoff may be on the item, not on
+    // whether this process saw the write succeed — the distinction `takeClaim` already draws
+    // with `announced`. A surface can accept the write and throw on the way home, and that
+    // leaves the false sentence where somebody reads it with nothing to answer it.
+    const { t, log } = tracker({ reportPostsThenThrows: true, releaseLeavesHolder: true })
+    const out = await handOffFrom(t, candidate(), role(), 'igor-bot', CLAIMED, { kind: 'budget' }, result(), NOW)
+
+    expect(out.posted).toBe(false)
+    expect(out.released).toBe(false)
+    expect(log.reported.at(-1)).toBe(stillAssigned())
+  })
+
+  it('still says the item is held where the handoff itself never landed', async () => {
+    // A surface that refused the handoff and answered the release is up again by the second
+    // call, and the item is genuinely still assigned. The sentence stands alone the same way
+    // `complete()`'s does: a claim message is above it, and what it says is true.
+    const { t, log } = tracker({ reportFailsOnce: true, releaseLeavesHolder: true })
+    const out = await handOffFrom(t, candidate(), role(), 'igor-bot', CLAIMED, { kind: 'budget' }, result(), NOW)
+
+    expect(out.posted).toBe(false)
+    expect(log.reported).toEqual([stillAssigned()])
   })
 
   it('says nothing extra where the release did take', async () => {

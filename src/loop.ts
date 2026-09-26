@@ -1,6 +1,9 @@
 import type { Candidate, CodeHost, Comment, Tracker } from './adapter.js'
 import type { Gate, SeatVerdict } from './budget.js'
-import { checkpoint, eligibleAfterStop, stopReceipt, takeClaim, type ClaimOptions, type ClaimResult } from './claiming.js'
+import {
+  checkpoint, eligibleAfterStop, stillAssigned, stopReceipt, takeClaim,
+  type ClaimOptions, type ClaimResult,
+} from './claiming.js'
 import { complete, execute, workerEnv, type ExecuteOptions, type ExecutionResult } from './execute.js'
 import { handOffFrom, type HandoffReason } from './handoff.js'
 import type { Role } from './role.js'
@@ -156,6 +159,11 @@ export async function runItem(
     // owes its own release rather than this exemption.
     if (claim.outcome === 'stopped' && claim.verdict) {
       await tracker.report(candidate, stopReceipt(role, claim.verdict)).catch(() => undefined)
+      // After the receipt, never before it. The receipt is what claims the release, and a
+      // clause correcting it that stands above it answers nothing.
+      if (claim.releaseStuck === true) {
+        await tracker.report(candidate, stillAssigned()).catch(() => undefined)
+      }
       return { outcome: 'stopped', candidate, reason: claim.reason, costUsd: 0, spoke: true, cures: [] }
     }
     return {

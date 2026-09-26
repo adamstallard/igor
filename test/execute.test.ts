@@ -14,6 +14,7 @@ import type {
   ResolutionRequest,
   Tracker,
 } from '../src/adapter.js'
+import { stillAssigned } from '../src/claiming.js'
 import type { Role } from '../src/role.js'
 import {
   ABSOLUTE_CEILING_MS, branchFor, claudeWorker, complete, conflictPrompt, DENIED_COMMAND_LIMIT, denialsFrom, describeTool, execute,
@@ -150,8 +151,9 @@ function fakeCodeHost(opts: { caughtUp?: CatchUp[] } = {}): {
   return { host, seen, resolved, asked }
 }
 
-function fakeTracker() {
+function fakeTracker(opts: { releaseLeavesHolder?: boolean } = {}) {
   const released: string[] = []
+  const reported: string[] = []
   const t: Tracker = {
     name: 'fake',
     nativeHolderField: true,
@@ -160,14 +162,16 @@ function fakeTracker() {
     claim: async () => true,
     commentsSince: async () => [],
     verifyClaim: async () => ({ status: 'held' }),
-    report: async () => {},
+    report: async (_c, m) => {
+      reported.push(m)
+    },
     release: async (_c, as) => {
       released.push(as)
-      return true
+      return opts.releaseLeavesHolder !== true
     },
     linkage: () => 'Closes #7',
   }
-  return { t, released }
+  return { t, released, reported }
 }
 
 describe('a worker that fails with something to say', () => {
@@ -277,9 +281,19 @@ describe('the action space is enforced at the loop', () => {
   })
 
   it('releases the claim on the default completion', async () => {
-    const { t, released } = fakeTracker()
+    const { t, released, reported } = fakeTracker()
     expect(await complete(t, candidate(), role(), 'igor-bot')).toBeUndefined()
     expect(released).toEqual(['igor-bot'])
+    expect(reported).toEqual([])
+  })
+
+  it('says so on the item where the completion did not clear the holder', async () => {
+    // The completion action is the last call of a run that published. A surface answering
+    // "still assigned" there leaves the run reported as produced, the pull request open, and
+    // the item held by an Igor that has finished with it — with nobody told.
+    const { t, reported } = fakeTracker({ releaseLeavesHolder: true })
+    expect(await complete(t, candidate(), role(), 'igor-bot')).toBeUndefined()
+    expect(reported).toEqual([stillAssigned()])
   })
 })
 

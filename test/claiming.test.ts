@@ -309,14 +309,23 @@ describe('a claim taken and not finished', () => {
 })
 
 describe('standing down when the release does not take', () => {
-  it('corrects the stop receipt rather than leaving "released this" standing', async () => {
-    // The receipt is posted by the caller and says the claim was released. Where the holder
-    // field did not clear, that is a false sentence on an item somebody is reading.
+  it('hands the stop back for correction rather than writing above the receipt', async () => {
+    // The receipt is posted by the caller and says the claim was released. Correcting it here
+    // would put the correction above the sentence it answers, so the flag goes back instead
+    // and `runItem` posts after its own receipt.
     const { t, log } = tracker({ status: 'stopped', by: 'alice' }, { releaseLeavesHolder: true })
     const r = await takeClaim(t, candidate(), role(), 'igor-bot', opts)
 
     expect(r.outcome).toBe('stopped')
-    expect(log.reported.at(-1)).toBe(stillAssigned())
+    expect(r.releaseStuck).toBe(true)
+    expect(log.reported).toEqual([claimMessage(role(), 'igor-bot')])
+  })
+
+  it('reports a clear holder field as nothing for the caller to correct', async () => {
+    const { t } = tracker({ status: 'stopped', by: 'alice' })
+    const r = await takeClaim(t, candidate(), role(), 'igor-bot', opts)
+
+    expect(r.releaseStuck).toBeUndefined()
   })
 
   it('speaks at all on a lost claim it could not give up', async () => {

@@ -92,12 +92,12 @@ export async function serve(
     //
     // **The second one in a row ends the cycle, not the first.** Whether a failure is the
     // surface's or the item's is not something the run can tell — `codeHost.produce` fails
-    // inside `execute` for a branch the item already owns, while a tracker refusing the
-    // completion unassign fails outside it, so neither the error nor what the run holds
+    // inside `execute` for a branch the item already owns, while a tracker that does not answer
+    // the completion unassign fails outside it, so neither the error nor what the run holds
     // separates them. What does separate them is how many items they affect: an outage fails
     // every item and a bad item fails one. Counting is that distinction, drawn from behaviour
-    // rather than from a table of error shapes — which is the guard-per-route mistake
-    // `docs/architecture.md:1538` records.
+    // rather than from a table of error shapes — the mistake `src/claiming.ts` names as a guard
+    // per route being a guard that misses the next route.
     //
     // Consecutive, so one wedged item does not accumulate a stop across a healthy cycle.
     let abandoned = false

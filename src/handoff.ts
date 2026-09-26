@@ -347,7 +347,12 @@ export async function handOff(
   } catch {
     // Recorded by the caller through the returned flags; nothing here can fix it.
   }
-  if (!released && posted) {
+  // Unconditional on what the handoff post did, like the other two sites. `posted` answers
+  // whether *this process saw* the write succeed, and a surface that accepted the handoff and
+  // threw on the way home leaves the false sentence on the item with that flag false. Where
+  // nothing landed the correction still stands on its own: the item is held, and saying so is
+  // true whether or not anybody read a handoff first.
+  if (!released) {
     await tracker.report(candidate, stillAssigned()).catch(() => undefined)
   }
 

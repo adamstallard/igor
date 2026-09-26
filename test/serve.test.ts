@@ -54,7 +54,7 @@ const issue = (n: number): Candidate =>
     idleDays: 0,
   }) as unknown as Candidate
 
-function deps(found: Candidate[], opts: { searchThrows?: boolean; verdict?: ClaimVerdict; caughtUp?: CatchUp[]; provisionThrows?: boolean; provisionThrowsOnce?: boolean } = {}) {
+function deps(found: Candidate[], opts: { searchThrows?: boolean; verdict?: ClaimVerdict; caughtUp?: CatchUp[]; provisionThrows?: boolean; provisionThrowsOn?: readonly number[] } = {}) {
   let searches = 0
   const tracker: Tracker = {
     name: 'github',
@@ -88,8 +88,11 @@ function deps(found: Candidate[], opts: { searchThrows?: boolean; verdict?: Clai
     name: 'fake',
     provision: async (): Promise<WorkingTree> => {
       if (opts.provisionThrows === true) throw new Error('disk on fire')
-      // One item wedged, the rest healthy — a deterministic item fault, not an outage.
-      if (opts.provisionThrowsOnce === true && (provisions += 1) === 1) {
+      // Named attempts wedged and the rest healthy — deterministic item faults, not an
+      // outage. Which attempts matters: whether two failures were adjacent is the whole
+      // question the counter answers.
+      provisions += 1
+      if (opts.provisionThrowsOn?.includes(provisions) === true) {
         throw new Error('422 Reference already exists')
       }
       return {
@@ -520,9 +523,28 @@ describe('a published artifact that stopped merging', () => {
     // it again.
     const events: ServeEvent[] = []
     const onEvent = (e: ServeEvent) => events.push(e)
-    const { d } = deps([issue(1), issue(2), issue(3)], { provisionThrowsOnce: true })
+    const { d } = deps([issue(1), issue(2), issue(3)], { provisionThrowsOn: [1] })
     const s = await serve(d, role(), 'igor-bot', { ...base, maxCycles: 1, onEvent })
 
+    // That the fault happened at all, before anything about what the cycle then did: without
+    // it every assertion below is also true of a pool where nothing went wrong.
+    const failed = events.filter((e) => e.kind === 'worked' && e.run.surfaceFailed === true)
+    expect(failed).toHaveLength(1)
+    expect(events.filter((e) => e.kind === 'working')).toHaveLength(3)
+    expect(events.filter((e) => e.kind === 'cycle-failed')).toHaveLength(0)
+    expect(s.failures).toBe(0)
+  })
+
+  it('counts consecutively, so a healthy item between two faults does not add up to an outage', async () => {
+    // What "consecutive" is for, and the only shape that tells it from a per-cycle tally: two
+    // wedged items with a healthy one between them. A tally would end the cycle at the second
+    // fault, which is the behaviour the counter was introduced to stop.
+    const events: ServeEvent[] = []
+    const onEvent = (e: ServeEvent) => events.push(e)
+    const { d } = deps([issue(1), issue(2), issue(3)], { provisionThrowsOn: [1, 3] })
+    const s = await serve(d, role(), 'igor-bot', { ...base, maxCycles: 1, onEvent })
+
+    expect(events.filter((e) => e.kind === 'worked' && e.run.surfaceFailed === true)).toHaveLength(2)
     expect(events.filter((e) => e.kind === 'working')).toHaveLength(3)
     expect(events.filter((e) => e.kind === 'cycle-failed')).toHaveLength(0)
     expect(s.failures).toBe(0)
