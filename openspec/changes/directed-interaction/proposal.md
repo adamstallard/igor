@@ -148,6 +148,18 @@ Explicitly out of scope:
 - **Acting on anything irreversible.** The action-space cap from `core-igor-loop` still
   holds and is what bounds the damage of a successful injection.
 
+- **A person with authority can have an Igor file an issue.** Asked on a pull request to track
+  something, an Igor opens an issue carrying what was asked, where, and by whom — and does not
+  claim or work it. Without this, work suggested on a pull request lives only in a comment
+  thread, where nothing can discover it or be scoped to it. Opening an issue is a new role
+  action and must be granted like any other, so a mention still cannot widen a role.
+- **An answer to a question the Igor asked may be acted on.** An Igor that posts a decision with
+  numbered options — bug-hunter's open decisions on a pull request it published, per
+  [#139](https://github.com/adamstallard/igor/issues/139) — takes the answer from a comment that
+  mentions it. Matched against what it recorded when it asked, never read back out of the
+  description, so a reply can choose among options the Igor already proposed but cannot add one.
+  Mentioning a different Igor routes the answer to that role.
+
 ## Capabilities
 
 ### New Capabilities
