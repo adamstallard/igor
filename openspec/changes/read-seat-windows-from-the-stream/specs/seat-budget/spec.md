@@ -182,9 +182,9 @@ stream-json --verbose`. It SHALL read the call's `rate_limit_event` and record i
 reading of that seat, exactly as a worker run's event is recorded.
 
 Stream readings arrive only when a run is made on a seat, which leaves two seats unread. A
-reserved seat with no capacity figure is passed over by the gate, so it never runs and never gets
-a reading. And a seat the fleet is not using is never read. A probe reads both, on the machine
-that already holds the seat's token and config.
+reserved seat with no capacity figure is admitted only once a reading of it exists, so until
+something reads it, it never runs and never gets a reading. And a seat the fleet is not using is
+never read. A probe reads both, on the machine that already holds the seat's token and config.
 
 A seat probe SHALL run only on the server that runs the Igors, never on a person's machine, and
 nothing SHALL be installed anywhere else for it. A seat naming no token source SHALL NOT be probed:
@@ -267,6 +267,100 @@ the only reason for passing a seat over under which it is still probed.
 - **WHEN** a seat is probed
 - **THEN** the call is made by the server running the Igors, with the token in its config
 
+### Requirement: Observations arrive irregularly and nothing depends on their arriving
+
+No behaviour SHALL require that a reading of a seat was taken at a particular time, at a
+particular interval, or at all. A gap between readings SHALL NOT be treated as an error, and SHALL
+NOT be filled by interpolating or repeating a reading.
+
+Readings arrive with the work. A stream reading comes with a run on the seat, and a probe comes
+only when a seat has no unexpired reading, within the probe's own limits. A seat nobody is
+spending from on a quiet day is read about once a session window. A seat the fleet is busy on is
+read many times an hour. Neither is a fault, and a system that expected a regular cadence would
+report the first as one.
+
+Every observation carries the instant it was taken, so a consumer decides for itself whether a
+figure is current enough for what it is about to do. Staleness is read at the point of use, and
+nothing has to keep a schedule for it.
+
+#### Scenario: A gap is not a fault
+
+- **WHEN** no reading of a seat has been taken for many hours
+- **THEN** nothing reports an error on that ground
+- **AND** the most recent observation remains available, with its own time
+
+#### Scenario: A gap is not filled in
+
+- **WHEN** no run or probe was made on a seat across a stretch of time
+- **THEN** no observation is recorded for that stretch
+- **AND** the next reading is recorded at the time it was actually taken
+
+#### Scenario: Age travels with the figure
+
+- **WHEN** a capacity figure is derived from an observation
+- **THEN** the observation's time is available wherever that figure is used
+
+### Requirement: A window's length is measured from successive resets, not configured
+
+The length of a window SHALL be derived from the reset instants of that window's observations: it
+is the smallest positive difference between two differing reset instants. It SHALL NOT be an
+operator-settable value. Until two differing resets have been observed, a built-in length stands
+(five hours for the session, seven days for the week), so that a capacity derivation has an
+instance to bound. Wherever a length is reported, it SHALL say which of the two it is.
+
+A stream reading states its reset in epoch seconds, so its reset is an exact instant with no
+phrase to resolve. Readings arrive with every run and probe, so pairs of differing resets arrive
+as a by-product of the work.
+
+**Why the smallest difference.** Readings do not come from every instance of a window. Between
+two readings there may have been instances nothing read, so a difference between two resets is at
+least one window length and may be several. It is never less than one. So the smallest
+difference is the best estimate, and any error in it is on the long side.
+
+**Why a longer figure does not replace the built-in.** A measured length longer than the built-in
+one is exactly what instances nobody read would produce, so it is no evidence that the provider
+changed the window. It SHALL be reported as measured, and SHALL NOT supersede the built-in length.
+A measured length shorter than the built-in one cannot come from unread instances, so it is
+evidence, and it SHALL supersede the built-in length.
+
+The built-in length is not a configuration knob, and the difference matters. A knob is a number
+somebody sets once from a guess and nobody revisits. A built-in that measurement overwrites is a
+starting point with an expiry, the same self-correcting shape the capacity estimate has.
+
+#### Scenario: Two resets give the length
+
+- **WHEN** two observations of the session window report reset instants exactly five hours apart
+- **THEN** that window's length is five hours
+
+#### Scenario: Unread instances do not stretch the window
+
+- **WHEN** the resets of a window's observations differ by five hours and by fifteen hours
+- **THEN** its length is five hours
+
+#### Scenario: Before two resets the built-in length stands, and says so
+
+- **WHEN** fewer than two differing resets have been observed for a window
+- **THEN** the built-in length is used, so a capacity derivation still has an instance to bound
+- **AND** it is reported as built-in rather than measured
+
+#### Scenario: A shorter measured length replaces the built-in one
+
+- **WHEN** the smallest difference between a window's observed resets is shorter than its
+  built-in length
+- **THEN** that measured length is used
+- **AND** nothing is configured for it to take effect
+
+#### Scenario: A longer measured length is reported and not used
+
+- **WHEN** every difference between a window's observed resets is longer than its built-in length
+- **THEN** the built-in length is still used
+- **AND** reporting shows the measured length beside it
+
+#### Scenario: A window's length is not settable
+
+- **WHEN** an operator supplies a window length in configuration
+- **THEN** it is rejected
+
 ## MODIFIED Requirements
 
 ### Requirement: Usage is read from the seat, not supplied by a person
@@ -285,9 +379,11 @@ which is the thing two independent limits exist to deny: were a session exactly 
 week, the weekly limit would forbid nothing the session limit already forbids. A seat MAY
 declare one window and not the other; the undeclared one is simply unobserved until it is. A
 declared figure needs neither an observation nor recorded spend, which is what it is for: a
-reserved seat with no figure at all is passed over rather than spent from, so without one
-nothing ever accumulates for a derivation to divide. It is reported as declared until an
-observation replaces it, so nobody mistakes an assumption for a measurement.
+reserved seat with no figure at all is passed over rather than spent from until a reading of it
+admits it one item at a time, as *A seat with no capacity figure at all protects no floor* says,
+so without one a seat nothing has read accumulates nothing for a derivation to divide. It is
+reported as declared until an observation replaces it, so nobody mistakes an assumption for a
+measurement.
 
 What must never be configured is a *usage figure*. Capacity is a property of the plan and
 changes rarely; how full the window is right now changes by the minute and is the thing a
@@ -354,6 +450,12 @@ the instant the observation was taken, the instant the window resets, and which 
 it came from: a usage reading (`usage`), a provider limit error (`limit`), or the
 `rate_limit_event` on a run's output stream (`stream`).
 
+New observations SHALL be recorded as `limit` or `stream` only. Nothing SHALL write `usage` any
+more: it was written only by `igor observe`, which read `/usage` under the interactive login of
+whoever ran it, and that command is withdrawn. Rows already recorded as `usage` SHALL still be
+read, exactly as any other observation is, because the log is never rewritten and those rows
+are calibration.
+
     {"at":…,"seat":"adam","window":"session","percentUsed":100,"resetsAt":…,"source":"limit"}
     {"at":…,"seat":"adam","window":"week","percentUsed":36,"resetsAt":…,"source":"usage"}
     {"at":…,"seat":"adam","window":"week","percentUsed":86,"resetsAt":…,"source":"stream"}
@@ -386,10 +488,15 @@ length after any moment inside it, so the seat is held for at least as long as i
 shut. That error cannot overrun anybody's floor, where a row that never expired would be a seat
 nobody could use again.
 
-#### Scenario: A reading becomes an observation
+#### Scenario: A recorded usage reading is still read
 
-- **WHEN** a usage reading reports a window percentage and a reset time
-- **THEN** an observation is recorded with that percentage, that reset, and source `usage`
+- **WHEN** the log holds an observation with source `usage`
+- **THEN** it is read, and bears on capacity, expiry and reporting as any observation does
+
+#### Scenario: Nothing new is recorded as a usage reading
+
+- **WHEN** any observation is recorded
+- **THEN** its source is `limit` or `stream`
 
 #### Scenario: A limit error becomes an observation at 100%
 
@@ -448,9 +555,10 @@ which is what makes it usable as a proxy for consumption of a subscription windo
 
 ### Requirement: A seat with no capacity figure at all protects no floor
 
-A seat declaring a non-zero reserve and having neither an observation nor a declared capacity
-SHALL be passed over, with that as the stated reason, rather than spent from against a
-denominator nobody supplied. A seat declaring no reserve MAY be spent from with neither,
+A seat declaring a non-zero reserve and having, for a window, no capacity figure (neither one
+derived from an observation nor a declared capacity) SHALL be passed over, with that as the
+stated reason, rather than spent from against a denominator nobody supplied. The one exception
+is calibration admission, below. A seat declaring no reserve MAY be spent from with neither,
 bounded reactively: its first limit error is its first calibration point.
 
 A reserve is a fraction of capacity, so without a capacity figure it expresses no quantity at
@@ -466,16 +574,99 @@ Igor has not spent from inside the instance yields no figure. The seat's own cre
 a reading on the stream of every run made with it, so no machine with an interactive login is
 required.
 
-The one call made on such a seat is a seat probe, which spends a trivial amount to read it and does
-no work; it is recorded against the seat like any spend. Being passed over means no work is charged
-to the seat, not that the seat is never read.
+**Calibration admission.** Such a seat SHALL be admitted for one item at a time while the most
+recent unreset observation of every one of its windows reports it below `1 − reserve`. A window
+that has a capacity figure SHALL still be bounded as it otherwise would be, and the seat is
+admitted only if that window is within its bound too. A seat with no unreset observation of some
+window SHALL NOT be admitted on this ground; the seat probe reads it first.
+
+A reading is of the whole seat, owner's use included. A reading below `1 − reserve` therefore
+says that at least the reserved fraction of the window was still unspent, by anybody, when it
+was taken. That makes one item a small, bounded risk to the owner's floor, where the alternative
+is a seat nobody declared a figure for never being used at all.
+
+One item at a time means that an Igor SHALL NOT admit a further item to such a seat while an item
+it admitted there under this rule is still running. Within one Igor this holds by construction,
+because an Igor works its items one after another. Several Igors sharing the seat each hold it for
+themselves, so up to one admitted item per Igor can be running on the seat at once. That is the
+same slack the dollar bound already has, since spend is recorded only when a run ends.
+
+The admitted item's spend is recorded when its run ends, after the reading its own run carried
+arrived. So that reading yields no figure, by the arrival rule. The next reading inside the same
+window instance divides that spend and yields one: in practice, the reading carried by the next
+item admitted under this rule. Until a figure exists, admission continues one item at a time on
+the same condition. Once one exists, the ordinary bound applies to that window and this rule no
+longer does.
+
+Where the reading an admitted run carries is at or past `1 − reserve` in any window, that run
+SHALL be allowed to finish. It is not stopped mid-item, since stopping it would waste what was
+already spent. No further item SHALL be admitted to the seat under this rule while that reading
+is unreset.
+
+Apart from the items calibration admission lets in, the one call made on such a seat is a seat
+probe. A probe spends a trivial amount to read the seat and does no work, and it is recorded
+against the seat like any spend. Being passed over means no work is charged to the seat. It does
+not mean the seat is never read.
 
 #### Scenario: A reserved seat is not spent from on a guess
 
-- **WHEN** a seat declares a reserve and has neither an observation for the window nor a
+- **WHEN** a seat declares a reserve and has, for a window, neither a capacity figure nor a
   declared capacity
+- **AND** it has no unreset observation of every window below `1 − reserve`
 - **THEN** it is passed over
 - **AND** the reason given is that no capacity figure exists for it
+
+#### Scenario: A read seat below its reserve is admitted for one item
+
+- **WHEN** a seat declares a reserve of 0.5, has no capacity figure for either window, and its
+  most recent unreset observations report the session at 20% and the week at 30%
+- **THEN** one item may be charged to it
+
+#### Scenario: Not a second item while the first runs
+
+- **WHEN** an Igor has admitted an item to such a seat under calibration admission and that item
+  is still running
+- **THEN** that Igor admits no further item to the seat on that ground
+
+#### Scenario: A reading at the reserve admits nothing
+
+- **WHEN** such a seat's most recent unreset observation of either window reports it at or past
+  `1 − reserve`
+- **THEN** it is passed over
+
+#### Scenario: A seat nothing has read is probed, not admitted
+
+- **WHEN** such a seat has no unreset observation of a window
+- **THEN** no item is charged to it
+- **AND** it is left to the seat probe
+
+#### Scenario: A run that crosses the reserve finishes, and nothing follows it
+
+- **WHEN** an item admitted under calibration admission carries a reading at or past
+  `1 − reserve` in a window
+- **THEN** that item's run is allowed to finish
+- **AND** no further item is admitted to the seat on that ground until that window resets
+
+#### Scenario: The next reading yields the figure
+
+- **WHEN** an admitted item's spend has been recorded, and a later reading of the seat inside the
+  same window instance arrives
+- **THEN** that window has a capacity figure derived from that spend and that reading
+- **AND** from then on that window is bounded by `(1 − reserve) × capacity`, as any calibrated
+  window is
+
+#### Scenario: A window with a figure is still bounded
+
+- **WHEN** such a seat's week window has a capacity figure and its session window has none
+- **THEN** the seat is admitted for one item only if its week spend is within its bound and every
+  window's most recent unreset observation is below `1 − reserve`
+
+#### Scenario: Several Igors each hold to one
+
+- **WHEN** two Igors share a reserved seat with no capacity figure and a reading below
+  `1 − reserve`
+- **THEN** each admits at most one item to it at a time
+- **AND** up to two admitted items may be running on it at once
 
 #### Scenario: A dedicated seat runs uncalibrated
 
@@ -569,3 +760,159 @@ credential pays, and the fallback is what it runs on.
 - **WHEN** the gate chooses a seat that names none of the token mechanisms
 - **THEN** the call is made, on the ambient login, as that configuration already permits
 - **AND** the seat is recorded as having paid
+
+### Requirement: A pool is an ordered list of seats, and order is the allocation mechanism
+
+Organization configuration MAY declare pools, each an **ordered** list of seat identifiers. A
+role referencing a pool SHALL spend from the first seat in that list with headroom remaining.
+A role MAY reference a single seat instead, for an Igor that must never draw on a shared one.
+
+Ordering is what expresses the common arrangement — some dedicated capacity, plus whatever the
+team has spare — without a separate overflow concept. A seat nobody works on declares no
+reserve; a person's seat declares one, and is listed after the dedicated seats so it is drawn
+on last.
+
+A seat declaring a reserve is drawn on only once it has a capacity figure — observed, or
+declared as a `capacity_estimate` — because a fraction of an unknown quantity bounds nothing.
+The one exception is calibration admission: a reserved seat with no figure, whose most recent
+unreset observation of every window is below `1 − reserve`, is drawn on one item at a time, as
+*A seat with no capacity figure at all protects no floor* says. The overflow position in a pool
+is therefore conditional on that seat having a figure or being admissible that way, and a pool
+whose only reserved seat is neither has nothing to overflow into.
+
+#### Scenario: Dedicated capacity is consumed before a person's
+
+- **WHEN** a pool lists dedicated seats ahead of seats owned by people
+- **THEN** work is charged to the dedicated seats until they have no headroom
+- **AND** only then to a person's seat, and never past that seat's reserve
+
+#### Scenario: A seat without headroom is passed over, not waited on
+
+- **WHEN** the first seat in a pool has reached its reserve
+- **THEN** the next seat with headroom is used
+- **AND** the Igor does not stop while the pool has capacity
+
+#### Scenario: An uncalibrated reserved seat is not the pool's fallback
+
+- **WHEN** the dedicated seats in a pool have no headroom and the reserved seat behind them has
+  no capacity figure, neither observed nor declared
+- **AND** that seat has no unreset observation of every window below `1 − reserve`
+- **THEN** the pool is treated as having no headroom
+- **AND** the reserved seat is not spent from against a guessed capacity
+
+#### Scenario: A read reserved seat is the fallback one item at a time
+
+- **WHEN** the dedicated seats in a pool have no headroom and the reserved seat behind them has
+  no capacity figure, but its most recent unreset observation of every window is below
+  `1 − reserve`
+- **THEN** one item at a time may be charged to that seat under calibration admission
+
+#### Scenario: Exhausting every seat in a pool is a handoff
+
+- **WHEN** no seat in a role's pool has headroom
+- **THEN** the Igor hands off rather than stopping silently
+
+#### Scenario: Pool referencing an undeclared seat rejected
+
+- **WHEN** a pool lists a seat not declared in organization configuration
+- **THEN** validation fails
+
+### Requirement: The reserve is untouchable
+
+An Igor SHALL treat the seat's reserve as unavailable. The reserve SHALL be enforced as a bound
+on what Igors themselves spend — recorded spend against the seat, summed across every Igor and
+role drawing on it within the window, SHALL NOT exceed `(1 − reserve) × capacity` — rather than
+as a distance from a reading of how full the seat is. Work MUST stop at that bound rather than
+at exhaustion, so that a person sharing the seat retains capacity.
+
+Bounding Igor's own spend guarantees the owner's floor by construction: whatever the owner does
+with the rest of the window, the fraction Igors can have taken from it is capped, and no
+observation of the owner is required. That independence is the point — the floor holds while
+observations are stale, sparse or absent, which is the normal condition. The subscription behind
+a seat is shared with that person's Claude on web, desktop and mobile, not only with Claude
+Code, so the consumer Igor sees least of is the largest one, and a floor whose enforcement
+waited on a current reading of them would lapse exactly when readings stopped arriving.
+
+Every Igor drawing on a seat writes its executions to the same state branch, so the sum is
+recoverable from one record and Igors sharing a seat with each other stay within one bound. A
+person is the only consumer that keeps no books.
+
+A seat that has no capacity figure has no bound to enforce this way. For such a seat alone,
+calibration admission lets in one item at a time on a reading of how full the seat is, while that
+reading is below `1 − reserve`, as *A seat with no capacity figure at all protects no floor* says.
+That is the stated exception to enforcing the reserve as a bound on Igor's spend rather than as a
+distance from a reading. It ends as soon as the seat has a figure, and from then on the bound
+above applies.
+
+#### Scenario: Igor stops at the reserve
+
+- **WHEN** recorded Igor spend against a seat reaches `(1 − reserve) × capacity` for a window
+- **THEN** the Igor stops taking new work on that seat and hands off any in progress
+- **AND** the reserved fraction of capacity remains unspent by Igors
+
+#### Scenario: Human capacity preserved
+
+- **WHEN** an Igor shares a seat with the person who owns it
+- **THEN** the reserved fraction is available to that person regardless of Igor activity
+
+#### Scenario: The floor holds without observing the owner
+
+- **WHEN** nothing reports how much of a seat its owner has consumed
+- **THEN** the bound on Igor spend is still enforced
+- **AND** the reserve is still guaranteed to the owner
+
+#### Scenario: Several Igors share one bound
+
+- **WHEN** two Igors spend from the same seat
+- **THEN** their recorded spend is summed against a single bound
+- **AND** neither is permitted the whole of it
+
+### Requirement: Capacity is recorded spend divided by the fraction it consumed
+
+A seat's capacity for a window SHALL be derived as recorded Igor spend within that window
+instance divided by the fraction of the window an observation reported consumed. The numerator
+SHALL be the spend recorded for that seat within the instance the observation belongs to —
+bounded by the observation's reset time and the window's fixed cadence — and not spend over all
+recorded history.
+
+Instances tile the timeline: each ends exactly where the next begins, and no moment belongs to
+neither. One observed reset therefore fixes every boundary before and after it by subtraction,
+which is what lets spend be assigned to an instance at all. The session window runs five hours
+and the weekly window seven days until measurement says otherwise, as *A window's length is
+measured from successive resets, not configured* says.
+
+Where a seat has consumers Igor cannot see, the quotient is lower than the seat's true capacity,
+because the numerator counts only Igor's share of a denominator that everybody moved. That error
+is deliberate and is in the safe direction: a capacity estimated low yields a bound on Igor that
+is tighter than intended, which cannot overrun anybody's floor.
+
+It is a property of one observation, not a ceiling on what can be known. A seat read repeatedly
+is also read across intervals its owner happened to sit out, and those yield the capacity
+outright. Which observations to combine, and how, wants a season of them to decide; what must
+not be concluded is that a shared seat is stuck with an underestimate, because a seat
+permanently under-used is the waste that lending was meant to avoid.
+
+An observation with no recorded spend in its instance SHALL yield no capacity figure. Dividing
+by an unrelated numerator produces a number, and nothing about that number is true.
+
+#### Scenario: Capacity derived from one observation
+
+- **WHEN** an observation reports a window 36% consumed and the record shows Igor spent an
+  amount within that instance
+- **THEN** capacity for that window is that amount divided by 0.36
+
+#### Scenario: Only the instance the observation belongs to counts
+
+- **WHEN** spend is recorded for a seat across several instances of the same window
+- **THEN** only spend within the observation's own instance is the numerator
+
+#### Scenario: A co-consumer makes the estimate low, not high
+
+- **WHEN** a seat's owner has also consumed part of the observed window
+- **THEN** the derived capacity is lower than the seat's true capacity
+- **AND** the resulting bound on Igor spend is tighter rather than looser
+
+#### Scenario: No spend in the instance derives nothing
+
+- **WHEN** an observation's window instance has no recorded Igor spend
+- **THEN** no capacity figure is derived from it

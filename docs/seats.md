@@ -65,7 +65,8 @@ Claude for as well — but Igor does not read it there unless
 [`read-seat-windows-from-the-stream`](../openspec/changes/read-seat-windows-from-the-stream/proposal.md)
 has been built, and the `/usage` command Igor does read answers that credential with no window at
 all. Until then the figure has to come from a reading taken on your own machine, where you are
-signed in normally.
+signed in normally, with `igor observe`. That command is being withdrawn by the same change,
+which reads your seat on the server instead, so do not plan around it.
 
 Until one has been taken, an Igor has a fraction and no quantity, and a fraction of an unknown
 is not a floor. So:
@@ -87,8 +88,9 @@ replaces it.
 Nothing takes that reading on a schedule, and nothing will be installed on your machine to take
 one: a job on a lender's machine was proposed and withdrawn. Reading your seat on the server that
 runs the Igors, with the token you handed over, is specified in
-[`read-seat-windows-from-the-stream`](../openspec/changes/read-seat-windows-from-the-stream/proposal.md)
-and has not been built, so for now it is a thing somebody does by hand. Lend a seat knowing that, and ask what the fleet actually spent rather than
+[`read-seat-windows-from-the-stream`](../openspec/changes/read-seat-windows-from-the-stream/proposal.md),
+along with letting a reserved seat that has been read start itself one item at a time while
+your window is below your reserve. None of it has been built, so for now it is a thing somebody does by hand. Lend a seat knowing that, and ask what the fleet actually spent rather than
 assuming a number in a file did the work.
 
 ## Handing it over

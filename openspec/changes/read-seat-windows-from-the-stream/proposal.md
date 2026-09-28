@@ -52,8 +52,17 @@ tokens and the seat config.
   reading. The probe is not free, and its cost is recorded. It is rate-limited, never runs on a
   refused seat, and never runs on a person's machine. It is built only if a seat below every
   threshold proves to emit the event (task 1.1).
-- **`scheduled-observation` is withdrawn**: nothing is installed on a lender's machine. The
-  reasons are in `design.md`.
+- **A reserved seat with no capacity figure is let in one item at a time** while its most recent
+  unreset reading of every window is below `1 − reserve`. The item's recorded spend and the next
+  reading yield a figure, and from then on the ordinary bound applies. With no unreset reading it
+  is not admitted; the probe reads it first. An admitted run whose own reading reaches the bound
+  finishes, and nothing further is admitted.
+- **`scheduled-observation` is withdrawn entirely, `igor observe` included**, and its change
+  directory is deleted. Nothing is installed on a lender's machine, and nothing reads a seat
+  through a person's login. Its two requirements that still apply, on irregular arrival and on
+  measuring a window's length from successive resets, move here, adapted to stream readings.
+  `igor observe`'s shipped code is removed in gate two. Existing `usage` rows are still read;
+  nothing writes them any more. The reasons, and what is lost, are in `design.md`.
 
 This is an optimisation, never a correctness dependency. The event is undocumented and could
 change or vanish without notice; every behaviour it adds has to degrade to what the loop does
@@ -66,16 +75,19 @@ Explicitly out of scope:
   that, and where, is open.
 - **Pacing and the reserve's meaning.** `allowed_warning` and a seat-wide fullness figure are
   inputs `budget-pacing` may consume; this change records them and decides no pacing behaviour.
-- **Per-model weekly windows.** The event carries none.
+- **Per-model weekly windows.** The event carries none. With `igor observe` removed, nothing reads
+  them for a token seat; capacity never used them, and `igor budget` loses a display line. #75
+  task 5.1 is where they are taken up.
 
 ## Capabilities
 
 ### Modified Capabilities
 
 - `seat-budget`: a worker run's own output stream is a source of observations of the seat that
-  paid for it, read with that seat's credential and recorded with a third source, `stream`. The
-  four in-force passages that said a seat's credential reports no window are corrected by
-  `MODIFIED` deltas, listed in `design.md`.
+  paid for it, read with that seat's credential and recorded with a third source, `stream`. A
+  seat nothing has read is probed on the Igor server, and a reserved seat with no figure is
+  calibrated one item at a time. The in-force passages this makes false, or makes an exception
+  to, are corrected by `MODIFIED` deltas, listed in `design.md`.
 
 ## Impact
 
@@ -83,7 +95,12 @@ Explicitly out of scope:
   `result`, and `recordExecution` writes it through `recordObservation`.
 - `src/capacity.ts`: the observation's `source` gains `stream`, and the shape gains optional
   fields; `capacityFor`, `spentFor` and
-  the gate read the new rows through the paths they already have.
+  the gate read the new rows through the paths they already have. Window lengths come from
+  observed resets. `observeSeat` and `seatToObserve` are removed.
+- `src/budget.ts`: the gate admits an uncalibrated reserved seat one item at a time on a reading.
+  The remedies that name `igor observe` are reworded.
+- `src/cli.ts`: the `observe` command is removed, with `test/observe.test.ts`.
+- The serve loop gains the seat probe.
 - `capacity.ndjson` grows by up to two rows per worker run, at the execution log's rate rather
   than a refusal's. It is still read whole; whether it should stay so is open in `design.md`.
 - `igor budget` can name a figure's route and show the provider's warning and overage state.

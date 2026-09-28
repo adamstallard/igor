@@ -202,40 +202,103 @@ recorded twice*. #75 records a triage *refusal* only where the call carried no r
 triage runs `--output-format json`, that is every triage refusal. Whether triage should switch is
 still an open question for this change.
 
-### `scheduled-observation` is withdrawn
+### `scheduled-observation` is withdrawn, `igor observe` included
 
-Decided by Adam on 2026-09-27: a scheduled job on a seat holder's machine should not exist. In his
-words, "Any services or queries need to be done on the server that runs the igors. It should have
-the tokens and the seat info in its config."
+Decided by Adam on 2026-09-27, in two steps. First, a scheduled job on a seat holder's machine
+should not exist. In his words, "Any services or queries need to be done on the server that runs
+the igors. It should have the tokens and the seat info in its config." Then, the same day, the
+rest of the change goes too, including the shipped `igor observe`. Services and queries run only
+on the Igor server. `igor observe` needs an interactive login, so it can only run on a person's
+machine. And the stream plus the probe replace what it read.
 
 That was not possible when `scheduled-observation` was written, because a seat's token was
 believed to read no windows, so the only sensor was a person's login on their own machine. It is
 possible now for two reasons. The seat's own token reads the seat's windows from the stream
-(§6.3.3), on the server, with the token already in the server's config. And the gaps that stream
-readings leave are specified here, on the same server, rather than on a lender's laptop. Those
-gaps are a reserved seat with no figure, and a seat the fleet is not using. So everything in that
-change that runs on, or is installed on, a lender's machine is withdrawn:
+(§6.3.3), on the server, with the token already in the server's config. And the seats stream
+readings leave unread are read here too, on the same server: a reserved seat with no figure, and
+a seat the fleet is not using.
+
+**What is done on this branch.** `openspec/changes/scheduled-observation/` is deleted. None of
+its requirements was ever archived into `openspec/specs/`, so nothing in force specifies
+`igor observe`, the schedule, or the refusal of a seat credential, and no `REMOVED` delta is
+needed. Two of its requirements were neither shipped nor laptop-specific, and they move here as
+`ADDED` requirements, adapted to stream readings (see *Moved from `scheduled-observation`*
+below). Everything else in it is withdrawn:
 
 - the launchd, cron and systemd timers and their installation procedure;
-- the half-hourly schedule;
-- the refusal of a seat credential, which exists to keep the job on a person's login;
-- lending's dependence on push access for the lender's readings.
+- the half-hourly schedule, and its premise that the reading is free;
+- the refusal of a seat credential, which existed to keep the job on a person's login;
+- lending's dependence on push access for the lender's readings;
+- `igor observe` itself.
 
-The withdrawal is recorded on this branch so that it lands with the requirement that replaces what
-the change was for. It is **not yet applied to `openspec/changes/scheduled-observation/` itself**,
-because that change does not split cleanly into what shipped and what is withdrawn. The shipped
-`igor observe` (its tasks 1.x) is specified only inside *A usage reading is free and is taken on a
-recurring schedule*, whose title and first `SHALL` are the withdrawn schedule and the unverified
-claim that the reading is free. Two of its requirements are neither shipped nor laptop-specific:
-*Observations arrive irregularly and nothing depends on their arriving*, and *A window's length is
-measured from successive resets, not configured*. How to cut it is under *Still open*.
+**What is removed in gate two.** `igor observe` is shipped code: the `observe` command in
+`src/cli.ts`, `observeSeat` and `seatToObserve` in `src/capacity.ts`, and `test/observe.test.ts`.
+It is removed in gate two, along with the remedies in `src/budget.ts` that send an operator to it
+and the `scheduled-observation` citations in `src/capacity.ts` and `test/capacity.test.ts`. The
+built-in window lengths those citations justify are justified by *A window's length is measured
+from successive resets* here. The docs that describe `igor observe` say, until then, that it is
+being withdrawn by this change.
+
+**What is not removed.** The live `/usage` read in `readAllSeats` (`readUsage`, `parseUsage`,
+`runUsage`, `hasSubscription` in `src/budget.ts`) is not `igor observe`. It reads a seat on the
+server, when the gate asks, through whatever credential the seat resolves to, and it produces
+the "read live" rows of `igor budget`. It is specified by the in-force *Usage is read from the
+seat, not supplied by a person*, which this change does not withdraw. `parseUsage` is shared by
+both paths and stays.
+
+**The `usage` source.** Only `igor observe` wrote observations with `source: "usage"`; the live
+read never records what it reads. After gate two nothing writes it. Existing `capacity.ndjson`
+rows carry it and are still read, because the log is never rewritten and those rows are
+calibration. The `MODIFIED` observation requirement says both.
+
+**What is lost: per-model weekly caps for a token seat.** `/usage` prints per-model weekly
+limits, and `igor observe` recorded them as week observations carrying `model`. Nothing else
+reads them for a seat whose credential is a `setup-token`: the stream event carries no per-model
+window, and the live `/usage` read answers such a credential with no windows at all. For
+capacity this loses nothing, because `capacityFor`, `whyNoFigure` and `resetAnchor` already skip
+any observation with a `model` (`src/capacity.ts`, the per-model skip around line 253). What goes
+is a display line: the `wk:<model>` rows `renderBudget` prints from observation rows for such a
+seat, which *Limits the provider reports but the loop does not enforce are still shown* asks for.
+Existing rows still print until they are superseded. A seat that reads live through an
+interactive login keeps its `wk:` rows from the live read. Where per-model caps are taken up is
+#75 task 5.1 (`triage-refusal-calibrates`), which decides whether a refusal records
+`Observation.model`.
+
+### Moved from `scheduled-observation`
+
+*Observations arrive irregularly and nothing depends on their arriving* keeps its name and its
+rule. Its reason changes. It used to be a laptop that sleeps. Now it is that readings come with
+the work: with runs, and with probes only when a seat has no unexpired reading.
+
+*A window's length is measured from successive resets, not configured* keeps its name. It changes
+in three ways:
+
+- **No phrase resolution.** A stream reading's reset is epoch seconds, so the old dependency on
+  `capacity-from-observation` task 1.2 resolving a reset phrase falls away.
+- **The smallest difference.** The old text took "the difference between two observations".
+  Readings come from some instances of a window and not others, so two successive resets can be
+  several window lengths apart and are never less than one. The smallest positive difference is
+  the estimate, and its error is on the long side.
+- **A longer figure is reported, not used.** A measured length longer than the built-in one is
+  exactly what unread instances produce, so it is no evidence that the provider changed the
+  window. A shorter one cannot come from unread instances, so it replaces the built-in. The old
+  text's scenario *A changed window follows the provider* therefore holds only for a window the
+  provider shortens. A lengthened window is reported beside the built-in length and not
+  followed. That is a question for Adam under *Still open*.
+
+Neither name is used anywhere else on `main` or on any `origin/*` branch, except inside copies of
+`scheduled-observation` itself.
+
+The in-force *Capacity is recorded spend divided by the fraction it consumed* says "The session
+window runs five hours and the weekly window seven days". It carries a `MODIFIED` delta that
+makes those the built-in lengths until measurement says otherwise.
 
 ### A seat probe, on the server, for the seats no run reads
 
 Decided by Adam on 2026-09-27, and specified as *A seat nothing has read is probed on the Igor
 server with its own token*. Stream readings arrive only with runs, which leaves two seats unread:
-a reserved seat with no figure, which the gate passes over so it never runs, and a seat the fleet
-is not using. The server that runs the Igors already holds every seat's token, so it reads them
+a reserved seat with no figure, which the gate admits only once something has read it, and a
+seat the fleet is not using. The server that runs the Igors already holds every seat's token, so it reads them
 itself. It makes one minimal `claude -p` call per seat with that seat's token and
 `--output-format stream-json --verbose`, and records the `rate_limit_event` as a `stream` reading.
 
@@ -253,10 +316,11 @@ window until that window resets (above), so a clock threshold shorter than the r
 money to learn something the log already bounds. So "stale" means past its reset. For an idle seat
 whose probes return events, that is about one probe per session window, roughly five a day.
 
-**Bounds.** At most one probe per seat per hour, and none while one is running. After a probe that
-got no event, or none that could be read, none for five hours: one session window. A failed probe
-is never retried in a loop. The two numbers are proposed, not fitted. They are listed under
-*Still open* for Adam to confirm or change.
+**Bounds (settled by Adam, 2026-09-27).** At most one probe per seat per hour, and none while one
+is running. After a probe that got no event, or none that could be read, none for five hours: one
+session window. A failed probe is never retried in a loop. Both numbers were proposed in the first
+draft of this design and Adam settled them as written. The requirement states them, and tasks 6.1
+and 6.4 build and test them.
 
 **Never on a refused seat, nor on one spending extra usage.** An unexpired observation at 100%
 means the provider has already said no until its reset, so a probe there only spends a failed
@@ -284,21 +348,78 @@ than the 1% a reading resolves. So:
 
 - **An idle seat that already has a figure** gets its fullness refreshed. That serves reporting,
   and a later derivation once Igor spends there again. This gap is closed.
-- **A reserved seat with no figure** gets a fullness reading and is still passed over under the
-  in-force gate. The probe makes that seat's state known, but by itself it does not start the
-  seat. Starting it takes a gate decision that this change has not been given: for instance,
-  admitting such a seat for one item at a time while its seat-wide reading is below
-  `1 − reserve`, so that the item's spend and the next reading derive a figure. That is under
-  *Still open* as a question for Adam.
+- **A reserved seat with no figure** gets a fullness reading. The reading alone yields no
+  figure, and under the in-force gate the seat would still be passed over. Calibration
+  admission, below, is what starts it: the probe's reading lets in one item, and that item's
+  spend and the next reading derive a figure.
 
 **If a seat below every threshold gets no event.** This is task 1.1's measurement, and it gates
 the rest. If the answer is no, a probe of a fresh seat returns nothing and records nothing. Its
 cost is bounded by the five-hour back-off, and it can never produce a figure for that seat. The
 probe would then read only seats already past a provider threshold. In practice those are seats
 whose owner has used them heavily. A fresh reserved seat would start only as in force: from a
-declared `capacity_estimate`, or from a period at `reserve: 0`. In that case, tasks 6.x are not
+declared `capacity_estimate`, or from a period at `reserve: 0`. Calibration admission would
+still start a reserved seat whose owner had used it past a threshold, but a fresh one never gets
+the reading it needs. In that case, tasks 6.x are not
 built as written, and whether a probe that reads only past-threshold seats is worth building goes
 back to Adam.
+
+### Calibration admission: a reserved seat with no figure is let in one item at a time
+
+Decided by Adam on 2026-09-27, and written as a `MODIFIED` delta on *A seat with no capacity
+figure at all protects no floor* (the same block the probe's delta already amends, not a second
+one). A reserved seat with no capacity figure for a window is admitted for one item at a time
+while the most recent unreset observation of every window reports it below `1 − reserve`. Once
+the item's recorded spend and a later reading yield a figure, the ordinary bound applies. With no
+unreset reading of some window it is not admitted; the probe reads it first.
+
+**Why it is safe enough.** The reading is of the whole seat, owner's use included. Below
+`1 − reserve` means at least the reserved fraction of the window was unspent, by anyone, when it
+was taken. The risk is one item's spend past that margin, taken knowingly. The alternative is a
+seat nobody declared a figure for never being used at all, or its owner guessing a
+`capacity_estimate`.
+
+**Why one item does not finish the job in one step.** The arrival rule stamps a stream reading
+when the event arrives, before the run's spend is recorded. So the admitted item's own reading
+excludes its own spend and yields no figure. The figure comes from the next reading inside the
+same instance. The probe does not fire while the item's reading is unexpired, so in practice that
+next reading is the one carried by the next item admitted under the same rule. Admission
+therefore continues one item at a time until a figure exists. Typically that happens as the
+second item's event arrives.
+
+**Per window.** The rule applies window by window. A window that has a figure is bounded by
+`(1 − reserve) × capacity` as always, and the seat is admitted only if that bound holds too. A
+seat whose week is calibrated and whose session is not is let in one item at a time, and only
+while its week spend is within the week's bound.
+
+**A run that crosses the bound.** If an admitted run's own reading is at or past `1 − reserve`
+in any window, the run finishes. Stopping it mid-item would waste what it already spent and hand
+off work for no gain. Nothing further is admitted on that ground while the reading is unreset.
+After the reset the seat has no unreset reading, so the probe reads it first.
+
+**This is a reading used as a gate, for this case only.** The in-force reserve is a bound on
+Igor's own spend, never a distance from a reading. Calibration admission is the stated exception,
+written into *The reserve is untouchable*, and it lasts only until the seat has a figure. Whether
+a seat-wide reading past `1 − reserve` should also stop a calibrated seat is a different question
+and stays with `budget-pacing` (see *Still open*). The pool requirement's "drawn on only once it
+has a capacity figure", and its scenario *An uncalibrated reserved seat is not the pool's
+fallback*, carry `MODIFIED` deltas for the same reason.
+
+**Several Igors sharing the seat.** "One item at a time" is held per Igor. Within one Igor it
+holds by construction: `serve` works `toClaim` items one after another, each behind its own
+`options.gate()`. Across Igors nothing coordinates, so N Igors sharing the seat can have N
+admitted items running at once. That is the same slack the dollar bound already has. Spend is
+recorded only when a run ends, so two Igors can both pass the gate on the last of a seat's
+headroom (*Several Igors share one bound* sums what has been recorded, not what is in flight).
+
+To make it strict across Igors would take a marker that every Igor checks and at most one can
+set. The state branch offers one: `appendRecord` writes through the contents API with the file's
+`sha`, which the server refuses if the file moved. Writing "calibrating on seat X, by process P"
+that way, and admitting only on a successful write, is a compare-and-swap. It is also a
+read-modify-write, which *Observations are appended to their own log and never rewritten* was
+written to keep out of the record, and it needs a lease so that a crashed Igor does not hold the
+seat forever. The other option is `work-claiming`'s claim, settle and verify, which costs a
+settle interval per admission. Neither is specified here. This is under *Still open*.
 
 ### Degrading to today
 
@@ -311,16 +432,19 @@ to the observations and record it had, which is the in-force behaviour.
 
 `openspec validate` does not cross-check deltas against the prose of requirements they do not
 touch. These passages in `openspec/specs/seat-budget/spec.md` stated the premise this change
-removes. **Adam decided on 2026-09-27 that this change corrects them now**, so
-`specs/seat-budget/spec.md` carries a `MODIFIED` delta for each, changing only the sentence that
-is false:
+removes, or a rule this change's decisions make an exception to. **Adam decided on 2026-09-27
+that this change corrects them now**, so `specs/seat-budget/spec.md` carries a `MODIFIED` delta
+for each, changing only what is false:
 
 - ***Usage is read from the seat, not supplied by a person*** — "The credential a seat holds is a
   `setup-token` one, which carries no subscription identity, so the provider reports a
   per-invocation cost summary instead of window percentages and there is nothing to read." True of
-  `/usage`; false of the stream.
+  `/usage`; false of the stream. Also "a reserved seat with no figure at all is passed over rather
+  than spent from", which now points at calibration admission.
 - ***An observation records how full a window was, and when it resets*** — "which of two sources
-  it came from". Now three, with `stream`; see *The record* above.
+  it came from". Now three, with `stream`; see *The record* above. It also now says that nothing
+  writes `usage` any more and that existing `usage` rows are still read, and its scenario *A
+  reading becomes an observation* is replaced by two saying so.
 - ***Recorded spend attributes a seat between its roles*** — "The record is the only quantity
   available for both questions on a seat whose credential reports no window." A seat's credential
   does report its windows.
@@ -328,7 +452,25 @@ is false:
   with such a login — the seat's owner — rather than the seat's own credential." The seat's own
   credential suffices, through the stream. The delta also states what the old paragraph left
   implicit: a reading yields a figure only once Igor has spent from the seat inside the window it
-  reads.
+  reads. It now carries calibration admission, with its scenarios.
+- ***A pool is an ordered list of seats, and order is the allocation mechanism*** — "A seat
+  declaring a reserve is drawn on only once it has a capacity figure". Calibration admission is
+  the exception, and the scenario *An uncalibrated reserved seat is not the pool's fallback* gains
+  the condition that the seat has no reading below `1 − reserve`.
+- ***The reserve is untouchable*** — the reserve is enforced "rather than as a distance from a
+  reading of how full the seat is". Calibration admission is the stated exception, for a seat with
+  no figure, until it has one.
+- ***Capacity is recorded spend divided by the fraction it consumed*** — "The session window runs
+  five hours and the weekly window seven days." Those are now the built-in lengths, until
+  measurement says otherwise.
+
+Two more deltas are about the probe rather than about this premise: *Every invocation records
+which role spent from which seat* and *A spend with no seat behind it does not happen* (see *A
+seat probe*).
+
+No in-force requirement specifies `igor observe`, the scheduled reading, or the refusal of a seat
+credential, since `scheduled-observation` was never archived. So its withdrawal needs no
+`REMOVED` delta.
 
 ## Still open
 
@@ -336,30 +478,39 @@ is false:
   The only capture fired with the week at 86%, past the 0.75 threshold. The session window
   was reported at 0.07 inside that same event, so low windows are reported *when an event fires*.
   Whether a completely fresh seat gets one is the open part. Task 1.1 takes that capture on the
-  fresh Max seat Adam is buying, before anything else is built. What the probe degrades to if
-  the answer is no is under *A seat probe* above.
-- **Starting a reserved seat with no figure** (Adam's question). A probe reads such a seat, but
-  under the in-force dollar gate a reading of a seat Igor has not spent from yields no figure
-  (see *What a probe's reading unlocks*). Should such a seat be admitted for one item at a time
-  while its seat-wide reading is below `1 − reserve`, so that it calibrates itself? The
-  alternative is to leave it to `capacity_estimate` and `reserve: 0`, as in force.
-- **The probe's two numbers.** At most once an hour per seat, and five hours after a probe that
-  got no event. Both are proposed, not fitted.
+  fresh Max seat Adam is buying, before anything else is built. What the probe and calibration
+  admission degrade to if the answer is no is under *A seat probe* above.
+- **"One item at a time" across several Igors** (question for Adam). As written it holds per
+  Igor, so N Igors sharing an uncalibrated reserved seat can have N items running on it. That is
+  the slack the dollar bound already has. Making it strict needs a compare-and-swap marker on the
+  state branch, with a lease, or `work-claiming`'s claim and settle. See *Calibration admission*.
+  Recommended: accept the per-Igor slack now, and take the marker up once more than one Igor
+  actually shares a reserved seat, together with the same race on the dollar bound.
+- **A lengthened window** (question for Adam). *A window's length is measured from successive
+  resets* follows the provider only when a window gets shorter. A longer measured length is
+  reported and not used, because unread instances produce the same figure. Recommended: keep it
+  so. A lengthened window leaves the built-in length too short, which undercounts a numerator,
+  and an operator sees the measured figure beside it.
+- **Whether a session window instance tiles or floats.** The in-force capacity requirement
+  assumes instances tile the timeline. If a session instead starts at the first use after a
+  reset, successive resets still differ by at least one length, so the smallest-difference rule
+  holds. What would be wrong is placing one instance from another's reset by tiling, as
+  `resetAnchor` does, across a gap in which nobody used the seat. Unmeasured. Stream readings
+  supply the resets that would show it.
+- **A probe of an uncalibrated seat whose reading is past its reserve** (question for Adam). The
+  probe skips a seat at its dollar bound. A seat with no figure has no dollar bound, so it is
+  still probed when one window's reading has expired and the other's is at or past
+  `1 − reserve`. Recommended: skip it too, for the same reason calibration admission stops there.
+  It is a trivial spend, but it is Igor spend into what the reading says is the reserve.
 - **The `rejected` shape** (#57). The single-row rule above is written against the
   contributor-reported shape and must be checked against the first captured refusal.
 - **The observation log's size.** *Observations are appended to their own log and never
   rewritten* justifies a separate log partly because it stays "small enough to read whole". Up to
   two rows per worker run grows it at the execution log's rate. Still small at today's volumes;
   whether it should stay read whole is worth deciding before a fleet runs many seats.
-- **Whether a seat-wide reading past `1 − reserve` should stop Igor.** It would turn the reserve
-  from a cap on Igor into a floor under the owner. That is a change to what a reserve means and
-  belongs with `budget-pacing`'s adaptive reserve, not here.
-- **Per-model weekly windows** still need another source.
-- **How to cut `scheduled-observation`** (Adam's question). The withdrawal is decided; applying it
-  needs three answers first. Should the shipped `igor observe` stay specified, given that it reads
-  the login of whoever runs it, which in practice is a person on their own machine? If it stays,
-  a new requirement has to be written for it, since none of that change's requirements states
-  only what shipped. And should the two requirements that are neither shipped nor laptop-specific
-  move to this change, stay there, or be dropped? `src/capacity.ts` and `test/capacity.test.ts`
-  cite `scheduled-observation` for the built-in window lengths and for `observeSeat`'s credential;
-  whatever is decided, those citations move in gate two.
+- **Whether a seat-wide reading past `1 − reserve` should stop Igor on a calibrated seat.** It
+  would turn the reserve from a cap on Igor into a floor under the owner. That is a change to what
+  a reserve means and belongs with `budget-pacing`'s adaptive reserve, not here. Calibration
+  admission uses a reading this way only for a seat with no figure.
+- **Per-model weekly windows** have no source for a token seat once `igor observe` is removed.
+  See *What is lost* above. #75 task 5.1 is where they are taken up.

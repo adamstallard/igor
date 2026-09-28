@@ -120,19 +120,74 @@
 - [ ] 6.5 `igor budget` names a figure that came from a probe, or says a seat was probed and
       returned nothing, so an operator can tell a probed seat from an unread one. **May be
       reworded**
+- [ ] 6.6 The two limits are settled (Adam, 2026-09-27): at most one probe per seat per hour, and
+      five hours before re-probing after a probe that got no event. Build them as constants, not
+      configuration
 
-## 7. Docs, once built
+## 7. Calibration admission, in `src/budget.ts`'s gate
 
-- [ ] 7.1 `README.md` Budgets, `docs/seats.md` "What the floor rests on" and `docs/deployment.md`
+- [ ] 7.1 In `chooseSeat`, a reserved seat with no capacity figure for a window is admissible when
+      the most recent unreset observation of every window is below `1 − reserve`, and every window
+      that has a figure is within its bound. It gets its own verdict and reason, distinct from
+      `no-figure`
+- [ ] 7.2 One at a time, per Igor: the gate does not admit a further item to a seat on this ground
+      while an item it admitted there on this ground is running. Hold it in the serve loop's own
+      state, not in the record
+- [ ] 7.3 A run admitted this way is not stopped when its own reading reaches `1 − reserve`; the
+      next gate call finds that reading and admits nothing further until it resets
+- [ ] 7.4 Tests: admitted on a reading below the bound; passed over at or past it; passed over with
+      no unreset reading of a window; not a second while the first runs; a crossing run finishes
+      and nothing follows; the second admitted item's reading yields a figure and the ordinary
+      bound takes over; a week with a figure still bounds a seat whose session has none
+- [ ] 7.5 `igor budget` says a seat is calibrating, and on what reading. **May be reworded**,
+      provided it names the reading and the reserve:
+
+      ```
+      calibrating — no capacity figure yet; one item at a time while 30% used at 2026-09-27T14:02:11.000Z stays below 50%
+      ```
+
+## 8. Window length and irregular arrival, moved from `scheduled-observation`
+
+- [ ] 8.1 Derive each window's length as the smallest positive difference between two differing
+      `resetsAt` instants among its observations; use it only where it is shorter than the
+      built-in length, and report it either way, saying which length is in use
+- [ ] 8.2 Replace the `scheduled-observation` citations on `WINDOW_LENGTH` in `src/capacity.ts`
+      and in `test/capacity.test.ts` with this change's requirement
+- [ ] 8.3 Tests: five hours from two resets five hours apart; five hours from differences of five
+      and fifteen; a longer measured length is reported and not used; a shorter one is used; a
+      single reset leaves the built-in length, reported as built-in
+- [ ] 8.4 Test that a long gap between readings raises nothing and records nothing for the gap
+
+## 9. Withdrawing `igor observe` (gate two)
+
+- [ ] 9.1 Remove the `observe` command from `src/cli.ts`, and `observeSeat`, `seatToObserve` and
+      `reported` from `src/capacity.ts`. Keep `readUsage`, `parseUsage`, `runUsage` and
+      `hasSubscription` in `src/budget.ts`: `readAllSeats` still reads live through them
+- [ ] 9.2 Remove `test/observe.test.ts`. Keep the `source: 'usage'` fixtures in the other tests:
+      they are existing rows, which must still be read
+- [ ] 9.3 Reword the remedies in `src/budget.ts` that send an operator to `igor observe`
+      (`SeatVerdict`'s comment, `WindowState`'s comment, and the "run `igor observe …` on the
+      owner's machine" consequence in `describeWindow`) to what starts a seat now: the probe,
+      calibration admission, or a declared `capacity_estimate`. Also the `whyNoFigure` comment in
+      `src/capacity.ts` that says an unread seat "wants `igor observe`". Update the tests that
+      assert the old text
+- [ ] 9.4 Leave `Observation.source`'s `'usage'` member in place, and test that a `usage` row is
+      still read while nothing writes one
+- [ ] 9.5 `README.md`, `docs/deployment.md` and `docs/seats.md`: remove the descriptions of
+      `igor observe` that say it is being withdrawn, and the example `igor budget` row that names it
+
+## 10. Docs, once built
+
+- [ ] 10.1 `README.md` Budgets, `docs/seats.md` "What the floor rests on" and `docs/deployment.md`
       step 4: describe the stream reading as shipped, and what a lender no longer has to install.
       Replace the links from `README.md` and `docs/seats.md` into
       `openspec/changes/read-seat-windows-from-the-stream/`, which archiving moves
-- [ ] 7.2 `docs/architecture.md` §6.3.1 and §6.3.3: move from "what this changes" to what was built
+- [ ] 10.2 `docs/architecture.md` §6.3.1 and §6.3.3: move from "what this changes" to what was built
 
-## 8. Left open, recorded so they are not lost
+## 11. Left open, recorded so they are not lost
 
-- [ ] 8.1 Triage: capture whether `--output-format json`'s single envelope carries
+- [ ] 11.1 Triage: capture whether `--output-format json`'s single envelope carries
       `rate_limit_info`, and record the answer in `design.md` — the owner of any triage reading is
       the reviewer's decision (this change or `triage-refusal-calibrates`, #75)
-- [x] 8.2 `MODIFIED` deltas for the four in-force passages `design.md` lists under *In-force text
+- [x] 11.2 `MODIFIED` deltas for the in-force passages `design.md` lists under *In-force text
       this overtakes* — written in gate one, on Adam's decision of 2026-09-27

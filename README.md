@@ -218,8 +218,10 @@ repository.
 
    **Do not set `CLAUDE_CODE_OAUTH_TOKEN` yourself.** That is the variable `claude` reads, so
    it authenticates everything igor spawns rather than the one seat you meant — including
-   `igor observe`, which reads `/usage`, and `/usage` reports windows only to an interactive
-   login. Name the token in the config and let igor decide what sees it.
+   `igor observe` while it exists (it reads `/usage`, which reports windows only to an
+   interactive login, and it is being withdrawn by
+   [`read-seat-windows-from-the-stream`](openspec/changes/read-seat-windows-from-the-stream/design.md)).
+   Name the token in the config and let igor decide what sees it.
 
    A token placed in a service's environment stays there for the unit's whole lifetime, so
    `igor serve` under launchd or systemd wants more than a laptop does: an `EnvironmentFile=`
@@ -415,8 +417,11 @@ pool engineering: fleet-1 has 83% of the session left
 - **the tail of each row** — what state that window is in, and what the figure rests on. A
   credential that cannot be read, a window nobody has observed, a window observed and still
   unbounded, a bound with room in it, a bound reached, and a window the provider refused are
-  six different things, fixed by different people: one is a token, one is `igor observe` on the
-  owner's machine, one is a declared `capacity_estimate`, and one is waiting. A derived figure carries
+  six different things, fixed by different people: one is a token, one is a reading of the seat
+  (today `igor observe` on the owner's machine, which
+  [`read-seat-windows-from-the-stream`](openspec/changes/read-seat-windows-from-the-stream/design.md)
+  withdraws in favour of reading the seat on the server), one is a declared `capacity_estimate`,
+  and one is waiting. A derived figure carries
   the observation it came from and when that observation was taken, because headroom derived
   from a limit error an hour ago and headroom derived from a month-old reading are not the same
   claim.
