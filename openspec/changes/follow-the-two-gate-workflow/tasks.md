@@ -3,7 +3,7 @@ Line numbers are as of `main` at `511e519`.
 ## 1. Measure before building
 
 - [ ] 1.1 Find out whether GitHub accepts an `APPROVE` review on a **draft** pull request, on a
-      scratch repository. Record the answer in `design.md` and settle open question 3 with it
+      scratch repository. Record the answer in `design.md` and settle question 3 with it
 - [ ] 1.2 Confirm `latestOpinionatedReviews` returns one review per author, excluding comment-only
       and dismissed reviews, and that `commit { oid }` names the commit each review was submitted
       against
@@ -21,6 +21,10 @@ Line numbers are as of `main` at `511e519`.
       ones
 - [ ] 2.3 Show it in `role explain` with its provenance (`src/role.ts:654`)
 - [ ] 2.4 Tests: opt in, unset, override from base, unknown value refused, explained
+- [ ] 2.5 `igor doctor` (#113) warns when a `two-gate` role's Igor posts as a person who is also
+      the only one with authority over the repository, because GitHub refuses an approval from a
+      pull request's author, so its gate two could never start. A warning, not a refusal: the loop
+      can't know who else might review
 
 ## 3. Reading the artifact
 
@@ -48,7 +52,7 @@ Line numbers are as of `main` at `511e519`.
       never the `permission` string. This read is shared with `directed-interaction`, which needs
       it and has not built it. Put it where both can call it (`src/github.ts`)
 - [ ] 4.2 Authority is the store's `reviewers` (`src/config.ts:189`) or that boolean. Role-level
-      `reviewers` (`src/role.ts:532`) do not count unless open question 4 is answered otherwise
+      `reviewers` (`src/role.ts:532`) do not count (settled question 4)
 - [ ] 4.3 A read that fails is no authority, for that author, for that cycle
 - [ ] 4.4 Tests: writer, store reviewer without write, neither, unreadable, admin (whose
       `permission` string is `admin` and not `write`)
@@ -66,7 +70,7 @@ Line numbers are as of `main` at `511e519`.
       (`src/loop.ts:453`), carrying whether they are to be revised or implemented. A conflicting
       artifact goes to `toCatchUp` first and is resumed on a later cycle
 - [ ] 5.4 Put `toResume` through the stop gate and the deferral gate as `toCatchUp` goes
-      (`src/loop.ts:621`), then through the lane (open question 9). It holds no watermark, and no
+      (`src/loop.ts:621`), then through the lane (settled question 9). It holds no watermark, and no
       triage call is made for it
 - [ ] 5.5 Record a resume decision at the universal stage, as a catch-up is recorded
       (`src/loop.ts:1040`)
@@ -92,7 +96,7 @@ Line numbers are as of `main` at `511e519`.
       excerpt. Strip every closing keyword for the item from the excerpt, not only the linkage
       line (`stripLinkage`, `src/execute.ts:189`)
 - [ ] 6.6 The commit message and the title at `produce` (`src/execute.ts:1697`) carry no closing
-      keyword for the item. The title carries the specification marker (open question 1)
+      keyword for the item. The title carries the specification marker (settled question 1)
 - [ ] 6.7 Gate one releases the claim and skips `complete` (`src/loop.ts:193`,
       `src/execute.ts:1743`)
 - [ ] 6.8 Tests for each scenario in *Gate one publishes a specification and nothing else* and
@@ -166,4 +170,4 @@ Line numbers are as of `main` at `511e519`.
 - [ ] 12.2 `docs/architecture.md` §5.0.4 (`docs/architecture.md:901`): the second exception to
       the in-flight skip, and why the phase is read from the artifact
 - [ ] 12.3 `DECISIONS.md`, or wherever the repository records decisions: Adam's five
-      decisions of 2026-09-28, and the answers to the open questions once given
+      decisions of 2026-09-28, and the settled questions

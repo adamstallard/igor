@@ -45,12 +45,12 @@ Also stated as requirements in the brief for this change:
 
 The brief also gave three recommendations: a fresh claim at gate two, noting an edited item and
 continuing, and treating an approval with comments as a go. The spec is written to them, and
-they are listed under Open questions (11–13) so they get confirmed rather than assumed.
+they were listed as questions 11–13, and Adam confirmed them.
 
 ## Decisions made here
 
 Each of these follows from the settled decisions above, or from requirements already in force.
-Where one is a real choice, it is also listed under Open questions.
+Where one was a real choice, it was also put to Adam as a question (see Settled questions).
 
 ### Confinement is a filter on what is carried, not a separate path
 
@@ -99,7 +99,7 @@ person who pushes code onto a gate-one branch moves it into gate two, and the Ig
 it alone as work in flight, which is the safe direction. A pull request's diff is taken against
 the merge base, so a catch-up merge does not move it.
 
-The alternative, reading the title marker, is listed as an open question.
+The alternative, reading the title marker, was rejected (settled question 2).
 
 ### Which review counts, and when
 
@@ -170,7 +170,7 @@ A resumed item is decided at the universal stage, as a catch-up is. The model st
 run, because the approval is the decision about the item, and re-triaging an item a person just
 approved could veto them. The stop gate and the deferral gate still run.
 
-Whether lane predicates run is an open question.
+Lane predicates run (settled question 9).
 
 ### Gate one ends with a release, not a completion
 
@@ -178,7 +178,7 @@ The configured completion action is for "on believing work complete". At gate on
 not complete. Taking `completion: close` at gate one closes the issue with nothing built, which
 is the failure Adam's closing-keyword decision exists to prevent, reached another way. So gate
 one releases the claim, as standing down does, and the completion action waits for gate two.
-This is listed as an open question because it narrows how an existing setting behaves.
+This was put to Adam because it narrows how an existing setting behaves (settled question 10).
 
 ### No closing keyword from any source until gate two
 
@@ -223,10 +223,11 @@ It is noted: gate two's body says the item was edited after the approval, and li
 The reviewer then knows to check the spec against the new text. "Edited" means the item's own
 edit time (`lastEditedAt`) is later than the approval. A comment is not an edit.
 
-## Open questions for Adam
+## Settled questions (Adam, 2026-09-28)
 
-Each has a recommendation. None is settled in the spec silently: where a requirement depends on
-one, the requirement is written to the recommendation and the question says which one.
+Adam accepted every recommendation below on 2026-09-28. The requirements were already written to
+them, so none changed. Question 3 still waits on the measurement in task 1.1, which decides
+between its two branches.
 
 1. **The gate-one title marker.** An Igor can't know a repository's `TYPE(Scope):` convention,
    and its title is the issue title today. *Recommend:* gate one titles the pull request
@@ -325,10 +326,11 @@ one, the requirement is written to the recommendation and the question says whic
 ## Risks
 
 - **An Igor posting as its operator can't be approved by that operator.** GitHub refuses a
-  review from a pull request's author. Until the Igor has its own account
-  (`docs/machine-accounts.md`), gate two starts only if somebody else with authority approves.
-  This is documented and not guarded against. A refusal at validation would need the loop to
-  know who else could review.
+  review from a pull request's author. **Decided (Adam, 2026-09-28): an approving review stays
+  the only go signal, and a two-gate Igor needs its own account**, as `docs/machine-accounts.md`
+  already requires. There's no fallback signal from the author. `igor doctor` (#113) warns when a
+  `two-gate` role's Igor posts as a person who is also the only one with authority, since its
+  gate two could then never start (task 2.5).
 - **Review data widens the discovery request.** `latestOpinionatedReviews` and `headRefOid` on
   every cross-referenced pull request add to the GraphQL cost of each page. Measure before and
   after on a real query (task 3.4).
@@ -341,7 +343,10 @@ one, the requirement is written to the recommendation and the question says whic
   any open pull request's body creates the `CROSS_REFERENCED_EVENT` that `inFlightFrom` reads,
   and `inFlightFrom` returns the first open pull request it finds. So an issue that an unrelated
   open pull request merely discusses is skipped as work in flight. Observed on 2026-09-28: issue
-  #139 reads as in flight because open PR #140 mentions it. Gate one relies on that same event,
+  #139 reads as in flight because open PR #140 mentions it. Filed as #151. Fixing it by counting only real links
+  (`willCloseTarget`, or a Development link) would make gate one's `Answers #n` PR invisible, so
+  gate one then needs a link that marks the work without closing the issue. That has to be
+  settled here or on #151 before this change's implementation lands. Gate one relies on that same event,
   so this change neither fixes nor worsens it. It does mean a spec pull request that discusses
   another issue makes that issue skip. This may deserve its own issue.
 
