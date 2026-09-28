@@ -191,7 +191,8 @@ repository.
 
    Then `seat: me` on the role. Once any seat is declared every role must name one, and a role
    that does not fails at load rather than defaulting to a seat nobody chose for it. `reserve:
-   0.5` keeps half your window for you. [Budgets](#budgets) covers pools and shares.
+   0.5` holds half your window back for you, and [Budgets](#budgets) says how that is changing
+   to half of whatever is left of it. It also covers pools and shares.
 
    A seat names *where* its token is, never the token itself, which is why the config stays
    safe to commit. `token_command` runs something and takes its stdout, `token_env` names a
@@ -408,8 +409,10 @@ pool engineering: fleet-1 has 83% of the session left
 - **used** — how much of that window is gone. A seat whose token `/usage` answers with windows
   is read live, in percent; a seat whose token it does not is measured in dollars of Igor spend
   instead.
-- **reserve** — the share of a seat Igors will not touch, so you never sit down to find your
-  capacity spent. Dedicated seats reserve nothing.
+- **reserve** — what Igors leave for the seat's owner, so you never sit down to find your
+  capacity spent. As shipped, a fixed share of the window. As specified, the share of the window
+  still to come ([below](#the-reserve-as-a-line-that-moves-toward-the-reset)). Dedicated seats
+  reserve nothing by default.
 - **headroom** — what is left after the reserve. A seat is usable only when **both** windows
   have some: the session limit bites first, the weekly one bites longest.
 - **wk:** rows — per-model weekly limits. Igor does not enforce these, and shows them so that a
@@ -425,6 +428,46 @@ pool engineering: fleet-1 has 83% of the session left
   the observation it came from and when that observation was taken, because headroom derived
   from a limit error an hour ago and headroom derived from a month-old reading are not the same
   claim.
+
+The example output is what ships today. Once the line below is built, its rows show each
+window's reading against its line instead of dollars against a bound.
+
+### The reserve as a line that moves toward the reset
+
+Decided and specified in [#143](https://github.com/adamstallard/igor/pull/143)
+([`read-seat-windows-from-the-stream`](openspec/changes/read-seat-windows-from-the-stream/design.md));
+the shipped gate still uses the dollar bound above until it is built.
+
+**At any moment, an Igor leaves `reserve` × the part of the window still to come.** It starts new
+work on a seat only while the provider's reading of that seat, everything its owner uses included,
+is below `1 − reserve × remaining`, in both windows. At `0.5` that leaves half the window just after
+a reset, a quarter halfway through, and nothing at the reset itself, when anything unused is lost
+anyway:
+
+| reserve | just after a reset | a day into a week | halfway | 10% left | at the reset |
+|---|---|---|---|---|---|
+| 0 | 100% | 100% | 100% | 100% | 100% |
+| 0.3 | 70% | 74% | 85% | 97% | 100% |
+| 0.5 | 50% | 57% | 75% | 95% | 100% |
+| 1 | 0% | 14% | 50% | 90% | 100% |
+
+It needs no figure for what the owner has used and no figure in dollars for the window. An owner
+who uses less leaves the Igor more, and one who uses more leaves it less. It assumes the owner's use
+is spread across the window, since the reserve is a share of the time still to come; an owner who
+finds the Igor takes too much, or who uses the seat late in the window, raises the reserve. An item
+already running finishes, so an Igor can pass the line by about one run before the next reading
+stops it. A seat with a reserve that nothing has read is not drawn on until the server reads it.
+
+**On a dedicated seat a reserve is pacing.** It holds capacity back for work that arrives later in
+the window, and at `1` it spends the window evenly. Dedicated seats default to `0`, which fills the
+whole window, because spending early is not waste when the work is there.
+
+**A role may hold back more than its seat, never less.** A role's own `reserve` applies to every
+seat it draws on, and the larger of the seat's and the role's governs. With `frontend` at `0.3` and
+`generalist` at none on one pool, `frontend` stops at its line and `generalist` takes what is left
+above it. That is a priority, not a guaranteed share: a `generalist` that always has work can crowd
+`frontend` out for most of a window, and the remedies are pools, since a role draws only on its
+own, and more seats.
 
 ### Configuring seats
 
@@ -459,6 +502,8 @@ seats are spent.
 A role's `budget_share` is a **ceiling**, not a reservation: several roles may declare the same
 one, an idle role holds nothing back, and adding an Igor requires editing no other role. Each
 seat's reserve is enforced separately, so no ceiling however generous reaches a person's floor.
+A role's own `reserve`, once built, is the other way to rank roles on a shared seat, as the line
+[above](#the-reserve-as-a-line-that-moves-toward-the-reset) describes.
 
 ## What it costs, and what the numbers actually were
 
