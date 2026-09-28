@@ -158,16 +158,22 @@ how far off the reset is. Two rows for one refusal would be two measurements of 
 The absence of a `rate_limit_event`, or an event that cannot be read, SHALL record no observation
 from the stream, SHALL leave the run's recording exactly as it would otherwise have been, and
 SHALL NOT fail the run. Its one effect on a budget decision is the one *A seat with no reading is
-drawn on only where its line is the whole window* states: once a seat with a non-zero reserve has
-no unreset reading of a window, it is not drawn on until something reads it again.
+drawn on only where its line is the whole window* states. A seat whose effective reserve for a
+role — the larger of the seat's reserve and the role's — is above 0, and that has no unreset
+reading of a window, is not drawn on for that role until something reads it again. A seat whose
+effective reserve is 0 has a line of 100% whatever the reading says, so it is admitted with no
+reading and runs until the provider refuses it.
 
-The event is undocumented, and the gate now rests on it. A seat with a reserve is drawn on only
-while a reading shows it below its line, and for a seat whose credential is a `setup-token` one
-the stream is the only source of a reading, a refusal aside. So if the provider drops or changes
-the event, every reserved seat read only that way goes idle once its last reading resets, and
-stays idle until readings return. That is the fail-closed direction: nobody's reserve is spent on
-a guess. A seat at reserve 0 keeps running, stopped by the provider's refusal, as it does without
-this change.
+The event is undocumented, and the gate rests on it for reserved seats. For a seat whose
+credential is a `setup-token` one the stream is the only source of a reading other than a refusal,
+and a refusal only ever shuts a window. So if the provider drops or changes the event:
+
+- **What fails closed:** every seat whose effective reserve is above 0 goes idle for that role once
+  its last reading resets, and stays idle until readings return. Nobody's reserve is spent on a
+  guess.
+- **What keeps running:** every seat whose effective reserve is 0, stopped by the provider's
+  refusal as it is without this change. A refusal is still recorded from the envelope, and still
+  shuts its window until its reset.
 
 #### Scenario: No event, no observation
 
@@ -190,9 +196,17 @@ this change.
 
 #### Scenario: A seat at reserve 0 runs on without events
 
-- **WHEN** a seat declares reserve 0 and its runs carry no events
+- **WHEN** a seat declares reserve 0, the role drawing on it declares none, and its runs carry no
+  events
 - **THEN** work may still be charged to it
 - **AND** it stops when the provider refuses it
+
+#### Scenario: A role's reserve needs a reading even on a reserve-0 seat
+
+- **WHEN** a seat declares reserve 0, a role drawing on it declares 0.3, and the seat has no unreset
+  reading of a window
+- **THEN** that role's Igor does not draw on the seat until something reads it
+- **AND** a role declaring no reserve still may
 
 ### Requirement: A seat nothing has read is probed on the Igor server with its own token
 
@@ -229,6 +243,15 @@ until that window resets, since a probe there would spend its owner's money. Nor
 made on a seat whose most recent unreset reading of any window is at or past that window's line
 (*The reserve is untouchable*), since a probe's consumption is Igor's and the reading says the
 seat has none to give it.
+
+**A probe checks the credential too.** A probe the provider answers with an authentication failure
+(HTTP 401) SHALL open the seat's credential stop, `seat:<id>:credential`, in whichever record owns
+that stop: the breaker #65 proposes, or the condition record #101 specifies, whichever lands first.
+A probe that succeeds SHALL count as the check that clears that stop. A seat whose credential stop
+is open SHALL be probed only as that clearing check, whatever its readings, and never more than
+once an hour. Every other exclusion above still applies to it: a seat refused, spending extra
+usage, or at its line could not be used if its credential were cleared, so it keeps its stop until
+it could.
 
 #### Scenario: A reserved seat with no reading is probed
 
@@ -279,6 +302,23 @@ seat has none to give it.
 - **WHEN** a seat's session reading has expired, and its most recent unreset week reading is at or
   past the week's line
 - **THEN** it is not probed while that remains so
+
+#### Scenario: A probe refused its credential opens the stop
+
+- **WHEN** a seat probe is answered with an authentication failure
+- **THEN** the seat's credential stop `seat:<id>:credential` is opened
+- **AND** no observation is recorded
+
+#### Scenario: A probe that succeeds clears the stop
+
+- **WHEN** a seat's credential stop is open and a probe of it succeeds
+- **THEN** the stop is cleared
+- **AND** any reading the probe carried is recorded as usual
+
+#### Scenario: A stopped credential is checked at most hourly
+
+- **WHEN** a seat's credential stop is open and it was probed less than an hour ago
+- **THEN** it is not probed again
 
 #### Scenario: A seat with no token source is not probed
 
@@ -988,7 +1028,13 @@ window is below the seat's line for that window:
 
 where `resetsAt` is the reset that reading reports and the window length is the one in use for
 that window (*A window's length is measured, and so is whether it starts at first use*). Both
-windows SHALL be below their lines. The line is one rule for every seat and every role, whatever
+windows SHALL be below their lines.
+
+The reading is the latest unreset observation of the window, all models, whatever its source: a
+`stream` reading, a refusal, or a `usage` row already in the log, and on a seat `/usage` reads
+live, that live reading. A refusal counts as a reading for this: an observation at 100% of the
+window it names until its reset, whether it was recorded from a refused worker run's envelope or
+from a refused triage call. It is the one input to this gate that does not depend on the stream. The line is one rule for every seat and every role, whatever
 their reserves; *A role may hold back more of a seat than the seat does* says what a role's
 reserve is for.
 
@@ -1018,9 +1064,9 @@ needed a capacity in dollars for every window before a reserved seat could be us
 held the whole reserve back until the reset, where what nobody used was lost.
 
 A reading whose reset cannot be resolved places nothing, so its `remaining` SHALL be taken as 1
-and its line as `1 − r`, the most the line ever holds back. A refusal is a reading at 100%,
-which is at or past every line, so a refused window is shut until its reset under this rule, as
-*A seat at 100% is spent until its window resets* already says.
+and its line as `1 − r`, the most the line ever holds back. A refusal, at 100%, is at or past
+every line, so a refused window is shut until its reset under this rule, as *A seat at 100% is
+spent until its window resets* already says.
 
 An item already running when a reading reaches the line SHALL be allowed to finish: the line
 decides only whether work starts. Between readings an Igor does not see its own spend. The
@@ -1107,6 +1153,13 @@ one line without adding up each other's books.
 
 - **WHEN** a seat has a capacity figure in dollars, observed or declared
 - **THEN** whether work may start on it is the same as it would be without one
+
+#### Scenario: A refusal is the reading until its reset
+
+- **WHEN** a seat's newest observation of its session is a refusal recorded from a run's envelope,
+  and its reset has not passed
+- **THEN** the session's reading is 100%, and no work starts on the seat
+- **AND** once the reset passes, that row no longer bears on the session
 
 #### Scenario: An unresolved reset holds the whole reserve
 

@@ -347,8 +347,11 @@ and *Still open*.
 
 **Which readings count.** The newest observation of the window, all-models, whose reset has not
 passed, whatever its source: a `stream` reading, an existing `usage` row, or a `limit` refusal.
-Fullness does not fall within an instance, so the newest unreset one is also the fullest. A
-refusal is a reading at 100%, past every line. The live `/usage` read of a seat whose credential
+Fullness does not fall within an instance, so the newest unreset one is also the fullest. **A
+refusal counts as a reading** (Adam, 2026-09-28): an observation at 100% of its window until its
+reset, past every line. That covers the row a refused worker run already records from its envelope
+(#39) and the row #75 records for a refused triage call. It is the one gate input that does not
+depend on the stream. The live `/usage` read of a seat whose credential
 answers with windows is a reading too. Today that path enforces a fixed line,
 `100 − reserve − used` (`seatStatus` and `hasHeadroom`, `src/budget.ts`), which becomes the moving
 line with the live reading's reset. `remaining` uses the reset of the reading being checked and
@@ -556,6 +559,14 @@ probed later in the window without anything else changing. This replaces the ear
 seat at its dollar bound, and settles the earlier question about probing an uncalibrated seat past
 `1 − reserve`: the moving line applies, not a fixed one.
 
+**A probe checks the credential too (decided 2026-09-28).** A probe answered with an
+authentication failure (401) opens the seat's credential stop, `seat:<id>:credential`, in whichever
+record owns it: #65's breaker or #101's condition record, whichever lands first. A probe that
+succeeds is the check that clears it. Against the exclusions: a seat whose credential stop is open
+is probed only as that clearing check, whatever its readings, and within the hourly limit. The
+refusal, overage and line exclusions still hold it off, because a seat any of them excludes could
+not be used even with its credential cleared, so the stop costs nothing while they last.
+
 **Never on a seat with no token source.** Such a seat runs on the ambient login. A probe of it would
 read that login, which is not the seat.
 
@@ -656,8 +667,9 @@ needs no `REMOVED` delta.
   arrives near its end, and up to two if near the start. Task 1.1 records when events arrive in a
   run. Recommended: accept it as measured. If last events come early, read the event at the end of a
   run, or add the previous run's recorded spend to the reading as a correction.
-- **A reserve on the event.** The gate now rests on an undocumented event, and fails closed if it
-  goes. Recommended: accept it, and have `igor budget` say plainly when a reserved seat is idle for
+- **The gate rests on the event, for reserved seats.** It rests on an undocumented event. If the
+  event goes, seats with an effective reserve above 0 fail closed, and seats at 0 keep running until
+  refused. Recommended: accept it, and have `igor budget` say plainly when a reserved seat is idle for
   want of a reading.
 - **Coordination across Igors** (settled for now, 2026-09-28). The line and the overshoot are per
   Igor. A coordination marker is taken up only once a reserved seat is actually shared by several

@@ -68,7 +68,7 @@
 - [ ] 4.3 Reporting presents an unexpired reading as a lower bound with its time, and a reading past
       its reset as not bearing on the present. Tests for both
 - [ ] 4.4 Hand the gate, per seat and window, the newest unreset all-models observation of any
-      source (a new field on `SeatBound`, `src/capacity.ts:419-442`, or a sibling of it), with its
+      source, a refusal row (#39, and #75's triage refusal) counting as 100% until its reset (a new field on `SeatBound`, `src/capacity.ts:419-442`, or a sibling of it), with its
       `resetsAt`. That is the gate's only input for the line; the capacity half stays for the
       report. Test that a seat whose runs carry no events keeps its older unreset readings until
       they reset, and has none after
@@ -145,6 +145,12 @@
 - [ ] 6.6 The two limits are settled (Adam, 2026-09-27): at most one probe per seat per hour, and
       five hours before re-probing after a probe that got no event. Build them as constants, not
       configuration
+- [ ] 6.7 A probe answered with an authentication failure (401) opens `seat:<id>:credential` in
+      whichever record owns the credential stop when this is built: #65's breaker or #101's
+      condition record. A probe that succeeds clears it. A seat whose stop is open is selected by
+      6.1 as a clearing check whatever its readings, still under the hourly limit and the refusal,
+      overage and line exclusions. Tests: a 401 opens the stop and records nothing; a success
+      clears it and records its reading; a stopped seat is not re-probed within the hour
 
 ## 7. The line, in `src/budget.ts`'s gate (replaces the dollar bound and calibration admission)
 
