@@ -48,9 +48,11 @@
 - [ ] 4.1 `capacityFor`, `resetAnchor` and `spentFor` read stream rows through their existing
       newest-wins paths; add no selection rule. Test that a stream row newer than a `/usage` row
       supersedes it, and that the run's own spend is excluded from the numerator by `at`
-- [ ] 4.2 A row with `isUsingOverage: true` is treated by `spentFor` like a row at 100%: no headroom
-      in its window until its reset, with its own reason. Tests: passed over while unexpired,
-      usable after the reset with nothing run
+- [ ] 4.2 A row with `isUsingOverage: true` for the window its event's `rateLimitType` named is
+      treated by `spentFor` like a row at 100%: no headroom in that window until its reset, with
+      its own reason. The same flag on the event's other row shuts nothing. Tests: passed over
+      while unexpired, usable after the reset with nothing run, a session overage leaves the week
+      bounded as before
 - [ ] 4.3 Reporting presents an unexpired reading as a lower bound with its time, and a reading past
       its reset as not bearing on the present. Tests for both
 - [ ] 4.4 Nothing in the gate waits for or requires a stream row. Test that a seat whose runs carry
@@ -95,7 +97,9 @@
 ## 6. Docs, once built
 
 - [ ] 6.1 `README.md` Budgets, `docs/seats.md` "What the floor rests on" and `docs/deployment.md`
-      step 4: describe the stream reading as shipped, and what a lender no longer has to install
+      step 4: describe the stream reading as shipped, and what a lender no longer has to install.
+      Replace the links from `README.md` and `docs/seats.md` into
+      `openspec/changes/read-seat-windows-from-the-stream/`, which archiving moves
 - [ ] 6.2 `docs/architecture.md` §6.3.1 and §6.3.3: move from "what this changes" to what was built
 
 ## 7. Left open, recorded so they are not lost

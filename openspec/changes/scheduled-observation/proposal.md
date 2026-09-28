@@ -10,7 +10,8 @@
 > ([`docs/architecture.md` §6.3.3](../../../docs/architecture.md#633-a-seat-token-is-measured-from-the-workers-own-stream)),
 > and that reading is seat-wide, so it includes the owner's use — it is the whole-window reading
 > this change sends a laptop to take. The claim is true of `/usage` and false of the stream.
-> `read-seat-windows-from-the-stream` specifies reading it; it is not built.
+> `read-seat-windows-from-the-stream` specifies reading it; Igor discards the event unless that
+> change has been built.
 >
 > **Still stands.** `igor observe` is shipped (tasks 1.x) and still works under an interactive
 > login. A stream reading arrives only when a worker runs, so a reserved seat with no capacity

@@ -15,9 +15,13 @@ else available to that credential reports them: `/usage` returns a cost summary 
 endpoint refuses it. Discarding the event discards the only reading of the seat that needs no
 person signed in anywhere.
 
-A stream reading SHALL be recorded in the observation shape already in force, as a usage reading
-where the event reports the seat allowed and as a limit error where it reports the run rejected,
-and SHALL be distinguishable in the record and in reporting from a reading taken through `/usage`.
+A stream reading SHALL be recorded in the observation shape already in force, and SHALL be
+distinguishable in the record and in reporting from a reading taken through `/usage`. It SHALL be
+recorded as a usage reading where the event's status is `allowed` or `allowed_warning`, and as a
+limit error where the status is `rejected` and the run ended in error. A `rejected` event on a run
+the provider reports as successful SHALL be recorded as a usage reading at the figures it gives,
+not as a limit error: a limit the run met, retried past and finished around is not the reason it
+stopped.
 A window the event names that is neither the session nor the weekly window SHALL NOT be recorded
 as either.
 
@@ -42,6 +46,11 @@ event is the freshest and the earlier ones add nothing to it.
 
 - **WHEN** the event reports `isUsingOverage`
 - **THEN** every observation recorded from that event carries it
+
+#### Scenario: A rejection the run finished around is not a refusal
+
+- **WHEN** a run's last event has status `rejected` and the run's terminal envelope reports success
+- **THEN** its observations are recorded as usage readings, not as limit errors
 
 #### Scenario: Several events, one reading
 
@@ -101,8 +110,10 @@ that it says nothing about the present while remaining calibration.
 ### Requirement: A seat spending extra usage has no headroom
 
 A seat whose newest unexpired reading reports extra usage being spent SHALL be treated as having
-no headroom in the window that reading names until that window resets, independently of any
-capacity estimate.
+no headroom in the window the event was about — the one its `rateLimitType` names — until that
+window resets, independently of any capacity estimate. The seat's other window SHALL NOT be shut
+on that ground: a session past its cap says nothing about the week, and shutting the week for it
+would hold the seat out for days.
 
 Extra usage is spending past the subscription's cap, billed beyond it. A seat is lent as a
 subscription; no reserve anybody declared contemplates spending its owner's money beyond it.
@@ -110,8 +121,15 @@ subscription; no reserve anybody declared contemplates spending its owner's mone
 #### Scenario: Overage stops the seat
 
 - **WHEN** a seat's newest unexpired reading reports `isUsingOverage` true
-- **THEN** that seat is passed over for the window the reading names, with that as the reason
+- **THEN** that seat is passed over for the window the event's `rateLimitType` names, with that as
+  the reason
 - **AND** it is usable again once that window resets, without intervention
+
+#### Scenario: Overage in one window does not shut the other
+
+- **WHEN** a reading reports `isUsingOverage` true with `rateLimitType` `five_hour`
+- **THEN** the session window has no headroom until its reset
+- **AND** the week window is bounded as it would otherwise be
 
 ### Requirement: A refusal the stream reports is not recorded twice
 

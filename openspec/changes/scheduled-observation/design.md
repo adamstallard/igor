@@ -12,7 +12,8 @@ and whether extra usage is being spent. `/usage` under the same credential retur
 summary, and `GET /api/oauth/usage` refuses it for want of `user:profile`; the stream is not
 gated that way. Full detail, and the capture, in
 [`docs/architecture.md` §6.3.3](../../../docs/architecture.md#633-a-seat-token-is-measured-from-the-workers-own-stream).
-Reading it is specified in `read-seat-windows-from-the-stream` and not built.
+Reading it is specified in `read-seat-windows-from-the-stream`; Igor discards the event unless
+that change has been built.
 
 **What that overtakes here.**
 

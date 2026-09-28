@@ -40,8 +40,8 @@ shared seat need no longer depend on a job on its lender's laptop.
   stream carried.
 - **A reading bounds the window from below until that window resets**, and says nothing about
   the instance after.
-- **A seat reported spending extra usage is not spent from** until the window the event names
-  resets.
+- **A seat reported spending extra usage is not spent from** in the window the event is about,
+  until that window resets.
 - **A refusal is recorded once.** A run whose stream carries a `rejected` event and whose
   envelope also trips `usageLimit` records one observation, not two.
 
@@ -73,7 +73,8 @@ Explicitly out of scope:
   `result`, and `recordExecution` writes it through `recordObservation`.
 - `src/capacity.ts`: the observation shape gains optional fields; `capacityFor`, `spentFor` and
   the gate read the new rows through the paths they already have.
-- `capacity.ndjson` grows by up to two rows per worker run. It is still read whole.
+- `capacity.ndjson` grows by up to two rows per worker run, at the execution log's rate rather
+  than a refusal's. It is still read whole; whether it should stay so is open in `design.md`.
 - `igor budget` can name a figure's route and show the provider's warning and overage state.
 - Every caveat in §6.3.3 carries over: whether a seat below every threshold reports numbers is
   unverified, and the `rejected` shape is contributor-reported, not captured (#57, #15).

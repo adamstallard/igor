@@ -13,9 +13,10 @@ lender's laptop, because a `setup-token` credential was believed to report no wi
 windows' utilization and reset, read with the seat's own credential and nobody signed in
 ([`docs/architecture.md` §6.3.3](../../../docs/architecture.md#633-a-seat-token-is-measured-from-the-workers-own-stream)).
 The reading is of the whole seat, so it includes the owner's use. `read-seat-windows-from-the-stream`
-specifies recording it; it is not built. Once it is, `percentUsed` is available after every worker
-run on the seat, without a lender installing anything. The observation-informed state of the
-reserve decay no longer depends on `scheduled-observation`.
+specifies recording it, and Igor discards it unless that change has been built. Once it has,
+`percentUsed` is available after every worker run on the seat, without a lender installing
+anything, and the observation-informed state of the reserve decay no longer depends on
+`scheduled-observation`.
 
 It also offers two inputs this change did not have:
 

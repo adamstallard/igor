@@ -403,8 +403,9 @@ adam             week             —      50%         —  2026-09-25T22:59:00.
 pool engineering: fleet-1 has 83% of the session left
 ```
 
-- **used** — how much of that window is gone. A seat the provider reports windows for is read
-  live, in percent; a seat it does not is measured in dollars of Igor spend instead.
+- **used** — how much of that window is gone. A seat whose token `/usage` answers with windows
+  is read live, in percent; a seat whose token it does not is measured in dollars of Igor spend
+  instead.
 - **reserve** — the share of a seat Igors will not touch, so you never sit down to find your
   capacity spent. Dedicated seats reserve nothing.
 - **headroom** — what is left after the reserve. A seat is usable only when **both** windows

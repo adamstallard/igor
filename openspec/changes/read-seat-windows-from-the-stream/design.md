@@ -164,8 +164,11 @@ Two uses are left open and assigned:
 `isUsingOverage: true` says the subscription's window is past its cap and further use is being
 billed as extra usage — money, beyond what the seat was lent for. No reserve anybody declared
 contemplates that, and a seat's owner who lent a subscription did not lend a card. So an unexpired
-reading with `isUsingOverage: true` is treated like an unexpired observation at 100%: no
-headroom in that window until its reset, independently of any capacity estimate.
+reading with `isUsingOverage: true` is treated like an unexpired observation at 100% of the window
+the event was about — the one `rateLimitType` names — with no headroom there until its reset,
+independently of any capacity estimate. The flag is recorded on every row from the event, because
+it is a fact about the seat at that moment, but it shuts only that window: overage met in a session
+says nothing about the week, and shutting the week for it could hold a seat out for days.
 
 **Flagged for the reviewer:** whether a seat should be able to opt in — an owner who wants the
 fleet to spend extra usage. Nothing here adds a key for it; `strict-config-keys` would refuse one
@@ -234,6 +237,10 @@ requirements only, as briefed.
   the same gap from the other side.
 - **The `rejected` shape** (#57). The single-row rule above is written against the
   contributor-reported shape and must be checked against the first captured refusal.
+- **The observation log's size.** *Observations are appended to their own log and never
+  rewritten* justifies a separate log partly because it stays "small enough to read whole". Up to
+  two rows per worker run grows it at the execution log's rate. Still small at today's volumes;
+  whether it should stay read whole is worth deciding before a fleet runs many seats.
 - **Whether a seat-wide reading past `1 − reserve` should stop Igor.** It would turn the reserve
   from a cap on Igor into a floor under the owner. That is a change to what a reserve means and
   belongs with `budget-pacing`'s adaptive reserve, not here.
