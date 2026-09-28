@@ -1334,7 +1334,8 @@ remaining = (resetsAt − now) ÷ window length
 ```
 
 which is the same line as `(1 − reserve) + reserve × elapsed`. The session and the week each have
-one, and a seat is admitted only while it is below both.
+one, and a seat is admitted only while it is below both. Where the role drawing on the seat declares
+a higher reserve of its own, that one is used (below).
 
 | reserve | just after a reset | halfway | 10% left | at the reset |
 |---|---|---|---|---|
@@ -1361,6 +1362,21 @@ do* survives, as waiting on the line. A reserve on a dedicated seat now means pa
 dedicated seat defaults to reserve 0. The config check that refuses a reserve on a dedicated seat
 (`parseOrgBudget`) goes in #143's second gate. That check also refuses a reserve of exactly 1,
 which the table above uses.
+
+**A role may set a reserve too, and that is how roles get priority.** A role file may declare its
+own `reserve`, which applies to every seat the role draws on. The line for that role on that seat
+uses `r = max(seat reserve, role reserve)`:
+
+```
+line = 1 − r × remaining
+```
+
+On a shared seat, that orders roles with no coordination between them. If frontend declares 0.3
+and generalist 0 on the same seat, frontend stops at 70% just after a reset while generalist runs
+to 100%, so generalist tends to use more of the seat. This is priority, not a guaranteed share: a
+lower-reserve role can still take capacity a higher one was waiting for. That is accepted, with no
+new mechanism. The remedies are pools, since a role draws only on its own pool, and adding seats.
+Also decided 2026-09-28, specified on #143, and not built.
 
 **What it replaces.**
 
@@ -1478,7 +1494,8 @@ The failure mode of ceilings is that a busy role can crowd out a quiet one. That
 `igor budget`, self-corrects when the busy role finishes, and never reaches the humans, because
 each seat's own `reserve` is checked first and independently.
 
-**Enforcement order**, most protective first: the seat's reserve, then the role's ceiling
+**Enforcement order**, most protective first: the seat's reserve (the reserve line, taken with
+the role's own reserve where that is higher, once §6.3.4 is built), then the role's ceiling
 against its trailing spend, then the next seat in the pool. Exhausting every seat in a pool is
 a graceful handoff (§5.5), never a hard stop.
 
