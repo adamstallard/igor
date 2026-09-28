@@ -8,6 +8,32 @@ both backend and frontend. What an Igor is *not* is a person: nothing durable li
 one. Run five processes of Milton, kill four mid-week, and nothing is lost. The roles are
 versioned in git and the knowledge belongs to the team.
 
+## Our agents, not my agent
+
+Most coding agents are somebody's assistant: one person's terminal, one person's login, and the
+reasoning behind each change kept in that person's session files, where nobody else can read it
+and the next session has to be told again. Igor moves all of that into the open.
+
+- **The thinking lives where the team works.** An Igor takes its brief from the issue, and
+  its claims, questions, handoffs and pull requests go back to the same tracker, where
+  everyone can see them. A decision a person records there is what the next Igor picks up: on
+  the next cycle, on another machine, holding another role. Nothing an Igor needs is in a
+  session file, and nothing it learned is stuck in one. What the team learns across many items
+  becomes [lore](#lore), which every Igor reads.
+- **The agents belong to the team.** An Igor serves roles, not a person. Anyone can give it
+  work by filing an issue in a role's lane, see who has what from the claim, and correct it in
+  review. A correction worth keeping becomes lore, and every Igor holding that role improves at
+  once. Asking a role something by mentioning it is planned
+  ([`directed-interaction`](openspec/changes/directed-interaction/)).
+- **Joining adds capacity.** Someone who joins the team or the project can add Igors, which
+  means a role file in the lore repository, reviewed like any other change. They can also lend
+  a Claude seat to the pool, with a `reserve` saying how much of it to keep for themselves
+  ([`docs/seats.md`](docs/seats.md)). Work is spread across whatever seats have been
+  contributed.
+
+The shift in practice: you stop steering your own agent through a session and start writing
+things down where the team's agents, and the team, will find them.
+
 ## Vocabulary
 
 - **Igor** — a named teammate, identified by its own account on the surfaces it works, so a
