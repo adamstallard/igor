@@ -436,7 +436,8 @@ window's reading against its line instead of dollars against a bound.
 
 Decided and specified in [#143](https://github.com/adamstallard/igor/pull/143)
 ([`read-seat-windows-from-the-stream`](openspec/changes/read-seat-windows-from-the-stream/design.md));
-the shipped gate still uses the dollar bound above until it is built.
+the shipped gate still uses the dollar bound in the example output above, `(1 − reserve)` of what
+the window is worth in dollars, until it is built.
 
 **At any moment, an Igor leaves `reserve` × the part of the window still to come.** It starts new
 work on a seat only while the provider's reading of that seat, everything its owner uses included,
