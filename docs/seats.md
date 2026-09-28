@@ -58,10 +58,14 @@ coding budget; it comes out of everything you do with Claude.
 sums it, and stops at `(1 − reserve)` of the window. Nothing in that depends on knowing what you
 have spent, so the number holds whatever else you do with Claude that day.
 
-What it does depend on is knowing **how many dollars your window is worth**, and that cannot be
-read through the credential you are handing over: a `setup-token` login resolves no subscription,
-so the provider tells it nothing about your limits. The figure has to come from a reading taken
-on your own machine, where you are signed in normally.
+What it does depend on is knowing **how many dollars your window is worth**, and that takes a
+reading of how full your window is. The provider does report that to the credential you are
+handing over — in the output of every run an Igor makes with it, covering everything you use
+Claude for as well — but Igor does not read it there unless
+[`read-seat-windows-from-the-stream`](../openspec/changes/read-seat-windows-from-the-stream/proposal.md)
+has been built, and the `/usage` command Igor does read answers that credential with no window at
+all. Until then the figure has to come from a reading taken on your own machine, where you are
+signed in normally.
 
 Until one has been taken, an Igor has a fraction and no quantity, and a fraction of an unknown
 is not a floor. So:
@@ -80,9 +84,9 @@ reading taken, then add your reserve. Or declare a `capacity_estimate` in the co
 knows roughly what the window is worth — it is reported as an assumption until a reading
 replaces it.
 
-Taking that reading on a schedule is still being built
-([igor#30](https://github.com/adamstallard/igor/issues/30)), so today it is a thing somebody
-does by hand. Lend a seat knowing that, and ask what the fleet actually spent rather than
+Nothing takes that reading on a schedule unless
+[`scheduled-observation`](../openspec/changes/scheduled-observation/proposal.md) has been built,
+so it is a thing somebody does by hand. Lend a seat knowing that, and ask what the fleet actually spent rather than
 assuming a number in a file did the work.
 
 ## Handing it over

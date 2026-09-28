@@ -218,8 +218,8 @@ repository.
 
    **Do not set `CLAUDE_CODE_OAUTH_TOKEN` yourself.** That is the variable `claude` reads, so
    it authenticates everything igor spawns rather than the one seat you meant — including
-   `igor observe`, which has to use your own login precisely because a seat token cannot report
-   a window. Name the token in the config and let igor decide what sees it.
+   `igor observe`, which reads `/usage`, and `/usage` reports windows only to an interactive
+   login. Name the token in the config and let igor decide what sees it.
 
    A token placed in a service's environment stays there for the unit's whole lifetime, so
    `igor serve` under launchd or systemd wants more than a laptop does: an `EnvironmentFile=`
@@ -381,12 +381,14 @@ fixtures in — is what would make that refusal worth building.
 
 ## Budgets
 
-An Igor spends a Claude subscription seat. Where that seat's own token yields a reading it is
-asked how much is left, whenever the answer matters. Where it does not — a `claude setup-token`
-credential resolves no subscription, so the provider reports no windows against it — the seat is
-bounded instead by observations recorded of it and spend recorded against it. Either way there
-is nothing to submit, nothing to keep up to date, and no way to read one seat and charge
-another.
+An Igor spends a Claude subscription seat. Where that seat's own token yields a `/usage` reading
+it is asked how much is left, whenever the answer matters. Where it does not — `/usage` reports no
+windows to a `claude setup-token` credential — the seat is bounded instead by observations
+recorded of it and spend recorded against it. The provider does report such a seat's windows in
+the output stream of every worker run spent with it; Igor discards that report while
+[`read-seat-windows-from-the-stream`](openspec/changes/read-seat-windows-from-the-stream/proposal.md)
+is unbuilt. Either way there is nothing to submit, nothing to keep up to date, and no way to read
+one seat and charge another.
 
 ```
 $ igor budget

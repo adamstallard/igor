@@ -1,3 +1,27 @@
+> **Status — premise overtaken, 2026-09-27. Decision needed: withdraw, cut down, or keep a
+> remnant.** Nothing below has been rewritten; the finding is in
+> [`design.md` § Finding: the seat's own credential can read its windows](design.md#finding-the-seats-own-credential-can-read-its-windows).
+>
+> **Overtaken.** This change rests on two claims: that a `setup-token` credential resolves no
+> windows, so the lender's laptop has to be the sensor; and that a shared seat cannot learn its
+> capacity from its own refusal, so it needs a reading taken where the whole window is visible.
+> A worker run's own output stream carries a `rate_limit_event` reporting both windows, read with
+> the seat's own credential and nobody signed in
+> ([`docs/architecture.md` §6.3.3](../../../docs/architecture.md#633-a-seat-token-is-measured-from-the-workers-own-stream)),
+> and that reading is seat-wide, so it includes the owner's use — it is the whole-window reading
+> this change sends a laptop to take. The claim is true of `/usage` and false of the stream.
+> `read-seat-windows-from-the-stream` specifies reading it; it is not built.
+>
+> **Still stands.** `igor observe` is shipped (tasks 1.x) and still works under an interactive
+> login. A stream reading arrives only when a worker runs, so a reserved seat with no capacity
+> figure — passed over, so never run — gets none, and something still has to start it. Whether
+> a seat below every threshold reports numbers at all is unverified. The requirements on
+> irregular arrival and on measuring a window's length from successive resets apply as much to
+> stream readings as to scheduled ones.
+>
+> **Unverified here.** The claim that `/usage` "is answered client-side" was inferred from a
+> zero-cost envelope and has not been established; nothing in this change should rest on it.
+
 ## Why
 
 A seat declaring a reserve is refused until its capacity has been observed, and nothing takes

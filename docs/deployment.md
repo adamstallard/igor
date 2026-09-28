@@ -169,8 +169,8 @@ earns its place there.
 
 Whichever source names it, **do not set `CLAUDE_CODE_OAUTH_TOKEN` yourself.** That is the
 variable `claude` itself reads, so it authenticates everything igor spawns rather than the seat
-you named — and `igor observe`, which has to read a window under your own login, gets the seat's
-credential instead and reports that it carries no subscription.
+you named — and `igor observe`, which reads `/usage` and so needs your own login to see a window,
+gets the seat's credential instead and reports that it carries no subscription.
 
 This does not remove the token from the `igor` process or the worker it spawns, which is where
 it has to be. It removes it from everything else you run.

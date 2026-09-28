@@ -1,3 +1,66 @@
+## Finding: the seat's own credential can read its windows
+
+Recorded 2026-09-27. The rest of this document is unchanged and was written before it; read it
+with this section in mind. **Whether to withdraw this change, cut it down, or keep a remnant is
+the reviewer's decision** — this section records what the finding does to each part, and decides
+none of it.
+
+**What was found.** A worker run — `claude -p … --output-format stream-json --verbose`, which is
+how every worker is already spawned — under a seat's `setup-token` credential emits a
+`rate_limit_event` carrying both windows' utilization and reset, the provider's warning status,
+and whether extra usage is being spent. `/usage` under the same credential returns a cost
+summary, and `GET /api/oauth/usage` refuses it for want of `user:profile`; the stream is not
+gated that way. Full detail, and the capture, in
+[`docs/architecture.md` §6.3.3](../../../docs/architecture.md#633-a-seat-token-is-measured-from-the-workers-own-stream).
+Reading it is specified in `read-seat-windows-from-the-stream` and not built.
+
+**What that overtakes here.**
+
+- *Context* above: "the reading only answers to a credential the provider can resolve a
+  subscription for, and the fleet holds none. So the one component that measures a seat has to
+  be installed on the machine of the person lending it." The fleet holds a credential that reads
+  the seat on every run. The sensor does not have to be the lender's laptop.
+- The proposal's case for a shared seat: that its refusal divides Igor's spend by a window the
+  owner also drew on, so it "needs a reading taken where the whole window is visible". A stream
+  reading is of the whole seat, owner's use included — the same seat-wide figure a laptop's
+  `/usage` reading would give, arriving once per worker run instead of once per half hour.
+- *The reading runs as a signed-in person, not as a service.* True of `/usage`, which is what it
+  was written about; no longer the only reading there is, so no longer the constraint "the whole
+  arrangement is built around".
+- *Appending an observation requires write access to the state branch*, as an obstacle to lending.
+  A stream reading is written by the fleet with the access it already has; a lender outside the
+  team no longer needs push access for their seat to be measured. It remains true of `igor
+  observe`.
+- *Roads not taken: reading on demand* — "impossible … the fleet cannot take a reading." The fleet
+  takes one on every run it makes.
+
+**What the finding does not reach.**
+
+- **A reserved seat with no figure is never run, so never read.** The in-force rule passes over a
+  seat with a reserve and neither an observation nor a declared capacity. A stream reading needs a
+  run, so it cannot start such a seat. Today's ways to start one — a declared `capacity_estimate`,
+  running at `reserve: 0` first, or `igor observe` on the owner's machine — are still needed, and a
+  scheduled reading is one of them. So is a deliberate small probe run under the seat's own token,
+  which is not free and is not specified anywhere.
+- **A seat the fleet is not using goes unread.** Readings arrive when runs happen. A scheduled
+  reading keeps a figure fresh through a quiet day; a stream reading does not. Since a stream
+  reading is a lower bound until its window resets, and a seat is read again the moment it is next
+  run, this matters for reporting more than for safety.
+- **A seat below every threshold** may not report numbers on the stream at all. Unverified; a fresh
+  seat's first run settles it. If it does not, the lender's reading stays the only one until the
+  seat crosses a threshold.
+- **Measuring a window's length from successive resets** stands, and is better served: a stream
+  reading's reset is epoch seconds, needing no phrase resolution, and arrives on every run.
+- **Irregular arrival** stands: stream readings are as irregular as the work.
+- **`igor observe` itself** is shipped (tasks 1.x) and correct for what it reads.
+
+**Unverified: "answered client-side".** The proposal and the first requirement say `/usage` "is
+answered client-side" and "does not consume any part of the window it reports". What was measured
+is an envelope reporting `total_cost_usd: 0`, `num_turns: 0` and empty `modelUsage` in 485ms. That
+supports "spends no model tokens"; it does not establish where the answer comes from, and a figure
+of two windows' utilization has to come from the provider somehow. Treat the claim as unverified,
+not as false. It does not change that the reading is free.
+
 ## Context
 
 Everything else in this repository runs where the fleet runs. This does not, and cannot: the
