@@ -4,7 +4,7 @@ import {
   checkpoint, eligibleAfterStop, stillAssigned, stopReceipt, takeClaim,
   type ClaimOptions, type ClaimResult,
 } from './claiming.js'
-import { complete, execute, workerEnv, type ExecuteOptions, type ExecutionResult } from './execute.js'
+import { complete, execute, headlessClaude, workerEnv, type ExecuteOptions, type ExecutionResult } from './execute.js'
 import { handOffFrom, type HandoffReason } from './handoff.js'
 import type { Role } from './role.js'
 import type { TreeProvider } from './worktree.js'
@@ -184,9 +184,8 @@ export async function runItem(
   // window that issue is about.
   //
   // The claim is given back the way any other failure gives it back — a handoff, which posts
-  // and then releases — rather than by a second vocabulary of its own. Reported as `refused`
-  // rather than `handed-off` because nothing about the item produced this: a deferral would
-  // park an item that was never the problem.
+  // and then releases — rather than by a second vocabulary of its own. Whether the run is then
+  // reported as refused or handed off turns on whether the worker had run: see the handler.
   //
   // **What the run had reached is carried out with it.** A throw arriving here is not always a
   // throw from before the work: the completion action is an unassign, so the last call of a
@@ -197,7 +196,7 @@ export async function runItem(
   // **It says how far the run got, never whose fault the throw was.** `codeHost.produce` runs
   // inside `execute`, so an item's own `422` leaves this empty, while the tracker 503 above
   // fills it — reading it as item-versus-surface gets both backwards.
-  const reached: { result?: ExecutionResult } = {}
+  const reached: Reached = {}
   try {
     return await runClaimedItem(deps, candidate, role, identity, claim, options, reached)
   } catch (error) {
@@ -206,17 +205,39 @@ export async function runItem(
       tracker, candidate, role, identity, claim.claimedAt, { kind: 'failure', detail },
       reached.result,
     ).catch(() => ({ posted: false }))
+    // **What a retry would cost decides what happens next, not whose fault the throw was** —
+    // which nothing here can tell. A retry is dear only where the worker ran and nothing was
+    // published: it spends the whole worker again to reach the same failure, so the item is
+    // handed off and waits in the deferral record until someone with write access answers.
+    // Otherwise the item is refused and tried again next cycle. Before the worker ran a retry
+    // is cheap, and once something is published the in-flight rule keeps the item off the claim
+    // path anyway — deferring it then would only stop that artifact being caught up. A run
+    // `execute` reports as refused is never dear: a stop is exempt from handoff, and the other
+    // refusals have published or carry a cure.
+    const retryIsDear =
+      reached.spent === true && reached.published !== true && reached.result?.outcome !== 'refused'
     return {
       // The result's own figure where there is one, undefined and all: a killed worker reports
       // no cost, and a zero would read as a run that was free.
-      outcome: 'refused', candidate, costUsd: reached.result === undefined ? 0 : reached.result.costUsd,
+      outcome: retryIsDear ? 'handed-off' : 'refused', candidate,
+      costUsd: reached.result === undefined ? 0 : reached.result.costUsd,
       spoke: out.posted,
       ...(reached.result === undefined ? {} : { execution: reached.result }),
+      ...(retryIsDear ? { handoff: 'failure' as const } : {}),
       cures: reached.result?.cures ?? [],
       surfaceFailed: true,
       reason: `${candidate.id} was claimed and the run could not finish: ${detail}`,
     }
   }
+}
+
+/** How far a claimed run got, for the handler that meets a throw from it. */
+interface Reached {
+  result?: ExecutionResult
+  /** The worker returned. */
+  spent?: true
+  /** The code host accepted a pull request or a resolution. */
+  published?: true
 }
 
 async function runClaimedItem(
@@ -226,8 +247,8 @@ async function runClaimedItem(
   identity: string,
   claim: ClaimResult,
   options: RunOptions,
-  /** Filled as soon as there is one, so a throw after it still knows what the run reached. */
-  reached: { result?: ExecutionResult },
+  /** Filled as each point is passed, so a throw after it still knows what the run reached. */
+  reached: Reached,
 ): Promise<ItemRun> {
   const { tracker, codeHost, trees } = deps
   const step = options.onStep ?? (() => {})
@@ -254,7 +275,20 @@ async function runClaimedItem(
   }
 
   step('working')
-  const execution = await execute(trees, tracker, codeHost, candidate, role, {
+  // Recorded when the host answers, not when `execute` returns: a throw after a publish — the
+  // check that a resolution took — escapes with the artifact already on the branch.
+  const published = async <T>(call: Promise<T>): Promise<T> => {
+    const out = await call
+    reached.published = true
+    return out
+  }
+  const recording: CodeHost = {
+    name: codeHost.name,
+    produce: (request) => published(codeHost.produce(request)),
+    resolve: (request) => published(codeHost.resolve(request)),
+    catchUp: (request) => codeHost.catchUp(request),
+  }
+  const execution = await execute(trees, tracker, recording, candidate, role, {
     ...options,
     ...(options.lore === undefined ? {} : { lore: options.lore }),
     // Named rather than left to the spread, which is a field nobody keeps correct. The worker
@@ -267,6 +301,14 @@ async function runClaimedItem(
     ...(options.store === undefined ? {} : { store: options.store }),
     onPublish: () => step('publishing'),
     claimStatus: async () => (await checkpoint(tracker, claim, identity)).status,
+    // Recorded the moment the worker returns, not when `execute` does: a publish that throws —
+    // the 422 a branch left by a closed pull request produces — escapes `execute` with the
+    // spend already made and no result to show for it.
+    worker: async (input) => {
+      const out = await (options.worker ?? headlessClaude)(input)
+      reached.spent = true
+      return out
+    },
   })
   reached.result = execution
 

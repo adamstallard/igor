@@ -89,7 +89,9 @@
       with that endpoint down: `failures: 0`. Kept as it is deliberately, argued in `design.md` —
       each item still prints its own refusal reason, and the shapes a counter cannot separate are
       what 8.3 is really about
-- [ ] 8.3 **A deterministic item fault still re-spends.** The counter stops a wedged item from
-      ending every cycle, but the claim is released rather than held, so the item returns next
-      cycle and the worker runs on it again. Before this change the held claim screened it out.
-      Needs a decision: defer such an item, or screen it some other way
+- [x] 8.3 **A failure after the worker ran hands off; one before it refuses and retries.** A
+      wedged item used to come back next cycle and spend the whole worker again to reach the same
+      failure — the main trigger being a closed pull request's leftover branch, which makes the
+      publish fail with 422. Now what a retry would cost decides what happens: a worker that ran
+      with nothing published means handing off, which defers the item until someone with write access answers.
+      What causes the close to be noticed at all is `defer-a-closed-pull-request`, #141

@@ -147,3 +147,38 @@ artifact whose completion unassign did not clear, the correction sits one commen
 note rather than at the foot of the item. It is still after the only sentence that claimed a
 release — there is none on that path — so the requirement holds and the reader's last line is a
 true one. What they lose is the correction being the thing they end on.
+
+## Deciding by what a retry would cost
+
+The handler first returned `refused` for every throw, so a wedged item came back next cycle and
+the worker ran again to reach the same failure. The distinction the earlier drafts reached for —
+whether a throw was the surface's fault or the item's — is not answerable from here, as the
+counter's section records. **What a retry would cost is.** A throw before the worker ran is cheap
+to retry, and most of an outage lands there, so the item is refused and tried again. A throw
+after it ran would spend the whole worker again, so the item is handed off and waits in the
+deferral record until someone with write access answers — and that includes an outage that
+begins while a worker is running, which the handler cannot tell from a fault of the item's. A
+stop is the exception: a run `execute` reports as refused was stopped, or has published, or
+carries a cure, and is never handed off from here.
+
+**The signal is the worker returning, not `execute` returning.** The worker runs inside
+`execute`, before anything is published, and `codeHost.produce` has no handler — so a publish
+that throws escapes `execute` with the spend already made and no result. Reading only whether
+there was a result classifies exactly that case as never having started, and retries it: that is
+the leftover-branch 422, the case this exists for. The run wraps the worker it hands to
+`execute` and records the moment it returns. Measured: with the decision read off the result
+alone, the test for a publish failing after the worker ran goes red.
+
+**A published artifact makes a retry cheap again.** Once the run has opened a pull request, the
+in-flight rule keeps the item off the claim path, so a retry spends nothing — and a deferral
+there would only stop that pull request being caught up when it later stops merging, until
+someone commented on the issue. The completion unassign failing after a publish is refused, as
+"Refused, not handed off" has it. The same goes for a catch-up whose merge came out clean: it publishes
+without running a worker at all. So the item is handed off only where the worker ran *and*
+nothing was published. Both are recorded when they happen — the worker returning, the host
+accepting a pull request or a resolution — never read off the result, which a throw after the
+publish (the check that a resolution took) leaves absent.
+
+**Handed off, and only then deferred.** `shouldDefer` defers a `failure` handoff with no cures,
+and keeps a handoff carrying cures live, because a cure is a fault in the Igor's own
+configuration and the item did not produce it.

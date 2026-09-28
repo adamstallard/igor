@@ -37,6 +37,8 @@ function deps(opts: {
   changes?: ChangedFile[]
   /** A tree that cannot be provisioned — a network blip, an expired token, a full disk. */
   provisionThrows?: boolean
+  /** A publish that fails after the worker ran — a branch left by a closed pull request. */
+  produceThrows?: boolean
   /**
    * A tracker that will not give the claim up. The completion action is an unassign, so this
    * is what a 503 on the last call of a run that already published looks like.
@@ -76,6 +78,7 @@ function deps(opts: {
   const codeHost: CodeHost = {
     name: 'fake',
     produce: async (r): Promise<Artifact> => {
+      if (opts.produceThrows === true) throw new Error('422 Reference already exists')
       produced.push(r)
       return { kind: 'pull-request', ref: '#9', url: 'https://example.test/9' }
     },
@@ -377,6 +380,122 @@ describe('a claim held through a failure that is not the item\'s', () => {
     expect(posts.at(-1)).toBe(stillAssigned())
     expect(r.execution?.artifact?.url).toBe('https://example.test/9')
     expect(r.costUsd).toBe(0.02)
+  })
+
+  it('hands off rather than retrying when the worker had already run', async () => {
+    // A branch left by a closed pull request makes the publish fail after the worker has spent.
+    // Retried, the next cycle spends the whole worker again to reach the same 422 — so the item
+    // is handed off, which defers it until someone with write access answers.
+    const { d } = deps({
+      changes: [{ path: 'src/a.ts', content: 'fixed', kind: 'modified' }],
+      produceThrows: true,
+    })
+    const r = await runItem(d, candidate(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+
+    expect(r.outcome).toBe('handed-off')
+    expect(r.handoff).toBe('failure')
+    // The publish threw inside `execute`, so there is no result — which is exactly why the
+    // spend has to be recorded when the worker returns rather than read off the result.
+    expect(r.execution).toBeUndefined()
+    expect(shouldDefer(r.outcome, r.handoff, r.cures)).toBe(true)
+  })
+
+  it('refuses and retries when nothing had been spent', async () => {
+    // The pole: a failure before the worker ran costs nothing to retry, and an outage that is
+    // already on when the cycle starts lands here. Deferring it would park the item until
+    // somebody noticed — after the outage cleared.
+    const { d } = deps({ provisionThrows: true })
+    const r = await runItem(d, candidate(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+
+    expect(r.outcome).toBe('refused')
+    expect(shouldDefer(r.outcome, r.handoff, r.cures)).toBe(false)
+  })
+
+  it('does not defer a run that published before the failure', async () => {
+    // The pull request already keeps the item off the claim path, so a retry spends nothing.
+    // Deferred, the record would instead drop every later catch-up of that same pull request
+    // until somebody comments on the issue — the one thing the deferral does here is harm.
+    const { d, produced } = deps({ changes: [{ path: 'src/a.ts', content: 'fixed', kind: 'modified' }] })
+    let calls = 0
+    const release = d.tracker.release.bind(d.tracker)
+    d.tracker.release = async (c, as) => {
+      calls += 1
+      if (calls === 1) throw new Error('503 unassigning')
+      return release(c, as)
+    }
+    const r = await runItem(d, candidate(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+
+    expect(produced).toHaveLength(1)
+    expect(r.surfaceFailed).toBe(true)
+    expect(shouldDefer(r.outcome, r.handoff, r.cures)).toBe(false)
+  })
+
+  it('does not count a worker a stop killed as a spend', async () => {
+    // Somebody stopped the item mid-run, and the re-read after it failed. The worker was cut
+    // short on their word, not run to a failure a retry would meet again, so a deferral would
+    // only hold the item past the stop's own cooldown until somebody spoke a second time.
+    const { d } = deps({ changes: [{ path: 'src/a.ts', content: 'fixed', kind: 'modified' }] })
+    let phase: 'claiming' | 'working' | 'aborted' = 'claiming'
+    const verify = d.tracker.verifyClaim.bind(d.tracker)
+    d.tracker.verifyClaim = async (...a) => {
+      if (phase === 'claiming') return verify(...a)
+      if (phase === 'working') return { status: 'stopped', by: 'alice' } as ClaimVerdict
+      throw new Error('503 reading claim')
+    }
+    const r = await runItem(d, candidate(), role(), 'igor-bot', {
+      ...noWait,
+      checkpointMs: 0,
+      worker: (input) => new Promise((resolve) => {
+        phase = 'working'
+        input.signal?.addEventListener('abort', () => { phase = 'aborted'; resolve({}) }, { once: true })
+        input.onEvent?.({ type: 'system' } as never)
+      }),
+    })
+
+    expect(phase).toBe('aborted')
+    expect(r.surfaceFailed).toBe(true)
+    expect(shouldDefer(r.outcome, r.handoff, r.cures)).toBe(false)
+  })
+
+  it('does not defer a stop read after the worker finished', async () => {
+    // The same stop, seen by the read after the worker rather than by one during it.
+    const { d } = deps({ changes: [{ path: 'src/a.ts', content: 'fixed', kind: 'modified' }] })
+    let done = false
+    let after = 0
+    const verify = d.tracker.verifyClaim.bind(d.tracker)
+    d.tracker.verifyClaim = async (...a) => {
+      if (!done) return verify(...a)
+      after += 1
+      if (after === 1) return { status: 'stopped', by: 'alice' } as ClaimVerdict
+      throw new Error('503 reading claim')
+    }
+    const r = await runItem(d, candidate(), role(), 'igor-bot', {
+      ...noWait,
+      worker: async () => { done = true; return { result: 'Fixed.', total_cost_usd: 0.5 } },
+    })
+
+    expect(after).toBe(2)
+    expect(r.surfaceFailed).toBe(true)
+    expect(shouldDefer(r.outcome, r.handoff, r.cures)).toBe(false)
+  })
+
+  it('does not defer a catch-up that published without running a worker', async () => {
+    // The conflict cleared before the clone, so no worker ran and nothing was spent.
+    let ran = 0
+    const { d } = deps({
+      caughtUp: [{ outcome: 'conflict' }, { outcome: 'already-current' }],
+      merge: { conflicts: [], head: 'headsha', broughtIn: 'basesha' },
+      changes: [{ path: 'src/a.ts', content: 'merged\n', kind: 'modified' }],
+      releaseThrows: true,
+    })
+    const r = await catchUpItem(d, stale(), role(), 'igor-bot', {
+      ...noWait,
+      worker: async () => { ran += 1; return { result: 'x', total_cost_usd: 0.02 } },
+    })
+
+    expect(ran).toBe(0)
+    expect(r.surfaceFailed).toBe(true)
+    expect(shouldDefer(r.outcome, r.handoff, r.cures)).toBe(false)
   })
 
   it('does not flag an ordinary refusal as a surface failure', async () => {
@@ -1091,6 +1210,28 @@ describe('catching an artifact of its own back up', () => {
     expect(run.outcome).toBe('handed-off')
     expect(run.handoff).toBe('failure')
     expect(shouldDefer(run.outcome, run.handoff, run.cures)).toBe(true)
+  })
+
+  it('does not defer a resolution that was published before the confirming check threw', async () => {
+    // The resolution is on the branch, so the artifact merges and is off the claim path. A
+    // deferral would only stop it being caught up the next time its base moves.
+    const { d, resolved } = deps({
+      caughtUp: [{ outcome: 'conflict' }],
+      merge: conflicted,
+      changes: [{ path: 'src/a.ts', content: 'resolved\n', kind: 'modified' }],
+    })
+    const catchUp = d.codeHost.catchUp.bind(d.codeHost)
+    let asks = 0
+    d.codeHost.catchUp = async (r) => {
+      asks += 1
+      if (asks === 2) throw new Error('503 merging')
+      return catchUp(r)
+    }
+    const run = await catchUpItem(d, stale(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+
+    expect(resolved).toHaveLength(1)
+    expect(run.surfaceFailed).toBe(true)
+    expect(shouldDefer(run.outcome, run.handoff, run.cures)).toBe(false)
   })
 
   it('hands off naming the artifact when the tree provider cannot merge at all', async () => {
