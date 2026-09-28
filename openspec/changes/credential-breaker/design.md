@@ -2,7 +2,7 @@
 
 Added 2026-09-28, after both gates were discharged. It changes no requirement, task or code, and it
 does not block merging. It records a decision made after review, how it narrows the case this
-change was built for, and one question for Adam.
+change was built for, and how Adam settled the question it raised, the same day.
 
 ### The decision
 
@@ -25,30 +25,30 @@ whose token was revoked before Igor ever read it stops burning items without thi
 reading until that window resets, up to a week. The gate admits it throughout, and every run on it
 burns an item. That is exactly the case this change counts and trips on.
 
-**A revoked, never-read seat becomes silent.** Its probe gets a 401 and no `rate_limit_event`, so
-the seat is never read and never admitted, and nothing reports why. Today the breaker's
-`!  out of rotation` line is what tells an operator. It counts rows in `executions.ndjson`, and a
-probe is not an execution.
-
-**The half-open trial could be the probe.** After a cooldown the breaker lets one run through, and
-that run is an item. #143's probe is a cheaper trial that burns no item. #143 currently says the
-probe never runs on a refused seat. Whether that means a tripped breaker is for #143 to say.
+**A revoked, never-read seat would have been silent.** Its probe gets a 401 and no
+`rate_limit_event`, so the seat is never read and never admitted. The breaker's `!  out of
+rotation` line is what tells an operator, and it counts rows in `executions.ndjson`, which a probe
+does not write. The decision below closes that gap.
 
 **No code here depends on the dollar bound.** `credentialBreaker` and the `rejected` verdict in
 `chooseSeat` are checked before any bound and are independent of it. When #143's gate two rewrites
 the gate, the `rejected` verdict has to keep its place ahead of the line.
 
-### Open, for Adam
+### Decided (Adam, 2026-09-28): a probe opens and clears the credential stop
 
-**Should a probe that gets a 401 mint `seat:<id>:credential` into whichever record owns the
-credential stop?** Today that is this change's breaker, which counts `executions.ndjson`. If
-[#101](https://github.com/adamstallard/igor/pull/101) lands, it is the condition record, which
-absorbs this breaker and counts handoffs, and a probe produces neither a run row nor a handoff.
-Recommendation: yes, with the fingerprint, into whichever of the two owns the stop at the time.
-Otherwise a revoked seat nobody has read is out of rotation with no reason given. If it counts,
-the probe could also serve as the half-open trial, or as #101's clearing probe, without spending an
-item. This would be specified on #143, where the probe is, and it needs no change to this change's
-requirements.
+**A probe that gets a 401 opens `seat:<id>:credential`, and a probe that succeeds counts as the
+clearing check.** It is specified on #143, where the probe is. The key goes into whichever record
+owns the credential stop at the time: this change's breaker today, or the condition record if
+[#101](https://github.com/adamstallard/igor/pull/101) lands and absorbs it. A revoked seat nobody
+has read is then out of rotation with its reason reported, and the half-open trial after a
+cooldown no longer has to spend an item.
+
+**What that asks of this change's code, as work for #143's gate two.** `credentialBreaker` derives
+the stop from trailing rows in `executions.ndjson` carrying the key and the token's fingerprint,
+and a successful row on the same fingerprint closes it. A probe writes no such row today. For a
+probe's 401 to count, and a passing probe to close the breaker, a probe's outcome has to reach
+whatever `credentialBreaker` reads, with the fingerprint. That is #143's implementation, or #101's
+if the condition record owns the stop by then. Nothing on this branch changes for it.
 
 ## Deriving it rather than storing it
 
