@@ -5,7 +5,7 @@ has already learned.
 
 Keep your own AI for thinking: brainstorming, asking, deciding. When it's time to act, hand the
 work to Igors instead of sub-agents in your session. They take it from the team's tracker and put
-their claims, questions, handoffs and pull requests back there, in plain view. What the team
+their claims, questions, handoffs and pull requests there, in plain view. What the team
 teaches them becomes [lore](#lore) every Igor reads, not memory stuck in one person's sessions.
 
 An Igor is a named teammate, defined by the roles it holds. Nothing durable lives inside one: run
