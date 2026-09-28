@@ -117,8 +117,11 @@ artifacts that conflict, and a gate-one spec waiting for review is exactly the k
 that gets caught up. If each catch-up voided the approval, a slow review on a busy repository
 would never end.
 
-A current decisive review is **answered** once the Igor has posted on the artifact after it. It
-is **actionable** while it is current and unanswered. Then:
+A current decisive review is **answered** once the Igor has posted a hand-back reply on the
+artifact that names that review. Nothing else answers a review. That includes the Igor answering
+a mention under `directed-interaction`, and a comment from someone else, including the operator
+where the Igor posts as its operator. A review is **actionable** while it is current and
+unanswered. Then:
 
 - a current, unanswered change request from anyone with authority means **revise**, even if
   someone else approved;
@@ -128,12 +131,19 @@ is **actionable** while it is current and unanswered. Then:
 "Answered" is what makes each round end at a fixed point without a record on the state branch.
 A revision that commits supersedes the review it answers. A revision that changes nothing
 cannot commit, and without this rule the same review would stay current and be retried at full
-worker cost every cycle. The reply it posts marks the review answered instead. The same rule
-ends a gate two that implements nothing. A later review is actionable again.
+worker cost every cycle. The reply it posts names the change requests it answers, and so marks
+those answered instead. The same rule ends a gate two that implements nothing, where the reply
+names the approval. A later review is actionable again.
+
+**Answering names the review, so a reply answers only what it names.** A looser rule, "the Igor
+posted anything after the review", would let an answer to a mention silently void an approval,
+and gate two would never start. It would also let a no-op revision's reply to a change request
+void an approval standing beside it.
 
 Changes requested win over an approval because a person who asked for changes has not been
-answered. The approval will still be current after the revision if the revision changes
-nothing it cared about, and it can be re-given in seconds.
+answered. A revision is a new commit, so it supersedes the approval as well. The approver
+re-approves the revised spec, which costs them seconds. If the revision changes nothing, the
+approval was not superseded, and it becomes actionable once the change request is answered.
 
 ### Authority is checked per reviewer, and fails closed
 
@@ -244,7 +254,9 @@ one, the requirement is written to the recommendation and the question says whic
    `concurrent-instances` or machine-account provisioning gives the loop such a list.
 6. **Changes requested at gate two.** *Recommend:* the same revise loop, without the confinement,
    on the same branch. It is specified as its own requirement, *A change request at gate two is
-   answered on the same branch*, so it can be dropped.
+   answered on the same branch*, and by the in-flight skip's "past gate one, a change request"
+   clause, with its scenario *A change request past gate two is a candidate*. Dropping it means
+   dropping all three.
 7. **A spec pull request merged before gate two.** With no closing keyword the issue stays open,
    and a merged pull request is not in flight, so today the next pickup would open a **second**
    spec pull request, which Adam's workflow forbids. The merge is ambiguous: "spec accepted,
@@ -324,6 +336,14 @@ one, the requirement is written to the recommendation and the question says whic
   base that conflicts again every cycle is still bounded by the catch-up's own rule.
 - **Repositories that dismiss stale approvals.** With that protection on, a catch-up merge
   dismisses the approval, and gate two waits for a new one. This is the safe direction.
+
+- **A mention alone already makes an issue "in flight".** A non-closing mention of an issue in
+  any open pull request's body creates the `CROSS_REFERENCED_EVENT` that `inFlightFrom` reads,
+  and `inFlightFrom` returns the first open pull request it finds. So an issue that an unrelated
+  open pull request merely discusses is skipped as work in flight. Observed on 2026-09-28: issue
+  #139 reads as in flight because open PR #140 mentions it. Gate one relies on that same event,
+  so this change neither fixes nor worsens it. It does mean a spec pull request that discusses
+  another issue makes that issue skip. This may deserve its own issue.
 
 ## Roads not taken
 

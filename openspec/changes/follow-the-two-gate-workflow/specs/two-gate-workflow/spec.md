@@ -119,7 +119,8 @@ artifact. An approval is actionable when all of these hold:
   access to the repository;
 - it is current, meaning no commit that is not a merge of the base has landed on the
   artifact's branch since it was submitted;
-- it is unanswered, meaning the Igor has not posted on the artifact since it was submitted;
+- it is unanswered, meaning the Igor has not posted a hand-back reply on the artifact that names
+  that review. Nothing else the Igor or anyone else posts answers a review;
 - no actionable change request stands beside it, where a change request is actionable on the
   same terms.
 
@@ -150,6 +151,12 @@ itself SHALL still be found.
 
 - **WHEN** the reviewer's permission cannot be read
 - **THEN** gate two does not start in that cycle
+
+#### Scenario: Other posts on the artifact do not answer an approval
+
+- **WHEN** after an approval, the Igor answers a mention on the artifact, or someone else comments
+  on it
+- **THEN** the approval is still unanswered, and gate two starts
 
 #### Scenario: A comment saying go is not a go
 
@@ -196,12 +203,14 @@ SHALL take a claim on the item and provision a tree at the artifact's branch. It
 worker the review's body and inline comments, delimited as untrusted data. It SHALL publish
 the revision as a commit on the existing branch, confined as gate one is.
 
-After the revision the Igor SHALL reply on the artifact, saying what changed. It SHALL ask
-everyone whose change request it answered to review again, and SHALL release the claim.
+After the revision the Igor SHALL reply on the artifact, naming each change request it answers
+and saying what changed. It SHALL ask everyone whose change request it answered to review again,
+and SHALL release the claim.
 
-Where the revision leaves nothing to publish, the Igor SHALL reply on the artifact saying it
-could not revise and why, and SHALL hand the item off. The same review SHALL NOT be acted on
-again.
+Where the revision leaves nothing to publish, the Igor SHALL reply on the artifact, naming each
+change request it answers and saying why it could not revise, and SHALL hand the item off. That
+reply answers those change requests and no other review, so the same change request SHALL NOT be
+acted on again.
 
 #### Scenario: A requested change is made on the branch that exists
 
@@ -223,9 +232,15 @@ again.
 #### Scenario: A revision that changes nothing ends the round
 
 - **WHEN** the worker makes no change under `openspec/changes/` in answer to a change request
-- **THEN** nothing is committed, and a reply on the artifact says the Igor could not revise and
-  why
-- **AND** the same review is not acted on again, and the Igor waits for a new one
+- **THEN** nothing is committed, and a reply on the artifact names the change request and says
+  why the Igor could not revise
+- **AND** the same change request is not acted on again, and the Igor waits for a new review
+
+#### Scenario: An approval beside an unrevisable change request is not answered by the reply
+
+- **WHEN** a change request and an approval were both current, and the revision changed nothing
+- **THEN** the reply answers the change request only
+- **AND** on a later cycle the approval is actionable, and gate two starts
 
 #### Scenario: A revised spec waits for its next review
 
@@ -256,8 +271,9 @@ The Igor SHALL then request review, release the claim, and take the role's compl
 Gate two is a spend, and SHALL start only where the budget gate names a seat for it.
 
 Where gate two leaves nothing to publish outside `openspec/changes/`, the Igor SHALL publish
-nothing and SHALL leave the title and body as they are. It SHALL reply on the artifact saying
-why, and SHALL hand the item off. The same approval SHALL NOT be acted on again.
+nothing and SHALL leave the title and body as they are. It SHALL reply on the artifact, naming
+the approval it answers and saying why, and SHALL hand the item off. The same approval SHALL NOT
+be acted on again.
 
 #### Scenario: Gate two lands on the spec's branch
 

@@ -3,8 +3,9 @@
 ### Requirement: Items with work already in flight are skipped
 
 Triage SHALL skip any item the adapter reports as having work already in flight, unless that
-artifact is the Igor's own and cannot merge, or is the Igor's own gate-one artifact carrying an
-actionable approval or change request under the two-gate workflow. This rule is universal and
+artifact is the Igor's own and cannot merge, or is the Igor's own two-gate artifact carrying an
+actionable review it can act on: at gate one an approval or a change request, and past gate one a
+change request. This rule is universal and
 MUST NOT be configurable; only its detection is adapter-supplied.
 
 The exception preserves the reason rather than qualifying it. Work in flight is skipped because
@@ -63,8 +64,14 @@ same work too, waiting on the Igor rather than on a reviewer.
   actionable review
 - **THEN** it is skipped, as work in flight
 
-#### Scenario: A specification past gate two is still skipped
+#### Scenario: An approval past gate two is still skipped
 
 - **WHEN** an item's in-flight artifact is this Igor's own and carries paths outside
-  `openspec/changes/`
-- **THEN** an approval on it does not make it a candidate, because gate two has already run
+  `openspec/changes/`, and carries an actionable approval
+- **THEN** it is skipped, because gate two has already run and merging is a person's to do
+
+#### Scenario: A change request past gate two is a candidate
+
+- **WHEN** an item's in-flight artifact is this Igor's own, past gate one, and carries an
+  actionable change request
+- **THEN** it is not skipped, and is resumed for a revision of the implementation

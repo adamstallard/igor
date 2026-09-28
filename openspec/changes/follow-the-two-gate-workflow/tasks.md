@@ -35,10 +35,11 @@ Line numbers are as of `main` at `511e519`.
 - [ ] 3.5 A code-host read, only for an own open artifact on a two-gate role with a decisive
       review, of three things: the paths the pull request changes, which gives the phase; the
       commits since each review, which gives currency (only a two-parent merge of the base
-      leaves a review current); and the Igor's own comments since each review, which gives
-      "answered"
+      leaves a review current); and the Igor's own hand-back replies, each naming the review ids
+      it answers in a fixed, machine-readable line, which gives "answered". No other post counts
 - [ ] 3.6 Tests against fixtures: current, superseded by a revision, not superseded by a
-      merge, answered, dismissed, comment-only, several authors
+      merge, answered, not answered by an unrelated Igor post or someone else's comment,
+      dismissed, comment-only, several authors
 
 ## 4. Authority
 
@@ -115,10 +116,12 @@ Line numbers are as of `main` at `511e519`.
       never through `produce`
 - [ ] 8.2 The worker is given the review body and inline comments inside the untrusted-data
       delimiters, and gate one's filter applies
-- [ ] 8.3 After a commit: reply on the pull request saying what changed, re-request review from
-      each author of an answered change request, and release
-- [ ] 8.4 With nothing to commit: a reply on the pull request saying why (this also marks the
-      review answered), and a handoff on the item
+- [ ] 8.3 After a commit: reply on the pull request naming the change requests answered and
+      saying what changed, re-request review from each author of an answered change request,
+      and release
+- [ ] 8.4 With nothing to commit: a reply on the pull request naming the change requests it
+      answers, and only those, saying why (the reply is what marks them answered), and a
+      handoff on the item
 - [ ] 8.5 Call `resumeItem` from `serve` (`src/serve.ts:109`) and from `run`
       (`src/cli.ts:456`, `src/cli.ts:496`) where `catchUpItem` is called
 - [ ] 8.6 Tests, including that a revision which changes nothing is not retried on the next
@@ -133,7 +136,7 @@ Line numbers are as of `main` at `511e519`.
 - [ ] 9.3 Run the bug-hunter step where #139 has made it configurable. Until #139 lands, this
       task is a named no-op, not a stub
 - [ ] 9.4 Nothing outside `openspec/changes/` means no commit, an unchanged title and body, a
-      reply on the pull request, and a handoff on the item
+      reply on the pull request naming the approval it answers, and a handoff on the item
 - [ ] 9.5 After the commit, update the title (drop the marker) and the body (the code and the
       spec, and `linkage`). Note an edit to the item after the approval (3.3). Request review,
       release, and take `complete`
@@ -150,7 +153,8 @@ Line numbers are as of `main` at `511e519`.
 
 ## 11. Gate-two change requests (if question 6 is accepted)
 
-- [ ] 11.1 `actionableReview` applies past gate one too, returning `revise-implementation`
+- [ ] 11.1 `actionableReview` applies past gate one too, returning `revise-implementation` for
+      a change request only, and `universalSkip` admits it
 - [ ] 11.2 Revise without the filter, then update the title and body
 - [ ] 11.3 Tests
 
