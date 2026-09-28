@@ -526,24 +526,17 @@ How full a seat is SHALL be established from the seat itself — read directly w
 credential yields a reading, and otherwise taken from recorded observations of that seat. The
 system MUST NOT require a person to submit a usage figure.
 
-A capacity MAY be declared in configuration as `capacity_estimate`, a figure in dollars per seat
-**and per window**, and SHALL be superseded by any observation of that seat and window rather
-than averaged with one.
-One figure cannot serve both windows: reporting is per seat and per window. Deriving one window's
-capacity from the other's by their cadence ratio would assume the two limits are proportional,
-which is the thing two independent limits exist to deny: were a session exactly a 168th of a
-week, the weekly limit would forbid nothing the session limit already forbids. A seat MAY
-declare one window and not the other; the undeclared one is simply unobserved until it is. A
-declared figure is reported as declared until an observation replaces it, so nobody mistakes an
-assumption for a measurement. It SHALL NOT admit a seat or keep one out: whether Igor may start
-work on a seat is decided by the seat's reading against its line (*The reserve is untouchable*),
-and a figure in dollars is not an input to that.
+Neither a usage figure nor a capacity SHALL be configured. How full the window is right now
+changes by the minute and is the thing a person cannot supply usefully. A capacity in dollars was
+once declarable, as `capacity_estimate`, to start a reserved seat under a bound on Igor's spend;
+whether Igor may start work on a seat is now decided by the seat's reading against its line (*The
+reserve is untouchable*), and a figure in dollars is not an input to that, so the key has nothing
+left to do. A capacity is only ever derived from observations, and reported.
 
-What must never be configured is a *usage figure*. Capacity is a property of the plan and
-changes rarely; how full the window is right now changes by the minute and is the thing a
-person cannot supply usefully. Even capacity is not fixed — the provider has moved the weekly
-allowance for every subscriber at least once, without any plan changing — so a declared figure
-is a starting point with a shelf life and not a constant.
+`capacity_estimate` SHALL be refused wherever a seat declares it, because configuration refuses a
+key nobody reads. So that an operator upgrading an existing config is not left guessing, the
+refusal SHALL name the key, say that it was removed with the dollar bound (#143), and say to
+delete the line.
 
 `/usage` reports window percentages only to a credential the provider can resolve a
 subscription for. The credential a seat holds is a `setup-token` one, which carries no
@@ -561,17 +554,12 @@ a seat with no ceiling at all.
 - **AND** otherwise how full it is comes from recorded observations of that seat
 - **AND** no human supplies how full the window is, in either case
 
-#### Scenario: A declared capacity is reported and admits nothing
+#### Scenario: A declared capacity is refused, saying how to fix it
 
-- **WHEN** a seat declares both a reserve and a capacity, and has no observation
-- **THEN** the figure is reported as declared rather than observed
-- **AND** the seat is not drawn on for having it
-
-#### Scenario: An observation supersedes what was declared
-
-- **WHEN** a seat with a declared capacity is observed
-- **THEN** the observed capacity is reported and the declared one is not combined with it
-- **AND** later observations supersede earlier ones in the same way
+- **WHEN** a seat in an existing config declares `capacity_estimate`
+- **THEN** the config is refused at load
+- **AND** the refusal names `capacity_estimate`, says it was removed with the dollar bound (#143),
+  and says to delete the line
 
 #### Scenario: A seat is read through its own credential
 
@@ -638,6 +626,13 @@ less: a lender's reserve holds whatever a role declares. On a seat declaring res
 reserve alone sets that role's line. A role reserve is valid whatever seat or pool the role draws
 on, a dedicated seat included.
 
+A role's reserve SHALL be raised by inheritance and never lowered. A role MAY declare a larger
+reserve than the one it inherits from its parent or from `roles/org.yaml`, and SHALL NOT declare a
+smaller one: configuration declaring a child reserve below its parent's SHALL be refused, naming
+both values and the role each came from. It is the same protective direction as taking the larger
+of the seat's and the role's reserve: nothing below a level can hold back less than that level
+does.
+
 It gives roles sharing a seat a priority without coordinating them. Every Igor compares the same
 whole-seat reading against its own line, so once the reading passes a higher-reserve role's line,
 only roles with a lower one take items there. With `frontend` at 0.3 and `generalist` at none on
@@ -672,6 +667,22 @@ from it; and more seats, so that the lower-reserve role is fully served elsewher
 - **WHEN** a role declares a reserve below 0 or above 1
 - **THEN** validation fails
 
+#### Scenario: A child role may raise its inherited reserve
+
+- **WHEN** `roles/org.yaml` declares a reserve of 0.2 and a role extending it declares 0.4
+- **THEN** configuration is valid, and the role's reserve is 0.4
+
+#### Scenario: A child role may not lower its inherited reserve
+
+- **WHEN** a role's parent declares a reserve of 0.3 and the role declares 0.1
+- **THEN** validation fails
+- **AND** the refusal names both reserves and the role each came from
+
+#### Scenario: A role declaring none inherits its parent's
+
+- **WHEN** a role's parent declares a reserve of 0.3 and the role declares none
+- **THEN** the role's reserve is 0.3
+
 #### Scenario: A role reserve with a dedicated seat is valid
 
 - **WHEN** a role naming a dedicated seat declares a reserve of 0.4
@@ -688,8 +699,8 @@ capacity gets a reserved seat started* is false, and openspec will not archive a
 that drops a scenario.
 
 **Migration**: Replaced by *A seat's fullness is read from the seat, not supplied by a person*,
-added by this change. It keeps every other rule and scenario, and makes a declared capacity a
-reported figure that admits nothing.
+added by this change. It keeps every other rule and scenario, and removes `capacity_estimate`:
+an existing config carrying it is refused with a message saying to delete the line.
 
 ### Requirement: Recorded spend attributes a seat between its roles
 
@@ -843,7 +854,7 @@ SHALL be passed over for that role, with that as the stated reason. Where it is 
 drawn on with no reading, stopped by the provider's refusal; its first run's reading, or its first
 refusal, is its first reading.
 
-No capacity figure, observed or declared, SHALL admit a seat or keep one out. The line is a
+No capacity figure SHALL admit a seat or keep one out. The line is a
 fraction of the window compared against a fraction of the window, and needs no quantity in
 dollars. A reserved seat nothing has read is passed over not because its size is unknown but
 because how full it is is unknown, and spending somebody's subscription past a line nobody has
@@ -866,12 +877,6 @@ work is charged to the seat; it does not mean the seat is never read.
 - **WHEN** a seat declares a reserve of 0.5, has no capacity figure for either window, and its
   most recent unreset readings put the session at 20% and the week at 30%, both below their lines
 - **THEN** work may be charged to it
-
-#### Scenario: A declared capacity does not stand in for a reading
-
-- **WHEN** a seat declares a reserve and a `capacity_estimate`, and has no unreset reading of a
-  window
-- **THEN** it is passed over
 
 #### Scenario: A dedicated seat runs uncalibrated
 
@@ -1154,7 +1159,7 @@ one line without adding up each other's books.
 
 #### Scenario: A capacity figure decides nothing
 
-- **WHEN** a seat has a capacity figure in dollars, observed or declared
+- **WHEN** a seat has a capacity figure in dollars
 - **THEN** whether work may start on it is the same as it would be without one
 
 #### Scenario: A refusal is the reading until its reset
@@ -1272,3 +1277,47 @@ same failure with nobody re-running a reading, editing a configuration, or notic
 - **THEN** no reading is re-run and no configuration is edited to make the correction take
   effect
 
+### Requirement: `budget_share` is a ceiling, not a reservation
+
+A role's `budget_share` SHALL bound what that role may consume from its pool. It MUST NOT
+reserve capacity for that role, and shares across roles MUST NOT be required to sum to one —
+several roles may each declare the same ceiling.
+
+A role's consumption of a seat SHALL be measured against the seat's reading: the role's share of
+recorded Igor spend on the seat, times the fraction of the window the seat's latest unreset
+reading reports used. It SHALL NOT be measured by dividing recorded spend by a capacity figure. No
+figure in dollars is an input to any gate (*The reserve is untouchable*), and this is the same
+measure a seat read live already uses. The reading counts the owner's use too, so on a shared seat
+a role reaches its ceiling sooner than its own spend alone would carry it; that errs toward
+holding the role back. A seat with no unreset reading of a window gives the ceiling nothing to
+measure there, and is decided for the role as *A seat with no reading is drawn on only where its
+line is the whole window* says.
+
+Reservations were rejected: they would idle capacity a quiet role is not using, and adding a
+role would require editing every other role to make room. A ceiling composes, inherits
+monotonically like every other permission, and needs no coordination when the fleet changes.
+
+#### Scenario: Ceilings need not sum to one
+
+- **WHEN** three roles sharing a pool each declare a share of 0.4
+- **THEN** configuration is valid
+- **AND** each is capped at 0.4 of the pool rather than allotted a third of it
+
+#### Scenario: Unused capacity is available to another role
+
+- **WHEN** one role is idle and another is working
+- **THEN** the working role may consume up to its own ceiling
+- **AND** it is not limited to a fraction reserved for it
+
+#### Scenario: A busy role cannot starve the seat's owner
+
+- **WHEN** a role reaches its ceiling while a person's seat is in its pool
+- **THEN** that seat's reserve is still untouched
+- **AND** the reserve is enforced independently of any role's ceiling
+
+#### Scenario: A share is measured against the reading
+
+- **WHEN** a role accounts for half of Igor's recorded spend on a seat whose latest unreset week
+  reading is 60%, and the role declares a `budget_share` of 0.3
+- **THEN** the role is at its ceiling for the week on that seat
+- **AND** no capacity figure enters the decision

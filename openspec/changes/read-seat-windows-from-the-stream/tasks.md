@@ -79,8 +79,8 @@
       in `boundsForSeats` (`:512-516`), and the co-consumer paragraph on `capacityFor`
       (`:256-258`). Keep the tests in `test/capacity.test.ts` 'a seat capacity estimate' (`:308`),
       'a limit error lowers the estimate that permitted it' (`:390`), 'a co-consumer makes the
-      estimate low, not high' (`:434`) and 'a declared capacity' (`:448`) as tests of a reported
-      figure, and reword any that assert it bounds a seat
+      estimate low, not high' (`:434`) as tests of a reported figure, and reword any that assert
+      it bounds a seat. 'a declared capacity' (`:448`) goes with `capacity_estimate` (14.1)
 
 ## 5. Saying so, in `igor budget`
 
@@ -210,12 +210,15 @@
 - [ ] 7.9 New tests: a reserved seat with a reading below its line and no capacity figure is
       chosen; one at or past it is passed over; one with no unreset reading is passed over at
       `r` > 0 and chosen at `r` = 0; the line rises with time on unchanged readings; both windows
-      must pass; a capacity figure, observed or declared, changes no verdict
-- [ ] 7.10 `budget_share` on the derived path (`src/budget.ts:648-663`) divides by
-      `capacity.capacityUsd`. **Left as it is until Adam answers the question in `design.md`**
-      (*What the dollar bound leaves behind*). Recommended: measure it against the reading as the
-      live path does (`:697-708`). 'budget_share is a ceiling, not a reservation' (`:534`) follows
-      whichever is decided
+      must pass; a capacity figure changes no verdict
+- [ ] 7.10 `budget_share` is measured against the reading on every path (Adam, 2026-09-28). On
+      the derived path (`src/budget.ts:648-663`) replace
+      `(capacity.spentUsd / capacity.capacityUsd) * 100` with the window's newest unreset reading
+      (4.4), passed to `roleSharePercent` exactly as the live path does (`:697-708`). A window with
+      no unreset reading gives the ceiling nothing to measure, and the no-reading rule decides the
+      seat. Afterwards no gate reads `capacityUsd`. Update 'budget_share is a ceiling, not a
+      reservation' (`test/budget.test.ts:534`) and add a test that a share is reached on a seat
+      with a reading and no capacity figure
 
 ## 8. Window length and schedule
 
@@ -254,7 +257,7 @@
 - [ ] 9.3 Reword the remedies in `src/budget.ts` that send an operator to `igor observe`
       (`SeatVerdict`'s comment, `WindowState`'s comment, and the "run `igor observe …` on the
       owner's machine" consequence in `describeWindow`) to what starts a seat now: a reading below
-      its line, from a run or the probe. A declared `capacity_estimate` no longer starts one. Also the `whyNoFigure` comment in
+      its line, from a run or the probe. Also the `whyNoFigure` comment in
       `src/capacity.ts` that says an unread seat "wants `igor observe`". Update the tests that
       assert the old text
 - [ ] 9.4 Leave `Observation.source`'s `'usage'` member in place, and test that a `usage` row is
@@ -287,8 +290,12 @@
 
 - [ ] 12.1 `src/role.ts`: an optional `reserve`, a number from 0 to 1 inclusive, beside
       `budget_share` (`:72`, `:105`, `:332`, `:441-449`), refused outside that range. Inheritance
-      follows the protective direction, a role may raise an inherited reserve and never lower it,
-      unless Adam decides otherwise (`design.md`, *Still open*)
+      raises, never lowers (Adam, 2026-09-28): resolve the effective reserve as the largest along
+      the role's parents and `roles/org.yaml` (where `budget_share` takes the smallest, `:363-382`),
+      a role declaring none inheriting its parent's. A child declaring a reserve below its
+      parent's is refused, naming both values and both roles, as `:446-449` does for
+      `budget_share`. Tests in `test/role.test.ts`: raise accepted, lower refused naming both,
+      none inherits
 - [ ] 12.2 The gate takes the role's reserve (`chooseSeat`'s and `budgetGate`'s `role` parameter,
       `src/budget.ts:615` and `:871`) and uses `max(seat.reserve, role.reserve ?? 0)` for the line
       on every seat the role draws on
@@ -320,8 +327,28 @@
 - [ ] 13.3 Test that an operator can tell holding back, a refusal, an unread seat and an empty
       queue apart from the record alone
 
-## 14. `capacity_estimate`
+## 14. Removing `capacity_estimate`
 
-- [ ] 14.1 Keep the key parsed (`src/budget.ts:1298-1330`, `:1340`) and reported as declared; it
-      admits nothing (7.9). Whether to deprecate and then remove it waits on Adam's answer in
-      `design.md` and on task 1.1
+- [ ] 14.1 Remove the key (Adam, 2026-09-28). In `src/budget.ts`: `Seat.capacityEstimate` and its
+      comment (`:69-73`), `DeclaredEstimate` (`:76-83`), `parseDeclaredEstimate`
+      (`:1298-1330`), its call and field in `parseOrgBudget` (`:1398`, `:1412`), and the
+      declared-capacity wording in `describeWindow` (`:1050`, `:1122-1123`). In
+      `src/capacity.ts`: the `declared` basis of `CapacityFigure` (`:154`) and `CapacityAndSpend`
+      (`:409`), `capacityFor`'s declared argument and fallback (`:276`), and `boundsForSeats`'
+      `capacityEstimate` input and rolling-window branch for a declared figure (`:504`, `:528`,
+      and the rolling-window comment around `:560-568`). `src/keys.ts:5-6`'s example
+- [ ] 14.2 Take `capacity_estimate` out of `SEAT_KEYS` (`src/budget.ts:1340`), and refuse it with
+      its own message rather than the generic unknown-key one. **May be reworded**, provided it
+      names the key, says it was removed with the dollar bound (#143), and says to delete the
+      line:
+
+      ```
+      seat "adam".capacity_estimate was removed with the dollar bound (#143): a seat is now admitted on its reading, so delete this line
+      ```
+
+- [ ] 14.3 Tests: the refusal names the key, #143 and the fix. Remove or rewrite the tests that
+      declare it: `test/budget.test.ts:651`, `:663`, `:711`, `:733`, `:782-785`, `:826`, the parsing
+      tests at `:878-937`, and `:1546-1558`; `test/capacity.test.ts` 'a declared capacity'
+      (`:448-490`) and `:569-571`
+- [ ] 14.4 `README.md` and `docs/seats.md`: drop the "being removed" notes and every remaining
+      mention of declaring a capacity

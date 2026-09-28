@@ -343,8 +343,9 @@ owner's floor "by construction", with no observation of the owner, and that a fl
 a reading would lapse when readings stopped. The line answers the second half by failing closed: a
 seat whose line uses a non-zero reserve is not drawn on without an unreset reading (below), so a
 seat whose readings stop goes idle rather than open. It does give up the first half. The floor now
-rests on a reading, and a reading is the undocumented event. That is recorded under *Degrading*
-and *Still open*.
+rests on a reading, and a reading is the undocumented event. That is recorded under *Degrading*,
+and it is settled (Adam, 2026-09-28): seats whose effective reserve is 0 run without a reading, reserved
+seats go idle, and `igor budget` says why a seat is idle.
 
 **Which readings count.** The newest observation of the window, all-models, whose reset has not
 passed, whatever its source: a `stream` reading, an existing `usage` row, or a `limit` refusal.
@@ -369,8 +370,9 @@ The gate before an item sees the last reading the previous run carried, and that
 timed when its event arrived. So an Igor can pass the line by the item it admits plus whatever the
 previous run spent after its last event. Where a run's last event arrives near its end, that is
 about one run's spend, which is the cost Adam accepted. Where it arrives near the start, it can
-approach two. How late in a run the last event arrives is unmeasured. Task 1.1 records it, and it
-is under *Still open*. Every run carries a fresh reading, so the overshoot does not compound.
+approach two. How late in a run the last event arrives is unmeasured, and task 1.1a measures it.
+Adam accepted this bound on 2026-09-28, as stated: about one run per process, up to two if a run's
+last event comes early. Every run carries a fresh reading, so the overshoot does not compound.
 
 **Per Igor, not coordinated (settled by Adam, 2026-09-28).** Every Igor on a seat reads the same
 whole-seat reading, so they are held to one line without adding up each other's books. Each
@@ -419,6 +421,12 @@ added. The two remedies that exist are pools, since a role draws only on its own
 seats so that the low-reserve role is fully served elsewhere. A guaranteed per-role minimum is not
 specified, and is added only if it proves to be needed.
 
+**It is raised by inheritance, never lowered (Adam, 2026-09-28).** A child role may hold back more
+than `roles/org.yaml` or its parent, never less, and config validation refuses a child reserve below
+its parent's, naming both. That is the same protective direction as `max(seat, role)`. It runs the
+opposite way to `budget_share`, which a child may only lower, because both inherit toward holding a
+role back.
+
 ### A reserve on a dedicated seat is pacing
 
 Decided by Adam on 2026-09-28. On a seat nobody works on, a reserve holds capacity back for work
@@ -429,8 +437,7 @@ reserve capacity for") is removed in gate two. So are the parser forcing a dedic
 to 0 (`src/budget.ts:1413`) and the range check that refuses a reserve of 1 (`src/budget.ts:1392`),
 since a reserve of 1 now means even pacing. The `MODIFIED` *Seats are named configuration entities
 with an owner and a reserve* says a reserve is the share of the remaining window held back, from 0
-to 1 inclusive, on any seat. The key keeps its name `reserve`. Whether to rename it is a minor
-question under *Still open*.
+to 1 inclusive, on any seat. The key keeps its name `reserve` (confirmed by Adam, 2026-09-28).
 
 ### What the dollar bound leaves behind
 
@@ -439,26 +446,27 @@ capacity half of `boundsForSeats` (`src/capacity.ts`) still derive a figure, and
 shows it with its source. No gate reads it. The in-force *Capacity is recorded spend…* and *A limit
 error lowers the estimate that permitted it* carry `MODIFIED` deltas saying so.
 
-**`capacity_estimate` becomes a reported figure that admits nothing.** It existed to start a
-reserved seat under the dollar bound, and the line does not need it. Removing the key outright would
-make `strict-config-keys` refuse every existing config that carries it, which is a breaking change for
-no gain in this change. So it stays parsed, is reported as declared, and gates nothing. Whether to
-deprecate and later remove it is a question for Adam under *Still open*. There is one case it
-used to cover that nothing now covers: a fresh reserved seat that emits no event below every
-threshold (task 1.1).
+**`capacity_estimate` is removed in gate two (Adam, 2026-09-28).** It existed to start a reserved
+seat under the dollar bound, and the line does not need it. Config checking is strict, so an existing
+config that still carries the key is refused at load. That is accepted, and the refusal is made to
+say what to do: it names the key, says it was removed with the dollar bound (#143), and says to
+delete the line. The docs say the same to anyone upgrading. There is one case it used to cover that
+nothing now covers, a fresh reserved seat that emits no event below every threshold, and that waits
+on task 1.1.
 
-**`budget_share` depends on a capacity figure, on one path.** It is a ceiling on one role's share of
-a seat, and is not the seat reserve. On the live path it is measured against the reading: the role's
-share of Igor's recorded spend times the reading's `percentUsed` (`src/budget.ts:697-708`). On the
-derived path, for a seat `/usage` cannot read, it divides by the capacity figure instead:
-`capacity.spentUsd / capacity.capacityUsd` (`src/budget.ts:648-663`), and it is unchecked where there
-is no figure. That is the one gate input left on a capacity figure, and this change does not resolve
-it on its own. It is a question for Adam under *Still open*. Until he answers, gate two leaves
-`budget_share` as it is.
+**`budget_share` is measured against the reading (Adam, 2026-09-28).** It is a ceiling on one
+role's share of a seat, and is not the seat reserve. On the live path it is already measured against
+the reading: the role's share of Igor's recorded spend times the reading's `percentUsed`
+(`src/budget.ts:697-708`). On the derived path it divided by the capacity figure instead,
+`capacity.spentUsd / capacity.capacityUsd` (`src/budget.ts:648-663`), and was unchecked where there
+was no figure. Gate two moves that path to the reading too, so no figure in dollars is a gate input
+anywhere. The reading counts the owner's use, so on a shared seat a role meets its ceiling sooner
+than its own spend would take it, which errs toward holding it back. *`budget_share` is a ceiling,
+not a reservation* carries a `MODIFIED` delta saying so.
 
 **No other operator-configured dollar ceiling exists.** `git grep` over `src/config.ts`, `docs` and
 `README.md` for ceilings, allowances and reserves finds only the seat `reserve`, `budget_share`, and
-`capacity_estimate`.
+`capacity_estimate`. After gate two none of them is measured in dollars, and the last does not exist.
 
 ### Window length and schedule, measured just after a reset
 
@@ -582,7 +590,7 @@ fullness for the gate and the report.
 probe. If the answer is no, a probe of a fresh seat returns nothing and records nothing. Its cost is
 bounded by the five-hour back-off. Under the line, the consequence is sharper than it was: a fresh
 seat whose line uses a non-zero reserve is not drawn on until a reading exists, and a declared
-`capacity_estimate` no longer starts it. Such a seat would start only once its owner's own use
+`capacity_estimate`, which used to start it, is removed. Such a seat would start only once its owner's own use
 carried it past a provider threshold, or from a period at reserve 0. In that case tasks 6.x are
 not built as written, and what starts a fresh reserved seat goes back to Adam.
 
@@ -643,47 +651,40 @@ scenarios became false are `REMOVED` and re-`ADDED` under new names.
 Two more deltas are about the probe: *Every invocation records which role spent from which seat* and
 *A spend with no seat behind it does not happen*.
 
-`budget_share is a ceiling, not a reservation` is not modified. Its text does not say how a share is
-measured, and how it is measured on the derived path is the open question above.
+- ***`budget_share` is a ceiling, not a reservation*** — its text said nothing about how a share is
+  measured, and the derived path measured it with a capacity figure. Now it is measured against the
+  reading, on every path.
 
 No in-force requirement specifies `igor observe`, the scheduled reading, the refusal of a seat
 credential, or anything in `budget-pacing`, since neither change was archived. So their withdrawal
 needs no `REMOVED` delta.
 
+## Settled on 2026-09-28, after the questions this design raised
+
+- **`budget_share` is measured against the reading**, on every path. No figure in dollars is a gate
+  input anywhere (task 7.10).
+- **`capacity_estimate` is removed in gate two.** A config that still carries it is refused, and the
+  refusal names the key, cites #143 and says to delete the line (task 14.1).
+- **A role's reserve is raised by inheritance, never lowered**, and a child reserve below its
+  parent's is refused, naming both (task 12.1).
+- **The overshoot is accepted:** about one run per process, up to two if a run's last event comes
+  early, as task 1.1a will measure.
+- **Losing the event:** seats whose effective reserve is 0 run without a reading, reserved seats go
+  idle, and `igor budget` says why a seat is idle (task 7.6).
+- **The names:** the rename to *A seat with no reading is drawn on only where its line is the whole
+  window*, the re-added *A seat's fullness is read from the seat…* and *Recorded spend attributes a
+  seat between its roles, and decides no headroom*, and the key name `reserve`, are confirmed.
+- **Coordination across Igors** stays per process, until a reserved seat is actually shared by
+  several Igors.
+
 ## Still open
 
-- **A seat below every threshold** (task 1.1). Whether it gets a `rate_limit_event` at all is
-  unmeasured. The only capture fired with the week at 86%. The session was reported at 0.07 in that
-  same event, so low windows are reported when an event fires. Under the line this gates more than
-  the probe: if a fresh seat emits nothing, a fresh seat whose line uses a non-zero reserve cannot
-  start at all. See *A seat probe*.
-- **`budget_share` on the derived path** (question for Adam). It divides by a capacity figure
-  (`src/budget.ts:648-663`), the one gate input left on one. Recommended: measure it against the
-  reading, as the live path already does (`src/budget.ts:697-708`), so no gate reads a capacity figure.
-  That counts the owner's use against a role's share, which the live path already does. The
-  alternative is to keep the figure there as the one exception.
-- **`capacity_estimate`** (question for Adam). It is now a reported figure that admits nothing.
-  Recommended: keep it parsed and reported until task 1.1 answers, then deprecate it if fresh seats
-  do emit events, since removing the key makes `strict-config-keys` refuse existing configs. If they do
-  not, what starts a fresh reserved seat has to be decided, and a declared figure is one candidate.
-- **How far past the line one run can carry a seat.** About one run's spend if a run's last event
-  arrives near its end, and up to two if near the start. Task 1.1 records when events arrive in a
-  run. Recommended: accept it as measured. If last events come early, read the event at the end of a
-  run, or add the previous run's recorded spend to the reading as a correction.
-- **The gate rests on the event, for reserved seats.** It rests on an undocumented event. If the
-  event goes, seats with an effective reserve above 0 fail closed, and seats at 0 keep running until
-  refused. Recommended: accept it, and have `igor budget` say plainly when a reserved seat is idle for
-  want of a reading.
-- **Coordination across Igors** (settled for now, 2026-09-28). The line and the overshoot are per
-  Igor. A coordination marker is taken up only once a reserved seat is actually shared by several
-  Igors, together with the same gap on any remaining spend bound, such as `budget_share`.
+- **What starts a fresh reserved seat, if task 1.1 finds no event below every threshold.** Waiting on
+  the capture from Adam's new seat. Under the line such a seat is not drawn on without a reading, and
+  `capacity_estimate`, which used to start one, is removed. If fresh seats do emit events, the probe
+  starts them and there is nothing to decide.
 - **A guaranteed per-role share.** Not specified. Add it only if a role's reserve proves too weak a
   priority in practice. Pools and more seats are the remedies that exist.
-- **How a role's reserve inherits** (minor). `budget_share` inherits so that a child may only lower
-  it. Task 12.1 has a role's reserve inherit in the protective direction instead: a child may raise
-  an inherited reserve and never lower it. Recommended: that.
-- **The key's name** (minor). `reserve` now means the share of the remaining window held back, for
-  an owner on a lent seat and for later work on a dedicated one. Recommended: keep the name.
 - **The `rejected` shape** (#57). The single-row rule is written against the contributor-reported
   shape and must be checked against the first captured refusal.
 - **`allowed_warning` has no gate behaviour.** The line uses the utilization itself. Please review this

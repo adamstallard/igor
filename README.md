@@ -424,8 +424,8 @@ pool engineering: fleet-1 has 83% of the session left
   six different things, fixed by different people: one is a token, one is a reading of the seat
   (today `igor observe` on the owner's machine, which
   [`read-seat-windows-from-the-stream`](openspec/changes/read-seat-windows-from-the-stream/design.md)
-  withdraws in favour of reading the seat on the server), one is a declared `capacity_estimate`,
-  and one is waiting. A derived figure carries
+  withdraws in favour of reading the seat on the server), one is a declared `capacity_estimate`
+  (being removed by #143: delete it from your config when you upgrade), and one is waiting. A derived figure carries
   the observation it came from and when that observation was taken, because headroom derived
   from a limit error an hour ago and headroom derived from a month-old reading are not the same
   claim.
@@ -458,7 +458,10 @@ who uses less leaves the Igor more, and one who uses more leaves it less. It ass
 is spread across the window, since the reserve is a share of the time still to come; an owner who
 finds the Igor takes too much, or who uses the seat late in the window, raises the reserve. An item
 already running finishes, so an Igor can pass the line by about one run before the next reading
-stops it. A seat with a reserve that nothing has read is not drawn on until the server reads it.
+stops it. A seat with a reserve that nothing has read is not drawn on until the server reads it,
+and `igor budget` says that is why it is idle. No figure in dollars decides anything, a role's
+`budget_share` included, and `capacity_estimate` is being removed: delete it from your config when
+you upgrade.
 
 **On a dedicated seat a reserve is pacing.** It holds capacity back for work that arrives later in
 the window, and at `1` it spends the window evenly. Dedicated seats default to `0`, which fills the
@@ -467,7 +470,8 @@ whole window, because spending early is not waste when the work is there.
 **A role may hold back more than its seat, never less.** A role's own `reserve` applies to every
 seat it draws on, and the larger of the seat's and the role's governs. With `frontend` at `0.3` and
 `generalist` at none on one pool, `frontend` stops at its line and `generalist` takes what is left
-above it. That is a priority, not a guaranteed share: a `generalist` that always has work can crowd
+above it. A child role may raise the reserve it inherits, never lower it. That is a priority, not a
+guaranteed share: a `generalist` that always has work can crowd
 `frontend` out for most of a window, and the remedies are pools, since a role draws only on its
 own, and more seats.
 

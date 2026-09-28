@@ -118,7 +118,8 @@ before you hand anything over: declare the seat with `reserve: 0`, let it run fo
 reading taken, then add your reserve. Or declare a `capacity_estimate` in the config if somebody
 knows roughly what the window is worth — it is reported as an assumption until a reading
 replaces it. Under the line neither is needed: a reading below the line is all a reserved seat
-wants, and a declared `capacity_estimate` becomes a figure that is reported and starts nothing.
+wants. `capacity_estimate` is being removed by #143: delete it from your config when you upgrade,
+or the config will be refused at load with a message saying so.
 
 Nothing takes that reading on a schedule, and nothing will be installed on your machine to take
 one: a job on a lender's machine was proposed and withdrawn. Reading your seat on the server that
