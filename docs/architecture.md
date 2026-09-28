@@ -1183,7 +1183,11 @@ rewrite — turning the eventual fully-open migration into a dial rather than a 
   seat's windows, including an `allowed_warning` once a threshold is crossed. Wind-down is still
   built reactively — catch the limit error, then spend whatever remains on a handoff — with
   proactive tracking as an optimization, never a correctness dependency: the warning is
-  undocumented and could change without notice.
+  undocumented and could change without notice. The reserve line decided in §6.3.4 changes the
+  second half of that once it is built: the gate will then rest on the stream reading. It fails
+  closed — a seat with no unreset reading is not admitted — so losing the event would stop Igor
+  starting work, not let it overspend. It becomes a dependency for staying live, not for staying
+  within the reserve.
 - **Per-invocation cost is available**: headless `claude -p --output-format json` returns
   `total_cost_usd` and a per-model breakdown, so a wrapper can sum real spend. These are
   documented as client-side estimates.
@@ -1289,9 +1293,13 @@ about the weekly one, so every window appears to be included whichever one is be
   discarding this one.
 - **Calibration is no longer the only way to bound a seat.** It used one `/usage` reading from an
   interactive login on the same account, divided into the spend Igor recorded over the window.
-- **An adaptive reserve becomes possible in principle.** The reading is of the whole seat, so it
-  includes the owner's own use, which is what `budget-pacing`'s fourth requirement needed to see.
-  Relating a percentage of a window to dollars of recorded spend is the part not yet worked out.
+  Under §6.3.4 it bounds nothing at all: the gate compares the reading itself, and a capacity
+  figure is kept only for display.
+- **An adaptive reserve becomes possible**, and §6.3.4 is the one decided. The reading is of the
+  whole seat, so it includes the owner's own use. That is what `budget-pacing`'s fourth
+  requirement (*A reserve decays toward the reset…*) needed to see, and §6.3.4 supersedes that
+  requirement. Relating a percentage of a window to dollars of recorded spend no longer matters for
+  the gate, because the gate compares percent against percent.
 
 **Still open.**
 
@@ -1306,7 +1314,89 @@ about the weekly one, so every window appears to be included whichever one is be
 **Calibration was built once and deleted** in `188a762`, on the premise that the CLI reports the
 number for free. It does, for a login. Anything reviving it should start from that history rather
 than from scratch, and should not revive the destructive part — running a seat to its limit to
-discover the limit.
+discover the limit. It was specified a second time on #143, as *calibration admission* (let an
+unread reserved seat in one item at a time until it has a figure). That was dropped on 2026-09-28
+with §6.3.4, which needs no figure to gate a seat.
+
+### 6.3.4 A seat's reserve is a line that moves toward the reset — **decided 2026-09-28; specified on #143, not built**
+
+Decided by Adam on 2026-09-28 and specified on [#143](https://github.com/adamstallard/igor/pull/143)
+(branch `seat-from-stream`). **Nothing here is built.** The shipped gate still bounds Igor's
+recorded dollars by `(1 − reserve) × capacity` (`derivedWindow` and `describeWindow` in
+`src/budget.ts`) until #143's second gate lands.
+
+**The rule.** For each window, Igor may start work on a seat only while the seat's latest unreset
+reading of that window — the `rate_limit_event` utilization of §6.3.3 — is below
+
+```
+line      = 1 − reserve × remaining
+remaining = (resetsAt − now) ÷ window length
+```
+
+which is the same line as `(1 − reserve) + reserve × elapsed`. The session and the week each have
+one, and a seat is admitted only while it is below both.
+
+| reserve | just after a reset | halfway | 10% left | at the reset |
+|---|---|---|---|---|
+| 0 | 100% | 100% | 100% | 100% |
+| 0.3 | 70% | 85% | 97% | 100% |
+| 1 | 0% | 50% | 90% | 100% |
+
+At reserve 0 the line is 100% throughout: no reserve and no pacing. At reserve 1 the line equals
+`elapsed`, which is even pacing. That is `budget-pacing`'s `target × elapsed`, except that it
+always reaches 100% at the reset, so it never strands capacity.
+
+**Why a line and not a bound on Igor's spend.** In Adam's words: *"we don't need to know how much
+the seat holder is using, and igor will adapt to fill the usage whether they're using more or
+less."* The reading is of the whole seat, so the owner's use is already in it. A quiet owner
+leaves Igor room up to the line. A busy owner leaves Igor less. Nobody has to work out which part
+of the reading is whose. What the owner keeps is the gap between the line and 100%: `reserve ×
+remaining` of the window, narrowing to nothing at the reset. Capacity left unspent at a reset is
+lost to everyone, so holding any of it back until then protects nobody.
+
+**One line does both jobs, protecting the owner and pacing the spend.** There is no separate pace
+line to take the lower of. On #143's branch, `budget-pacing`'s pace line, dead band and reserve
+decay requirements are removed. Only *Waiting on pace is distinguishable from having nothing to
+do* survives, as waiting on the line. A reserve on a dedicated seat now means pacing, and a
+dedicated seat defaults to reserve 0. The config check that refuses a reserve on a dedicated seat
+(`parseOrgBudget`) goes in #143's second gate. That check also refuses a reserve of exactly 1,
+which the table above uses.
+
+**What it replaces.**
+
+- **The dollar gate.** `(1 − reserve) × capacity` on Igor's recorded spend is no longer the gate.
+  Capacity figures stay only as a display in `igor budget`.
+- **Calibration admission** (§6.3.3), dropped. A seat with no unreset reading is not admitted.
+  A probe on the Igor server reads it first, and the probe also holds off once the seat is at the
+  line.
+- **`budget-pacing`'s *A reserve decays toward the reset, on the clock or on the owner's
+  consumption*.** It is superseded, and so are its statements that the weekly reserve does not
+  decay and that a reserve never narrows to nothing. Under the line, both windows narrow, all the
+  way to the reset.
+
+**Accepted cost: overshoot by one run.** Igor's own spend shows up only in the next reading, so
+between readings Igor cannot see it, and each Igor can overshoot the line by at most one run.
+That limit is held per Igor and not coordinated across Igors, until a reserved seat is actually
+shared. `concurrent-instances` checks the gate once per item in each process, so under it the
+limit is one run per process.
+
+**Window length is measured, not assumed.** A probe placed just after a known reset measures the
+window's length. It also shows whether windows run on a fixed schedule or start at first use.
+Until that is measured, the built-in 5 hours and 7 days stand.
+
+**Consequences not yet settled.**
+
+- **A window the line has shut reopens before its reset.** The line rises as the window runs
+  down, so a reading `u` below 1 is under the line again once `remaining < (1 − u) ÷ reserve`.
+  At reserve 0.3, a reading of 85% is shut until halfway through the window. Only a reading of
+  100% waits for the reset. A reading is a lower bound until its reset, so that crossing is the
+  earliest possible return and not a certain one. Which hour a handoff states is open (#74,
+  `graceful-handoff`).
+- **The gate now depends on the stream to stay live** (§6.3). If the event stops arriving, or a
+  seat below every threshold turns out to emit no numbers (§6.3.3, *Still open*), no seat can be
+  admitted, because nothing reads it.
+- **Whether a refusal-derived observation counts as a reading.** #39 writes one at 100% for a
+  refused run, and #75 would write one for a refused triage call.
 
 ### 6.4 Graceful handoff — **built**
 
@@ -1334,9 +1424,12 @@ consequences:
   the one it replaces.
 
 **A reserve floor is required whenever a human shares the seat.** Igors stop at a configured
-fraction of the allowance and leave the remainder untouched, so a person never sits down to
-find their capacity was quietly consumed overnight. Without it the failure is invisible,
-unattributable, and lands on the human; with it, it is a configured limit they chose.
+line below the seat's allowance, so a person never sits down to find their capacity was quietly
+consumed overnight. Without it the failure is invisible, unattributable, and lands on the human;
+with it, it is a configured limit they chose. What that line is was decided on 2026-09-28
+(§6.3.4, not built): it rises from `1 − reserve` just after a reset to 100% at the reset. The
+person is kept `reserve × remaining` of the window rather than a fixed fraction of it, because
+whatever is left at the reset is lost to everyone.
 
 Two practical notes: several processes on one token may hit per-account concurrency limits,
 and all activity appears under one account upstream — so distinguishing which Igor did what
@@ -1358,7 +1451,7 @@ seats:
   - id: adam
     owner: adam@example.com
     token_env: IGOR_SEAT_ADAM
-    reserve: 0.5             # Adam keeps half his allowance for himself
+    reserve: 0.5             # Adam keeps half the window just after a reset, less as it nears (§6.3.4)
 
 pools:
   - id: engineering
