@@ -15,7 +15,7 @@ than restating it.
 session files and spends one person's login. Igor keeps both in the team's shared space:
 whatever an Igor needs to continue a piece of work is on the tracker or in lore, never in a
 process (§1, §2). Igors are defined by roles and claim work where everyone can see it (§2.1,
-§5.2), and they spend seats that team members lend to a pool (§6.3). One test follows for any
+§5.2), and they use the seats team members have set aside for their roles (§6.3). One test follows for any
 feature: if it only works because something is remembered in a process, a session file, or one
 person's machine, it breaks the premise.
 
@@ -107,7 +107,7 @@ that a seat costs the same idle, so a role too narrow to fill its allowance wast
 already paid for — holding a second role absorbs the slack.
 
 That argument depends entirely on **one seat per Igor**. Seats can be shared (§6.5), and once
-they are, the pressure disappears: five narrow Igors on one pooled seat beat one broad Igor,
+they are, the pressure disappears: five narrow Igors on one shared seat beat one broad Igor,
 because specialization buys things breadth destroys —
 
 - **Legibility.** If every Igor does everything, "which Igor claimed this" carries no
@@ -117,10 +117,10 @@ because specialization buys things breadth destroys —
   intersection of its roles, and both are wrong.
 - **Failure isolation.** A bad role config breaks one lane rather than everything.
 
-Under a shared pool the priority ordering moves to **fleet level** — one ordering across Igors
+Once seats are shared, the priority ordering moves to **fleet level** — one ordering across Igors
 rather than a ranked list inside each — which is cleaner anyway. Role breadth then becomes an
 empirical tuning decision that follows expected work volume, exactly like staffing: a role that
-reliably fills capacity gets dedicated resources, one that does not gets pooled.
+reliably fills capacity gets a dedicated seat, one that does not shares one.
 
 Three properties make that safe:
 
@@ -131,7 +131,7 @@ Three properties make that safe:
   into another's task.
 - **Priority is fleet-level, not per-Igor.** Ranking roles inside a single Igor so spare
   budget flows down its own list only makes sense when each Igor owns a seat. Seats are
-  pooled (§6.5), so the ordering belongs across Igors. Ties break by item age either way.
+  shared (§6.5), so the ordering belongs across Igors. Ties break by item age either way.
 - **Interchangeability survives.** An Igor is still fully described by its ordered role
   list, so two Igors with the same list remain swappable. Worth keeping explicit, because
   this is the property that would quietly erode into Igors having individual identities.
@@ -900,7 +900,7 @@ runtime mode, which is where it belonged.
 
 ### 5.0.4 Work already in flight — **built**
 
-An Igor unassigns itself on completion, so the item returns to the pool and is rediscovered
+An Igor unassigns itself on completion, so the item is open work again and is rediscovered
 next cycle. Without a check it would claim it again and redo work sitting in review.
 
 **The rule is universal, the detection is per-adapter.** "Do not duplicate work already in
@@ -966,7 +966,7 @@ from a second command:
 
 That yields pause-with-resume without inventing a second verb, and the resume signal is just a
 message on the surface. The failure it avoids: if stop blacklisted an item permanently, a human
-who stopped to look and then wandered off would have silently deleted that work from the pool,
+who stopped to look and then wandered off would have silently removed that work from what is open,
 since the watermark already marks it seen.
 
 **A minimal stop belongs in `core-igor-loop`, not in `directed-interaction`.** The conversational
@@ -1391,7 +1391,7 @@ On a shared seat, that orders roles with no coordination between them. If fronte
 and generalist 0 on the same seat, frontend stops at 70% just after a reset while generalist runs
 to 100%, so generalist tends to use more of the seat. This is priority, not a guaranteed share: a
 lower-reserve role can still take capacity a higher one was waiting for. That is accepted, with no
-new mechanism. The remedies are pools, since a role draws only on its own pool, and adding seats.
+new mechanism. The remedies are choosing which roles a seat serves, and adding seats.
 Also decided 2026-09-28, specified on #143, and not built.
 
 **What it replaces.**
@@ -1449,7 +1449,7 @@ other Igors back off, then it goes silent mid-task. So exhaustion must produce a
 state-of-work, remaining steps, and suggested pickups. The summarizing call should be cheap
 and separate, not competing for the exhausted budget.
 
-### 6.5 A seat is a pool, not an identity — **planned**
+### 6.5 A seat is capacity, not an identity — **planned**
 
 Nothing prevents several Igors, or an Igor and a human, from running against the same
 subscription seat. One token, several processes. Three configurations, with different
@@ -1480,10 +1480,12 @@ Two practical notes: several processes on one token may hit per-account concurre
 and all activity appears under one account upstream — so distinguishing which Igor did what
 depends on local logging, not on anything the provider records.
 
-#### 6.5.1 Ordered pools and ceilings — **decided**
+#### 6.5.1 Which seats a role uses, and ceilings — **built; the grouping is being replaced (#148)**
 
-Three concepts, no more: a **seat** is capacity, a **pool** is an ordered list of seats, and a
-role's `budget_share` is a **ceiling** on what it may draw from its pool.
+Three concepts, no more: a **seat** is capacity, a **pool** (the config key) is an ordered list
+of the seats a role may use, and a role's `budget_share` is a **ceiling** on what it may draw
+from them. #148 replaces the list with a file per seat naming the roles it serves, the seat
+chosen by headroom rather than by order.
 
 ```yaml igor:budget
 seats:
@@ -1503,14 +1505,14 @@ pools:
     seats: [fleet-1, fleet-2, adam]
 ```
 
-**Pool order is the whole allocation mechanism.** An Igor takes the first seat in its pool with
+**Order is the whole allocation mechanism today.** An Igor takes the first listed seat with
 headroom, so dedicated capacity drains before anyone's personal allowance is touched. That
 single ordering replaces a separate overflow concept, and it means the common arrangement —
 some dedicated seats, plus whatever the team has spare — is expressed by listing them in that
 order.
 
 **`budget_share` is a ceiling, not a reservation, and shares need not sum to one.** Three roles
-may each declare `0.4`. It reads as "this role may never consume more than 40% of the pool",
+may each declare `0.4`. It reads as "this role may never consume more than 40% of the seats it may use",
 not "40% is set aside for it". The reasons are practical:
 
 - Adding a fourth Igor would otherwise mean editing three other roles to make room. Ceilings
@@ -1525,17 +1527,16 @@ each seat's own `reserve` is checked first and independently.
 
 **Enforcement order**, most protective first: the seat's reserve (the reserve line, taken with
 the role's own reserve where that is higher, once §6.3.4 is built), then the role's ceiling
-against its trailing spend, then the next seat in the pool. Exhausting every seat in a pool is
+against its trailing spend, then the next seat it may use. Exhausting every one is
 a graceful handoff (§5.5), never a hard stop.
 
-**Where legibility comes from.** Config states the *policy* — which pool a role draws on and
+**Where legibility comes from.** Config states the *policy* — which seats a role may use and
 what its ceiling is. The record states the *fact* — every invocation stores role, seat, cost
 and time, so "which Igor spent whose allowance" is answerable historically even though the
 seat is chosen dynamically. `igor budget` reports both: per seat its windows, what each has
 used, its reserve and headroom; per role its ceiling, spend and which seats it drew on.
 
-A role may still name a single seat rather than a pool, for an Igor that must never borrow a
-human's capacity. The pool is the general case, not the only one.
+A role may still name a single seat, for an Igor that must never use a person's capacity.
 
 ### 6.6 Distribution: public repository now, npm later — **planned**
 
@@ -1592,9 +1593,8 @@ process per Igor each holding its own credentials.
 - **One shared recognizer.** This is where the local open-weight model (§4.1) runs, and sharing
   is what makes its cost argument work at all — serving one model to a dozen loops is cheap,
   standing one up per Igor is absurd.
-- **One secret store**, with seat tokens pooled (§6.5). Members of the org can see each other's
-  keys, which is an ordinary trade for an internal tool and the right default; per-user
-  isolation is what you add when someone has a reason, not what you start with.
+- **One secret store** for seat tokens, on the server, readable by its operator and nobody
+  else (#148).
 - **Surface credentials are org-level anyway** — a GitHub App or token for the organization,
   not one per Igor.
 
@@ -1869,8 +1869,8 @@ Agreed in principle, not scoped, roughly in dependency order:
 7. Post-hoc output recognition (§4.4).
 8. Difficulty routing (§6.2).
 9. Publishing to npm, and pinning the promotion workflow to a release (§6.6).
-10. Seat pooling and the fleet-level budget policy, with a reserve floor where a human shares
-    the seat (§6.5).
+10. Shared seats and the fleet-level budget policy, with a reserve where a person shares their
+    seat (§6.5).
 11. Additional adapters: Linear, then Discord.
 12. Binaries in an artifact, refused or carried rather than corrupted (§6.7.3) — needs a role
     that can touch one.

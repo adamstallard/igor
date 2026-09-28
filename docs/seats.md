@@ -116,7 +116,8 @@ warns in advance; what happens is that the Igor stops and says it is not logged 
 ## Several people, one fleet
 
 Each person runs the command themselves and hands over their own token. Nobody needs anybody
-else's. The operator lists the seats in a pool, and an Igor takes the first with headroom — so
+else's. The operator lists which seats each role may use, in order, and an Igor takes the first with
+headroom — so
 listing dedicated seats before personal ones means a colleague's allowance is only ever reached
 once the dedicated capacity is spent. A personal seat nobody has measured yet is not the
-fallback either: the pool is treated as empty rather than overflowing into it on a guess.
+fallback either: it is left alone rather than used on a guess.

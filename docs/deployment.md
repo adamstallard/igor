@@ -296,12 +296,12 @@ checkout needed.
 | `role "x" names no seat` | seats are declared but this role names none; set `seat:` on it or on a level it inherits from. Omitting it used to fall through to the first pool declared, which may be a person's |
 | `the tracker did not record <account> as holding <item>` | the machine account lacks write access — GitHub accepts the assignment and silently drops it |
 | nothing is ever claimed | run `igor run <role> --plan`; the funnel prints where every candidate was dropped |
-| `9 left untriaged — the budget is used up, back at …` | every seat in the role's pool is held. Nothing is wrong with the host: triage is a spend, so it does not run where the gate names no seat, and those nine items wait rather than being decided about. It keeps discovering and keeps reading comments, so a **stop** still lands |
+| `9 left untriaged — the budget is used up, back at …` | every seat the role may use is held. Nothing is wrong with the host: triage is a spend, so it does not run where the gate names no seat, and those nine items wait rather than being decided about. It keeps discovering and keeps reading comments, so a **stop** still lands |
 | `9 left untriaged — no seat's usage could be read …` | the same stop, for a reason a clock will not clear: the sentence names what to go and look at, and only "used up" means spend |
 | an item was claimed and nothing happened | there is no such case; every path that holds a claim posts before releasing. If you find one, it is a bug |
 
 An Igor that is quiet is not necessarily an Igor that is broken, and the cycle line says
-which. `Not logged in · Please run /login` is **not** what a held pool looks like: triage no
+which. `Not logged in · Please run /login` is **not** what it looks like when every seat is held: triage no
 longer falls back to whatever login is ambient, so that message means what it says, and running
 `/login` on a machine whose seats are simply held fixes nothing.
 
