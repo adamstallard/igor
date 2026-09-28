@@ -84,9 +84,11 @@ reading taken, then add your reserve. Or declare a `capacity_estimate` in the co
 knows roughly what the window is worth — it is reported as an assumption until a reading
 replaces it.
 
-Nothing takes that reading on a schedule unless
-[`scheduled-observation`](../openspec/changes/scheduled-observation/proposal.md) has been built,
-so it is a thing somebody does by hand. Lend a seat knowing that, and ask what the fleet actually spent rather than
+Nothing takes that reading on a schedule, and nothing will be installed on your machine to take
+one: a job on a lender's machine was proposed and withdrawn. Reading your seat on the server that
+runs the Igors, with the token you handed over, is specified in
+[`read-seat-windows-from-the-stream`](../openspec/changes/read-seat-windows-from-the-stream/proposal.md)
+and has not been built, so for now it is a thing somebody does by hand. Lend a seat knowing that, and ask what the fleet actually spent rather than
 assuming a number in a file did the work.
 
 ## Handing it over

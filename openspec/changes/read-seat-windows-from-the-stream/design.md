@@ -202,6 +202,34 @@ recorded twice*. #75 records a triage *refusal* only where the call carried no r
 triage runs `--output-format json`, that is every triage refusal. Whether triage should switch is
 still an open question for this change.
 
+### `scheduled-observation` is withdrawn
+
+Decided by Adam on 2026-09-27: a scheduled job on a seat holder's machine should not exist. In his
+words, "Any services or queries need to be done on the server that runs the igors. It should have
+the tokens and the seat info in its config."
+
+That was not possible when `scheduled-observation` was written, because a seat's token was
+believed to read no windows, so the only sensor was a person's login on their own machine. It is
+possible now for two reasons. The seat's own token reads the seat's windows from the stream
+(§6.3.3), on the server, with the token already in the server's config. And the gaps that stream
+readings leave are specified here, on the same server, rather than on a lender's laptop. Those
+gaps are a reserved seat with no figure, and a seat the fleet is not using. So everything in that
+change that runs on, or is installed on, a lender's machine is withdrawn:
+
+- the launchd, cron and systemd timers and their installation procedure;
+- the half-hourly schedule;
+- the refusal of a seat credential, which exists to keep the job on a person's login;
+- lending's dependence on push access for the lender's readings.
+
+The withdrawal is recorded on this branch so that it lands with the requirement that replaces what
+the change was for. It is **not yet applied to `openspec/changes/scheduled-observation/` itself**,
+because that change does not split cleanly into what shipped and what is withdrawn. The shipped
+`igor observe` (its tasks 1.x) is specified only inside *A usage reading is free and is taken on a
+recurring schedule*, whose title and first `SHALL` are the withdrawn schedule and the unverified
+claim that the reading is free. Two of its requirements are neither shipped nor laptop-specific:
+*Observations arrive irregularly and nothing depends on their arriving*, and *A window's length is
+measured from successive resets, not configured*. How to cut it is under *Still open*.
+
 ### Degrading to today
 
 No event, a malformed event, or an event with no numbers produces no row, and the run is recorded
@@ -253,3 +281,11 @@ is false:
   from a cap on Igor into a floor under the owner. That is a change to what a reserve means and
   belongs with `budget-pacing`'s adaptive reserve, not here.
 - **Per-model weekly windows** still need another source.
+- **How to cut `scheduled-observation`** (Adam's question). The withdrawal is decided; applying it
+  needs three answers first. Should the shipped `igor observe` stay specified, given that it reads
+  the login of whoever runs it, which in practice is a person on their own machine? If it stays,
+  a new requirement has to be written for it, since none of that change's requirements states
+  only what shipped. And should the two requirements that are neither shipped nor laptop-specific
+  move to this change, stay there, or be dropped? `src/capacity.ts` and `test/capacity.test.ts`
+  cite `scheduled-observation` for the built-in window lengths and for `observeSeat`'s credential;
+  whatever is decided, those citations move in gate two.

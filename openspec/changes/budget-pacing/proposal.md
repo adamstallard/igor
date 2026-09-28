@@ -63,7 +63,8 @@ Explicitly out of scope:
 - Removes the state where an Igor is idle with capacity remaining and no reason.
 - Makes a shared seat worth sharing: the person keeps a floor that reflects their actual use,
   and the Igor stops sitting on capacity nobody claimed. How much of that is recovered depends
-  on whether observations of the seat are current, which `scheduled-observation` is what
-  arranges; without it the clock alone recovers the conservative part.
+  on whether observations of the seat are current, which `read-seat-windows-from-the-stream`
+  arranges (`scheduled-observation`, which was to, is withdrawn); without them the clock alone
+  recovers the conservative part.
 - Adds a reason for an Igor to decline work that is not budget exhaustion, which the decision
   record has to distinguish or an operator reads "waiting" as "broken".
