@@ -11,35 +11,13 @@ than restating it.
 
 ## 0. What Igor is for
 
-**The premise: our agents, not my agent.** A personal coding agent keeps its reasoning in one
-person's session files and spends one person's login. Igor exists to move both into the
-team's shared space. Three commitments follow from that, and most of this document is how each
-is kept.
-
-1. **The record is external.** An Igor's working memory is what the team can already read:
-   the tracker, where the brief, claims, questions, handoffs and pull requests live, and the
-   lore store, where what was learned lives. A process holds nothing durable (§1). State Igor
-   keeps for itself is a cache that correctness never depends on (§5.0.2). So a decision a
-   person writes on an issue reaches whichever Igor picks the item up next, and a lesson learned
-   by one reaches all of them (§2). The test for any feature: if it only works because
-   something is remembered in a process or a session file, it breaks this commitment.
-2. **The agents are the team's.** An Igor is defined by the roles it holds (§2.1), not by whom
-   it works for. It takes work visibly, with one claim mechanism that humans and other Igors
-   both see (§5.2, §5.3). Its identity is its own machine account, so a claim says an Igor has
-   the work, not a person. Anyone on the team directs it through the tracker. Addressing a role
-   by mention is scoped (§5.4).
-3. **Capacity is pooled.** Seats are Claude subscriptions that team members contribute to
-   pools. Roles draw on a pool, and each seat's `reserve` sets how much its owner keeps (§6.3).
-   The reserve is being redefined as a line that moves toward the window's reset, read from the
-   seat's own usage (§6.3.4: decided, not built). The line also paces a seat only Igors use,
-   and orders roles that share a seat. Joining a team adds capacity the same way it adds
-   people: a role file reviewed into the lore repository, and a seat lent to a pool.
-
-What this rules out, stated so it isn't rebuilt by accident: per-agent memory (§2), a hidden
-coordination channel beside the tracker (§5.2), and a deployment that only works while one
-person's laptop or login is present. That last one is why a seat is read on the server with its
-own token (§6.3.3), and why a scheduled reading on the lender's machine was withdrawn
-([#143](https://github.com/adamstallard/igor/pull/143)).
+**Our agents, not my agent.** A personal coding agent keeps its reasoning in one person's
+session files and spends one person's login. Igor keeps both in the team's shared space:
+whatever an Igor needs to continue a piece of work is on the tracker or in lore, never in a
+process (§1, §2). Igors are defined by roles and claim work where everyone can see it (§2.1,
+§5.2), and they spend seats that team members lend to a pool (§6.3). One test follows for any
+feature: if it only works because something is remembered in a process, a session file, or one
+person's machine, it breaks the premise.
 
 ---
 
