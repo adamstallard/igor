@@ -173,9 +173,9 @@ independently of any capacity estimate. The flag is recorded on every row from t
 it is a fact about the seat at that moment, but it shuts only that window: overage met in a session
 says nothing about the week, and shutting the week for it could hold a seat out for days.
 
-**Flagged for the reviewer:** whether a seat should be able to opt in — an owner who wants the
-fleet to spend extra usage. Nothing here adds a key for it; `strict-config-keys` would refuse one
-until a change declares it.
+**No opt-in (decided by Adam, 2026-09-27).** No configuration key lets an owner allow the fleet
+to spend extra usage. Overage costs real money, and a key for it is added only when somebody asks
+for one; until a change declares it, `strict-config-keys` refuses it like any other unread key.
 
 ### Triage's model call produces no reading, as invoked
 
