@@ -62,8 +62,7 @@ is running.
 Explicitly out of scope:
 
 - **Choosing N or the cooldown.** The two items whose cost is recorded are $1.19 and $11.18,
-  10× apart, and there is no run history to fit against. Defaults are provisional, as
-  `budget-pacing`'s are.
+  10× apart, and there is no run history to fit against. Defaults are provisional.
 - **Deriving the cure key** — [#41](https://github.com/adamstallard/igor/issues/41). This change
   consumes the key; that one produces it, at `src/execute.ts:980` for a refused command and on
   the precedent `src/wiring.ts:68` sets for seats. Nothing here works without it.

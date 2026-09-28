@@ -998,6 +998,13 @@ unspent is lost. Just after a reset it is `1 − r`. At `r` = 0 it is 100% at ev
 seat is filled to the whole window and stopped only by the provider's refusal. At `r` = 1 it is
 exactly the fraction of the window elapsed, which spends the window evenly across its length.
 
+What a reserve promises an owner is this: at any moment, Igor leaves `r` × the part of the window
+still to come. At 0.5 it leaves half of what remains: half the window just after a reset, a
+quarter halfway through, and nothing at the reset itself, when anything unused is lost anyway.
+That assumes the owner's own use is spread across the window, since the reserve is a share of the
+time still to come and not a slice set aside at the start. An owner who finds Igor takes too much,
+or who tends to use the seat late in the window, raises the reserve; there is no other setting.
+
 What is compared is a reading of the whole seat, owner's use included. So the rule needs no
 figure for how much the owner has used and no figure in dollars for the window: whatever the
 owner does, Igor stops where the seat as a whole reaches the line, and it takes more of the
