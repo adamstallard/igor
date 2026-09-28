@@ -856,6 +856,12 @@ one. Narrowing means an entry the parent already lists, verbatim: deciding wheth
 is narrower than an inherited `npm *` is a matcher, and the same reasoning that gets one command
 past the check gets every command past it.
 
+A setup starts from `templates/org.yaml`, which `igor init` writes as the store's `roles/org.yaml`:
+the entries a worker's own tools cannot reach — `git rm` and `git mv`, since no file tool deletes,
+and `git log`, `git show` and `git blame` — with the project's own build and test commands left
+commented, because only the team knows what they are. It is the org file that has to carry them:
+a role may narrow what it inherits, so a command listed there and nowhere above it is refused.
+
 **Legibility is a standing constraint, not a finishing touch.** People read these, and so do
 models writing them — a flat obvious schema is easier to generate correctly than a nested one
 with implicit structure. Every level of nesting should have to earn itself.
@@ -1172,10 +1178,12 @@ rewrite — turning the eventual fully-open migration into a dial rather than a 
 
 ### 6.3 Budget — **built**
 
-- **There is no proactive quota API.** `/usage` shows historical spend; no hook or endpoint
-  warns before a cap. Wind-down must therefore be built reactively — catch the limit error,
-  then spend whatever remains on a handoff — with proactive self-tracking as an
-  optimization, never a correctness dependency.
+- **There is no proactive quota API, but there is a warning.** `/usage` shows historical spend,
+  and the usage endpoint refuses a seat token (§6.3.3). The worker's own stream does report the
+  seat's windows, including an `allowed_warning` once a threshold is crossed. Wind-down is still
+  built reactively — catch the limit error, then spend whatever remains on a handoff — with
+  proactive tracking as an optimization, never a correctness dependency: the warning is
+  undocumented and could change without notice.
 - **Per-invocation cost is available**: headless `claude -p --output-format json` returns
   `total_cost_usd` and a per-model breakdown, so a wrapper can sum real spend. These are
   documented as client-side estimates.
@@ -1186,15 +1194,16 @@ rewrite — turning the eventual fully-open migration into a dial rather than a 
   against a subscription seat. Refresh behavior past expiry is undocumented; budget for an
   annual manual regeneration as a known operational task.
 
-### 6.3.1 Capacity is read from the seat — **decided, and false for a seat token**
+### 6.3.1 Capacity is read from the seat — **decided; for a seat token, from the stream (§6.3.3)**
 
 Read §6.3.3 first. The reasoning below holds for an interactive login and not for the only
 credential a seat can hold, which is most of the point of it.
 
 `claude -p '/usage'` reports the fraction of a seat's session and weekly limits consumed, plus
-when each resets. It costs nothing, spends no tokens, is answered client-side in under a
-second, and can be run under any token. So an Igor asks its own seat whenever the answer
-matters.
+when each resets. Measured under an interactive login, it costs nothing, spends no tokens and
+answers in under a second; where the answer comes from was not measured. So an Igor whose
+credential can ask asks its own seat whenever the answer matters. A seat's `setup-token`
+credential cannot: under one, `/usage` returns a cost summary and no percentages (§6.3.3).
 
 This removes the machinery a stored reading would need. There is no cap in dollars to derive,
 because the comparison happens in percent — the unit the provider actually reports. There is no
@@ -1236,40 +1245,68 @@ This lands with the command allowlist (§5.0.3) and not before it. Until a worke
 commands, the credentials it inherits are unreachable; granting the commands without fixing the
 environment is what makes them reachable.
 
-### 6.3.3 A seat token cannot be measured — **open**
+### 6.3.3 A seat token is measured from the worker's own stream
 
-`claude setup-token` credentials authenticate and spend correctly and report no usage.
-Measured on one machine, same command, same directory:
+`claude setup-token` credentials authenticate and spend correctly, and **their seat's windows are
+readable** — only not from where they were first looked for. Measured 2026-09-27 against one
+seat, every row with the same `setup-token` credential:
 
-| | interactive login | `setup-token` |
-|---|---|---|
-| `auth status` | `authMethod: claude.ai`, `subscriptionType: team` | `authMethod: oauth_token`, no identity fields |
-| `-p '/usage'` | session and weekly percentages | a session cost summary |
+| where | what comes back |
+|---|---|
+| CLI: `claude -p '/usage'` | a session cost summary, no percentages |
+| API: `GET /api/oauth/usage` | `403 permission_error`, `oauth_scope_insufficient`, requires `user:profile` |
+| API: `GET /api/oauth/profile` | `403`, requires `user:profile` or `user:office` |
+| stream: `claude -p … --output-format stream-json --verbose` | a `rate_limit_event` carrying both windows |
 
-Windows are reported against a subscription, and the CLI resolves none for these credentials.
-So "can be run under any token" in §6.3.1 is wrong, and with it the claim that there is no cap
-in dollars to derive: for a seat there is, because percent is unavailable.
+The event, as captured:
 
-What this does and does not cost, which is narrower than it first looks:
+```json
+{"type":"rate_limit_event","rate_limit_info":{"status":"allowed_warning","resetsAt":1790982000,
+ "rateLimitType":"seven_day","utilization":0.86,"isUsingOverage":false,"surpassedThreshold":0.75,
+ "unifiedWindows":{"five_hour":{"utilization":0.07,"resetsAt":1790569200},
+                   "seven_day":{"utilization":0.86,"resetsAt":1790982000}}}}
+```
 
-- **Igors sharing a seat with each other is unaffected.** Every Igor writes its spend to the
-  same state branch, so the record is complete for any consumer that keeps books. Sharing is
-  only opaque where the other consumer is a person.
-- **A reserve as a floor survives exactly.** Igor capping its own cumulative spend at
-  `(1 - reserve) x capacity` leaves the rest by construction, whatever the owner does. That
-  needs Igor's own record and a capacity figure, not a reading.
-- **A reserve that adapts does not.** Narrowing the floor because the owner is measurably
-  behind their own pace — `budget-pacing`'s fourth requirement — needs to see the owner.
-- **`budget_share` is untouched**, being computed from recorded cost already.
+**Why the API refuses.** A `setup-token` credential carries neither `user:profile` nor
+`user:office`, so it can neither learn whose account it is — which is why `auth status` shows it
+with `authMethod: oauth_token` and no identity fields — nor read usage. `claude setup-token` takes
+no options, so there is no asking for the scope. The stream is not gated by it because the
+figures arrive as a consequence of spending: a claude-swap contributor found the same values in
+`anthropic-ratelimit-unified-*` headers on successful `/v1/messages` calls, which is presumably
+what the CLI relays. That last part is inference, not measurement.
 
-Capacity itself need not be guessed: one `/usage` reading from an interactive login on the same
-account, divided into the spend Igor recorded over that window, gives it. That is a calibration
-and not a stored reading, and the distinction matters because §6.3.1 rejected the latter.
+**The fields.** `utilization` runs 0 to 1; `resetsAt` is epoch seconds; `rateLimitType` names the
+window the top-level figures describe; `status` is `allowed`, `allowed_warning` — with the
+threshold it crossed in `surpassedThreshold` — or `rejected`; `isUsingOverage` says whether extra
+usage is being spent. `unifiedWindows` reported the five-hour window at 7% while the event was
+about the weekly one, so every window appears to be included whichever one is being warned about.
 
-**Calibration was built once and deleted** in `188a762`, on the premise that the CLI reports
-the number for free. It does, for a login. Anything reviving it should start from that history
-rather than from scratch, and should not revive the destructive part — running a seat to its
-limit to discover the limit.
+**What this changes.**
+
+- **Every worker run is a reading of its own seat**, taken with the seat's own credential: no
+  interactive login, no rotating refresh token, no observer on somebody's laptop. Workers
+  already run with these flags (`src/execute.ts`) and keep only the terminal `result` event,
+  discarding this one.
+- **Calibration is no longer the only way to bound a seat.** It used one `/usage` reading from an
+  interactive login on the same account, divided into the spend Igor recorded over the window.
+- **An adaptive reserve becomes possible in principle.** The reading is of the whole seat, so it
+  includes the owner's own use, which is what `budget-pacing`'s fourth requirement needed to see.
+  Relating a percentage of a window to dollars of recorded spend is the part not yet worked out.
+
+**Still open.**
+
+- **A seat below every threshold.** This capture was past 75% of the week. Events are known to
+  appear on ordinary runs, but whether one on a seat under every threshold carries the numbers is
+  unverified; a fresh seat's first run settles it.
+- **Per-model weekly windows** do not appear in the event, so per-model tracking still needs
+  another source.
+- **The exhausted shape** is contributor-reported as `status: "rejected"`, `utilization: 1`, and a
+  non-zero exit rather than a block, and has not been captured here (#57, #15).
+
+**Calibration was built once and deleted** in `188a762`, on the premise that the CLI reports the
+number for free. It does, for a login. Anything reviving it should start from that history rather
+than from scratch, and should not revive the destructive part — running a seat to its limit to
+discover the limit.
 
 ### 6.4 Graceful handoff — **built**
 
