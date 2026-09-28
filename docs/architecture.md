@@ -11,13 +11,14 @@ than restating it.
 
 ## 0. What Igor is for
 
-**Our agents, not my agent.** A personal coding agent keeps its reasoning in one person's
-session files and spends one person's login. Igor keeps both in the team's shared space:
-whatever an Igor needs to continue a piece of work is on the tracker or in lore, never in a
-process (§1, §2). Igors are defined by roles and claim work where everyone can see it (§2.1,
-§5.2), and they use the seats team members have set aside for their roles (§6.3). One test follows for any
-feature: if it only works because something is remembered in a process, a session file, or one
-person's machine, it breaks the premise.
+**Think with your own agent; act through the team's.** A person still decides with their own
+AI. What Igor replaces is the sub-agents that act for them inside a session, whose work and
+lessons stay in that session. Igors act in the team's shared space instead: whatever an Igor
+needs to continue a piece of work is on the tracker or in lore, never in a process (§1, §2).
+Igors are defined by roles and claim work where everyone can see it (§2.1, §5.2), and they use
+the seats team members have set aside for their roles (§6.3). One test follows for any feature:
+if it only works because something is remembered in a process, a session file, or one person's
+machine, it breaks the premise.
 
 ---
 
