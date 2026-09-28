@@ -57,7 +57,8 @@
       `TRIAGE_MODEL`, so it is the likeliest place a per-model cap is mistaken for the whole
       window — but the execution path records no model either, and a model-scoped observation
       derives no bound, so recording one would calibrate nothing. Settle it against the first live
-      refusal, and correct both paths together
+      refusal, and correct both paths together. #57's body lists what would settle it: does
+      `rateLimitType` name a model window when a per-model cap binds?
 - [ ] 5.2 Whether a triage refusal's envelope belongs in `refusals/` beside a run's. The directory
       exists because the patterns are guesses and nobody has seen a real refusal, and triage is the
       likeliest first sighting — but the record's shape is built around a run: an item, an outcome,
