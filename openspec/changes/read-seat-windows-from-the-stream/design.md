@@ -263,6 +263,13 @@ means the provider has already said no until its reset, so a probe there only sp
 call. An unexpired overage reading means a probe would be billed beyond the subscription, and no
 opt-in exists (see above).
 
+**Never on a seat at its bound.** A probe's spend is Igor spend, and *The reserve is untouchable*
+says Igor spend never exceeds `(1 − reserve) × capacity`. A seat's session reading can expire
+while its week window is at that bound, and probing it then would spend into the owner's week
+reserve. So a seat at its bound in any window is not probed. The one reason for passing a seat
+over under which it is still probed is having no capacity figure. That seat has no bound to
+exceed, and the no-figure requirement's delta says so.
+
 **Never on a seat with no token source.** Such a seat runs on the ambient login. A probe of it
 would read that login, which is not the seat.
 

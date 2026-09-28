@@ -201,7 +201,10 @@ hours) has passed. A probe that fails SHALL NOT be retried in a loop.
 A seat probe SHALL NOT be made on a seat the gate has found refused, while that refusal is
 unexpired: an unexpired observation at 100% of a window stops probes of that seat until the reset
 it states. Nor SHALL one be made on a seat whose unexpired reading reports extra usage being spent,
-until that window resets, since a probe there would spend its owner's money.
+until that window resets, since a probe there would spend its owner's money. Nor SHALL one be
+made on a seat whose recorded Igor spend has reached `(1 − reserve) × capacity` in any window,
+since a probe's spend is Igor spend and the reserve is untouchable. Having no capacity figure is
+the only reason for passing a seat over under which it is still probed.
 
 #### Scenario: A reserved seat with no figure is probed
 
@@ -247,6 +250,12 @@ until that window resets, since a probe there would spend its owner's money.
 
 - **WHEN** a seat's unexpired reading reports extra usage being spent
 - **THEN** it is not probed until that window resets
+
+#### Scenario: A seat at its bound is not probed
+
+- **WHEN** a seat's session reading has expired, and its recorded Igor spend in the week window
+  has reached `(1 − reserve) × capacity`
+- **THEN** it is not probed until that week window resets
 
 #### Scenario: A seat with no token source is not probed
 

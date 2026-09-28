@@ -103,7 +103,8 @@
 
 - [ ] 6.1 In the serve loop, select the seats to probe: seats are declared; the seat names a token
       source; some window has no unexpired `usage` or `stream` observation; no unexpired row at
-      100%; no unexpired overage reading; not probed in the last hour; no probe of it running; and
+      100%; no unexpired overage reading; recorded Igor spend below `(1 − reserve) × capacity` in
+      every window that has a figure; not probed in the last hour; no probe of it running; and
       none in the last five hours returned no event
 - [ ] 6.2 Spawn the probe as `claudeWorker` spawns a worker, with the environment written out
       (§6.3.2) and only that seat's token. Use `TRIAGE_MODEL`, a trivial prompt, tools denied and
@@ -112,7 +113,8 @@
       against the seat, marked as a seat probe in place of a role. Record no observation when no
       event arrived
 - [ ] 6.4 Tests: a reserved seat with no reading is probed once; a seat with both windows unexpired
-      is not; a refused or overage seat is not until the reset; a seat with no token source is not;
+      is not; a refused or overage seat is not until the reset; a seat at its bound in the week is not
+      though its session reading has expired; a seat with no token source is not;
       the hourly bound and the five-hour back-off hold; a probe's cost counts toward the bound; a
       probe with no event records nothing and is not retried in a loop
 - [ ] 6.5 `igor budget` names a figure that came from a probe, or says a seat was probed and
