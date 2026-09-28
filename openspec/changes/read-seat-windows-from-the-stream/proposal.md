@@ -27,7 +27,9 @@ premise was true of where the reading was looked for (`/usage`, and `GET /api/oa
 which refuses the credential for want of `user:profile`) and false of the stream.
 
 So a dedicated fleet seat need no longer wait for its first refusal to be calibrated, and a
-shared seat need no longer depend on a job on its lender's laptop.
+shared seat need no longer depend on a job on its lender's laptop. Adam has decided that no such
+job should exist: services and queries run on the server that runs the Igors, which holds the
+tokens and the seat config.
 
 ## What Changes
 
@@ -44,6 +46,14 @@ shared seat need no longer depend on a job on its lender's laptop.
   until that window resets.
 - **A refusal is recorded once.** A run whose stream carries a `rejected` event and whose
   envelope also trips `usageLimit` records one observation, not two.
+
+- **A seat nothing has read is probed on the server that runs the Igors**, with its own token: a
+  minimal call on the cheapest model, read for its `rate_limit_event` and recorded as a `stream`
+  reading. The probe is not free, and its cost is recorded. It is rate-limited, never runs on a
+  refused seat, and never runs on a person's machine. It is built only if a seat below every
+  threshold proves to emit the event (task 1.1).
+- **`scheduled-observation` is withdrawn**: nothing is installed on a lender's machine. The
+  reasons are in `design.md`.
 
 This is an optimisation, never a correctness dependency. The event is undocumented and could
 change or vanish without notice; every behaviour it adds has to degrade to what the loop does

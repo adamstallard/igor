@@ -1,9 +1,14 @@
 ## 1. Before building against it
 
-- [ ] 1.1 Capture one worker run's full stream on a seat below every threshold, and record whether
-      its `rate_limit_event` carries `utilization` and `unifiedWindows`. If it does not, note in
-      `design.md` that a fresh seat still starts from the in-force paths, and build the rest
-      unchanged — a reading that arrives only past a threshold is still worth recording
+- [ ] 1.1 **Taken before anything below is built, and gates the seat probe.** Measure whether a seat below every warning threshold emits
+      a `rate_limit_event` at all, and if it does, whether the event carries `utilization` and
+      `unifiedWindows`. Take the capture on the fresh Max seat Adam is buying, before anything
+      else runs on it: one minimal `claude -p … --output-format stream-json --verbose` call under
+      its `setup-token`, with the full stream kept. Record the answer in `design.md` and in
+      `docs/architecture.md` §6.3.3. If no event arrives, the stream reading (sections 2–5) is
+      still built, because a reading that arrives only past a threshold is still worth recording.
+      The seat probe (section 6) is not built as written, and goes back to Adam as `design.md`
+      *A seat probe* describes
 - [ ] 1.2 Keep the capture as a test fixture beside the 2026-09-27 one from §6.3.3, so the parser
       is tested against what the provider sent rather than what was guessed
 
@@ -89,23 +94,43 @@
       reworded:**
 
       ```
-      !  seat "adam" has no reading yet: /usage reports no window to its token, and no worker run has reported one
+      !  seat "adam" has no reading yet: /usage reports no window to its token, and no worker run or probe has reported one
       ```
 
 - [ ] 5.5 Tests that each of 5.1–5.4 appears where it should and nowhere else
 
-## 6. Docs, once built
+## 6. The seat probe, on the server (only if 1.1 found an event below threshold)
 
-- [ ] 6.1 `README.md` Budgets, `docs/seats.md` "What the floor rests on" and `docs/deployment.md`
+- [ ] 6.1 In the serve loop, select the seats to probe: seats are declared; the seat names a token
+      source; some window has no unexpired `usage` or `stream` observation; no unexpired row at
+      100%; no unexpired overage reading; not probed in the last hour; no probe of it running; and
+      none in the last five hours returned no event
+- [ ] 6.2 Spawn the probe as `claudeWorker` spawns a worker, with the environment written out
+      (§6.3.2) and only that seat's token. Use `TRIAGE_MODEL`, a trivial prompt, tools denied and
+      `--output-format stream-json --verbose`. Reuse 2.1–2.3's parsing
+- [ ] 6.3 Record its event through 3.2's path as `stream` rows, timed at arrival. Record its cost
+      against the seat, marked as a seat probe in place of a role. Record no observation when no
+      event arrived
+- [ ] 6.4 Tests: a reserved seat with no reading is probed once; a seat with both windows unexpired
+      is not; a refused or overage seat is not until the reset; a seat with no token source is not;
+      the hourly bound and the five-hour back-off hold; a probe's cost counts toward the bound; a
+      probe with no event records nothing and is not retried in a loop
+- [ ] 6.5 `igor budget` names a figure that came from a probe, or says a seat was probed and
+      returned nothing, so an operator can tell a probed seat from an unread one. **May be
+      reworded**
+
+## 7. Docs, once built
+
+- [ ] 7.1 `README.md` Budgets, `docs/seats.md` "What the floor rests on" and `docs/deployment.md`
       step 4: describe the stream reading as shipped, and what a lender no longer has to install.
       Replace the links from `README.md` and `docs/seats.md` into
       `openspec/changes/read-seat-windows-from-the-stream/`, which archiving moves
-- [ ] 6.2 `docs/architecture.md` §6.3.1 and §6.3.3: move from "what this changes" to what was built
+- [ ] 7.2 `docs/architecture.md` §6.3.1 and §6.3.3: move from "what this changes" to what was built
 
-## 7. Left open, recorded so they are not lost
+## 8. Left open, recorded so they are not lost
 
-- [ ] 7.1 Triage: capture whether `--output-format json`'s single envelope carries
+- [ ] 8.1 Triage: capture whether `--output-format json`'s single envelope carries
       `rate_limit_info`, and record the answer in `design.md` — the owner of any triage reading is
       the reviewer's decision (this change or `triage-refusal-calibrates`, #75)
-- [x] 7.2 `MODIFIED` deltas for the four in-force passages `design.md` lists under *In-force text
+- [x] 8.2 `MODIFIED` deltas for the four in-force passages `design.md` lists under *In-force text
       this overtakes* — written in gate one, on Adam's decision of 2026-09-27

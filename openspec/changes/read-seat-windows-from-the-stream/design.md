@@ -230,6 +230,69 @@ claim that the reading is free. Two of its requirements are neither shipped nor 
 *Observations arrive irregularly and nothing depends on their arriving*, and *A window's length is
 measured from successive resets, not configured*. How to cut it is under *Still open*.
 
+### A seat probe, on the server, for the seats no run reads
+
+Decided by Adam on 2026-09-27, and specified as *A seat nothing has read is probed on the Igor
+server with its own token*. Stream readings arrive only with runs, which leaves two seats unread:
+a reserved seat with no figure, which the gate passes over so it never runs, and a seat the fleet
+is not using. The server that runs the Igors already holds every seat's token, so it reads them
+itself. It makes one minimal `claude -p` call per seat with that seat's token and
+`--output-format stream-json --verbose`, and records the `rate_limit_event` as a `stream` reading.
+
+**It is not free.** The earlier case for scheduling `/usage` rested on it costing nothing. A probe
+is a real model call, so it uses the cheapest model with a trivial prompt and no tools. Triage
+already calls the same model with tools denied (`TRIAGE_MODEL`, `src/triage.ts`). Its cost is
+recorded against the seat it read and counts toward that seat's bound. A probe is made on no
+role's behalf, so the record says "seat probe" where a role would go. That needs `MODIFIED`
+deltas on *Every invocation records which role spent from which seat* and *A spend with no seat
+behind it does not happen*, whose in-force text requires a role and a seat the gate chose. A probe
+is the stated exception to the second, and only for a seat that names its own token.
+
+**When a seat needs one: no unexpired reading of a window.** A reading is a lower bound on its
+window until that window resets (above), so a clock threshold shorter than the reset would spend
+money to learn something the log already bounds. So "stale" means past its reset. For an idle seat
+whose probes return events, that is about one probe per session window, roughly five a day.
+
+**Bounds.** At most one probe per seat per hour, and none while one is running. After a probe that
+got no event, or none that could be read, none for five hours: one session window. A failed probe
+is never retried in a loop. The two numbers are proposed, not fitted. They are listed under
+*Still open* for Adam to confirm or change.
+
+**Never on a refused seat, nor on one spending extra usage.** An unexpired observation at 100%
+means the provider has already said no until its reset, so a probe there only spends a failed
+call. An unexpired overage reading means a probe would be billed beyond the subscription, and no
+opt-in exists (see above).
+
+**Never on a seat with no token source.** Such a seat runs on the ambient login. A probe of it
+would read that login, which is not the seat.
+
+**What a probe's reading unlocks, and what it does not.** A reading gives the seat's fullness in
+percent. The in-force gate works in dollars: a capacity is Igor's recorded spend inside the
+window, divided by the fullness a reading reports (`capacityFor`). A seat Igor has not spent from
+inside the instance therefore has a reading and still no figure. `whyNoFigure` already reports
+that case as "no Igor spend is recorded inside the instance it observed, so there is nothing to
+divide". The probe's own spend does not rescue it: that spend is recorded after the reading it
+produced, which the arrival rule excludes on purpose, and a trivial call moves a window far less
+than the 1% a reading resolves. So:
+
+- **An idle seat that already has a figure** gets its fullness refreshed. That serves reporting,
+  and a later derivation once Igor spends there again. This gap is closed.
+- **A reserved seat with no figure** gets a fullness reading and is still passed over under the
+  in-force gate. The probe makes that seat's state known, but by itself it does not start the
+  seat. Starting it takes a gate decision that this change has not been given: for instance,
+  admitting such a seat for one item at a time while its seat-wide reading is below
+  `1 − reserve`, so that the item's spend and the next reading derive a figure. That is under
+  *Still open* as a question for Adam.
+
+**If a seat below every threshold gets no event.** This is task 1.1's measurement, and it gates
+the rest. If the answer is no, a probe of a fresh seat returns nothing and records nothing. Its
+cost is bounded by the five-hour back-off, and it can never produce a figure for that seat. The
+probe would then read only seats already past a provider threshold. In practice those are seats
+whose owner has used them heavily. A fresh reserved seat would start only as in force: from a
+declared `capacity_estimate`, or from a period at `reserve: 0`. In that case, tasks 6.x are not
+built as written, and whether a probe that reads only past-threshold seats is worth building goes
+back to Adam.
+
 ### Degrading to today
 
 No event, a malformed event, or an event with no numbers produces no row, and the run is recorded
@@ -262,15 +325,19 @@ is false:
 
 ## Still open
 
-- **A seat below every threshold.** If ordinary events carry no numbers, a fresh seat still gets
-  no reading until it crosses one, and the in-force paths (a declared figure, a refusal, `igor
-  observe`) remain its only start. A fresh seat's first run settles it; task 1.1 asks for that
-  capture before the rest is built against it.
-- **A reserved seat with no figure is never run, so never read.** The in-force rule passes it over,
-  and a stream reading needs a run. It still starts from a declared `capacity_estimate`, a period
-  at `reserve: 0`, or `igor observe` — or from a deliberate small probe run under its own token,
-  which costs something and is specified nowhere. `scheduled-observation`'s `design.md` records
-  the same gap from the other side.
+- **A seat below every threshold.** Whether it gets a `rate_limit_event` at all is unmeasured.
+  The only capture fired with the week at 86%, past the 0.75 threshold. The session window
+  was reported at 0.07 inside that same event, so low windows are reported *when an event fires*.
+  Whether a completely fresh seat gets one is the open part. Task 1.1 takes that capture on the
+  fresh Max seat Adam is buying, before anything else is built. What the probe degrades to if
+  the answer is no is under *A seat probe* above.
+- **Starting a reserved seat with no figure** (Adam's question). A probe reads such a seat, but
+  under the in-force dollar gate a reading of a seat Igor has not spent from yields no figure
+  (see *What a probe's reading unlocks*). Should such a seat be admitted for one item at a time
+  while its seat-wide reading is below `1 − reserve`, so that it calibrates itself? The
+  alternative is to leave it to `capacity_estimate` and `reserve: 0`, as in force.
+- **The probe's two numbers.** At most once an hour per seat, and five hours after a probe that
+  got no event. Both are proposed, not fitted.
 - **The `rejected` shape** (#57). The single-row rule above is written against the
   contributor-reported shape and must be checked against the first captured refusal.
 - **The observation log's size.** *Observations are appended to their own log and never
