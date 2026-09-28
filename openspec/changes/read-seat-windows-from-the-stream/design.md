@@ -188,11 +188,16 @@ shape the envelope repeats it from the stream", but every fixture that sets it i
 call on a seat, which this change does not do.
 
 Two ways to get one, neither decided here: switch triage to `stream-json --verbose` as the worker
-runs, or read `rate_limit_info` off the JSON envelope if a capture shows it is there. **Which
-change owns that is flagged for the reviewer:** #55 says the question is being settled on #75
-(`triage-refusal-calibrates`), which records a triage *refusal*; a triage *reading* is the
-general case of the same plumbing. This change leaves #75's branch alone and requires nothing of
-triage.
+runs, or read `rate_limit_info` off the JSON envelope if a capture shows it is there. Neither is
+required here.
+
+**Who owns what (settled 2026-09-27 by Adam's decision on #75).** #75
+(`triage-refusal-calibrates`) is narrowed to a fallback (`08be738` on `triage-refusal`). If
+triage ever reads the stream, a triage call's *reading* belongs to this change, including a
+refusal that reading reports, which is recorded once under *A refusal the stream reports is not
+recorded twice*. #75 records a triage *refusal* only where the call carried no reading. While
+triage runs `--output-format json`, that is every triage refusal. Whether triage should switch is
+still an open question for this change.
 
 ### Degrading to today
 
