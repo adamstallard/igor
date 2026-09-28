@@ -373,8 +373,9 @@ approach two. How late in a run the last event arrives is unmeasured. Task 1.1 r
 is under *Still open*. Every run carries a fresh reading, so the overshoot does not compound.
 
 **Per Igor, not coordinated (settled by Adam, 2026-09-28).** Every Igor on a seat reads the same
-whole-seat reading, so they are held to one line without adding up each other's books. Each can
-overshoot once, so N Igors can pass it by N runs. A coordination marker, a compare-and-swap on the
+whole-seat reading, so they are held to one line without adding up each other's books. Each
+process can overshoot once, so N Igors can pass it by N runs, and so can N concurrent ranks of one
+Igor, as `concurrent-instances`' design now records. A coordination marker, a compare-and-swap on the
 state branch with a lease or `work-claiming`'s claim and settle, is taken up only once a reserved
 seat is actually shared by several Igors, together with the same gap on any spend bound that
 remains then. `budget_share` is one such bound (below).

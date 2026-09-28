@@ -1078,8 +1078,8 @@ run's event is timed when it arrives. So each Igor can carry the seat past its l
 of the item it admits, plus whatever the previous run spent after its last event arrived — about
 one run's spend where a run's last event arrives near its end. That overshoot is accepted. Every
 worker run carries a fresh reading, so the next gate call sees it, and the overshoot does not
-compound. It is held per Igor and not coordinated across Igors, so several Igors on one seat can
-each overshoot once.
+compound. It is held per Igor process and not coordinated across processes, so several Igors on
+one seat, or several concurrent ranks of one Igor, can each overshoot once.
 
 Every Igor drawing on a seat is counted in the seat's reading, so Igors sharing a seat are held to
 one line without adding up each other's books.
