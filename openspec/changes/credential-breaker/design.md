@@ -1,3 +1,50 @@
+## Since review: an unread seat is probed, not run (2026-09-28)
+
+Added 2026-09-28, after both gates were discharged. It changes no requirement, task or code, and it
+does not block merging. It records a decision made after review, how it narrows the case this
+change was built for, and one question for Adam.
+
+### The decision
+
+Adam decided on 2026-09-28 that a seat's reserve is a line that moves toward the reset, checked
+against the seat's latest unreset reading of each window
+([`docs/architecture.md` §6.3.4](../../../docs/architecture.md#634-a-seats-reserve-is-a-line-that-moves-toward-the-reset--decided-2026-09-28-specified-on-143-not-built)).
+It replaces the dollar bound as the gate. A seat with no unreset reading is not admitted: a probe
+on the Igor server reads it first, with one minimal call on the seat's own token. It is specified
+on [#143](https://github.com/adamstallard/igor/pull/143) and not built.
+
+### What it does to this change
+
+**The premise narrows.** The proposal's *Why* says a revoked seat is chosen every cycle because
+"the derived path now bounds it and lets it run". Under #143's gate two, a seat with no unreset
+reading is never run. It is probed, and the probe is what meets the 401, not an item. So a seat
+whose token was revoked before Igor ever read it stops burning items without this change.
+
+**The breaker is still needed.** A seat read successfully and then revoked keeps an unreset
+reading until that window resets, up to a week. The gate admits it throughout, and every run on it
+burns an item. That is exactly the case this change counts and trips on.
+
+**A revoked, never-read seat becomes silent.** Its probe gets a 401 and no `rate_limit_event`, so
+the seat is never read and never admitted, and nothing reports why. Today the breaker's
+`!  out of rotation` line is what tells an operator. It counts rows in `executions.ndjson`, and a
+probe is not an execution.
+
+**The half-open trial could be the probe.** After a cooldown the breaker lets one run through, and
+that run is an item. #143's probe is a cheaper trial that burns no item. #143 currently says the
+probe never runs on a refused seat. Whether that means a tripped breaker is for #143 to say.
+
+**No code here depends on the dollar bound.** `credentialBreaker` and the `rejected` verdict in
+`chooseSeat` are checked before any bound and are independent of it. When #143's gate two rewrites
+the gate, the `rejected` verdict has to keep its place ahead of the line.
+
+### Open, for Adam
+
+**Should a probe that gets a 401 mint `seat:<id>:credential`, so it counts toward the breaker?**
+Recommendation: yes, with the fingerprint, the same way a run's does. Otherwise a revoked seat
+nobody has read is out of rotation with no reason given. If it counts, the probe could also serve
+as the half-open trial. This would be specified on #143, where the probe is, and it needs no change
+to this change's requirements.
+
 ## Deriving it rather than storing it
 
 The alternative was a breaker store beside `capacity.ndjson`: a row per seat holding a count, a
