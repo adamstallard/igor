@@ -1184,10 +1184,9 @@ rewrite — turning the eventual fully-open migration into a dial rather than a 
   built reactively — catch the limit error, then spend whatever remains on a handoff — with
   proactive tracking as an optimization, never a correctness dependency: the warning is
   undocumented and could change without notice. The reserve line decided in §6.3.4 changes the
-  second half of that once it is built: the gate will then rest on the stream reading. It fails
-  closed — a seat with no unreset reading is not admitted — so losing the event would stop Igor
-  starting work, not let it overspend. It becomes a dependency for staying live, not for staying
-  within the reserve.
+  second half of that once it is built: a reserved seat will then rest on the stream reading. A
+  seat whose effective reserve is 0 is admitted with no reading, so losing the stream stops only
+  reserved seats.
 - **Per-invocation cost is available**: headless `claude -p --output-format json` returns
   `total_cost_usd` and a per-model breakdown, so a wrapper can sum real spend. These are
   documented as client-side estimates.
@@ -1365,12 +1364,12 @@ line to take the lower of. On #143's branch, `budget-pacing`'s pace line, dead b
 decay requirements are removed. Only *Waiting on pace is distinguishable from having nothing to
 do* survives, as waiting on the line. A reserve on a dedicated seat now means pacing, and a
 dedicated seat defaults to reserve 0. The config check that refuses a reserve on a dedicated seat
-(`parseOrgBudget`) goes in #143's second gate. That check also refuses a reserve of exactly 1,
-which the table above uses.
+(`parseOrgBudget`) goes in #143's second gate. That check also refuses a reserve of exactly 1; the
+table's reserve-1 row needs the parser to allow 1, which is also #143's second gate.
 
 **A role may set a reserve too, and that is how roles get priority.** A role file may declare its
 own `reserve`, which applies to every seat the role draws on. The line for that role on that seat
-uses `r = max(seat reserve, role reserve)`:
+uses the effective reserve `r = max(seat reserve, role reserve)`:
 
 ```
 line = 1 − r × remaining
@@ -1387,9 +1386,10 @@ Also decided 2026-09-28, specified on #143, and not built.
 
 - **The dollar gate.** `(1 − reserve) × capacity` on Igor's recorded spend is no longer the gate.
   Capacity figures stay only as a display in `igor budget`.
-- **Calibration admission** (§6.3.3), dropped. A seat with no unreset reading is not admitted.
-  A probe on the Igor server reads it first, and the probe also holds off once the seat is at the
-  line.
+- **Calibration admission** (§6.3.3), dropped. A reserved seat with no unreset reading is not
+  admitted. A probe on the Igor server reads it first, and the probe also holds off once the seat
+  is at the line. A seat whose effective reserve is 0 has a line of 100% throughout, so it needs no
+  reading to be admitted.
 - **`budget-pacing`'s *A reserve decays toward the reset, on the clock or on the owner's
   consumption*.** It is superseded, and so are its statements that the weekly reserve does not
   decay and that a reserve never narrows to nothing. Under the line, both windows narrow, all the
@@ -1401,23 +1401,34 @@ That limit is held per Igor and not coordinated across Igors, until a reserved s
 shared. `concurrent-instances` checks the gate once per item in each process, so under it the
 limit is one run per process.
 
+**A refusal counts as a reading.** A refusal is a 100% observation of its window until that
+window resets, and an input to the line: #39's row for a refused run, and #75's for a refused
+triage call. It is the one input that does not depend on the stream.
+
+**A probe opens and clears the credential stop.** A probe that gets a 401 opens
+`seat:<id>:credential`, and a probe that succeeds counts as the clearing check. So a revoked seat
+nobody has read is reported out of rotation, and clearing it spends no item. The stop is held by
+#65's breaker, or by the condition record if #101 lands.
+
+**A handoff for a window the line has shut states the crossing, marked approximate.** The line
+rises as the window runs down, so a reading `u` below 1 is under the line again once
+`remaining < (1 − u) ÷ r`. At reserve 0.3, a reading of 85% is shut until halfway through the
+window, and only a reading of 100% waits for the reset. The handoff states that crossing, not the
+reset, and marks it approximate, because a reading is a lower bound until its reset and the seat
+can be back later than the crossing, never earlier (#74).
+
+These three were decided by Adam on 2026-09-28, with the rest of this section, and are specified on
+#143 (#74 for the handoff hour). None is built.
+
 **Window length is measured, not assumed.** A probe placed just after a known reset measures the
 window's length. It also shows whether windows run on a fixed schedule or start at first use.
 Until that is measured, the built-in 5 hours and 7 days stand.
 
-**Consequences not yet settled.**
+**What losing the stream costs.** A seat whose effective reserve is 0 is admitted with no reading,
+so if the event stops arriving, or a seat below every threshold turns out to emit no numbers
+(§6.3.3, *Still open*), only reserved seats stop. A refusal still reads a reserved seat as full.
 
-- **A window the line has shut reopens before its reset.** The line rises as the window runs
-  down, so a reading `u` below 1 is under the line again once `remaining < (1 − u) ÷ reserve`.
-  At reserve 0.3, a reading of 85% is shut until halfway through the window. Only a reading of
-  100% waits for the reset. A reading is a lower bound until its reset, so that crossing is the
-  earliest possible return and not a certain one. Which hour a handoff states is open (#74,
-  `graceful-handoff`).
-- **The gate now depends on the stream to stay live** (§6.3). If the event stops arriving, or a
-  seat below every threshold turns out to emit no numbers (§6.3.3, *Still open*), no seat can be
-  admitted, because nothing reads it.
-- **Whether a refusal-derived observation counts as a reading.** #39 writes one at 100% for a
-  refused run, and #75 would write one for a refused triage call.
+**Still open.** How old an unreset reading can be before the line distrusts it (#69).
 
 ### 6.4 Graceful handoff — **built**
 
