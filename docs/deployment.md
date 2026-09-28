@@ -21,6 +21,22 @@ Igor shells out rather than reimplementing, so four things must be on the path:
 The floor is 26 rather than something older because Igor resolves provider reset phrases with
 `Temporal`, which 26 is the first release to ship unflagged.
 
+**"On the path" means the service's path, not your shell's.** A service inherits no shell
+profile, and systemd's default `PATH` doesn't include `~/.local/bin`, which is where `claude`'s
+native installer puts it for whoever ran the installer. `deploy/igor.service` sets
+`Environment=PATH=` with the service user's `~/.local/bin` first. Check that it's right with
+`sudo -u igor sh -lc 'command -v claude'` and edit the unit to match. If it's wrong, every
+triage and worker call fails to start. The same applies to `gh` if it came from Homebrew
+(`/opt/homebrew/bin` on macOS, `/home/linuxbrew/.linuxbrew/bin` on Linux).
+
+**Don't let `claude` update itself on the server.** A native install updates in the background,
+and a release is expected to change how `claude -p` authenticates: `--bare` will become its
+default, and bare mode ignores a seat's `setup-token`
+([igor#144](https://github.com/adamstallard/igor/issues/144)). The unit sets
+`DISABLE_AUTOUPDATER=1`, so an upgrade only happens when you run `claude update` as the service
+user and then restart the Igors. Read the release notes before you do. Claude Code's setup
+docs say apt, dnf and apk installs don't update themselves either.
+
 ## Before it can run
 
 Three things, in this order. None can be automated, and the first two are the ones people miss.
