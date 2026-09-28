@@ -160,19 +160,20 @@ warns in advance; what happens is that the Igor stops and says it is not logged 
 ## Several people, one fleet
 
 Each person runs the command themselves and hands over their own token. Nobody needs anybody
-else's. The operator lists the seats in a pool, and an Igor takes the first with headroom — so
+else's. The operator lists which seats each role may use, in order, and an Igor takes the first with
+headroom — so
 listing dedicated seats before personal ones means a colleague's allowance is only ever reached
 once the dedicated capacity is spent. A personal seat nobody has read yet is not the
-fallback either: the pool is treated as empty rather than overflowing into it on a guess.
+fallback either: it is left alone rather than used on a guess.
 
 **Roles can hold back more than your reserve, never less** (specified in #143, not built). A role
 may declare a `reserve` of its own, and on every seat it draws on the larger of yours and the
 role's applies, so nothing a role says lowers what you are left. Teams use it to give one role
-priority over another on the same seat. Say `roles/frontend.yaml` has `seat: pool:engineering` and
-`reserve: 0.3`, and `roles/generalist.yaml` has the same `seat` and no `reserve`.
+priority over another on the same seat. Say `frontend` and `generalist` may both use your seat,
+`roles/frontend.yaml` has `reserve: 0.3`, and `roles/generalist.yaml` has none.
 
 On a seat with no reserve of its own, `frontend` stops starting work once the seat reaches its
 line, 70% just after a reset and rising to 100% at the reset, while `generalist` carries on to the
 whole window. That is a priority, not a guaranteed share: a `generalist` that always has work can
-keep `frontend` near its line for most of a window. Where that matters, leave a seat out of
-`generalist`'s pool, or add seats.
+keep `frontend` near its line for most of a window. Where that matters, keep a seat that only
+`frontend` may use, or add seats.
