@@ -1,8 +1,9 @@
 ## Since review: a window the reserve line shuts can reopen before its reset (2026-09-28)
 
-Added 2026-09-28, after both gates were discharged. It changes no requirement, task or code, and it
-does not block merging. It records a decision made after review, what it does to this change, and
-one question for Adam.
+Added 2026-09-28, after both gates were discharged. It records a decision made after review and
+what it does to this change. Adam settled the one question it raised the same day, and that answer
+is applied to the spec (see the end of this note). No task or code changed, and it does not block
+merging.
 
 ### The decision
 
@@ -46,7 +47,7 @@ two.
 reset does not fix it* draws its line at a stated reset. A crossing is computed from a stated
 reset, but also from a reading that is only a lower bound until its reset (the owner may have
 spent since), and from a window length that stays built in until a probe measures it. It can only
-be early, never late. The requirement does not name this case.
+be early, never late. The requirement now names this case (below).
 
 **Code on this branch that gate two of #143 will rework.** The `live` candidate builder in
 `budgetGate` decides "shut" with `hasHeadroom(seatStatus(…))` against the reserve and states each
@@ -55,24 +56,21 @@ return of a window shut below 100% is the crossing. That is #143's work, not a r
 this change. The ordering this change adds (later of two, compared as instants) carries over
 unchanged.
 
-### Open, for Adam
+### Decided (Adam, 2026-09-28): the crossing, marked approximate
 
-**Which hour does a handoff state for a window the line has shut: the crossing, or the reset?**
+**A handoff for a window the line has shut states the crossing, marked approximate, not the
+reset.** The crossing is the earliest the seat can be back, and the first probe after it reads the
+seat again. The reset would be a stated hour and never early, but late by up to the whole window:
+at reserve 0.3 a seat read at 85% is back halfway through a week and would be reported as back at
+the end of it. The purpose of this change is that a handoff not promise a return the seat does not
+keep. That rules out an hour that is too early presented as exact, and it does not argue for an
+hour that is late by days.
 
-- **The crossing, marked approximate.** The earliest the seat can be back. It reads as "back
-  around", and the first probe after it reads the seat again. If this is chosen, *An hour is
-  marked approximate…* needs one more marked case. Proposed wording (not applied): "…and an hour
-  at which a reserve line crosses a reading below 100%, since the reading is only a lower bound
-  until its window resets."
-- **The reset.** Always a stated hour and never early, but late by up to the whole window: at
-  reserve 0.3 a seat read at 85% is back halfway through a week and would be reported as back at
-  the end of it.
-
-Recommendation: the crossing, marked approximate. The purpose of this change is that a handoff not
-promise a return the seat does not keep. That rules out stating an hour that is too early and
-presenting it as exact. It does not argue for an hour that is late by days. Whichever is chosen
-belongs in #143's gate, which is where the crossing is computed. This change needs only the
-restatement above if Adam picks the crossing.
+Applied to *An hour is marked approximate where a stated reset does not fix it*: the crossing is
+one more marked case, the requirement states that the crossing is the hour named, and a scenario
+pins both. The crossing is computed by #143's gate, so no code on this branch reaches this case
+until #143's gate two lands. The implementation belongs there. This branch's own code and tests are
+unchanged, and its gate two stays discharged.
 
 ## Since review: a seat token's windows can be read from the worker's stream (2026-09-27)
 

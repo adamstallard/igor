@@ -64,9 +64,17 @@ seats is still what a handoff states.
 ### Requirement: An hour is marked approximate where a stated reset does not fix it
 
 An hour a handoff states SHALL be marked approximate where no reset the provider stated fixes
-it — a cadence ceiling standing in for a reset a refusal never named, and an hour named while
-another window that is also holding the seat named no return. An hour the provider stated, and a
-window boundary tiled from one along the window's own cadence, SHALL NOT be marked.
+it — a cadence ceiling standing in for a reset a refusal never named, an hour named while
+another window that is also holding the seat named no return, and the hour at which a reserve line
+crosses a reading below 100%. An hour the provider stated, and a window boundary tiled from one
+along the window's own cadence, SHALL NOT be marked.
+
+Where a window is shut because its reading is at or above the seat's reserve line, and the reading
+is below 100%, the hour stated for that window SHALL be the instant the line rises past the
+reading, not the window's reset. The line rises toward 100% as the window runs down, so such a
+window reopens before its reset, and stating the reset would be late by up to the whole window. The
+crossing is marked because a reading is only a lower bound until its window resets: the owner may
+have spent since, so the seat can be back later than the crossing and never earlier.
 
 The flag says what kind of claim the hour is, and a person reads it in the sentence: a marked
 hour is reported as "back around" and an unmarked one as "back at". So the line it draws has to
@@ -99,6 +107,12 @@ is the case that still raises it.
 
 - **WHEN** the hour stated stands in for a reset the provider never named
 - **THEN** it is marked approximate, as before
+
+#### Scenario: A reserve line's crossing is stated, and hedged
+
+- **WHEN** a window is shut because its reading, below 100%, is at or above the seat's reserve line
+- **THEN** the hour stated for it is the instant the line rises past that reading, not its reset
+- **AND** it is marked approximate
 
 #### Scenario: A tiled boundary is still exact
 
