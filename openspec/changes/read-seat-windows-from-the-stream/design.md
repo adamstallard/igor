@@ -243,8 +243,9 @@ being withdrawn by this change.
 **What is not removed.** The live `/usage` read in `readAllSeats` (`readUsage`, `parseUsage`,
 `runUsage`, `hasSubscription` in `src/budget.ts`) is not `igor observe`. It reads a seat on the
 server, when the gate asks, through whatever credential the seat resolves to, and it produces
-the "read live" rows of `igor budget`. It is specified by the in-force *Usage is read from the
-seat, not supplied by a person*, which this change does not withdraw. `parseUsage` is shared by
+the "read live" rows of `igor budget`. It was specified by the in-force *Usage is read from the
+seat, not supplied by a person*, which this change replaces with *A seat's fullness is read from
+the seat, not supplied by a person*; the live read keeps its rule there. `parseUsage` is shared by
 both paths and stays.
 
 **The `usage` source.** Only `igor observe` wrote observations with `source: "usage"`; the live
@@ -267,8 +268,8 @@ interactive login keeps its `wk:` rows from the live read. Where per-model caps 
 
 ### Moved from `scheduled-observation`
 
-*Observations arrive irregularly and nothing depends on their arriving* keeps its name and most
-of its rule. Its reason changes. It used to be a laptop that sleeps. Now it is that readings come
+*Observations arrive irregularly and nothing depends on their arriving* is renamed *Observations
+arrive irregularly, and a gap is waiting, not a fault*, and keeps most of its rule. Its reason changes. It used to be a laptop that sleeps. Now it is that readings come
 with the work: with runs, and with probes. It no longer says nothing requires a reading "at all":
 a seat whose line uses a non-zero reserve is drawn on only on an unreset reading, so a gap past a
 reset leaves it waiting, and the requirement now says that waiting is not a fault.
@@ -560,7 +561,8 @@ seat at its dollar bound, and settles the earlier question about probing an unca
 `1 − reserve`: the moving line applies, not a fixed one.
 
 **A probe checks the credential too (decided 2026-09-28).** A probe answered with an
-authentication failure (401) opens the seat's credential stop, `seat:<id>:credential`, in whichever
+authentication failure (401) is not a probe that got no event: the five-hour back-off does not
+apply to it, so a stopped seat is re-checked hourly. It opens the seat's credential stop, `seat:<id>:credential`, in whichever
 record owns it: #65's breaker or #101's condition record, whichever lands first. A probe that
 succeeds is the check that clears it. Against the exclusions: a seat whose credential stop is open
 is probed only as that clearing check, whatever its readings, and within the hourly limit. The

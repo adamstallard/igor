@@ -147,7 +147,8 @@
       configuration
 - [ ] 6.7 A probe answered with an authentication failure (401) opens `seat:<id>:credential` in
       whichever record owns the credential stop when this is built: #65's breaker or #101's
-      condition record. A probe that succeeds clears it. A seat whose stop is open is selected by
+      condition record. A probe that succeeds clears it. A 401 is not "no event": the five-hour
+      back-off does not follow it. A seat whose stop is open is selected by
       6.1 as a clearing check whatever its readings, still under the hourly limit and the refusal,
       overage and line exclusions. Tests: a 401 opens the stop and records nothing; a success
       clears it and records its reading; a stopped seat is not re-probed within the hour

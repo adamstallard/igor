@@ -311,7 +311,8 @@ rejection is undone the same way it was made, by removing a file in a pull reque
 
 A role is a YAML file under `roles/` in your lore repository, and the filename is its name.
 It declares `extends`, `seat`, `sources`, `lane`, `instructions`, `completion`, `allow`,
-`commands`, `budget_share` and `reviewers`. Roles compose, and a role may narrow what it
+`commands`, `budget_share` and `reviewers` (and, once #143 is built, a `reserve`: see
+[the reserve as a line](#the-reserve-as-a-line-that-moves-toward-the-reset)). Roles compose, and a role may narrow what it
 inherits but never widen it — `igor role explain <name>` prints the effective merge with the
 level each value came from.
 

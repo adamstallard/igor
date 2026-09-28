@@ -247,9 +247,10 @@ seat has none to give it.
 **A probe checks the credential too.** A probe the provider answers with an authentication failure
 (HTTP 401) SHALL open the seat's credential stop, `seat:<id>:credential`, in whichever record owns
 that stop: the breaker #65 proposes, or the condition record #101 specifies, whichever lands first.
-A probe that succeeds SHALL count as the check that clears that stop. A seat whose credential stop
-is open SHALL be probed only as that clearing check, whatever its readings, and never more than
-once an hour. Every other exclusion above still applies to it: a seat refused, spending extra
+A probe that succeeds SHALL count as the check that clears that stop. An authentication failure is
+not a probe that received no event, so the five-hour back-off SHALL NOT follow it. A seat whose
+credential stop is open SHALL be probed only as that clearing check, whatever its readings, and
+never more than once an hour. Every other exclusion above still applies to it: a seat refused, spending extra
 usage, or at its line could not be used if its credential were cleared, so it keeps its stop until
 it could.
 
@@ -315,10 +316,11 @@ it could.
 - **THEN** the stop is cleared
 - **AND** any reading the probe carried is recorded as usual
 
-#### Scenario: A stopped credential is checked at most hourly
+#### Scenario: A stopped credential is checked hourly
 
 - **WHEN** a seat's credential stop is open and it was probed less than an hour ago
 - **THEN** it is not probed again
+- **AND** once an hour has passed it is probed again, with no five-hour back-off
 
 #### Scenario: A seat with no token source is not probed
 
@@ -330,7 +332,7 @@ it could.
 - **WHEN** a seat is probed
 - **THEN** the call is made by the server running the Igors, with the token in its config
 
-### Requirement: Observations arrive irregularly and nothing depends on their arriving
+### Requirement: Observations arrive irregularly, and a gap is waiting, not a fault
 
 No behaviour SHALL require that a reading of a seat was taken at a particular time or at a
 particular interval. A gap between readings SHALL NOT be treated as an error, and SHALL NOT be
@@ -588,7 +590,8 @@ a seat with no ceiling at all.
 - **WHEN** a seat's usage cannot be read
 - **THEN** it is judged on its recorded observations against its line rather than passed over on
   that ground alone
-- **AND** a seat with a non-zero reserve and no unreset observation is passed over, with the reason
+- **AND** where its effective reserve is above 0 and it has no unreset observation, it is passed
+  over, with the reason
 
 #### Scenario: One unreadable seat does not blind the rest
 
