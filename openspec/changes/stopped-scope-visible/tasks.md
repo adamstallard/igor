@@ -52,7 +52,7 @@
 - [ ] 4.1 `renderBudget` prints a stopped seat once, on the seat's own line, naming the cure key
       and what clears it — the shape the unreadable-credential line already uses
 - [ ] 4.2 Distinct from unreadable, from the provider-refused line `credential-breaker` adds, and
-      from no headroom or no capacity figure; a stopped seat with headroom shows both
+      from no headroom or no unreset reading; a stopped seat with headroom shows both
 - [ ] 4.3 A role-scoped condition puts nothing in the report
 - [ ] 4.4 Tests: each of the states above rendered side by side in one report, so the wordings
       are compared rather than asserted one at a time

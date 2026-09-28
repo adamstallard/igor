@@ -5,7 +5,7 @@
 Budget reporting SHALL show a seat that an open condition has stopped as stopped, on a line of the
 seat's own, naming the cure key and what would clear it. That state SHALL be distinguishable from
 a seat whose credential could not be read, from a seat whose credential the provider refused, and
-from a seat with no headroom left or no capacity figure at all. A condition scoped to a role SHALL
+from a seat with no headroom left or with no unreset reading of its windows. A condition scoped to a role SHALL
 NOT appear in budget reporting, and reading the report SHALL NOT clear a condition.
 
 Whether a seat can be spent from is the question a budget report exists to answer, and a stopped
