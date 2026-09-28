@@ -1,3 +1,54 @@
+## Since review: the reserve is a line checked against a reading, and nothing calibrates (2026-09-28)
+
+Added 2026-09-28, after gate one and before gate two. It changes no requirement, scenario or task.
+It records a decision that makes part of the requirement's wording wrong, proposes a restatement,
+and leaves the restatement for Adam to accept or reject.
+
+### The decision
+
+Adam decided on 2026-09-28 that a seat's reserve is a line that moves toward the reset, checked
+against the seat's latest unreset reading of each window
+([`docs/architecture.md` §6.3.4](../../../docs/architecture.md#634-a-seats-reserve-is-a-line-that-moves-toward-the-reset--decided-2026-09-28-specified-on-143-not-built)).
+Igor may start work on a seat only while that reading is below `1 − reserve × remaining`. This
+replaces the dollar bound `(1 − reserve) × capacity` as the gate. Capacity figures stay only as a
+display in `igor budget`, and calibration admission is dropped. It is specified on
+[#143](https://github.com/adamstallard/igor/pull/143) and not built.
+
+### What it does to this change
+
+**Calibration stops bounding anything.** The requirement is titled *A refusal met during triage
+calibrates the seat that refused*. Its last paragraph values the refusal because it proves the
+window full "with the spend record complete behind it", and that is a calibration argument:
+recorded spend divided by 100% gives a capacity. After #143's gate two, a capacity figure gates
+nothing. So the title and that clause describe a job this row no longer does.
+
+**The row's job for the gate is stronger, not weaker.** An observation at 100% is at or above
+every line, so if the gate counts it as a reading, it holds the seat until the window resets. It is
+also the one input to the gate that does not come from the undocumented stream. Under the line, a
+missing event means no seat is admitted (§6.3.4 *Consequences not yet settled*), and a structural
+refusal is the one route that survives that.
+
+**Whether it counts as a reading is not yet specified.** #143's gate reads "the latest unreset
+reading", and nothing on that branch yet says whether a source-`limit` observation is one. That
+question belongs to #143, not to this change, and it has been put to Adam as one.
+
+**No code on this branch depends on the dollar bound.** The branch is specification only.
+Gate two writes a source-`limit` observation at 100%, and that row has to be one #143's gate
+reads. If #143's gate two has landed by then, check this against it.
+
+### Proposed restatement (for Adam; not applied)
+
+- Title: *A refusal met during triage is recorded as a full reading of the seat that refused.*
+- Last paragraph: "Triage is the first model call of a cycle, so an exhausted window is likelier to
+  be discovered there than anywhere else. The refusal is worth most at that moment: it proves the
+  window was full at a known instant, and a reading at 100% holds the seat out until that window
+  resets, whether or not the stream reported anything."
+- Everything else stands as written: one recogniser, a structural signal only, the fallback
+  narrowing, one row per refusal, the batch stops, the untriaged come back.
+
+Renaming the requirement breaks no cross-reference: nothing on #143's branch cites it by name.
+The change's directory name, `triage-refusal-calibrates`, would keep the old word either way.
+
 ## Since review: a seat token's windows can be read from the worker's stream (2026-09-27)
 
 This note was added after gate one and before gate two. It records a finding that overtakes part of this change's premise, and the decision Adam made
