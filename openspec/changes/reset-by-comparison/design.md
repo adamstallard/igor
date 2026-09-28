@@ -1,3 +1,72 @@
+## Since review: a window the reserve line shuts can reopen before its reset (2026-09-28)
+
+Added 2026-09-28, after both gates were discharged. It changes no requirement, task or code, and it
+does not block merging. It records a decision made after review, what it does to this change, and
+one question for Adam.
+
+### The decision
+
+Adam decided on 2026-09-28 that a seat's reserve is a line that moves toward the reset, checked
+against the seat's latest unreset reading of each window
+([`docs/architecture.md` §6.3.4](../../../docs/architecture.md#634-a-seats-reserve-is-a-line-that-moves-toward-the-reset--decided-2026-09-28-specified-on-143-not-built)).
+Igor may start work on a seat only while that reading is below `1 − reserve × remaining`, where
+`remaining = (resetsAt − now) ÷ window length`. This replaces the dollar bound
+`(1 − reserve) × capacity` as the gate, for every seat. It is specified on
+[#143](https://github.com/adamstallard/igor/pull/143) and not built.
+
+### What it does to this change
+
+**A window's return is no longer always its reset.** The line rises as the window runs down. A
+reading `u` below 100% is under the line again once `remaining < (1 − u) ÷ reserve`. At reserve
+0.3, a window read at 85% is shut until halfway through it, not until `resetsAt`. Only a reading of
+100%, a refusal, waits for the reset. So where a window is shut by the line, the return is the
+instant the line crosses the reading, and that instant is at or before the reset.
+
+**The later-of-two rule survives.** *A seat shut in both windows returns on the later of the two*
+is written about the seat's returns, "however the figure was arrived at", and the seat is still
+back only when the last thing holding it clears. What changes is what each window's return is.
+Its scenarios speak of exhausted windows, which are 100% readings and still return at their
+resets, so none of them is wrong.
+
+**The two paths become one.** The rationale describes a live path for a seat the provider reports
+on and a derived path for a seat bounded by recorded dollars. Under #143's gate two, both are the
+same comparison: a reading against a line. The prose becomes history. It is not normative, and
+this note leaves it as it is. The 2026-09-27 note below says "shut" is decided by `hasHeadroom`
+against the reserve. That is true of the code on this branch and becomes the line after #143's gate
+two.
+
+**A crossing is not an hour a stated reset fixes.** *An hour is marked approximate where a stated
+reset does not fix it* draws its line at a stated reset. A crossing is computed from a stated
+reset, but also from a reading that is only a lower bound until its reset (the owner may have
+spent since), and from a window length that stays built in until a probe measures it. It can only
+be early, never late. The requirement does not name this case.
+
+**Code on this branch that gate two of #143 will rework.** The `live` candidate builder in
+`budgetGate` decides "shut" with `hasHeadroom(seatStatus(…))` against the reserve and states each
+shut window's `resetsAt`. Once #143's gate two lands, "shut" means at or above the line, and the
+return of a window shut below 100% is the crossing. That is #143's work, not a reason to hold
+this change. The ordering this change adds (later of two, compared as instants) carries over
+unchanged.
+
+### Open, for Adam
+
+**Which hour does a handoff state for a window the line has shut: the crossing, or the reset?**
+
+- **The crossing, marked approximate.** The earliest the seat can be back. It reads as "back
+  around", and the first probe after it reads the seat again. If this is chosen, *An hour is
+  marked approximate…* needs one more marked case. Proposed wording (not applied): "…and an hour
+  at which a reserve line crosses a reading below 100%, since the reading is only a lower bound
+  until its window resets."
+- **The reset.** Always a stated hour and never early, but late by up to the whole window: at
+  reserve 0.3 a seat read at 85% is back halfway through a week and would be reported as back at
+  the end of it.
+
+Recommendation: the crossing, marked approximate. The purpose of this change is that a handoff not
+promise a return the seat does not keep. That rules out stating an hour that is too early and
+presenting it as exact. It does not argue for an hour that is late by days. Whichever is chosen
+belongs in #143's gate, which is where the crossing is computed. This change needs only the
+restatement above if Adam picks the crossing.
+
 ## Since review: a seat token's windows can be read from the worker's stream (2026-09-27)
 
 This note was added after both gates were discharged. It changes no requirement, no task and no
