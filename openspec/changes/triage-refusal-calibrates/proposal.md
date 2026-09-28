@@ -1,7 +1,7 @@
 ## Why
 
 `ee2c9b9` (#39) made a provider refusal write an observation at 100%. On a seat bought for a fleet,
-that is the calibration route that does not depend on undocumented output. A run's own
+that is the reading of a full window that does not depend on undocumented output. A run's own
 `rate_limit_event` also reads the seat, with nobody signed in (`docs/architecture.md` §6.3.3), and
 reading it is specified by `read-seat-windows-from-the-stream`
 ([#143](https://github.com/adamstallard/igor/pull/143)). But that event is not in the provider's
@@ -21,9 +21,10 @@ envelope, and nothing records an observation.
 **Triage is the first model call of every cycle**, and the one made against candidates the Igor
 has not yet decided to work. If a seat's window is exhausted, triage is where that is most likely
 to be discovered first — and it is the moment the observation is worth the most, because the
-refusal proves the window was full at a known instant with the spend record complete behind it.
-So the loop #39 built has a hole at its most probable entry point: the seat gets refused, and the
-one signal that would calibrate it is dropped because the refusal arrived at the wrong call site.
+refusal proves the window was full at a known instant, and a reading at 100% holds the seat out
+until that window resets. So the loop #39 built has a hole at its most probable entry point: the
+seat gets refused, and the one signal that would hold it out is dropped because the refusal arrived
+at the wrong call site.
 
 This is not about enforcement. Triage spend never reaches `EXECUTIONS_PATH` and the budget ledger
 reads nothing else, so no ceiling is being evaded. An observation is a capacity signal, not a
@@ -199,7 +200,7 @@ requirement about estimates, where nobody implementing triage would look.
 
 ## Impact
 
-- A dedicated fleet seat gets calibrated from the call most likely to discover it is exhausted,
+- A dedicated fleet seat gets a full reading from the call most likely to discover it is exhausted,
   rather than only from a run that got far enough to be refused, and without depending on the
   undocumented stream event. Where a triage call does carry a reading, the reading records the
   refusal and this change writes nothing, so the two never record one refusal twice.

@@ -1,6 +1,6 @@
 ## ADDED Requirements
 
-### Requirement: A refusal met during triage calibrates the seat that refused
+### Requirement: A refusal met during triage is recorded as a full reading of the seat that refused
 
 Where the provider refuses a triage call on a seat the budget gate named, an observation SHALL be
 recorded at 100% for that seat and window, with the reset the refusal stated where it stated one,
@@ -32,8 +32,9 @@ provider filled is the route that does not depend on it. Triage run with `--outp
 carries no event, so until triage reads the stream this requirement covers every triage refusal.
 
 Triage is the first model call of a cycle, so an exhausted window is likelier to be discovered
-there than anywhere else — and the refusal is worth most at that moment, because it proves the
-window was full at a known instant with the spend record complete behind it.
+there than anywhere else. The refusal is worth most at that moment: it proves the window was full
+at a known instant, and a reading at 100% holds the seat out until that window resets, whether or
+not the stream reported anything.
 
 #### Scenario: A refused triage call records the observation
 
