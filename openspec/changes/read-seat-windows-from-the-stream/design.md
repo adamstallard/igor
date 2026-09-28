@@ -70,29 +70,32 @@ having paid. A seat naming no token source runs on the ambient login and is stil
 gate chose, so its reading is attributed to it too — which is exactly as true as the existing
 claim that it paid.
 
-### The record: the existing shape, two sources, and a route
+### The record: the existing shape, and a third source, `stream`
 
 A stream reading is written as the `Observation` `capacity-from-observation` defines, through
 `recordObservation`, to `capacity.ndjson` — one row per window the event reports, with
 `percentUsed = utilization × 100`, `resetsAt` from epoch seconds, `five_hour` → `session` and
 `seven_day` → `week`. A window name the code does not know is not recorded as either.
 
-The in-force requirement says an observation records "which of two sources it came from: a
-usage reading, or a provider limit error", and argues for one record type because the two say the
-same thing. A stream reading is a usage reading by that argument, so it is `source: "usage"`; a
-`rejected` event is a refusal, so it is `source: "limit"`. What distinguishes it is how it was
-obtained, not what it asserts, so it carries a new optional field, `via: "stream"`, and a row
-without one came from `/usage` or from the envelope as today. Reporting uses `via` to say where a
-figure came from, which *Budget reporting states what each seat has left* already requires.
+**Every row taken from the stream is `source: "stream"`** (decided by Adam, 2026-09-27, in place
+of the optional `via: "stream"` field this design first proposed). The in-force requirement said
+an observation records "which of two sources it came from"; this change carries a `MODIFIED`
+delta on *An observation records how full a window was, and when it resets* making it three:
+`usage`, `limit`, `stream`. The argument for one record type is unchanged — the sources say the
+same thing — and `stream` records the route, which *Budget reporting states what each seat has
+left* needs to say where a figure came from.
+
+Whether a stream row reports a refusal is carried by the event's `status` on the row, not by the
+source. A `rejected` event on a run that ended in error is written at 100% of the window it names,
+with its reset; that is what makes it a refusal to everything downstream. Nothing in force selects
+rows by `source: "limit"`: `spentFor` looks for an unexpired row at 100%, `capacityFor` divides
+whatever row is newest, and the budget report prints the source verbatim in the tail of a figure.
+So a refusal recorded as `stream` holds the seat shut and lowers the estimate exactly as a `limit`
+row would. The envelope path keeps writing `limit` for a refusal the stream did not report.
 
 The event-level fields — `status`, `surpassedThreshold`, `isUsingOverage` — are recorded on the
 row for the window `rateLimitType` names; `isUsingOverage`, being about the seat, on every row
 from the event.
-
-**Open for the reviewer:** whether `stream` should instead be a third `source`. That is the more
-literal record and contradicts the in-force "two sources" wording, so it would need a `MODIFIED`
-delta on *An observation records how full a window was, and when it resets*. The field avoids
-that; it does not make the question go away.
 
 ### A refusal is recorded once
 
@@ -206,28 +209,28 @@ exactly as it is today. Nothing waits on an event, nothing is refused for lackin
 envelope-based refusal path is not removed. A seat whose runs stop carrying readings falls back
 to the observations and record it had, which is the in-force behaviour.
 
-## In-force text this overtakes
+## In-force text this overtakes, and the `MODIFIED` deltas that correct it
 
 `openspec validate` does not cross-check deltas against the prose of requirements they do not
-touch. These passages in `openspec/specs/seat-budget/spec.md` state the premise this change
-removes, and stay false-by-omission once it is implemented:
+touch. These passages in `openspec/specs/seat-budget/spec.md` stated the premise this change
+removes. **Adam decided on 2026-09-27 that this change corrects them now**, so
+`specs/seat-budget/spec.md` carries a `MODIFIED` delta for each, changing only the sentence that
+is false:
 
 - ***Usage is read from the seat, not supplied by a person*** — "The credential a seat holds is a
   `setup-token` one, which carries no subscription identity, so the provider reports a
   per-invocation cost summary instead of window percentages and there is nothing to read." True of
   `/usage`; false of the stream.
 - ***An observation records how full a window was, and when it resets*** — "which of two sources
-  it came from". Accommodated by `via` above rather than contradicted; see the open question.
+  it came from". Now three, with `stream`; see *The record* above.
 - ***Recorded spend attributes a seat between its roles*** — "The record is the only quantity
   available for both questions on a seat whose credential reports no window." A seat's credential
   does report its windows.
 - ***A seat with no capacity figure at all protects no floor*** — "What it requires is a machine
   with such a login — the seat's owner — rather than the seat's own credential." The seat's own
-  credential suffices, through the stream.
-
-**Flagged for the reviewer:** whether this change should also carry `MODIFIED` deltas rewording
-these four, or leave them for a follow-up once the reading is built. This change carries `ADDED`
-requirements only, as briefed.
+  credential suffices, through the stream. The delta also states what the old paragraph left
+  implicit: a reading yields a figure only once Igor has spent from the seat inside the window it
+  reads.
 
 ## Still open
 

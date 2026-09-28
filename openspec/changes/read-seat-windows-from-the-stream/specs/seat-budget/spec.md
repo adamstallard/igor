@@ -15,13 +15,13 @@ else available to that credential reports them: `/usage` returns a cost summary 
 endpoint refuses it. Discarding the event discards the only reading of the seat that needs no
 person signed in anywhere.
 
-A stream reading SHALL be recorded in the observation shape already in force, and SHALL be
-distinguishable in the record and in reporting from a reading taken through `/usage`. It SHALL be
-recorded as a usage reading where the event's status is `allowed` or `allowed_warning`, and as a
-limit error where the status is `rejected` and the run ended in error. A `rejected` event on a run
-the provider reports as successful SHALL be recorded as a usage reading at the figures it gives,
-not as a limit error: a limit the run met, retried past and finished around is not the reason it
-stopped.
+A stream reading SHALL be recorded in the observation shape already in force, with source
+`stream`, so that it is distinguishable in the record and in reporting from a reading taken
+through `/usage` and from a limit error read off the envelope. Where the event's status is
+`rejected` and the run ended in error, it SHALL be recorded as a refusal: at 100% of the window
+the event names, with the reset it states. A `rejected` event on a run the provider reports as
+successful SHALL be recorded at the figures it gives, not as a refusal: a limit the run met,
+retried past and finished around is not the reason it stopped.
 A window the event names that is neither the session nor the weekly window SHALL NOT be recorded
 as either.
 
@@ -34,7 +34,7 @@ event is the freshest and the earlier ones add nothing to it.
   `0.07` and the seven-day window at `0.86`, with their resets
 - **THEN** an observation of the paying seat's session window at 7% and one of its week window at
   86% are recorded, each with its reset
-- **AND** each is marked as having come from the worker's stream
+- **AND** each is recorded with source `stream`
 
 #### Scenario: The warning and its threshold are kept
 
@@ -50,7 +50,7 @@ event is the freshest and the earlier ones add nothing to it.
 #### Scenario: A rejection the run finished around is not a refusal
 
 - **WHEN** a run's last event has status `rejected` and the run's terminal envelope reports success
-- **THEN** its observations are recorded as usage readings, not as limit errors
+- **THEN** its observations are recorded at the figures the event gives, not as a refusal
 
 #### Scenario: Several events, one reading
 
@@ -171,3 +171,220 @@ it.
 - **WHEN** a `rate_limit_event` is missing fields or carries values of the wrong type
 - **THEN** no observation is recorded for what cannot be read
 - **AND** the run's outcome is unaffected
+
+## MODIFIED Requirements
+
+### Requirement: Usage is read from the seat, not supplied by a person
+
+Remaining capacity SHALL be established from the seat itself — read directly where the seat's
+credential yields a reading, and otherwise derived from recorded observations of that seat and
+recorded spend against it. The system MUST NOT require a person to submit a usage figure.
+
+A capacity MAY be declared in configuration as `capacity_estimate`, a starting figure per seat
+**and per window**, and SHALL be superseded by any observation of that seat and window rather
+than averaged with one.
+One figure cannot serve both: every consumer is per window — the bound is `(1 − reserve) ×
+capacity` within a window, and reporting is per seat and per window. Deriving one window's
+capacity from the other's by their cadence ratio would assume the two limits are proportional,
+which is the thing two independent limits exist to deny: were a session exactly a 168th of a
+week, the weekly limit would forbid nothing the session limit already forbids. A seat MAY
+declare one window and not the other; the undeclared one is simply unobserved until it is. A
+declared figure needs neither an observation nor recorded spend, which is what it is for: a
+reserved seat with no figure at all is passed over rather than spent from, so without one
+nothing ever accumulates for a derivation to divide. It is reported as declared until an
+observation replaces it, so nobody mistakes an assumption for a measurement.
+
+What must never be configured is a *usage figure*. Capacity is a property of the plan and
+changes rarely; how full the window is right now changes by the minute and is the thing a
+person cannot supply usefully. Even capacity is not fixed — the provider has moved the weekly
+allowance for every subscriber at least once, without any plan changing — so a declared figure
+is a starting point with a shelf life and not a constant.
+
+`/usage` reports window percentages only to a credential the provider can resolve a
+subscription for. The credential a seat holds is a `setup-token` one, which carries no
+subscription identity, so `/usage` under it reports a per-invocation cost summary instead. The
+same credential does receive the seat's windows, in the `rate_limit_event` on the output stream
+of a run made with it, so a seat is read through its own credential whenever such a run is made.
+Where a reading can be taken it remains the better answer and is taken; its absence must bound
+the seat rather than blind the system to it, because a seat nothing can measure is otherwise a
+seat with no ceiling at all.
+
+#### Scenario: Capacity established without a person
+
+- **WHEN** an Igor needs to know whether it may spend
+- **THEN** the seat's usage is read directly where its credential yields a reading
+- **AND** otherwise capacity is derived from recorded observations of that seat and recorded
+  spend against it
+- **AND** no human supplies how full the window is, in either case
+
+#### Scenario: A declared capacity gets a reserved seat started
+
+- **WHEN** a seat declares both a reserve and a capacity, and has no observation
+- **THEN** the declared capacity bounds it and it may be spent from
+- **AND** the figure is reported as declared rather than observed
+
+#### Scenario: An observation supersedes what was declared
+
+- **WHEN** a seat with a declared capacity is observed
+- **THEN** the observed capacity is used and the declared one is not combined with it
+- **AND** later observations supersede earlier ones in the same way
+
+#### Scenario: A seat is read through its own credential
+
+- **WHEN** a seat declares where its token is held
+- **THEN** the reading is taken using that token
+- **AND** the figure therefore describes that seat and no other
+
+#### Scenario: A missing token is refused, not substituted
+
+- **WHEN** a seat names a token that is not available
+- **THEN** the seat is reported unreadable
+- **AND** no other credential is used in its place
+
+#### Scenario: An unreadable seat is not treated as free
+
+- **WHEN** a seat's usage cannot be read
+- **THEN** it is bounded by observation and record rather than passed over on that ground alone
+- **AND** a seat with neither a reading nor an observation is passed over, with the reason
+
+#### Scenario: One unreadable seat does not blind the rest
+
+- **WHEN** one seat of several cannot be read
+- **THEN** the others are still reported and still usable
+
+### Requirement: An observation records how full a window was, and when it resets
+
+A capacity observation SHALL record the seat, the window, the fraction of that window consumed,
+the instant the observation was taken, the instant the window resets, and which of three sources
+it came from: a usage reading (`usage`), a provider limit error (`limit`), or the
+`rate_limit_event` on a run's output stream (`stream`).
+
+    {"at":…,"seat":"adam","window":"session","percentUsed":100,"resetsAt":…,"source":"limit"}
+    {"at":…,"seat":"adam","window":"week","percentUsed":36,"resetsAt":…,"source":"usage"}
+    {"at":…,"seat":"adam","window":"week","percentUsed":86,"resetsAt":…,"source":"stream"}
+
+One record type, because the three sources say the same thing. A limit error is a reading at
+exactly 100% with a reset time attached, and treating it as a second kind of fact would mean
+two mechanisms deciding the same question from the same information. A stream reading is a
+reading of the same windows taken by another route, and a refusal the stream reports is a limit
+error taken by another route; `stream` records the route, because reporting has to say where a
+figure came from, and whether a stream row reports a refusal is carried by the event's status on
+the row.
+
+An observation of a window scoped to one model SHALL record that model. The weekly limit on a
+single model is a separate cap from the all-models one, so recording a refusal against it as an
+unqualified `week` would assert that the whole window was full when it was not — a wrong figure
+where none was needed. No bound is derived against a per-model window here; the model is
+recorded so that the figure is true and so that the derivation, when it comes, has the rows.
+
+The reset SHALL be recorded as an instant that can be compared against the present. The
+provider reports it as a human phrase — a date, a time, and a zone — which cannot be compared
+without being resolved first. An observation whose reset cannot be resolved SHALL be recorded
+anyway and SHALL place no window boundary and yield no capacity derivation, because a position
+in a window that has been invented is worse than none. It SHALL still expire, one window length
+after it was taken.
+
+The two are not the same claim. A derivation has to know *where* the instance sits, and an
+unresolved reset says nothing about that. An expiry only has to know how long the fact stays
+relevant, and the cadence bounds that without placing anything: a window resets at most one
+length after any moment inside it, so the seat is held for at least as long as it is really
+shut. That error cannot overrun anybody's floor, where a row that never expired would be a seat
+nobody could use again.
+
+#### Scenario: A reading becomes an observation
+
+- **WHEN** a usage reading reports a window percentage and a reset time
+- **THEN** an observation is recorded with that percentage, that reset, and source `usage`
+
+#### Scenario: A limit error becomes an observation at 100%
+
+- **WHEN** the provider refuses a run because a window is exhausted, and the run's stream
+  reported no refusal
+- **THEN** an observation is recorded at 100% for that window, with the reset the provider
+  stated and source `limit`
+
+#### Scenario: A stream reading is recorded with its own source
+
+- **WHEN** a run's output stream carries a `rate_limit_event` reporting a window's fullness and
+  reset
+- **THEN** an observation is recorded with that fullness, that reset, and source `stream`
+
+#### Scenario: A per-model window is recorded as one
+
+- **WHEN** an observation concerns a limit scoped to a single model
+- **THEN** the record names that model
+- **AND** it is not recorded as the all-models window
+
+#### Scenario: A reset that cannot be resolved is not invented
+
+- **WHEN** an observation's reset time cannot be resolved to a comparable instant
+- **THEN** the observation is still recorded
+- **AND** it yields no capacity figure and places no window boundary
+- **AND** it stops bearing on the present one window length after it was taken
+
+### Requirement: Recorded spend attributes a seat between its roles
+
+Recorded cost SHALL be used both to apportion a seat between the roles drawing on it and, taken
+against an observed capacity, to decide whether that seat has anything left. What fraction of a
+seat a role is responsible for comes from the record; whether capacity remains comes from the
+record measured against an observation of how full the window was.
+
+The record is the only quantity available for both questions on a seat nothing has read yet:
+`/usage` reports no window to a seat's credential, and a stream reading arrives only when a run
+is made with it. A reading, where there is one, says how full the whole seat is; which role
+consumed what still comes only from the record. Cost is reported as an equivalent value at list prices rather than an amount billed,
+which is what makes it usable as a proxy for consumption of a subscription window.
+
+#### Scenario: A role's share derived from its spend
+
+- **WHEN** two roles have drawn on one seat
+- **THEN** each role's share of the consumed limit follows its share of recorded cost
+
+#### Scenario: No recorded spend attributes nothing
+
+- **WHEN** a seat has no recorded spend
+- **THEN** no role is held to have consumed any of it
+
+#### Scenario: The record decides exhaustion where no reading can
+
+- **WHEN** a seat's recorded spend reaches its bound and no reading is available
+- **THEN** the seat is treated as having no headroom
+- **AND** the decision does not wait on a reading that has not arrived
+
+### Requirement: A seat with no capacity figure at all protects no floor
+
+A seat declaring a non-zero reserve and having neither an observation nor a declared capacity
+SHALL be passed over, with that as the stated reason, rather than spent from against a
+denominator nobody supplied. A seat declaring no reserve MAY be spent from with neither,
+bounded reactively: its first limit error is its first calibration point.
+
+A reserve is a fraction of capacity, so without a capacity figure it expresses no quantity at
+all. Spending somebody's subscription against a denominator nobody chose is worse than declining
+to use their seat, because the failure is invisible to them until their own work is refused. A
+declared figure is not that: somebody named it, it is reported as declared, and the first
+observation replaces it. Where nobody's floor is at stake, the same ignorance costs only a
+failed run, which is the calibration the seat needed.
+
+The unlock is a reading taken after Igor has spent from the seat inside the window it reads,
+because a capacity is that spend divided by the fullness the reading reports: a reading of a seat
+Igor has not spent from inside the instance yields no figure. The seat's own credential receives
+a reading on the stream of every run made with it, so no machine with an interactive login is
+required.
+
+#### Scenario: A reserved seat is not spent from on a guess
+
+- **WHEN** a seat declares a reserve and has neither an observation for the window nor a
+  declared capacity
+- **THEN** it is passed over
+- **AND** the reason given is that no capacity figure exists for it
+
+#### Scenario: A dedicated seat runs uncalibrated
+
+- **WHEN** a seat declares no reserve and has no observation
+- **THEN** work may be charged to it
+
+#### Scenario: The first refusal calibrates it
+
+- **WHEN** an uncalibrated seat with no reserve is refused by the provider
+- **THEN** that refusal is recorded as an observation
+- **AND** the seat has a capacity estimate it did not have before

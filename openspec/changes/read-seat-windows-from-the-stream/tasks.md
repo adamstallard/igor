@@ -26,14 +26,14 @@
 
 ## 3. Recording
 
-- [ ] 3.1 Extend `Observation` with optional `via: 'stream'`, `status`, `surpassedThreshold` and
-      `isUsingOverage`; rows without them read exactly as today
+- [ ] 3.1 Extend `Observation`'s `source` to `'usage' | 'limit' | 'stream'`, and add optional
+      `status`, `surpassedThreshold` and `isUsingOverage`; rows without them read exactly as today
 - [ ] 3.2 In `recordExecution`, write one observation per window from the run's reading through
       `recordObservation`, against the seat the run was charged to, with `at` the arrival instant
       from 2.1 — never the time `recordExecution` runs
-- [ ] 3.3 `source: 'usage'` for `allowed`/`allowed_warning`; `source: 'limit'` for `rejected` on a
-      run whose envelope is an error; a `rejected` event on a run with `is_error: false` is
-      recorded as a reading at the figure it gives, not as a refusal
+- [ ] 3.3 Every stream row is `source: 'stream'`. A `rejected` event on a run whose envelope is an
+      error is written at 100% of the window it names, with its reset; a `rejected` event on a run
+      with `is_error: false` is written at the figure it gives, not as a refusal
 - [ ] 3.4 When the stream reading is a refusal, the envelope path in `recordExecution` writes no
       second row for the same run; when there is no event, the envelope path is unchanged
 - [ ] 3.5 Rows are appended one at a time, as `observeSeat` does, since `appendRecord` drops
@@ -107,5 +107,5 @@
 - [ ] 7.1 Triage: capture whether `--output-format json`'s single envelope carries
       `rate_limit_info`, and record the answer in `design.md` — the owner of any triage reading is
       the reviewer's decision (this change or `triage-refusal-calibrates`, #75)
-- [ ] 7.2 If the reviewer asks for it, `MODIFIED` deltas for the four in-force passages `design.md`
-      lists under *In-force text this overtakes*
+- [x] 7.2 `MODIFIED` deltas for the four in-force passages `design.md` lists under *In-force text
+      this overtakes* — written in gate one, on Adam's decision of 2026-09-27

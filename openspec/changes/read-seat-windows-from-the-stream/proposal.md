@@ -57,21 +57,22 @@ Explicitly out of scope:
 - **Pacing and the reserve's meaning.** `allowed_warning` and a seat-wide fullness figure are
   inputs `budget-pacing` may consume; this change records them and decides no pacing behaviour.
 - **Per-model weekly windows.** The event carries none.
-- **Rewording the in-force requirements whose premise this overtakes.** Listed in `design.md`;
-  whether this change should also carry `MODIFIED` deltas for them is a reviewer's decision.
 
 ## Capabilities
 
 ### Modified Capabilities
 
 - `seat-budget`: a worker run's own output stream is a source of observations of the seat that
-  paid for it, read with that seat's credential.
+  paid for it, read with that seat's credential and recorded with a third source, `stream`. The
+  four in-force passages that said a seat's credential reports no window are corrected by
+  `MODIFIED` deltas, listed in `design.md`.
 
 ## Impact
 
 - `src/execute.ts`: the stream consumer keeps the last `rate_limit_event` beside the terminal
   `result`, and `recordExecution` writes it through `recordObservation`.
-- `src/capacity.ts`: the observation shape gains optional fields; `capacityFor`, `spentFor` and
+- `src/capacity.ts`: the observation's `source` gains `stream`, and the shape gains optional
+  fields; `capacityFor`, `spentFor` and
   the gate read the new rows through the paths they already have.
 - `capacity.ndjson` grows by up to two rows per worker run, at the execution log's rate rather
   than a refusal's. It is still read whole; whether it should stay so is open in `design.md`.
