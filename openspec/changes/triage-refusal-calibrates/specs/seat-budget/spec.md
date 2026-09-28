@@ -22,13 +22,18 @@ being wrong is not a wasted call but a permanent row asserting a seat was full w
 Where the gate named no seat, nothing is recorded. An observation owes a seat, and a call made on a
 credential no seat names is attributable to none.
 
-This is the only way a seat bought for a fleet is ever calibrated. Every other route to an
-observation needs a person signed in on the seat to take a reading, and nobody signs in as a
-dedicated seat. Triage is the first model call of a cycle, so an exhausted window is likelier to be
-discovered there than anywhere else — and the refusal is worth most at that moment, because it
-proves the window was full at a known instant with the spend record complete behind it. A refusal
-recognised only at the execution stage means the seats that most need calibrating are the ones
-least likely to get it.
+This is a fallback. A seat's windows are read from the rate-limit event a run's own output carries,
+and where a triage call carries such a reading of its refusal, that reading is what is recorded —
+once, under the rule that a refusal the stream reports is not recorded twice — and this requirement
+records nothing for that call. It applies where the call carried no reading: an event that is
+absent, malformed, or in a shape Igor does not recognise. The event is not in the provider's
+documentation and can change or stop without notice, and a refusal recognised from a field the
+provider filled is the route that does not depend on it. Triage run with `--output-format json`
+carries no event, so until triage reads the stream this requirement covers every triage refusal.
+
+Triage is the first model call of a cycle, so an exhausted window is likelier to be discovered
+there than anywhere else — and the refusal is worth most at that moment, because it proves the
+window was full at a known instant with the spend record complete behind it.
 
 #### Scenario: A refused triage call records the observation
 
@@ -36,6 +41,19 @@ least likely to get it.
   fills
 - **THEN** an observation is recorded at 100% for that seat and window, with source `limit`
 - **AND** the reset the refusal stated is recorded with it
+
+#### Scenario: A refusal the call's own reading reports is left to that reading
+
+- **WHEN** a refused triage call carries a rate-limit event that Igor records as a reading of the
+  seat
+- **THEN** this requirement records no observation for that call
+- **AND** the refusal is recorded once, from the reading
+
+#### Scenario: A refusal with no reading behind it is still recorded
+
+- **WHEN** a refused triage call carries no rate-limit event Igor recognises, and the refusal is
+  named in a field the provider fills
+- **THEN** an observation is recorded at 100% for that seat and window, with source `limit`
 
 #### Scenario: The same reading as a refused run
 

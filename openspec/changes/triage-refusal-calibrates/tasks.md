@@ -20,6 +20,11 @@
       invisible to the recogniser
 - [ ] 2.4 Tests: each structural signal recognised; a prose-only limit refused; an exit-zero
       errored envelope recognised
+- [ ] 2.5 The fallback condition: where the triage call's output carries a `rate_limit_event` that
+      is recorded as a reading of the seat (`read-seat-windows-from-the-stream`, #143), this path
+      records nothing for that call. Under `--output-format json` no event arrives, so the
+      condition always passes. Test it with a hand-built event only if triage reads the stream by
+      the time this lands. Otherwise leave a comment at the check naming #143's rule
 
 ## 3. The stage stops, and the batch reports one refusal
 

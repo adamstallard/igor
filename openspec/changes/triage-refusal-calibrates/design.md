@@ -1,8 +1,8 @@
 ## Since review: a seat token's windows can be read from the worker's stream (2026-09-27)
 
-This note was added after gate one and before gate two. It changes no requirement and no task.
-It records a finding that overtakes part of this change's premise, and it flags one decision for
-the reviewer, below.
+This note was added after gate one and before gate two. It records a finding that overtakes part of this change's premise, and the decision Adam made
+because of it: the requirement *A refusal met during triage calibrates the seat that refused* is
+narrowed to a fallback, and task 2.5 is added. Nothing else in the requirements or tasks changed.
 
 ### The finding
 
@@ -56,21 +56,34 @@ covers (the gate named a seat and was wrong) should become rarer. It does not go
 whose last worker run was long ago, or whose owner spent it since, still reaches triage with a
 stale figure.
 
-### Decision for the reviewer
+### Decided: this change is the fallback (Adam, 2026-09-27)
 
-**① Does gate two proceed as specified, with the overtaken rationale restated?** Recommended:
-yes. The requirement's normative clauses still hold. What is false is the justification that a
-refusal is the *only* calibration route. If the reviewer agrees, gate two restates that sentence
-in the requirement and the proposal's *Why* as "the route that does not depend on undocumented
-output". Nothing is rewritten here: the requirement text was reviewed at gate one, and changing
-its premise is the reviewer's call.
+The reviewer was offered three options: proceed and restate the premise, narrow to a fallback,
+or withdraw. **Adam chose to narrow to a fallback.** The objection recorded against that option
+earlier, that it would depend on a specification that did not exist, no longer holds:
+`read-seat-windows-from-the-stream` is open as
+[#143](https://github.com/adamstallard/igor/pull/143).
 
-The alternatives, for completeness:
+What the narrowing means, as now written into the requirement:
 
-- **Narrow this change to a fallback** for seats with no stream reading. That makes this change
-  depend on a specification that does not exist yet.
-- **Withdraw it in favour of `seat-from-stream`.** That makes a documented-behaviour path depend
-  on an undocumented one, which is what §6.3 rules out.
+- **Where a refused triage call carries a reading of its own**, meaning a `rate_limit_event` Igor
+  records, the refusal is recorded once, from that reading, under #143's *A refusal the stream
+  reports is not recorded twice*. This change writes nothing for that call.
+- **Where it carries none**, because the event is absent, malformed or unrecognised, this change
+  records the refusal exactly as gate one specified. This is the path that does not depend on
+  undocumented output.
+- **Today that means every triage refusal**, because triage runs `--output-format json` and
+  receives no events. The narrowing does no work until triage reads the stream, and whether
+  triage should is #143's question, not this change's.
+
+This also settles #143's flagged question of who owns a triage reading. #143 owns a triage call's
+*reading*, if triage ever produces one. This change owns a triage *refusal* that arrived without
+a reading. The mechanism is unchanged: one recogniser, a structural signal only, one row per
+refusal, the batch stops, and the untriaged candidates come back.
+
+**Order of landing.** The requirement names #143's rule by title. If this change lands first,
+there is no reading to defer to, and the condition "the call carried no reading" is always true.
+So neither change has to wait for the other.
 
 ### Questions for `seat-from-stream`, not for this change
 

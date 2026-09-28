@@ -1,9 +1,13 @@
 ## Why
 
-`ee2c9b9` (#39) made a provider refusal write an observation at 100%, and on a seat bought for a
-fleet that is not one calibration route among several — it is the only one there is. Every other
-route needs a person signed in on the seat to take a reading, and nobody signs in as a fleet
-seat. The comment at `src/execute.ts:1620-1626` says so in as many words.
+`ee2c9b9` (#39) made a provider refusal write an observation at 100%. On a seat bought for a fleet,
+that is the calibration route that does not depend on undocumented output. A run's own
+`rate_limit_event` also reads the seat, with nobody signed in (`docs/architecture.md` §6.3.3), and
+reading it is specified by `read-seat-windows-from-the-stream`
+([#143](https://github.com/adamstallard/igor/pull/143)). But that event is not in the provider's
+documentation, its `rejected` shape has never been captured (#57), and triage does not see it at
+all. **So this change is the fallback:** it records a triage refusal wherever the call carried no
+reading of its own, which, while triage runs `--output-format json`, is every triage refusal.
 
 That writer is the last of three writes in `recordExecution`, which runs **once per execution**.
 Triage never reaches it. `usageLimit` has no call site in `src/triage.ts`, so a refusal met at
@@ -196,7 +200,9 @@ requirement about estimates, where nobody implementing triage would look.
 ## Impact
 
 - A dedicated fleet seat gets calibrated from the call most likely to discover it is exhausted,
-  rather than only from a run that got far enough to be refused.
+  rather than only from a run that got far enough to be refused, and without depending on the
+  undocumented stream event. Where a triage call does carry a reading, the reading records the
+  refusal and this change writes nothing, so the two never record one refusal twice.
 - One additional write to the state branch per cycle, and only in a cycle that met a refusal.
 - `TriageResponse` gains the limit-bearing fields, typed to the same
   either-the-type-it-claims-or-absent discipline the boundary already applies. Nothing that reads
