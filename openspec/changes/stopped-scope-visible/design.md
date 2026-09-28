@@ -1,5 +1,33 @@
 # Design notes
 
+## Since review: "no capacity figure" stops being a gate state (2026-09-28)
+
+Added 2026-09-28. It changes no requirement, scenario or task, and it records one wording question
+for Adam.
+
+Adam decided on 2026-09-28 that a seat's reserve is a line that moves toward the reset, checked
+against the seat's latest unreset reading of each window. It replaces the dollar bound
+`(1 − reserve) × capacity` as the gate
+([`docs/architecture.md` §6.3.4](../../../docs/architecture.md#634-a-seats-reserve-is-a-line-that-moves-toward-the-reset--decided-2026-09-28-specified-on-143-not-built)).
+Capacity figures stay only as a display, and a seat with no unreset reading is not admitted until a
+probe has read it. It is specified on [#143](https://github.com/adamstallard/igor/pull/143) and not
+built.
+
+**For this change:**
+
+- *A seat a condition has stopped reads as stopped* requires the stopped state to be told apart
+  from, among others, "a seat with no headroom left or no capacity figure at all". After #143's
+  gate two, "no capacity figure" no longer holds a seat. The state that does is "no unreset
+  reading, awaiting a probe". The requirement is not wrong, but it names a state that will have
+  gone and misses the one that replaces it. Tasks 4.2 and 4.4 inherit the same list.
+  **Proposed restatement, for Adam (not applied):** "…and from a seat with no headroom left or
+  with no unreset reading of its windows."
+- *Only open conditions count toward it* holds as written. "A window that has not reset" and "a
+  role held back by pacing" are both waits that end on their own. Under the line, a window shut
+  below 100% reopens when the line crosses the reading, before its reset, and pacing is that same
+  line. Both still end without anyone acting, which is the discriminator this change turns on.
+- No code on this branch; nothing here depends on the dollar bound.
+
 ## Why this is its own change and not an extension of `condition-backoff`
 
 `condition-backoff` put this outside its own scope in writing: *"Reporting an open condition
