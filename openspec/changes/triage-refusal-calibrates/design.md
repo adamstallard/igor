@@ -9,7 +9,9 @@ and leaves the restatement for Adam to accept or reject.
 Adam decided on 2026-09-28 that a seat's reserve is a line that moves toward the reset, checked
 against the seat's latest unreset reading of each window
 ([`docs/architecture.md` §6.3.4](../../../docs/architecture.md#634-a-seats-reserve-is-a-line-that-moves-toward-the-reset--decided-2026-09-28-specified-on-143-not-built)).
-Igor may start work on a seat only while that reading is below `1 − reserve × remaining`. This
+Igor may start work on a seat only while that reading is below `1 − reserve × remaining`.
+The line is `1 − r × remaining` with `r = max(seat reserve, role reserve)`, since a role file
+may also set its own reserve (§6.3.4). This
 replaces the dollar bound `(1 − reserve) × capacity` as the gate. Capacity figures stay only as a
 display in `igor budget`, and calibration admission is dropped. It is specified on
 [#143](https://github.com/adamstallard/igor/pull/143) and not built.
