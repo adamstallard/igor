@@ -143,8 +143,9 @@ Recorded 2026-09-28. This changes no requirement or task here.
 
 Adam decided that a seat's reserve is a line that rises toward the reset, checked against the
 seat's latest unreset stream reading ([`docs/architecture.md` §6.3.4](../../../docs/architecture.md#634-a-seats-reserve-is-a-line-that-moves-toward-the-reset--decided-2026-09-28-specified-on-143-not-built)).
-It is specified on [#143](https://github.com/adamstallard/igor/pull/143) and not built. Its
-accepted cost is that Igor sees its own spend only in the next reading, so each Igor can
+The line is `1 − r × remaining` with `r = max(seat reserve, role reserve)`, since a role file may
+set its own reserve. It is specified on [#143](https://github.com/adamstallard/igor/pull/143) and
+not built. Its accepted cost is that Igor sees its own spend only in the next reading, so each Igor can
 overshoot the line by at most one run.
 
 The proposal's *Per-process budget* says concurrency "spends faster without spending

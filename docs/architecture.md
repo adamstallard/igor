@@ -1351,9 +1351,14 @@ always reaches 100% at the reset, so it never strands capacity.
 the seat holder is using, and igor will adapt to fill the usage whether they're using more or
 less."* The reading is of the whole seat, so the owner's use is already in it. A quiet owner
 leaves Igor room up to the line. A busy owner leaves Igor less. Nobody has to work out which part
-of the reading is whose. What the owner keeps is the gap between the line and 100%: `reserve ×
-remaining` of the window, narrowing to nothing at the reset. Capacity left unspent at a reset is
-lost to everyone, so holding any of it back until then protects nobody.
+of the reading is whose. Capacity left unspent at a reset is lost to everyone, so holding any of
+it back until then protects nobody.
+
+**What a reserve promises the owner.** At any moment, Igor leaves `reserve` × the part of the
+window still to come, assuming linear spend. At 0.5, that is half of what remains. It is not a
+fixed share of the window that is always the owner's; that was the old wording, and under the line
+it is false. If Igor is taking too much, or the owner tends to spend late in a window, the owner
+raises the reserve.
 
 **One line does both jobs, protecting the owner and pacing the spend.** There is no separate pace
 line to take the lower of. On #143's branch, `budget-pacing`'s pace line, dead band and reserve
@@ -1443,9 +1448,10 @@ consequences:
 line below the seat's allowance, so a person never sits down to find their capacity was quietly
 consumed overnight. Without it the failure is invisible, unattributable, and lands on the human;
 with it, it is a configured limit they chose. What that line is was decided on 2026-09-28
-(§6.3.4, not built): it rises from `1 − reserve` just after a reset to 100% at the reset. The
-person is kept `reserve × remaining` of the window rather than a fixed fraction of it, because
-whatever is left at the reset is lost to everyone.
+(§6.3.4, not built): it rises from `1 − reserve` just after a reset to 100% at the reset. At any
+moment Igor leaves `reserve` × the part of the window still to come, assuming linear spend, and
+not a fixed share of the window. A person who finds Igor taking too much, or who tends to spend
+late, raises the reserve.
 
 Two practical notes: several processes on one token may hit per-account concurrency limits,
 and all activity appears under one account upstream — so distinguishing which Igor did what
@@ -1467,7 +1473,7 @@ seats:
   - id: adam
     owner: adam@example.com
     token_env: IGOR_SEAT_ADAM
-    reserve: 0.5             # Adam keeps half the window just after a reset, less as it nears (§6.3.4)
+    reserve: 0.5             # Igor leaves Adam half of what remains of each window (§6.3.4)
 
 pools:
   - id: engineering
