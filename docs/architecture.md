@@ -1200,9 +1200,10 @@ Read §6.3.3 first. The reasoning below holds for an interactive login and not f
 credential a seat can hold, which is most of the point of it.
 
 `claude -p '/usage'` reports the fraction of a seat's session and weekly limits consumed, plus
-when each resets. It costs nothing, spends no tokens, is answered client-side in under a
-second, and can be run under any token. So an Igor asks its own seat whenever the answer
-matters.
+when each resets. Measured under an interactive login, it costs nothing, spends no tokens and
+answers in under a second; where the answer comes from was not measured. So an Igor whose
+credential can ask asks its own seat whenever the answer matters. A seat's `setup-token`
+credential cannot: under one, `/usage` returns a cost summary and no percentages (§6.3.3).
 
 This removes the machinery a stored reading would need. There is no cap in dollars to derive,
 because the comparison happens in percent — the unit the provider actually reports. There is no
