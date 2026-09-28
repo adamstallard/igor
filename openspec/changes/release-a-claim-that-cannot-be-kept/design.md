@@ -161,6 +161,17 @@ begins while a worker is running, which the handler cannot tell from a fault of 
 stop is the exception: a run `execute` reports as refused was stopped, or has published, or
 carries a cure, and is never handed off from here.
 
+**Accepted cost: an outage that begins mid-worker parks one item** — decided at review, not
+merely observed. The worker returns, the next tracker call fails, and the item is handed off and
+deferred rather than retried. It is bounded: at most one item per serving process per outage,
+because the counter abandons the cycle on the second consecutive failure and every item after
+that fails at the claim, before any worker runs; and only where the deferral's own write
+succeeds, so a total outage parks nothing. In a partial one the item carries a visible handoff
+and waits for someone with write access to answer. The alternative is retrying these, which
+re-spends the worker on items that really are wedged — the leftover-branch 422 this rule exists
+to stop — and nothing here can tell the two apart. One item, visibly set down and restartable by
+a comment, is the cheaper of the two.
+
 **The signal is the worker returning, not `execute` returning.** The worker runs inside
 `execute`, before anything is published, and `codeHost.produce` has no handler — so a publish
 that throws escapes `execute` with the spend already made and no result. Reading only whether
