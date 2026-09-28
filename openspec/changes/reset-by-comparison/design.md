@@ -22,6 +22,13 @@ reading `u` below 100% is under the line again once `remaining < (1 − u) ÷ re
 100%, a refusal, waits for the reset. So where a window is shut by the line, the return is the
 instant the line crosses the reading, and that instant is at or before the reset.
 
+**The crossing depends on the role.** Also decided 2026-09-28: a role may declare its own
+`reserve`, and the line for that role on a seat uses `r = max(seat reserve, role reserve)`. So one
+seat can be open to one role and shut to another at the same moment, and its crossing comes at a
+different hour for each. A handoff is written for one role, so it would use that role's `r`. With
+`reserve` 0 for both the seat and the role, the line is 100% throughout, and only a refusal shuts a
+window.
+
 **The later-of-two rule survives.** *A seat shut in both windows returns on the later of the two*
 is written about the seat's returns, "however the figure was arrived at", and the seat is still
 back only when the last thing holding it clears. What changes is what each window's return is.
