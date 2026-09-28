@@ -10,7 +10,8 @@ against the seat's latest unreset reading of each window. It replaces the dollar
 `(1 − reserve) × capacity` as the gate
 ([`docs/architecture.md` §6.3.4](../../../docs/architecture.md#634-a-seats-reserve-is-a-line-that-moves-toward-the-reset--decided-2026-09-28-specified-on-143-not-built)).
 Capacity figures stay only as a display, and a seat with no unreset reading is not admitted until a
-probe has read it. It is specified on [#143](https://github.com/adamstallard/igor/pull/143) and not
+probe has read it. The line is `1 − r × remaining` with `r = max(seat reserve, role reserve)`, since a role file
+may also set its own reserve (§6.3.4). It is specified on [#143](https://github.com/adamstallard/igor/pull/143) and not
 built.
 
 **For this change:**
@@ -26,6 +27,13 @@ built.
   role held back by pacing" are both waits that end on their own. Under the line, a window shut
   below 100% reopens when the line crosses the reading, before its reset, and pacing is that same
   line. Both still end without anyone acting, which is the discriminator this change turns on.
+- **Headroom becomes per role.** Because the line uses the larger of the seat's and the role's
+  reserve, one seat can have headroom for one role and none for another at the same moment. Task
+  4.2's "a stopped seat with headroom shows both", and the scenario *Stopped is not out of
+  headroom* ("a stopped seat still has headroom in both windows"), no longer say whose headroom.
+  `igor budget` reports per seat. Whether it shows headroom against the seat's own reserve or per
+  role is for #143, whose gate two rewrites that report. This change needs only to say which,
+  once #143 has decided.
 - No code on this branch; nothing here depends on the dollar bound.
 
 ## Why this is its own change and not an extension of `condition-backoff`
