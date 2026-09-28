@@ -50,6 +50,18 @@ probe's 401 to count, and a passing probe to close the breaker, a probe's outcom
 whatever `credentialBreaker` reads, with the fingerprint. That is #143's implementation, or #101's
 if the condition record owns the stop by then. Nothing on this branch changes for it.
 
+### A documented signal for a refused credential (added 2026-09-28, approved by Adam)
+
+The CLI's `system/api_retry` stream event carries a **documented** `error` category, including
+`authentication_failed`, `account_on_hold` and `billing_error`
+([headless docs, *Handle API retries*](https://code.claude.com/docs/en/headless#handle-api-retries)).
+Workers already run with `stream-json --verbose` and receive it, and Igor discards it today. It is a
+structural signal for recognising a refused credential, alongside `api_error_status: 401` and
+`Not logged in`, and unlike the `rate_limit_event` it is in the provider's documentation. The
+caveat: it is emitted only before a retry, so a refusal that is not retried never produces it, and
+it cannot be the only signal. The same note is on #57 and #145. Nothing on this branch changes for
+it.
+
 ## Deriving it rather than storing it
 
 The alternative was a breaker store beside `capacity.ndjson`: a row per seat holding a count, a
