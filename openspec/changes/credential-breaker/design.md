@@ -9,7 +9,8 @@ change was built for, and one question for Adam.
 Adam decided on 2026-09-28 that a seat's reserve is a line that moves toward the reset, checked
 against the seat's latest unreset reading of each window
 ([`docs/architecture.md` §6.3.4](../../../docs/architecture.md#634-a-seats-reserve-is-a-line-that-moves-toward-the-reset--decided-2026-09-28-specified-on-143-not-built)).
-It replaces the dollar bound as the gate. A seat with no unreset reading is not admitted: a probe
+The line is `1 − r × remaining` with `r = max(seat reserve, role reserve)`, since a role file
+may also set its own reserve (§6.3.4). It replaces the dollar bound as the gate. A seat with no unreset reading is not admitted: a probe
 on the Igor server reads it first, with one minimal call on the seat's own token. It is specified
 on [#143](https://github.com/adamstallard/igor/pull/143) and not built.
 
@@ -39,11 +40,15 @@ the gate, the `rejected` verdict has to keep its place ahead of the line.
 
 ### Open, for Adam
 
-**Should a probe that gets a 401 mint `seat:<id>:credential`, so it counts toward the breaker?**
-Recommendation: yes, with the fingerprint, the same way a run's does. Otherwise a revoked seat
-nobody has read is out of rotation with no reason given. If it counts, the probe could also serve
-as the half-open trial. This would be specified on #143, where the probe is, and it needs no change
-to this change's requirements.
+**Should a probe that gets a 401 mint `seat:<id>:credential` into whichever record owns the
+credential stop?** Today that is this change's breaker, which counts `executions.ndjson`. If
+[#101](https://github.com/adamstallard/igor/pull/101) lands, it is the condition record, which
+absorbs this breaker and counts handoffs, and a probe produces neither a run row nor a handoff.
+Recommendation: yes, with the fingerprint, into whichever of the two owns the stop at the time.
+Otherwise a revoked seat nobody has read is out of rotation with no reason given. If it counts,
+the probe could also serve as the half-open trial, or as #101's clearing probe, without spending an
+item. This would be specified on #143, where the probe is, and it needs no change to this change's
+requirements.
 
 ## Deriving it rather than storing it
 
