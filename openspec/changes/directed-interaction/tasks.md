@@ -29,16 +29,6 @@
 - [ ] 3.4 Tests: the holder keeps the item; a mention cannot widen permissions; the answer
       contains the change rather than describing it
 
-## 3a. Signed replies
-
-- [ ] 3a.1 The model step composing a reply runs the prose pass and signs the reply with
-      `prose sign`; skills are loaded as #152 describes
-- [ ] 3a.2 The code that posts a reply runs `prose verify-post` on the exact text first
-- [ ] 3a.3 A failure goes back to the model step with the reason; after the allowed attempts,
-      nothing is posted and the failure is recorded
-- [ ] 3a.4 Tests: a signed reply is posted unchanged; an edited or unsigned reply is sent back;
-      repeated failures post nothing
-
 ## 4. Asking rather than guessing
 
 - [ ] 4.1 An item that cannot be acted on as written produces a question, not a guess
