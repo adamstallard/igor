@@ -49,6 +49,36 @@ manipulation, and one needing no permission lookup.
 - **WHEN** the investigation produces a change small enough to read
 - **THEN** the reply contains it, rather than describing that a change exists
 
+### Requirement: A reply is signed by the step that writes it and verified before it is posted
+
+The model step that composes a reply SHALL sign it with the prose skill's `prose sign`, which
+appends a footer hashed over the text above it. The deterministic code that posts the reply
+SHALL run `prose verify-post` on the exact text first, and MUST NOT post text that fails. On a
+failure it SHALL return the text to the model step with the reason to be redone, and after a
+small number of failed attempts it SHALL post nothing.
+
+Running the check is what puts the prose rules in front of the model while it writes, and
+producing its own footer means it cannot skip the check. The code verifies because the model's
+word is not proof. This is the rule for everything an Igor publishes: a model step writes and
+signs, the deterministic code verifies and publishes (see issue #139). It holds for a reply on
+any surface: GitHub, Discord or Linear.
+
+#### Scenario: A signed reply is posted
+
+- **WHEN** the model step returns a reply whose footer verifies
+- **THEN** the code posts exactly that text
+
+#### Scenario: A reply edited after signing is sent back
+
+- **WHEN** the reply's footer does not match its text, or it has none
+- **THEN** the code does not post it
+- **AND** returns it to the model step with the reason, which checks and signs again
+
+#### Scenario: Repeated failures post nothing
+
+- **WHEN** the reply still fails after the allowed number of attempts
+- **THEN** nothing is posted, and the failure is recorded
+
 ### Requirement: Authority to instruct is write access on the artifact
 
 An Igor SHALL act on an instruction only from a party with write access to the repository

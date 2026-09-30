@@ -143,6 +143,12 @@ to reply to.
   abstract — it is what distinguishes a request from an injection after the fact, and "who told
   it to" is the first question anybody asks about an Igor that did something odd.
 
+- **A reply is signed by the step that writes it and verified before it is posted.** The model
+  step composing a reply signs it with the prose skill (`prose sign`); the code that posts it
+  runs `prose verify-post` first, sends a failure back to be redone, and posts nothing after a
+  few failed attempts. It is the rule for everything an Igor publishes (issue #139), applied to
+  replies. Depends on the prose skill, loaded as #152 describes.
+
 Explicitly out of scope:
 
 - **Acting on anything irreversible.** The action-space cap from `core-igor-loop` still
@@ -155,7 +161,8 @@ Explicitly out of scope:
 - `directed-interaction`: learning it was addressed through a mentions source; replying to
   people with write access on the artifact and to no one else; a mention narrowing the action
   space and claiming nothing; treating everything ingested as data; bounding conversation by
-  budget rather than by a count; asking rather than guessing; and recording who asked.
+  budget rather than by a count; asking rather than guessing; recording who asked; and signing
+  each reply before it is posted.
 
 ### Modified Capabilities
 
