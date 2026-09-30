@@ -10,10 +10,10 @@ fixes this for every piece of text an Igor publishes:
 
 ## What Changes
 
-- **Every text an Igor publishes is signed by the model step that wrote it.** That covers pull
-  request descriptions, claims, handoffs, receipts, replies, questions, and any other post to
-  GitHub, Discord or Linear. The step signs with the prose skill's `prose sign`, which appends a
-  `prose ✓ <6 hex>` footer hashed over the text above it.
+- **Every text a model writes for an Igor to publish is signed by the model step that wrote
+  it.** That covers pull request descriptions, replies, questions, and any other model-written
+  post to GitHub, Discord or Linear. The step signs with the prose skill's `prose sign`, which
+  appends a `prose ✓ <6 hex>` footer hashed over the text above it.
 - **The code that posts runs `prose verify-post` on the exact text first**, and posts nothing
   that fails.
 - **A commit is written and signed by two model steps before `produce()` commits it:**
@@ -24,8 +24,10 @@ fixes this for every piece of text an Igor publishes:
   `produce()` commits through the API only when `prose verify-staged` accepts the trailer, the
   staged tree equals both signed trees, and the subject equals the issue title.
 - **A failed check goes back to the model step with the reason**, to redo and sign again. After
-  a small number of attempts (two, proposed), the code publishes nothing and records the
-  failure.
+  two attempts, the code publishes nothing and records the failure.
+- **Text the code assembles from recorded state is not signed:** handoffs, stop receipts and
+  claim messages. The code's authors wrote it and it is reviewed as code. A handoff is needed
+  exactly when a model call may be impossible, so `graceful-handoff` stays as it is.
 
 Replies from `directed-interaction`, and the numbered questions from
 [#140](https://github.com/adamstallard/igor/pull/140), are published text, so this change
@@ -61,8 +63,5 @@ governs them. Neither change is edited here: the rule lives in one place, and th
   public yet. Prose is in review there, and so is bug-hunter's caller-commits mode. Igor loads
   both from a pinned directory with `--add-dir`, as
   [#152](https://github.com/adamstallard/igor/issues/152) decides.
-- **Conflicts with `graceful-handoff` as it stands.** That capability requires a handoff to be
-  composed without a model call; this one requires a model step to sign it. `design.md` sets out
-  the choice; it is not decided.
 - **No GitHub Action.** Igor runs the checks in its own pipeline, so a CI check would only
   re-verify its work (#139, section 4).
