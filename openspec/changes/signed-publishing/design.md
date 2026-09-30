@@ -46,9 +46,18 @@ A failed check returns the text to the step that wrote it, with the reason ("the
 not verify", "the staged tree differs from the signed tree"). The step redoes its check and
 signs again.
 
-The bound is two attempts, proposed and not yet a configuration key. Without a bound, a step
-that keeps failing spends the seat's budget on one item. After the last attempt the code
+The bound is two attempts, the same for every role. Without a bound, a step that keeps failing
+spends the seat's budget on one item. A per-role setting can be added later if a role needs one. After the last attempt the code
 publishes nothing and records the failure, with each reason, to the state branch.
+
+### Text the code assembles is not signed
+
+The rule covers text a model writes. Handoffs, stop receipts and claim messages are assembled
+by the code from recorded state; the code's authors wrote them, and they are reviewed as code.
+
+A handoff is needed exactly when a model call may be impossible: the budget is exhausted, or
+the model step itself failed. Requiring a model step to sign it would leave an Igor silent on
+its claim in the very case `graceful-handoff` exists for, so that capability stays as it is.
 
 ### What a signature proves, and what it does not
 
@@ -61,19 +70,5 @@ publishes nothing and records the failure, with each reason, to the state branch
 
 ## Open Questions
 
-- **Handoffs and stop receipts.** `graceful-handoff` requires a handoff to be composed from
-  recorded state without a model call, because the situation that forces a handoff (budget
-  exhausted, an unrecoverable failure) is often one where no call can be made. A stop receipt
-  must not wait either. This change requires a model step to sign every published text.
-  The choices:
-  - **Exempt code-assembled text.** Handoffs and receipts stay templates filled from recorded
-    state; the template text is reviewed in the repository like code.
-  - **Change `graceful-handoff`.** A model step writes the handoff. Without a fallback, an Igor
-    that ran out of budget would then fall silent on its claim, which is what
-    `graceful-handoff` exists to prevent.
-
-  Claims posted as messages, on a surface with no holder field, raise the same question.
-- **The attempt bound.** Two is proposed; whether it becomes a per-role configuration key is
-  open.
 - **Which roles.** Every role that produces code, or opt-in per role in `org.yaml`, decided
   after measuring the cost.

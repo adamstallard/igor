@@ -2,15 +2,18 @@
 
 ### Requirement: Published text is signed by the model step that wrote it
 
-Every text an Igor publishes SHALL be written and signed by a model step. That covers pull
-request descriptions, claims, handoffs, receipts, replies, questions, and any other post to
+Every text a model step writes for an Igor to publish SHALL be signed by that step. That
+covers pull request descriptions, replies, questions, and any other model-written post to
 GitHub, Discord or Linear. The step SHALL sign with the prose skill's `prose sign`, which
-appends a `prose ✓ <hash>` footer computed over the text above it.
-
-No model step SHALL post, and no code step SHALL write the text it posts.
+appends a `prose ✓ <hash>` footer computed over the text above it. No model step SHALL post.
 
 Running the check is what puts the prose rules in front of the model while it writes, and a
 footer can only come from running it.
+
+Text the code assembles from recorded state is not signed: handoffs, stop receipts and claim
+messages. The code's authors wrote it, and it is reviewed as code. A handoff is needed exactly
+when a model call may be impossible, so it cannot depend on one, and `graceful-handoff` stays
+as it is.
 
 #### Scenario: A reply is signed where it is written
 
@@ -19,12 +22,17 @@ footer can only come from running it.
 
 #### Scenario: The rule holds on every surface
 
-- **WHEN** an Igor posts to GitHub, Discord or Linear
+- **WHEN** an Igor posts model-written text to GitHub, Discord or Linear
 - **THEN** the text carries a footer from the model step that wrote it
+
+#### Scenario: A handoff needs no model call
+
+- **WHEN** an Igor hands off an item after its budget is exhausted, so no model call is possible
+- **THEN** the code posts the handoff it assembled from recorded state, without a signature
 
 ### Requirement: The code verifies text before it publishes it
 
-The code that publishes a text SHALL run `prose verify-post` on the exact text it is about to
+The code that publishes a model-written text SHALL run `prose verify-post` on the exact text it is about to
 send, and MUST NOT publish text that fails. The code verifies because the model's word is not
 proof.
 
@@ -46,7 +54,7 @@ proof.
 ### Requirement: A failed check goes back to the model step, a bounded number of times
 
 When a check fails, the code SHALL return the text to the model step that wrote it, with the
-reason, and that step SHALL redo its check and sign again. After a fixed number of failed
+reason, and that step SHALL redo its check and sign again. After two failed
 attempts the code SHALL publish nothing and SHALL record the failure, with each reason, to the
 state branch.
 
@@ -58,6 +66,6 @@ state branch.
 
 #### Scenario: Repeated failure publishes nothing
 
-- **WHEN** a text still fails after the last allowed attempt
+- **WHEN** a text fails its second attempt
 - **THEN** nothing is published
 - **AND** the failure and its reasons are recorded to the state branch

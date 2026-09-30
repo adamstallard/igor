@@ -23,7 +23,7 @@ more to sign the new tree.
 
 A failure SHALL go back to the step that signed, as the signed-publishing capability requires.
 The commit SHALL carry the message, then the `Bug-hunter:`, `Bug-hunter-Tree:` and `Prose:`
-trailers, then `Co-Authored-By:` naming the model. Merge commits carry none of these trailers.
+trailers. Merge commits carry none of these trailers.
 
 #### Scenario: A signed commit is committed with its trailers
 
