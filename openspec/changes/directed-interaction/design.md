@@ -64,6 +64,33 @@ A count is also aimed at the wrong party. Once a stranger gets no reply, the onl
 partner left is a colleague with write access — whose fourth question is often the useful one,
 because the first three established what the Igor actually understood.
 
+### Two things a mention can ask for beyond an answer
+
+**Filing an issue** stays inside the narrowing rule because it is a role action like any other.
+There is no such action today — `ACTIONS` in `src/role.ts` is `comment`, `review-comment`,
+`draft-pr`, `pr`, `label`, `assign`, `unassign`, `close`, `merge`, `send` — so it needs one, and a
+role that does not grant it declines. The requester could open the issue themselves, which is
+what makes filing it on their behalf grant nothing.
+
+**Acting on an answer is an exception to *speaking only*, and not to *widening*.** The narrowing
+requirement has two clauses: a mention restricts the action space to what may be said, and it
+never widens what the role permits. Only the first gives way. Every option was proposed by the
+Igor, within its own role, before anyone replied; a reply chooses among them, which narrows the
+set of things the Igor was ready to do and adds none. The monotonic-merge argument — that a
+successful injection gains strictly less than the Igor could already do — therefore holds.
+
+What would break it is reading the options back out of the artifact. A description is editable
+by anyone with write access, so a question parsed from it is a question anyone could insert. The
+options are read from the asking Igor's own record instead, written when it posted them. That
+same record is what makes routing work: a different Igor, mentioned in the reply, matches the
+choice against the asker's record and acts within its own role.
+
+**Rejected: checkboxes in the description.** Considered for #139 and dropped. A ticked box
+notifies nobody, and once an Igor publishes its claim is released, so nothing re-reads its own
+pull request; REST exposes no edit fields at all, so who ticked it is only recoverable through
+GraphQL's `userContentEdits`; and it parses decisions out of editable text. A comment is
+attributable in REST, and a mention is what makes it visible.
+
 ## Roads not taken
 
 **A per-thread exchange cap.** Rejected twice over: it bounds a proxy for budget, and on the

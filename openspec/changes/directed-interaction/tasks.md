@@ -52,3 +52,21 @@
 - [ ] 7.2 Record in `docs/architecture.md` that a runaway exchange is the venue's to moderate,
       and that GitHub is the weakest surface for it — an Igor holds write access, so locking a
       conversation does not reach it
+
+## 8. Filing an issue, and answering an Igor's own question
+
+- [ ] 8.1 A new role action for opening an issue, added to `ACTIONS` in `src/role.ts` and granted
+      nowhere by default
+- [ ] 8.2 Asked by someone with write access, open an issue naming what was asked, where, and by
+      whom; do not claim it or work it
+- [ ] 8.3 Decline where the role does not grant the action, and do nothing for a requester
+      without write access
+- [ ] 8.4 Where an Igor posts a numbered question with options, record the question and its
+      options when it posts them, where another Igor can read them
+- [ ] 8.5 Act on a reply that mentions an Igor and chooses a recorded option, matched against that
+      record and never against the artifact's text
+- [ ] 8.6 A reply naming a question or option that was not recorded has no effect — including one
+      edited into the description
+- [ ] 8.7 A reply mentioning a different Igor is handled by that Igor, within its own role
+- [ ] 8.8 Tests for each, including an edited-in question and a reply from someone without write
+      access
