@@ -87,6 +87,7 @@ function deps(found: Candidate[], opts: { searchThrows?: boolean; verdict?: Clai
     name: 'fake',
     provision: async (): Promise<WorkingTree> => ({
       path: tempDir('igor-serve-'),
+      outbox: tempDir('igor-serve-outbox-'),
       repo: 'o/r',
       changes: async () => [],
       release: async () => {},

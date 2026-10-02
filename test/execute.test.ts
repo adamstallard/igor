@@ -19,12 +19,15 @@ import {
   ABSOLUTE_CEILING_MS, branchFor, claudeWorker, complete, conflictPrompt, DENIED_COMMAND_LIMIT, denialsFrom, describeTool, execute,
   ExecutionError, limitWindow, MODEL_SILENCE_MS, permits, prBody, PR_BODY_LIMIT, recordExecution, renderProgress, spendByModel, stripLinkage,
   TOOL_SILENCE_MS, usageLimit, watchWorker, workerEnv, workerPrompt, workerSystemPrompt,
-  describeCommand, refusalPath,
+  describeCommand, refusalPath, declarations, DECLARATION_FILE,
   type ExecutionResult, type Progress, type WorkerEvent, type WorkerRunner,
 } from '../src/execute.js'
 import { CAPACITY_PATH } from '../src/capacity.js'
-import { withTree, type ChangedFile, type TreeProvider, type WorkingTree } from '../src/worktree.js'
+import { blobSha, withTree, type BaseChange, type ChangedFile, type TreeProvider, type WorkingTree } from '../src/worktree.js'
 import { tempDir } from './tmp.js'
+
+/** Where Igor puts the outbox: outside the tree, so the prompt names an absolute path. */
+const OUTBOX = '/tmp/igor-outbox-test'
 
 const MINUTE = 60 * 1000
 const HOUR = 60 * MINUTE
@@ -99,16 +102,19 @@ function fakeProvider(
   changes: ChangedFile[],
   opts: { failProvision?: boolean; noHead?: boolean } = {},
 ) {
-  const log = { provisioned: 0, released: 0, paths: [] as string[] }
+  const log = { provisioned: 0, released: 0, paths: [] as string[], outboxes: [] as string[] }
   const provider: TreeProvider = {
     name: 'fake',
     provision: async () => {
       if (opts.failProvision) throw new Error('cannot clone')
       log.provisioned++
       const path = tempDir('igor-test-tree-')
+      const outbox = tempDir('igor-test-outbox-')
       log.paths.push(path)
+      log.outboxes.push(outbox)
       const tree: WorkingTree = {
         path,
+        outbox,
         repo: 'o/r',
         changes: async () => changes,
         ...(opts.noHead === true ? {} : { head: async () => CLONE_SHA }),
@@ -313,6 +319,81 @@ describe('rendering a command pattern for the worker', () => {
   })
 })
 
+describe('what a worker is told about undoing the base', () => {
+  const artifact = (): InFlight => ({
+    kind: 'pull-request',
+    ref: '#42',
+    url: 'https://example.test/42',
+    draft: false,
+    author: 'igor-bot',
+    mergeable: 'conflicting',
+    branch: 'igor/triage/7-timestamps',
+    base: 'main',
+  })
+
+  const base: BaseChange[] = [
+    { path: 'src/a.ts', before: blobSha('base\n'), after: blobSha('theirs\n'), head: blobSha('ours\n') },
+    { path: 'src/gone.ts', before: blobSha('base\n'), head: blobSha('base\n') },
+  ]
+
+
+  it('names the file to write, what it is for, and what leaving it out costs', () => {
+    // A channel a worker is not told about is a guard that only ever refuses: every
+    // legitimate revert becomes a handoff, whatever the worker meant.
+    const p = conflictPrompt(candidate(), artifact(), OUTBOX, ['src/a.ts'], base)
+    expect(p).toContain(`${OUTBOX}/${DECLARATION_FILE}`)
+    expect(p).toMatch(/hands the item to a\s+person/)
+    expect(p).toContain('"reverts"')
+  })
+
+  it('gives the base state to quote for each conflicted path, and for no other', () => {
+    // The state is the half of a declaration a worker cannot read off the tree — it is not
+    // given git — and a declaration naming the wrong one authorizes nothing. Only the
+    // conflicted paths, because the base's diff as a whole is unbounded.
+    const p = conflictPrompt(candidate(), artifact(), OUTBOX, ['src/a.ts'], base)
+    expect(p).toContain(`- src/a.ts: ${blobSha('theirs\n')}`)
+    expect(p).not.toContain('src/gone.ts')
+  })
+
+  it('says a deleted path is deleted rather than naming a blob that does not exist', () => {
+    const p = conflictPrompt(candidate(), artifact(), OUTBOX, ['src/gone.ts'], base)
+    expect(p).toContain('- src/gone.ts: deleted')
+  })
+
+  it('leaves the marker-free paragraph last, where the rest of this prompt puts it', () => {
+    // That paragraph is the last thing a worker reads before it resolves a delete/modify
+    // conflict, and the tests above it read it by position. The declaration goes before it.
+    const p = conflictPrompt(candidate(), artifact(), OUTBOX, ['src/a.ts'], base)
+    expect(p.split('\n\n').at(-1)).toMatch(/^Where a conflicted file has no markers/)
+  })
+})
+
+describe('reading a declaration a worker wrote', () => {
+  it('takes the entries it can read and nothing else', () => {
+    const sha = blobSha('theirs\n')
+    expect(declarations(JSON.stringify({ reverts: [{ path: 'a.ts', discards: sha }] })))
+      .toEqual([{ path: 'a.ts', discards: sha }])
+  })
+
+  it('authorizes nothing where the file is not readable as a declaration', () => {
+    // Every unreadable shape yields no declaration rather than an error: the consequence of
+    // having none is a refusal naming the paths, which is what an unreadable file deserves.
+    for (const content of [
+      'not json at all',
+      '[]',
+      '{"reverts": {}}',
+      '{"all": true}',
+      '{"reverts": [{"path": "*", "discards": "abc"}]}',
+      '{"reverts": [{"path": "  ", "discards": "abc"}]}',
+      '{"reverts": [{"discards": "abc"}]}',
+      '{"reverts": [{"path": "a.ts"}]}',
+      '{"reverts": [null]}',
+    ]) {
+      expect(declarations(content), content).toEqual([])
+    }
+  })
+})
+
 describe('the trusted channel', () => {
   it('fences the item and says it is data', () => {
     const s = workerSystemPrompt(role(), ['draft-pr'])
@@ -350,7 +431,7 @@ describe('the conflict a worker is handed when one side deleted the file', () =>
 
   /** The marker-free paragraph alone, unwrapped, so an assertion reads the prose not the layout. */
   const markerFree = (): string =>
-    (conflictPrompt(candidate(), artifact(), ['doomed.ts']).split('\n\n').at(-1) ?? '').replace(/\s+/g, ' ')
+    (conflictPrompt(candidate(), artifact(), OUTBOX, ['doomed.ts']).split('\n\n').at(-1) ?? '').replace(/\s+/g, ' ')
 
   it('points at the copy left on disk rather than assuming the artifact is the side that survived', () => {
     // Git leaves the surviving side in the tree whichever side deleted, so on `DU` — the
@@ -540,6 +621,24 @@ describe('the pull request and the ledger point at one transcript', () => {
     const record = ledger.records[0] ?? {}
     expect('costUsd' in record).toBe(false)
     expect(record['usage']).toEqual({ assistantTurns: 3, cacheReadTokensPeak: 3000 })
+  })
+
+  it('records what a published resolution undid, which its diff cannot show', async () => {
+    // A restored deletion reads in the diff as the file still being there, so the record is
+    // the only place an undone base change is legible at all — and a declaration is meant to
+    // make it a statement rather than an exemption from being seen.
+    const { item, result } = await run()
+    const reverts = ['src/a.ts (base blob 0f1e2d)', 'src/gone.ts, which the base deleted']
+    await recordExecution('acme/lore', item, role(), { ...result, reverts })
+
+    expect(ledger.records[0]?.['reverts']).toEqual(reverts)
+  })
+
+  it('leaves the field out of a run that undid nothing', async () => {
+    const { item, result } = await run()
+    await recordExecution('acme/lore', item, role(), result)
+
+    expect('reverts' in (ledger.records[0] ?? {})).toBe(false)
   })
 
   it('records the figure where the worker reported one', async () => {
@@ -1310,6 +1409,32 @@ describe('a worker may run only the commands its role declares', () => {
     expect(argv.slice(at, at + 3)).toEqual(['--allowed-tools', 'Bash(npm test:*)', 'Bash(git diff)'])
     // Editing comes from the mode, so the allowlist never has to carry Edit or Write.
     expect(argv).toContain('acceptEdits')
+  })
+
+  it('grants the outbox as a second directory, because nothing outside the tree is writable', async () => {
+    // Measured against the real CLI, not assumed: with `--add-dir` naming the directory the
+    // write outside the working directory succeeds, and without it the same write is refused
+    // however `acceptEdits` is set. A channel the worker cannot write to is no channel.
+    const { provider, log } = fakeProvider([])
+    const { t } = fakeTracker()
+    const { host } = fakeCodeHost()
+    const run = await execute(
+      provider, t, host, candidate(), role(),
+      { worker: claudeWorker(stubCommand(REPORT_ARGV)) },
+    )
+    const argv = JSON.parse(run.transcript) as string[]
+    const granted = argv.flatMap((a, i) => (a === '--add-dir' ? [argv[i + 1]!] : []))
+    const tree = log.paths.at(-1)!
+    const outbox = log.outboxes.at(-1)!
+
+    expect(granted).toHaveLength(2)
+    expect(granted[0]).toBe(tree)
+    // The tree's own outbox and no other directory. Asserting only that it is somewhere
+    // outside the tree passes an implementation that grants the temp root or the home
+    // directory — writable, and released with `rm -rf`.
+    expect(granted[1]).toBe(outbox)
+    expect(outbox).not.toBe(tree)
+    expect(outbox.startsWith(`${tree}/`)).toBe(false)
   })
 
   it('passes no allowlist at all where a role declares none', async () => {
