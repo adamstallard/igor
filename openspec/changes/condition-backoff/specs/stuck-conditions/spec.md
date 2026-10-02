@@ -73,6 +73,24 @@ role drawing on that seat, a credential belonging to an Igor stops that Igor. Th
 live in the state branch keyed by the cure key, so the same cure met by several Igors is one
 condition.
 
+Where the cure key does not by itself identify what is stuck, the record SHALL also carry a
+discriminator: an opaque value naming what the condition was observed against, absent wherever
+the key already says it. Occurrences observed against different discriminators are different
+occurrences of the same condition — one does not count toward the other, and a handoff carrying
+a new one closes the open occurrence and starts a new count rather than extending it. The
+discriminator qualifies the occurrence and never the scope: a key naming a seat is seat-scoped
+however many discriminators that seat has been observed against.
+
+For most cures the key is the identity. `role:web:commands` fully says what is stuck and what a
+person would edit, and two Igors meeting it met the same thing. A key naming a seat's credential
+names the seat and not the credential, so one seat's two tokens produce the identical key — and
+a record reading that key with a count and an open state cannot answer the question its own stop
+turns on: is this about the credential resolving now? A condition is an occurrence and not a
+thing; a cure key opens, clears and reopens over its life, so a record keyed on the cure alone
+answers for the last occurrence when asked about this one. The discriminator is the part of an
+occurrence's identity the cure key cannot express, which is why it belongs on the record rather
+than alongside it as context.
+
 Keying by the process that hit the condition would count one cure five times, back off five
 times over, and clear five times — with the fifth Igor still discovering for itself something
 four others already recorded. The cure is the thing that is singular; everything else is a
@@ -84,8 +102,15 @@ capacity that was never affected.
 
 #### Scenario: One cure met by several Igors is one condition
 
-- **WHEN** five Igors each hand back on the same cure key
+- **WHEN** five Igors each hand back on the same cure key, having observed it against the same
+  thing
 - **THEN** it is one condition, counted once toward its recurrence and cleared once
+
+#### Scenario: A cure key that does not identify what is stuck carries a discriminator
+
+- **WHEN** a cure key names a seat's credential, which does not say which credential
+- **THEN** the record carries what the condition was observed against, and a handoff observed
+  against a different one is a new occurrence rather than the next count of the open one
 
 #### Scenario: A role-scoped condition leaves other roles working
 
@@ -108,6 +133,20 @@ An open condition SHALL clear when it stops recurring, with nothing external req
 announce the cure. After a cooldown the affected scope SHALL take exactly one item; where that
 item does not meet the condition it SHALL clear, and where it does the scope SHALL stop again
 for a longer cooldown.
+
+A condition carrying a discriminator SHALL clear by that rule and by one more: it SHALL also
+clear the moment the scope resolves a different discriminator, with no cooldown waited and no
+item spent. Both hold together. A credential condition clears on a probe that does not meet it,
+as every condition does, and it clears on the credential changing, which needs no probe to see.
+
+The probe is the general observation because for most conditions nothing else is observable
+from inside the loop: an allowlist edited on some other surface announces nothing, so running is
+the only way to find out. A discriminator is observable. A seat resolving a credential other
+than the one the condition was observed against is the cure having happened, visible before any
+item is claimed — and holding such a scope for a cooldown it no longer needs keeps an operator
+who has already fixed the thing waiting out a backoff that lengthens each time. That second
+clear is the whole reason a credential-shaped stop was worth having, and it is kept here rather
+than left to a mechanism of its own.
 
 Nobody sends a fixed signal, and nobody should have to: the cure is a configuration change made
 by whoever reads the stop, on a surface that has no channel back to the loop, and a condition
@@ -136,6 +175,19 @@ the cure it is trying to observe.
 
 - **WHEN** a scope is probing
 - **THEN** it takes one item and stops again until that item's outcome is known
+
+#### Scenario: A changed discriminator clears without a probe
+
+- **WHEN** a seat resolves a credential other than the one an open condition on that seat was
+  observed against
+- **THEN** the condition closes at once, without waiting for the cooldown and without spending
+  an item
+
+#### Scenario: The same credential still clears by probe
+
+- **WHEN** the cooldown passes and the probe runs on the unchanged credential without meeting
+  the condition
+- **THEN** the condition closes, exactly as it would for a condition carrying no discriminator
 
 #### Scenario: The probe is not the item that tripped it
 
