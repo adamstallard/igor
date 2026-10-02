@@ -99,7 +99,7 @@ describe('what the model call is spawned with', () => {
     IGOR_SEAT_1: 'the-other-seats-token',
     IGOR_SEAT_2: 'seat-two-token',
   }
-  const chosen = () => workerEnv({ tokenEnv: 'IGOR_SEAT_2' }, ambient)
+  const chosen = async () => (await workerEnv({ tokenEnv: 'IGOR_SEAT_2' }, ambient)).env
 
   function watch() {
     const seen: (NodeJS.ProcessEnv | undefined)[] = []
@@ -339,7 +339,7 @@ describe('the environment survives the spawn', () => {
     vi.stubEnv('PATH', `${bin}:/usr/bin:/bin`)
     vi.stubEnv('GH_TOKEN', 'gh-token-from-the-parent')
     vi.stubEnv('IGOR_SEAT_1', 'the-other-seats-token')
-    const env = await workerEnv(
+    const { env } = await workerEnv(
       { tokenEnv: 'IGOR_SEAT_2' },
       { PATH: `${bin}:/usr/bin:/bin`, IGOR_SEAT_2: 'seat-two-token' },
     )
