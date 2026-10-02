@@ -131,8 +131,10 @@ Four steps, once a colleague has sent you a token ([`seats.md`](seats.md) is wha
    answers with them, derived from observation and record where it does not. A seat whose
    variable is unset reports its credential unreadable and is skipped, never substituted with
    whatever login is ambient. That is a different row from a seat nobody has observed, which
-   wants `igor observe` run on the owner's machine, and from a seat that has run out, which
-   wants waiting.
+   wants a reading of it — today `igor observe` run on the owner's machine, which
+   [`read-seat-windows-from-the-stream`](../openspec/changes/read-seat-windows-from-the-stream/design.md)
+   withdraws in favour of reading the seat on the server — and from a seat that has run out,
+   which wants waiting.
 
 `igor budget` reading a seat is necessary and not sufficient. Reading inherits this process's
 environment, so an ambient login or a keychain can answer for a seat that names no token source
@@ -185,8 +187,10 @@ earns its place there.
 
 Whichever source names it, **do not set `CLAUDE_CODE_OAUTH_TOKEN` yourself.** That is the
 variable `claude` itself reads, so it authenticates everything igor spawns rather than the seat
-you named — and `igor observe`, which has to read a window under your own login, gets the seat's
-credential instead and reports that it carries no subscription.
+you named — and `igor observe`, while it exists, reads `/usage` and so needs your own login to see
+a window; under the seat's credential it reports that it carries no subscription. It is being
+withdrawn by
+[`read-seat-windows-from-the-stream`](../openspec/changes/read-seat-windows-from-the-stream/design.md).
 
 This does not remove the token from the `igor` process or the worker it spawns, which is where
 it has to be. It removes it from everything else you run.
