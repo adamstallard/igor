@@ -394,9 +394,9 @@ describe('a claim held through a failure that is not the item\'s', () => {
 
     expect(r.outcome).toBe('handed-off')
     expect(r.handoff).toBe('failure')
-    // The publish threw inside `execute`, so there is no result — which is exactly why the
-    // spend has to be recorded when the worker returns rather than read off the result.
-    expect(r.execution).toBeUndefined()
+    // The publish threw inside `execute`, so the result is built from what the worker returned,
+    // and its cost reaches the seat ledger.
+    expect(r.execution?.costUsd).toBe(0.02)
     expect(shouldDefer(r.outcome, r.handoff, r.cures)).toBe(true)
   })
 
@@ -1476,5 +1476,124 @@ describe('what the note on the item claims', () => {
     })
     await catchUpItem(d, stale(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
     expect(posts.at(-1)).toContain('resolved a merge conflict')
+  })
+})
+
+describe('the failure handler says what the run reached', () => {
+  const fixed: ChangedFile[] = [{ path: 'src/a.ts', content: 'fixed', kind: 'modified' }]
+
+  it('does not call a worker that ran and was paid for a run that never started', async () => {
+    const { d, posts } = deps({ changes: fixed, produceThrows: true })
+    const r = await runItem(d, candidate(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+    expect(posts.at(-1)).not.toContain('the work never started')
+    expect(r.costUsd).toBe(0.02)
+  })
+
+  it('does not call a resolution already pushed a run that never started', async () => {
+    const { d, posts, resolved } = deps({
+      caughtUp: [{ outcome: 'conflict' }],
+      merge: { conflicts: ['src/a.ts'], head: 'h', broughtIn: 'b' },
+      changes: [{ path: 'src/a.ts', content: 'resolved\n', kind: 'modified' }],
+    })
+    let n = 0
+    const catchUp = d.codeHost.catchUp.bind(d.codeHost)
+    d.codeHost.catchUp = async (req) => {
+      n += 1
+      if (n === 2) throw new Error('502 from host')
+      return catchUp(req)
+    }
+    await catchUpItem(d, stale(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+    expect(resolved).toHaveLength(1)
+    expect(posts.at(-1)).not.toContain('the work never started')
+  })
+
+  it('posts a stop receipt, not a failure handoff, when the re-read after a stop fails', async () => {
+    const { d, posts, released } = deps({ changes: fixed })
+    let phase: 'claiming' | 'working' | 'aborted' = 'claiming'
+    const verify = d.tracker.verifyClaim.bind(d.tracker)
+    d.tracker.verifyClaim = async (...a) => {
+      if (phase === 'claiming') return verify(...a)
+      if (phase === 'working') return { status: 'stopped', by: 'alice' } as ClaimVerdict
+      throw new Error('503 reading claim')
+    }
+    await runItem(d, candidate(), role(), 'igor-bot', {
+      ...noWait,
+      checkpointMs: 0,
+      worker: (input) =>
+        new Promise((resolve) => {
+          phase = 'working'
+          input.signal?.addEventListener('abort', () => { phase = 'aborted'; resolve({}) }, { once: true })
+          input.onEvent?.({ type: 'system' } as never)
+        }),
+    })
+    expect(posts.some((p) => p.includes('could not get past'))).toBe(false)
+    expect(posts.at(-1)).toContain("stopped at alice's request")
+    expect(released).toContain('igor-bot')
+  })
+
+  it('does not say it will not retry an item it retries next cycle', async () => {
+    const { d, posts } = deps({ provisionThrows: true })
+    const r = await runItem(d, candidate(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+    expect(shouldDefer(r.outcome, r.handoff, r.cures)).toBe(false)
+    expect(posts.some((p) => p.includes('It will not retry'))).toBe(false)
+  })
+
+  it('posts no failure handoff on an item lost to somebody else before the publish failed', async () => {
+    const { d, posts } = deps({
+      changes: fixed,
+      produceThrows: true,
+      verdicts: [{ status: 'held' }, { status: 'lost', by: 'bob' }],
+    })
+    await runItem(d, candidate(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+    expect(posts.some((p) => p.includes('could not get past'))).toBe(false)
+  })
+})
+
+describe('the failure handler records and reports what a paid run did', () => {
+  const fixed: ChangedFile[] = [{ path: 'src/a.ts', content: 'fixed', kind: 'modified' }]
+
+  it('records the cost of a run lost to somebody else before the publish failed', async () => {
+    const { d } = deps({
+      changes: fixed,
+      produceThrows: true,
+      verdicts: [{ status: 'held' }, { status: 'lost', by: 'bob' }],
+    })
+    const r = await runItem(d, candidate(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+    expect(r.execution?.costUsd).toBe(0.02)
+  })
+
+  it('records the cost of a stopped run whose re-read failed', async () => {
+    const { d } = deps({ changes: fixed })
+    let n = 0
+    d.tracker.verifyClaim = async () => {
+      n += 1
+      if (n === 1) return { status: 'held' }
+      if (n === 2) return { status: 'stopped', by: 'alice' } as ClaimVerdict
+      throw new Error('503 reading claim')
+    }
+    const r = await runItem(d, candidate(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+    expect(r.execution?.costUsd).toBe(0.02)
+  })
+
+  it('does not call edits that were made and lost nothing usable', async () => {
+    const { d, posts } = deps({ changes: fixed, produceThrows: true })
+    await runItem(d, candidate(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+    expect(posts.at(-1)).not.toContain('nothing usable was produced')
+  })
+})
+
+describe('the failure handler keeps what a paid worker reported about denied commands', () => {
+  it('records a denied command when the publish failed after it, and still defers the item', async () => {
+    const { d } = deps({ changes: [{ path: 'src/a.ts', content: 'fixed', kind: 'modified' }], produceThrows: true })
+    const denied = async () => ({
+      result: 'Fixed it.',
+      total_cost_usd: 0.02,
+      permission_denials: [{ tool_name: 'Bash', tool_input: { command: 'npm test' } }],
+    })
+    const r = await runItem(d, candidate(), role(), 'igor-bot', { ...noWait, worker: denied })
+    expect(r.execution?.denials?.map((x) => x.command)).toEqual(['npm test'])
+    // A cure cannot clear the failed publish, so the item waits for an answer rather than
+    // spending the worker again on the same failure.
+    expect(shouldDefer(r.outcome, r.handoff, r.cures)).toBe(true)
   })
 })

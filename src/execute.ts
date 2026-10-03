@@ -1144,6 +1144,12 @@ export interface ExecuteOptions {
   /** How long between mid-run claim re-reads; zero checks on every worker event. */
   checkpointMs?: number
   onPublish?: () => void
+  /**
+   * Called with what the worker left in the tree, the moment it is read. A publish that throws
+   * escapes with no result, and the caller's account of the run is otherwise left saying it
+   * changed nothing.
+   */
+  onChanges?: (changed: ChangedFile[]) => void
   branchPrefix?: string
   /**
    * An artifact of the Igor's own to bring up to date, rather than an item to work.
@@ -1445,6 +1451,7 @@ export async function execute(
       ...(worker.is_error !== false && structuralLimit(worker) ? { limitEnvelope: worker } : {}),
     }
     const changed = await tree.changes()
+    options.onChanges?.(changed)
 
     // Read before anything is decided, not merely before publishing: a stop during a run that
     // changed nothing is still a stop, and owes a receipt rather than a handoff.

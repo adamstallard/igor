@@ -55,7 +55,18 @@ export type HandoffReason =
   // run can be refused an action and have been denied a command, and both have to be fixed.
   // Nothing suppresses an item handed back carrying any, so a sentence promising no retry
   // does not belong on it.
-  | { kind: 'failure'; detail: string; cures?: readonly string[] }
+  | {
+      kind: 'failure'
+      detail: string
+      cures?: readonly string[]
+      /**
+       * What happens to the item next, where that is not "nothing until somebody answers". Absent
+       * means the default sentence, "It will not retry", which is true of every handoff the
+       * deferral record then holds. A caller whose item comes back unasked says so here, or the
+       * item carries a promise the next cycle breaks.
+       */
+      next?: 'retry' | 'published'
+    }
   // Looking carefully and finding nothing is a result, not a breakdown, and reads as one.
   | { kind: 'nothing-to-do'; detail: string }
 
@@ -271,11 +282,15 @@ export function composeHandoff(role: Role, candidate: Candidate, handoff: Handof
         : // Another layer's sentence, and several of them end in a full stop of their own —
           // the seat's "export it." among them, which the reader then meets as "export it.."
           `it hit something it could not get past: ${handoff.reason.detail.replace(/\.$/, '')}. ` +
-          (handoff.reason.cures === undefined || handoff.reason.cures.length === 0
-            ? 'It will not retry'
-            : `Nothing about this item caused that — ${keys(handoff.reason.cures)} ` +
+          (handoff.reason.cures !== undefined && handoff.reason.cures.length > 0
+            ? `Nothing about this item caused that — ${keys(handoff.reason.cures)} ` +
               `${handoff.reason.cures.length === 1 ? 'is' : 'are'} what would change it — so it ` +
-              'comes back to this rather than waiting for a reply')
+              'comes back to this rather than waiting for a reply'
+            : handoff.reason.next === 'retry'
+              ? 'It will try again next cycle'
+              : handoff.reason.next === 'published'
+                ? 'What it published stands, and is caught up there if it stops merging'
+                : 'It will not retry')
 
   const who =
     handoff.suggested.length > 0 ? `${handoff.suggested.join(' or ')} could pick this up.` : ''
