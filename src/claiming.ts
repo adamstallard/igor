@@ -19,6 +19,24 @@ export interface ClaimResult {
   claimedAt: string
   verdict?: ClaimVerdict
   reason: string
+  /**
+   * Set where this refusal is about the surface rather than about the item — the tracker did
+   * not answer, so nothing here would have gone differently on any other item. A cycle that
+   * meets one stops, instead of doing the same thing to everything else in the pool.
+   */
+  surfaceFailed?: true
+  /**
+   * Set where standing down left the holder field set. The caller owes the correction on a
+   * `stopped` claim, because the sentence it corrects is the caller's stop receipt and a
+   * correction written before it stands above the claim it answers. A `lost` claim gets no
+   * sentence from anybody, so that one is said here and this flag only reports it.
+   */
+  releaseStuck?: true
+  /**
+   * Whether anything was said on the item. Only a claim window that threw after announcing
+   * says anything on a refusal, and it says two things — the claim, then its withdrawal.
+   */
+  spoke?: boolean
 }
 
 /**
@@ -38,7 +56,62 @@ export function claimMessage(role: Role, identity: string): string {
   )
 }
 
+/**
+ * Said where a claim was taken, announced, and then could not be finished.
+ *
+ * Posted wherever the claim message may have reached the item, including where the call that
+ * posted it threw: a surface can accept a write and fail on the way home, and a claim message
+ * nobody withdraws tells everyone to stand off an item nobody holds. The waste the other way
+ * is bounded — a claim message that truly never landed usually failed for a reason that is
+ * still there, which fails this post too and leaves the item untouched.
+ *
+ * It names no cause: what failed goes to the run's record, and the protocol keeps tracker
+ * errors off the item.
+ */
+export function claimWithdrawn(role: Role): string {
+  return (
+    `**${role.name}** could not finish taking this and has released it. ` +
+    `Nothing was done, so there is nothing to clean up.`
+  )
+}
+
+/**
+ * Said where the claim could not be finished **and** could not be given up either.
+ *
+ * The item still carries this Igor's name, so the withdrawal's "has released it" would be
+ * false. Naming the one action that clears it, because nothing else will: the next run cannot
+ * take an item somebody else appears to hold.
+ */
+export function claimStuck(role: Role): string {
+  return (
+    `**${role.name}** could not finish taking this and could not release it either, so it is ` +
+    `still assigned. Nothing was done. Unassign it to let another run pick it up.`
+  )
+}
+
 /** The receipt owed on a stop: what exists so far, so nobody has to go looking. */
+/**
+ * Appended wherever something has already been said and the release then did not take.
+ *
+ * A correction rather than a replacement: the sentence above it — a stop receipt, a handoff —
+ * is still true about what happened, and only its last clause about releasing is not. Says
+ * nothing about the cause, which goes to the run's record.
+ */
+export function stillAssigned(): string {
+  return 'This is still assigned — releasing it did not take. Unassign it to free it.'
+}
+
+/**
+ * Said where a claim was lost to somebody else and could not then be given up.
+ *
+ * Standing down silently is right only where the release worked: the other holder is visible
+ * and a second voice adds nothing. Where this Igor's name is still on the item, silence leaves
+ * two apparent holders and no account of the second.
+ */
+export function stoodDownStuck(role: Role): string {
+  return `**${role.name}** stood down here, and could not clear its own name from it. Unassign it to free it.`
+}
+
 export function stopReceipt(role: Role, verdict: ClaimVerdict, artifact?: string): string {
   const who = verdict.by ? ` at ${verdict.by}'s request` : ''
   const left = artifact
@@ -48,6 +121,8 @@ export function stopReceipt(role: Role, verdict: ClaimVerdict, artifact?: string
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
+
+const why = (error: unknown): string => (error instanceof Error ? error.message : String(error))
 
 export interface ClaimOptions {
   /** Injected so tests do not wait, and so a dry run can pass a zero. */
@@ -79,47 +154,108 @@ export async function takeClaim(
   const claimedAt = new Date(now()).toISOString()
   const since = new Date(now() - role.settleSeconds * 1000).toISOString()
 
-  if (tracker.nativeHolderField) {
-    const recorded = await tracker.claim(candidate, identity)
-    if (!recorded) {
-      // GitHub accepts an assignment naming a non-collaborator and silently drops it, so a
-      // claim that did not stick must refuse the work rather than proceed unclaimed.
-      return {
-        outcome: 'refused',
-        candidate,
-        claimedAt,
-        reason:
-          `the tracker did not record ${identity} as holding ${candidate.id} — ` +
-          `most likely it lacks write access to ${candidate.repo}`,
+  // **The claim starts at the assignment call, so the guard opens before it.** That call can
+  // apply on the surface and throw on the way home, and on a surface with no holder field the
+  // claim is the message posted below — either way a throw escaping this window leaves the item
+  // held with nothing said on it, the one state a claim exists to prevent, and an ordinary
+  // tracker 503 reaches it. The window is guarded rather than each call in it: a guard per
+  // route is a guard that misses the next route.
+  let announced = false
+  try {
+    if (tracker.nativeHolderField) {
+      const recorded = await tracker.claim(candidate, identity)
+      if (!recorded) {
+        // GitHub accepts an assignment naming a non-collaborator and silently drops it, so a
+        // claim that did not stick must refuse the work rather than proceed unclaimed.
+        return {
+          outcome: 'refused',
+          candidate,
+          claimedAt,
+          reason:
+            `the tracker did not record ${identity} as holding ${candidate.id} — ` +
+            `most likely it lacks write access to ${candidate.repo}`,
+        }
       }
     }
-  }
 
-  if (options.announce !== false) {
-    await tracker.report(candidate, claimMessage(role, identity))
-  }
+    if (options.announce !== false) {
+      // Set before the call, never after. The question it answers is whether a claim message
+      // may be on the item, and a surface that accepted the write can still throw on the way
+      // home — a flag set afterwards answers the different question of whether this process
+      // saw the write succeed.
+      announced = true
+      await tracker.report(candidate, claimMessage(role, identity))
+    }
 
-  options.onSettle?.()
-  await wait(role.settleSeconds * 1000)
-  const verdict = await tracker.verifyClaim(candidate, identity, since)
+    options.onSettle?.()
+    await wait(role.settleSeconds * 1000)
+    const verdict = await tracker.verifyClaim(candidate, identity, since)
 
-  if (verdict.status === 'held') {
-    return { outcome: 'held', candidate, claimedAt, verdict, reason: 'claim stands' }
-  }
+    if (verdict.status === 'held') {
+      return { outcome: 'held', candidate, claimedAt, verdict, reason: 'claim stands' }
+    }
 
-  // Standing down releases our own claim in both cases: someone else holding it is not a
-  // reason to leave a second name on the item, and a stop must leave nothing behind.
-  await tracker.release(candidate, identity).catch(() => undefined)
+    // Standing down releases our own claim in both cases: someone else holding it is not a
+    // reason to leave a second name on the item, and a stop must leave nothing behind.
+    //
+    // Where it does not take, the item keeps this Igor's name, and what is owed depends on
+    // what else will be said. A stop receipt is posted by the caller and says "released this",
+    // so the clause correcting it has to follow it and the caller is handed the flag instead.
+    // A lost claim is told nothing by anybody, so its standalone sentence is said here.
+    const stoodDown = await tracker.release(candidate, identity).then((clear) => clear, () => false)
+    if (!stoodDown && verdict.status === 'lost') {
+      await tracker.report(candidate, stoodDownStuck(role)).catch(() => undefined)
+    }
 
-  return {
-    outcome: verdict.status,
-    candidate,
-    claimedAt,
-    verdict,
-    reason:
-      verdict.status === 'stopped'
-        ? `stopped${verdict.by ? ` by ${verdict.by}` : ''}`
-        : `lost to ${verdict.by ?? 'another party'}`,
+    return {
+      outcome: verdict.status,
+      candidate,
+      claimedAt,
+      verdict,
+      ...(stoodDown ? {} : { releaseStuck: true as const }),
+      reason:
+        verdict.status === 'stopped'
+          ? `stopped${verdict.by ? ` by ${verdict.by}` : ''}`
+          : `lost to ${verdict.by ?? 'another party'}`,
+    }
+  } catch (error) {
+    // The release goes first, so the withdrawal is true wherever the release succeeded. Where
+    // the release is refused too the item keeps this Igor's name, the withdrawal posted on it
+    // is wrong, and the run's record is the only place left that can say so — **so a reason
+    // here asserts nothing this call cannot know.** Whether the item was ever held is one of
+    // those unknowns: the assignment call throws both before its request leaves and after it
+    // applies, so both reasons below are worded to hold either way.
+    //
+    // Releasing is safe even where the claim itself is what failed, or where what failed was
+    // the check that would have said whether the claim still stands. What a release means on
+    // a surface with no holder field is the adapter's to decide; one the surface refuses
+    // lands in the second reason rather than escaping.
+    // Three answers, not two. The contract distinguishes *the holder field is clear* from *the
+    // surface says it is not* from *the surface did not answer*, and only the first of those
+    // makes the withdrawal below true.
+    const stillHeld = await tracker.release(candidate, identity).then(
+      (clear) => (clear ? undefined : `the ${candidate.repo} holder field is still set`),
+      why,
+    )
+    if (announced) {
+      await tracker
+        .report(candidate, stillHeld === undefined ? claimWithdrawn(role) : claimStuck(role))
+        .catch(() => undefined)
+    }
+    const releaseRefused = stillHeld
+    return {
+      outcome: 'refused',
+      candidate,
+      claimedAt,
+      surfaceFailed: true,
+      spoke: announced,
+      reason:
+        releaseRefused === undefined
+          ? `${identity} could not finish taking ${candidate.id}, and any claim it took ` +
+            `was released: ${why(error)}`
+          : `${identity} could not finish taking ${candidate.id}: ${why(error)}. Releasing it ` +
+            `failed too, so it is still held if the claim landed: ${releaseRefused}`,
+    }
   }
 }
 

@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process'
+import { stillAssigned } from './claiming.js'
 import { randomUUID } from 'node:crypto'
 import type { Artifact, Candidate, ClaimVerdict, CodeHost, InFlight, Tracker } from './adapter.js'
 import { resolveToken, type TokenSource, type Window } from './budget.js'
@@ -1143,6 +1144,12 @@ export interface ExecuteOptions {
   /** How long between mid-run claim re-reads; zero checks on every worker event. */
   checkpointMs?: number
   onPublish?: () => void
+  /**
+   * Called with what the worker left in the tree, the moment it is read. A publish that throws
+   * escapes with no result, and the caller's account of the run is otherwise left saying it
+   * changed nothing.
+   */
+  onChanges?: (changed: ChangedFile[]) => void
   branchPrefix?: string
   /**
    * An artifact of the Igor's own to bring up to date, rather than an item to work.
@@ -1444,6 +1451,7 @@ export async function execute(
       ...(worker.is_error !== false && structuralLimit(worker) ? { limitEnvelope: worker } : {}),
     }
     const changed = await tree.changes()
+    options.onChanges?.(changed)
 
     // Read before anything is decided, not merely before publishing: a stop during a run that
     // changed nothing is still a stop, and owes a receipt rather than a handoff.
@@ -1750,9 +1758,14 @@ export async function complete(
     return { action: role.completion, why: `role "${role.name}" does not permit its own completion action` }
   }
   switch (role.completion) {
-    case 'unassign':
-      await tracker.release(candidate, identity)
+    case 'unassign': {
+      // Asked of the surface, not inferred from the call returning. A completion that did not
+      // clear the holder leaves a published run reported as produced and the item still
+      // assigned to an Igor that has finished with it, with nobody told.
+      const clear = await tracker.release(candidate, identity)
+      if (!clear) await tracker.report(candidate, stillAssigned()).catch(() => undefined)
       return undefined
+    }
     case 'assign':
     case 'close':
       // Neither ships in this change; refusing loudly beats silently doing the default.

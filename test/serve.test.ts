@@ -54,7 +54,7 @@ const issue = (n: number): Candidate =>
     idleDays: 0,
   }) as unknown as Candidate
 
-function deps(found: Candidate[], opts: { searchThrows?: boolean; verdict?: ClaimVerdict; caughtUp?: CatchUp[] } = {}) {
+function deps(found: Candidate[], opts: { searchThrows?: boolean; verdict?: ClaimVerdict; caughtUp?: CatchUp[]; provisionThrows?: boolean; provisionThrowsOn?: readonly number[] } = {}) {
   let searches = 0
   const tracker: Tracker = {
     name: 'github',
@@ -69,7 +69,7 @@ function deps(found: Candidate[], opts: { searchThrows?: boolean; verdict?: Clai
     commentsSince: async () => [],
     verifyClaim: async () => opts.verdict ?? { status: 'held' },
     report: async () => {},
-    release: async () => {},
+    release: async () => true,
     linkage: () => 'Closes #1',
   }
   const caughtUp: CatchUpRequest[] = []
@@ -83,14 +83,25 @@ function deps(found: Candidate[], opts: { searchThrows?: boolean; verdict?: Clai
     },
     resolve: async (): Promise<string> => 'resolvedsha',
   }
+  let provisions = 0
   const trees: TreeProvider = {
     name: 'fake',
-    provision: async (): Promise<WorkingTree> => ({
-      path: tempDir('igor-serve-'),
-      repo: 'o/r',
-      changes: async () => [],
-      release: async () => {},
-    }),
+    provision: async (): Promise<WorkingTree> => {
+      if (opts.provisionThrows === true) throw new Error('disk on fire')
+      // Named attempts wedged and the rest healthy — deterministic item faults, not an
+      // outage. Which attempts matters: whether two failures were adjacent is the whole
+      // question the counter answers.
+      provisions += 1
+      if (opts.provisionThrowsOn?.includes(provisions) === true) {
+        throw new Error('422 Reference already exists')
+      }
+      return {
+        path: tempDir('igor-serve-'),
+        repo: 'o/r',
+        changes: async () => [],
+        release: async () => {},
+      }
+    },
   }
   return {
     d: { tracker, codeHost, trees, destination: 'o/lore' } as CycleDeps,
@@ -165,6 +176,23 @@ describe('the loop keeps going', () => {
     expect(s.cycles).toBe(3)
     expect(s.failures).toBe(3)
     expect(events.filter((e) => e.kind === 'cycle-failed')).toHaveLength(3)
+  })
+
+  it('abandons the cycle when a surface stops answering, rather than doing it to every item', async () => {
+    // Converting the throw into a per-item refusal removed the abandonment a throw used to
+    // cause here. Without this the loop walks the whole pool doing the same thing to each —
+    // two comments per item per poll for as long as the outage lasts, at a volume that is
+    // itself what trips the rate limit.
+    const events: ServeEvent[] = []
+    const onEvent = (e: ServeEvent) => events.push(e)
+    const { d } = deps([issue(1), issue(2), issue(3)], { provisionThrows: true })
+    const s = await serve(d, role(), 'igor-bot', { ...base, maxCycles: 1, onEvent })
+
+    // Two items attempted, not three: the second consecutive failure is what ends the cycle,
+    // because one on its own does not say whether the surface or the item is at fault.
+    expect(events.filter((e) => e.kind === 'working')).toHaveLength(2)
+    expect(events.filter((e) => e.kind === 'cycle-failed')).toHaveLength(1)
+    expect(s.failures).toBe(1)
   })
 
   it('sleeps between cycles but not after the last', async () => {
@@ -446,5 +474,98 @@ describe('a published artifact that stopped merging', () => {
 
     expect(caughtUp()).toEqual([])
     expect(events.filter((e) => e.kind === 'stopping')).toHaveLength(1)
+  })
+
+  it('abandons the cycle on a surface failure here too, and this loop runs first', async () => {
+    // The catch-up loop runs before the claim loop, so a surface that stops answering is met
+    // here first. A break in only the second loop lets the whole catch-up pool be walked —
+    // a claim and a handoff on each — before the guarded one is ever reached.
+    const events: ServeEvent[] = []
+    const onEvent = (e: ServeEvent) => events.push(e)
+    const { d } = deps([rotting(7), rotting(8), rotting(9)], {
+      caughtUp: [{ outcome: 'conflict' }, { outcome: 'conflict' }, { outcome: 'conflict' }],
+      provisionThrows: true,
+    })
+    const s = await serve(d, role(), 'igor-bot', { ...base, maxCycles: 1, onEvent })
+
+    expect(events.filter((e) => e.kind === 'working')).toHaveLength(2)
+    expect(events.filter((e) => e.kind === 'cycle-failed')).toHaveLength(1)
+    expect(s.failures).toBe(1)
+  })
+
+  it('stops the claim loop on an outage the catch-up loop met, and counts it once', async () => {
+    // A mixed pool, because a pool of only catch-ups never reaches the second loop and so
+    // cannot tell whether it was stopped. Both halves ride on this: the claim pool is not
+    // walked against a surface already known to be dead, and one cycle fails once — without
+    // the cross-loop guard the breaker fires again below and counts the same outage twice.
+    const events: ServeEvent[] = []
+    const onEvent = (e: ServeEvent) => events.push(e)
+    const { d } = deps([rotting(7), issue(8), issue(9)], {
+      caughtUp: [{ outcome: 'conflict' }],
+      provisionThrows: true,
+    })
+    const s = await serve(d, role(), 'igor-bot', { ...base, maxCycles: 1, onEvent })
+
+    expect(events.filter((e) => e.kind === 'working')).toHaveLength(2)
+    expect(events.filter((e) => e.kind === 'cycle-failed')).toHaveLength(1)
+    expect(s.failures).toBe(1)
+    // The item that ended the cycle is still reported as worked. `worked` is the only route
+    // by which a run's execution reaches the ledger, so breaking before it would drop the
+    // spend of a run that published — silently, since the cycle total is added earlier.
+    expect(events.filter((e) => e.kind === 'worked')).toHaveLength(2)
+  })
+
+  it('does not abandon on one failure, because one does not say whose fault it is', async () => {
+    // The pole the counter creates. A branch an earlier run orphaned makes `produce` fail
+    // `422 Reference already exists` on that item and no other, deterministically. Abandoning
+    // on the first would stop every cycle for the life of that item — and since the claim is
+    // now released rather than held, the item comes back next cycle and the worker spends on
+    // it again.
+    const events: ServeEvent[] = []
+    const onEvent = (e: ServeEvent) => events.push(e)
+    const { d } = deps([issue(1), issue(2), issue(3)], { provisionThrowsOn: [1] })
+    const s = await serve(d, role(), 'igor-bot', { ...base, maxCycles: 1, onEvent })
+
+    // That the fault happened at all, before anything about what the cycle then did: without
+    // it every assertion below is also true of a pool where nothing went wrong.
+    const failed = events.filter((e) => e.kind === 'worked' && e.run.surfaceFailed === true)
+    expect(failed).toHaveLength(1)
+    expect(events.filter((e) => e.kind === 'working')).toHaveLength(3)
+    expect(events.filter((e) => e.kind === 'cycle-failed')).toHaveLength(0)
+    expect(s.failures).toBe(0)
+  })
+
+  it('counts consecutively, so a healthy item between two faults does not add up to an outage', async () => {
+    // What "consecutive" is for, and the only shape that tells it from a per-cycle tally: two
+    // wedged items with a healthy one between them. A tally would end the cycle at the second
+    // fault, which is the behaviour the counter was introduced to stop.
+    const events: ServeEvent[] = []
+    const onEvent = (e: ServeEvent) => events.push(e)
+    const { d } = deps([issue(1), issue(2), issue(3)], { provisionThrowsOn: [1, 3] })
+    const s = await serve(d, role(), 'igor-bot', { ...base, maxCycles: 1, onEvent })
+
+    expect(events.filter((e) => e.kind === 'worked' && e.run.surfaceFailed === true)).toHaveLength(2)
+    expect(events.filter((e) => e.kind === 'working')).toHaveLength(3)
+    expect(events.filter((e) => e.kind === 'cycle-failed')).toHaveLength(0)
+    expect(s.failures).toBe(0)
+  })
+
+  it('abandons one cycle, not every cycle after it', async () => {
+    // The breaker is per cycle: the next poll is the retry. A flag that outlived its cycle
+    // would leave the claim loop switched off for the life of the process, which no
+    // single-cycle test can tell apart from abandoning correctly.
+    const events: ServeEvent[] = []
+    const onEvent = (e: ServeEvent) => events.push(e)
+    const { d } = deps([rotting(7), issue(8), issue(9)], {
+      caughtUp: [{ outcome: 'conflict' }],
+      provisionThrows: true,
+    })
+    const s = await serve(d, role(), 'igor-bot', { ...base, maxCycles: 2, onEvent })
+
+    // Each cycle abandons on its own, and the next poll is the retry — so the count rises
+    // across cycles rather than the breaker latching. What matters is the second line: one
+    // failure per cycle, not one per item and not one for the process.
+    expect(events.filter((e) => e.kind === 'working')).toHaveLength(5)
+    expect(s.failures).toBe(2)
   })
 })
