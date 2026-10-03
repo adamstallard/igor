@@ -1,13 +1,15 @@
 # Provisioning machine accounts
 
-An Igor acts on GitHub as a **machine account**: an ordinary GitHub user account that exists to
-run automation. This document is the part of deployment that cannot be scripted, because it
+Where an organization's Igors claim work on GitHub, an Igor acts there as a **machine
+account**: an ordinary GitHub user account that exists to run automation. Where they claim on
+another tracker, a GitHub App is the better identity; see
+[When a GitHub App is the right identity](#when-a-github-app-is-the-right-identity). This document is the part of deployment that cannot be scripted, because it
 involves accepting terms, holding credentials, and granting access.
 
-## Why not a GitHub App
+## Why not a GitHub App, where GitHub holds claims
 
 An App is the tidier-looking answer — scoped permissions, no seat, obviously not a person — and
-it is the wrong one here.
+where GitHub is the claiming tracker it is the wrong one.
 
 **A GitHub App's bot user cannot be an issue assignee.** Measured against a live repository: the
 "can this user be assigned" endpoint returns 404 for a bot user, and the assignment request
@@ -17,6 +19,29 @@ be the more correct choice.
 
 Use an App for things that are genuinely app-shaped — checks, webhooks, status. Not for holding
 work.
+
+## When a GitHub App is the right identity
+
+An organization's Igors claim on one tracker (`work-claiming`). Where that tracker is not
+GitHub — Linear, say, where an Igor holds an issue as its `delegate` — GitHub only carries the
+work: branches, pushes, pull requests and comments. An App does all of that, and nothing above
+is lost, because no claim needs the assignee field.
+
+Then an App is the better choice:
+
+- **No seat.** An App is not an organization member, so it adds nothing to a per-user bill.
+- **Nothing to renew.** The App's private key mints an installation token for an hour at a
+  time, so no personal access token expires on anyone.
+- **Obviously not a person.** Its work shows as `<name>[bot]` with a bot badge.
+- **No server.** Minting a token and calling the API are outbound. Leave the App's webhook
+  inactive; the Igor polls as it would with any other identity.
+
+An App cannot be requested as a reviewer, which no Igor needs, and whether its approval counts
+toward branch protection is unmeasured and does not matter: a person approves every Igor pull
+request (`task-execution`).
+
+One App per Igor, so each Igor's work on GitHub is attributable to it, as its claims are on
+the tracker.
 
 ## One account per Igor
 
