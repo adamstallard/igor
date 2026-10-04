@@ -17,17 +17,20 @@ what neither the configuration nor an entry can show on its own. It SHALL inspec
   an entry pushed straight to the default branch has nothing to promote it, stays provisional,
   never fires, and is reported nowhere.
 - **Approval is not required on a pull request.** No account may approve its own pull request,
-  so where the store has no second account able to approve, requiring approvals blocks
-  promotion outright.
+  and an Igor's approval never counts for a person's, so where the store has no second person
+  able to approve, requiring approvals blocks promotion outright.
 - **The merge-triggered reconciliation workflow is present on the default branch.** Without it
   promotion depends on someone having Igor installed and remembering to run it.
 - **The workflow's own push is not blocked.** Where the default branch is protected and the
   workflow is present, that the actor the workflow pushes as may bypass the protection.
 - **The state branch.** That it is reachable, and that the credential holds the write permission
   pushing to it requires.
-- **Write access for the account that claims.** The code host accepts an assignment from an
-  account without write access and silently drops it, so the permission SHALL be reported
-  before anything is claimed rather than inferred from a claim that did not stick.
+- **Each role's GitHub identity can claim.** On GitHub every Igor is a GitHub App, one per
+  role, claiming an issue with its `igor:<role>` label and a claim comment. For each role, the
+  report SHALL say whether its identity is an App installed on the repository it claims on, with
+  the permissions the label and the comment need. These SHALL be read before anything is
+  claimed, rather than inferred from a claim that did not stick. An identity that is not an App
+  SHALL be a finding, because machine users are not supported.
 
 A condition another command already reports, or that the configuration loader already refuses,
 SHALL NOT be re-implemented here; where the report would otherwise be silent about it, the
@@ -42,14 +45,14 @@ report SHALL name the command that covers it.
 #### Scenario: Approvals are required
 
 - **WHEN** the destination requires an approving review on a pull request
-- **AND** no account other than the one that proposes can approve
+- **AND** no person other than the one that proposes can approve
 - **THEN** it is reported as a finding
 - **AND** the finding states that no account may approve its own pull request
 
 #### Scenario: Approvals are required where somebody else can give one
 
 - **WHEN** the destination requires an approving review
-- **AND** another account with write access could approve it
+- **AND** another person with write access could approve it
 - **THEN** the check passes, and the report states that requiring approvals blocks self-merge
 
 #### Scenario: The reconciliation workflow is absent
@@ -66,6 +69,18 @@ report SHALL name the command that covers it.
 - **THEN** it is reported as a finding
 - **AND** the finding states that the workflow's own push is blocked by the rule it exists to
   work around
+
+#### Scenario: A role's identity is not an App
+
+- **WHEN** a role's configured GitHub identity is an ordinary user account rather than a GitHub App
+- **THEN** it is reported as a finding naming that role
+- **AND** the finding states that machine users are not supported
+
+#### Scenario: A role's App cannot label the repository it claims on
+
+- **WHEN** a role's App is not installed on the repository it claims on, or its installation
+  cannot write issues there
+- **THEN** it is reported as a finding naming that role and the permission it lacks
 
 #### Scenario: A role names no source
 

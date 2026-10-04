@@ -54,9 +54,9 @@ inspects the destination and its repository:
 - The state branch is reachable, and the credential holds the write permission pushing to it
   needs. Reachability is read; **writability is inferred from the permission, never tested by
   writing** — see `design.md`.
-- The machine account has write access to the destination. `claiming.ts` reports *"the tracker
-  did not record `<account>` as holding `<item>`"* because GitHub accepts an assignment from an
-  account without write access and silently drops it; the permission is readable in advance.
+- Each role's GitHub identity is an App installed on the repository it claims on, with the
+  permissions its `igor:<role>` label and claim comment need. On GitHub every Igor is a GitHub
+  App (#156), and an identity that is not one is a finding; see `design.md`.
 
 *The check reports and never repairs.* Changing branch protection is exactly the outward-facing
 mutation a diagnostic must not make, and a doctor that mutates is one people are afraid to run.
@@ -88,14 +88,14 @@ made it impossible rather than because it stopped mattering.
 | `seat "x" reads its token from Y, which is not set` | already `igor budget`, which reports a credential that will not resolve. The report names that command rather than reading tokens itself |
 | `role "x" names seat "y", which is not declared` | already a load-time refusal (`role.ts` `checkSeat`), for the role you run. `doctor` resolves **every** role, so the roles you did not run are covered by the resolution check rather than by a check of their own |
 | `role "x" names no seat` | the same refusal, the same coverage |
-| `the tracker did not record <account> as holding <item>` | **a check.** The permission is readable before anything is claimed, and this is the row whose cause is invisible at the moment it bites |
+| `the tracker did not record <account> as holding <item>` | **a check**, now of each role's App rather than a machine user's write access (#156). What the App may do is readable before anything is claimed, and this is the row whose cause is invisible at the moment it bites |
 | nothing is ever claimed | **prose.** The remedy is already *"run `igor run <role> --plan`"* — a funnel over live candidates, not a fact about setup |
 | `9 left untriaged — the budget is used up …` | **prose.** A runtime state of a correctly configured system; `igor budget` shows it |
 | `9 left untriaged — no seat's usage could be read …` | **prose**, for the same reason |
 | an item was claimed and nothing happened | **prose.** The row exists to say there is no such case and that finding one is a bug |
 
-And the judgement the table leaves to a person stays with the person: whether a machine account
-*should* have write access is not a question a command answers.
+And the judgement the table leaves to a person stays with the person: whether an Igor's App
+*should* hold the permissions it was granted is not a question a command answers.
 
 ## Capabilities
 
@@ -103,7 +103,7 @@ And the judgement the table leaves to a person stays with the person: whether a 
 
 - `setup-check`: one read-only command reports whether a lore repository is wired to work —
   destination, roles, the removal permission, the four repository settings, the state branch
-  and write access — naming each finding's remedy and who performs it, skipping what it cannot
+  and each role's App — naming each finding's remedy and who performs it, skipping what it cannot
   read, and exiting non-zero only when something is wrong.
 
 **A new capability rather than an addition to `lore-store`.**

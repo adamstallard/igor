@@ -33,8 +33,8 @@
       repository permission for the authenticated account. Record what the reading actually
       said in `design.md`, including where it contradicts what that file assumed
 - [ ] 3.2 Direct pushes to the default branch are prevented — a pull request is required
-- [ ] 3.3 Approvals are not required, graded on whether a second account could approve;
-      unchecked where the account list cannot be read
+- [ ] 3.3 Approvals are not required, graded on whether a second person could approve, since
+      an Igor's approval never counts; unchecked where the account list cannot be read
 - [ ] 3.4 The reconciliation workflow is present **on the default branch**, not merely in the
       working tree — an uncommitted workflow never runs
 - [ ] 3.5 The workflow's actor may bypass the protection, checked only where the branch is
@@ -42,8 +42,12 @@
       administrative and the credential is not
 - [ ] 3.6 The state branch is reachable, and the credential holds the write permission pushing
       to it needs — read from the permission, never by writing
-- [ ] 3.7 Write access for the account that claims, which is the deployment table's
-      `the tracker did not record <account> as holding <item>` row, checkable before a claim
+- [ ] 3.7 Each role's GitHub identity is an App installed on the repository it claims on,
+      with the permissions its `igor:<role>` label and claim comment need; an identity that is
+      not an App is a finding. This replaces the deployment table's
+      `the tracker did not record <account> as holding <item>` row, checkable before a claim.
+      Confirm against the live API where an installation's permissions can be read, and record
+      it in `design.md`
 - [ ] 3.8 Every credentialled check degrades individually: one unreadable endpoint skips one
       check, not the run
 
@@ -69,8 +73,8 @@
       the bypass list — point at the command instead of relying on being remembered. The
       warnings stay; what changes is that they end with a way to confirm
 - [ ] 5.3 `docs/deployment.md`, "When something is wrong": name the command on the rows it
-      evaluates, and leave the rows that need human judgement as prose — whether a machine
-      account *should* have write access is not a question a command answers
+      evaluates, and leave the rows that need human judgement as prose — whether an Igor's App
+      *should* hold the permissions it was granted is not a question a command answers
 - [ ] 5.4 `docs/architecture.md` §5.0.3: one sentence that the same principle — feedback rather
       than documentation — produced a setup check, naming where it is documented. The list of
       two stays two, because both of those are about a role's effective behaviour and this is

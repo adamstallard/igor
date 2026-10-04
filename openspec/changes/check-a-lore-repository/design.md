@@ -42,10 +42,9 @@ permission, not the push. A permission that says write while a ruleset still ref
 a false pass, and calling the check *writability* would hide that; calling it what it is does
 not.
 
-The same reasoning covers the machine account's write access, which is the row of the
-deployment table whose cause is invisible at the moment it bites: the code host accepts the
-assignment and drops it. The permission is readable in advance and is the whole of what can be
-read without claiming something.
+The same reasoning covers whether each role's identity can claim. What a role's App may do on
+the repository it claims on is readable in advance, and is the whole of what can be read
+without claiming something.
 
 ## Three outcomes, and a skip is not a finding
 
@@ -73,7 +72,7 @@ Three alternatives, one chosen:
 **"Require approvals" is graded rather than absolute** for the same reason. It hard-blocks a
 solo maintainer and is unremarkable for a team of four, so reporting it as a finding
 unconditionally would train a team to ignore the output. The discriminator is whether any
-account other than the one that proposes could approve: where there is none, the setting blocks
+person other than the one that proposes could approve: where there is none, the setting blocks
 promotion outright and it is a finding; where there is one, the check passes and the report
 states the consequence, which keeps the report at three states — pass, finding, unchecked — and
 the exit status answering one question. Where that cannot be determined — the account list is itself a
@@ -104,3 +103,30 @@ A consequence for implementation order: the protection and bypass checks share a
 a set of endpoints, and the cheap local checks (destination, roles, `commands`, workflow file)
 share none of it. They are separable, and the local half is worth having on its own where no
 credential exists at all.
+
+## Every Igor is a GitHub App (amended 2026-10-04)
+
+[#156](https://github.com/adamstallard/igor/pull/156) settles that on GitHub every Igor is a
+GitHub App, one per role, which claims an issue with its `igor:<role>` label. Machine users are
+not supported. Two checks change.
+
+**The claimer's write access becomes each role's App.** The check was written against a machine
+user: GitHub accepts an assignment to one that lacks write access, then silently drops it. An App
+claims by label instead, and the question becomes whether each role's App is installed on the
+repository it claims on, with the permissions the label and the claim comment need. An identity
+that is not an App is now a finding. [#150](https://github.com/adamstallard/igor/pull/150)
+already expects this check: its gate-two test excludes an Igor's review by the reviewer's `Bot`
+account type, and a machine user's review would pass as a person's.
+
+**"Another account could approve" means another person.** An Igor's approval never counts for a
+person's (#156), and every Igor pull request needs a person's. An App's bot also reads
+`push: false` on the collaborator-permission endpoint (measured 2026-10-04, for
+`dependabot[bot]` and `github-actions[bot]`), so a list of collaborators with write access
+already leaves the Apps out.
+
+**Open: what to report while Igor still runs as a machine user.** App support is not built yet
+(#156's tasks). A `doctor` built before it would report every working installation's identity as
+a finding. *Recommend:* build the App check as specified, and if `doctor` ships first, keep the
+machine user's write-access check until App support lands, reporting the identity as not yet an
+App without counting it as a finding.
+
