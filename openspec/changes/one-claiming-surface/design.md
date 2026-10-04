@@ -1,3 +1,44 @@
+## What a claim is for
+
+**Claims coordinate Igors with each other.** That is the property this change protects, and it
+is why an organization's Igors claim on one tracker: an Igor cannot see a claim held on a
+tracker it does not read.
+
+Three facts bound what a claim has to do:
+
+- **Igors do not hold items for long.** A claim needs no expiry or lease.
+- **A stalled Igor is taken over by a person.** The person stops it, or takes the item.
+- **Duplicate human work is acceptable.** A person working an item that an Igor or another
+  person also works costs some effort and breaks nothing. No rule here is designed to prevent
+  it.
+
+So a claim must be reliable between Igors and visible to people. It need not sit in the
+assignee field, which is why a GitHub App's label claim is enough.
+
+## Open: the App's label and items assigned to a person
+
+On Linear the holder field (the delegate) is distinct from the assignee, and an issue assigned
+to a person is off-limits unless delegated to this Igor. On GitHub, the `igor:<role>` label an
+App claims with is also distinct from the assignee. **Not decided:** whether the GitHub adapter
+declares the label distinct from the assignee, which decides whether:
+
+- an App Igor skips an issue assigned to a person unless it carries this Igor's label;
+- a person adding an `igor:<role>` label directs that Igor, starting it without the settle
+  interval, as a person's delegation does on Linear.
+
+The same answer settles a case `work-claiming` already covers, a person assigning themselves
+after stopping an Igor. Under a label claim, only a "distinct" declaration keeps that Igor from
+reclaiming the item.
+
+## The App's label names the role, and nothing else
+
+**`igor:<role>`, such as `igor:reviewer`.** The `igor:` prefix marks a label as a claim, and the
+role names the Igor. A prefix naming the organization, or the word "agent", says nothing the
+repository and `igor:` do not already say. No GitHub Projects field is used.
+
+**Not measured here:** an App adding and removing a label. The adapter reads its labels back
+after writing them, as it reads assignees back today, rather than trusting the response.
+
 ## Measured against Linear, 2026-10-03
 
 Against the Aura workspace, as the app user `aura-agent-adam`, whose token was minted with
@@ -28,6 +69,13 @@ Also not established here: the assignee field. The earlier `linear-app` measurem
 app user cannot be assignee, and that the request reported success while changing nothing. The
 adapter must read the field back rather than trust the response.
 
+## Owed: a GitHub App's pull request linking to a Linear issue
+
+**Not measured yet:** whether a pull request opened by a GitHub App links to its Linear issue
+the way a person's does. Linear links by the issue identifier in the branch name, title or
+description, not by author, so it is expected to. The measurement needs a GitHub repository
+connected to Linear's GitHub integration; `aura-workroom` is not connected.
+
 ## Holder field first, then the message
 
 **Rejected: message first.** Resolution reads one thing, and people see one thing, and those
@@ -38,12 +86,12 @@ round, leaving a message claiming an item whose field shows nobody.
 
 ## A losing Igor leaves a single-valued field alone
 
-GitHub's stand-down removes the Igor from the assignee list, which leaves anyone else there.
+On GitHub, standing down removes the Igor's own assignee or label and leaves anyone else's.
 Applied to Linear's delegate, the same "release my claim" would set the field to empty, and the
 field at that moment names the **winner**. The loser therefore only replies. If its write is
 somehow still in the field, it has not lost.
 
-## Items assigned to a person
+## Items assigned to a person, on Linear
 
 **Chosen: off-limits unless delegated to this Igor.** Closest to GitHub, where a person in the
 assignee list means the item is taken, and it makes a person's hand-over explicit.
@@ -60,22 +108,3 @@ starts. Neither applies when a person sets the holder field: other Igors do not 
 that names a holder, and the person has made the choice an objection would contest. Waiting
 would cost up to one settle interval for nothing. Stop is unchanged, so a mistaken delegation
 is undone the same way as any claim.
-
-## A GitHub App where GitHub does not hold claims
-
-`docs/machine-accounts.md` measured that a GitHub App's bot user cannot be an assignee, and
-concluded an App would reduce GitHub to a message-only surface. That stands where GitHub is the
-claiming tracker. Where claims live on another tracker, GitHub needs no holder field, and an
-App's properties are all gains: no seat on a paid plan, no personal access token to renew,
-installation tokens minted from the App's private key for an hour at a time, and a `[bot]`
-badge that says what it is. Using one needs no server: minting a token and calling the API are
-outbound, and an App's webhook is optional. An Igor still finds its work by polling.
-
-**What an App cannot do, and why it does not matter here:** be assigned, which the claiming
-tracker now covers; be requested as a reviewer, which no Igor needs; and possibly have its
-approval count toward branch protection, unmeasured, and irrelevant because a person approves
-every Igor pull request.
-
-**Not measured yet:** whether a pull request an App opens links to its Linear issue the way a
-person's does. Linear links by the issue identifier in the branch name, title or description,
-not by author, so it is expected to. Measure it with the first App.

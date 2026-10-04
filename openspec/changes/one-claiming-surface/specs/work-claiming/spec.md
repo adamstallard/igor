@@ -13,9 +13,9 @@ whose field shows nobody, which is a claim people miss. Written field first, a f
 the visible claim, and the message follows on the next cycle.
 
 Where the holder field holds a single value, the later of two writes holds the item: each Igor
-re-reads the field, and the one it no longer names has lost. Where the field holds a list, any
-other holder present after the settle interval means the claim is lost, because people add
-themselves to a list rather than replacing what is there.
+re-reads the field, and the one it no longer names has lost. Where the field holds a list, such
+as GitHub's assignees or its `igor:` labels, any other holder present after the settle interval
+means the claim is lost, because a list keeps every write rather than replacing one.
 
 #### Scenario: Claim visible in the native field
 
@@ -33,6 +33,11 @@ themselves to a list rather than replacing what is there.
 - **WHEN** two Igors set a single-valued holder field on the same item within one settle interval
 - **THEN** the Igor whose write the field still shows holds the item
 - **AND** the other Igor has lost the claim
+
+#### Scenario: Another holder in a list
+
+- **WHEN** a re-read after the settle interval finds another holder in a list-valued holder field
+- **THEN** the Igor has lost the claim
 
 #### Scenario: No dependence on conditional writes
 
@@ -71,7 +76,7 @@ can direct an Igor through the holder field*.
 #### Scenario: Losing Igor removes itself from a list
 
 - **WHEN** an Igor loses a claim on a holder field that holds a list
-- **THEN** it removes itself from the list and leaves every other holder in place
+- **THEN** it removes its own entry and leaves every other holder in place
 
 #### Scenario: Settle interval configurable
 
@@ -82,11 +87,15 @@ can direct an Igor through the holder field*.
 
 ### Requirement: An organization's Igors claim on one tracker
 
-The Igors of one organization SHALL hold claims on a single tracker, so that a person can tell
-who is working on what, and stop it, by looking in one place. Other surfaces MAY direct an Igor,
-by a mention or a message, or carry its work as a code host, but a claim SHALL NOT be taken on
-them. A configuration whose roles take claims on more than one tracker SHALL be refused, naming
-the trackers involved.
+The Igors of one organization SHALL hold claims on a single tracker. Claims exist so that Igors
+do not work the same item, and an Igor cannot see a claim held on a tracker it does not read.
+Other surfaces MAY direct an Igor, by a mention or a chat message, or carry its work as a code
+host, but a claim SHALL NOT be taken on them. A configuration whose roles take claims on more
+than one tracker SHALL be refused, naming the trackers involved.
+
+Claims coordinate Igors with each other, not with people. An Igor holds an item briefly, a
+person takes over an Igor that stalls, and a person duplicating work is acceptable. No rule in
+this capability is designed to prevent duplicate human work.
 
 #### Scenario: Claims on one tracker
 
@@ -104,6 +113,29 @@ the trackers involved.
 
 - **WHEN** a person asks an Igor for work on a surface that is not the claiming tracker
 - **THEN** any claim for that work is taken on the claiming tracker, not where the request was made
+
+### Requirement: On GitHub, an Igor acting as an App claims with its role's label
+
+An Igor whose GitHub identity is a GitHub App SHALL claim a GitHub issue by adding the label
+`igor:<role>`, naming its role, such as `igor:reviewer`, and then posting the claim comment. An
+App's bot user cannot be an issue assignee, so the label is its holder field. The label carries
+no organization or other prefix beyond `igor:`. An Igor whose GitHub identity is a machine user
+claims by assignee.
+
+Any label beginning `igor:` names an Igor. Another Igor's `igor:` label present after the settle
+interval means the claim is lost, and standing down removes only this Igor's own label.
+
+#### Scenario: App claims by label and comment
+
+- **WHEN** an Igor acting as a GitHub App claims an issue
+- **THEN** the issue carries the label `igor:<role>` for that Igor's role
+- **AND** the claim comment follows the label
+
+#### Scenario: Another Igor's label after the settle interval
+
+- **WHEN** a re-read after the settle interval finds another Igor's `igor:` label on the issue
+- **THEN** the Igor has lost the claim
+- **AND** it removes its own label and leaves the other in place
 
 ### Requirement: An item someone else holds is not claimed
 
@@ -154,3 +186,17 @@ or a person removing the Igor from the holder field, SHALL halt it at any time, 
 
 - **WHEN** a person removes the Igor as delegate, or replies stop, after the Igor has started
 - **THEN** the Igor halts as it would for any stopped claim
+
+### Requirement: An issue created from chat points back to the chat
+
+Where an Igor creates an issue because a person instructed it in chat, the issue's description
+SHALL quote the relevant chat messages, link to them, or both, so that whoever reads the issue
+sees where the request came from. After creating the issue, the Igor SHALL post a message in
+that chat with a link to the issue. The issue is created on the claiming tracker, and any claim
+on it is taken there.
+
+#### Scenario: Instructed in chat
+
+- **WHEN** a person in chat instructs an Igor to do work that has no issue
+- **THEN** the Igor creates an issue on the claiming tracker whose description quotes or links the chat
+- **AND** it then posts the issue's link in the chat
