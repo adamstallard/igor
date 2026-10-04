@@ -37,7 +37,7 @@ manipulation, and one needing no permission lookup.
 
 - **WHEN** the holder of an item mentions the Igor on it
 - **THEN** the Igor investigates and answers
-- **AND** it does not assign itself, and the holder keeps the item
+- **AND** it does not claim the item, and the holder keeps the item
 
 #### Scenario: A mention cannot widen the action space
 
@@ -174,7 +174,7 @@ reader can see.
 
 - **WHEN** someone with write access mentions an Igor on a pull request and asks for an issue
 - **THEN** the Igor opens one naming what was asked, where, and by whom
-- **AND** it does not assign itself or begin the work
+- **AND** it does not claim the issue or begin the work
 
 #### Scenario: A role that may not open issues does not
 

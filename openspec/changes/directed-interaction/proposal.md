@@ -57,7 +57,7 @@ to reply to.
   A `mentions:` source fixes that with no new mechanism: it flows through the same watermark,
   screening and triage as every other candidate, which is what "enters at triage" has to mean.
 - **A mention narrows the action space rather than widening it, and claims nothing.** An Igor
-  asked to look at an item investigates and answers; it does not assign itself, take the work,
+  asked to look at an item investigates and answers; it does not claim the item, take the work,
   or publish. That resolves what would otherwise be a collision with the universal skip for an
   item somebody else holds — reading is not taking, so the rule needs no exception and Alice
   keeps her issue.

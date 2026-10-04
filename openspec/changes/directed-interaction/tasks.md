@@ -25,7 +25,7 @@
 
 - [ ] 3.1 A mention narrows the action space to what may be said and claims nothing
 - [ ] 3.2 The worker is told it may not publish and that its answer should carry the change
-- [ ] 3.3 Reply on the item; no assignment, no settle interval, no marker
+- [ ] 3.3 Reply on the item; no claim, no settle interval, no marker
 - [ ] 3.4 Tests: the holder keeps the item; a mention cannot widen permissions; the answer
       contains the change rather than describing it
 
@@ -70,3 +70,6 @@
 - [ ] 8.7 A reply mentioning a different Igor is handled by that Igor, within its own role
 - [ ] 8.8 Tests for each, including an edited-in question and a reply from someone without write
       access
+- [ ] 8.9 Before building the mentions source, measure with a real Igor App how a comment
+      addressed to it can be found: whether `@<app-slug>` is searchable or notifies the App.
+      `mentions:<slug>[bot]` returned nothing for two Apps on 2026-10-04 (`design.md`, Open)

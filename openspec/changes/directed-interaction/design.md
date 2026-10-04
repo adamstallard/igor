@@ -91,6 +91,23 @@ pull request; REST exposes no edit fields at all, so who ticked it is only recov
 GraphQL's `userContentEdits`; and it parses decisions out of editable text. A comment is
 attributable in REST, and a mention is what makes it visible.
 
+### Every Igor on GitHub is a GitHub App (amended 2026-10-04)
+
+[#156](https://github.com/adamstallard/igor/pull/156) settles that on GitHub every Igor is a
+GitHub App, which claims an issue with its `igor:<role>` label and cannot be an assignee. The
+scenario for filing an issue therefore says the Igor does not *claim* it, where it said it does
+not assign itself: an App cannot assign itself, and the label is what a claim would be. The
+scenario for a mention on a held item, task 3.3 and the proposal say the same for the same reason.
+
+**An Igor never has authority, measured.** On 2026-10-04 the collaborator-permission endpoint on
+this repository returned `permission: none` and `push: false` for two installed Apps' bot
+accounts, `dependabot[bot]` and `github-actions[bot]`. So under *Authority is
+`permissions.push`*, a comment from an Igor never instructs another: it cannot have an issue
+filed, and it cannot answer an Igor's question. That agrees with #156's rule that an Igor's
+review never counts, and needs no identity test of its own. It also means the frontend Igor
+asking a backend Igor, which *Refusing bot accounts* below wanted to keep, gets no reply under
+the rule as written; see Open.
+
 ## Roads not taken
 
 **A per-thread exchange cap.** Rejected twice over: it bounds a proxy for budget, and on the
@@ -120,3 +137,17 @@ Discord and Slack moderate participants directly — mute, throttle, roles. GitH
 a conversation, which does not restrain a collaborator, and blocking an account, which is
 nuclear. An Igor needs write access, so it sits on the wrong side of the only lock that bites.
 Budget bounds the spend; nothing bounds the noise.
+
+**How an App Igor learns it was mentioned (raised 2026-10-04).** The mentions source queries
+mentions of the Igor's own account, and on GitHub that account is now an App's bot. GitHub
+search for `mentions:dependabot[bot]` and `mentions:github-actions[bot]` returned 0 results on
+2026-10-04, against 3.9 million for `mentions:dependabot`. Searching by the bot's login finds
+nothing, and whether a person's `@<app-slug>` reaches the App by search or notification is not
+measured. Both additions above depend on it. *Recommend:* measure it with a real Igor App before
+gate two (task 8.9), and adjust the first requirement to what is found.
+
+**Whether one Igor may question another (raised 2026-10-04).** Since an App's bot reads
+`push: false`, a mention from an Igor gets no reply, which forecloses what *Refusing bot
+accounts* was cut to keep. *Recommend:* leave it foreclosed until an organization needs it. An
+Igor's word acting on another Igor is what #156 rules out for reviews, and allowing a reply but
+not an action would need the identity test this change avoided.
