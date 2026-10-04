@@ -22,6 +22,18 @@ WorkingDirectory=/srv/igor/lore
 # point at a stable interpreter instead.
 ExecStart=/usr/local/bin/igor serve %i
 
+# Igor runs git, gh and claude by name, so they must be on this PATH, and systemd's default
+# does not include the directory claude's native installer uses: ~/.local/bin of whoever ran
+# it. Replace /home/igor with the service user's home, or with wherever
+# `sudo -u igor sh -lc 'command -v claude'` says claude is. (%h will not do here: in a system
+# unit it is root's home, whatever User= says.) Without this, every model call fails to start.
+Environment=PATH=/home/igor/.local/bin:/usr/local/bin:/usr/bin:/bin
+
+# A native install updates itself in the background, so a release that changes how claude -p
+# authenticates can arrive overnight (igor#144). Upgrade deliberately instead: `claude update`
+# as the service user, then restart.
+Environment=DISABLE_AUTOUPDATER=1
+
 # Two files, because the two kinds of credential have different scopes. Seat tokens are
 # shared: a seat is a Claude subscription several Igors may draw from. The surface token is
 # not, because one machine account per Igor is what makes a claim say who has your issue —
