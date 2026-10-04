@@ -1,17 +1,16 @@
 # Provisioning an Igor's GitHub identity
 
-**On public repositories, an Igor acts on GitHub as a GitHub App.** Use a **machine user**, an
-ordinary GitHub account that exists to run automation, only where an Igor must be an issue
-assignee or a requested reviewer, because an App can be neither.
+**An Igor acts on GitHub as a GitHub App.** Machine users, ordinary GitHub accounts that exist
+to run automation, are not supported as Igor identities at launch.
 
 **Not built yet:** Igor runs only as a machine user today. App credentials for `gh` and git,
 and claiming by label, are specified in the `one-claiming-surface` change and not yet
-implemented.
+implemented. Until they ship, an Igor needs the machine user described at the end of this page.
 
 This document is the part of deployment that cannot be scripted, because it involves accepting
 terms, holding credentials, and granting access.
 
-## A GitHub App, by default
+## A GitHub App
 
 An App does everything an Igor does on GitHub except be assigned or be requested as a
 reviewer. It pushes branches, opens pull requests, comments, and creates issues. And:
@@ -32,27 +31,26 @@ reviewer. It pushes branches, opens pull requests, comments, and creates issues.
   inactive; the Igor polls as it would with any other identity.
 
 Whether an App's approving review counts toward branch protection is not measured, and does
-not matter: a person approves every Igor pull request (`task-execution`).
+not matter: a person approves every Igor pull request (`task-execution`). An Igor's review is
+recognisable, because its author is a `Bot` account.
 
-## A machine user, where an Igor must be an assignee or a reviewer
+## No assignee, no requested reviewer
 
 **A GitHub App's bot user cannot be an issue assignee, on any plan.** Measured against a live
 repository: the "can this user be assigned" endpoint returns 404 for a bot user, and the
 assignment request returns 403. Nor can an App be requested as a reviewer.
 
-So where an Igor has to appear in the assignee field, or be requested to review a pull request,
-it needs a machine user. A machine user claims by assignee, and the steps are in
-[Creating a machine user](#creating-a-machine-user).
+An Igor that has to be an assignee or a requested reviewer is out of scope: nothing needs it
+yet, and perhaps nothing ever will. That is why machine users are not supported.
 
 ## One identity per Igor
 
 Not one per organization, and not one per running process.
 
-**Not one shared identity.** For machine users it breaks claiming rather than merely blurring
-it. An Igor verifies its claim by asking "am I among the assignees?". If every Igor posts as
-`acme-igor`, each one reads back its own name and concludes it holds the item, so two Igors
-work the same issue and the settle-interval protocol fails silently. For Apps, one App per Igor
-keeps each Igor's work on GitHub attributable to it, as its claims are.
+**Not one shared identity.** One App per Igor keeps each Igor's work on GitHub attributable to
+it, as its claims are. It also lets an Igor tell its own label removal from a person's stop: it
+compares the actor of the `unlabeled` event with its own bot account, which works only if no
+other Igor shares that account.
 
 **Not one per process**, because processes of the same Igor are interchangeable. Twenty backend
 workers are still one teammate as far as anyone reading the issue is concerned.
@@ -62,7 +60,10 @@ identity is that role, so a person sees which role took an issue and can hand wo
 by name. An Igor that does two jobs is two Igors: backend and frontend work is a `backend` Igor
 and a `frontend` Igor, each with its own identity. The two may draw on the same seat.
 
-## Creating a machine user
+## Creating a machine user, until App support ships
+
+Today's build needs a machine user, which claims by assignee. These steps go once App support
+ships.
 
 1. **Pick a name that names the role.** It appears in the assignee field, in PR authorship,
    and in review threads, and it is how a person tells which role has an issue.
@@ -130,7 +131,7 @@ Igor yet.
 
 The GitHub identity and the Claude subscription seat are different things and are configured
 separately. The GitHub identity says who acts on the repository; a seat says whose allowance
-pays for the reasoning (§6.5.1). An Igor may act as `acme-igor-backend` while using seats that
+pays for the reasoning (§6.5.1). An Igor may act as `acme-igor-backend[bot]` while using seats that
 three people have set aside for its role, and that is the normal arrangement rather than an
 edge case.
 
@@ -139,6 +140,6 @@ allowance it is. [`seats.md`](seats.md) is the page to send them.
 
 ## Revoking
 
-Because the identity is per Igor, retiring one is: for a machine user, revoke its token, remove
-it from the organization, and leave the account dormant; for an App, uninstall it. Either way
-its history stays attributable, which is the point of it having had a name.
+Because the identity is per Igor, retiring one is uninstalling its App. Its history stays
+attributable, which is the point of it having had a name. On today's build, revoke the machine
+user's token, remove it from the organization, and leave the account dormant.

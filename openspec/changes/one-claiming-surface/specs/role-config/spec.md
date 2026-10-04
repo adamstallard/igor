@@ -31,7 +31,7 @@ Igor do two jobs, which is what *An Igor holds exactly one role* rules out.
 ### Requirement: An Igor holds exactly one role
 
 An Igor SHALL hold exactly one role, and its identity on every surface SHALL be that role: a
-GitHub App, a Linear app user, or a machine user where one is still needed. A person reading a
+GitHub App on GitHub, and an app user on Linear. A person reading a
 claim sees which role took the item, and hands work to a role by naming it. An Igor that does
 two jobs is two Igors, each with its own identity. They MAY draw on the same seat, since a seat
 is capacity and not an identity.

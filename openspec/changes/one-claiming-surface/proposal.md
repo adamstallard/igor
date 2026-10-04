@@ -20,14 +20,14 @@ stalls, a person takes the item over. A person duplicating work is acceptable, a
 here is designed to prevent it. So a claim needs to be reliable between Igors and visible to
 people, and it does not need the assignee field.
 
-**That makes a GitHub App the default Igor identity on public repositories.** An App's bot user
-cannot be an issue assignee (404 and 403, measured, on any plan; see
-`docs/machine-accounts.md`). On GitHub an App therefore claims with a label naming its role,
-`igor:<role>`, plus the claim comment. Labels hold a list, so they resolve as the assignee list
-does: another Igor's `igor:` label present after the settle interval means the claim is lost.
-An App needs no personal token renewed, shows a `[bot]` badge, and needs no server. A machine
-user is still needed where an Igor must be an assignee or a requested reviewer, because an App
-cannot be either.
+**So on GitHub every Igor is a GitHub App.** An App's bot user cannot be an issue assignee
+(404 and 403, measured, on any plan; see `docs/machine-accounts.md`). On GitHub an App
+therefore claims with a label naming its role, `igor:<role>`, plus the claim comment. Labels
+hold a list, so they resolve as the assignee list does: another Igor's `igor:` label present
+after the settle interval means the claim is lost. An App needs no personal token renewed,
+shows a `[bot]` badge, and needs no server. Machine-user Igors are not supported at launch. An
+Igor that must be an assignee or a requested reviewer is out of scope: nothing needs it yet,
+and perhaps nothing ever will.
 
 **The label is the Igor's field, and the assignee stays the person's.** That is how Linear
 separates its delegate from its assignee, so the GitHub label follows Linear's rules case for
@@ -55,7 +55,8 @@ instructed in chat but claims only on the tracker, so it creates the issue itsel
 has to say where the request came from, and the chat has to learn where the work went.
 
 **A person approves every Igor pull request.** Nothing in the specs says so. It is also why an
-App's approving review does not need to count toward branch protection.
+App's approving review does not need to count toward branch protection. Because every Igor is
+an App, an Igor's approval is recognisable: its author is a `Bot` account.
 
 ## What Changes
 
@@ -65,8 +66,8 @@ App's approving review does not need to count toward branch protection.
 - **`work-claiming`:**
   - An organization's Igors hold claims on one tracker. A configuration claiming on two is
     refused.
-  - On GitHub, an Igor acting as an App claims with its `igor:<role>` label and the claim
-    comment.
+  - On GitHub, an Igor is a GitHub App and claims with its `igor:<role>` label and the claim
+    comment. Machine-user Igors are not supported.
   - The holder field is written before the claim message. On a single-valued field the later
     write holds the item, and a losing Igor never clears it.
   - An item someone else holds is not claimed. An item assigned to a person is not claimed
@@ -79,17 +80,19 @@ App's approving review does not need to count toward branch protection.
   - A stop removes this Igor from the holder field, so a person who then assigns themselves
     keeps the item, and a person who hands it back directs the Igor again, without the
     cooldown.
+  - An Igor whose `igor:<role>` label disappears while it works reads who removed it from the
+    issue's events. Its own bot account means its own release; anyone else means a stop by
+    that person, and the stop receipt names them.
   - An issue an Igor creates because it was instructed in chat quotes or links that chat, and
     the Igor posts the issue's link back in the chat.
 - **`surface-adapter`:** an adapter declares whether its holder field holds one value or a list,
-  and whether it is distinct from the assignee. The GitHub adapter's holder field depends on
-  the identity: the assignee for a machine user, the `igor:<role>` label for an App. The label
-  is declared distinct from the assignee.
+  and whether it is distinct from the assignee. The GitHub adapter's holder field is the
+  `igor:<role>` label, declared a list and distinct from the assignee. It never claims by
+  assignment.
 - **`task-execution`:** a person approves every Igor pull request. An Igor never merges a pull
   request it opened, and no Igor's approval stands in for a person's.
-- **`docs/machine-accounts.md`:** rewritten around the GitHub App as the default identity on
-  public repositories, with a machine user only where an Igor must be an assignee or a
-  requested reviewer, and one identity per role.
+- **`docs/machine-accounts.md`:** rewritten around the GitHub App as the only Igor identity on
+  GitHub, one per role. Machine users are not supported at launch.
 - **`docs/architecture.md`:** §2.1 says an Igor holds one role, and why. §6.9, which said an
   Igor must be a machine user, is marked superseded by this change.
 - **`README.md`:** no longer describes an Igor defined by several roles.
@@ -111,7 +114,7 @@ None.
   label claim on GitHub, items held by others, a person directing an Igor, a person
   reassigning an issue by removing the holding Igor's label first, issues created from chat).
 - `surface-adapter`: two modified requirements (the holder-field declaration; the GitHub
-  adapter claims by assignee or by label).
+  adapter claims by label).
 - `task-execution`: one added requirement (a person approves every Igor pull request).
 
 ## Impact
@@ -121,10 +124,10 @@ None.
 - An organization configured with sources on two trackers stops loading until it picks one.
   The GitHub adapter is the only one that exists, so a configuration that loads today already
   claims on one tracker.
-- A GitHub Igor running as a machine user keeps claiming by assignee; its behaviour does not
-  change.
-- An Igor running as a GitHub App claims by label. App credentials in `gh` and git, and the
-  label claim, are implementation work tracked in `tasks.md`.
+- An Igor on GitHub runs as a GitHub App and claims by label. App credentials in `gh` and git,
+  and the label claim, are implementation work tracked in `tasks.md`.
+- Igor runs only as a machine user today, claiming by assignee. Once App support ships, that
+  path is no longer supported.
 - A Linear adapter, when written, follows the rules here rather than GitHub's.
 - Polling is unchanged. *Nothing may require inbound reachability* stands: an App's webhook is
   optional, and the Linear measurement in `design.md` shows a polling Igor is not penalised for

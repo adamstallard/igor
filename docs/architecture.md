@@ -85,9 +85,9 @@ anyone touching an area is lore.
 ### 2.1 Roles — **built** (`core-igor-loop`)
 
 **An Igor holds exactly one role**, and many processes can run it. Its identity on every
-platform (a GitHub App, a Linear app user, a machine user where one is still needed) is that
-role, so a person sees which role took an issue and can hand work to a role by name. An Igor
-that does two jobs is two Igors. This is decided in `one-claiming-surface`, which removes
+platform (a GitHub App on GitHub, an app user on Linear) is that role, so a person sees
+which role took an issue and can hand work to a role by name. An Igor that does two jobs is
+two Igors. This is decided in `one-claiming-surface`, which removes
 multi-role Igors.
 
 **Not built yet:** a role whose `extends` names two roles still resolves to an Igor doing both
@@ -1729,10 +1729,10 @@ running process. `lore-from-reviews` is a batch CLI and needs none of it.
 ### 6.9 Igors act as machine users on GitHub, not as a GitHub App — **superseded by `one-claiming-surface`**
 
 **Superseded.** The change `one-claiming-surface` (`openspec/changes/one-claiming-surface/`)
-replaces this section's conclusion. A **GitHub App** is the default Igor identity on public
-repositories, and it claims an issue with the label `igor:<role>` plus the claim comment, so it
-needs no assignee field. A **machine user** is used only where an Igor must be an issue
-assignee or a requested reviewer, which an App cannot be. The 404/403 measurement below still
+replaces this section's conclusion. On GitHub every Igor is a **GitHub App**, and it claims an
+issue with the label `igor:<role>` plus the claim comment, so it needs no assignee field.
+Machine users are not supported at launch. An Igor that must be an issue assignee or a
+requested reviewer, which an App cannot be, is out of scope. The 404/403 measurement below still
 stands; what changed is that a claim no longer has to sit in the assignee field. The Linear
 question below, whether an app may set its own delegate, was measured on 2026-10-03: it can
 (the change's `design.md`). The text below is kept as the record of the earlier decision.

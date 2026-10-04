@@ -8,16 +8,15 @@
       case for case; a person reassigns by removing the holding Igor's label first
 - [x] 1.2 `surface-adapter`: the holder-field declaration says single value or list, and
       whether it is distinct from the assignee; GitHub's `igor:` labels are distinct; the
-      GitHub adapter claims by assignee or by label, depending on the identity
+      GitHub adapter claims by label, because an Igor on GitHub is an App
 - [x] 1.3 `task-execution`: a person approves every Igor pull request
 - [x] 1.4 `role-config`: an Igor holds exactly one role, and its identity is that role; a role
       naming more than one base in `extends` is refused
 - [x] 1.5 `design.md`: what a claim is for, one role per Igor, the label mirroring Linear's
       delegate, reassigning by removing the holding Igor's label first, the Linear measurement of 2026-10-03, and the
       choices with live alternatives
-- [x] 1.6 `docs/machine-accounts.md`: a GitHub App is the default identity on public
-      repositories, a machine user only where an Igor must be an assignee or a requested
-      reviewer; one identity per role
+- [x] 1.6 `docs/machine-accounts.md`: an Igor on GitHub is a GitHub App, one per role; machine
+      users are not supported at launch
 - [x] 1.7 `docs/architecture.md`: §2.1 states one role per Igor; §6.9 is marked superseded by
       this change. `README.md` no longer describes an Igor holding several roles
 
@@ -25,8 +24,7 @@
 
 - [ ] 2.1 Refuse a configuration whose roles take claims on more than one tracker, naming them
 - [ ] 2.2 The adapter interface declares single-valued or list, and distinct-from-assignee,
-      alongside `nativeHolderField`; GitHub's assignee declares list and not distinct; GitHub's
-      `igor:` labels declare list and distinct
+      alongside `nativeHolderField`; GitHub's `igor:` labels declare list and distinct
 - [ ] 2.3 Remove multi-role Igors from `src/role.ts`: refuse a role whose `extends` names more
       than one base, naming them, in `parentsOf`; delete `unionLane` and the sibling-union
       branch of `capabilitiesOf` (the union of `allow`, `commands` and lane, and the lowest
@@ -46,9 +44,14 @@
 - [ ] 3.4 An item a person handed to this Igor, by delegate or by `igor:<role>` label: post the
       claim message and start without the settle interval, or the cooldown after a stop
 - [ ] 3.5 Tell a person's label or delegation from the Igor's own: read who added the label
-      from the issue's events, or who set the delegate, rather than assuming
-- [ ] 3.6 The GitHub adapter claims by `igor:<role>` label when the Igor acts as an App, and
-      reads its labels back after writing them
+      from the issue's events, or who set the delegate, rather than assuming. Read who removed
+      it the same way: when this Igor's label is gone, the latest `unlabeled` event for it names
+      the actor; its own bot account is its own release, and anyone else is a stop whose
+      receipt names them
+- [ ] 3.6 The GitHub adapter claims by `igor:<role>` label, never by assignment, and reads its
+      labels back after writing them. Under #146 (`release-a-claim-that-cannot-be-kept`),
+      `release` returns what the surface recorded, and "did the holder field clear" becomes
+      "is my `igor:<role>` label gone"
 - [ ] 3.7 A stop removes this Igor's own label or delegate, and a person assigning themselves
       afterwards keeps the item
 - [ ] 3.8 An Igor labelled by a person on an issue another Igor holds doesn't claim it, and
@@ -60,7 +63,7 @@
 ## 4. Pull requests
 
 - [ ] 4.1 An Igor never merges a pull request it opened, and counts only a person's approval
-      before merging any pull request
+      before merging any pull request; a review whose author is a `Bot` account is an Igor's
 
 ## 5. Outside this change
 
@@ -69,4 +72,5 @@
 - [ ] 5.3 Measure whether a pull request opened by a GitHub App links to its Linear issue. Needs a
       GitHub repository connected to Linear; `aura-workroom` is not connected
 - [ ] 5.4 When App support ships, update `README.md` and `docs/deployment.md`, which still say
-      an Igor must be a machine user
+      an Igor must be a machine user, to describe the App as the only identity, and drop the
+      machine-user steps from `docs/machine-accounts.md`

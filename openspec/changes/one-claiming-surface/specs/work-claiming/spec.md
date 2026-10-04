@@ -14,7 +14,7 @@ the visible claim, and the message follows on the next cycle.
 
 Where the holder field holds a single value, the later of two writes holds the item: each Igor
 re-reads the field, and the one it no longer names has lost. Where the field holds a list, such
-as GitHub's assignees or its `igor:` labels, any other holder present after the settle interval
+as GitHub's `igor:` labels, any other holder present after the settle interval
 means the claim is lost, because a list keeps every write rather than replacing one.
 
 #### Scenario: Claim visible in the native field
@@ -87,16 +87,23 @@ can direct an Igor through the holder field*.
 
 After a stop, eligibility SHALL be determined by the tracker's state rather than by any
 distinct pause or resume verb. A stop releases the claim by removing this Igor from the holder
-field: its assignee entry, its `igor:<role>` label, or itself as delegate. What the item then
+field: its `igor:<role>` label on GitHub, or itself as delegate on Linear. What the item then
 shows decides what happens next, by the rules for items someone else holds and for a person
 directing an Igor.
+
+On GitHub, when an Igor finds its `igor:<role>` label gone, it SHALL read the latest
+`unlabeled` event for that label from the issue's events. If that event's actor is the Igor's
+own bot account, the removal was the Igor's own release. If the actor is anyone else, the
+removal is a stop by that person: the Igor SHALL halt, and its stop receipt SHALL name them.
+These two cases are exhaustive, because an Igor that loses a race removes only its own label,
+never another Igor's.
 
 #### Scenario: A human takes the item
 
 - **WHEN** a human assigns themselves after stopping an Igor
 - **THEN** the item is not reclaimed by the Igor
-- **AND** this holds whether the holder field is the assignee, an `igor:` label, or Linear's
-  delegate, because an item assigned to a person is not claimed unless it names this Igor
+- **AND** this holds whether the holder field is an `igor:` label or Linear's delegate,
+  because an item assigned to a person is not claimed unless it names this Igor
 
 #### Scenario: Nobody takes the item
 
@@ -114,6 +121,19 @@ directing an Igor.
 - **WHEN** a person who stopped an Igor later delegates the Linear issue to it again, or adds
   its `igor:<role>` label to the GitHub issue again
 - **THEN** the Igor treats the item as directed to it, without waiting the cooldown
+
+#### Scenario: A person removing the label is a stop that names them
+
+- **WHEN** an Igor working a GitHub issue finds its `igor:<role>` label gone, and the latest
+  `unlabeled` event for that label was made by anyone other than the Igor's own bot account
+- **THEN** the Igor halts as for any stop
+- **AND** its stop receipt names whoever removed the label
+
+#### Scenario: The Igor's own removal is its release
+
+- **WHEN** an Igor finds its `igor:<role>` label gone, and the latest `unlabeled` event for that
+  label was made by the Igor's own bot account
+- **THEN** the removal is the Igor's own release, and it posts no stop receipt
 
 #### Scenario: No second verb exists
 
@@ -152,13 +172,13 @@ this capability is designed to prevent duplicate human work.
 - **WHEN** a person asks an Igor for work on a surface that is not the claiming tracker
 - **THEN** any claim for that work is taken on the claiming tracker, not where the request was made
 
-### Requirement: On GitHub, an Igor acting as an App claims with its role's label
+### Requirement: On GitHub, an Igor is a GitHub App and claims with its role's label
 
-An Igor whose GitHub identity is a GitHub App SHALL claim a GitHub issue by adding the label
-`igor:<role>`, naming its role, such as `igor:reviewer`, and then posting the claim comment. An
-App's bot user cannot be an issue assignee, so the label is its holder field. The label carries
-no organization or other prefix beyond `igor:`. An Igor whose GitHub identity is a machine user
-claims by assignee.
+An Igor's GitHub identity SHALL be a GitHub App. Machine-user Igors are not supported. An Igor
+SHALL claim a GitHub issue by adding the label `igor:<role>`, naming its role, such as
+`igor:reviewer`, and then posting the claim comment. An App's bot user cannot be an issue
+assignee, so the label is its holder field. The label carries no organization or other prefix
+beyond `igor:`.
 
 The `igor:` label is the Igor's field and the assignee is the person's, as Linear's delegate
 and assignee are. The rules that follow for items assigned to a person, for a person handing an
@@ -172,7 +192,7 @@ reassigns an issue by removing the holding Igor's label first*).
 
 #### Scenario: App claims by label and comment
 
-- **WHEN** an Igor acting as a GitHub App claims an issue
+- **WHEN** an Igor claims a GitHub issue
 - **THEN** the issue carries the label `igor:<role>` for that Igor's role
 - **AND** the claim comment follows the label
 
@@ -191,9 +211,7 @@ unless the holder field names that Igor: the person is accountable for it, and h
 Igor is their decision. Unassigned items, and items a person has handed to this Igor, are
 candidates.
 
-Linear's delegate and GitHub's `igor:` label are each distinct from the assignee. On a tracker
-whose holder field is its assignee, such as GitHub for a machine user, the two conditions
-coincide, and this changes nothing.
+Linear's delegate and GitHub's `igor:` label are each distinct from the assignee.
 
 #### Scenario: Item assigned to a person, on Linear
 

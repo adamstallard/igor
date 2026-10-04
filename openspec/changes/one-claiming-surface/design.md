@@ -18,7 +18,7 @@ assignee field, which is why a GitHub App's label claim is enough.
 ## One role per Igor
 
 **Decided by the owner: an Igor holds exactly one role, and its identity is that role.** The
-Igor's GitHub App, Linear app user or machine user names the role, so a person sees which role
+Igor's GitHub App or Linear app user names the role, so a person sees which role
 took an issue and hands work to a role by naming it, by delegating on Linear or labelling on
 GitHub. An Igor that does two jobs is two Igors, which may share a seat.
 
@@ -32,6 +32,14 @@ base, still works.
 **Rejected: keep several bases but conjoin them.** A role would be the intersection of its
 bases, which no one has asked for. Siblings rarely overlap, so it would match almost nothing,
 and a role wanting a narrower lane can extend one base and narrow it.
+
+## On GitHub, an Igor is a GitHub App
+
+**Decided by the owner, 2026-10-04: Igors are GitHub Apps only at launch.** Machine-user Igors
+are not supported. An App's bot user cannot be an issue assignee or a requested reviewer
+(`docs/machine-accounts.md`), and an Igor that has to be either is out of scope: nothing needs
+it yet, and perhaps nothing ever will. On GitHub an Igor claims by its `igor:<role>` label, and
+the adapter has no assignee path.
 
 ## The App's label mirrors Linear's delegate
 
@@ -47,10 +55,20 @@ list, distinct from the assignee. The rules then match Linear's case for case:
   person who then assigns themselves keeps the item, and a person who adds the label again
   hands it back.
 
-**Not measured here:** telling a person's label from the Igor's own. An Igor that wrote its
-label and failed before posting the claim comment also finds its label with no comment. GitHub
-records who added each label in the issue's events; the adapter is expected to read that, as a
-Linear adapter would read who set the delegate.
+## Who added a label, and who removed it, come from the issue's events
+
+GitHub records the actor of every `labeled` and `unlabeled` event. The adapter reads them, as
+a Linear adapter reads who set the delegate. Who added a label tells a person's label from the
+Igor's own, which matters because an Igor that wrote its label and failed before posting the claim comment
+also finds its label with no comment.
+
+**Decided by the owner, 2026-10-04: removal is how an Igor detects a stop by label.** When the
+Igor's `igor:<role>` label is gone, it reads the latest `unlabeled` event for that label. If the
+actor is the Igor's own bot account, the removal was its own release. If the actor is anyone
+else, a person stopped it: the Igor halts, and the stop receipt names them. A lost race never
+removes this Igor's label, because a losing Igor removes only its own, so the two cases are
+exhaustive. Comparing the actor with the Igor's own account works because every Igor is an App
+with an account of its own.
 
 ## A person reassigns by removing the holding Igor's label first
 
@@ -75,8 +93,37 @@ the two apart by who added the label, from the issue's events.
 role names the Igor. A prefix naming the organization, or the word "agent", says nothing the
 repository and `igor:` do not already say. No GitHub Projects field is used.
 
+**Adding a label the repository doesn't have yet creates it** (Adam, 2026-10-04: GitHub
+creates it). The first claim by a new role needs no label set up beforehand.
+
 **Not measured here:** an App adding and removing a label. The adapter reads its labels back
 after writing them, as it reads assignees back today, rather than trusting the response.
+
+## Two processes of one Igor claiming the same issue
+
+Both add the same `igor:<role>` label, so the label can't separate them. `concurrent-instances`
+does: each claim comment carries the process rank, and the earliest claim comment by comment id
+holds the item. Its mechanism keys on comments, so it covers labels unchanged.
+
+## Archiving alongside `concurrent-instances`
+
+`concurrent-instances` and this change both MODIFY *Assignment expresses a claim; ordering
+resolves it* in `work-claiming`. Whichever is archived second must first rebase its MODIFIED
+block on the text the first one archived, or the second archive overwrites the first's
+changes.
+
+## Releasing under `release-a-claim-that-cannot-be-kept` (#146)
+
+#146's release checks whether the holder field cleared, through an adapter contract that
+returns what the surface recorded. For an App Igor the question becomes "is my `igor:<role>`
+label gone": the label adapter's release answers by reading the issue's labels back after
+removing its own (task 3.6).
+
+## A person approves every Igor pull request
+
+Every Igor is a GitHub App, so a person approves every Igor pull request, and an Igor's
+approval is recognisable: the review's author is a `Bot` account. A review from a `Bot` author
+never counts as a person's approval, whatever branch protection accepts.
 
 ## Measured against Linear, 2026-10-03
 
@@ -125,7 +172,7 @@ round, leaving a message claiming an item whose field shows nobody.
 
 ## A losing Igor leaves a single-valued field alone
 
-On GitHub, standing down removes the Igor's own assignee or label and leaves anyone else's.
+On GitHub, standing down removes the Igor's own label and leaves anyone else's.
 Applied to Linear's delegate, the same "release my claim" would set the field to empty, and the
 field at that moment names the **winner**. The loser therefore only replies. If its write is
 somehow still in the field, it has not lost.
