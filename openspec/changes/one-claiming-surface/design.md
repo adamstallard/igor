@@ -70,6 +70,29 @@ removes this Igor's label, because a losing Igor removes only its own, so the tw
 exhaustive. Comparing the actor with the Igor's own account works because every Igor is an App
 with an account of its own.
 
+**Measured 2026-10-04** with the App `adam-personal-agent` on `igor-throwaway-tests` (issue #9):
+an add and a removal by the App, then a removal and an add by Adam, all read back from
+`/issues/{n}/events` and `/timeline`, including by the App itself:
+
+| event | actor | type |
+|---|---|---|
+| `labeled` | `adam-personal-agent[bot]` (id 337660608) | `Bot` |
+| `unlabeled` | `adamstallard` (id 205792) | `User` |
+| `labeled` | `adamstallard` | `User` |
+| `unlabeled` | `adam-personal-agent[bot]` | `Bot` |
+
+Three things the adapter must do that the rule alone doesn't say:
+
+- **Match the actor by the bot's numeric `actor.id`**, with `actor.type == "Bot"`.
+  `performed_via_github_app` was `null` even for the App's own actions, so it can't be the
+  signal.
+- **Order events by id, never by `created_at`.** Two of the four events shared a second, and
+  ids rose strictly in the order of the actions.
+- **Read every page.** The events list is paginated oldest first, so the latest `unlabeled` on a
+  busy issue is on the last page.
+
+All four events appeared in the first read, 0.5 s after the last action.
+
 ## A person reassigns by removing the holding Igor's label first
 
 **Decided by the owner: an Igor never claims an issue that carries another Igor's `igor:`
@@ -93,11 +116,12 @@ the two apart by who added the label, from the issue's events.
 role names the Igor. A prefix naming the organization, or the word "agent", says nothing the
 repository and `igor:` do not already say. No GitHub Projects field is used.
 
-**Adding a label the repository doesn't have yet creates it** (Adam, 2026-10-04: GitHub
-creates it). The first claim by a new role needs no label set up beforehand.
-
-**Not measured here:** an App adding and removing a label. The adapter reads its labels back
-after writing them, as it reads assignees back today, rather than trusting the response.
+**Adding a label the repository doesn't have yet creates it.** Adam said so on 2026-10-04, and
+it was measured the same day: the App adding a missing label through REST
+`POST /repos/{owner}/{repo}/issues/{n}/labels` created it (colour `ededed`, no description), so
+the first claim by a new role needs no label set up beforehand. The adapter uses that call; the
+gh CLI's add-label path was not tried with a missing label. The adapter still reads its labels
+back after writing them, rather than trusting the response.
 
 ## Two processes of one Igor claiming the same issue
 

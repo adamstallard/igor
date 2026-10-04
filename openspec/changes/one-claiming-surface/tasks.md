@@ -47,7 +47,10 @@
       from the issue's events, or who set the delegate, rather than assuming. Read who removed
       it the same way: when this Igor's label is gone, the latest `unlabeled` event for it names
       the actor; its own bot account is its own release, and anyone else is a stop whose
-      receipt names them
+      receipt names them. Match the actor by the bot's numeric `actor.id` and `type == "Bot"`,
+      not by `performed_via_github_app`, which is null; order events by id; and read every page
+      (design, measured 2026-10-04)
+
 - [ ] 3.6 The GitHub adapter claims by `igor:<role>` label, never by assignment, and reads its
       labels back after writing them. Under #146 (`release-a-claim-that-cannot-be-kept`),
       `release` returns what the surface recorded, and "did the holder field clear" becomes
