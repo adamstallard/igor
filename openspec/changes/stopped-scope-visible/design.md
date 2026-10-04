@@ -1,5 +1,23 @@
 # Design notes
 
+## Since review: one role per Igor, and no pools (2026-10-04)
+
+Two decisions by Adam change the reasoning here, and no requirement or scenario:
+
+- **An Igor holds exactly one role** ([#156](https://github.com/adamstallard/igor/pull/156)).
+  This change argued for detecting what is left on the grounds that `serve` might one day run
+  several roles. That day will not come, so the passages saying a multi-role `serve` satisfies
+  the rule unchanged are removed. The check is still detected rather than inferred from the
+  scope, because the seat side needs it: a stopped seat leaves nothing only where every seat that
+  serves the role is stopped.
+- **Pools are dropped** ([#148](https://github.com/adamstallard/igor/issues/148)). A seat's own
+  file lists the roles it serves, and among those under their line the Igor picks the seat with
+  the most headroom, soonest reset breaking ties
+  ([#147](https://github.com/adamstallard/igor/issues/147)). "Every seat in the pool" is now
+  "every seat that serves the role", which is what the requirement already said. The
+  description of today's `igor budget`, with its pool lines, stays as written: it is the report
+  as built.
+
 ## Since review: "no capacity figure" stops being a gate state (2026-09-28)
 
 Added 2026-09-28. It records a decision made after review and the one wording change Adam approved
@@ -69,16 +87,14 @@ whether every seat being stopped should exit — is the same omission approached
 and a scope-derived rule has to answer it as a special case. Keyed to what is left, both fall out
 of one check.
 
-**Detected, not inferred from today's process shape.** The distinction matters, because "`serve`
-runs one role, so role-scoped means fatal" is an inference that expires the moment `serve` runs
-two. The requirement asks what is *left*, which a process answers about itself: a condition naming
-the Igor's own credential leaves nothing; a condition on a role it serves leaves nothing if it
-serves no other; a stopped seat leaves nothing only where every seat that role could spend from is
-stopped. A multi-role `serve` satisfies the same sentence unchanged.
+**Detected, not inferred from the scope.** The requirement asks what is *left*, which a process
+answers about itself: a condition naming the Igor's own credential leaves nothing; a condition on
+the role it serves leaves nothing, since an Igor holds one role; a stopped seat leaves nothing only
+where every seat that serves the role is stopped.
 
 Nothing new has to be recorded for it. A cure key *is* its scope — `role:<name>:commands` names a
-role, `seat:<id>:token` names a seat — and resolving a role's seat reference into the seats it may
-spend from is what the budget gate already does before choosing one. The check belongs where that
+role, `seat:<id>:token` names a seat — and finding the seats that serve a role is what the budget gate
+already does before choosing one. The check belongs where that
 resolution happens.
 
 **The guard is in the requirement, not only here.** Only *stopped scopes* may count toward

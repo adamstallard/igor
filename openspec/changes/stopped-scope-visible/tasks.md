@@ -19,7 +19,7 @@
       cures, and that it is exiting for that reason
 - [ ] 1.5 A stop that leaves the process work leaves the status alone and the loop running
 - [ ] 1.6 Tests: the Igor's own credential; the role this process serves; a role it does not
-      serve; one seat stopped with another behind it; every seat in the pool stopped; a spent
+      serve; one seat stopped with another behind it; every seat that serves the role stopped; a spent
       budget alone; one seat stopped and the rest merely out of headroom; a signalled shutdown
       with nothing open
 

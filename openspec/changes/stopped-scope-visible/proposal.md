@@ -23,7 +23,7 @@ That covers all three scopes without deciding any of them in advance. A conditio
 Igor's own credential leaves nothing. A condition stopping the role a process serves leaves that
 process nothing, whatever it leaves the fleet. A stopped seat leaves it nothing only where every
 seat that role could spend from is stopped, which is the issue's own open question — "once every
-seat is stopped" is a pool with no usable seat left, and the same check answers it.
+seat is stopped" means no seat left that serves the role, and the same check answers it.
 
 **Only stopped scopes count toward "nothing left".** A seat with no headroom, an unreset window,
 a role held back by pacing are none of them this. The discriminator is who ends the wait: a budget
@@ -110,13 +110,9 @@ reading was written first and does not survive contact with the shapes this repo
 `igor serve` takes exactly one role and `deploy/igor.service` is a per-role template, so a
 role-scoped stop leaves *that* process up and doing nothing — the failure mode this change exists
 to end, arriving through the door a scope-derived rule leaves open. The seat side of the same
-question, an entire pool stopped, is the same omission from the other end. Detecting what is left
+question, every seat that serves the role stopped, is the same omission from the other end. Detecting what is left
 answers both with one rule and needs no new field: the cure key is the scope, and the seats a role
 can spend from are already resolvable where a seat is chosen.
-
-Not re-derived per process shape, though — the rule is *detect*, not *assume `serve` runs one
-role*. A `serve` that later runs several roles satisfies it unchanged: it exits when nothing it
-serves can take an item, and not before.
 
 **Left open: whether a credential the provider refused belongs in the same determination.** It
 waits for a person exactly as a stopped scope does, which is the argument for folding it in. It is
