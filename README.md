@@ -8,15 +8,15 @@ work to Igors instead of sub-agents in your session. They take it from the team'
 their claims, questions, handoffs and pull requests there, in plain view. What the team
 teaches them becomes [lore](#lore) every Igor reads, not memory stuck in one person's sessions.
 
-An Igor is a named teammate, defined by the roles it holds. Nothing durable lives inside one: run
+An Igor is a named teammate that holds one role. Nothing durable lives inside one: run
 five, kill four mid-week, and nothing is lost. The roles live in git, the knowledge belongs to the
 team, and anyone who joins can add an Igor or let Igors in chosen roles use their Claude seat.
 
 ## Vocabulary
 
 - **Igor** — a named teammate, identified by its own account on the surfaces it works, so a
-  claim says who has your issue. Defined by the roles it holds; any distinct combination is
-  a distinct Igor. Its processes are interchangeable and hold no durable state.
+  claim says which role has your issue. Holds exactly one role, so an Igor that does two jobs
+  is two Igors. Its processes are interchangeable and hold no durable state.
 - **Role** — a versioned config: what to watch for, what it may claim, how to behave. Roles
   compose, and a role may narrow what it inherits but never widen it.
 - **Lore** — the team's curated store of learned knowledge. Shared by every Igor,

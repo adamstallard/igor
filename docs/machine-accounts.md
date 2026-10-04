@@ -1,47 +1,75 @@
-# Provisioning machine accounts
+# Provisioning an Igor's GitHub identity
 
-An Igor acts on GitHub as a **machine account**: an ordinary GitHub user account that exists to
-run automation. This document is the part of deployment that cannot be scripted, because it
-involves accepting terms, holding credentials, and granting access.
+**On public repositories, an Igor acts on GitHub as a GitHub App.** Use a **machine user**, an
+ordinary GitHub account that exists to run automation, only where an Igor must be an issue
+assignee or a requested reviewer, because an App can be neither.
 
-## Why not a GitHub App
+**Not built yet:** Igor runs only as a machine user today. App credentials for `gh` and git,
+and claiming by label, are specified in the `one-claiming-surface` change and not yet
+implemented.
 
-An App is the tidier-looking answer — scoped permissions, no seat, obviously not a person — and
-it is the wrong one here.
+This document is the part of deployment that cannot be scripted, because it involves accepting
+terms, holding credentials, and granting access.
 
-**A GitHub App's bot user cannot be an issue assignee.** Measured against a live repository: the
-"can this user be assigned" endpoint returns 404 for a bot user, and the assignment request
-returns 403. Since a claim's whole purpose is to be visible in the assignee field where people
-already look, an App would silently reduce GitHub to a message-only surface while appearing to
-be the more correct choice.
+## A GitHub App, by default
 
-Use an App for things that are genuinely app-shaped — checks, webhooks, status. Not for holding
-work.
+An App does everything an Igor does on GitHub except be assigned or be requested as a
+reviewer. It pushes branches, opens pull requests, comments, and creates issues. And:
 
-## One account per Igor
+- **It claims with a label.** On GitHub an App claims an issue by adding the label
+  `igor:<role>`, such as `igor:reviewer`, and then posting the claim comment. Labels hold a
+  list, so another Igor's `igor:` label on the issue after the settle interval means the claim
+  is lost. Where the organization's Igors claim on another tracker, such as Linear, the App
+  claims nothing on GitHub and only carries the work.
+- **The label is the Igor's field; the assignee stays the person's.** They work like Linear's
+  delegate and assignee. An App Igor leaves alone an issue assigned to a person unless it
+  carries that Igor's label, and a person adding `igor:<role>` hands the issue to that Igor,
+  which starts without waiting the settle interval.
+- **Nothing to renew.** The App's private key mints an installation token for an hour at a
+  time, so no personal access token expires on anyone.
+- **Obviously not a person.** Its work shows as `<name>[bot]` with a bot badge.
+- **No server.** Minting a token and calling the API are outbound. Leave the App's webhook
+  inactive; the Igor polls as it would with any other identity.
+
+Whether an App's approving review counts toward branch protection is not measured, and does
+not matter: a person approves every Igor pull request (`task-execution`).
+
+## A machine user, where an Igor must be an assignee or a reviewer
+
+**A GitHub App's bot user cannot be an issue assignee, on any plan.** Measured against a live
+repository: the "can this user be assigned" endpoint returns 404 for a bot user, and the
+assignment request returns 403. Nor can an App be requested as a reviewer.
+
+So where an Igor has to appear in the assignee field, or be requested to review a pull request,
+it needs a machine user. A machine user claims by assignee, and the steps are in
+[Creating a machine user](#creating-a-machine-user).
+
+## One identity per Igor
 
 Not one per organization, and not one per running process.
 
-**Not one shared account**, because it breaks claiming rather than merely blurring it. An Igor
-verifies its claim by asking "am I among the assignees?". If every Igor posts as `acme-igor`,
-each one reads back its own name and concludes it holds the item — so two Igors work the same
-issue and the settle-interval protocol fails silently.
+**Not one shared identity.** For machine users it breaks claiming rather than merely blurring
+it. An Igor verifies its claim by asking "am I among the assignees?". If every Igor posts as
+`acme-igor`, each one reads back its own name and concludes it holds the item, so two Igors
+work the same issue and the settle-interval protocol fails silently. For Apps, one App per Igor
+keeps each Igor's work on GitHub attributable to it, as its claims are.
 
 **Not one per process**, because processes of the same Igor are interchangeable. Twenty backend
 workers are still one teammate as far as anyone reading the issue is concerned.
 
-An Igor is a named set of capabilities, so an Igor that does two jobs is one account. If
-`milton` handles both backend and frontend work, that is one machine account named `milton`,
-not two.
+**One role per Igor, so one identity per role.** An Igor holds exactly one role, and its
+identity is that role, so a person sees which role took an issue and can hand work to a role
+by name. An Igor that does two jobs is two Igors: backend and frontend work is a `backend` Igor
+and a `frontend` Igor, each with its own identity. The two may draw on the same seat.
 
-## Creating one
+## Creating a machine user
 
-1. **Pick a name that reads as a teammate, not as infrastructure.** It appears in the assignee
-   field, in PR authorship, and in review threads. `acme-igor-backend` or `milton-acme` both
-   work; `svc-bot-01` does not.
+1. **Pick a name that names the role.** It appears in the assignee field, in PR authorship,
+   and in review threads, and it is how a person tells which role has an issue.
+   `acme-igor-backend` works; `svc-bot-01` does not.
 
 2. **Use a distinct email you control.** Plus-addressing works and keeps them in one inbox:
-   `engineering+milton@acme.com`. Do not reuse a personal address — GitHub allows one account
+   `engineering+igor-backend@acme.com`. Do not reuse a personal address — GitHub allows one account
    per address, and you will need the inbox later for recovery.
 
 3. **Register the account.** GitHub's Terms of Service permit machine accounts explicitly: a
@@ -98,24 +126,19 @@ structural where the claim primitive is structural, and textual where the claim 
 Measured rather than assumed, but only from documentation and trial accounts; none has run an
 Igor yet.
 
-## What this costs
-
-On paid GitHub plans a machine account consumes a seat like any member. For a handful of Igors
-this is small next to the model subscription, and it is the reason accounts are per Igor rather
-than per process — processes are free, accounts are not.
-
 ## Separately: which seat pays
 
-The GitHub account and the Claude subscription seat are different things and are configured
-separately. A machine account says who acts on the repository; a seat says whose allowance pays
-for the reasoning (§6.5.1). An Igor may act as `milton` while using seats that three people have
-set aside for its roles, and that is the normal arrangement rather than an edge case.
+The GitHub identity and the Claude subscription seat are different things and are configured
+separately. The GitHub identity says who acts on the repository; a seat says whose allowance
+pays for the reasoning (§6.5.1). An Igor may act as `acme-igor-backend` while using seats that
+three people have set aside for its role, and that is the normal arrangement rather than an
+edge case.
 
 Provisioning a seat is a different conversation with a different person — the one whose
 allowance it is. [`seats.md`](seats.md) is the page to send them.
 
 ## Revoking
 
-Because the account is per Igor, retiring one is: revoke its token, remove it from the
-organization, and leave the account dormant. Its history stays attributable, which is the point
-of it having had a name.
+Because the identity is per Igor, retiring one is: for a machine user, revoke its token, remove
+it from the organization, and leave the account dormant; for an App, uninstall it. Either way
+its history stays attributable, which is the point of it having had a name.
