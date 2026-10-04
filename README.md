@@ -3,10 +3,14 @@
 AI teammates that find their own work, claim it in the open, and draw on what the team
 has already learned.
 
-An Igor is a named teammate, and what it can do is the roles it holds — Milton might hold
-both backend and frontend. What an Igor is *not* is a person: nothing durable lives inside
-one. Run five processes of Milton, kill four mid-week, and nothing is lost. The roles are
-versioned in git and the knowledge belongs to the team.
+Keep your own AI for thinking: brainstorming, asking, deciding. When it's time to act, hand the
+work to Igors instead of sub-agents in your session. They take it from the team's tracker and put
+their claims, questions, handoffs and pull requests there, in plain view. What the team
+teaches them becomes [lore](#lore) every Igor reads, not memory stuck in one person's sessions.
+
+An Igor is a named teammate, defined by the roles it holds. Nothing durable lives inside one: run
+five, kill four mid-week, and nothing is lost. The roles live in git, the knowledge belongs to the
+team, and anyone who joins can add an Igor or let Igors in chosen roles use their Claude seat.
 
 ## Vocabulary
 
@@ -191,7 +195,7 @@ repository.
 
    Then `seat: me` on the role. Once any seat is declared every role must name one, and a role
    that does not fails at load rather than defaulting to a seat nobody chose for it. `reserve:
-   0.5` keeps half your window for you. [Budgets](#budgets) covers pools and shares.
+   0.5` keeps half your window for you. [Budgets](#budgets) covers which seats each role may use, and shares.
 
    A seat names *where* its token is, never the token itself, which is why the config stays
    safe to commit. `token_command` runs something and takes its stdout, `token_env` names a
@@ -429,24 +433,25 @@ budget:
     - {id: engineering, seats: [fleet-1, adam]}
 ```
 
-A seat is a Claude subscription, not an Igor: several Igors draw on one through a pool and one
-may draw on several. `token_env` names the environment variable holding that seat's token —
+A seat is a Claude subscription, not an Igor: several Igors may use one, and one may use
+several. `token_env` names the environment variable holding that seat's token —
 the name, never the value, so the config is safe to commit. `token_file` (a path) and
 `token_command` (something to run and take stdout) name a token the same indirect way; a seat
 may set exactly one of the three. Obtaining a token and installing it is
 [`docs/deployment.md`](docs/deployment.md#adding-a-seat-somebody-has-given-you), and
 [`docs/seats.md`](docs/seats.md) is the page to send whoever's subscription it is.
 
-A role's `seat` names one of these: a seat id, for an Igor that must never borrow, or a pool
-id for one that may. Either may be written `pool:engineering`; the prefix reads better and is
-not what decides which is looked up. Where seats are declared, every role must name one —
-by omission or by typo, an Igor would otherwise spend from the first pool declared, which
-nobody chose for it and which may be a person's. Both fail at load. Declare no seats at all
-and budget is not enforced, and roles need not name one.
+A role's `seat` names either a single seat, for an Igor that must use only that one, or an
+ordered group of seats from `pools:`, for one that may use any of them. Either may be written
+`pool:engineering`; the prefix reads better and is not what decides which is looked up. (#148
+replaces `pools:` with a file per seat that names the roles it serves.) Where seats are
+declared, every role must name one — by omission or by typo, an Igor would otherwise spend
+from the first group declared, which nobody chose for it and which may be a person's. Both
+fail at load. Declare no seats at all and budget is not enforced, and roles need not name one.
 
-**Pool order is the allocation mechanism.** An Igor takes the first seat with headroom, so
-listing dedicated seats first means personal capacity is only ever borrowed once the dedicated
-seats are spent.
+**Order within a group decides which seat is used.** An Igor takes the first seat with
+headroom, so listing dedicated seats first means personal capacity is only ever used once the
+dedicated seats are spent.
 
 A role's `budget_share` is a **ceiling**, not a reservation: several roles may declare the same
 one, an idle role holds nothing back, and adding an Igor requires editing no other role. Each

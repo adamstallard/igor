@@ -9,6 +9,19 @@ than restating it.
 
 ---
 
+## 0. What Igor is for
+
+**Think with your own agent; act through the team's.** A person still decides with their own
+AI. What Igor replaces is the sub-agents that act for them inside a session, whose work and
+lessons stay in that session. Igors act in the team's shared space instead: whatever an Igor
+needs to continue a piece of work is on the tracker or in lore, never in a process (§1, §2).
+Igors are defined by roles and claim work where everyone can see it (§2.1, §5.2), and they use
+the seats team members have set aside for their roles (§6.3). One test follows for any feature:
+if it only works because something is remembered in a process, a session file, or one person's
+machine, it breaks the premise.
+
+---
+
 ## 1. Shape of the system
 
 An **Igor** is an instance of a **role**. It holds no durable state. Retire it and nothing
@@ -95,7 +108,7 @@ that a seat costs the same idle, so a role too narrow to fill its allowance wast
 already paid for — holding a second role absorbs the slack.
 
 That argument depends entirely on **one seat per Igor**. Seats can be shared (§6.5), and once
-they are, the pressure disappears: five narrow Igors on one pooled seat beat one broad Igor,
+they are, the pressure disappears: five narrow Igors on one shared seat beat one broad Igor,
 because specialization buys things breadth destroys —
 
 - **Legibility.** If every Igor does everything, "which Igor claimed this" carries no
@@ -105,10 +118,10 @@ because specialization buys things breadth destroys —
   intersection of its roles, and both are wrong.
 - **Failure isolation.** A bad role config breaks one lane rather than everything.
 
-Under a shared pool the priority ordering moves to **fleet level** — one ordering across Igors
+Once seats are shared, the priority ordering moves to **fleet level** — one ordering across Igors
 rather than a ranked list inside each — which is cleaner anyway. Role breadth then becomes an
 empirical tuning decision that follows expected work volume, exactly like staffing: a role that
-reliably fills capacity gets dedicated resources, one that does not gets pooled.
+reliably fills capacity gets a dedicated seat, one that does not shares one.
 
 Three properties make that safe:
 
@@ -119,7 +132,7 @@ Three properties make that safe:
   into another's task.
 - **Priority is fleet-level, not per-Igor.** Ranking roles inside a single Igor so spare
   budget flows down its own list only makes sense when each Igor owns a seat. Seats are
-  pooled (§6.5), so the ordering belongs across Igors. Ties break by item age either way.
+  shared (§6.5), so the ordering belongs across Igors. Ties break by item age either way.
 - **Interchangeability survives.** An Igor is still fully described by its ordered role
   list, so two Igors with the same list remain swappable. Worth keeping explicit, because
   this is the property that would quietly erode into Igors having individual identities.
@@ -888,7 +901,7 @@ runtime mode, which is where it belonged.
 
 ### 5.0.4 Work already in flight — **built**
 
-An Igor unassigns itself on completion, so the item returns to the pool and is rediscovered
+An Igor unassigns itself on completion, so the item is open work again and is rediscovered
 next cycle. Without a check it would claim it again and redo work sitting in review.
 
 **The rule is universal, the detection is per-adapter.** "Do not duplicate work already in
@@ -954,7 +967,7 @@ from a second command:
 
 That yields pause-with-resume without inventing a second verb, and the resume signal is just a
 message on the surface. The failure it avoids: if stop blacklisted an item permanently, a human
-who stopped to look and then wandered off would have silently deleted that work from the pool,
+who stopped to look and then wandered off would have silently removed that work from what is open,
 since the watermark already marks it seen.
 
 **A minimal stop belongs in `core-igor-loop`, not in `directed-interaction`.** The conversational
@@ -1178,10 +1191,15 @@ rewrite — turning the eventual fully-open migration into a dial rather than a 
 
 ### 6.3 Budget — **built**
 
-- **There is no proactive quota API.** `/usage` shows historical spend; no hook or endpoint
-  warns before a cap. Wind-down must therefore be built reactively — catch the limit error,
-  then spend whatever remains on a handoff — with proactive self-tracking as an
-  optimization, never a correctness dependency.
+- **There is no proactive quota API, but there is a warning.** `/usage` shows historical spend,
+  and the usage endpoint refuses a seat token (§6.3.3). The worker's own stream does report the
+  seat's windows, including an `allowed_warning` once a threshold is crossed. Wind-down is still
+  built reactively — catch the limit error, then spend whatever remains on a handoff — with
+  proactive tracking as an optimization, never a correctness dependency: the warning is
+  undocumented and could change without notice. The reserve line decided in §6.3.4 changes the
+  second half of that once it is built: a reserved seat will then rest on the stream reading. A
+  seat whose effective reserve is 0 is admitted with no reading, so losing the stream stops only
+  reserved seats.
 - **Per-invocation cost is available**: headless `claude -p --output-format json` returns
   `total_cost_usd` and a per-model breakdown, so a wrapper can sum real spend. These are
   documented as client-side estimates.
@@ -1192,15 +1210,16 @@ rewrite — turning the eventual fully-open migration into a dial rather than a 
   against a subscription seat. Refresh behavior past expiry is undocumented; budget for an
   annual manual regeneration as a known operational task.
 
-### 6.3.1 Capacity is read from the seat — **decided, and false for a seat token**
+### 6.3.1 Capacity is read from the seat — **decided; for a seat token, from the stream (§6.3.3)**
 
 Read §6.3.3 first. The reasoning below holds for an interactive login and not for the only
 credential a seat can hold, which is most of the point of it.
 
 `claude -p '/usage'` reports the fraction of a seat's session and weekly limits consumed, plus
-when each resets. It costs nothing, spends no tokens, is answered client-side in under a
-second, and can be run under any token. So an Igor asks its own seat whenever the answer
-matters.
+when each resets. Measured under an interactive login, it costs nothing, spends no tokens and
+answers in under a second; where the answer comes from was not measured. So an Igor whose
+credential can ask asks its own seat whenever the answer matters. A seat's `setup-token`
+credential cannot: under one, `/usage` returns a cost summary and no percentages (§6.3.3).
 
 This removes the machinery a stored reading would need. There is no cap in dollars to derive,
 because the comparison happens in percent — the unit the provider actually reports. There is no
@@ -1242,40 +1261,187 @@ This lands with the command allowlist (§5.0.3) and not before it. Until a worke
 commands, the credentials it inherits are unreachable; granting the commands without fixing the
 environment is what makes them reachable.
 
-### 6.3.3 A seat token cannot be measured — **open**
+### 6.3.3 A seat token is measured from the worker's own stream
 
-`claude setup-token` credentials authenticate and spend correctly and report no usage.
-Measured on one machine, same command, same directory:
+`claude setup-token` credentials authenticate and spend correctly, and **their seat's windows are
+readable** — only not from where they were first looked for. Measured 2026-09-27 against one
+seat, every row with the same `setup-token` credential:
 
-| | interactive login | `setup-token` |
-|---|---|---|
-| `auth status` | `authMethod: claude.ai`, `subscriptionType: team` | `authMethod: oauth_token`, no identity fields |
-| `-p '/usage'` | session and weekly percentages | a session cost summary |
+| where | what comes back |
+|---|---|
+| CLI: `claude -p '/usage'` | a session cost summary, no percentages |
+| API: `GET /api/oauth/usage` | `403 permission_error`, `oauth_scope_insufficient`, requires `user:profile` |
+| API: `GET /api/oauth/profile` | `403`, requires `user:profile` or `user:office` |
+| stream: `claude -p … --output-format stream-json --verbose` | a `rate_limit_event` carrying both windows |
 
-Windows are reported against a subscription, and the CLI resolves none for these credentials.
-So "can be run under any token" in §6.3.1 is wrong, and with it the claim that there is no cap
-in dollars to derive: for a seat there is, because percent is unavailable.
+The event, as captured:
 
-What this does and does not cost, which is narrower than it first looks:
+```json
+{"type":"rate_limit_event","rate_limit_info":{"status":"allowed_warning","resetsAt":1790982000,
+ "rateLimitType":"seven_day","utilization":0.86,"isUsingOverage":false,"surpassedThreshold":0.75,
+ "unifiedWindows":{"five_hour":{"utilization":0.07,"resetsAt":1790569200},
+                   "seven_day":{"utilization":0.86,"resetsAt":1790982000}}}}
+```
 
-- **Igors sharing a seat with each other is unaffected.** Every Igor writes its spend to the
-  same state branch, so the record is complete for any consumer that keeps books. Sharing is
-  only opaque where the other consumer is a person.
-- **A reserve as a floor survives exactly.** Igor capping its own cumulative spend at
-  `(1 - reserve) x capacity` leaves the rest by construction, whatever the owner does. That
-  needs Igor's own record and a capacity figure, not a reading.
-- **A reserve that adapts does not.** Narrowing the floor because the owner is measurably
-  behind their own pace — `budget-pacing`'s fourth requirement — needs to see the owner.
-- **`budget_share` is untouched**, being computed from recorded cost already.
+**Why the API refuses.** A `setup-token` credential carries neither `user:profile` nor
+`user:office`, so it can neither learn whose account it is — which is why `auth status` shows it
+with `authMethod: oauth_token` and no identity fields — nor read usage. `claude setup-token` takes
+no options, so there is no asking for the scope. The stream is not gated by it because the
+figures arrive as a consequence of spending: a claude-swap contributor found the same values in
+`anthropic-ratelimit-unified-*` headers on successful `/v1/messages` calls, which is presumably
+what the CLI relays. That last part is inference, not measurement.
 
-Capacity itself need not be guessed: one `/usage` reading from an interactive login on the same
-account, divided into the spend Igor recorded over that window, gives it. That is a calibration
-and not a stored reading, and the distinction matters because §6.3.1 rejected the latter.
+**The fields.** `utilization` runs 0 to 1; `resetsAt` is epoch seconds; `rateLimitType` names the
+window the top-level figures describe; `status` is `allowed`, `allowed_warning` — with the
+threshold it crossed in `surpassedThreshold` — or `rejected`; `isUsingOverage` says whether extra
+usage is being spent. `unifiedWindows` reported the five-hour window at 7% while the event was
+about the weekly one, so every window appears to be included whichever one is being warned about.
 
-**Calibration was built once and deleted** in `188a762`, on the premise that the CLI reports
-the number for free. It does, for a login. Anything reviving it should start from that history
-rather than from scratch, and should not revive the destructive part — running a seat to its
-limit to discover the limit.
+**What this changes.**
+
+- **Every worker run is a reading of its own seat**, taken with the seat's own credential: no
+  interactive login, no rotating refresh token, no observer on somebody's laptop. Workers
+  already run with these flags (`src/execute.ts`) and keep only the terminal `result` event,
+  discarding this one.
+- **Calibration is no longer the only way to bound a seat.** It used one `/usage` reading from an
+  interactive login on the same account, divided into the spend Igor recorded over the window.
+  Under §6.3.4 it bounds nothing at all: the gate compares the reading itself, and a capacity
+  figure is kept only for display.
+- **An adaptive reserve becomes possible**, and §6.3.4 is the one decided. The reading is of the
+  whole seat, so it includes the owner's own use. That is what `budget-pacing`'s fourth
+  requirement (*A reserve decays toward the reset…*) needed to see, and §6.3.4 supersedes that
+  requirement. Relating a percentage of a window to dollars of recorded spend no longer matters for
+  the gate, because the gate compares percent against percent.
+
+**Still open.**
+
+- **A seat below every threshold.** This capture was past 75% of the week. Events are known to
+  appear on ordinary runs, but whether one on a seat under every threshold carries the numbers is
+  unverified; a fresh seat's first run settles it.
+- **Per-model weekly windows** do not appear in the event, so per-model tracking still needs
+  another source.
+- **The exhausted shape** is contributor-reported as `status: "rejected"`, `utilization: 1`, and a
+  non-zero exit rather than a block, and has not been captured here (#57, #15).
+
+**Calibration was built once and deleted** in `188a762`, on the premise that the CLI reports the
+number for free. It does, for a login. Anything reviving it should start from that history rather
+than from scratch, and should not revive the destructive part — running a seat to its limit to
+discover the limit. It was specified a second time on #143, as *calibration admission* (let an
+unread reserved seat in one item at a time until it has a figure). That was dropped on 2026-09-28
+with §6.3.4, which needs no figure to gate a seat.
+
+### 6.3.4 A seat's reserve is a line that moves toward the reset — **decided 2026-09-28; specified on #143, not built**
+
+Decided by Adam on 2026-09-28 and specified on [#143](https://github.com/adamstallard/igor/pull/143)
+(branch `seat-from-stream`). **Nothing here is built.** The shipped gate still bounds Igor's
+recorded dollars by `(1 − reserve) × capacity` (`derivedWindow` and `describeWindow` in
+`src/budget.ts`) until #143's second gate lands.
+
+**The rule.** For each window, Igor may start work on a seat only while the seat's latest unreset
+reading of that window — the `rate_limit_event` utilization of §6.3.3 — is below
+
+```
+line      = 1 − reserve × remaining
+remaining = (resetsAt − now) ÷ window length
+```
+
+which is the same line as `(1 − reserve) + reserve × elapsed`. The session and the week each have
+one, and a seat is admitted only while it is below both. Where the role drawing on the seat declares
+a higher reserve of its own, that one is used (below).
+
+| reserve | just after a reset | halfway | 10% left | at the reset |
+|---|---|---|---|---|
+| 0 | 100% | 100% | 100% | 100% |
+| 0.3 | 70% | 85% | 97% | 100% |
+| 1 | 0% | 50% | 90% | 100% |
+
+At reserve 0 the line is 100% throughout: no reserve and no pacing. At reserve 1 the line equals
+`elapsed`, which is even pacing. That is `budget-pacing`'s `target × elapsed`, except that it
+always reaches 100% at the reset, so it never strands capacity.
+
+**Why a line and not a bound on Igor's spend.** In Adam's words: *"we don't need to know how much
+the seat holder is using, and igor will adapt to fill the usage whether they're using more or
+less."* The reading is of the whole seat, so the owner's use is already in it. A quiet owner
+leaves Igor room up to the line. A busy owner leaves Igor less. Nobody has to work out which part
+of the reading is whose. Capacity left unspent at a reset is lost to everyone, so holding any of
+it back until then protects nobody.
+
+**What a reserve promises the owner.** At any moment, Igor leaves `reserve` × the part of the
+window still to come, assuming linear spend. At 0.5, that is half of what remains. It is not a
+fixed share of the window that is always the owner's; that was the old wording, and under the line
+it is false. If Igor is taking too much, or the owner tends to spend late in a window, the owner
+raises the reserve.
+
+**One line does both jobs, protecting the owner and pacing the spend.** There is no separate pace
+line to take the lower of. On #143's branch, `budget-pacing`'s pace line, dead band and reserve
+decay requirements are removed. Only *Waiting on pace is distinguishable from having nothing to
+do* survives, as waiting on the line. A reserve on a dedicated seat now means pacing, and a
+dedicated seat defaults to reserve 0. The config check that refuses a reserve on a dedicated seat
+(`parseOrgBudget`) goes in #143's second gate. That check also refuses a reserve of exactly 1; the
+table's reserve-1 row needs the parser to allow 1, which is also #143's second gate.
+
+**A role may set a reserve too, and that is how roles get priority.** A role file may declare its
+own `reserve`, which applies to every seat the role draws on. The line for that role on that seat
+uses the effective reserve `r = max(seat reserve, role reserve)`:
+
+```
+line = 1 − r × remaining
+```
+
+On a shared seat, that orders roles with no coordination between them. If frontend declares 0.3
+and generalist 0 on the same seat, frontend stops at 70% just after a reset while generalist runs
+to 100%, so generalist tends to use more of the seat. This is priority, not a guaranteed share: a
+lower-reserve role can still take capacity a higher one was waiting for. That is accepted, with no
+new mechanism. The remedies are choosing which roles a seat serves, and adding seats.
+Also decided 2026-09-28, specified on #143, and not built.
+
+**What it replaces.**
+
+- **The dollar gate.** `(1 − reserve) × capacity` on Igor's recorded spend is no longer the gate.
+  Capacity figures stay only as a display in `igor budget`.
+- **Calibration admission** (§6.3.3), dropped. A reserved seat with no unreset reading is not
+  admitted. A probe on the Igor server reads it first, and the probe also holds off once the seat
+  is at the line. A seat whose effective reserve is 0 has a line of 100% throughout, so it needs no
+  reading to be admitted.
+- **`budget-pacing`'s *A reserve decays toward the reset, on the clock or on the owner's
+  consumption*.** It is superseded, and so are its statements that the weekly reserve does not
+  decay and that a reserve never narrows to nothing. Under the line, both windows narrow, all the
+  way to the reset.
+
+**Accepted cost: overshoot by one run.** Igor's own spend shows up only in the next reading, so
+between readings Igor cannot see it, and each Igor can overshoot the line by at most one run.
+That limit is held per Igor and not coordinated across Igors, until a reserved seat is actually
+shared. `concurrent-instances` checks the gate once per item in each process, so under it the
+limit is one run per process.
+
+**A refusal counts as a reading.** A refusal is a 100% observation of its window until that
+window resets, and an input to the line: #39's row for a refused run, and #75's for a refused
+triage call. It is the one input that does not depend on the stream.
+
+**A probe opens and clears the credential stop.** A probe that gets a 401 opens
+`seat:<id>:credential`, and a probe that succeeds counts as the clearing check. So a revoked seat
+nobody has read is reported out of rotation, and clearing it spends no item. The stop is held by
+#65's breaker, or by the condition record if #101 lands.
+
+**A handoff for a window the line has shut states the crossing, marked approximate.** The line
+rises as the window runs down, so a reading `u` below 1 is under the line again once
+`remaining < (1 − u) ÷ r`. At reserve 0.3, a reading of 85% is shut until halfway through the
+window, and only a reading of 100% waits for the reset. The handoff states that crossing, not the
+reset, and marks it approximate, because a reading is a lower bound until its reset and the seat
+can be back later than the crossing, never earlier (#74).
+
+These three were decided by Adam on 2026-09-28, with the rest of this section, and are specified on
+#143 (#74 for the handoff hour). None is built.
+
+**Window length is measured, not assumed.** A probe placed just after a known reset measures the
+window's length. It also shows whether windows run on a fixed schedule or start at first use.
+Until that is measured, the built-in 5 hours and 7 days stand.
+
+**What losing the stream costs.** A seat whose effective reserve is 0 is admitted with no reading,
+so if the event stops arriving, or a seat below every threshold turns out to emit no numbers
+(§6.3.3, *Still open*), only reserved seats stop. A refusal still reads a reserved seat as full.
+
+**Still open.** How old an unreset reading can be before the line distrusts it (#69).
 
 ### 6.4 Graceful handoff — **built**
 
@@ -1284,7 +1450,7 @@ other Igors back off, then it goes silent mid-task. So exhaustion must produce a
 state-of-work, remaining steps, and suggested pickups. The summarizing call should be cheap
 and separate, not competing for the exhausted budget.
 
-### 6.5 A seat is a pool, not an identity — **planned**
+### 6.5 A seat is capacity, not an identity — **planned**
 
 Nothing prevents several Igors, or an Igor and a human, from running against the same
 subscription seat. One token, several processes. Three configurations, with different
@@ -1303,18 +1469,24 @@ consequences:
   the one it replaces.
 
 **A reserve floor is required whenever a human shares the seat.** Igors stop at a configured
-fraction of the allowance and leave the remainder untouched, so a person never sits down to
-find their capacity was quietly consumed overnight. Without it the failure is invisible,
-unattributable, and lands on the human; with it, it is a configured limit they chose.
+line below the seat's allowance, so a person never sits down to find their capacity was quietly
+consumed overnight. Without it the failure is invisible, unattributable, and lands on the human;
+with it, it is a configured limit they chose. What that line is was decided on 2026-09-28
+(§6.3.4, not built): it rises from `1 − reserve` just after a reset to 100% at the reset. At any
+moment Igor leaves `reserve` × the part of the window still to come, assuming linear spend, and
+not a fixed share of the window. A person who finds Igor taking too much, or who tends to spend
+late, raises the reserve.
 
 Two practical notes: several processes on one token may hit per-account concurrency limits,
 and all activity appears under one account upstream — so distinguishing which Igor did what
 depends on local logging, not on anything the provider records.
 
-#### 6.5.1 Ordered pools and ceilings — **decided**
+#### 6.5.1 Which seats a role uses, and ceilings — **built; the grouping is being replaced (#148)**
 
-Three concepts, no more: a **seat** is capacity, a **pool** is an ordered list of seats, and a
-role's `budget_share` is a **ceiling** on what it may draw from its pool.
+Three concepts, no more: a **seat** is capacity, a **pool** (the config key) is an ordered list
+of the seats a role may use, and a role's `budget_share` is a **ceiling** on what it may draw
+from them. #148 replaces the list with a file per seat naming the roles it serves, the seat
+chosen by headroom rather than by order.
 
 ```yaml igor:budget
 seats:
@@ -1327,21 +1499,21 @@ seats:
   - id: adam
     owner: adam@example.com
     token_env: IGOR_SEAT_ADAM
-    reserve: 0.5             # Adam keeps half his allowance for himself
+    reserve: 0.5             # Igor leaves Adam half of what remains of each window (§6.3.4)
 
 pools:
   - id: engineering
     seats: [fleet-1, fleet-2, adam]
 ```
 
-**Pool order is the whole allocation mechanism.** An Igor takes the first seat in its pool with
+**Order is the whole allocation mechanism today.** An Igor takes the first listed seat with
 headroom, so dedicated capacity drains before anyone's personal allowance is touched. That
 single ordering replaces a separate overflow concept, and it means the common arrangement —
 some dedicated seats, plus whatever the team has spare — is expressed by listing them in that
 order.
 
 **`budget_share` is a ceiling, not a reservation, and shares need not sum to one.** Three roles
-may each declare `0.4`. It reads as "this role may never consume more than 40% of the pool",
+may each declare `0.4`. It reads as "this role may never consume more than 40% of the seats it may use",
 not "40% is set aside for it". The reasons are practical:
 
 - Adding a fourth Igor would otherwise mean editing three other roles to make room. Ceilings
@@ -1354,18 +1526,18 @@ The failure mode of ceilings is that a busy role can crowd out a quiet one. That
 `igor budget`, self-corrects when the busy role finishes, and never reaches the humans, because
 each seat's own `reserve` is checked first and independently.
 
-**Enforcement order**, most protective first: the seat's reserve, then the role's ceiling
-against its trailing spend, then the next seat in the pool. Exhausting every seat in a pool is
+**Enforcement order**, most protective first: the seat's reserve (the reserve line, taken with
+the role's own reserve where that is higher, once §6.3.4 is built), then the role's ceiling
+against its trailing spend, then the next seat it may use. Exhausting every one is
 a graceful handoff (§5.5), never a hard stop.
 
-**Where legibility comes from.** Config states the *policy* — which pool a role draws on and
+**Where legibility comes from.** Config states the *policy* — which seats a role may use and
 what its ceiling is. The record states the *fact* — every invocation stores role, seat, cost
 and time, so "which Igor spent whose allowance" is answerable historically even though the
 seat is chosen dynamically. `igor budget` reports both: per seat its windows, what each has
 used, its reserve and headroom; per role its ceiling, spend and which seats it drew on.
 
-A role may still name a single seat rather than a pool, for an Igor that must never borrow a
-human's capacity. The pool is the general case, not the only one.
+A role may still name a single seat, for an Igor that must never use a person's capacity.
 
 ### 6.6 Distribution: public repository now, npm later — **planned**
 
@@ -1422,9 +1594,8 @@ process per Igor each holding its own credentials.
 - **One shared recognizer.** This is where the local open-weight model (§4.1) runs, and sharing
   is what makes its cost argument work at all — serving one model to a dozen loops is cheap,
   standing one up per Igor is absurd.
-- **One secret store**, with seat tokens pooled (§6.5). Members of the org can see each other's
-  keys, which is an ordinary trade for an internal tool and the right default; per-user
-  isolation is what you add when someone has a reason, not what you start with.
+- **One secret store** for seat tokens, on the server, readable by its operator and nobody
+  else (#148).
 - **Surface credentials are org-level anyway** — a GitHub App or token for the organization,
   not one per Igor.
 
@@ -1699,8 +1870,8 @@ Agreed in principle, not scoped, roughly in dependency order:
 7. Post-hoc output recognition (§4.4).
 8. Difficulty routing (§6.2).
 9. Publishing to npm, and pinning the promotion workflow to a release (§6.6).
-10. Seat pooling and the fleet-level budget policy, with a reserve floor where a human shares
-    the seat (§6.5).
+10. Shared seats and the fleet-level budget policy, with a reserve where a person shares their
+    seat (§6.5).
 11. Additional adapters: Linear, then Discord.
 12. Binaries in an artifact, refused or carried rather than corrupted (§6.7.3) — needs a role
     that can touch one.
