@@ -73,9 +73,9 @@ App's approving review does not need to count toward branch protection.
     unless they handed it to this Igor through the holder field. A person handing an item to an
     Igor directs it: the Igor posts the claim message and starts without the settle interval.
     On GitHub the `igor:<role>` label follows these rules exactly as Linear's delegate does.
-  - A person adding a second Igor's `igor:<role>` label hands the issue over, as setting a new
-    delegate does on Linear: the first Igor stops and removes its own label, and the newly
-    labelled Igor proceeds as directed.
+  - An Igor never claims an issue carrying another Igor's `igor:` label. To reassign it, a
+    person removes the holding Igor's label first. A newly labelled Igor that finds another
+    Igor's label comments once to say so.
   - A stop removes this Igor from the holder field, so a person who then assigns themselves
     keeps the item, and a person who hands it back directs the Igor again, without the
     cooldown.
@@ -108,8 +108,8 @@ None.
   Igor holds exactly one role).
 - `work-claiming`: three modified requirements (how a claim is expressed and resolved; settle
   and stand-down; what follows a stop) and six added (one tracker per organization, the App's
-  label claim on GitHub, items held by others, a person directing an Igor, a person handing an
-  issue to a second Igor by label, issues created from chat).
+  label claim on GitHub, items held by others, a person directing an Igor, a person
+  reassigning an issue by removing the holding Igor's label first, issues created from chat).
 - `surface-adapter`: two modified requirements (the holder-field declaration; the GitHub
   adapter claims by assignee or by label).
 - `task-execution`: one added requirement (a person approves every Igor pull request).

@@ -165,8 +165,10 @@ and assignee are. The rules that follow for items assigned to a person, for a pe
 item to an Igor, and for what follows a stop apply to the label exactly as they apply to
 Linear's delegate.
 
-Any label beginning `igor:` names an Igor. Another Igor's `igor:` label present after the settle
-interval means the claim is lost, and standing down removes only this Igor's own label.
+Any label beginning `igor:` names an Igor. Another Igor's `igor:` label that the other Igor added
+itself, present after the settle interval, means the claim is lost, and standing down removes
+only this Igor's own label. A label a person added is not a competing claim (*A person
+reassigns an issue by removing the holding Igor's label first*).
 
 #### Scenario: App claims by label and comment
 
@@ -176,14 +178,14 @@ interval means the claim is lost, and standing down removes only this Igor's own
 
 #### Scenario: Another Igor's label after the settle interval
 
-- **WHEN** a re-read after the settle interval finds another Igor's `igor:` label on the issue
+- **WHEN** a re-read after the settle interval finds another Igor's `igor:` label on the issue,
+  which that Igor added itself
 - **THEN** the Igor has lost the claim
 - **AND** it removes its own label and leaves the other in place
 
 ### Requirement: An item someone else holds is not claimed
 
-An Igor SHALL NOT claim an item whose holder field names another party, unless a person has
-also named this Igor there (*A person adding a second Igor's label hands the issue over*). Where the tracker's
+An Igor SHALL NOT claim an item whose holder field names another party. Where the tracker's
 holder field is distinct from its assignee, an Igor SHALL NOT claim an item assigned to a person
 unless the holder field names that Igor: the person is accountable for it, and handing it to the
 Igor is their decision. Unassigned items, and items a person has handed to this Igor, are
@@ -220,9 +222,8 @@ coincide, and this changes nothing.
 
 #### Scenario: Item labelled for another Igor, on GitHub
 
-- **WHEN** a GitHub issue carries another Igor's `igor:` label, and no person has added this
-  Igor's label
-- **THEN** this Igor does not claim it
+- **WHEN** a GitHub issue carries another Igor's `igor:` label
+- **THEN** this Igor does not claim it, even if a person has added this Igor's label too
 
 #### Scenario: Unassigned item, on Linear
 
@@ -263,24 +264,34 @@ by adding its `igor:<role>` label.
   after the Igor has started
 - **THEN** the Igor halts as it would for any stopped claim
 
-### Requirement: A person adding a second Igor's label hands the issue over
+### Requirement: A person reassigns an issue by removing the holding Igor's label first
 
-Where a person adds an App Igor's `igor:<role>` label to a GitHub issue that another Igor
-holds, the issue SHALL pass to the newly labelled Igor, as setting a new delegate on Linear
-replaces the old one. The first Igor SHALL stop and remove only its own label. The newly
-labelled Igor SHALL proceed as directed by a person, by *A person can direct an Igor through the
-holder field*, although the first Igor's label may still be present. Work that needs two roles
-is split into two issues, one per role.
+Where a person adds an App Igor's `igor:<role>` label to a GitHub issue that carries another
+Igor's `igor:` label, the newly labelled Igor SHALL NOT claim it. On the next cycle that finds
+the issue, it SHALL post one comment saying which Igor holds the issue and that removing that
+Igor's label hands the issue over. It SHALL NOT post the comment again while the issue's labels
+are unchanged. Once the other Igor's label is gone, the person's label directs this Igor, by *A
+person can direct an Igor through the holder field*. This matches Linear, where a person
+replaces a delegate rather than adding a second. Work that needs two roles is split into two
+issues, one per role.
 
-This applies only to a label a person added. A label another Igor added while claiming is
-resolved by the settle interval, as in *A claim is verified after a settle interval*. The
-adapter SHALL tell the two apart by who added the label, read from the issue's events.
+A label a person added SHALL NOT make the Igor holding the issue lose its claim, even during
+its settle interval. A label another Igor added while claiming is resolved by the settle
+interval, as in *A claim is verified after a settle interval*. The adapter SHALL tell the two
+apart by who added the label, read from the issue's events.
 
 #### Scenario: Person labels a second Igor
 
 - **WHEN** a person adds `igor:frontend` to a GitHub issue the `backend` Igor holds by its
   `igor:backend` label
-- **THEN** the `backend` Igor stops and removes `igor:backend`, leaving `igor:frontend`
+- **THEN** the `frontend` Igor does not claim it, and posts one comment saying the `backend`
+  Igor holds the issue and that removing `igor:backend` hands it over
+- **AND** the `backend` Igor keeps the issue
+
+#### Scenario: Person removes the holding Igor's label
+
+- **WHEN** the person then removes `igor:backend`
+- **THEN** the `backend` Igor halts, as for any stopped claim
 - **AND** the `frontend` Igor posts the claim comment and starts work without waiting the
   settle interval
 
@@ -288,7 +299,7 @@ adapter SHALL tell the two apart by who added the label, read from the issue's e
 
 - **WHEN** an Igor finds another Igor's `igor:` label on an issue it is claiming, and the
   issue's events show that Igor added the label itself
-- **THEN** the settle interval resolves the claim, and neither Igor treats it as a hand-off
+- **THEN** the settle interval resolves the claim
 
 ### Requirement: An issue created from chat points back to the chat
 

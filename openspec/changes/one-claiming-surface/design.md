@@ -52,18 +52,22 @@ label and failed before posting the claim comment also finds its label with no c
 records who added each label in the issue's events; the adapter is expected to read that, as a
 Linear adapter would read who set the delegate.
 
-## A person adding a second Igor's label hands the issue over
+## A person reassigns by removing the holding Igor's label first
 
-**Decided by the owner: a person who adds one Igor's `igor:<role>` label to an issue that
-another Igor holds hands the issue to the newly labelled Igor.** This mirrors Linear, where a
-person setting a new delegate replaces the old one. GitHub's labels hold a list, so the first
-label is not replaced; the first Igor stops and removes only its own label. The newly labelled
-Igor proceeds as if a person had labelled an unclaimed issue. Work that needs two roles is split
-into two issues.
+**Decided by the owner: an Igor never claims an issue that carries another Igor's `igor:`
+label, even one a person labelled for it.** To move an issue to a different Igor, a person
+removes the holding Igor's label, then adds the new one. That is Linear's single step of
+replacing a delegate, done in two. A newly labelled Igor that finds another Igor's label
+comments once to say so, so a label added without removing the first doesn't sit unnoticed.
+Work that needs two roles is split into two issues.
 
-This differs from two Igors racing to claim. A label another Igor added itself, while claiming,
-is resolved by the settle interval as before. The adapter tells the two apart by who added the
-label, from the issue's events.
+**Rejected: a second label hands the issue over.** The first Igor would stop as soon as a
+person labelled another, which makes adding a label a stop, and that is easy to do by
+mistake.
+
+A label a person added never makes the holding Igor lose its claim. A label another Igor
+added itself, while claiming, is resolved by the settle interval as before. The adapter tells
+the two apart by who added the label, from the issue's events.
 
 ## The App's label names the role, and nothing else
 

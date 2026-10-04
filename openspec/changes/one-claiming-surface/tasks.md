@@ -5,7 +5,7 @@
       message; later write holds a single-valued field, and a losing Igor never clears it;
       items held by others; a person directing an Igor; what follows a stop; an issue created
       from chat points back to the chat. The GitHub label rules match Linear's delegate rules
-      case for case; a person adding a second Igor's label hands the issue over
+      case for case; a person reassigns by removing the holding Igor's label first
 - [x] 1.2 `surface-adapter`: the holder-field declaration says single value or list, and
       whether it is distinct from the assignee; GitHub's `igor:` labels are distinct; the
       GitHub adapter claims by assignee or by label, depending on the identity
@@ -13,7 +13,7 @@
 - [x] 1.4 `role-config`: an Igor holds exactly one role, and its identity is that role; a role
       naming more than one base in `extends` is refused
 - [x] 1.5 `design.md`: what a claim is for, one role per Igor, the label mirroring Linear's
-      delegate, the hand-off by a second label, the Linear measurement of 2026-10-03, and the
+      delegate, reassigning by removing the holding Igor's label first, the Linear measurement of 2026-10-03, and the
       choices with live alternatives
 - [x] 1.6 `docs/machine-accounts.md`: a GitHub App is the default identity on public
       repositories, a machine user only where an Igor must be an assignee or a requested
@@ -51,9 +51,9 @@
       reads its labels back after writing them
 - [ ] 3.7 A stop removes this Igor's own label or delegate, and a person assigning themselves
       afterwards keeps the item
-- [ ] 3.8 A person adding a second Igor's `igor:<role>` label hands the issue over: the Igor
-      holding it stops and removes only its own label, and the newly labelled Igor proceeds as
-      directed, without the settle interval
+- [ ] 3.8 An Igor labelled by a person on an issue another Igor holds doesn't claim it, and
+      comments once that removing the holding Igor's label hands it over; a person's label never
+      makes the holding Igor lose its claim
 - [ ] 3.9 An issue created from a chat instruction quotes or links the chat, and its link is
       posted back in the chat
 
