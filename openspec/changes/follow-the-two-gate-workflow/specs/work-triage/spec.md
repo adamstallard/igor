@@ -22,7 +22,7 @@ same work too, waiting on the Igor rather than on a reviewer.
 
 #### Scenario: Rediscovery after completion does not duplicate work
 
-- **WHEN** an Igor has completed an item, unassigned itself, and the item is rediscovered
+- **WHEN** an Igor has completed an item, released its claim, and the item is rediscovered
 - **THEN** the open artifact is detected and the item is skipped
 - **AND** no second artifact is produced
 

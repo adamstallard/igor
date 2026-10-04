@@ -21,9 +21,9 @@ Line numbers are as of `main` at `511e519`.
       ones
 - [ ] 2.3 Show it in `role explain` with its provenance (`src/role.ts:654`)
 - [ ] 2.4 Tests: opt in, unset, override from base, unknown value refused, explained
-- [ ] 2.5 `igor doctor` (#113) warns when a `two-gate` role's GitHub identity is not an App,
-      because an Igor's review is excluded by its `Bot` account type, and a machine user's review
-      would count as a person's
+- [ ] 2.5 `igor doctor` (#113) reports a role whose GitHub identity is not an App, because an
+      Igor's review is excluded by its `Bot` account type, and a machine user's review would count
+      as a person's. #113 specifies this check for every role; confirm it covers `two-gate` roles
 
 ## 3. Reading the artifact
 

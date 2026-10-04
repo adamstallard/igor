@@ -55,6 +55,10 @@ they were listed as questions 11–13, and Adam confirmed them.
 - **Every Igor is a GitHub App at launch** (#156). An Igor's review is therefore recognisable by
   its author's account type, `Bot`, with no list of Igor accounts. Machine-user Igors are not
   supported, so an Igor never posts as a person.
+- **An App claims with its `igor:<role>` label, not the assignee** (#156). The fresh claim at
+  gate two is the ordinary claim, so settled question 11 now names the holder field where it
+  named the assignee, and the rediscovery scenario in `work-triage` says the Igor released its
+  claim where it said it unassigned itself. Amended 2026-10-04.
 
 ## Decisions made here
 
@@ -295,7 +299,8 @@ between its two branches. Adam reversed question 5 on 2026-10-04.
     does not modify `Completion behaviour follows configured policy`, because gate one is not
     "believing work complete", but you may want that spelled out there.
 11. **A fresh claim at gate two, and at each revision.** *Recommend:* yes, on the item, through
-    the ordinary claim path, so the assignee field and the claim message show gate two starting.
+    the ordinary claim path, so the holder field (on GitHub, the Igor's `igor:<role>` label) and
+    the claim message show gate two starting.
     The claim message also names the pull request being resumed. A claim on the pull request
     was considered and rejected, because the item is where people look and where a stop is
     read.
@@ -342,8 +347,8 @@ between its two branches. Adam reversed question 5 on 2026-10-04.
 ## Risks
 
 - **An Igor that is not an App breaks the `Bot` test.** Today's build runs an Igor as a machine
-  user, whose reviews are authored by a `User` and would count. `igor doctor` (#113) warns when
-  a `two-gate` role's GitHub identity is not an App (task 2.5). An approving review stays the
+  user, whose reviews are authored by a `User` and would count. `igor doctor` (#113) reports any
+  role whose GitHub identity is not an App as a finding (task 2.5). An approving review stays the
   only go signal (Adam, 2026-09-28), with no fallback from the pull request's author.
 - **Review data widens the discovery request.** `latestOpinionatedReviews` and `headRefOid` on
   every cross-referenced pull request add to the GraphQL cost of each page. Measure before and
