@@ -3,16 +3,14 @@
 AI teammates that find their own work, claim it in the open, and draw on what the team
 has already learned.
 
-Most coding agents are somebody's assistant: one person's terminal and login, with the
-reasoning behind each change kept in that person's session files. Igors are the team's. They
-take work from the tracker, and their claims, questions, handoffs and pull requests go back to
-it, where anyone can see them. A decision written on an issue is what the next Igor picks up,
-and what the team learns becomes [lore](#lore) that every Igor reads. Nothing durable lives
-inside an Igor: run five processes of one, kill four mid-week, and nothing is lost.
+Keep your own AI for thinking: brainstorming, asking, deciding. When it's time to act, hand the
+work to Igors instead of sub-agents in your session. They take it from the team's tracker and put
+their claims, questions, handoffs and pull requests there, in plain view. What the team
+teaches them becomes [lore](#lore) every Igor reads, not memory stuck in one person's sessions.
 
-Anyone who joins can add capacity. An Igor is a role file reviewed into the lore repository
-plus a machine account, and a person can let Igors in chosen roles use their Claude seat,
-with a `reserve` saying how much they keep ([`docs/seats.md`](docs/seats.md)).
+An Igor is a named teammate, defined by the roles it holds. Nothing durable lives inside one: run
+five, kill four mid-week, and nothing is lost. The roles live in git, the knowledge belongs to the
+team, and anyone who joins can add an Igor or let Igors in chosen roles use their Claude seat.
 
 ## Vocabulary
 
