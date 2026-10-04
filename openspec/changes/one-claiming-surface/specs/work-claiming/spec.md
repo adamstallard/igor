@@ -182,7 +182,8 @@ interval means the claim is lost, and standing down removes only this Igor's own
 
 ### Requirement: An item someone else holds is not claimed
 
-An Igor SHALL NOT claim an item whose holder field names another party. Where the tracker's
+An Igor SHALL NOT claim an item whose holder field names another party, unless a person has
+also named this Igor there (*A person adding a second Igor's label hands the issue over*). Where the tracker's
 holder field is distinct from its assignee, an Igor SHALL NOT claim an item assigned to a person
 unless the holder field names that Igor: the person is accountable for it, and handing it to the
 Igor is their decision. Unassigned items, and items a person has handed to this Igor, are
@@ -219,7 +220,8 @@ coincide, and this changes nothing.
 
 #### Scenario: Item labelled for another Igor, on GitHub
 
-- **WHEN** a GitHub issue carries another Igor's `igor:` label
+- **WHEN** a GitHub issue carries another Igor's `igor:` label, and no person has added this
+  Igor's label
 - **THEN** this Igor does not claim it
 
 #### Scenario: Unassigned item, on Linear
