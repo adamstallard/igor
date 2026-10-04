@@ -407,8 +407,8 @@ answers for it. That is the fail-closed direction, and `igor budget` says why.
 ### A role's reserve
 
 Decided by Adam on 2026-09-28, and added as *A role may hold back more of a seat than the seat
-does*. A role file may declare one `reserve`. It applies to every seat the role draws on through
-its `seat`, a seat or a pool, and is not set per role and seat. The line that role's Igor checks
+does*. A role file may declare one `reserve`. It applies to every seat the role draws on, and is
+not set per role and seat. The line that role's Igor checks
 uses `max(seat reserve, role reserve)`, so a role can hold back more than a seat and never less,
 and a lender's reserve holds whatever a role declares. On a seat at reserve 0 the role's reserve
 alone sets its line.
@@ -417,8 +417,8 @@ It is priority without coordination. With `frontend` at 0.3 and `generalist` at 
 once the reading passes `frontend`'s line only `generalist` takes items, so `generalist` tends to
 use more of the seat. It is **not a guaranteed share**, and that is accepted. A low-reserve role
 that always has work can crowd a higher-reserve role out for most of a window. No mechanism is
-added. The two remedies that exist are pools, since a role draws only on its own pool, and adding
-seats so that the low-reserve role is fully served elsewhere. A guaranteed per-role minimum is not
+added. The two remedies are choosing which roles a seat serves, and adding seats so that the
+low-reserve role is fully served elsewhere. A guaranteed per-role minimum is not
 specified, and is added only if it proves to be needed.
 
 **It is raised by inheritance, never lowered (Adam, 2026-09-28).** A child role may hold back more
@@ -659,6 +659,30 @@ No in-force requirement specifies `igor observe`, the scheduled reading, the ref
 credential, or anything in `budget-pacing`, since neither change was archived. So their withdrawal
 needs no `REMOVED` delta.
 
+## Pools are dropped (amended 2026-10-04)
+
+Adam decided that pools are dropped
+([#148](https://github.com/adamstallard/igor/issues/148)). A seat's own file lists the roles it
+serves, and among the eligible seats under their line the Igor picks the one with the most
+headroom, with the soonest reset breaking ties
+([#147](https://github.com/adamstallard/igor/issues/147)). Nothing of it is specified yet.
+
+This change used pools in two places:
+
+- **As a remedy for a greedy role**, in *A role may hold back more of a seat than the seat does*.
+  The requirement and this design now name the remedy as choosing which roles a seat serves.
+  That is true of a pool today and of a seat's own file after #148. The scenario about a pool of
+  three seats now says the role may draw on three seats.
+- **In the `MODIFIED` block for *A pool is an ordered list of seats, and order is the allocation
+  mechanism***. It is kept. The block only replaces "has a capacity figure" with "read below its
+  line", so the in-force requirement stops contradicting the line while pools exist. Removing the
+  requirement and specifying how a seat is chosen belong to #148's change.
+
+**Open: which change removes the pool requirement.** If #148's change archives first, this
+block modifies a requirement that no longer exists, and archive fails. *Recommend:* #148's change
+removes the requirement, written against whichever text is in force then. If #148 is specified
+before this archives, drop this block here instead.
+
 ## Settled on 2026-09-28, after the questions this design raised
 
 - **`budget_share` is measured against the reading**, on every path. No figure in dollars is a gate
@@ -684,7 +708,7 @@ needs no `REMOVED` delta.
   `capacity_estimate`, which used to start one, is removed. If fresh seats do emit events, the probe
   starts them and there is nothing to decide.
 - **A guaranteed per-role share.** Not specified. Add it only if a role's reserve proves too weak a
-  priority in practice. Pools and more seats are the remedies that exist.
+  priority in practice. Choosing which roles a seat serves, and more seats, are the remedies.
 - **The `rejected` shape** (#57). The single-row rule is written against the contributor-reported
   shape and must be checked against the first captured refusal.
 - **`allowed_warning` has no gate behaviour.** The line uses the utilization itself. Please review this

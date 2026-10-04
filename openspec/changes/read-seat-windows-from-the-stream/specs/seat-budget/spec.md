@@ -619,12 +619,11 @@ window.
 ### Requirement: A role may hold back more of a seat than the seat does
 
 A role MAY declare a `reserve`, a fraction from 0 to 1, both included. It SHALL apply to every seat
-the role draws on through its `seat`, whether that names a seat or a pool, and it is not set per
-seat. The line that role's Igor checks on a seat SHALL use the larger of the seat's reserve and
+the role draws on, and it is not set per seat. The line that role's Igor checks on a seat SHALL use the larger of the seat's reserve and
 the role's (*The reserve is untouchable*). So a role can hold back more than a seat does and never
 less: a lender's reserve holds whatever a role declares. On a seat declaring reserve 0, the role's
-reserve alone sets that role's line. A role reserve is valid whatever seat or pool the role draws
-on, a dedicated seat included.
+reserve alone sets that role's line. A role reserve is valid whatever seats the role draws on, a
+dedicated seat included.
 
 A role's reserve SHALL be raised by inheritance and never lowered. A role MAY declare a larger
 reserve than the one it inherits from its parent or from `roles/org.yaml`, and SHALL NOT declare a
@@ -641,9 +640,9 @@ takes what lies above that line.
 
 It is a priority, not a guaranteed share. A lower-reserve role that always has work can hold the
 seat at a higher-reserve role's line for most of a window and so crowd it out. No mechanism is
-added against that. Two already exist: pools, since a role draws only on its own pool, taking the
-first seat with headroom in listed order, so a seat left out of the greedy role's pool is kept
-from it; and more seats, so that the lower-reserve role is fully served elsewhere.
+added against that. Two remedies exist: choosing which roles a seat serves, so a seat that does
+not serve the greedy role is kept from it; and more seats, so that the lower-reserve role is fully
+served elsewhere.
 
 #### Scenario: A higher-reserve role yields to a lower one
 
@@ -659,7 +658,7 @@ from it; and more seats, so that the lower-reserve role is fully served elsewher
 
 #### Scenario: One reserve for every seat the role draws on
 
-- **WHEN** a role declares a reserve of 0.3 and names a pool of three seats
+- **WHEN** a role declares a reserve of 0.3 and may draw on three seats
 - **THEN** each of the three is judged against a line using at least 0.3
 
 #### Scenario: A role reserve out of range is refused
