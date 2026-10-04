@@ -47,6 +47,15 @@ The brief also gave three recommendations: a fresh claim at gate two, noting an 
 continuing, and treating an approval with comments as a go. The spec is written to them, and
 they were listed as questions 11–13, and Adam confirmed them.
 
+## Decided (Adam, 2026-10-04)
+
+- **An approval from an Igor never counts as the go signal.** Only an approving review from a
+  person with authority does. This reverses settled question 5, and matches
+  `one-claiming-surface`'s *A person approves every Igor pull request* (#156).
+- **Every Igor is a GitHub App at launch** (#156). An Igor's review is therefore recognisable by
+  its author's account type, `Bot`, with no list of Igor accounts. Machine-user Igors are not
+  supported, so an Igor never posts as a person.
+
 ## Decisions made here
 
 Each of these follows from the settled decisions above, or from requirements already in force.
@@ -119,9 +128,8 @@ would never end.
 
 A current decisive review is **answered** once the Igor has posted a hand-back reply on the
 artifact that names that review. Nothing else answers a review. That includes the Igor answering
-a mention under `directed-interaction`, and a comment from someone else, including the operator
-where the Igor posts as its operator. A review is **actionable** while it is current and
-unanswered. Then:
+a mention under `directed-interaction`, and a comment from someone else. A review is
+**actionable** while it is current and unanswered. Then:
 
 - a current, unanswered change request from anyone with authority means **revise**, even if
   someone else approved;
@@ -147,8 +155,13 @@ approval was not superseded, and it becomes actionable once the change request i
 
 ### Authority is checked per reviewer, and fails closed
 
-A review's author comes from platform metadata, never from text (§5.4). That author has
-authority if the store's `reviewers` names them, or if `user.permissions.push` is true on the
+A review's author comes from platform metadata, never from text (§5.4). **An author whose
+account type is `Bot` has no authority**, whatever its access, and no permission read is made
+for it. Every Igor is a GitHub App, so this excludes every Igor's review, an approval or a
+change request. It also excludes any other App, such as a dependency bot, which was never
+asked to decide.
+
+Any other author has authority if the store's `reviewers` names them, or if `user.permissions.push` is true on the
 repository (`GET /repos/{repo}/collaborators/{login}/permission`). Read the boolean, never the
 `permission` string. `directed-interaction` measured this: the string reports `admin` for an
 admin and `write` for a maintainer, so comparing it to `"write"` excludes the people with the
@@ -227,7 +240,7 @@ edit time (`lastEditedAt`) is later than the approval. A comment is not an edit.
 
 Adam accepted every recommendation below on 2026-09-28. The requirements were already written to
 them, so none changed. Question 3 still waits on the measurement in task 1.1, which decides
-between its two branches.
+between its two branches. Adam reversed question 5 on 2026-10-04.
 
 1. **The gate-one title marker.** An Igor can't know a repository's `TYPE(Scope):` convention,
    and its title is the issue title today. *Recommend:* gate one titles the pull request
@@ -248,11 +261,11 @@ between its two branches.
    declare `reviewers`. Your decision named the store-level list. *Recommend:* role `reviewers`
    do **not** confer authority. They say whom to ask, and the store list says who may decide. A
    role reviewer with write access has authority anyway.
-5. **An approval from another Igor.** §5.4 bounds Igor-to-Igor exactly as person-to-Igor, so
-   another Igor's account with write access has authority. The workflow says a person reviews
-   gate one. *Recommend:* follow §5.4 for now, because there is no registry of Igor accounts
-   that could tell them apart. Record the gap, and exclude known Igor accounts once
-   `concurrent-instances` or machine-account provisioning gives the loop such a list.
+5. **An approval from another Igor.** **Reversed by Adam on 2026-10-04:** an Igor's review
+   never counts, and only a person with authority starts gate two. The 2026-09-28 answer
+   followed §5.4 because no list of Igor accounts existed. None is needed: every Igor is a
+   GitHub App, and its review's author is a `Bot` account (see *Authority is checked per
+   reviewer*).
 6. **Changes requested at gate two.** *Recommend:* the same revise loop, without the confinement,
    on the same branch. It is specified as its own requirement, *A change request at gate two is
    answered on the same branch*, and by the in-flight skip's "past gate one, a change request"
@@ -309,6 +322,9 @@ between its two branches.
   about a gate it doesn't know exists: a closed spec pull request is never resumed. That already
   holds, because only open pull requests are in flight, and it is stated so no implementation
   loosens it. The merged-at-gate-one case (question 7) mirrors #141's rule.
+- **#156 `one-claiming-surface`.** It makes every Igor a GitHub App and requires a person to
+  approve every Igor pull request. The go signal relies on both: the `Bot` account type is how
+  an Igor's review is excluded.
 - **#146 `claim-window`.** Gate two and each revision take an ordinary claim through
   `takeClaim`, so *A claim that cannot be kept is given back, out loud* applies to them
   unchanged. Nothing here depends on #146 landing first.
@@ -325,12 +341,10 @@ between its two branches.
 
 ## Risks
 
-- **An Igor posting as its operator can't be approved by that operator.** GitHub refuses a
-  review from a pull request's author. **Decided (Adam, 2026-09-28): an approving review stays
-  the only go signal, and a two-gate Igor needs its own account**, as `docs/machine-accounts.md`
-  already requires. There's no fallback signal from the author. `igor doctor` (#113) warns when a
-  `two-gate` role's Igor posts as a person who is also the only one with authority, since its
-  gate two could then never start (task 2.5).
+- **An Igor that is not an App breaks the `Bot` test.** Today's build runs an Igor as a machine
+  user, whose reviews are authored by a `User` and would count. `igor doctor` (#113) warns when
+  a `two-gate` role's GitHub identity is not an App (task 2.5). An approving review stays the
+  only go signal (Adam, 2026-09-28), with no fallback from the pull request's author.
 - **Review data widens the discovery request.** `latestOpinionatedReviews` and `headRefOid` on
   every cross-referenced pull request add to the GraphQL cost of each page. Measure before and
   after on a real query (task 3.4).

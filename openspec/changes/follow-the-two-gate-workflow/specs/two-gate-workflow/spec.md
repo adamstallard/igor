@@ -115,8 +115,8 @@ artifact. An approval is actionable when all of these hold:
 
 - it is the latest decisive review by its author, where a decisive review approves or requests
   changes;
-- its author has authority, meaning the store's `reviewers` names them or they have write
-  access to the repository;
+- its author is a person with authority, meaning the store's `reviewers` names them or they
+  have write access to the repository;
 - it is current, meaning no commit that is not a merge of the base has landed on the
   artifact's branch since it was submitted;
 - it is unanswered, meaning the Igor has not posted a hand-back reply on the artifact that names
@@ -126,6 +126,8 @@ artifact. An approval is actionable when all of these hold:
 
 A review's author SHALL be read from the code host's metadata. Authority SHALL be read from the
 host's permission data and SHALL fail closed: an author whose authority can't be read has none.
+An author whose account type is `Bot` SHALL have no authority, whatever its access. Every Igor
+is a GitHub App, so an approval from an Igor never starts gate two.
 
 Nothing else SHALL start gate two. That includes a comment, a mention, a comment-only review, a
 dismissed review, and any text in a review's body. An approval with no activity on the item
@@ -145,6 +147,12 @@ itself SHALL still be found.
 #### Scenario: An approval from someone without authority does nothing
 
 - **WHEN** someone with neither write access nor a place in the store's `reviewers` approves
+- **THEN** gate two does not start, and nothing is said
+
+#### Scenario: An approval from an Igor's App account starts nothing
+
+- **WHEN** an Igor's GitHub App account approves the gate-one artifact, even with write access,
+  and no person with authority has approved it
 - **THEN** gate two does not start, and nothing is said
 
 #### Scenario: An unreadable permission is no authority

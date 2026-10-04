@@ -33,9 +33,10 @@ Everything below applies only to a role that opts in, and was decided by Adam on
   specification marker, its body opens by saying it is specification only, and it refers to its
   item without a closing keyword. Gate one releases the claim, and does not take the role's
   completion action.
-- **The go signal is an approving review** on the spec pull request, from someone with
+- **The go signal is an approving review** on the spec pull request, from a person with
   authority over the repository: the store's `reviewers`, or anyone with write access (§5.4). It
-  is structured data, and no text is interpreted.
+  is structured data, and no text is interpreted. A review from an Igor never counts: every
+  Igor is a GitHub App, so its review's author is a `Bot` account.
 - **A change request is answered on the same branch.** The Igor reads the review as data,
   amends the spec, commits onto the branch, replies to the review and asks for it again.
 - **Gate two implements on the same branch.** After approval: a fresh claim on the item, the
@@ -86,6 +87,5 @@ Explicitly out of scope:
   read is shared with `directed-interaction`, which needs it and has not built it.
 - A two-gate item costs two worker runs instead of one, plus one for each round of changes. Each
   goes through the budget gate as a separate spend.
-- An Igor that posts as the person running it can't be approved by that person, because GitHub
-  refuses a review from a pull request's author. Two-gate therefore needs the Igor to have an
-  account of its own (`docs/machine-accounts.md`), or another reviewer with authority.
+- Every Igor is a GitHub App (`one-claiming-surface`, #156), so a pull request an Igor opens is
+  authored by its App, and any person with authority can approve it.

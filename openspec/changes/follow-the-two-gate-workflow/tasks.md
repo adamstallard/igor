@@ -21,16 +21,15 @@ Line numbers are as of `main` at `511e519`.
       ones
 - [ ] 2.3 Show it in `role explain` with its provenance (`src/role.ts:654`)
 - [ ] 2.4 Tests: opt in, unset, override from base, unknown value refused, explained
-- [ ] 2.5 `igor doctor` (#113) warns when a `two-gate` role's Igor posts as a person who is also
-      the only one with authority over the repository, because GitHub refuses an approval from a
-      pull request's author, so its gate two could never start. A warning, not a refusal: the loop
-      can't know who else might review
+- [ ] 2.5 `igor doctor` (#113) warns when a `two-gate` role's GitHub identity is not an App,
+      because an Igor's review is excluded by its `Bot` account type, and a machine user's review
+      would count as a person's
 
 ## 3. Reading the artifact
 
 - [ ] 3.1 Extend the `pr` fragment (`src/github-adapter.ts:64`) and `RawPr`
       (`src/github-adapter.ts:75`) with `headRefOid` and `latestOpinionatedReviews(first: 20)
-      { nodes { author { login } state submittedAt commit { oid } } }`
+      { nodes { author { login __typename } state submittedAt commit { oid } } }`
 - [ ] 3.2 Carry the head, the decisive reviews, and each review's commit on `InFlight`
       (`src/adapter.ts:20`), set by `inFlightFrom` (`src/github-adapter.ts:106`)
 - [ ] 3.3 Carry the item's `lastEditedAt` on `Candidate`, for gate two's note about an edited item
@@ -47,6 +46,8 @@ Line numbers are as of `main` at `511e519`.
 
 ## 4. Authority
 
+- [ ] 4.0 A review whose author's `__typename` is `Bot` has no authority, and is excluded
+      before any permission read. It covers every Igor, since every Igor is a GitHub App
 - [ ] 4.1 One permission read per distinct review author per cycle,
       `GET /repos/{repo}/collaborators/{login}/permission`, reading `user.permissions.push` and
       never the `permission` string. This read is shared with `directed-interaction`, which needs
@@ -55,7 +56,7 @@ Line numbers are as of `main` at `511e519`.
       `reviewers` (`src/role.ts:532`) do not count (settled question 4)
 - [ ] 4.3 A read that fails is no authority, for that author, for that cycle
 - [ ] 4.4 Tests: writer, store reviewer without write, neither, unreadable, admin (whose
-      `permission` string is `admin` and not `write`)
+      `permission` string is `admin` and not `write`), and a `Bot` author with write access
 
 ## 5. Deciding what to resume
 
@@ -170,4 +171,4 @@ Line numbers are as of `main` at `511e519`.
 - [ ] 12.2 `docs/architecture.md` §5.0.4 (`docs/architecture.md:901`): the second exception to
       the in-flight skip, and why the phase is read from the artifact
 - [ ] 12.3 `DECISIONS.md`, or wherever the repository records decisions: Adam's five
-      decisions of 2026-09-28, and the settled questions
+      decisions of 2026-09-28, the settled questions, and the 2026-10-04 reversal of question 5
