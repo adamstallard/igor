@@ -23,9 +23,9 @@ organizational preference", and a conflicting artifact of one's own is not dupli
 the same work, unfinished. Everything else in flight is still skipped, and the rule stays
 non-configurable.
 
-**A clean merge costs no model at all.** The loop asks the code host to merge the base into the
-branch. The host does the merge and reports a conflict rather than producing one, so the common
-case is one request and nothing else.
+**Only a conflict costs anything.** The loop asks the code host to merge the base into the
+branch of an artifact that no longer merges. The host does the merge and reports a conflict
+rather than producing one, so nothing at all is spent on an artifact that is merely behind.
 
 **A conflict escalates to a worker, on the branch rather than instead of it.** What the worker
 is handed is a conflict in files, which is its job. It is not handed git.
@@ -49,14 +49,16 @@ Explicitly out of scope:
 
 - `work-triage`: the in-flight skip narrows. An item whose in-flight artifact is the Igor's own
   and cannot merge is a candidate; every other item in flight is still skipped.
-- `task-execution`: an artifact is kept mergeable after it is published, by merging its base
-  where that is clean and by a worker where it is not.
+- `task-execution`: an artifact of the Igor's own that can no longer merge is brought up to
+  date after it is published — by the code host where the merge comes out clean, and by a
+  worker where it does not.
 
 ## Impact
 
 - Removes the only state in which an Igor's own unfinished work is invisible to it.
-- Costs one request per published artifact per cycle in the ordinary case, and a worker run
-  only where a person would also have had to think.
+- Costs roughly two requests per *conflicting* own artifact per cycle — a comment read and the
+  merge — and nothing at all for one that is healthy or whose mergeability is unknown; a worker
+  run only where a person would also have had to think.
 - Sits awkwardly beside the claim protocol today: the claim is released at publication, but the
   work is not finished until the artifact merges or somebody closes it. This does not resolve
   that tension, it just stops the Igor being silent about it.

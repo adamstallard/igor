@@ -1,0 +1,51 @@
+# What every role in this repository inherits. A role may narrow anything here and may
+# never widen it, so an action, a command or a lane no role can reach is one this file
+# does not list.
+#
+# `igor role explain <name>` prints the effective merge, with the level each value came
+# from — read it after editing this file rather than guessing at what a role now has.
+
+# What an Igor may do to the item it is working. A role may drop any of these and none
+# may add one, and `completion` below has to be among them.
+allow: [draft-pr, comment, unassign]
+
+# What becomes of the item once the work is handed back: unassign, close or assign.
+completion: unassign
+
+# Igor reads this working directory and publishes what it finds, so nothing below needs
+# to stage or commit. A file the worker writes is read as untracked; `git rm` and
+# `git mv` stage themselves; and a committed change is one `git status` no longer
+# reports, so committing hides the worker's own work rather than finishing it.
+commands:
+  # The only way to remove or rename a tracked file, since no file tool deletes. `git mv`
+  # stages both sides, so the change reads as a rename rather than as an unrelated add
+  # and delete.
+  - "git rm:*"
+  - "git mv:*"
+  # Why the code is as it is. Where the reasoning lives in history, a worker that cannot
+  # read history works blind.
+  - "git log:*"
+  - "git show:*"
+  - "git blame:*"
+  # Your build, test and type-check commands belong here and not on a role: a role may
+  # only list what it inherits, so one named there and nowhere else is refused as
+  # widening. They are commented because only you know them — and because `npm test` is
+  # whatever your package.json says it is, which is a file the worker can edit, with the
+  # seat's token in its environment.
+  # - "npm test:*"
+  # - "npx tsc --noEmit"
+
+# Items no Igor here touches, whatever lane a role adds: exclusions accumulate down the
+# chain and a role cannot drop one. Rename these to the labels your tracker uses.
+lane:
+  labels:
+    excludes: [Human, wontfix]
+
+# Prepended to every role's own instructions, so a convention is stated once rather than
+# once per role.
+instructions: |
+  Leave the working directory as the change you would open yourself: no debugging
+  output, no commented-out code, and no file the change does not need.
+
+  Where you cannot finish, hand back what you did and what is left. A plausible-looking
+  change that does not work costs more to review than an honest stop.
