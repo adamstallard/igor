@@ -25,8 +25,8 @@ GitHub. An Igor that does two jobs is two Igors, which may share a seat.
 Multi-role Igors exist today only as a role whose `extends` names two sibling roles. Its lane,
 `allow` and `commands` are then the union of both, and its `budget_share` the lower of the two.
 
-**Chosen: refuse a role that names more than one base.** That removes the union and nothing
-else; a chain of single bases, such as a role extending a frontend base that extends the org
+**Decided by the owner: a role that names more than one base is refused.** That removes the
+union and nothing else; a chain of single bases, such as a role extending a frontend base that extends the org
 base, still works.
 
 **Rejected: keep several bases but conjoin them.** A role would be the intersection of its
@@ -52,13 +52,18 @@ label and failed before posting the claim comment also finds its label with no c
 records who added each label in the issue's events; the adapter is expected to read that, as a
 Linear adapter would read who set the delegate.
 
-## Open: a person adding a second Igor's label
+## A person adding a second Igor's label hands the issue over
 
-On Linear a person re-delegating replaces the first Igor, which then sees it is no longer the
-delegate and halts. GitHub's labels hold a list, so a person can add one Igor's label while
-another's is still there. **Not decided:** whether the first Igor halts, whether the second
-starts, or both. The case-for-case rules above do not settle it, because Linear has no such
-state.
+**Decided by the owner: a person who adds one Igor's `igor:<role>` label to an issue that
+another Igor holds hands the issue to the newly labelled Igor.** This mirrors Linear, where a
+person setting a new delegate replaces the old one. GitHub's labels hold a list, so the first
+label is not replaced; the first Igor stops and removes only its own label. The newly labelled
+Igor proceeds as if a person had labelled an unclaimed issue. Work that needs two roles is split
+into two issues.
+
+This differs from two Igors racing to claim. A label another Igor added itself, while claiming,
+is resolved by the settle interval as before. The adapter tells the two apart by who added the
+label, from the issue's events.
 
 ## The App's label names the role, and nothing else
 
@@ -138,3 +143,7 @@ starts. Neither applies when a person sets the holder field: other Igors do not 
 that names a holder, and the person has made the choice an objection would contest. Waiting
 would cost up to one settle interval for nothing. Stop is unchanged, so a mistaken delegation
 is undone the same way as any claim.
+
+**Decided by the owner: a person handing an item back after a stop skips the cooldown too**,
+whether by delegating it again or adding the label again. Handing it back is an explicit
+go-ahead, which the accepted stop requirement already lets cut the cooldown short.

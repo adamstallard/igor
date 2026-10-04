@@ -261,6 +261,33 @@ by adding its `igor:<role>` label.
   after the Igor has started
 - **THEN** the Igor halts as it would for any stopped claim
 
+### Requirement: A person adding a second Igor's label hands the issue over
+
+Where a person adds an App Igor's `igor:<role>` label to a GitHub issue that another Igor
+holds, the issue SHALL pass to the newly labelled Igor, as setting a new delegate on Linear
+replaces the old one. The first Igor SHALL stop and remove only its own label. The newly
+labelled Igor SHALL proceed as directed by a person, by *A person can direct an Igor through the
+holder field*, although the first Igor's label may still be present. Work that needs two roles
+is split into two issues, one per role.
+
+This applies only to a label a person added. A label another Igor added while claiming is
+resolved by the settle interval, as in *A claim is verified after a settle interval*. The
+adapter SHALL tell the two apart by who added the label, read from the issue's events.
+
+#### Scenario: Person labels a second Igor
+
+- **WHEN** a person adds `igor:frontend` to a GitHub issue the `backend` Igor holds by its
+  `igor:backend` label
+- **THEN** the `backend` Igor stops and removes `igor:backend`, leaving `igor:frontend`
+- **AND** the `frontend` Igor posts the claim comment and starts work without waiting the
+  settle interval
+
+#### Scenario: Another Igor's own label is still a race
+
+- **WHEN** an Igor finds another Igor's `igor:` label on an issue it is claiming, and the
+  issue's events show that Igor added the label itself
+- **THEN** the settle interval resolves the claim, and neither Igor treats it as a hand-off
+
 ### Requirement: An issue created from chat points back to the chat
 
 Where an Igor creates an issue because a person instructed it in chat, the issue's description
