@@ -37,7 +37,7 @@ export function igorRoot(): string {
   return resolve(dirname(fileURLToPath(import.meta.url)), '..')
 }
 
-function isInside(child: string, parent: string): boolean {
+export function isInside(child: string, parent: string): boolean {
   const rel = relative(parent, child)
   return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))
 }
@@ -59,55 +59,77 @@ function requireStringArray(value: unknown, field: string): string[] {
  */
 const GIT_REDIRECTS = ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_COMMON_DIR']
 
+/** A `rev-parse` that did not answer, for the caller to phrase in its own terms. */
+export interface GitSilence {
+  /**
+   * Whether git ran at all. A spawn that produced no exit code — git absent from PATH, not
+   * executable, killed — is a fault of the host; a spawn that never happened is a fault of the
+   * path it was handed, and naming the wrong one of those sends somebody to inspect what is
+   * already correct.
+   */
+  ran: boolean
+  /**
+   * git's own line, because exit 128 is not only "not a repository": dubious ownership on a bind
+   * mount or a CI container is a valid checkout that git declines to read, and the remedy is in
+   * the sentence git prints and nowhere else.
+   */
+  said: string
+}
+
+/**
+ * Asks `rev-parse` about a directory, one question per line of the answer.
+ *
+ * The redirect variables are scrubbed first: `-C <dir>` is the whole question, and an inherited
+ * `GIT_DIR` silently makes it a different one, so a nested directory reads as a root.
+ *
+ * Only the terminating newline is taken off, because git emits a path raw and a directory's name
+ * may legally begin with a space or contain a newline. Take one line, or trim it, and the answer
+ * names a directory that is not the one asked about.
+ */
+export function askGit(dir: string, questions: string[]): string[] | GitSilence {
+  const env = { ...process.env }
+  for (const name of GIT_REDIRECTS) delete env[name]
+
+  try {
+    const out = execFileSync('git', ['-C', dir, 'rev-parse', ...questions], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env,
+    })
+    return out.replace(/\n$/, '').split('\n')
+  } catch (e) {
+    const failure = e as { status?: number | null; stderr?: string; message?: string }
+    if (failure.status === null) return { ran: false, said: String(failure.message ?? '') }
+    return { ran: true, said: String(failure.stderr ?? '').trim() || String(failure.message ?? '') }
+  }
+}
+
 /**
  * Where a directory sits inside its git repository: the path down from the root, with a
  * trailing slash, and empty at the root itself.
  *
- * Three questions in one `rev-parse`, which answers them in the order given, one line each.
- * `--show-prefix` alone is not enough twice over: a bare repository and anything inside a gitdir
- * both report an empty prefix, and neither is a place a store can be. A path that git cannot be
- * made to place at all is refused rather than read as a root.
- *
- * The prefix is everything after the fixed answers, with only the terminating newline taken off,
- * because git emits the path raw and a directory's name may legally begin with a space or
- * contain a newline. Take one line, or trim it, and the prefix names a directory that is not the
- * store.
+ * Three questions in one `rev-parse`, which answers them in the order given. `--show-prefix`
+ * alone is not enough twice over: a bare repository and anything inside a gitdir both report an
+ * empty prefix, and neither is a place a store can be. A path that git cannot be made to place at
+ * all is refused rather than read as a root.
  */
 function storePrefix(dir: string): string {
-  const env = { ...process.env }
-  for (const name of GIT_REDIRECTS) delete env[name]
-
-  let out: string
-  try {
-    out = execFileSync(
-      'git',
-      ['-C', dir, 'rev-parse', '--is-bare-repository', '--is-inside-work-tree', '--show-prefix'],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env },
-    )
-  } catch (e) {
-    const failure = e as { status?: number | null; stderr?: string; message?: string }
-    // A null status is a spawn that happened and produced no exit code — git absent from PATH,
-    // not executable, killed — and naming the destination there sends somebody to inspect a path
-    // that is correct. An absent status is the opposite: no spawn happened, because the
-    // destination is a string git cannot be handed, so the destination is exactly what is wrong.
-    if (failure.status === null) {
+  const answer = askGit(dir, ['--is-bare-repository', '--is-inside-work-tree', '--show-prefix'])
+  if (!Array.isArray(answer)) {
+    if (!answer.ran) {
       throw new ConfigError(
         `git could not be run, so where ${dir} sits in its repository is unknown. Igor reads the ` +
-          `store from a git checkout, so git has to be on PATH.\n${failure.message ?? ''}`.trim(),
+          `store from a git checkout, so git has to be on PATH.\n${answer.said}`.trim(),
       )
     }
-    // git's own line, because exit 128 is not only "not a repository": dubious ownership on a
-    // bind mount or a CI container is a valid store that git declines to read, and the remedy is
-    // in the sentence git prints and nowhere else.
-    const said = String(failure.stderr ?? '').trim() || String(failure.message ?? '')
     throw new ConfigError(
       `destination ${dir} cannot be used as a store: git could not say where it sits. The store ` +
         `is a repository of its own, at its root, and a path whose place in one cannot be read ` +
-        `must not be taken for a root.\ngit: ${said}`,
+        `must not be taken for a root.\ngit: ${answer.said}`,
     )
   }
 
-  const lines = out.replace(/\n$/, '').split('\n')
+  const lines = answer
   if (lines.length < 3) {
     // Fail closed. An answer that cannot be parsed is an unknown place, and the one outcome that
     // must not happen is an unknown place read as the root.
