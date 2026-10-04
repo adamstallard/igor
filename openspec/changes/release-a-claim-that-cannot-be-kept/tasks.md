@@ -95,3 +95,6 @@
       publish fail with 422. Now what a retry would cost decides what happens: a worker that ran
       with nothing published means handing off, which defers the item until someone with write access answers.
       What causes the close to be noticed at all is `defer-a-closed-pull-request`, #141
+- [ ] 8.5 When #156's label claim is built, reword the three strings in 2.4 and 5a.4 to name the
+      `igor:<role>` label instead of the assignee, with the reviewer's agreement. Proposed wording
+      is in `design.md`, *When an Igor claims by label*

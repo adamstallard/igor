@@ -4,7 +4,7 @@
 
 `work-claiming` says how a claim is taken, verified, stood down from and stopped. It says nothing
 about the run that takes one and then cannot continue, and that silence is the gap: an Igor that
-throws while holding a claim leaves the item assigned, other people told to stand off, and no
+throws while holding a claim leaves the item held, other people told to stand off, and no
 explanation.
 
 Where a run holds a claim and cannot go on — the claim could not be finished, or anything after it
@@ -38,7 +38,7 @@ caller that must tell them apart cannot do it from a thrown error alone.
 
 - **WHEN** a claim is recorded and the message announcing it fails
 - **THEN** the claim is released and the run is refused
-- **AND** the item is not left assigned with nothing said
+- **AND** the item is not left held with nothing said
 
 #### Scenario: A claim that could not be verified is given back and withdrawn
 

@@ -193,3 +193,36 @@ publish (the check that a resolution took) leaves absent.
 **Handed off, and only then deferred.** `shouldDefer` defers a `failure` handoff with no cures,
 and keeps a handoff carrying cures live, because a cure is a fault in the Igor's own
 configuration and the item did not produce it.
+
+## When an Igor claims by label (amended 2026-10-04)
+
+[#156](https://github.com/adamstallard/igor/pull/156) settles that on GitHub every Igor is a
+GitHub App, which claims with its `igor:<role>` label and cannot be an assignee. The requirement
+here is about the holder field, whatever it is, so it now says the item is left *held* where it
+said *assigned*. The code on this branch is written for today's build, a machine user claiming by
+assignee, and stays correct for that build. When #156's label claim is built:
+
+- `release` answers whether this Igor's own label is gone, not whether the assignees are clear.
+  *An answer that does not carry the assignees reads as not clear* becomes the same rule about the
+  labels.
+- A person removing the label is a stop (#156). The stop exclusion in the handler covers it as
+  it covers any stop: a run that was stopped is never handed off from here.
+
+**Open: the three approved wordings name the assignee.** Tasks 2.4 and 5a.4 carry them verbatim,
+and they may be reworded only with the reviewer's agreement. Each tells the reader to unassign
+the item, which frees nothing once the claim is a label. *Recommend*, applied when the label
+claim lands:
+
+```
+**<role>** could not finish taking this and could not release it either, so it still carries
+its `igor:<role>` label. Nothing was done. Remove the label to let another run pick it up.
+```
+
+```
+This still carries the `igor:<role>` label — releasing it did not take. Remove the label to free it.
+```
+
+```
+**<role>** stood down here, and could not remove its own `igor:<role>` label. Remove the label to free it.
+```
+
