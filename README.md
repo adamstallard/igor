@@ -3,10 +3,14 @@
 AI teammates that find their own work, claim it in the open, and draw on what the team
 has already learned.
 
-An Igor is a named teammate, and what it can do is the roles it holds — Milton might hold
-both backend and frontend. What an Igor is *not* is a person: nothing durable lives inside
-one. Run five processes of Milton, kill four mid-week, and nothing is lost. The roles are
-versioned in git and the knowledge belongs to the team.
+Keep your own AI for thinking: brainstorming, asking, deciding. When it's time to act, hand the
+work to Igors instead of sub-agents in your session. They take it from the team's tracker and put
+their claims, questions, handoffs and pull requests there, in plain view. What the team
+teaches them becomes [lore](#lore) every Igor reads, not memory stuck in one person's sessions.
+
+An Igor is a named teammate, defined by the roles it holds. Nothing durable lives inside one: run
+five, kill four mid-week, and nothing is lost. The roles live in git, the knowledge belongs to the
+team, and anyone who joins can add an Igor or let Igors in chosen roles use their Claude seat.
 
 ## Vocabulary
 
@@ -36,6 +40,16 @@ Igors poll rather than wait for triggers. Each cycle:
    space holds even if the worker is steered.
 5. **Report** — status updates back to the same surfaces, including a graceful handoff if
    the Igor runs out of budget mid-task.
+
+An Igor does not forget a pull request once it has opened one. The base moves while the
+artifact waits, and an artifact that stopped merging is the Igor's own unfinished work rather
+than somebody else's work in review — so each cycle it asks the code host to merge the base
+into its own artifacts that no longer merge. That is one request, and where the merge is clean
+the Igor says nothing: the merge commit on the branch is the record, and a catch-up nobody had
+to think about is not news. Where it conflicts, a worker resolves the files on the branch that
+exists, so the pull request keeps its history and whatever review has accumulated on it. A
+conflict it cannot resolve is handed back once, naming the artifact, and then left quiet until
+somebody answers. It never touches a conflicting pull request somebody else opened.
 
 [`docs/architecture.md`](docs/architecture.md) is the long form: why team memory rather than
 per-agent memory, how recognition is meant to work, and what was considered and rejected.
@@ -77,8 +91,9 @@ npm run build
 npm link          # puts `igor` on your PATH
 ```
 
-`npm unlink -g igor` removes it. Without linking, `npm run igor -- <command>` from the clone
-does the same thing and needs no build.
+`npm unlink -g igor-lore` removes it — npm knows the package by its name, not by the command
+it installs. Without linking, `npm run igor -- <command>` from the clone does the same thing
+and needs no build.
 
 Every command below assumes `igor` is on your path, and that you are running it inside the
 lore repository it works from. Igor finds its configuration by walking up from the working
@@ -101,51 +116,55 @@ The state branch lives here too, so it has to be a repository the Igor can push 
    Public or private both work. Public means the `publicStore` guard refuses entries whose
    provenance cites a private repository, which is the point of it.
 
-2. **Copy the config and commit it.**
+2. **Run `igor init` inside it**, the way you would `git init`.
 
    ```sh
-   cp path/to/igor/igor.config.example.yaml igor.config.yaml
+   igor init
    ```
 
-   Set `destination: .`, list `reviewers` and `experts`. Igor finds it by searching upward
-   from wherever it runs, so anywhere in the repository works. Commit it — who reviews and
-   who counts as an expert are shared decisions, and uncommitted they drift between whoever
-   runs the tool until an entry scores differently depending on whose machine computed it.
-   Nothing in the file is secret: `token_env` names a variable rather than holding a token.
+   It writes four files at the root of the repository you are standing in: `igor.config.yaml`
+   with `destination: .`; `roles/org.yaml`, the action space every role inherits and the one
+   file nobody should be writing from nothing; a `roles/maintenance.yaml` stub; and
+   `.github/workflows/reconcile-on-merge.yml`. A file already there is named and left exactly
+   as it is while the rest are still written, so running it again after adding a role is safe
+   and adds only what is missing.
 
-3. **Write `roles/org.yaml` and one role.** The org file holds what every role inherits — the
-   action space, the completion behaviour, the lane exclusions, standing instructions. A role
-   names its `sources` and narrows whatever it needs to. See [Roles](#roles).
+   Then fill in what only you know, which it names on the way out: `reviewers`, `experts` and
+   a seat in `igor.config.yaml`, and `sources` in the role. Commit the lot — who reviews, who
+   counts as an expert and whose subscription pays are shared decisions, and uncommitted they
+   drift between whoever runs the tool until an entry scores differently depending on whose
+   machine computed it. Nothing in the file is secret: `token_env` names a variable rather
+   than holding a token.
+
+   **The workflow is what makes promotion not depend on remembering.** Without it, promotion
+   waits for someone with Igor installed to run `reconcile`, so a teammate can merge lore that
+   then silently never fires. The job runs the same `reconcile` you would run locally, so it
+   promotes what merged and records what a reviewer deleted — run `reconcile` yourself on a
+   store without the workflow, or to read the report of proposals that have gone quiet.
+   Exactly one job may promote lore on push: two of them race on the same commit and disagree
+   about what a reviewer deleted, so delete any other workflow in `.github/workflows` that
+   promotes or reconciles lore. Where a later Igor ships a new version of that file,
+   `igor init --force workflow` replaces it and touches nothing else you have written.
+
+3. **Branch protection, from the first commit.** Enable **"require a pull request before
+   merging"** — it still lets an author merge their own proposal and only blocks direct pushes
+   to `main`. Do **not** enable **"require approvals"**: GitHub refuses to let anyone approve
+   their own pull request, so that setting hard-blocks a solo maintainer with no workaround.
+
+   This is not a courtesy between collaborators, and a single-writer store needs it too.
+   Promotion works by reconciling pull requests, so **an entry committed straight to `main`
+   has nothing to promote it**: it stays `provisional`, and only `active` entries fire.
+   Nothing reports it. You find out when lore you wrote never shows up in a prompt. For one
+   already on `main` that way, `igor promote --by <you>` sets it active in place and records
+   you as having approved it — a repair, run by hand.
+
+4. **Add the GitHub Actions actor to the ruleset's bypass list**, if the default branch is
+   protected — or the reconciliation workflow's own push is blocked by the same rule it exists
+   to work around.
 
 `entries/` and the state branch are created when first needed; neither wants making by hand.
-
-**Branch protection, from the first commit.** Enable **"require a pull request before
-merging"** — it still lets an author merge their own proposal and only blocks direct pushes to
-`main`. Do **not** enable **"require approvals"**: GitHub refuses to let anyone approve their
-own pull request, so that setting hard-blocks a solo maintainer with no workaround.
-
-This is not a courtesy between collaborators, and a single-writer store needs it too.
-Promotion works by reconciling pull requests, so **an entry committed straight to `main` has
-nothing to promote it**: it stays `provisional`, and only `active` entries fire. Nothing
-reports it. You find out when lore you wrote never shows up in a prompt. For one already on
-`main` that way, `igor promote --by <you>` sets it active in place and records you as having
-approved it — a repair, run by hand.
-
-**Merge-triggered reconciliation, at the same time.** Without it, promotion depends on someone
-having igor installed and remembering to run `reconcile` — so a teammate can merge lore that
-then silently never fires.
-
-```sh
-igor init-workflow
-```
-
-That writes `.github/workflows/reconcile-on-merge.yml` into the destination. Commit it. **If the
-branch is protected, add the GitHub Actions actor to the ruleset's bypass list**, or the
-workflow's own push is blocked by the same rule it exists to work around.
-
-The job runs the same `reconcile` you would run locally, so it promotes what merged and records
-what a reviewer deleted. Run `reconcile` yourself on a store without the workflow, or to read
-the report of proposals that have gone quiet.
+`igor init` does not touch repository settings, which is why steps 3 and 4 are yours: a
+command whose job is writing files must not decide who may push to `main`.
 
 None of this needs a credential — authoring lore, proposing it and reviewing it work on a clone
 and a `git` push. Credentials are what [Running an Igor](#running-an-igor) adds.
@@ -176,7 +195,7 @@ repository.
 
    Then `seat: me` on the role. Once any seat is declared every role must name one, and a role
    that does not fails at load rather than defaulting to a seat nobody chose for it. `reserve:
-   0.5` keeps half your window for you. [Budgets](#budgets) covers pools and shares.
+   0.5` keeps half your window for you. [Budgets](#budgets) covers which seats each role may use, and shares.
 
    A seat names *where* its token is, never the token itself, which is why the config stays
    safe to commit. `token_command` runs something and takes its stdout, `token_env` names a
@@ -222,8 +241,9 @@ repository.
    igor run <role> --plan     # what it would claim, claiming nothing
    ```
 
-   `--plan` claims nothing and posts nothing. It is not free: triage is a model call, measured
-   around four cents for a nine-candidate cycle.
+   That run claims nothing, posts nothing, and writes nothing: the discovery watermark stays
+   where it was, so looking at the backlog does not consume it. It is not free: triage is a
+   model call, measured around four cents for a nine-candidate cycle.
 
 4. **Leave it running.** Everything above is a command you run once; finding your own work is
    a loop.
@@ -295,6 +315,32 @@ It declares `extends`, `seat`, `sources`, `lane`, `instructions`, `completion`, 
 `commands`, `budget_share` and `reviewers`. Roles compose, and a role may narrow what it
 inherits but never widen it — `igor role explain <name>` prints the effective merge with the
 level each value came from.
+
+`roles/org.yaml` is the base every other role inherits without saying so, and it is where the
+action space is decided for the whole team. `igor init` writes it with the git entries filled
+in and your own build and test commands left commented, because a role may only narrow what it
+inherits: a command named on a role and nowhere above it is refused rather than granted.
+
+```yaml igor:role
+# roles/org.yaml
+allow: [draft-pr, comment, unassign]
+completion: unassign
+commands:
+  - "git rm:*"                        # the only way to remove or rename a tracked file
+  - "git mv:*"                        # stages both sides, so the change reads as a rename
+  - "git log:*"                       # why the code is as it is
+  - "git show:*"
+  - "git blame:*"
+  - "npm test:*"                      # yours, and here rather than on the role below
+  - "npx tsc --noEmit"
+lane:
+  labels:
+    excludes: [Human, wontfix]        # nothing below can drop an exclusion
+instructions: |
+  Leave the working directory as the change you would open yourself.
+```
+
+A role beside it names where to look and narrows the rest:
 
 ```yaml igor:role
 # roles/frontend.yaml
@@ -387,24 +433,25 @@ budget:
     - {id: engineering, seats: [fleet-1, adam]}
 ```
 
-A seat is a Claude subscription, not an Igor: several Igors draw on one through a pool and one
-may draw on several. `token_env` names the environment variable holding that seat's token —
+A seat is a Claude subscription, not an Igor: several Igors may use one, and one may use
+several. `token_env` names the environment variable holding that seat's token —
 the name, never the value, so the config is safe to commit. `token_file` (a path) and
 `token_command` (something to run and take stdout) name a token the same indirect way; a seat
 may set exactly one of the three. Obtaining a token and installing it is
 [`docs/deployment.md`](docs/deployment.md#adding-a-seat-somebody-has-given-you), and
 [`docs/seats.md`](docs/seats.md) is the page to send whoever's subscription it is.
 
-A role's `seat` names one of these: a seat id, for an Igor that must never borrow, or a pool
-id for one that may. Either may be written `pool:engineering`; the prefix reads better and is
-not what decides which is looked up. Where seats are declared, every role must name one —
-by omission or by typo, an Igor would otherwise spend from the first pool declared, which
-nobody chose for it and which may be a person's. Both fail at load. Declare no seats at all
-and budget is not enforced, and roles need not name one.
+A role's `seat` names either a single seat, for an Igor that must use only that one, or an
+ordered group of seats from `pools:`, for one that may use any of them. Either may be written
+`pool:engineering`; the prefix reads better and is not what decides which is looked up. (#148
+replaces `pools:` with a file per seat that names the roles it serves.) Where seats are
+declared, every role must name one — by omission or by typo, an Igor would otherwise spend
+from the first group declared, which nobody chose for it and which may be a person's. Both
+fail at load. Declare no seats at all and budget is not enforced, and roles need not name one.
 
-**Pool order is the allocation mechanism.** An Igor takes the first seat with headroom, so
-listing dedicated seats first means personal capacity is only ever borrowed once the dedicated
-seats are spent.
+**Order within a group decides which seat is used.** An Igor takes the first seat with
+headroom, so listing dedicated seats first means personal capacity is only ever used once the
+dedicated seats are spent.
 
 A role's `budget_share` is a **ceiling**, not a reservation: several roles may declare the same
 one, an idle role holds nothing back, and adding an Igor requires editing no other role. Each
@@ -470,13 +517,14 @@ would be worse than admitting it:
 ## Status
 
 Working end to end against live repositories: discovery, triage, claiming, execution, handoff,
-budget, and a loop that runs on an interval. Verified by real runs that opened real pull
-requests and, more usefully, by runs that correctly declined to.
+budget, lore fired into the worker's context per item, and a loop that runs on an interval.
+Verified by real runs that opened real pull requests and, more usefully, by runs that
+correctly declined to.
 
-Not built: any tracker but GitHub, lore retrieval (nothing reads the lore yet), conversation
-beyond `stop`, and concurrent Igors. Linear looks strictly better than GitHub for claiming —
-app identities cost no seat and there is a parallel `delegate` field — but that rests on an
-untested assumption about whether an app may delegate to itself.
+Not built: any tracker but GitHub, conversation beyond `stop`, and concurrent Igors. Linear
+looks strictly better than GitHub for claiming — app identities cost no seat and there is a
+parallel `delegate` field — but that rests on an untested assumption about whether an app may
+delegate to itself.
 
 Every interval is still a guess. See the costs section for what has actually been measured.
 

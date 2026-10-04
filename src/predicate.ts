@@ -1,5 +1,5 @@
 import picomatch from 'picomatch'
-import type { Candidate } from './adapter.js'
+import type { Candidate, InFlight } from './adapter.js'
 import type { Lane } from './role.js'
 
 /**
@@ -29,6 +29,21 @@ function globMatcher(patterns: string[]): (path: string) => boolean {
 }
 
 /**
+ * The Igor's own in-flight artifact, where it can no longer merge — the one thing in flight
+ * that is not somebody else's work in review.
+ *
+ * Only a stated conflict counts; see `Mergeability` for why unknown is not a conflict. Without
+ * an identity nothing is ours, which is the safe direction for a preview that does not know
+ * who would be running.
+ */
+export function staleOwnArtifact(candidate: Candidate, as?: string): InFlight | undefined {
+  const artifact = candidate.inFlight
+  if (artifact === undefined || as === undefined || as === '') return undefined
+  if (artifact.author !== as) return undefined
+  return artifact.mergeable === 'conflicting' ? artifact : undefined
+}
+
+/**
  * Skips no configuration can switch off. These are not lanes an org could forget to write:
  * acting on a closed item, on one already being worked, or on one somebody else holds is
  * visible noise on a surface people watch rather than an organizational preference.
@@ -37,14 +52,20 @@ function globMatcher(patterns: string[]): (path: string) => boolean {
  * reading `verdictFrom` applies mid-run, because people add themselves to a holder list rather
  * than replacing what is there. Without an identity every holder reads as foreign, which is
  * the safe direction for a preview that does not know who would be running.
+ *
+ * The in-flight rule narrows rather than gains an exception. It exists because duplicating
+ * work in review is never an organizational preference — and an artifact of one's own that
+ * cannot merge is not duplication, it is the same work, unfinished. It is read last so that
+ * an item both in flight and taken over by somebody else reports the holder, which is the
+ * more useful of the two reasons and the one that keeps the Igor off it either way.
  */
 export function universalSkip(candidate: Candidate, as?: string): Verdict | undefined {
   if (candidate.state === 'closed') return skip('universal', 'item is closed')
-  if (candidate.inFlight) {
-    return skip('universal', `work already in flight: ${candidate.inFlight.ref}`)
-  }
   const others = candidate.assignees.filter((a) => a !== as)
   if (others.length > 0) return skip('universal', `held by ${others.join(', ')}`)
+  if (candidate.inFlight && staleOwnArtifact(candidate, as) === undefined) {
+    return skip('universal', `work already in flight: ${candidate.inFlight.ref}`)
+  }
   return undefined
 }
 

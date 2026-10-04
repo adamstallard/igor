@@ -42,9 +42,21 @@ let reopenAfterFirstPage: number | undefined
 let openDuringScan: number | undefined
 /** Whether reading one pull request by number fails, as a rate limit makes it fail. */
 let refuseSinglePullRequest = false
+/** Whether the state branch refuses the write, as a ruleset or a missing push right does. */
+let refuseStateWrite = false
 
 function prNumber(endpoint: string): number {
   return Number(/\/pulls\/(\d+)\//.exec(endpoint)?.[1])
+}
+
+/**
+ * A row as a page of the list endpoint actually carries it: `merged_by` is not null on it, it
+ * is absent from the payload altogether. Only `pulls/{number}` answers who merged, and a fake
+ * that handed the key back on a page would hide every consequence of that.
+ */
+function listRow(pull: RawPull): Omit<RawPull, 'merged_by'> {
+  const { merged_by: _merger, ...page } = pull
+  return page
 }
 
 /**
@@ -55,7 +67,7 @@ function prNumber(endpoint: string): number {
  */
 function servePulls(query: URLSearchParams): unknown {
   // `state=open` is read with `--paginate --slurp`, which wraps the pages in an outer array.
-  if (query.get('state') === 'open') return [pulls.filter((p) => p.state === 'open')]
+  if (query.get('state') === 'open') return [pulls.filter((p) => p.state === 'open').map(listRow)]
   const closed = pulls
     .filter((p) => p.state === 'closed')
     .sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at))
@@ -79,7 +91,7 @@ function servePulls(query: URLSearchParams): unknown {
     })
     openDuringScan = undefined
   }
-  return rows
+  return rows.map(listRow)
 }
 
 vi.mock('../src/gh.js', () => ({
@@ -120,6 +132,7 @@ let mark: unknown
 vi.mock('../src/state.js', () => ({
   readState: async () => mark,
   writeState: async (_repo: string, _path: string, value: unknown) => {
+    if (refuseStateWrite) throw new FakeGhError('protected branch')
     mark = value
     return true
   },
@@ -185,6 +198,7 @@ beforeEach(() => {
   reopenAfterFirstPage = undefined
   openDuringScan = undefined
   refuseSinglePullRequest = false
+  refuseStateWrite = false
 })
 
 describe('a pull request somebody opened by hand', () => {
@@ -712,5 +726,296 @@ describe('how far the watermark moves', () => {
     expect(first.deferred).toEqual([7])
     expect(mark).toEqual({ closedSeen: '2026-04-01T10:00:00Z' })
     expect((await reconcile(config(dir))).deferred).toEqual([])
+  })
+})
+
+describe('what a run says about work it is carrying', () => {
+  const path = `${ENTRIES_DIR}/use-query-hook.md`
+
+  it('names a carried pull request it could not read back', async () => {
+    // Below the floor and readable by nobody else: if the report does not name it, the run
+    // that owes a promotion is indistinguishable from the run that had nothing to do.
+    const dir = store()
+    mergedOn(7, '2026-04-01')
+    filesAt.set('sha7', touched(path))
+    landed.set(7, touched(path))
+    await reconcile(config(dir))
+    writeEntry(dir, entry('use-query-hook'))
+
+    refuseSinglePullRequest = true
+    const refused = await reconcile(config(dir))
+
+    expect(refused.carried).toEqual([{ pr: 7, reason: 'pull-request' }])
+    expect(refused.promoted).toEqual([])
+    expect(refused.missingLocally).toEqual([])
+  })
+
+  it('names a merged proposal it could not attribute', async () => {
+    const dir = store()
+    writeEntry(dir, entry('use-query-hook'))
+    mergedOn(7, '2026-04-01')
+    filesAt.set('sha7', touched(path))
+    landed.set(7, touched(path))
+    refuseSinglePullRequest = true
+
+    const result = await reconcile(config(dir))
+
+    expect(result.carried).toEqual([{ pr: 7, reason: 'merger' }])
+    expect(result.promoted).toEqual([])
+  })
+})
+
+describe('what the cap on carried pull requests drops', () => {
+  /** A merged proposal of one entry whose file has not reached this checkout yet. */
+  function behind(number: number, day: string, id: string): void {
+    const path = `${ENTRIES_DIR}/${id}.md`
+    pulls.push({
+      number,
+      state: 'closed',
+      merged_at: `${day}T10:00:00Z`,
+      updated_at: `${day}T10:00:00Z`,
+      html_url: `https://github.com/org/lore/pull/${number}`,
+      assignees: [{ login: 'adam' }],
+      merged_by: { login: 'adam' },
+    })
+    commits.set(number, [`sha${number}`])
+    filesAt.set(`sha${number}`, touched(path))
+    landed.set(number, touched(path))
+  }
+
+  /** 100 proposals idle since January, and one merged long after all of them. */
+  function overTheCap(): void {
+    for (let k = 0; k < 100; k += 1) behind(200 + k, dayOf(k + 1), `idle-${200 + k}`)
+    behind(1, dayOf(200), 'merged-today')
+  }
+
+  it('drops the oldest standing condition, not the lowest number', async () => {
+    const dir = store()
+    overTheCap()
+
+    const first = await reconcile(config(dir))
+
+    expect(first.missingLocally).toHaveLength(101)
+    const state = mark as { closedSeen: string; pending: number[] }
+    expect(state.pending).toHaveLength(100)
+    expect(state.pending).toContain(1)
+    expect(first.evicted).toEqual([200])
+    // The floor is past every one of them, so `pending` is the only way back to any of them.
+    expect(state.closedSeen).toBe(`${dayOf(200)}T10:00:00Z`)
+  })
+
+  it('still promotes the low-numbered pull request merged today once the checkout catches up', async () => {
+    // What ordering by number costs: #1 merged in July is sliced off in favour of #200 idle
+    // since January, the floor moves past it, and no later run has anything left to find it
+    // with. The promotion is not deferred — it is gone.
+    const dir = store()
+    overTheCap()
+
+    await reconcile(config(dir))
+    writeEntry(dir, entry('merged-today'))
+    const second = await reconcile(config(dir))
+
+    expect(second.promoted.map((p) => p.id)).toEqual(['merged-today'])
+    expect(loadEntry(dir, 'merged-today').entry?.status).toBe('active')
+  })
+
+  it('keeps today\u2019s merge when every carried number has gone unreadable', async () => {
+    // A carry full of numbers nothing can read must not crowd out the pull request that just
+    // merged. They have no date to rank by, so they rank last and drain out of the carry a
+    // little at a time, rather than holding every slot against work that is provably live.
+    const dir = store()
+    for (let k = 0; k < 100; k += 1) behind(200 + k, dayOf(k + 1), `idle-${200 + k}`)
+    await reconcile(config(dir))
+    expect((mark as { pending: number[] }).pending).toHaveLength(100)
+
+    // Answering 404 now: a transfer, a rename, or numbers that were never real.
+    pulls = []
+    behind(500, dayOf(200), 'merged-today')
+    const second = await reconcile(config(dir))
+
+    expect(second.missingLocally).toEqual(['merged-today'])
+    expect((mark as { pending: number[] }).pending).toContain(500)
+
+    writeEntry(dir, entry('merged-today'))
+    const third = await reconcile(config(dir))
+
+    expect(third.promoted.map((p) => p.id)).toEqual(['merged-today'])
+  })
+
+  it('does not name the same pull request as both carried and dropped', async () => {
+    // One says the next run will retry it and the other says nothing ever will. Only the
+    // second is true of a number the cap cut, so the first has to go.
+    const dir = store()
+    overTheCap()
+    refuseSinglePullRequest = true
+
+    const result = await reconcile(config(dir))
+
+    expect(result.evicted.length).toBeGreaterThan(0)
+    const stillCarried = new Set(result.carried.map((c) => c.pr))
+    expect(result.evicted.filter((n) => stillCarried.has(n))).toEqual([])
+  })
+
+  it('drops nothing the next scan will hand back anyway', async () => {
+    // A scan that cannot be vouched for moves no floor, so everything it found is still above
+    // the old one and the next run reads it again. Only what the floor has passed is lost, and
+    // the cap cutting a number is not by itself what loses it.
+    const dir = store()
+    mark = { closedSeen: '2026-01-01T10:00:00Z' }
+    for (let k = 0; k < 102; k += 1) behind(200 + k, dayOf(k + 1), `idle-${200 + k}`)
+    // Not a proposal, and the row that leaves the closed set mid-scan.
+    mergedOn(999, dayOf(103))
+    reopenAfterFirstPage = 999
+
+    const first = await reconcile(config(dir))
+
+    // One row hid behind the page boundary the reopen shifted, which is why the floor is stuck.
+    expect(first.missingLocally.length).toBeGreaterThan(100)
+    expect((mark as { closedSeen: string }).closedSeen).toBe('2026-01-01T10:00:00Z')
+    expect(first.evicted).toEqual([])
+
+    writeEntry(dir, entry('idle-200'))
+    const second = await reconcile(config(dir))
+
+    expect(second.promoted.map((p) => p.id)).toEqual(['idle-200'])
+  })
+
+  it('drops nothing when the destination refused the write', async () => {
+    // The previous state document survives whole, so the carry was never truncated. Reporting
+    // a permanent loss here sends someone to audit work the next run picks up by itself.
+    const dir = store()
+    overTheCap()
+    refuseStateWrite = true
+
+    const result = await reconcile(config(dir))
+
+    expect(result.evicted).toEqual([])
+    expect(mark).toBeUndefined()
+  })
+})
+
+describe('who a promotion is attributed to', () => {
+  const path = `${ENTRIES_DIR}/use-query-hook.md`
+
+  /** A merged proposal whose merger and assignee are whoever is named. */
+  function proposal(number: number, assignee: string, merger: string): void {
+    pulls.push({
+      number,
+      state: 'closed',
+      merged_at: '2026-04-01T10:00:00Z',
+      updated_at: '2026-04-01T10:00:00Z',
+      html_url: `https://github.com/org/lore/pull/${number}`,
+      assignees: [{ login: assignee }],
+      merged_by: { login: merger },
+    })
+    commits.set(number, [`sha${number}`])
+    filesAt.set(`sha${number}`, touched(path))
+    landed.set(number, touched(path))
+  }
+
+  it('names whoever merged, not whoever was assigned to review', async () => {
+    const dir = store()
+    writeEntry(dir, entry('use-query-hook'))
+    proposal(7, 'sarah', 'abram')
+
+    const result = await reconcile(config(dir))
+
+    expect(result.promoted).toEqual([
+      { id: 'use-query-hook', by: 'abram', at: '2026-04-01', pr: 7, mergerWasNotAssigned: true },
+    ])
+    expect(loadEntry(dir, 'use-query-hook').entry?.reviewed).toEqual({
+      by: 'abram',
+      at: '2026-04-01',
+    })
+  })
+
+  it('reads the merger back for one the scan found, since no page carries it', async () => {
+    const dir = store()
+    writeEntry(dir, entry('use-query-hook'))
+    proposal(7, 'sarah', 'abram')
+
+    await reconcile(config(dir))
+
+    expect(requests).toContain('repos/org/lore/pulls/7')
+  })
+
+  it('attributes a carried pull request exactly as the scan attributed it', async () => {
+    // The divergence this fixes: the same merge, found two ways. Carrying re-reads the pull
+    // request by number and has always been right; the scan had only the assignee to go on.
+    const dir = store()
+    writeEntry(dir, entry('use-query-hook'))
+    proposal(7, 'sarah', 'abram')
+
+    const scanned = await reconcile(config(dir))
+    expect(mark).toEqual({ closedSeen: '2026-04-01T10:00:00Z', pending: [7] })
+
+    // The floor has passed #7, so the second run reaches it through `pending` alone.
+    writeEntry(dir, entry('use-query-hook'))
+    const carried = await reconcile(config(dir))
+
+    expect(carried.promoted).toEqual(scanned.promoted)
+  })
+
+  it('does not flag a merger who was assigned to review it', async () => {
+    const dir = store()
+    writeEntry(dir, entry('use-query-hook'))
+    proposal(7, 'abram', 'abram')
+
+    expect((await reconcile(config(dir))).promoted).toEqual([
+      { id: 'use-query-hook', by: 'abram', at: '2026-04-01', pr: 7 },
+    ])
+  })
+
+  it('leaves the promotion for the next run when it cannot ask who merged', async () => {
+    // `reviewed.by` is written into the entry permanently and no later run revisits it, so a
+    // run that could not reach `pulls/{number}` must not fall back to the assignee. Carrying
+    // the number is what the floor already does for every other unfinished condition.
+    const dir = store()
+    writeEntry(dir, entry('use-query-hook'))
+    proposal(7, 'sarah', 'abram')
+    refuseSinglePullRequest = true
+
+    const refused = await reconcile(config(dir))
+
+    expect(refused.promoted).toEqual([])
+    expect(loadEntry(dir, 'use-query-hook').entry?.status).toBe('provisional')
+    expect(mark).toEqual({ closedSeen: '2026-04-01T10:00:00Z', pending: [7] })
+
+    refuseSinglePullRequest = false
+    const retried = await reconcile(config(dir))
+
+    expect(retried.promoted.map((p) => p.by)).toEqual(['abram'])
+  })
+})
+
+describe('what asking who merged costs', () => {
+  it('costs nothing on a pull request that proposed no entry', async () => {
+    // The bound #46 bought is on the scan, and the scan is mostly pull requests that are not
+    // proposals at all. None of them is read back by number.
+    const dir = store()
+    for (let n = 1; n <= 50; n += 1) mergedOn(n, dayOf(n))
+
+    await reconcile(config(dir))
+
+    expect(perPullRequest().length).toBe(150)
+    expect(requests.filter((e) => /^repos\/org\/lore\/pulls\/\d+$/.test(e))).toEqual([])
+  })
+
+  it('costs one request on a pull request that did propose one', async () => {
+    const dir = store()
+    const path = `${ENTRIES_DIR}/use-query-hook.md`
+    writeEntry(dir, entry('use-query-hook'))
+    mergedOn(7, '2026-04-01')
+    filesAt.set('sha7', touched(path))
+    landed.set(7, touched(path))
+
+    await reconcile(config(dir))
+
+    expect(perPullRequest()).toEqual([
+      'repos/org/lore/pulls/7/files?per_page=100',
+      'repos/org/lore/pulls/7/commits',
+      'repos/org/lore/commits/sha7',
+      'repos/org/lore/pulls/7',
+    ])
   })
 })
