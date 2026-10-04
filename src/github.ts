@@ -52,14 +52,19 @@ export interface FileToCommit {
 }
 
 /**
- * Creates a branch carrying the given files as one commit. Uses the tree API rather than a
- * checkout, so nothing has to be cloned.
+ * Creates a branch carrying the given files and removals as one commit. Uses the tree API
+ * rather than a checkout, so nothing has to be cloned.
+ *
+ * The tree is `baseSha`'s with `files` laid over it and `deletions` dropped out of it, built
+ * by the same call `commitOnBranch` makes. The sibling of that function, and separate because
+ * the last step differs: this one creates a ref, and fails if the branch is already there.
  */
 export async function createBranchWithFiles(
   repo: string,
   branch: string,
   baseSha: string,
   files: readonly FileToCommit[],
+  deletions: readonly string[],
   message: string,
 ): Promise<string> {
   const blobs: { path: string; sha: string }[] = []
@@ -75,7 +80,11 @@ export async function createBranchWithFiles(
     ['api', `repos/${repo}/git/trees`, '--method', 'POST', '--input', '-'],
     JSON.stringify({
       base_tree: baseSha,
-      tree: blobs.map((b) => ({ path: b.path, mode: '100644', type: 'blob', sha: b.sha })),
+      tree: [
+        ...blobs.map((b) => ({ path: b.path, mode: '100644', type: 'blob', sha: b.sha })),
+        // A null sha is how the tree API says "not in this tree".
+        ...deletions.map((path) => ({ path, mode: '100644', type: 'blob', sha: null })),
+      ],
     }),
   )) as { sha: string }
 

@@ -19,6 +19,13 @@ nothing surfaces it — and the point of writing it down was to be reminded. Fil
 the task with a pointer to the issue, so the archived record says where the work went rather
 than trailing off.
 
+**Where the wording is the deliverable, the task carries it verbatim.** A template comment, an
+error message, a line of a worker's prompt — the sentence *is* the work, and a task that
+describes it (*"a line explaining that Igor publishes"*) gets a paraphrase written by whoever
+implements it, who was not in the conversation the wording came out of. Put the text in the
+task, in a fenced block, and say whether it may be reworded. A line worth arguing over is worth
+transcribing.
+
 Issues are the atomic unit of work here for the same reason they are everywhere else in this
 design, and an Igor can eventually pick up its own backlog.
 

@@ -10,12 +10,13 @@ import type {
   CatchUpRequest,
   ClaimVerdict,
   CodeHost,
+  InFlight,
   ResolutionRequest,
   Tracker,
 } from '../src/adapter.js'
 import type { Role } from '../src/role.js'
 import {
-  ABSOLUTE_CEILING_MS, branchFor, claudeWorker, complete, DENIED_COMMAND_LIMIT, denialsFrom, describeTool, execute,
+  ABSOLUTE_CEILING_MS, branchFor, claudeWorker, complete, conflictPrompt, DENIED_COMMAND_LIMIT, denialsFrom, describeTool, execute,
   ExecutionError, limitWindow, MODEL_SILENCE_MS, permits, prBody, PR_BODY_LIMIT, recordExecution, renderProgress, spendByModel, stripLinkage,
   TOOL_SILENCE_MS, usageLimit, watchWorker, workerEnv, workerPrompt, workerSystemPrompt,
   describeCommand, refusalPath,
@@ -90,8 +91,14 @@ const role = (over: Partial<Role> = {}): Role =>
     ...over,
   }) as Role
 
+/** The commit every fake tree here was cut from, and what the artifact must be published over. */
+const CLONE_SHA = 'clonesha'
+
 /** A provider whose trees are plain directories, so the seam is testable without a network. */
-function fakeProvider(changes: ChangedFile[], opts: { failProvision?: boolean } = {}) {
+function fakeProvider(
+  changes: ChangedFile[],
+  opts: { failProvision?: boolean; noHead?: boolean } = {},
+) {
   const log = { provisioned: 0, released: 0, paths: [] as string[] }
   const provider: TreeProvider = {
     name: 'fake',
@@ -104,6 +111,7 @@ function fakeProvider(changes: ChangedFile[], opts: { failProvision?: boolean } 
         path,
         repo: 'o/r',
         changes: async () => changes,
+        ...(opts.noHead === true ? {} : { head: async () => CLONE_SHA }),
         release: async () => {
           log.released++
         },
@@ -325,6 +333,51 @@ describe('the trusted channel', () => {
 
   it('truncates a very long body rather than paying for all of it', () => {
     expect(workerPrompt(candidate({ body: 'x'.repeat(20000) }), 'Closes #7')).toContain('[truncated]')
+  })
+})
+
+describe('the conflict a worker is handed when one side deleted the file', () => {
+  const artifact = (): InFlight => ({
+    kind: 'pull-request',
+    ref: '#42',
+    url: 'https://example.test/42',
+    draft: false,
+    author: 'igor-bot',
+    mergeable: 'conflicting',
+    branch: 'igor/triage/7-timestamps',
+    base: 'main',
+  })
+
+  /** The marker-free paragraph alone, unwrapped, so an assertion reads the prose not the layout. */
+  const markerFree = (): string =>
+    (conflictPrompt(candidate(), artifact(), ['doomed.ts']).split('\n\n').at(-1) ?? '').replace(/\s+/g, ' ')
+
+  it('points at the copy left on disk rather than assuming the artifact is the side that survived', () => {
+    // Git leaves the surviving side in the tree whichever side deleted, so on `DU` — the
+    // artifact deleted, the base edited — the copy sitting there is the *base's*. A sentence
+    // that names the artifact as the side on disk is backwards in both directions there:
+    // keeping the file keeps the base's copy, and the base removed nothing to accept.
+    const p = markerFree()
+    expect(p).toMatch(/copy left on disk is the side that survived/i)
+    // Conditional, not a claim about every marker-free conflict. A binary, a path with `-merge`
+    // set, and a submodule's gitlink all conflict without markers and none of them is one side
+    // deleting what the other edited — asserted as a fact, the sentence lies to the worker in
+    // each, and the advice under it describes a choice that is not on offer.
+    expect(p).toMatch(/^Where a conflicted file has no markers because one side deleted/)
+    expect(p).not.toMatch(/keep the artifact's version/i)
+    expect(p).not.toMatch(/accept main's removal/i)
+  })
+
+  it('says it in terms that hold whichever side deleted, naming neither the artifact nor the base', () => {
+    // One sentence covering two orientations works only while it names no side: name one
+    // and it is written for that orientation and wrong for the other.
+    const p = markerFree()
+    expect(p).not.toMatch(/artifact/i)
+    expect(p).not.toMatch(/\bmain\b/)
+  })
+
+  it('offers both moves, so the worker can take the deletion as well as the surviving copy', () => {
+    expect(markerFree()).toMatch(/delete it to take the deletion/i)
   })
 })
 
@@ -2545,5 +2598,107 @@ describe('a refusal leaves the envelope behind, not only the verdict', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+describe('an artifact carries the removals as well as the edits', () => {
+  /** One item, one set of changes, and whatever reached the code host. */
+  async function publish(changes: ChangedFile[]) {
+    const { provider } = fakeProvider(changes)
+    const { host, seen } = fakeCodeHost()
+    const { t } = fakeTracker()
+    const result = await execute(provider, t, host, candidate(), role(), {
+      worker: async () => ({ result: 'Done.', total_cost_usd: 0.01 }),
+    })
+    return { result, request: seen[0] }
+  }
+
+  it('publishes a deletion alongside the edits rather than dropping it', async () => {
+    // Dropped, the pull request looks complete and is not: the reviewer reads a refactor that
+    // still has the module it removed.
+    const { result, request } = await publish([
+      { path: 'src/a.ts', content: 'fixed', kind: 'modified' },
+      { path: 'src/gone.ts', content: '', kind: 'deleted' },
+    ])
+    expect(result.outcome).toBe('produced')
+    expect(request?.files.map((f) => f.path)).toEqual(['src/a.ts'])
+    expect(request?.deletions).toEqual(['src/gone.ts'])
+    expect(result.refusals).toEqual([])
+  })
+
+  it('publishes a change that is only deletions', async () => {
+    // The worker ran and was paid for. Refusing here spends a full run to discover a limit.
+    const { result, request } = await publish([
+      { path: 'src/gone.ts', content: '', kind: 'deleted' },
+      { path: 'test/gone.test.ts', content: '', kind: 'deleted' },
+    ])
+    expect(result.outcome).toBe('produced')
+    expect(request?.files).toEqual([])
+    expect(request?.deletions).toEqual(['src/gone.ts', 'test/gone.test.ts'])
+    expect(result.refusals).toEqual([])
+  })
+
+  it('does not send a path as both a file and a removal', async () => {
+    // A rename that leaves a re-export behind: porcelain reports the rename's original path as
+    // deleted, and the recreated file at that same path as untracked. Sent as both, one tree
+    // entry carries the path twice — the shim is dropped, or the whole publish is rejected.
+    const { request } = await publish([
+      { path: 'src/old.ts', content: '', kind: 'deleted' },
+      { path: 'src/new.ts', content: 'moved', kind: 'modified' },
+      { path: 'src/old.ts', content: 'export * from "./new.js"', kind: 'added' },
+    ])
+    expect(request?.files.map((f) => f.path)).toEqual(['src/new.ts', 'src/old.ts'])
+    expect(request?.deletions).toEqual([])
+  })
+
+  it('leaves no duplicate behind a rename', async () => {
+    // Porcelain reports a rename as the new path plus the original, and the original is a
+    // deletion. Kept, the file is in the pull request twice.
+    const { result, request } = await publish([
+      { path: 'src/new.ts', content: 'moved', kind: 'added' },
+      { path: 'src/old.ts', content: '', kind: 'deleted' },
+    ])
+    expect(result.outcome).toBe('produced')
+    expect(request?.files.map((f) => f.path)).toEqual(['src/new.ts'])
+    expect(request?.deletions).toEqual(['src/old.ts'])
+  })
+})
+
+describe('the base the artifact is laid over', () => {
+  it('is the commit the tree was cut from, not the branch head at publish time', async () => {
+    // The base branch moves while the worker runs, and a publish that re-reads its head lays
+    // the artifact over a tree the worker never saw. Where both deleted the same path, the
+    // host refuses the whole tree request — every change the run made, lost to a removal that
+    // was correct when it was read.
+    const { provider } = fakeProvider([
+      { path: 'src/a.ts', content: 'fixed', kind: 'modified' },
+      { path: 'src/gone.ts', content: '', kind: 'deleted' },
+    ])
+    const { host, seen } = fakeCodeHost()
+    const { t } = fakeTracker()
+
+    await execute(provider, t, host, candidate(), role(), {
+      worker: async () => ({ result: 'Done.', total_cost_usd: 0.01 }),
+    })
+
+    expect(seen[0]?.baseSha).toBe(CLONE_SHA)
+  })
+
+  it('is left to the host where the tree cannot say what it was cut from', async () => {
+    // `head` is optional on the same terms as `merge`, because the provider seam says nothing
+    // about how a tree is made. A provider without it publishes as it always did rather than
+    // not publishing at all.
+    const { provider } = fakeProvider([{ path: 'src/a.ts', content: 'fixed', kind: 'modified' }], {
+      noHead: true,
+    })
+    const { host, seen } = fakeCodeHost()
+    const { t } = fakeTracker()
+
+    const result = await execute(provider, t, host, candidate(), role(), {
+      worker: async () => ({ result: 'Done.', total_cost_usd: 0.01 }),
+    })
+
+    expect(result.outcome).toBe('produced')
+    expect(seen[0]).not.toHaveProperty('baseSha')
   })
 })

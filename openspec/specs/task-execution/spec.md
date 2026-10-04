@@ -452,3 +452,212 @@ a worker resolves it.
 - **WHEN** an artifact that cannot merge was produced by another party
 - **THEN** the Igor does not act on it
 
+### Requirement: The artifact carries every change the worker made, including removals
+
+An artifact SHALL carry every change execution read out of the working tree — files added,
+files modified, and files removed. A removal SHALL NOT be dropped, and a change consisting only
+of removals SHALL be published rather than refused.
+
+An artifact that carries the edits and drops the removals is worse than one that is not
+published at all: it looks complete to a reviewer and is not. A refactor still has the module
+it removed; a rename has the file in two places.
+
+The limit this replaces was discovered after the worker had run, which is what made it
+expensive — a deletion-shaped task spent a whole run to learn it could not be published.
+
+Whether the artifact is being opened or brought up to date makes no difference: both build
+their commit from the base tree, and a removal is an entry in that tree with nothing behind it.
+
+#### Scenario: A removal alongside edits
+
+- **WHEN** a worker edits some files and removes others
+- **THEN** the artifact carries both, and the removed files are gone from it
+- **AND** nothing is refused
+
+#### Scenario: A change that is only removals
+
+- **WHEN** every change a worker made is a removal
+- **THEN** the artifact is published
+- **AND** the run is not refused for having produced no edits
+
+#### Scenario: A rename leaves no duplicate
+
+- **WHEN** a worker renames a file
+- **THEN** the artifact carries the new path and no longer carries the old one
+
+### Requirement: A change is not published under a name that is not text
+
+A filename is bytes. Where a changed file's name is not valid UTF-8, execution SHALL publish
+nothing for that run, and SHALL hand off naming the file by the bytes git wrote rather than by
+the spelling decoding left behind.
+
+An artifact names a path as text, so a name that is not text has no faithful form in one.
+Published at the decoded spelling, a modified file lands at a path no file on disk has — the
+original is left untouched and the branch carries the file twice; a deletion removes nothing;
+and two names differing only in the bytes that did not decode arrive as one path, so one
+replaces the other or the host rejects the whole change. Each of those is a change that is
+wrong rather than one that is missing, and nothing in the artifact tells a reader which file
+was meant.
+
+A name SHALL be judged by re-encoding the decoded name and comparing it to the bytes, and MUST
+NOT be judged by searching the decoded name for the replacement character. A file may
+legitimately be named with that character, and refusing it would take a working run away over
+a name nothing is wrong with.
+
+What the run changed SHALL still be recorded, and SHALL name such a file by its bytes there
+too. A refusal that cannot say which file it refused is one nobody can act on.
+
+#### Scenario: A file whose name is not text is not published under another one
+
+- **WHEN** a run changes a file whose name is not valid UTF-8
+- **THEN** nothing is published
+- **AND** the handoff names the file by the bytes git wrote
+
+#### Scenario: A deletion of such a name is not published either
+
+- **WHEN** a run deletes a file whose name is not valid UTF-8
+- **THEN** nothing is published, rather than a removal of a path that is not the file's
+
+#### Scenario: A name that really contains the replacement character is published
+
+- **WHEN** a run changes a file whose name is valid UTF-8 and contains U+FFFD
+- **THEN** it is published as any other file is
+
+#### Scenario: The run still says what it changed
+
+- **WHEN** a run is refused publication over a name that is not text
+- **THEN** the recorded outcome names every file the run changed
+- **AND** it names the one that was not text by the bytes git wrote
+
+#### Scenario: An ordinary run is unaffected
+
+- **WHEN** every changed file's name is valid UTF-8
+- **THEN** the run publishes as it did before
+
+### Requirement: No removal is lost to a read that reports two changed paths as one
+
+Execution SHALL read the working tree in a way that reports every changed path separately, and
+SHALL NOT lose a removal because git paired it with another path. Where a worker removed a file,
+that removal SHALL be read whatever else changed in the tree, and SHALL be carried into the
+artifact.
+
+Rename detection is what folds two paths into one. During a conflicted merge, a deletion the
+worker made can be detected as the source of a rename whose destination is an unmerged path, and
+the porcelain output then names only the unmerged path — with its own unmerged flags, not as a
+rename — so the deletion is absent from the input rather than misread in it. Measured at roughly
+one in a hundred conflicted merges.
+
+**An incomplete read is not an excuse.** *"The artifact carries every change the worker made,
+including removals"* is satisfied by carrying whatever execution read; this requirement says what
+execution must be able to read, so a removal that never reached the record is a failure of this
+requirement rather than a case the other one permits.
+
+A removal lost this way is the most expensive thing that can go missing. The resolution's commit
+names the base as a parent, so a file left in it is restored the moment the artifact merges, and
+review sees a file that is still there rather than a change that is wrong.
+
+Nothing downstream recovers it. A guard comparing what the base changed against what the
+resolution publishes has no entry for a path the base never touched, and what the resolution
+publishes is itself built from this read.
+
+How the tree is read is not fixed here. What is fixed is that no changed path may be reported
+only as part of another.
+
+#### Scenario: A removal folded into a conflicted path is still read
+
+- **WHEN** a worker resolving a conflict removes a file similar enough to a conflicted path that
+  git reports only the conflicted path as changed
+- **THEN** the removal is read
+- **AND** the recorded outcome names it among the files the run changed
+
+#### Scenario: The recovered removal reaches the artifact
+
+- **WHEN** such a resolution is published
+- **THEN** the artifact no longer carries the removed file
+- **AND** merging the artifact does not restore it
+
+#### Scenario: Nothing else in the loop would have caught it
+
+- **WHEN** the folded removal is of a path the base never changed
+- **THEN** the removal is still carried
+
+#### Scenario: A rename is carried however git reports it
+
+- **WHEN** a worker renames a file, whether git reports it as one record naming both paths or as
+  a removal and an addition separately
+- **THEN** the artifact carries the new path and no longer carries the old one
+
+#### Scenario: An ordinary run is unaffected
+
+- **WHEN** a run's changes involve no path git reports only as part of another
+- **THEN** the artifact carries the same additions, modifications and removals it carried before
+
+### Requirement: No removal is published for a path the base does not hold
+
+An artifact SHALL carry a removal only for a path the tree it is laid over already holds.
+
+**The base here is that tree**, and not the set of changes the base branch made — the branch head
+a resolution commits onto, or the base branch a new artifact is cut from. *"A base change is
+undone only where the resolution says so"* is about the second; this requirement is about the
+first.
+
+**And it is the tree the work was cut from**, not the branch as it stands when the artifact is
+published. A branch head read at publish time is a different tree whenever the branch moved while
+the work was being done, so a removal that was correct against what the worker saw arrives as a
+removal of a path that tree no longer holds. Publishing over an older base is what the artifact's
+catch-up merge exists for; publishing over a base nobody read the work against is not.
+
+Where reading the working tree offers a removal of a path the base does not hold, execution SHALL
+NOT publish it. **Whether the worker asked for the removal makes no difference.** Sometimes it did
+not — the run's own index brought the path into being, as the destination of a rename that was then
+moved again, or as a staged addition the worker then deleted. Sometimes it did: a merge can leave a
+path in the tree that the artifact's own side had deleted, and removing it is the resolution the
+worker is invited to make. Either way no tree the artifact is published against ever held the path,
+and the host refuses the removal the same.
+
+**So the obligation is a question about the tree, not about the status of the path.** A mechanism
+that decides from how the path came to be in its current state is enumerating the ways a path can be
+absent from the base, and is complete only until the next one is found.
+
+**This is the opposite half of the requirement above it.** That one says the read may not lose a
+removal; this one says it may not invent one. A mechanism satisfying either by breaking the other
+satisfies neither, and the two are stated separately so that a future read is measured against
+both.
+
+**The host refuses an invented removal outright.** Dropping a path the base tree does not hold
+returns `422 GitRPC::BadObjectState`, and the refusal is of the whole tree request: nothing is
+published, not even the changes that were correct. So this is not a tidiness rule about extra
+entries. A single invented removal costs the run everything it produced, which is why the
+obligation is stated rather than left to whichever mechanism reads the tree.
+
+#### Scenario: A path only the run's own index ever held is not removed
+
+- **WHEN** reading the working tree offers a removal of a path that is absent from the tree the
+  artifact is published against, because the run's index brought that path into being
+- **THEN** no removal of it is published
+- **AND** the artifact is published, rather than the whole tree request being refused
+- **AND** the removals of paths the base does hold are carried as before
+
+#### Scenario: A rename moved on a second time removes the original and nothing else
+
+- **WHEN** a worker moves a path the base holds, and then moves the result again, so that the
+  intermediate name exists in no tree
+- **THEN** the artifact no longer carries the original path
+- **AND** the artifact carries the final path
+- **AND** no removal is published for the intermediate name
+- **AND** the artifact is published, rather than the whole tree request being refused
+
+#### Scenario: A removal the worker did ask for is not published where the base lacks the path
+
+- **WHEN** a conflicted merge leaves in the tree a path the artifact's own side had deleted and the
+  base had modified, and the worker deletes it to accept the artifact's deletion
+- **THEN** no removal of it is published
+- **AND** the artifact is published, rather than the whole tree request being refused
+- **AND** the rest of what the worker changed is in it
+
+#### Scenario: A publish is not lost to a removal nobody asked for
+
+- **WHEN** a run's changes include a removal of a path the base does not hold
+- **THEN** the artifact is published, rather than the whole tree request being refused
+- **AND** every change the worker made that the base can carry is in it
+
