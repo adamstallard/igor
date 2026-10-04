@@ -51,7 +51,9 @@
 - [ ] 3.6 The GitHub adapter claims by `igor:<role>` label, never by assignment, and reads its
       labels back after writing them. Under #146 (`release-a-claim-that-cannot-be-kept`),
       `release` returns what the surface recorded, and "did the holder field clear" becomes
-      "is my `igor:<role>` label gone"
+      "is my `igor:<role>` label gone". Remove today's assignee claim path in the same change
+      that adds the label claim and App credentials (5.2), so no build is left without a way to
+      claim (Adam, 2026-10-04)
 - [ ] 3.7 A stop removes this Igor's own label or delegate, and a person assigning themselves
       afterwards keeps the item
 - [ ] 3.8 An Igor labelled by a person on an issue another Igor holds doesn't claim it, and
@@ -71,6 +73,6 @@
 - [ ] 5.2 GitHub App credentials for `gh` and git — file an issue before archiving
 - [ ] 5.3 Measure whether a pull request opened by a GitHub App links to its Linear issue. Needs a
       GitHub repository connected to Linear; `aura-workroom` is not connected
-- [ ] 5.4 When App support ships, update `README.md` and `docs/deployment.md`, which still say
-      an Igor must be a machine user, to describe the App as the only identity, and drop the
+- [ ] 5.4 When App support ships, update `docs/deployment.md`, which still says an Igor must be
+      a machine user, to describe the App as the only identity, and drop the
       machine-user steps from `docs/machine-accounts.md`
