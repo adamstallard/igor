@@ -1,5 +1,14 @@
 ## Why
 
+**An Igor holds one role, and its identity is that role.** A person reading a claim should see
+which role took the issue, and should be able to hand work to a role by name: by delegating on
+Linear, or by adding a label on GitHub. An Igor holding several roles makes its name say nothing
+about the work. Narrow Igors also keep trust separate (one role may open pull requests, another
+only comment) and keep a bad role config from breaking every lane. The old case for multi-role
+Igors, absorbing the idle capacity of a seat dedicated to one Igor, does not apply now that
+several Igors share a seat. Today a role whose `extends` names two sibling roles makes one Igor
+do both jobs.
+
 **An organization's Igors claim work on one tracker.** Claims exist so that Igors do not work
 the same item. An Igor claiming on GitHub cannot see a claim another Igor holds on Linear, so
 an organization whose Igors claim on two trackers has no coordination between them. Today a
@@ -20,9 +29,14 @@ An App needs no personal token renewed, shows a `[bot]` badge, and needs no serv
 user is still needed where an Igor must be an assignee or a requested reviewer, because an App
 cannot be either.
 
-**Linear's holder field behaves differently from GitHub's.** `surface-adapter` already names
-Linear's holder field as `delegate`, but the claiming rules were written against GitHub's
-assignee list, and three of them do not carry over:
+**The label is the Igor's field, and the assignee stays the person's.** That is how Linear
+separates its delegate from its assignee, so the GitHub label follows Linear's rules case for
+case: an App Igor skips an issue assigned to a person unless it carries that Igor's label, and a
+person adding `igor:<role>` hands the issue to that Igor.
+
+**Linear's holder field behaves differently from GitHub's assignee.** `surface-adapter`
+already names Linear's holder field as `delegate`, but the claiming rules were written against
+GitHub's assignee list, and three of them do not carry over:
 
 - The delegate holds **one** value, so the later of two writes stands. On a GitHub list, any
   second holder costs both claimants the item.
@@ -45,6 +59,9 @@ App's approving review does not need to count toward branch protection.
 
 ## What Changes
 
+- **`role-config`:** an Igor holds exactly one role, and its identity on every surface is that
+  role. An Igor that does two jobs is two Igors, which may share a seat. A role naming more than
+  one base in `extends` is refused, which removes the only way an Igor holds several roles today.
 - **`work-claiming`:**
   - An organization's Igors hold claims on one tracker. A configuration claiming on two is
     refused.
@@ -55,16 +72,23 @@ App's approving review does not need to count toward branch protection.
   - An item someone else holds is not claimed. An item assigned to a person is not claimed
     unless they handed it to this Igor through the holder field. A person handing an item to an
     Igor directs it: the Igor posts the claim message and starts without the settle interval.
+    On GitHub the `igor:<role>` label follows these rules exactly as Linear's delegate does.
+  - A stop removes this Igor from the holder field, so a person who then assigns themselves
+    keeps the item, and a person who hands it back directs the Igor again.
   - An issue an Igor creates because it was instructed in chat quotes or links that chat, and
     the Igor posts the issue's link back in the chat.
 - **`surface-adapter`:** an adapter declares whether its holder field holds one value or a list,
   and whether it is distinct from the assignee. The GitHub adapter's holder field depends on
-  the identity: the assignee for a machine user, the `igor:<role>` label for an App.
+  the identity: the assignee for a machine user, the `igor:<role>` label for an App. The label
+  is declared distinct from the assignee.
 - **`task-execution`:** a person approves every Igor pull request. An Igor never merges a pull
   request it opened, and no Igor's approval stands in for a person's.
 - **`docs/machine-accounts.md`:** rewritten around the GitHub App as the default identity on
   public repositories, with a machine user only where an Igor must be an assignee or a
-  requested reviewer.
+  requested reviewer, and one identity per role.
+- **`docs/architecture.md`:** §2.1 says an Igor holds one role, and why. §6.9, which said an
+  Igor must be a machine user, is marked superseded by this change.
+- **`README.md`:** no longer describes an Igor defined by several roles.
 
 Nothing under `src/` changes in this pull request.
 
@@ -76,15 +100,20 @@ None.
 
 ### Modified Capabilities
 
-- `work-claiming`: two modified requirements (how a claim is expressed and resolved; settle and
-  stand-down) and five added (one tracker per organization, the App's label claim on GitHub,
-  items held by others, a person directing an Igor, issues created from chat).
+- `role-config`: one modified requirement (`extends` names at most one base) and one added (an
+  Igor holds exactly one role).
+- `work-claiming`: three modified requirements (how a claim is expressed and resolved; settle
+  and stand-down; what follows a stop) and five added (one tracker per organization, the App's
+  label claim on GitHub, items held by others, a person directing an Igor, issues created from
+  chat).
 - `surface-adapter`: two modified requirements (the holder-field declaration; the GitHub
   adapter claims by assignee or by label).
 - `task-execution`: one added requirement (a person approves every Igor pull request).
 
 ## Impact
 
+- A role whose `extends` names two roles stops loading. The organization replaces it with one
+  Igor per role.
 - An organization configured with sources on two trackers stops loading until it picks one.
   The GitHub adapter is the only one that exists, so a configuration that loads today already
   claims on one tracker.

@@ -14,9 +14,9 @@ vocabulary into everyone's.
 
 An adapter declaring a holder field SHALL also declare whether it holds a **single value** or a
 **list**, and whether it is distinct from the item's assignee. GitHub's assignee is a list and is
-the assignee. GitHub's `igor:` labels are a list; whether they are declared distinct from the
-assignee is not decided yet (see the change's `design.md`). Linear's delegate is a single value, and is
-distinct from the assignee, which names the person accountable. The loop reads these
+the assignee. GitHub's `igor:` labels are a list, and are distinct from the assignee. Linear's
+delegate is a single value, and is distinct from the assignee. Where the two are distinct, the
+holder field names the Igor and the assignee names the person accountable. The loop reads these
 declarations to resolve claims and to decide which items it may claim, and never the field's
 name.
 
@@ -37,6 +37,13 @@ name.
 - **WHEN** one adapter declares a single-valued holder field and another a list
 - **THEN** on the first, the later write holds the item
 - **AND** on the second, any other holder present after the settle interval means the claim is lost
+
+#### Scenario: A holder field distinct from the assignee
+
+- **WHEN** an adapter declares its holder field distinct from the assignee, as GitHub's `igor:`
+  labels and Linear's delegate are
+- **THEN** the loop does not claim an item assigned to a person unless the holder field names
+  this Igor
 
 #### Scenario: Message-only surface declared
 

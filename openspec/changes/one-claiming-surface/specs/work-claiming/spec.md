@@ -83,6 +83,44 @@ can direct an Igor through the holder field*.
 - **WHEN** an operator tunes the settle interval
 - **THEN** the new value governs subsequent verification
 
+### Requirement: What follows a stop is read from the tracker, not from a second command
+
+After a stop, eligibility SHALL be determined by the tracker's state rather than by any
+distinct pause or resume verb. A stop releases the claim by removing this Igor from the holder
+field: its assignee entry, its `igor:<role>` label, or itself as delegate. What the item then
+shows decides what happens next, by the rules for items someone else holds and for a person
+directing an Igor.
+
+#### Scenario: A human takes the item
+
+- **WHEN** a human assigns themselves after stopping an Igor
+- **THEN** the item is not reclaimed by the Igor
+- **AND** this holds whether the holder field is the assignee, an `igor:` label, or Linear's
+  delegate, because an item assigned to a person is not claimed unless it names this Igor
+
+#### Scenario: Nobody takes the item
+
+- **WHEN** an item is stopped and left unassigned, with nothing in its holder field
+- **THEN** it becomes eligible again after a cooldown
+- **AND** it is not permanently removed from the pool
+
+#### Scenario: Explicit go-ahead short-circuits the cooldown
+
+- **WHEN** someone signals on the surface that work may resume
+- **THEN** the item becomes eligible immediately
+
+#### Scenario: Handing the item back to the Igor is a go-ahead
+
+- **WHEN** a person who stopped an Igor later delegates the Linear issue to it again, or adds
+  its `igor:<role>` label to the GitHub issue again
+- **THEN** the Igor treats the item as directed to it, without waiting the cooldown
+
+#### Scenario: No second verb exists
+
+- **WHEN** a party wishes to pause rather than stop
+- **THEN** they issue a stop
+- **AND** resumption follows from tracker state, with no separate pause command defined
+
 ## ADDED Requirements
 
 ### Requirement: An organization's Igors claim on one tracker
@@ -122,6 +160,11 @@ App's bot user cannot be an issue assignee, so the label is its holder field. Th
 no organization or other prefix beyond `igor:`. An Igor whose GitHub identity is a machine user
 claims by assignee.
 
+The `igor:` label is the Igor's field and the assignee is the person's, as Linear's delegate
+and assignee are. The rules that follow for items assigned to a person, for a person handing an
+item to an Igor, and for what follows a stop apply to the label exactly as they apply to
+Linear's delegate.
+
 Any label beginning `igor:` names an Igor. Another Igor's `igor:` label present after the settle
 interval means the claim is lost, and standing down removes only this Igor's own label.
 
@@ -145,28 +188,49 @@ unless the holder field names that Igor: the person is accountable for it, and h
 Igor is their decision. Unassigned items, and items a person has handed to this Igor, are
 candidates.
 
-On a tracker whose holder field is its assignee, the two conditions coincide, and this changes
-nothing.
+Linear's delegate and GitHub's `igor:` label are each distinct from the assignee. On a tracker
+whose holder field is its assignee, such as GitHub for a machine user, the two conditions
+coincide, and this changes nothing.
 
-#### Scenario: Item assigned to a person
+#### Scenario: Item assigned to a person, on Linear
 
 - **WHEN** a Linear issue is assigned to a person and has no delegate
 - **THEN** no Igor claims it
 
-#### Scenario: Item handed to this Igor
+#### Scenario: Item assigned to a person, on GitHub
+
+- **WHEN** a GitHub issue is assigned to a person and carries no `igor:` label
+- **THEN** no App Igor claims it
+
+#### Scenario: Item handed to this Igor, on Linear
 
 - **WHEN** a Linear issue is assigned to a person and delegated to an Igor
 - **THEN** that Igor treats it as its candidate
 
-#### Scenario: Item delegated to another agent
+#### Scenario: Item handed to this Igor, on GitHub
+
+- **WHEN** a GitHub issue is assigned to a person and carries an App Igor's `igor:<role>` label
+- **THEN** that Igor treats it as its candidate
+
+#### Scenario: Item delegated to another agent, on Linear
 
 - **WHEN** a Linear issue is delegated to another Igor or any other agent
 - **THEN** this Igor does not claim it
 
-#### Scenario: Unassigned item
+#### Scenario: Item labelled for another Igor, on GitHub
+
+- **WHEN** a GitHub issue carries another Igor's `igor:` label
+- **THEN** this Igor does not claim it
+
+#### Scenario: Unassigned item, on Linear
 
 - **WHEN** a Linear issue has neither an assignee nor a delegate
 - **THEN** it is a candidate, and an Igor claims it by setting itself as delegate
+
+#### Scenario: Unassigned item, on GitHub
+
+- **WHEN** a GitHub issue has neither an assignee nor an `igor:` label
+- **THEN** it is a candidate, and an App Igor claims it by adding its `igor:<role>` label
 
 ### Requirement: A person can direct an Igor through the holder field
 
@@ -176,15 +240,25 @@ carrying the stop instruction, and SHALL begin work without waiting the settle i
 other Igor competes for an item that names a holder, and the person has already chosen. A stop,
 or a person removing the Igor from the holder field, SHALL halt it at any time, as for any claim.
 
+On Linear a person directs an Igor by delegating to it. On GitHub a person directs an App Igor
+by adding its `igor:<role>` label.
+
 #### Scenario: Delegated by a person
 
 - **WHEN** a person delegates a Linear issue to an Igor
 - **THEN** on its next cycle the Igor posts the claim message and starts work
 - **AND** it does not wait the settle interval
 
+#### Scenario: Labelled by a person
+
+- **WHEN** a person adds the label `igor:<role>` to a GitHub issue
+- **THEN** on its next cycle the App Igor holding that role posts the claim comment and starts work
+- **AND** it does not wait the settle interval
+
 #### Scenario: Directed work can still be stopped
 
-- **WHEN** a person removes the Igor as delegate, or replies stop, after the Igor has started
+- **WHEN** a person removes the Igor as delegate, removes its `igor:<role>` label, or replies stop,
+  after the Igor has started
 - **THEN** the Igor halts as it would for any stopped claim
 
 ### Requirement: An issue created from chat points back to the chat

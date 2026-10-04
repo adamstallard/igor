@@ -84,8 +84,14 @@ anyone touching an area is lore.
 
 ### 2.1 Roles — **built** (`core-igor-loop`)
 
-Roles and Igors are **many-to-many**. Many Igors can run the same role; one Igor can hold
-several.
+**An Igor holds exactly one role**, and many processes can run it. Its identity on every
+platform (a GitHub App, a Linear app user, a machine user where one is still needed) is that
+role, so a person sees which role took an issue and can hand work to a role by name. An Igor
+that does two jobs is two Igors. This is decided in `one-claiming-surface`, which removes
+multi-role Igors.
+
+**Not built yet:** a role whose `extends` names two roles still resolves to an Igor doing both
+jobs, its lane and permissions the union of theirs (`src/role.ts`). The change's tasks remove it.
 
 Roles are real objects as of `core-igor-loop`, and were not before. `lore-from-reviews`
 deliberately defines none: its reviewer comes from a mined comment's author, and routing
@@ -103,39 +109,29 @@ tool's config, which is where an entry escalates when the author it was mined fr
 respond. A role narrows that to a per-role list; it did not introduce the concept, and the
 store-level list is still what a store without roles uses.
 
-**One Igor may hold several roles, but the reason is conditional.** The original argument was
-that a seat costs the same idle, so a role too narrow to fill its allowance wastes capacity
-already paid for — holding a second role absorbs the slack.
+**Why an Igor holds one role.** Narrow Igors buy three things a broad one gives up:
 
-That argument depends entirely on **one seat per Igor**. Seats can be shared (§6.5), and once
-they are, the pressure disappears: five narrow Igors on one shared seat beat one broad Igor,
-because specialization buys things breadth destroys —
-
-- **Legibility.** If every Igor does everything, "which Igor claimed this" carries no
-  information. A narrow identity tells a human what lane the work is in.
+- **Legibility.** The Igor's name is its role, so "which Igor claimed this" says which lane
+  the work is in, and a person hands work to a role by naming it.
 - **Differential trust.** The docs Igor may open pull requests freely while the infra Igor may
-  only comment. One Igor holding every role forces the action space to be the union or the
-  intersection of its roles, and both are wrong.
+  only comment. An Igor holding two roles would need an action space that is the union or the
+  intersection of theirs, and both are wrong.
 - **Failure isolation.** A bad role config breaks one lane rather than everything.
 
-Once seats are shared, the priority ordering moves to **fleet level** — one ordering across Igors
-rather than a ranked list inside each — which is cleaner anyway. Role breadth then becomes an
-empirical tuning decision that follows expected work volume, exactly like staffing: a role that
-reliably fills capacity gets a dedicated seat, one that does not shares one.
+**Several Igors may draw on one seat (§6.5).** The argument once made for multi-role Igors,
+that a second role absorbs the idle capacity of a seat dedicated to one Igor, does not apply:
+seats are shared, so a narrow role's slack is used by the other Igors on its seat. A role that
+reliably fills capacity can be given a dedicated seat, and one that does not shares one.
 
-Three properties make that safe:
+Two properties follow:
 
-- **Multi-role at discovery, single-role at execution.** An Igor runs the union of its
-  roles' queries, but triage assigns each candidate to exactly one role, and only that
-  role's standing instructions and lore scopes load for the work. The discovery surface
-  widens; the working context does not get diluted, so one role's conventions cannot bleed
-  into another's task.
-- **Priority is fleet-level, not per-Igor.** Ranking roles inside a single Igor so spare
-  budget flows down its own list only makes sense when each Igor owns a seat. Seats are
-  shared (§6.5), so the ordering belongs across Igors. Ties break by item age either way.
-- **Interchangeability survives.** An Igor is still fully described by its ordered role
-  list, so two Igors with the same list remain swappable. Worth keeping explicit, because
-  this is the property that would quietly erode into Igors having individual identities.
+- **Priority is fleet-level.** Which work goes first is ordered across Igors, not inside one,
+  because seats are shared (§6.5). Ties break by item age.
+- **Processes of an Igor are interchangeable.** An Igor is fully described by its role, so any
+  process running that role under that identity can replace any other. Adding capacity to a
+  role means more processes of the same Igor, not another identity. Worth keeping explicit,
+  because this is the property that would quietly erode into processes having individual
+  identities.
 
 ---
 
@@ -1730,7 +1726,16 @@ essentially credential provisioning. And there is no hosting business here, only
 Deployment work belongs to `core-igor-loop`, the first change that introduces a continuously
 running process. `lore-from-reviews` is a batch CLI and needs none of it.
 
-### 6.9 Igors act as machine users on GitHub, not as a GitHub App — **decided**
+### 6.9 Igors act as machine users on GitHub, not as a GitHub App — **superseded by `one-claiming-surface`**
+
+**Superseded.** The change `one-claiming-surface` (`openspec/changes/one-claiming-surface/`)
+replaces this section's conclusion. A **GitHub App** is the default Igor identity on public
+repositories, and it claims an issue with the label `igor:<role>` plus the claim comment, so it
+needs no assignee field. A **machine user** is used only where an Igor must be an issue
+assignee or a requested reviewer, which an App cannot be. The 404/403 measurement below still
+stands; what changed is that a claim no longer has to sit in the assignee field. The Linear
+question below, whether an app may set its own delegate, was measured on 2026-10-03: it can
+(the change's `design.md`). The text below is kept as the record of the earlier decision.
 
 Three identities are separate and stay separate: **who acts** on the surface, **which seat
 pays** for the model, and **which role's policy governs**. Config already splits the second

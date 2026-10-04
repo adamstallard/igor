@@ -15,20 +15,50 @@ Three facts bound what a claim has to do:
 So a claim must be reliable between Igors and visible to people. It need not sit in the
 assignee field, which is why a GitHub App's label claim is enough.
 
-## Open: the App's label and items assigned to a person
+## One role per Igor
 
-On Linear the holder field (the delegate) is distinct from the assignee, and an issue assigned
-to a person is off-limits unless delegated to this Igor. On GitHub, the `igor:<role>` label an
-App claims with is also distinct from the assignee. **Not decided:** whether the GitHub adapter
-declares the label distinct from the assignee, which decides whether:
+**Decided by the owner: an Igor holds exactly one role, and its identity is that role.** The
+Igor's GitHub App, Linear app user or machine user names the role, so a person sees which role
+took an issue and hands work to a role by naming it, by delegating on Linear or labelling on
+GitHub. An Igor that does two jobs is two Igors, which may share a seat.
 
-- an App Igor skips an issue assigned to a person unless it carries this Igor's label;
-- a person adding an `igor:<role>` label directs that Igor, starting it without the settle
-  interval, as a person's delegation does on Linear.
+Multi-role Igors exist today only as a role whose `extends` names two sibling roles. Its lane,
+`allow` and `commands` are then the union of both, and its `budget_share` the lower of the two.
 
-The same answer settles a case `work-claiming` already covers, a person assigning themselves
-after stopping an Igor. Under a label claim, only a "distinct" declaration keeps that Igor from
-reclaiming the item.
+**Chosen: refuse a role that names more than one base.** That removes the union and nothing
+else; a chain of single bases, such as a role extending a frontend base that extends the org
+base, still works.
+
+**Rejected: keep several bases but conjoin them.** A role would be the intersection of its
+bases, which no one has asked for. Siblings rarely overlap, so it would match almost nothing,
+and a role wanting a narrower lane can extend one base and narrow it.
+
+## The App's label mirrors Linear's delegate
+
+**Decided by the owner: on GitHub the `igor:<role>` label is the Igor's holder field, separate
+from the assignee, which stays the person's.** The GitHub adapter declares its `igor:` labels a
+list, distinct from the assignee. The rules then match Linear's case for case:
+
+- An App Igor skips an issue assigned to a person unless it carries that Igor's label, as a
+  Linear Igor skips an issue assigned to a person unless it is delegated to that Igor.
+- A person adding `igor:<role>` directs that Igor, which starts without the settle interval, as
+  a person's delegation does.
+- After a stop the Igor removes its own label, as a Linear Igor clears itself as delegate. A
+  person who then assigns themselves keeps the item, and a person who adds the label again
+  hands it back.
+
+**Not measured here:** telling a person's label from the Igor's own. An Igor that wrote its
+label and failed before posting the claim comment also finds its label with no comment. GitHub
+records who added each label in the issue's events; the adapter is expected to read that, as a
+Linear adapter would read who set the delegate.
+
+## Open: a person adding a second Igor's label
+
+On Linear a person re-delegating replaces the first Igor, which then sees it is no longer the
+delegate and halts. GitHub's labels hold a list, so a person can add one Igor's label while
+another's is still there. **Not decided:** whether the first Igor halts, whether the second
+starts, or both. The case-for-case rules above do not settle it, because Linear has no such
+state.
 
 ## The App's label names the role, and nothing else
 

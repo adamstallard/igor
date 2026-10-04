@@ -21,6 +21,10 @@ reviewer. It pushes branches, opens pull requests, comments, and creates issues.
   list, so another Igor's `igor:` label on the issue after the settle interval means the claim
   is lost. Where the organization's Igors claim on another tracker, such as Linear, the App
   claims nothing on GitHub and only carries the work.
+- **The label is the Igor's field; the assignee stays the person's.** They work like Linear's
+  delegate and assignee. An App Igor leaves alone an issue assigned to a person unless it
+  carries that Igor's label, and a person adding `igor:<role>` hands the issue to that Igor,
+  which starts without waiting the settle interval.
 - **Nothing to renew.** The App's private key mints an installation token for an hour at a
   time, so no personal access token expires on anyone.
 - **Obviously not a person.** Its work shows as `<name>[bot]` with a bot badge.
@@ -53,17 +57,19 @@ keeps each Igor's work on GitHub attributable to it, as its claims are.
 **Not one per process**, because processes of the same Igor are interchangeable. Twenty backend
 workers are still one teammate as far as anyone reading the issue is concerned.
 
-An Igor is a named set of capabilities, so an Igor that does two jobs is one identity. If
-`milton` handles both backend and frontend work, that is one identity named `milton`, not two.
+**One role per Igor, so one identity per role.** An Igor holds exactly one role, and its
+identity is that role, so a person sees which role took an issue and can hand work to a role
+by name. An Igor that does two jobs is two Igors: backend and frontend work is a `backend` Igor
+and a `frontend` Igor, each with its own identity. The two may draw on the same seat.
 
 ## Creating a machine user
 
-1. **Pick a name that reads as a teammate, not as infrastructure.** It appears in the assignee
-   field, in PR authorship, and in review threads. `acme-igor-backend` or `milton-acme` both
-   work; `svc-bot-01` does not.
+1. **Pick a name that names the role.** It appears in the assignee field, in PR authorship,
+   and in review threads, and it is how a person tells which role has an issue.
+   `acme-igor-backend` works; `svc-bot-01` does not.
 
 2. **Use a distinct email you control.** Plus-addressing works and keeps them in one inbox:
-   `engineering+milton@acme.com`. Do not reuse a personal address — GitHub allows one account
+   `engineering+igor-backend@acme.com`. Do not reuse a personal address — GitHub allows one account
    per address, and you will need the inbox later for recovery.
 
 3. **Register the account.** GitHub's Terms of Service permit machine accounts explicitly: a
@@ -124,9 +130,9 @@ Igor yet.
 
 The GitHub identity and the Claude subscription seat are different things and are configured
 separately. The GitHub identity says who acts on the repository; a seat says whose allowance
-pays for the reasoning (§6.5.1). An Igor may act as `milton` while using seats that three
-people have set aside for its roles, and that is the normal arrangement rather than an edge
-case.
+pays for the reasoning (§6.5.1). An Igor may act as `acme-igor-backend` while using seats that
+three people have set aside for its role, and that is the normal arrangement rather than an
+edge case.
 
 Provisioning a seat is a different conversation with a different person — the one whose
 allowance it is. [`seats.md`](seats.md) is the page to send them.
