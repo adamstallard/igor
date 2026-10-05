@@ -4,7 +4,8 @@
       GitHub by `igor:<role>` label and claim comment; holder field written before the claim
       message; later write holds a single-valued field, and a losing Igor never clears it;
       items held by others; a person directing an Igor; what follows a stop; an issue created
-      from chat points back to the chat, and is not created twice for one message. Every
+      from chat links the chat message, is not created twice for one message, and has its
+      link posted in the chat once. Every
       claiming tracker has a holder field, so no claim is a message alone. The GitHub label rules match Linear's delegate rules
       case for case; a person reassigns by removing the holding Igor's label first
 - [x] 1.2 `surface-adapter`: every tracker adapter declares a holder field, with no
@@ -76,9 +77,10 @@ gate two starts; both changes are archived together (`design.md`, *Built togethe
 - [ ] 3.8 An Igor labelled by a person on an issue another Igor holds doesn't claim it, and
       comments once that removing the holding Igor's label hands it over; a person's label never
       makes the holding Igor lose its claim
-- [ ] 3.9 An issue created from a chat instruction quotes or links the chat, and its link is
+- [ ] 3.9 An issue created from a chat instruction links the chat message, and its link is
       posted back in the chat. Before creating one, look on the claiming tracker for an issue
-      that already links the message, and create nothing if one exists
+      that already links the message, and create nothing if one exists. When one exists, post
+      its link in the chat only if the chat has no reply with that link yet
 
 ## 4. Pull requests
 

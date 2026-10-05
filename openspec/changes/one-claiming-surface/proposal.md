@@ -85,10 +85,11 @@ an App, an Igor's approval is recognisable: its author is a `Bot` account.
   - An Igor whose `igor:<role>` label disappears while it works reads who removed it from the
     issue's events. Its own bot account means its own release; anyone else means a stop by
     that person, and the stop receipt names them.
-  - An issue an Igor creates because it was instructed in chat quotes or links that chat, and
+  - An issue an Igor creates because it was instructed in chat links that chat message, and
     the Igor posts the issue's link back in the chat. Before creating one, the Igor looks on
     the claiming tracker for an issue that already links the message, and creates nothing if
-    one exists.
+    one exists; it posts that issue's link in the chat only if the chat has no reply with it
+    yet.
 - **`surface-adapter`:** every tracker adapter declares a holder field; the message-only
   declaration is removed. An adapter declares whether its holder field holds one value or a list,
   and whether it is distinct from the assignee. The GitHub adapter's holder field is the

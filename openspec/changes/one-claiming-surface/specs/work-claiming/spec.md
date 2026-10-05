@@ -340,10 +340,10 @@ apart by who added the label, read from the issue's events.
 ### Requirement: An issue created from chat points back to the chat
 
 Where an Igor creates an issue because a person instructed it in chat, the issue's description
-SHALL quote the relevant chat messages, link to them, or both, so that whoever reads the issue
-sees where the request came from. After creating the issue, the Igor SHALL post a message in
-that chat with a link to the issue. The issue is created on the claiming tracker, and any claim
-on it is taken there.
+SHALL link the chat message that asked for the work, and MAY also quote it, so that whoever
+reads the issue sees where the request came from. After creating the issue, the Igor SHALL post
+a message in that chat with a link to the issue. The issue is created on the claiming tracker,
+and any claim on it is taken there.
 
 Before creating an issue from a chat message, the Igor SHALL look on the claiming tracker for
 an issue that already links that message, and SHALL create none if one exists. This check, not
@@ -351,17 +351,30 @@ any record of which messages were handled, is what prevents a duplicate issue: s
 only saves work, and losing it costs API calls, never a second issue. How the tracker is
 searched for the link belongs to the adapter.
 
+When the check finds such an issue, the Igor SHALL post that issue's link in the chat if the
+chat has no reply with that link yet, and SHALL otherwise do nothing. So an Igor that stopped
+between creating the issue and posting its link posts the link on its next read of the
+message, and reading the message again never posts the link twice.
+
 #### Scenario: Instructed in chat
 
 - **WHEN** a person in chat instructs an Igor to do work that has no issue
-- **THEN** the Igor creates an issue on the claiming tracker whose description quotes or links the chat
+- **THEN** the Igor creates an issue on the claiming tracker whose description links the chat
+  message
 - **AND** it then posts the issue's link in the chat
 
-#### Scenario: An issue already links the message
+#### Scenario: An issue links the message, and its link was never posted
 
-- **WHEN** an Igor reads a chat message asking for work, and an issue on the claiming tracker
-  already links that message
+- **WHEN** an Igor reads a chat message asking for work, an issue on the claiming tracker
+  already links that message, and the chat has no reply with that issue's link
 - **THEN** the Igor creates no issue for it
+- **AND** it posts the issue's link in the chat
+
+#### Scenario: An issue links the message, and its link is already posted
+
+- **WHEN** an Igor reads a chat message asking for work, an issue on the claiming tracker
+  already links that message, and the chat already has a reply with that issue's link
+- **THEN** the Igor creates no issue and posts nothing
 
 #### Scenario: Lost record of handled messages
 

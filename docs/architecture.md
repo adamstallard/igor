@@ -46,7 +46,7 @@ reachability*. Igor reads new channel messages through Discord's REST API on its
 instead, because:
 
 - **Chat is where work is asked for.** A person asks in chat, an Igor opens an issue on the
-  org's claiming tracker that quotes or links the chat, and posts the issue's link back. A few
+  org's claiming tracker that links the chat message, and posts the issue's link back. A few
   minutes' latency is acceptable there, as it is on the tracker.
 - **One role may run as several interchangeable processes.** A socket per process would hand
   every message to each of them, so one process would have to own the connection. Polling
@@ -59,9 +59,9 @@ other state (§5.0.2), so any process of the role, or a restarted one, carries o
 last poll stopped. Where it is stored is specified when the Discord adapter is built.
 
 **The marker only saves work; the link prevents a duplicate issue.** Every issue an Igor creates
-from a chat message quotes or links that message. Before creating one, the Igor looks on the
-claiming tracker for an issue that already links the message, and creates nothing if one
-exists. A lost or stale marker therefore costs API calls, never a second issue, as §5.0.2
+from a chat message links that message. Before creating one, the Igor looks on the claiming
+tracker for an issue that already links the message, and creates nothing if one exists; it
+then posts that issue's link in the chat only if the chat has no reply with it yet. A lost or stale marker therefore costs API calls, never a second issue, as §5.0.2
 requires of all saved state.
 
 **Discord directs work and never holds a claim.** It has no holder field, so a claim there

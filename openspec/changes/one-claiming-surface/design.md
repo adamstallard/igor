@@ -163,7 +163,7 @@ never counts as a person's approval, whatever branch protection accepts.
 **Decided by the owner, 2026-10-04.** A claiming tracker is one with a holder field, as GitHub
 and Linear have. Discord has none, so a claim there would be a bare message with nothing to
 verify. Discord is a direction surface: a person asks in a channel, the Igor opens an issue on
-the claiming tracker that quotes or links the chat, claims it there, and posts the issue's link
+the claiming tracker that links the chat message, claims it there, and posts the issue's link
 back.
 
 **Refused (owner, 2026-10-05): a configuration that claims on Discord.** Validation fails with
@@ -193,12 +193,23 @@ of the role, or a restarted one, carries on where the last poll stopped. Where i
 specified when the Discord adapter is built (task 5.5).
 
 **The link, not the marker, prevents a duplicate issue (owner, 2026-10-05).** Every issue an
-Igor creates from a chat message quotes or links that message. Before creating one, the Igor
-looks on the claiming tracker for an issue that already links the message, and creates nothing
-if one exists (*An issue created from chat points back to the chat*). So the marker only saves
+Igor creates from a chat message links that message. Before creating one, the Igor looks on
+the claiming tracker for an issue that already links the message, and creates nothing if one
+exists (*An issue created from chat points back to the chat*). So the marker only saves
 work: a lost or stale marker makes the Igor re-read messages and look them up, and never makes
 a second issue. This keeps the rule of `docs/architecture.md` §5.0.2 that correctness never
 depends on saved state. How the tracker is searched for the link is the adapter's choice.
+
+**An issue created from chat links the message (owner, 2026-10-05).** It may also quote it.
+A quote alone is not enough: the duplicate check finds an issue only by its link to the
+message.
+
+**A found issue's link is posted unless the chat already has it (owner, 2026-10-05).** When
+the check finds an issue that already links the message, the Igor posts that issue's link in
+the chat if the chat has no reply with that link yet, and otherwise does nothing. An Igor that
+stopped between creating the issue and posting its link therefore posts it on the next read,
+and reading the message again never posts it twice. How the adapter tells whether the chat
+already has the link is decided when the Discord adapter is built.
 
 **Rejected: a gateway socket.** It is outbound, so it would not break *nothing may require
 inbound reachability*. It buys latency Igor does not need.
