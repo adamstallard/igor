@@ -678,10 +678,10 @@ This change used pools in two places:
   line", so the in-force requirement stops contradicting the line while pools exist. Removing the
   requirement and specifying how a seat is chosen belong to #148's change.
 
-**Open: which change removes the pool requirement.** If #148's change archives first, this
-block modifies a requirement that no longer exists, and archive fails. *Recommend:* #148's change
-removes the requirement, written against whichever text is in force then. If #148 is specified
-before this archives, drop this block here instead.
+**Decided 2026-10-04 (Adam): #148's change removes the pool requirement**, written against
+whatever text is in force when #148 is specified. If #148 is specified before this change
+archives, this change drops its `MODIFIED` block for the requirement instead of carrying it: a
+block modifying a requirement that #148's change has removed fails archive.
 
 ## Settled on 2026-09-28, after the questions this design raised
 
