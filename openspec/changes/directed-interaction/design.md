@@ -106,7 +106,12 @@ accounts, `dependabot[bot]` and `github-actions[bot]`. So under *Authority is
 filed, and it cannot answer an Igor's question. That agrees with #156's rule that an Igor's
 review never counts, and needs no identity test of its own. It also means the frontend Igor
 asking a backend Igor, which *Refusing bot accounts* below wanted to keep, gets no reply under
-the rule as written; see Open.
+the rule as written.
+
+**One Igor questioning another through a mention stays ruled out (decided 2026-10-04).** An App's
+bot reads as having no write access (`permissions.push` false, measured above), so a mention from
+an Igor gets no reply. Revisit only if someone needs it. An Igor's word acting on another Igor is what #156 rules out for reviews, and
+allowing a reply but not an action would need the identity test this change avoided.
 
 ## Roads not taken
 
@@ -145,9 +150,3 @@ search for `mentions:dependabot[bot]` and `mentions:github-actions[bot]` returne
 nothing, and whether a person's `@<app-slug>` reaches the App by search or notification is not
 measured. Both additions above depend on it. *Recommend:* measure it with a real Igor App before
 gate two (task 8.9), and adjust the first requirement to what is found.
-
-**Whether one Igor may question another (raised 2026-10-04).** Since an App's bot reads
-`push: false`, a mention from an Igor gets no reply, which forecloses what *Refusing bot
-accounts* was cut to keep. *Recommend:* leave it foreclosed until an organization needs it. An
-Igor's word acting on another Igor is what #156 rules out for reviews, and allowing a reply but
-not an action would need the identity test this change avoided.
