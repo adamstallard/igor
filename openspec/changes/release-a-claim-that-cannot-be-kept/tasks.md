@@ -96,5 +96,6 @@
       with nothing published means handing off, which defers the item until someone with write access answers.
       What causes the close to be noticed at all is `defer-a-closed-pull-request`, #141
 - [ ] 8.5 When #156's label claim is built, reword the three strings in 2.4 and 5a.4 to name the
-      `igor:<role>` label instead of the assignee, with the reviewer's agreement. Proposed wording
-      is in `design.md`, *When an Igor claims by label*
+      `igor:<role>` label instead of the assignee. Decided 2026-10-04: the change that builds the
+      label claim makes this rewording, and this branch keeps the current text, which is true
+      until then. The new wording is in `design.md`, *When an Igor claims by label*

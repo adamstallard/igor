@@ -208,10 +208,11 @@ assignee, and stays correct for that build. When #156's label claim is built:
 - A person removing the label is a stop (#156). The stop exclusion in the handler covers it as
   it covers any stop: a run that was stopped is never handed off from here.
 
-**Open: the three approved wordings name the assignee.** Tasks 2.4 and 5a.4 carry them verbatim,
-and they may be reworded only with the reviewer's agreement. Each tells the reader to unassign
-the item, which frees nothing once the claim is a label. *Recommend*, applied when the label
-claim lands:
+**Decided 2026-10-04: the three approved wordings change in the change that builds the label
+claim, not here.** Tasks 2.4 and 5a.4 carry them verbatim. Each tells the reader to unassign the
+item, which is true while the build claims by assignee and frees nothing once the claim is a
+label. So they keep their current text on this branch, and the change that builds the label claim
+rewords them to:
 
 ```
 **<role>** could not finish taking this and could not release it either, so it still carries
