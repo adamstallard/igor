@@ -16,10 +16,10 @@ covers the whole of an Igor's traffic.
 
 ## The identity is the role's name
 
-**Recommended: an Igor acts as the github-app identity named after its role, and no file in the
-lore repository names an App.** `igor serve reviewer` acts as `reviewer`. Under the systemd
-template the instance is the role, so `/etc/igor/reviewer.env` holds that App's lines, and on a
-person's machine `~/.config/github-app/reviewer.{json,pem}` does.
+**Decided by Adam, 2026-10-04: an Igor acts as the github-app identity named after its role, and
+no file in the lore repository names an App.** `igor serve reviewer` acts as `reviewer`. Under
+the systemd template the instance is the role, so `/etc/igor/reviewer.env` holds that App's
+lines, and on a person's machine `~/.config/github-app/reviewer.{json,pem}` does.
 
 The reasons:
 
@@ -35,18 +35,18 @@ The reasons:
   identities are too. #156's stop detection depends on that, because it compares the actor of
   an `unlabeled` event with the Igor's own account.
 
-**Alternative, open for Adam: a role key `github_app: <identity>`.** It is visible in the role
-file and in `role explain`, and it lets a role and its App have different names. It would have
-to be set only in a role's own file, refused on a base (or every role extending it shares one
-App), and refused where two roles name the same identity. Recommended against for the
-redirect described above.
+**Rejected: a role key `github_app: <identity>`.** It would be visible in the role file and in
+`role explain`, and would let a role and its App have different names. It would have to be set
+only in a role's own file, refused on a base (or every role extending it shares one App), and
+refused where two roles name the same identity. It allows the redirect described above, and
+`role explain` reports the identity without it.
 
 **Rejected: an org-level key.** One key gives every Igor the same App, which #156 rules out.
 
 **Where the name collides.** Two lore repositories served from one machine, each with a
 `reviewer` role, would share the stored identity `reviewer`. On a server each instance has its
 own env file, so they don't collide there. On a person's machine it is rare enough to leave
-until somebody meets it, and the role key above is the fix if they do.
+until somebody meets it.
 
 ## Mint in TypeScript, reading the skill's files
 
@@ -159,6 +159,14 @@ This is the same shape as the configuration refusals Igor already makes before a
 as a role naming a seat that isn't declared: the cause is the host's configuration, and every
 item would fail the same way.
 
+## One installation per Igor
+
+**Decided by Adam, 2026-10-04: an Igor uses one App installation, accepted for now.** One
+installation covers one account, so an Igor's worked repositories and its lore repository must
+sit on one account, or it refuses to start (step 5 above). If an organization needs an Igor to
+reach two accounts, the fix is to mint one token per installation and pick the token by the
+repository each call touches.
+
 ## A credential refused while running
 
 A key deleted on the App's page, or an uninstalled App, makes the next mint fail with 401 or
@@ -219,5 +227,7 @@ claim and App credentials, so no build is left unable to claim (its task 3.6). A
 assigned, so this change alone leaves an Igor that cannot claim. #156's claim tasks alone leave
 an Igor that claims by label as a machine user.
 
-**Recommended, open for Adam:** build this change and #156's claim tasks (its sections 3 and 4)
-together, as one gate-two pull request, and archive the two changes together.
+**Decided by Adam, 2026-10-04: this change and #156 are built together, as one gate-two pull
+request, and archived together.** Gate two lands on #156's branch, `one-claiming-surface`. This
+change's branch, `app-identity`, is merged into it at that point, and #158 is then closed in
+favour of #156.

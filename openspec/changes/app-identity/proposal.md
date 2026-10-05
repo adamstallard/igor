@@ -55,8 +55,15 @@ Out of scope:
   `budget` take no role and keep acting as the person who runs them.
 - **An Igor reaching repositories on two accounts.** One installation covers one account, so an
   Igor whose worked repositories and lore repository sit on different accounts is refused.
+  Adam accepted this for now on 2026-10-04; minting one token per installation is the fix if an
+  organization needs it.
 - **Linear.** Its app user's credential is the `linear-app` skill's and a Linear adapter's
   concern (#156, task 5.1).
+
+**Built with #156.** Adam decided on 2026-10-04 that this change and `one-claiming-surface`
+are built as one gate-two pull request on that change's branch, and archived together. This
+change is merged into `one-claiming-surface` at that point, and #158 is closed in favour of
+#156.
 
 ## Capabilities
 

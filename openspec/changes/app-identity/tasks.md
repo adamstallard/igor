@@ -1,3 +1,9 @@
+## 0. How this is built (Adam, 2026-10-04)
+
+- [ ] 0.1 Built with #156 on `one-claiming-surface`: gate two lands on that branch, with this
+      change merged into it at that point, and #158 is closed in favour of #156. Both changes
+      are archived together (`design.md`, *Sequencing with #156*)
+
 ## 1. The agreement (gate one — this pull request)
 
 - [x] 1.1 `role-config`: an Igor's GitHub App identity is its role's name; no role file names an
@@ -100,6 +106,4 @@ The wording of each is written when it is built.
 
 ## 8. Outside this change
 
-- [ ] 8.1 Build alongside #156's claim tasks (its sections 3 and 4), as one gate-two pull
-      request, if Adam agrees (`design.md`, *Sequencing with #156*)
-- [ ] 8.2 When this is archived, tick #156's tasks 5.2 and 5.4 with a pointer here
+- [ ] 8.1 When this is archived, tick #156's tasks 5.2 and 5.4 with a pointer here
