@@ -1,0 +1,105 @@
+## 1. The agreement (gate one — this pull request)
+
+- [x] 1.1 `role-config`: an Igor's GitHub App identity is its role's name; no role file names an
+      App; credentials come from the host in the `github-app` skill's order
+- [x] 1.2 `surface-adapter`: every GitHub call from `run` and `serve` acts as the App; tokens are
+      minted on demand and used only in the first half of their life; an Igor knows its own bot
+      account; it refuses to start when it cannot act as the App
+- [x] 1.3 `task-execution`: nothing that yields an App token reaches the worker or its tree
+- [x] 1.4 `design.md`: the call sites, the identity, minting in TypeScript against the script,
+      how each call gets the token, startup and mid-run failure, deployment, risks, and
+      sequencing with #156
+
+## 2. Credentials and minting
+
+- [ ] 2.1 A new module, `src/app.ts`: find the identity's credentials in the skill's order
+      (`GITHUB_APP_*` when `GITHUB_APP_IDENTITY` names it, then
+      `$XDG_CONFIG_HOME/github-app/<identity>.json` with `appId` and optional `keyFile`, and
+      `<identity>.pem`). Each miss says where it looked; environment credentials for another
+      identity are named as such
+- [ ] 2.2 Sign the RS256 JWT with `node:crypto`, issued a minute early for clock skew; read the
+      slug from `GET /app`
+- [ ] 2.3 Find the installation per repository with `GET /repos/{owner}/{repo}/installation`;
+      refuse repositories on more than one installation, naming the accounts
+- [ ] 2.4 Mint with `POST /app/installations/{id}/access_tokens`; hold the token and its
+      `permissions` in memory; renew once half its life has passed
+- [ ] 2.5 Read the bot account from `GET /users/<slug>[bot]`: login and numeric id
+- [ ] 2.6 Tests with an injected `fetch` and a generated key: each lookup source, each refusal,
+      renewal at half life, reuse within it, and no token written to disk or `process.env`
+
+## 3. Every call as the App
+
+- [ ] 3.1 `ghRaw` (`src/gh.ts:33`): when an identity is set, spawn `gh` with an explicit
+      environment carrying `GH_TOKEN` and without `GITHUB_TOKEN`, `GH_ENTERPRISE_TOKEN` or
+      `GITHUB_ENTERPRISE_TOKEN`; with none set, spawn as today. Rewrite the module comment at
+      `src/gh.ts:3-5`, which says credentials are whatever the user set up
+- [ ] 3.2 `CloneProvider.provision` (`src/worktree.ts:485-486`): remove `gh auth setup-git`; give
+      `git clone` the per-command `GIT_CONFIG_*` helper, numbered after any already present
+- [ ] 3.3 `ClonedTree.merge` (`src/worktree.ts:445-447`): the same for both `git fetch` calls
+- [ ] 3.4 `GitHubTracker.identity` (`src/github-adapter.ts:240-246`): return the App's bot login
+      instead of calling `GET /user`, and expose the numeric id for #156's task 3.5
+- [ ] 3.5 `staleOwnArtifact` (`src/predicate.ts:39-44`) and every other actor comparison accept
+      both spellings of the bot login, or compare ids, per the measurement in 6.2
+- [ ] 3.6 Tests: an ambient `GH_TOKEN` never reaches `gh`; the clone's `.git/config` and the
+      global git config hold no helper afterwards; a person's command spawns `gh` unchanged
+
+## 4. Starting and stopping
+
+- [ ] 4.1 `run` and `serve` (`src/cli.ts:381-383`, `src/cli.ts:529-531`): run the startup check
+      in `design.md` before discovery, over the role's source repositories and the lore
+      repository, and refuse naming the first failure
+- [ ] 4.2 Report a missing Workflows write at startup; a publish touching `.github/workflows/`
+      without it fails naming the permission
+- [ ] 4.3 A role file setting `github_app` is refused with the reason, in `REFUSED_KEYS`
+      (`src/role.ts:117`)
+- [ ] 4.4 `explainRole` (`src/role.ts:643`) reports the identity and where its credentials came
+      from, without minting a token
+- [ ] 4.5 A credential refused mid-run (401 or 404 on a mint) opens `app:<identity>:credential`
+      in whichever record owns credential stops when this is built (#65's breaker or #101's
+      condition record); the Igor takes no new item, tries a mint once per cycle, and resumes
+      on success
+- [ ] 4.6 Tests for each refusal message, the Workflows report, and the mid-run stop and recovery
+
+## 5. The worker
+
+- [ ] 5.1 Test through the real spawn path that the worker's environment holds no `GH_TOKEN`,
+      `GITHUB_APP_*` or `GIT_CONFIG_*` while the Igor acts as an App (`workerEnv`,
+      `src/execute.ts:781`)
+
+## 6. Measurements owed
+
+Record each result in this file's `design.md`, including where it contradicts what is written
+there.
+
+- [ ] 6.1 Whether a Git Data API commit made with an installation token and no `author` shows
+      the App's bot as author; if not, name the bot in `createBranchWithFiles`
+      (`src/github.ts:91-94`), `commitOnBranch` (`src/github.ts:176-179`) and the state
+      branch's commit (`src/state.ts:46-49`)
+- [ ] 6.2 How GraphQL spells a bot's login in `author { login }` (`src/github-adapter.ts:50`)
+      compared with REST's `user.login`
+- [ ] 6.3 Whether a headless worker can read a file outside its working directory, such as the
+      App's key; if it can, file an issue before archiving
+
+## 7. Deployment and docs
+
+The wording of each is written when it is built.
+
+- [ ] 7.1 `deploy/igor.service`: rewrite the comment above `EnvironmentFile=` (lines 37-43) so
+      the per-instance file holds the App's identity, ID and key path, and no `GH_TOKEN`; drop
+      the `-` on line 45, because every Igor now needs that file
+- [ ] 7.2 `deploy/env.example`: replace the `GH_TOKEN` section (lines 3-5, 21-26) with the three
+      `GITHUB_APP_*` lines and the key file's mode and owner
+- [ ] 7.3 `deploy/docker-compose.yml`: the same lines, and the key mounted read-only
+- [ ] 7.4 `docs/deployment.md`: step 1 of *Before it can run* (lines 44-47) creates and installs
+      one App per role; line 119's `GH_TOKEN` passage names the App's file; the table at line
+      297 gets a row per startup refusal; say not to log `gh` in as the service user; name the
+      skill's `store-credentials` and `check` as the setup and diagnosis tools
+- [ ] 7.5 `docs/machine-accounts.md`: drop the machine-user section and the *Not built yet*
+      paragraph (#156's task 5.4)
+- [ ] 7.6 `README.md`: *Running an Igor*, step 1 (lines 177-182), describes the App
+
+## 8. Outside this change
+
+- [ ] 8.1 Build alongside #156's claim tasks (its sections 3 and 4), as one gate-two pull
+      request, if Adam agrees (`design.md`, *Sequencing with #156*)
+- [ ] 8.2 When this is archived, tick #156's tasks 5.2 and 5.4 with a pointer here
