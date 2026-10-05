@@ -129,6 +129,15 @@ Both add the same `igor:<role>` label, so the label can't separate them. `concur
 does: each claim comment carries the process rank, and the earliest claim comment by comment id
 holds the item. Its mechanism keys on comments, so it covers labels unchanged.
 
+## Built together with `app-identity` (#158)
+
+**Decided by Adam, 2026-10-04: gate two of this change also implements `app-identity`, and the
+two changes are archived together.** An App cannot be assigned, so the label claim needs the
+App's credentials, and task 3.6 removes the assignee claim in the same build. Gate two lands
+on this branch, `one-claiming-surface`; `app-identity` is merged into it at that point, and #158
+is closed in favour of this pull request. `app-identity` answers task 5.2, App credentials for
+`gh` and git, and carries task 5.4.
+
 ## Archiving alongside `concurrent-instances`
 
 `concurrent-instances` and this change both MODIFY *Assignment expresses a claim; ordering

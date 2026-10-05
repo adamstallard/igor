@@ -20,6 +20,12 @@
 - [x] 1.7 `docs/architecture.md`: §2.1 states one role per Igor; §6.9 is marked superseded by
       this change. `README.md` no longer describes an Igor holding several roles
 
+## Gate two (Adam, 2026-10-04)
+
+Gate two also implements `openspec/changes/app-identity/` (#158), merged into this branch when
+gate two starts; both changes are archived together (`design.md`, *Built together with
+`app-identity`*).
+
 ## 2. Configuration
 
 - [ ] 2.1 Refuse a configuration whose roles take claims on more than one tracker, naming them
@@ -73,7 +79,8 @@
 ## 5. Outside this change
 
 - [ ] 5.1 A Linear adapter implementing the above — file an issue before archiving
-- [ ] 5.2 GitHub App credentials for `gh` and git — file an issue before archiving
+- [ ] 5.2 GitHub App credentials for `gh` and git — answered by #158 (`app-identity`), built
+      in this change's gate two
 - [ ] 5.3 Measure whether a pull request opened by a GitHub App links to its Linear issue. Needs a
       GitHub repository connected to Linear; `aura-workroom` is not connected
 - [ ] 5.4 When App support ships, update `docs/deployment.md`, which still says an Igor must be
