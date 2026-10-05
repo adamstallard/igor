@@ -2,9 +2,8 @@
 
 ### Requirement: Adapters declare how a claim is expressed
 
-A tracker adapter SHALL declare whether the surface offers a native **holder field** — a field
-naming who has the item — or only message-based convention. This declaration determines how a
-claim is *expressed*, not how it is resolved.
+A tracker adapter SHALL declare its native **holder field**, a field naming who has the item.
+This declaration determines how a claim is *expressed*, not how it is resolved.
 
 Which field that is belongs to the adapter, not to the loop. Linear's is `delegate`, because an
 app identity there may hold the latter and not the former. GitHub's is the `igor:<role>` label,
@@ -43,12 +42,6 @@ name.
   labels and Linear's delegate are
 - **THEN** the loop does not claim an item assigned to a person unless the holder field names
   this Igor
-
-#### Scenario: Message-only surface declared
-
-- **WHEN** an adapter declares message-only convention
-- **THEN** a claim is expressed as a post
-- **AND** claim resolution still relies on ordering rather than on any surface-specific primitive
 
 ### Requirement: A GitHub adapter ships with this change
 

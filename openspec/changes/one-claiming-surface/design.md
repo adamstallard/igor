@@ -164,8 +164,13 @@ never counts as a person's approval, whatever branch protection accepts.
 and Linear have. Discord has none, so a claim there would be a bare message with nothing to
 verify. Discord is a direction surface: a person asks in a channel, the Igor opens an issue on
 the claiming tracker that quotes or links the chat, claims it there, and posts the issue's link
-back. A configuration that claims on Discord is refused (*An organization's Igors claim on one
-tracker*). `docs/architecture.md` §5.1, which said Discord "forces the convention path", and
+back.
+
+**Refused (owner, 2026-10-05): a configuration that claims on Discord.** Validation fails with
+an error saying Discord directs work and cannot hold claims (*An organization's Igors claim on
+one tracker*, task 2.1).
+
+`docs/architecture.md` §5.1, which said Discord "forces the convention path", and
 `docs/machine-accounts.md`, which said a Discord claim is a message, now say this.
 
 ## Discord is polled, not a socket
@@ -186,6 +191,14 @@ messages after the newest one already handled, then moves that marker to the new
 has now handled. The marker, one per channel, is kept with Igor's other state, so any process
 of the role, or a restarted one, carries on where the last poll stopped. Where it is stored is
 specified when the Discord adapter is built (task 5.5).
+
+**The link, not the marker, prevents a duplicate issue (owner, 2026-10-05).** Every issue an
+Igor creates from a chat message quotes or links that message. Before creating one, the Igor
+looks on the claiming tracker for an issue that already links the message, and creates nothing
+if one exists (*An issue created from chat points back to the chat*). So the marker only saves
+work: a lost or stale marker makes the Igor re-read messages and look them up, and never makes
+a second issue. This keeps the rule of `docs/architecture.md` §5.0.2 that correctness never
+depends on saved state. How the tracker is searched for the link is the adapter's choice.
 
 **Rejected: a gateway socket.** It is outbound, so it would not break *nothing may require
 inbound reachability*. It buys latency Igor does not need.

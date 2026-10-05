@@ -2,9 +2,10 @@
 
 ### Requirement: Assignment expresses a claim; ordering resolves it
 
-Where a tracker offers a native holder field, a claim SHALL set it, because that is the signal
-humans read. Where a surface offers only messages, a claim SHALL be a post. In both cases
-resolution SHALL rely on the storage order of writes, not on any conditional-write primitive.
+Every claiming tracker offers a native holder field, such as GitHub's `igor:<role>` label and
+Linear's delegate. A claim SHALL set the holder field, because that is the signal humans
+read, and SHALL post the claim message. Resolution SHALL rely on the storage order of writes,
+not on any conditional-write primitive.
 
 The holder field SHALL be written before the claim message. The field is what resolution reads
 and what people see; the message names the Igor and carries the stop instruction. Written in
@@ -41,7 +42,7 @@ means the claim is lost, because a list keeps every write rather than replacing 
 
 #### Scenario: No dependence on conditional writes
 
-- **WHEN** a claim is taken on any surface
+- **WHEN** a claim is taken on any tracker
 - **THEN** correctness does not depend on a compare-and-set guarantee from that surface's API
 
 ### Requirement: A claim is verified after a settle interval
@@ -344,8 +345,26 @@ sees where the request came from. After creating the issue, the Igor SHALL post 
 that chat with a link to the issue. The issue is created on the claiming tracker, and any claim
 on it is taken there.
 
+Before creating an issue from a chat message, the Igor SHALL look on the claiming tracker for
+an issue that already links that message, and SHALL create none if one exists. This check, not
+any record of which messages were handled, is what prevents a duplicate issue: such a record
+only saves work, and losing it costs API calls, never a second issue. How the tracker is
+searched for the link belongs to the adapter.
+
 #### Scenario: Instructed in chat
 
 - **WHEN** a person in chat instructs an Igor to do work that has no issue
 - **THEN** the Igor creates an issue on the claiming tracker whose description quotes or links the chat
 - **AND** it then posts the issue's link in the chat
+
+#### Scenario: An issue already links the message
+
+- **WHEN** an Igor reads a chat message asking for work, and an issue on the claiming tracker
+  already links that message
+- **THEN** the Igor creates no issue for it
+
+#### Scenario: Lost record of handled messages
+
+- **WHEN** an Igor's record of which chat messages it has handled is lost or out of date, and
+  it reads again a message it already made an issue from
+- **THEN** it finds the issue that links the message and creates no second one

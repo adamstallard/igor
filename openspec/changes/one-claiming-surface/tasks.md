@@ -4,9 +4,11 @@
       GitHub by `igor:<role>` label and claim comment; holder field written before the claim
       message; later write holds a single-valued field, and a losing Igor never clears it;
       items held by others; a person directing an Igor; what follows a stop; an issue created
-      from chat points back to the chat. The GitHub label rules match Linear's delegate rules
+      from chat points back to the chat, and is not created twice for one message. Every
+      claiming tracker has a holder field, so no claim is a message alone. The GitHub label rules match Linear's delegate rules
       case for case; a person reassigns by removing the holding Igor's label first
-- [x] 1.2 `surface-adapter`: the holder-field declaration says single value or list, and
+- [x] 1.2 `surface-adapter`: every tracker adapter declares a holder field, with no
+      message-only declaration; the holder-field declaration says single value or list, and
       whether it is distinct from the assignee; GitHub's `igor:` labels are distinct; the
       GitHub adapter claims by label, because an Igor on GitHub is an App
 - [x] 1.3 `task-execution`: a person approves every Igor pull request
@@ -15,13 +17,14 @@
 - [x] 1.5 `design.md`: what a claim is for, one role per Igor, the label mirroring Linear's
       delegate, reassigning by removing the holding Igor's label first, the Linear measurement
       of 2026-10-03, Discord polled rather than held open, Discord directing work and never
-      holding claims, how the Discord bot finds new messages, and the choices with live
+      holding claims, how the Discord bot finds new messages, why the link rather than the
+      marker prevents a duplicate issue, and the choices with live
       alternatives
 - [x] 1.6 `docs/machine-accounts.md`: an Igor on GitHub is a GitHub App, one per role; machine
       users are not supported at launch; Discord directs work and holds no claim
 - [x] 1.7 `docs/architecture.md`: §1 says Discord is polled, how the bot finds new messages,
-      and that stop is seen on the claiming tracker; §5.1 says Discord directs work and is
-      never a claiming tracker; §2.1 states one role per Igor; §6.9 is marked superseded by this change.
+      that the marker only saves work, and that stop is seen on the claiming tracker; §5.1 says Discord directs work and is
+      never a claiming tracker; §5.2 drops the message-only claim; §2.1 states one role per Igor; §6.9 is marked superseded by this change.
       `README.md` no longer describes an Igor holding several roles
 
 ## Gate two (Adam, 2026-10-04)
@@ -74,7 +77,8 @@ gate two starts; both changes are archived together (`design.md`, *Built togethe
       comments once that removing the holding Igor's label hands it over; a person's label never
       makes the holding Igor lose its claim
 - [ ] 3.9 An issue created from a chat instruction quotes or links the chat, and its link is
-      posted back in the chat
+      posted back in the chat. Before creating one, look on the claiming tracker for an issue
+      that already links the message, and create nothing if one exists
 
 ## 4. Pull requests
 
@@ -92,6 +96,5 @@ gate two starts; both changes are archived together (`design.md`, *Built togethe
       a machine user, to describe the App as the only identity, and drop the
       machine-user steps from `docs/machine-accounts.md`
 - [ ] 5.5 When the Discord adapter is built, specify where each channel's marker is stored: the
-      newest message already handled, after which the next poll asks Discord for messages. It
-      is kept with Igor's other state, so any process of the role, or a restarted one, carries
-      on where the last poll stopped
+      newest message already handled, after which the next poll asks Discord for messages. The
+      marker only saves work; the link check in 3.9 is what prevents a duplicate issue

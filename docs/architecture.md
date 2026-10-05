@@ -58,6 +58,12 @@ moves that marker to the newest message it has now handled. The marker is kept w
 other state (§5.0.2), so any process of the role, or a restarted one, carries on where the
 last poll stopped. Where it is stored is specified when the Discord adapter is built.
 
+**The marker only saves work; the link prevents a duplicate issue.** Every issue an Igor creates
+from a chat message quotes or links that message. Before creating one, the Igor looks on the
+claiming tracker for an issue that already links the message, and creates nothing if one
+exists. A lost or stale marker therefore costs API calls, never a second issue, as §5.0.2
+requires of all saved state.
+
 **Discord directs work and never holds a claim.** It has no holder field, so a claim there
 would be a bare message with nothing to verify. A request in chat becomes an issue on the
 claiming tracker, and the issue's link is posted back in the chat.
@@ -936,14 +942,15 @@ claiming tracker, claims it there, and posts the issue's link back in the channe
 **Use the assignment field for visibility; use ordering for correctness.** Those are separate
 jobs and conflating them produced a design with two race mechanisms.
 
-Where a tracker has an assignee field, an Igor sets it — that is the native signal humans read,
-and it is what makes a claim legible without anyone learning a convention. Where a surface has
-only messages, the claim is a post.
+Every claiming tracker has a holder field, and an Igor sets it — that is the native signal
+humans read, and it is what makes a claim legible without anyone learning a convention. The
+claim message follows. A surface with only messages, such as Discord, never holds a claim
+(§5.1).
 
-Correctness comes from the same place either way: **writes have a genuine total order at the
-storage layer**, so true ties essentially never occur and no tie-break rule is needed. Post,
-wait a settle interval, re-read, and stand down if someone was first. Every surface orders its
-writes, so one path covers all of them.
+Correctness comes from ordering: **writes have a genuine total order at the storage layer**, so
+true ties essentially never occur and no tie-break rule is needed. Claim, wait a settle
+interval, re-read, and stand down if someone was first. Every tracker orders its writes, so one
+path covers all of them.
 
 **A conditional write was considered and dropped.** "Set assignee only if unset" would be
 atomic where it exists — but it exists only on some trackers, so it cannot replace the ordering

@@ -68,6 +68,8 @@ an App, an Igor's approval is recognisable: its author is a `Bot` account.
     refused.
   - On GitHub, an Igor is a GitHub App and claims with its `igor:<role>` label and the claim
     comment. Machine-user Igors are not supported.
+  - Every claiming tracker has a holder field, so a claim is always the holder field plus the
+    claim message. The message-only claim is removed.
   - The holder field is written before the claim message. On a single-valued field the later
     write holds the item, and a losing Igor never clears it.
   - An item someone else holds is not claimed. An item assigned to a person is not claimed
@@ -84,8 +86,11 @@ an App, an Igor's approval is recognisable: its author is a `Bot` account.
     issue's events. Its own bot account means its own release; anyone else means a stop by
     that person, and the stop receipt names them.
   - An issue an Igor creates because it was instructed in chat quotes or links that chat, and
-    the Igor posts the issue's link back in the chat.
-- **`surface-adapter`:** an adapter declares whether its holder field holds one value or a list,
+    the Igor posts the issue's link back in the chat. Before creating one, the Igor looks on
+    the claiming tracker for an issue that already links the message, and creates nothing if
+    one exists.
+- **`surface-adapter`:** every tracker adapter declares a holder field; the message-only
+  declaration is removed. An adapter declares whether its holder field holds one value or a list,
   and whether it is distinct from the assignee. The GitHub adapter's holder field is the
   `igor:<role>` label, declared a list and distinct from the assignee. It never claims by
   assignment.
