@@ -86,7 +86,7 @@ Explicitly out of scope:
 - A revoked token costs three items rather than one per cycle indefinitely.
 - `executions.ndjson` gains two optional fields, both only on rows that carry the cure key.
   Readers that ignore unknown fields are unaffected.
-- `SeatVerdict` gains `rejected`, which every switch over it already has a case for. A pool whose
+- `SeatVerdict` gains `rejected`, which every switch over it already has a case for. A role whose
   seats were all refused hands off saying so, rather than saying the budget is used up (#49) or
   that nothing could be read.
 - A seat held by the breaker is spendable again the moment a different credential resolves, with
