@@ -2,6 +2,18 @@
 
 - [ ] 0.1 Load the prose and bug-hunter skills from a pinned directory with `--add-dir` (#152)
 - [ ] 0.2 Confirm bug-hunter's caller-commits mode has landed in the shared-skills repository
+- [ ] 0.3 Measure that a fresh `claude -p --session-id <uuid>` reports that uuid as
+      `session_id` in its hook payload (design, item 1)
+- [ ] 0.4 Measure whether `git write-tree` after `git add -A` in a clone equals the tree sha
+      the Git Data API returns for the same change, with a deletion and an executable file;
+      if not, sign and verify against the API's tree (design, item 3)
+- [ ] 0.5 Before a worker starts, generate its session uuid, run
+      `prose.py start --session <uuid> --goals "<the item's reader goals>"` with the worker's
+      `HOME` and `XDG_STATE_HOME`, put the printed rules in its system prompt, and pass
+      `--session-id <uuid>` (design, item 1)
+- [ ] 0.6 Grant a role that produces signed text `prose.py check`, `prose.py sign`,
+      bug-hunter's `caller-result.sh` (by path into the pinned skills directory) and
+      `git add`; run `start`, staging and verifying in Igor's code instead (design, item 2)
 
 ## 1. Verifying and publishing
 
@@ -12,6 +24,8 @@
       attempt, nothing is published and the failure is recorded to the state branch
 - [ ] 1.3 Tests: signed text is published unchanged; edited or unsigned text is sent back;
       repeated failure publishes nothing; a handoff posts without a model call
+- [ ] 1.4 Test: with no prose hook installed, Igor's posting code refuses a post without a
+      valid footer (design, item 4)
 
 ## 2. The commit
 
