@@ -189,6 +189,19 @@ approved could veto them. The stop gate and the deferral gate still run.
 
 Lane predicates run (settled question 9).
 
+### An approval on a draft counts
+
+**Measured 2026-10-04: GitHub accepts an approving review on a draft pull request.** In
+`adamstallard/igor-throwaway-tests`, the App `igor-generalist` opened draft pull request #10, and
+Adam's `POST /pulls/10/reviews` with `event=APPROVE` returned `state: APPROVED`. The pull
+request was never marked ready. Read back as the App, REST
+`GET /pulls/10/reviews` gave one review: `user.login` `adamstallard`, `user.type` `User`,
+`state` `APPROVED`. GraphQL gave `isDraft: true` and `reviewDecision: APPROVED`.
+
+So gate one opens a pull request as any run of the role would, a draft where the role allows
+`draft-pr`, and an approval on that draft is the go signal. A role that allows only `draft-pr`
+can use `two-gate`.
+
 ### Gate one ends with a release, not a completion
 
 The configured completion action is for "on believing work complete". At gate one the work is
@@ -243,8 +256,8 @@ edit time (`lastEditedAt`) is later than the approval. A comment is not an edit.
 ## Settled questions (Adam, 2026-09-28)
 
 Adam accepted every recommendation below on 2026-09-28. The requirements were already written to
-them, so none changed. Question 3 still waits on the measurement in task 1.1, which decides
-between its two branches. Adam reversed question 5 on 2026-10-04.
+them, so none changed. Question 3 was settled by task 1.1's measurement on 2026-10-04. Adam
+reversed question 5 on 2026-10-04.
 
 1. **The gate-one title marker.** An Igor can't know a repository's `TYPE(Scope):` convention,
    and its title is the issue title today. *Recommend:* gate one titles the pull request
@@ -256,11 +269,11 @@ between its two branches. Adam reversed question 5 on 2026-10-04.
    it is already in the search results, but a reviewer who tidies the title stalls the item
    forever, and that is the unsafe direction. The diff costs one file listing per own gate-one
    artifact that has an actionable review.
-3. **Draft or ready at gate one.** A role that allows `draft-pr` opens drafts. Whether GitHub
-   accepts an approving review on a draft has not been measured (task 1.1). *Recommend:* keep
-   the role's choice if it does. If it doesn't, open gate one ready for review where the role
-   allows `pr`, and refuse `workflow: two-gate` at validation for a role that allows only
-   `draft-pr`, since that role could never be approved.
+3. **Draft or ready at gate one.** **Settled by measurement on 2026-10-04: keep the role's
+   choice.** GitHub accepts an approving review on a draft (*An approval on a draft counts*), so
+   a role that allows `draft-pr` opens gate one as a draft, and a role that allows only
+   `draft-pr` may use `two-gate`. The branch not taken was to open gate one ready for review
+   and refuse `two-gate` for a `draft-pr`-only role.
 4. **Role-level `reviewers`.** §5.4 says "per-role lists once roles exist", and roles now
    declare `reviewers`. Your decision named the store-level list. *Recommend:* role `reviewers`
    do **not** confer authority. They say whom to ask, and the store list says who may decide. A

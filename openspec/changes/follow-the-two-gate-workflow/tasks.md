@@ -2,8 +2,9 @@ Line numbers are as of `main` at `511e519`.
 
 ## 1. Measure before building
 
-- [ ] 1.1 Find out whether GitHub accepts an `APPROVE` review on a **draft** pull request, on a
-      scratch repository. Record the answer in `design.md` and settle question 3 with it
+- [x] 1.1 Find out whether GitHub accepts an `APPROVE` review on a **draft** pull request, on a
+      scratch repository. Record the answer in `design.md` and settle question 3 with it.
+      Measured 2026-10-04: accepted, so gate one keeps the role's draft choice
 - [ ] 1.2 Confirm `latestOpinionatedReviews` returns one review per author, excluding comment-only
       and dismissed reviews, and that `commit { oid }` names the commit each review was submitted
       against
@@ -75,9 +76,10 @@ Line numbers are as of `main` at `511e519`.
       triage call is made for it
 - [ ] 5.5 Record a resume decision at the universal stage, as a catch-up is recorded
       (`src/loop.ts:1040`)
-- [ ] 5.6 Tests: approved → resumed; changes requested → resumed; awaiting review → skipped; past
-      gate two → skipped; somebody else's → skipped; stopped, held by another party or excluded
-      by the lane → not resumed; approval found with the item's `updatedAt` untouched
+- [ ] 5.6 Tests: approved → resumed; approved while a draft → resumed; changes requested →
+      resumed; awaiting review → skipped; past gate two → skipped; somebody else's → skipped;
+      stopped, held by another party or excluded by the lane → not resumed; approval found with
+      the item's `updatedAt` untouched
 
 ## 6. Gate one
 

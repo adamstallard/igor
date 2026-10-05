@@ -133,10 +133,20 @@ Nothing else SHALL start gate two. That includes a comment, a mention, a comment
 dismissed review, and any text in a review's body. An approval with no activity on the item
 itself SHALL still be found.
 
+Gate one SHALL open its artifact as a draft or ready for review by the role's action space, as
+any other run of the role would. An approval on a draft artifact SHALL count as one on an
+artifact ready for review.
+
 #### Scenario: An approval from someone with write access starts gate two
 
 - **WHEN** someone with write access approves the Igor's gate-one artifact, and nothing has
   landed on it since
+- **THEN** gate two starts on the next cycle
+
+#### Scenario: An approval on a draft starts gate two
+
+- **WHEN** a role allows `draft-pr`, gate one opens its artifact as a draft, and someone with
+  write access approves it while it is still a draft
 - **THEN** gate two starts on the next cycle
 
 #### Scenario: An approval from a store reviewer without write access starts gate two
