@@ -13,12 +13,14 @@
 - [x] 1.4 `role-config`: an Igor holds exactly one role, and its identity is that role; a role
       naming more than one base in `extends` is refused
 - [x] 1.5 `design.md`: what a claim is for, one role per Igor, the label mirroring Linear's
-      delegate, reassigning by removing the holding Igor's label first, the Linear measurement of 2026-10-03, and the
-      choices with live alternatives
+      delegate, reassigning by removing the holding Igor's label first, the Linear measurement
+      of 2026-10-03, Discord polled rather than held open, and the choices with live
+      alternatives
 - [x] 1.6 `docs/machine-accounts.md`: an Igor on GitHub is a GitHub App, one per role; machine
       users are not supported at launch
-- [x] 1.7 `docs/architecture.md`: §2.1 states one role per Igor; §6.9 is marked superseded by
-      this change. `README.md` no longer describes an Igor holding several roles
+- [x] 1.7 `docs/architecture.md`: §1 says Discord is polled and stop is seen on the claiming
+      tracker; §2.1 states one role per Igor; §6.9 is marked superseded by this change.
+      `README.md` no longer describes an Igor holding several roles
 
 ## Gate two (Adam, 2026-10-04)
 

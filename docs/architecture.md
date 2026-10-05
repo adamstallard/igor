@@ -40,19 +40,22 @@ Igors poll rather than waiting for triggers. Polling avoids needing a public end
 webhook relay per platform, and per-surface bearer-token management. The cost is latency,
 which for this class of work is irrelevant.
 
-**What that argument does and does not cover.** It holds wherever a push would require the
-surface to reach *in* — a self-hosted Igor behind a firewall cannot receive a webhook without
-becoming a service someone operates. It does not hold for a surface the Igor already holds an
-outbound connection to. A Discord bot keeps a socket open and is handed every message in its
-channels; polling that channel asks for information already arriving, at higher latency and
-more calls. Take the push there.
+**Discord is polled too, though a socket there would need no public endpoint.** A bot could
+hold a gateway socket, which is outbound and would not break *nothing may require inbound
+reachability*. Igor reads new channel messages through Discord's REST API on its normal cycle
+instead, because:
 
-Two things that does not change. Discovery still polls, because a tracker has no push a
-firewalled Igor can receive. And a push is not coordination: it tells one Igor that something
-happened and decides nothing about who takes it, so the claim protocol is untouched.
+- **Chat is where work is asked for.** A person asks in chat, an Igor opens an issue on the
+  org's claiming tracker that quotes or links the chat, and posts the issue's link back. A few
+  minutes' latency is acceptable there, as it is on the tracker.
+- **One role may run as several interchangeable processes.** A socket per process would hand
+  every message to each of them, so one process would have to own the connection. Polling with a
+  cursor the processes share needs no owner.
+- **No heartbeat or reconnect to maintain.**
 
-Where it earns its keep is **stop**. A stop is currently seen at the next checkpoint, and its
-whole value is being fast — the one place in this design where latency is not irrelevant.
+**Stop needs no push either.** A stop happens on the claiming tracker: a person replies stop,
+or removes the Igor's `igor:<role>` label or its Linear delegation. Igors already poll that
+tracker, so the stop is seen on the next poll.
 
 ---
 

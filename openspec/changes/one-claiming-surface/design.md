@@ -158,6 +158,27 @@ Every Igor is a GitHub App, so a person approves every Igor pull request, and an
 approval is recognisable: the review's author is a `Bot` account. A review from a `Bot` author
 never counts as a person's approval, whatever branch protection accepts.
 
+## Discord is polled, not a socket
+
+**Decided by the owner, 2026-10-04: the Discord bot polls.** It reads new channel messages
+through Discord's REST API on Igor's normal cycle, and neither holds a gateway socket nor runs
+as a service. Stop happens on the claiming tracker, which Igors already poll, so nothing about
+stop depends on Discord. Discord is where a person asks for work, and a few minutes' latency is
+acceptable there, as it is on the tracker.
+
+- Polling is Igor's model on every surface.
+- One role may run as several interchangeable processes. A socket per process would deliver
+  every message to each of them, so one process would have to own it; polling with a shared
+  cursor needs no owner.
+- No heartbeat or reconnect to maintain.
+
+**Rejected: a gateway socket.** It is outbound, so it would not break *nothing may require
+inbound reachability*. It buys latency Igor does not need.
+
+To verify when the Discord adapter is built, not measured here: whether reading ordinary
+message text needs the Message Content Intent, and whether a bot must connect to the gateway
+once before it can send through REST.
+
 ## Measured against Linear, 2026-10-03
 
 Against the Aura workspace, as the app user `aura-agent-adam`, whose token was minted with
