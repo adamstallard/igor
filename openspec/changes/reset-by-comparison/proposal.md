@@ -68,8 +68,8 @@ a refusal never named, and an hour named while another window also holding the s
 return. Stating it that way keeps every current case on the side it is already on and removes
 one: the both-windows-shut hour.
 
-**Ordering across seats is untouched.** A pool is back when its first seat is back. Each seat
-answers with the later of its own two returns, and the earliest of those is still what the
+**Ordering across seats is untouched.** The seats that serve a role are back when the first of
+them is back. Each seat answers with the later of its own two returns, and the earliest of those is still what the
 handoff states.
 
 Explicitly out of scope:
@@ -83,8 +83,10 @@ Explicitly out of scope:
   the issue never raises, inside a change about a decision that was never reasoned, would hand
   back a spec that looks settled on a point nobody settled. The added requirement therefore
   applies only where both returns can be placed, and says so.
-- **Anything about which seat a pool picks.** `chooseSeat` is untouched. This is only about the
-  hour stated once no seat could be picked.
+- **Anything about which seat is picked.** `chooseSeat` is untouched. This is only about the
+  hour stated once no seat could be picked. Once #148 is built, seat choice becomes the most
+  headroom, with the soonest reset as the tie-break; that changes which seat is picked, not which
+  hour is stated when none is.
 - **`graceful-handoff`.** "A budget handoff states when capacity returns" is the consumer of
   this rule, not a participant in it, and needs no amendment: it requires an hour, and this says
   which one.

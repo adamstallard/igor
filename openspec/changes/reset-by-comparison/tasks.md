@@ -37,8 +37,8 @@
 - [x] 3.4 New: both windows shut with both hours stated and the week later — the week's hour,
       unhedged, so the change is not a swapped preference
 - [x] 3.5 New: a readable seat and a derived seat with the same two returns state the same hour
-- [x] 3.6 Unchanged and worth asserting: the pool still states the earliest hour across its
-      seats once each seat states the later of its own two
+- [x] 3.6 Unchanged and worth asserting: the role still states the earliest hour across the
+      seats that serve it once each seat states the later of its own two
 - [x] 3.7 Not enumerated above, found while implementing: `test/budget.test.ts`'s 'hedges the
       handoff hour once its week is at the reserve too' is a fourth test that pins the
       preference — a `0.57` seat with the week at `43%`, session 8pm, week 4pm, asserting 4pm

@@ -26,8 +26,8 @@ correctness then depends on which path a seat happens to take, and nothing about
 credential bears on when its windows reopen.
 
 This governs which of a seat's own hours is stated. It does not change how seats are ordered
-against each other: a pool is back when its first seat is back, so the earliest hour across
-seats is still what a handoff states.
+against each other: the seats that serve a role are back when the first of them is back, so the
+earliest hour across those seats is still what a handoff states.
 
 #### Scenario: The later hour is stated for a seat that could be read
 
@@ -55,11 +55,11 @@ seats is still what a handoff states.
 - **AND** which hour is stated is decided by the rules already governing an unplaceable return,
   which this requirement does not disturb
 
-#### Scenario: The pool is still back on its earliest seat
+#### Scenario: The role is still back on its earliest seat
 
-- **WHEN** several seats in a pool are each blocked in both windows
+- **WHEN** several seats that serve the role are each blocked in both windows
 - **THEN** each seat answers with the later of its own two returns
-- **AND** the pool's stated return is the earliest of those
+- **AND** the role's stated return is the earliest of those
 
 ### Requirement: An hour is marked approximate where a stated reset does not fix it
 
