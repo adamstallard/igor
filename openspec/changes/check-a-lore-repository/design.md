@@ -110,13 +110,12 @@ credential exists at all.
 GitHub App, one per role, which claims an issue with its `igor:<role>` label. Machine users are
 not supported. Two checks change.
 
-**The claimer's write access becomes each role's App.** The check was written against a machine
-user: GitHub accepts an assignment to one that lacks write access, then silently drops it. An App
-claims by label instead, and the question becomes whether each role's App is installed on the
-repository it claims on, with the permissions the label and the claim comment need. An identity
-that is not an App is now a finding. [#150](https://github.com/adamstallard/igor/pull/150)
-already expects this check: its gate-two test excludes an Igor's review by the reviewer's `Bot`
-account type, and a machine user's review would pass as a person's.
+**The identity check is a check of each role's App.** An App claims by label, so the question is
+whether each role's App is installed on the repository it claims on, with the permissions the
+label and the claim comment need. An identity that is not an App is a finding.
+[#150](https://github.com/adamstallard/igor/pull/150) already expects this check: its gate-two
+test excludes an Igor's review by the reviewer's `Bot` account type, and a machine user's review
+would pass as a person's.
 
 **"Another account could approve" means another person.** An Igor's approval never counts for a
 person's (#156), and every Igor pull request needs a person's. An App's bot also reads
@@ -124,9 +123,8 @@ person's (#156), and every Igor pull request needs a person's. An App's bot also
 `dependabot[bot]` and `github-actions[bot]`), so a list of collaborators with write access
 already leaves the Apps out.
 
-**Open: what to report while Igor still runs as a machine user.** App support is not built yet
-(#156's tasks). A `doctor` built before it would report every working installation's identity as
-a finding. *Recommend:* build the App check as specified, and if `doctor` ships first, keep the
-machine user's write-access check until App support lands, reporting the identity as not yet an
-App without counting it as a finding.
-
+**Sequenced after App support (decided 2026-10-04).** `doctor` is built after #156's
+implementation, so the only identity it ever meets is an App, and the App check is the only
+identity check it has. There is no interim check of a claiming account's write access, and no
+reporting mode for an identity that is not yet an App: a role whose identity is not an App is a
+finding, as the spec states.

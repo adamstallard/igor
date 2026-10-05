@@ -1,3 +1,7 @@
+**Depends on [#156](https://github.com/adamstallard/igor/pull/156)'s implementation.** Build
+this change after App support has landed: 3.7 checks Apps only, with no interim check of a
+claiming account's write access.
+
 ## 1. The agreement (gate one — this pull request)
 
 - [x] 1.1 Five `setup-check` requirements: the surface and the four constraints — read-only,
@@ -47,7 +51,7 @@
       not an App is a finding. This replaces the deployment table's
       `the tracker did not record <account> as holding <item>` row, checkable before a claim.
       Confirm against the live API where an installation's permissions can be read, and record
-      it in `design.md`
+      it in `design.md`. Requires #156's implementation; there is no machine-user path
 - [ ] 3.8 Every credentialled check degrades individually: one unreadable endpoint skips one
       check, not the run
 

@@ -58,6 +58,9 @@ inspects the destination and its repository:
   permissions its `igor:<role>` label and claim comment need. On GitHub every Igor is a GitHub
   App (#156), and an identity that is not one is a finding; see `design.md`.
 
+**Depends on #156's implementation.** `doctor` is built after App support lands, so it checks
+Apps only. It has no interim check of a claiming account's write access.
+
 *The check reports and never repairs.* Changing branch protection is exactly the outward-facing
 mutation a diagnostic must not make, and a doctor that mutates is one people are afraid to run.
 
@@ -88,7 +91,7 @@ made it impossible rather than because it stopped mattering.
 | `seat "x" reads its token from Y, which is not set` | already `igor budget`, which reports a credential that will not resolve. The report names that command rather than reading tokens itself |
 | `role "x" names seat "y", which is not declared` | already a load-time refusal (`role.ts` `checkSeat`), for the role you run. `doctor` resolves **every** role, so the roles you did not run are covered by the resolution check rather than by a check of their own |
 | `role "x" names no seat` | the same refusal, the same coverage |
-| `the tracker did not record <account> as holding <item>` | **a check**, now of each role's App rather than a machine user's write access (#156). What the App may do is readable before anything is claimed, and this is the row whose cause is invisible at the moment it bites |
+| `the tracker did not record <account> as holding <item>` | **a check** of each role's App (#156). What the App may do is readable before anything is claimed, and this is the row whose cause is invisible at the moment it bites |
 | nothing is ever claimed | **prose.** The remedy is already *"run `igor run <role> --plan`"* — a funnel over live candidates, not a fact about setup |
 | `9 left untriaged — the budget is used up …` | **prose.** A runtime state of a correctly configured system; `igor budget` shows it |
 | `9 left untriaged — no seat's usage could be read …` | **prose**, for the same reason |
