@@ -77,12 +77,14 @@
 Record each result in this file's `design.md`, including where it contradicts what is written
 there.
 
-- [ ] 6.1 Whether a Git Data API commit made with an installation token and no `author` shows
+- [x] 6.1 Whether a Git Data API commit made with an installation token and no `author` shows
       the App's bot as author; if not, name the bot in `createBranchWithFiles`
       (`src/github.ts:91-94`), `commitOnBranch` (`src/github.ts:176-179`) and the state
-      branch's commit (`src/state.ts:46-49`)
-- [ ] 6.2 How GraphQL spells a bot's login in `author { login }` (`src/github-adapter.ts:50`)
-      compared with REST's `user.login`
+      branch's commit (`src/state.ts:46-49`). Measured 2026-10-04: it does, with GitHub as
+      committer and a GitHub signature, so nothing changes
+- [x] 6.2 How GraphQL spells a bot's login in `author { login }` (`src/github-adapter.ts:50`)
+      compared with REST's `user.login`. Measured 2026-10-04: GraphQL `igor-generalist`, REST
+      `igor-generalist[bot]`, so task 3.5 must match both or compare `databaseId`
 - [ ] 6.3 Whether a headless worker can read a file outside its working directory, such as the
       App's key; if it can, file an issue before archiving
 

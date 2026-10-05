@@ -119,15 +119,46 @@ slug from `GET /app`, authenticated by the JWT, and its bot account from
 events carry that id with `type == "Bot"` (`one-claiming-surface/design.md`, 2026-10-04), and
 its task 3.5 matches on it.
 
-**Expected, not measured: GraphQL may spell a bot's login without `[bot]`.** Discovery reads
-pull request authors through GraphQL (`src/github-adapter.ts:50`), and `staleOwnArtifact`
-compares an author with the Igor's identity. If GraphQL reports `acme-reviewer` where REST
-reports `acme-reviewer[bot]`, that comparison fails silently. Task 6.2 measures it, and the
-requirement covers both spellings either way.
+**Measured 2026-10-04: GraphQL spells a bot's login without `[bot]`, and REST with it.** On a
+draft pull request the App `igor-generalist` opened in `adamstallard/igor-throwaway-tests`:
 
-**Expected, not measured: a Git Data API commit made with an installation token and no `author`
-is authored by the App's bot.** Task 6.1 measures it. If not, `createBranchWithFiles` and
-`commitOnBranch` name the bot as author explicitly.
+| read | login | type and id |
+|---|---|---|
+| REST `POST /pulls` and `GET /pulls/{n}`, `.user` | `igor-generalist[bot]` | `Bot`, 337663049 |
+| GraphQL `pullRequest { author { login } }` | `igor-generalist` | `__typename: Bot`, `databaseId: 337663049`, `id: BOT_kgDOFCBUSQ` |
+| REST `GET /users/igor-generalist[bot]` | `igor-generalist[bot]` | `Bot`, 337663049 |
+
+Discovery reads pull request authors through GraphQL (`src/github-adapter.ts:50` and `:72`,
+mapped at `:117`), and `staleOwnArtifact` (`src/predicate.ts:39-44`) compares that author with
+`as` by string equality. With `as` set to `igor-generalist[bot]` from `GET /users/<slug>[bot]`,
+the Igor's own pull request reads as `igor-generalist`, never matches, and a conflicting artifact
+of its own is treated as somebody else's work in review. The requirement *An Igor knows its own
+bot account* already covers this: its scenario *A read that spells the login differently still
+matches* names both spellings. GraphQL can also return the id, through
+`author { login ... on Bot { databaseId } }`, which the same requirement prefers where a read
+reports one.
+
+`GET /app` answers only to the JWT. Asked with an installation token it returns 401, *A JSON web
+token could not be decoded*, so the slug is read before any token is minted, as step 3 of the
+startup check already does.
+
+**Measured 2026-10-04: a Git Data API commit made with an installation token and no `author` or
+`committer` is authored by the App's bot, committed by GitHub, and signed.** The App made blob,
+tree and commit with the same fields `createBranchWithFiles` sends (`message`, `tree`,
+`parents`), then the ref. `POST /git/commits` returned commit
+`5fa4b564f94db52569799823e57c13f9e203b79d` with:
+
+| field | name | email | date |
+|---|---|---|---|
+| `author` | `igor-generalist[bot]` | `337663049+igor-generalist[bot]@users.noreply.github.com` | `2026-10-05T03:53:45Z` |
+| `committer` | `GitHub` | `noreply@github.com` | `2026-10-05T03:53:45Z` |
+
+`verification` was `verified: true`, `reason: valid`, a PGP signature by GitHub. REST
+`GET /commits/{sha}` gives `.author.login` `igor-generalist[bot]` (`type: Bot`, id 337663049)
+and `.committer.login` `web-flow` (`type: User`). So no explicit author is needed in
+`createBranchWithFiles`, `commitOnBranch` or the state branch's commit. Whether GitHub still
+signs a commit that names an author was not measured, so adding one risks the signature. An actor comparison over
+commits must read the author, because the committer is never the Igor.
 
 ## Access comes from the installation
 
