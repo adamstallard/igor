@@ -158,6 +158,16 @@ Every Igor is a GitHub App, so a person approves every Igor pull request, and an
 approval is recognisable: the review's author is a `Bot` account. A review from a `Bot` author
 never counts as a person's approval, whatever branch protection accepts.
 
+## Discord directs work and never holds claims
+
+**Decided by the owner, 2026-10-04.** A claiming tracker is one with a holder field, as GitHub
+and Linear have. Discord has none, so a claim there would be a bare message with nothing to
+verify. Discord is a direction surface: a person asks in a channel, the Igor opens an issue on
+the claiming tracker that quotes or links the chat, claims it there, and posts the issue's link
+back. A configuration that claims on Discord is refused (*An organization's Igors claim on one
+tracker*). `docs/architecture.md` §5.1, which said Discord "forces the convention path", and
+`docs/machine-accounts.md`, which said a Discord claim is a message, now say this.
+
 ## Discord is polled, not a socket
 
 **Decided by the owner, 2026-10-04: the Discord bot polls.** It reads new channel messages
@@ -168,9 +178,14 @@ acceptable there, as it is on the tracker.
 
 - Polling is Igor's model on every surface.
 - One role may run as several interchangeable processes. A socket per process would deliver
-  every message to each of them, so one process would have to own it; polling with a shared
-  cursor needs no owner.
+  every message to each of them, so one process would have to own it; polling needs no owner.
 - No heartbeat or reconnect to maintain.
+
+**How the bot finds new messages (owner, 2026-10-04).** Each poll asks Discord for a channel's
+messages after the newest one already handled, then moves that marker to the newest message it
+has now handled. The marker, one per channel, is kept with Igor's other state, so any process
+of the role, or a restarted one, carries on where the last poll stopped. Where it is stored is
+specified when the Discord adapter is built (task 5.5).
 
 **Rejected: a gateway socket.** It is outbound, so it would not break *nothing may require
 inbound reachability*. It buys latency Igor does not need.

@@ -120,9 +120,10 @@ accountable* rather than *who is working*. Free.
 **ClickUp** has no bot identity. An Igor is an ordinary member and is billed as one, so
 capacity there is a per-Igor purchase rather than a configuration choice.
 
-**Discord** identifies a bot by its application, and a claim there is a message rather than a
-field — so identity has to be textual, and the claim message carries it. Identity must be
-structural where the claim primitive is structural, and textual where the claim is a message.
+**Discord** identifies a bot by its application. It directs work and never holds a claim: it
+has no holder field, so a claim there would be a bare message with nothing to verify. A person
+asks in a channel, the Igor opens an issue on the claiming tracker, and posts the issue's link
+back in the channel. The claim, and the identity it shows, are on the tracker.
 
 Measured rather than assumed, but only from documentation and trial accounts; none has run an
 Igor yet.

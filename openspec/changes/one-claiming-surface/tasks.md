@@ -14,12 +14,14 @@
       naming more than one base in `extends` is refused
 - [x] 1.5 `design.md`: what a claim is for, one role per Igor, the label mirroring Linear's
       delegate, reassigning by removing the holding Igor's label first, the Linear measurement
-      of 2026-10-03, Discord polled rather than held open, and the choices with live
+      of 2026-10-03, Discord polled rather than held open, Discord directing work and never
+      holding claims, how the Discord bot finds new messages, and the choices with live
       alternatives
 - [x] 1.6 `docs/machine-accounts.md`: an Igor on GitHub is a GitHub App, one per role; machine
-      users are not supported at launch
-- [x] 1.7 `docs/architecture.md`: §1 says Discord is polled and stop is seen on the claiming
-      tracker; §2.1 states one role per Igor; §6.9 is marked superseded by this change.
+      users are not supported at launch; Discord directs work and holds no claim
+- [x] 1.7 `docs/architecture.md`: §1 says Discord is polled, how the bot finds new messages,
+      and that stop is seen on the claiming tracker; §5.1 says Discord directs work and is
+      never a claiming tracker; §2.1 states one role per Igor; §6.9 is marked superseded by this change.
       `README.md` no longer describes an Igor holding several roles
 
 ## Gate two (Adam, 2026-10-04)
@@ -30,7 +32,8 @@ gate two starts; both changes are archived together (`design.md`, *Built togethe
 
 ## 2. Configuration
 
-- [ ] 2.1 Refuse a configuration whose roles take claims on more than one tracker, naming them
+- [ ] 2.1 Refuse a configuration whose roles take claims on more than one tracker, naming them,
+      or on Discord, which directs work and cannot hold claims
 - [ ] 2.2 The adapter interface declares single-valued or list, and distinct-from-assignee,
       alongside `nativeHolderField`; GitHub's `igor:` labels declare list and distinct
 - [ ] 2.3 Remove multi-role Igors from `src/role.ts`: refuse a role whose `extends` names more
@@ -88,3 +91,7 @@ gate two starts; both changes are archived together (`design.md`, *Built togethe
 - [ ] 5.4 When App support ships, update `docs/deployment.md`, which still says an Igor must be
       a machine user, to describe the App as the only identity, and drop the
       machine-user steps from `docs/machine-accounts.md`
+- [ ] 5.5 When the Discord adapter is built, specify where each channel's marker is stored: the
+      newest message already handled, after which the next poll asks Discord for messages. It
+      is kept with Igor's other state, so any process of the role, or a restarted one, carries
+      on where the last poll stopped

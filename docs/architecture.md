@@ -49,9 +49,18 @@ instead, because:
   org's claiming tracker that quotes or links the chat, and posts the issue's link back. A few
   minutes' latency is acceptable there, as it is on the tracker.
 - **One role may run as several interchangeable processes.** A socket per process would hand
-  every message to each of them, so one process would have to own the connection. Polling with a
-  cursor the processes share needs no owner.
+  every message to each of them, so one process would have to own the connection. Polling
+  needs no owner.
 - **No heartbeat or reconnect to maintain.**
+
+**Each poll asks Discord for a channel's messages after the newest one already handled**, then
+moves that marker to the newest message it has now handled. The marker is kept with Igor's
+other state (§5.0.2), so any process of the role, or a restarted one, carries on where the
+last poll stopped. Where it is stored is specified when the Discord adapter is built.
+
+**Discord directs work and never holds a claim.** It has no holder field, so a claim there
+would be a bare message with nothing to verify. A request in chat becomes an issue on the
+claiming tracker, and the issue's link is posted back in the chat.
 
 **Stop needs no push either.** A stop happens on the claiming tracker: a person replies stop,
 or removes the Igor's `igor:<role>` label or its Linear delegation. Igors already poll that
@@ -915,7 +924,12 @@ architecture. An adapter provides: `search` returning normalized candidates, `cl
 `verify_claim`, `report`, and `identity`. Everything above that line is surface-agnostic.
 
 GitHub ships first on ubiquity — it is the one platform nearly every team has. Linear
-second (shares the assignment model), Discord third (forces the convention path).
+second (shares the assignment model), Discord third.
+
+**Discord is a direction surface, never a claiming tracker.** A claiming tracker has a holder
+field, as GitHub and Linear do. Discord has none, so a claim there would be a bare message with
+nothing to verify. A person asks for work in a Discord channel; the Igor opens an issue on the
+claiming tracker, claims it there, and posts the issue's link back in the channel.
 
 ### 5.2 One claim mechanism, not two — **built**
 

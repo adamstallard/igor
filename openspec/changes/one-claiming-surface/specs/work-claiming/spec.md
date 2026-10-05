@@ -151,6 +151,10 @@ Other surfaces MAY direct an Igor, by a mention or a chat message, or carry its 
 host, but a claim SHALL NOT be taken on them. A configuration whose roles take claims on more
 than one tracker SHALL be refused, naming the trackers involved.
 
+Discord SHALL NOT be a claiming tracker. It has no holder field, so a claim there would be a
+bare message with nothing to verify. Discord directs work: a request there becomes an issue on
+the claiming tracker, and the issue's link is posted back in the channel.
+
 Claims coordinate Igors with each other, not with people. An Igor holds an item briefly, a
 person takes over an Igor that stalls, and a person duplicating work is acceptable. No rule in
 this capability is designed to prevent duplicate human work.
@@ -171,6 +175,19 @@ this capability is designed to prevent duplicate human work.
 
 - **WHEN** a person asks an Igor for work on a surface that is not the claiming tracker
 - **THEN** any claim for that work is taken on the claiming tracker, not where the request was made
+
+#### Scenario: Discord directs work and never holds a claim
+
+- **WHEN** a person asks an Igor for work in a Discord channel
+- **THEN** the Igor opens an issue on the claiming tracker and claims it there
+- **AND** it posts the issue's link in the channel
+- **AND** no claim is taken on Discord
+
+#### Scenario: Discord as the claiming tracker refused
+
+- **WHEN** a role's sources claim on Discord
+- **THEN** validation fails
+- **AND** the error says Discord directs work and cannot hold claims
 
 ### Requirement: On GitHub, an Igor is a GitHub App and claims with its role's label
 
