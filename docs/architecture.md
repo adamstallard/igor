@@ -1001,7 +1001,7 @@ The cases that seemed to need shadow are better handled by scope. An item where 
 itself be disruptive — an incident ticket mid-outage — belongs outside the role's query, not
 inside a mode.
 
-### 5.4 Directed interaction — **scoped** (`directed-interaction`)
+### 5.4 Directed interaction — **built** (`directed-interaction`)
 
 The moment an Igor posts a claim, people reply to it. Having no answer for that means the
 behavior gets decided by accident.
