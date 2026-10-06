@@ -1629,8 +1629,8 @@ process per Igor each holding its own credentials.
   standing one up per Igor is absurd.
 - **One secret store** for seat tokens, on the server, readable by its operator and nobody
   else (#148).
-- **Surface credentials are org-level anyway** — a GitHub App or token for the organization,
-  not one per Igor.
+- **Surface credentials are installed on the organization** — one GitHub App per role (§6.9),
+  not one per process, so every process of a role can share its App.
 
 The cost is a single point of failure and a wider blast radius if the box is compromised.
 
