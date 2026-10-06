@@ -179,11 +179,10 @@ export async function runItem(
     }
   }
 
-  // **Everything from here runs with the claim held**, and until now none of it was guarded:
-  // `runItem` had no handler at all, so a throw from provisioning a tree, from a checkpoint,
-  // or from the completion action left the item assigned and announced with only a
-  // cycle-level error emitted somewhere above. Issue #129's state, one layer up from the
-  // window that issue is about.
+  // **Everything from here runs with the claim held**, so this handler guards all of it.
+  // Without it, a throw from provisioning a tree, from a checkpoint, or from the completion
+  // action leaves the item assigned and announced, with only a cycle-level error emitted
+  // somewhere above: issue #129's state, one layer up from the window that issue is about.
   //
   // The claim is given back the way any other failure gives it back — a handoff, which posts
   // and then releases — rather than by a second vocabulary of its own. Whether the run is then
