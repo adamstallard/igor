@@ -13,11 +13,10 @@
       two (PR #99), `triage-needs-a-seat`'s four (PR #70) and `guard-silent-reverts`' one (PR
       #103), plus every other requirement outside `openspec/changes/archive/`
 
-## 2. Interim guidance, while the key is still shared
+## 2. Documentation
 
-- [x] 2.1 `docs/architecture.md` §5.0.2 says the mark is keyed by source and not by role, what
-      that costs a second role, and to scope roles by query until this lands
-- [ ] 2.2 That paragraph deleted by whoever implements this, in the same change
+- [x] 2.1 `docs/architecture.md` §5.0.2 says what holds once this merges: each role keeps its own
+      mark for a source, so one role's lane rejection leaves an item fresh to another (`b08becd`)
 
 ## 3. The key
 
