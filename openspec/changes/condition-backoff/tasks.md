@@ -62,3 +62,11 @@
 
 - [ ] 6.1 Threshold and cooldown configurable, defaults marked provisional in the code
 - [ ] 6.2 Record what they were reasoned from, since nothing has measured them
+
+## 7. Merging
+
+- [ ] 7.1 When merging, reword `docs/architecture.md` §6.3.4's "or by the condition record if
+      #101 lands" as present
+- [ ] 7.2 When merging, if `main` still says "until a reply or an edit answers it"
+      (`docs/architecture.md` §5.0.2), reword it to say only someone with write access lifts a
+      deferral. #141 carries the same task; whichever merges first does it
