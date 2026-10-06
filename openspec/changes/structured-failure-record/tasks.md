@@ -170,3 +170,10 @@ Blocked behind the same [#65](https://github.com/adamstallard/igor/pull/65), whi
 - [ ] 7.6 Once cycles have run with this, the axis question is answerable and answering it is a
       separate change. File it as an issue before this one is archived rather than leaving it in a
       ticked task
+
+## 8. Archiving
+
+- [ ] 8.1 When archiving, reword the pointer in `openspec/specs/work-triage/spec.md`'s
+      "A candidate left untriaged is not a candidate triage decided about" — "what becomes of it
+      is #78, not this requirement" — so it names *"A failed triage call leaves the candidate in
+      the pool"* rather than #78 as the open bug
