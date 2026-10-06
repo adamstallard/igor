@@ -515,6 +515,19 @@ A direction in the recognizer's activation space separating "condition present" 
 state at layer L on the final input token, project onto the condition vector, threshold. If
 it exceeds, the intervention applies for the remainder of the pass.
 
+**Building one: difference of means first, a linear probe once there are examples.** The mean
+hidden state where the condition applied, minus the mean where it didn't, works from a few dozen
+examples and can't overfit. A logistic-regression probe separates the condition from what merely
+co-occurs with it, and gives comparable probabilities, but needs a few hundred. Keep whichever
+does better on held-out filter decisions (§4.2.1), with thresholds set for recall. Which layer,
+and whether to read the final token or an average over the context, is settled once per
+recognizer model by the same validation.
+
+**A vector belongs to one recognizer build.** Model weights, quantization and runtime all shift
+activations, so a vector built on one build fires differently on another. The lore repository
+names the build its vectors were made with, and a recognizer running a different one fires none
+of them. The runtime must also expose hidden states, which some local model servers do not.
+
 ### 4.2.1 The filter that precedes vectors also trains them — **planned**
 
 Condition vectors are built from contrastive examples, and §4.2 does not say where those come
@@ -599,6 +612,12 @@ it; they are not ground truth. Good enough to catch gross errors, not a correctn
 **Known unexplored:** defining trigger *conditions* over SAE features. Existing work uses
 sparse features to construct and denoise the *disposition*; the inversion appears absent
 from the literature.
+
+An SAE is trained per recognizer model, not per organization, so a published one for the chosen
+model may serve. If feature rules do prove useful, their likely entry points are guardrails on a
+learned vector ("never when *test fixture* is active"), role lanes, which must be legible anyway,
+and new entries with no examples yet. Expect them to win on legibility, not accuracy: reported
+results so far find that probes built on SAE features do not beat plain linear probes.
 
 ### 4.4 Post-hoc recognition — **planned**
 
@@ -915,8 +934,9 @@ Slack, ClickUp, GitHub, Linear, and Discord are *examples* of surfaces, not the
 architecture. An adapter provides: `search` returning normalized candidates, `claim`,
 `verify_claim`, `report`, and `identity`. Everything above that line is surface-agnostic.
 
-GitHub ships first on ubiquity — it is the one platform nearly every team has. Linear
-second (shares the assignment model), Discord third (forces the convention path).
+GitHub ships first on ubiquity — it is the one platform nearly every team has. Discord
+second, Linear third: GitHub can serve as project management, and Discord directs work while
+Linear would be another claiming tracker.
 
 ### 5.2 One claim mechanism, not two — **built**
 
@@ -1872,6 +1892,6 @@ Agreed in principle, not scoped, roughly in dependency order:
 9. Publishing to npm, and pinning the promotion workflow to a release (§6.6).
 10. Shared seats and the fleet-level budget policy, with a reserve where a person shares their
     seat (§6.5).
-11. Additional adapters: Linear, then Discord.
+11. Additional adapters: Discord (#160), then Linear (#161).
 12. Binaries in an artifact, refused or carried rather than corrupted (§6.7.3) — needs a role
     that can touch one.
