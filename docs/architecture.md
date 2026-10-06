@@ -108,24 +108,19 @@ which role took an issue and can hand work to a role by name. An Igor that does 
 two Igors. This was decided in
 [#156](https://github.com/adamstallard/igor/pull/156).
 
-**Not built yet:** today a role whose `extends` names two roles still resolves to one Igor doing
-both jobs, with the union of their lanes and permissions (`src/role.ts`).
+**Still in the code:** a role whose `extends` names two roles resolves to one Igor doing both
+jobs, with the union of their lanes and permissions (`src/role.ts`). #156 removes it.
 
-Roles are real objects as of `core-igor-loop`, and were not before. `lore-from-reviews`
-deliberately defines none: its reviewer comes from a mined comment's author, and routing
-guidance into role config is meaningless while nothing loads role config. Entries there carry
-a `scope` **label** (`role:frontend`) which is a tag, not a foreign key — enough to promote
-from later, costing nothing now. Defining the schema in the change that actually consumes it
-also means defining it with more information than we have today.
+A lore entry's `role:frontend` scope is a **label**, not a reference to a role file: an entry
+can name a role before any role file defines it.
 
 **`reviewers` is a list, not an owner.** Any one of them can approve a lore entry or role
 config change. No quorum and no single accountable person — that would be org structure
 leaking into config for no benefit.
 
-Before roles existed, the same need was met by a store-level `reviewers` list in the lore
-tool's config, which is where an entry escalates when the author it was mined from does not
-respond. A role narrows that to a per-role list; it did not introduce the concept, and the
-store-level list is still what a store without roles uses.
+A store without roles uses the store-level `reviewers` list in the lore tool's config, which is
+also where an entry escalates when the author it was mined from doesn't respond. A role narrows
+it to a per-role list.
 
 **Why an Igor holds one role.** Narrow Igors buy three things a broad one gives up:
 
@@ -136,10 +131,9 @@ store-level list is still what a store without roles uses.
   intersection of theirs, and both are wrong.
 - **Failure isolation.** A bad role config breaks one lane rather than everything.
 
-**Several Igors may draw on one seat (§6.5).** The argument once made for multi-role Igors,
-that a second role absorbs the idle capacity of a seat dedicated to one Igor, does not apply:
-seats are shared, so a narrow role's slack is used by the other Igors on its seat. A role that
-reliably fills capacity can be given a dedicated seat, and one that does not shares one.
+**Several Igors may draw on one seat (§6.5).** A narrow role's unused capacity goes to the
+other Igors on its seat. A role that reliably fills a seat can be given its own, and one that
+doesn't shares one.
 
 Two properties follow:
 
