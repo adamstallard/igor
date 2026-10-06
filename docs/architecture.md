@@ -61,8 +61,8 @@ last poll stopped. It lives on the state branch, keyed by role and channel id.
 **The marker only saves work; the link prevents a duplicate issue.** Every issue an Igor creates
 from a chat message links that message. Before creating one, the Igor looks on the claiming
 tracker for an issue that already links the message, and creates nothing if one exists; it
-then posts that issue's link in the chat only if the chat has no reply with it yet. A lost or stale marker therefore costs API calls, never a second issue, as §5.0.2
-requires of all saved state.
+then posts that issue's link in the chat only if the chat has no reply with it yet. A lost or
+stale marker therefore costs API calls, never a second issue, as §5.0.2 requires of all saved state.
 
 **Discord directs work and never holds a claim.** It has no holder field, so a claim there
 would be a bare message with nothing to verify. A request in chat becomes an issue on the
