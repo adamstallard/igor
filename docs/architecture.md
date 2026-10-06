@@ -105,11 +105,11 @@ anyone touching an area is lore.
 **An Igor holds exactly one role**, and many processes can run it. Its identity on every
 platform (a GitHub App on GitHub, an app user on Linear) is that role, so a person sees
 which role took an issue and can hand work to a role by name. An Igor that does two jobs is
-two Igors. This is decided in `one-claiming-surface`, which removes
-multi-role Igors.
+two Igors. This was decided in
+[#156](https://github.com/adamstallard/igor/pull/156).
 
-**Not built yet:** a role whose `extends` names two roles still resolves to an Igor doing both
-jobs, its lane and permissions the union of theirs (`src/role.ts`). The change's tasks remove it.
+**Not built yet:** today a role whose `extends` names two roles still resolves to one Igor doing
+both jobs, with the union of their lanes and permissions (`src/role.ts`).
 
 Roles are real objects as of `core-igor-loop`, and were not before. `lore-from-reviews`
 deliberately defines none: its reviewer comes from a mined comment's author, and routing
@@ -1770,16 +1770,17 @@ essentially credential provisioning. And there is no hosting business here, only
 Deployment work belongs to `core-igor-loop`, the first change that introduces a continuously
 running process. `lore-from-reviews` is a batch CLI and needs none of it.
 
-### 6.9 Igors act as machine users on GitHub, not as a GitHub App — **superseded by `one-claiming-surface`**
+### 6.9 Igors act as machine users on GitHub, not as a GitHub App — **superseded (#156)**
 
-**Superseded.** The change `one-claiming-surface` (`openspec/changes/one-claiming-surface/`)
-replaces this section's conclusion. On GitHub every Igor is a **GitHub App**, and it claims an
+**Superseded** by the decision in [#156](https://github.com/adamstallard/igor/pull/156),
+specified in `openspec/changes/one-claiming-surface/`. On GitHub every Igor is a **GitHub App**, and it claims an
 issue with the label `igor:<role>` plus the claim comment, so it needs no assignee field.
 Machine users are not supported at launch. An Igor that must be an issue assignee or a
 requested reviewer, which an App cannot be, is out of scope. The 404/403 measurement below still
 stands; what changed is that a claim no longer has to sit in the assignee field. The Linear
 question below, whether an app may set its own delegate, was measured on 2026-10-03: it can
-(the change's `design.md`). The text below is kept as the record of the earlier decision.
+(recorded in that spec's `design.md`). The text below is kept as the record of the earlier
+decision.
 
 Three identities are separate and stay separate: **who acts** on the surface, **which seat
 pays** for the model, and **which role's policy governs**. Config already splits the second
