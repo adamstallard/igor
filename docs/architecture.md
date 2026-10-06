@@ -669,15 +669,12 @@ tracker is the source of truth for what is claimed.** An Igor that loses its sta
 an old item, finds it assigned or closed, and skips — so losing state costs API calls and
 triage tokens, never a duplicate claim.
 
-**A mark is keyed by source and not by role, so two roles sharing a source share one mark —
-planned, [#104](https://github.com/adamstallard/igor/issues/104).** The lane is applied after
-discovery, so a narrow role's rejection advances the mark, and the item it rejected falls below
-every other role's floor without any of them having seen it. Nothing touches the item afterwards
-to lift it back. **Until that is fixed, scope a second role by its query rather than only by its
-lane** — a separate query is a separate key, where a narrower lane is not. It is a workaround and
-not an equivalent: a query is tracker-specific where a lane is not, `paths.under` has no GitHub
-search equivalent, and an inherited lane is a conjunction of disjunctions with no flat-string
-form. So it covers label-scoped roles and nothing else.
+**A mark records how far one role has considered a source.** Two roles polling the same source
+each keep their own, so an item one role's lane passed over is still fresh to the other. The
+lane is applied after discovery, so a mark shared across roles would advance on a narrow role's
+rejection and drop the item below every other role's floor, where nothing lifts it back. A role
+is identified by its name: two processes running one role share a mark, and a renamed role
+starts again.
 
 **It lives on an orphan branch of the destination**, not on `main` and not on a laptop. The
 generalisation: **machine output goes in a machine venue on every surface** — its own channel
