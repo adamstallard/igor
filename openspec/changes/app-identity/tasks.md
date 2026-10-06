@@ -114,8 +114,14 @@ The wording of each is written when it is built.
       297 gets a row per startup refusal, including both key variables set; say not to log
       `gh` in as the service user; say that the credentials come only from the environment
       file, and name the skill's `check`, run against that file, as an optional diagnosis tool
-- [ ] 7.5 `docs/machine-accounts.md`: drop the machine-user section and the *Not built yet*
-      paragraph (#156's task 5.4)
+- [ ] 7.5 Rename `docs/machine-accounts.md` to `docs/accounts.md`, titled "Giving an Igor its own
+      accounts" (Adam, 2026-10-06). It stays a separate page, linked from `docs/deployment.md`'s
+      *Before it can run* step 1, because setting up an App is a distinct job people return to
+      when adding a role. While renaming: drop the machine-user section and the *Not built yet*
+      paragraph (#156's task 5.4); replace *Separately: which seat pays* with a one-line link to
+      `docs/seats.md`; and point at the github-app skill's README for the steps that create the
+      App, rather than repeating them. Update the three links to it: `README.md` (*Running an
+      Igor*, step 1), `docs/deployment.md` and `deploy/env.example`
 - [ ] 7.6 `README.md`: *Running an Igor*, step 1 (lines 177-182), describes the App, and that a
       person running an Igor exports the same `GITHUB_APP_*` variables in their shell
 
