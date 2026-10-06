@@ -143,6 +143,14 @@ a conversation, which does not restrain a collaborator, and blocking an account,
 nuclear. An Igor needs write access, so it sits on the wrong side of the only lock that bites.
 Budget bounds the spend; nothing bounds the noise.
 
+**Whether a per-thread exchange cap stands (raised 2026-10-06).** `docs/architecture.md` §5.4
+said to cap exchanges per thread at two or three. This change rejects any count (*Roads not
+taken*), and task 5.3 tests that a fourth question is answered. §5.4 now lists the cap as open
+under *Not built*, with [#162](https://github.com/adamstallard/igor/issues/162). *Recommend:* keep
+the rejection and delete the cap from §5.4. A count bounds a proxy for budget, and GitHub issue
+comments have no thread to count within. The runaway exchange it was meant to stop is the
+moderation item above, which a count would not fix.
+
 **How an App Igor learns it was mentioned (raised 2026-10-04).** The mentions source queries
 mentions of the Igor's own account, and on GitHub that account is now an App's bot. GitHub
 search for `mentions:dependabot[bot]` and `mentions:github-actions[bot]` returned 0 results on
