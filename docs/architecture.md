@@ -1921,6 +1921,6 @@ Agreed in principle, not scoped, roughly in dependency order:
 9. Publishing to npm, and pinning the promotion workflow to a release (§6.6).
 10. Shared seats and the fleet-level budget policy, with a reserve where a person shares their
     seat (§6.5).
-11. Additional adapters: Linear, then Discord.
+11. Additional adapters: Discord (#160), then Linear (#161).
 12. Binaries in an artifact, refused or carried rather than corrupted (§6.7.3) — needs a role
     that can touch one.
