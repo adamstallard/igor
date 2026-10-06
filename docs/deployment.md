@@ -128,13 +128,11 @@ Four steps, once a colleague has sent you a token ([`seats.md`](seats.md) is wha
    open a new one — a token exported into one shell is invisible to every other.
 
 4. **Check `igor budget`.** The seat should print its windows — read live where the credential
-   answers with them, derived from observation and record where it does not. A seat whose
-   variable is unset reports its credential unreadable and is skipped, never substituted with
-   whatever login is ambient. That is a different row from a seat nobody has observed, which
-   wants a reading of it — today `igor observe` run on the owner's machine, which
-   [`read-seat-windows-from-the-stream`](../openspec/changes/read-seat-windows-from-the-stream/design.md)
-   withdraws in favour of reading the seat on the server — and from a seat that has run out,
-   which wants waiting.
+   answers with them, and otherwise the last reading a worker run or the server's probe reported.
+   A seat whose variable is unset reports its credential unreadable and is skipped, never
+   substituted with whatever login is ambient. That is a different row from a seat nothing has
+   read yet, which wants a reading — the next worker run or the probe takes one — and from a seat
+   that has run out, which wants waiting.
 
 `igor budget` reading a seat is necessary and not sufficient. Reading inherits this process's
 environment, so an ambient login or a keychain can answer for a seat that names no token source
@@ -187,10 +185,7 @@ earns its place there.
 
 Whichever source names it, **do not set `CLAUDE_CODE_OAUTH_TOKEN` yourself.** That is the
 variable `claude` itself reads, so it authenticates everything igor spawns rather than the seat
-you named — and `igor observe`, while it exists, reads `/usage` and so needs your own login to see
-a window; under the seat's credential it reports that it carries no subscription. It is being
-withdrawn by
-[`read-seat-windows-from-the-stream`](../openspec/changes/read-seat-windows-from-the-stream/design.md).
+you named.
 
 This does not remove the token from the `igor` process or the worker it spawns, which is where
 it has to be. It removes it from everything else you run.
@@ -228,7 +223,7 @@ A `claude setup-token` credential lasts **one year**, and the lifetime cannot be
 Nothing warns beforehand.
 
 What you get instead is a clear failure: the seat reports its credential unreadable in
-`igor budget` — distinctly from a seat nobody has observed and from one that has run out — and
+`igor budget` — distinctly from a seat nothing has read and from one that has run out — and
 a worker's handoff carries the message the CLI actually gave rather than an exit code. Rotating
 is the same command the colleague ran the first time, and step 2 again.
 

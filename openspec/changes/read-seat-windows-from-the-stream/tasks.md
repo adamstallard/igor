@@ -262,20 +262,22 @@
       assert the old text
 - [ ] 9.4 Leave `Observation.source`'s `'usage'` member in place, and test that a `usage` row is
       still read while nothing writes one
-- [ ] 9.5 `README.md`, `docs/deployment.md` and `docs/seats.md`: remove the descriptions of
-      `igor observe` that say it is being withdrawn, and the example `igor budget` row that names it
+- [ ] 9.5 Verify that `README.md`, `docs/deployment.md` and `docs/seats.md` still name no
+      `igor observe` command and no `capacity_estimate` other than its refusal
 
-## 10. Docs, once built
+## 10. Docs
 
-- [ ] 10.1 `README.md` Budgets, `docs/seats.md` "What the floor rests on" and `docs/deployment.md`
-      step 4: describe the stream reading as shipped, and what a lender no longer has to install.
-      Replace the links from `README.md` and `docs/seats.md` into
-      `openspec/changes/read-seat-windows-from-the-stream/`, which archiving moves
-- [ ] 10.2 `docs/architecture.md` §6.3.1 and §6.3.3: move from "what this changes" to what was built
-- [ ] 10.3 `README.md` Budgets, `docs/seats.md` and `docs/deployment.md` describe the line as
-      specified and not built, and keep the shipped dollar-bound behaviour beside it. Once 7.x and
-      12.x are built, drop the conditional wording, replace the example `igor budget` output with
-      the line's columns, and remove the description of the dollar bound
+The docs on this branch already describe the behaviour once this change's implementation merges:
+the stream reading, the probe, the line, a role's reserve, and no dollar bound, `igor observe` or
+`capacity_estimate`. They carry no "not built" or "until it ships" wording, and none is added.
+
+- [ ] 10.1 Verify `README.md` Budgets, `docs/seats.md` and `docs/deployment.md` step 4 against
+      the implementation, and correct any statement it makes untrue, including what 1.1 decides
+      about the seat probe
+- [ ] 10.2 Verify `docs/architecture.md` §6.3, §6.3.1, §6.3.3 (*What Igor does with it*), §6.3.4
+      and §6.5 the same way
+- [ ] 10.3 Replace the example `igor budget` output in `README.md` with output the implementation
+      actually prints, keeping the same seats and readings
 
 ## 11. Left open, recorded so they are not lost
 
@@ -350,5 +352,5 @@
       declare it: `test/budget.test.ts:651`, `:663`, `:711`, `:733`, `:782-785`, `:826`, the parsing
       tests at `:878-937`, and `:1546-1558`; `test/capacity.test.ts` 'a declared capacity'
       (`:448-490`) and `:569-571`
-- [ ] 14.4 `README.md` and `docs/seats.md`: drop the "being removed" notes and every remaining
-      mention of declaring a capacity
+- [ ] 14.4 Verify that `README.md` describes `capacity_estimate` only as refused at load, in the
+      words the refusal in 14.2 actually uses
