@@ -56,8 +56,8 @@ workers are still one teammate as far as anyone reading the issue is concerned.
 
 **One role per Igor, so one identity per role.** An Igor holds exactly one role, and its
 identity is that role, so a person sees which role took an issue and can hand work to a role
-by name. An Igor that does two jobs is two Igors: backend and frontend work is a `backend` Igor
-and a `frontend` Igor, each with its own identity. The two may draw on the same seat.
+by name. A `backend` Igor and a `frontend` Igor each have their own identity, and may draw on
+the same seat.
 
 ## Other surfaces
 

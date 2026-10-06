@@ -20,7 +20,7 @@ assignee field, which is why a GitHub App's label claim is enough.
 **Decided by the owner: an Igor holds exactly one role, and its identity is that role.** The
 Igor's GitHub App or Linear app user names the role, so a person sees which role
 took an issue and hands work to a role by naming it, by delegating on Linear or labelling on
-GitHub. An Igor that does two jobs is two Igors, which may share a seat.
+GitHub. Igors of different roles may share a seat.
 
 Multi-role Igors exist today only as a role whose `extends` names two sibling roles. Its lane,
 `allow` and `commands` are then the union of both, and its `budget_share` the lower of the two.
@@ -32,6 +32,30 @@ base, still works.
 **Rejected: keep several bases but conjoin them.** A role would be the intersection of its
 bases, which no one has asked for. Siblings rarely overlap, so it would match almost nothing,
 and a role wanting a narrower lane can extend one base and narrow it.
+
+**Rejected: a named composite with two bases** (Adam asked, 2026-10-06), such as a `fullstack`
+role extending `frontend` and `backend`. A name answers the identity objection, since it can be
+labelled and handed work. What remains against it:
+
+- **Its permissions change without it changing.** It would take the union of both bases'
+  `allow`, `commands` and lane. Letting `frontend` close issues would let `fullstack` close
+  them too, though no one edited or reviewed `fullstack.yaml`.
+- **Two bases conflict on override fields.** If one says `completion: close` and the other
+  `unassign`, a tie-break rule is needed for every such field, which is how inheritance becomes
+  something nobody can reason about (`docs/architecture.md` §6.0).
+- **Both bases' instructions apply to every item**, frontend conventions on backend work
+  included. Area guidance mostly belongs in lore, which fires by path, so this matters least.
+
+**The pattern instead:** one chain, with the broad role stating its own scope.
+
+```
+roles/engineering.yaml   extends org: what frontend, backend and fullstack share
+roles/fullstack.yaml     extends engineering, with a lane over both areas and its own
+                         allow and commands
+```
+
+It repeats a couple of lane paths and the commands it needs. In exchange, its own file and its
+ancestors say everything it may do, and nothing in a sibling role can widen it.
 
 ## On GitHub, an Igor is a GitHub App
 

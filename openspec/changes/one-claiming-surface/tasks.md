@@ -50,6 +50,10 @@ gate two starts; both changes are archived together (`design.md`, *Built togethe
 
 ## 3. Claiming
 
+- [ ] 2.5 `README.md`, *Roles*: say that a role extends at most one base, and how to build a
+      role spanning several areas (its own lane and permissions, extending a shared base, as in
+      design's *Rejected: a named composite with two bases*). Written when 2.3 ships, since
+      today's code still accepts two bases
 - [ ] 3.1 Write the holder field before the claim message, in the GitHub adapter as well
 - [ ] 3.2 Stand-down removes only what names this Igor; on a single-valued field it replies and
       changes nothing

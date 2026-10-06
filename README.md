@@ -15,8 +15,8 @@ team, and anyone who joins can add an Igor or let Igors in chosen roles use thei
 ## Vocabulary
 
 - **Igor** — a named teammate, identified by its own account on the surfaces it works, so a
-  claim says which role has your issue. Holds exactly one role, so an Igor that does two jobs
-  is two Igors. Its processes are interchangeable and hold no durable state.
+  claim says which role has your issue. Holds exactly one role. Its processes are
+  interchangeable and hold no durable state.
 - **Role** — a versioned config: what to watch for, what it may claim, how to behave. Roles
   compose, and a role may narrow what it inherits but never widen it.
 - **Lore** — the team's curated store of learned knowledge. Shared by every Igor,

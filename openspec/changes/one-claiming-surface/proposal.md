@@ -7,7 +7,7 @@ about the work. Narrow Igors also keep trust separate (one role may open pull re
 only comment) and keep a bad role config from breaking every lane. The old case for multi-role
 Igors, absorbing the idle capacity of a seat dedicated to one Igor, does not apply now that
 several Igors share a seat. Today a role whose `extends` names two sibling roles makes one Igor
-do both jobs.
+hold both.
 
 **An organization's Igors claim work on one tracker.** Claims exist so that Igors do not work
 the same item. An Igor claiming on GitHub cannot see a claim another Igor holds on Linear, so
@@ -61,8 +61,9 @@ an App, an Igor's approval is recognisable: its author is a `Bot` account.
 ## What Changes
 
 - **`role-config`:** an Igor holds exactly one role, and its identity on every surface is that
-  role. An Igor that does two jobs is two Igors, which may share a seat. A role naming more than
-  one base in `extends` is refused, which removes the only way an Igor holds several roles today.
+  role. Igors of different roles may share a seat. A role naming more than one base in
+  `extends` is refused, which removes the only way an Igor holds several roles today; a role
+  spanning several areas gets its own lane and permissions, extending a shared base.
 - **`work-claiming`:**
   - An organization's Igors hold claims on one tracker. A configuration claiming on two is
     refused.
