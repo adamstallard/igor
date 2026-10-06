@@ -823,8 +823,8 @@ That trades bytes for requests, so a past day is read once per process and held.
 gate reads the whole spend log and `serve` gates once per item, so an uncached read costs a
 request per day of history on every item — sixty gates an hour against a 5,000/hour REST
 budget reaches the limit in roughly eighty days, and sooner where several processes share one
-machine account, since that limit is per account. Today's partition and the directory listing
-are always re-read: both are constant, and it was the per-day term that grew.
+App installation, since that limit is per installation. Today's partition and the directory
+listing are always re-read: both are constant, and it was the per-day term that grew.
 
 **Stops are not kept there, and the principle holds without an exception.** Whether an item
 carries a stop is asked of the tracker before every claim, over the cooldown window: the stop
@@ -1763,40 +1763,28 @@ essentially credential provisioning. And there is no hosting business here, only
 Deployment work belongs to `core-igor-loop`, the first change that introduces a continuously
 running process. `lore-from-reviews` is a batch CLI and needs none of it.
 
-### 6.9 Igors act as machine users on GitHub, not as a GitHub App — **superseded (#156)**
-
-**Superseded** by the decision in [#156](https://github.com/adamstallard/igor/pull/156),
-specified in `openspec/changes/one-claiming-surface/`. On GitHub every Igor is a **GitHub App**, and it claims an
-issue with the label `igor:<role>` plus the claim comment, so it needs no assignee field.
-Machine users are not supported at launch. An Igor that must be an issue assignee or a
-requested reviewer, which an App cannot be, is out of scope. The 404/403 measurement below still
-stands; what changed is that a claim no longer has to sit in the assignee field. The Linear
-question below, whether an app may set its own delegate, was measured on 2026-10-03: it can
-(recorded in that spec's `design.md`). The text below is kept as the record of the earlier
-decision.
+### 6.9 On GitHub an Igor is a GitHub App, one per role — **decided**
 
 Three identities are separate and stay separate: **who acts** on the surface, **which seat
 pays** for the model, and **which role's policy governs**. Config already splits the second
-and third; this section is about the first.
+and third; this section is about the first. It was decided in
+[#156](https://github.com/adamstallard/igor/pull/156).
 
-**A GitHub App cannot be an assignee.** Measured against a real repository: the
-can-this-user-be-assigned check returns 404 for an app's bot user and the assignment attempt
-returns 403. An App is otherwise the tidier answer — scoped permissions, no seat, obviously not
-a person — but claiming by assignment is the whole reason assignment was chosen over a comment,
-and an App would silently degrade GitHub to a message-only surface. So Igors act as **machine
-users**: ordinary accounts with repository access.
+**An App claims with a label, because it cannot be an assignee.** Measured against a real
+repository: the can-this-user-be-assigned check returns 404 for an app's bot user, and the
+assignment attempt returns 403. So an Igor claims an issue with the label `igor:<role>` plus
+the claim comment, and the assignee field stays the person's. An App has scoped permissions,
+takes no seat, needs no personal token renewed, and is plainly not a person. Machine users are
+not supported. An Igor that must be an issue assignee or a requested reviewer, which an App
+cannot be, is out of scope.
 
-**One account per role, not one per org and not one per instance.** Roles are few, stable, and
-are what a person actually wants to see in an assignee field. A single shared account also
-breaks claim verification outright: every Igor reading the assignee back would see its own
-name and conclude it holds the item, so two Igors would proceed on one issue. Per-instance
-accounts solve nothing further, since instances of a role are interchangeable — that is the
-premise the name comes from.
+**One identity per role, not one per org and not one per instance.** Roles are few, stable,
+and are what a person wants to see on a claimed issue, and a person hands an issue to a role by
+adding that role's label. Per-instance identities solve nothing further, since instances of a
+role are interchangeable — that is the premise the name comes from.
 
-**A claim message is posted regardless.** It is required anyway on surfaces with no assignment
-(§5.2), it carries the stop instruction, and it names the specific Igor — which is what makes
-a shared account survivable if an org ever chooses one. One mechanism covering three needs
-beats three mechanisms.
+**A claim message is posted regardless.** Every claiming tracker pairs it with the holder field
+(§5.2). It carries the stop instruction and names the specific Igor.
 
 Interaction with worktrees (§6.7.2): fetching is shared and can use one read-only credential
 for the bare object store, while pushing is per-role and uses that role's own. A worktree is
@@ -1805,50 +1793,38 @@ created rather than configured globally.
 
 #### 6.9.1 The rule generalizes by claim primitive, not by surface
 
-**A claim must live in a field the acting identity is permitted to occupy.** Where no such
-field admits a non-human identity, the actor has to be a machine account. Where the claim is a
-message, identity can travel in the payload.
+**A claim lives in a field the acting identity is permitted to occupy.** A surface with no
+holder field holds no claims (§5.1).
 
 Do not read GitHub's constraint as a general one. A surface having a structural claim field
 does not imply that field accepts only real users — Linear's does not — and treating one
 surface's quirk as a law costs the better mechanism everywhere else.
 
 - **GitHub** — only real users may be assignees, and an App's bot user may not (404/403,
-  measured). Machine account per Igor.
+  measured). The App claims with its `igor:<role>` label, which follows the rules Linear's
+  delegate does.
 - **ClickUp** — no bot or service-account concept exists at all; both personal tokens and
-  OAuth attribute actions to a human. Machine account per Igor, and it is a paid seat each.
+  OAuth attribute actions to a human. Claiming there would take a machine account per Igor, and
+  a paid seat each.
 - **Linear** — has a first-class app identity (`actor=app`) that costs no seat, and although
   an app still cannot be the *assignee*, Linear provides a parallel `Issue.delegate` field
-  that an app may occupy. It is singular, so it is an exclusive claim, and filterable and
-  searchable in the UI. Strictly better than GitHub, at zero cost.
-- **Message surfaces** — the claim is the message.
+  that an app may occupy, and may set on itself (measured 2026-10-03). It is singular, so it is
+  an exclusive claim, and filterable and searchable in the UI. Strictly better than GitHub, at
+  zero cost.
+- **Message surfaces**, such as Discord — no holder field, so no claims. A person asks for work
+  there, and the Igor claims it on the tracker.
 
-Two Linear-specific consequences worth recording before anyone builds the adapter. **Delegation
-may be human-initiated only**: nothing in the documentation says an app may set its own
-`delegateId`, and if it cannot, Igors cannot claim their own work there. That is a ten-minute
-empirical test against a scratch workspace and it gates the whole approach. And **a delegate is
-not inert the way an assignee is**: dismissing the agent session removes the delegate. That is
-a hazard for a claim ledger and simultaneously a gift — it is a *native stop primitive*, and it
-should map onto `verifyClaim` returning `stopped` rather than being worked around.
+**On Linear, a delegate is not inert the way an assignee is**: dismissing the agent session
+removes the delegate. That is a hazard for a claim ledger and simultaneously a gift — it is a
+*native stop primitive*, and it should map onto `verifyClaim` returning `stopped` rather than
+being worked around.
 
 Linear's agents API is a Developer Preview and may change.
 
-A message-only surface is the opposite case: the claim *is* the message
-and Igor authors its content, so the role name travels inside the payload and one bot per org
-suffices. Verification re-reads the channel, finds the earliest claim for the item, and checks
-whether it names this role — which works whatever account posted it. The shared-account failure
-that breaks GitHub cannot arise, because nothing is being read back out of a field that only
-holds accounts.
+Where an Igor posts on a message surface:
 
-Consequences for a message-only adapter:
-
-- **Parse a machine-readable claim line, never the display name.** Display names are for
-  people, are spoofable where webhooks are available, and are simply wrong under a shared bot.
 - **Per-role display names are legibility, not identity.** Where a surface offers per-message
-  name overrides, use them so a human sees which Igor — and still parse the payload.
-- **Prefer a thread over a mention for stop.** A claim that opens a thread makes a stop a reply
-  in that thread: correctly scoped without parsing who was addressed, and it matches the bare
-  `stop` case. Mention-parsing is the fallback for surfaces without threads.
+  name overrides, use them so a human sees which Igor.
 - **Inbound identity is unaffected.** Messages arrive with a real author on every surface, so
   the authority intersection (§5.4) holds regardless of how many bots do the posting.
 
