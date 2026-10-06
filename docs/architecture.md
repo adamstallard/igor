@@ -105,9 +105,10 @@ anyone touching an area is lore.
 **An Igor holds exactly one role**, and many processes can run it. Its identity on every
 platform (a GitHub App on GitHub, an app user on Linear) is that role, so a person sees
 which role took an issue and can hand work to a role by name. This was decided in
-[#156](https://github.com/adamstallard/igor/pull/156). A role spanning several areas is one role
-with its own lane and permissions; roles share what they have in common through an intermediate
-base, never by extending two roles (§6.0).
+[#156](https://github.com/adamstallard/igor/pull/156). A role's file names one parent with
+`extends`, and parents can be chained. Settings that several roles share go in a common parent,
+such as `engineering.yaml`: it grants what they all may do, each specialist role narrows it, and
+a broad role like `fullstack` keeps it. (§6.0 covers how each kind of setting is inherited.)
 
 **Still in the code:** a role whose `extends` names two roles resolves to one Igor doing both
 jobs, with the union of their lanes and permissions (`src/role.ts`). #156 removes it.
