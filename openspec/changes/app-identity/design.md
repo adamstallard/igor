@@ -19,7 +19,7 @@ covers the whole of an Igor's traffic.
 **Decided by Adam, 2026-10-04: an Igor acts as the github-app identity named after its role, and
 no file in the lore repository names an App.** `igor serve reviewer` acts as `reviewer`. Under
 the systemd template the instance is the role, so `/etc/igor/reviewer.env` holds that App's
-lines, and on a person's machine `~/.config/github-app/reviewer.{json,pem}` does.
+lines, and a person running `igor serve reviewer` exports the same lines in their shell.
 
 The reasons:
 
@@ -44,30 +44,46 @@ refused where two roles name the same identity. It allows the redirect described
 **Rejected: an org-level key.** One key gives every Igor the same App, which #156 rules out.
 
 **Where the name collides.** Two lore repositories served from one machine, each with a
-`reviewer` role, would share the stored identity `reviewer`. On a server each instance has its
-own env file, so they don't collide there. On a person's machine it is rare enough to leave
-until somebody meets it.
+`reviewer` role, both act as the identity `reviewer`. Each instance reads only its own
+environment, so each acts as whichever App that environment holds, and they don't collide.
 
-## Mint in TypeScript, reading the skill's files
+## Credentials come only from the environment
 
-**Recommended: Igor mints tokens itself, and reads credentials from the places the `github-app`
-skill writes them.** The mint is small: sign a JWT with RS256 using `node:crypto`, ask
-`GET /repos/{owner}/{repo}/installation` which installation covers the repository, and
-`POST /app/installations/{id}/access_tokens` for a token. It needs no dependency, and every
-step can be tested with an injected `fetch`.
+**Decided by Adam, 2026-10-05: an Igor reads its App credentials only from its environment.**
+`GITHUB_APP_IDENTITY` names the identity the variables belong to, and must be the role's name.
+With it come `GITHUB_APP_ID` and one of `GITHUB_APP_PRIVATE_KEY_FILE` or
+`GITHUB_APP_PRIVATE_KEY`, and optionally `GITHUB_APP_OWNER` and `GITHUB_APP_INSTALLATION_ID`. On
+a server they come from the role's environment file, `/etc/igor/<role>.env`. A person running an Igor
+exports the same variables in their shell.
 
-Credential lookup follows the skill's order, so an operator who stored and checked an identity
-with the skill gets that identity in Igor:
+The reasons:
 
-1. `GITHUB_APP_ID` with `GITHUB_APP_PRIVATE_KEY_FILE` or `GITHUB_APP_PRIVATE_KEY`, when
-   `GITHUB_APP_IDENTITY` names this identity. With `GITHUB_APP_IDENTITY` unset they belong to
-   `default`, as in the skill, so the refusal says so: `GITHUB_APP_ID` is set for "default" and
-   this Igor acts as "reviewer".
-2. `$XDG_CONFIG_HOME/github-app/<identity>.json` (default `~/.config`) for `appId` and an
-   optional `keyFile`, with the key at `<identity>.pem` beside it.
+- **One place per role.** The systemd unit already reads `/etc/igor/<role>.env`, and that file,
+  with the key it points to, can be readable only by that role's service user.
+- **Nothing else to install on a server.** No Python and no installed skill.
+- **No silent fallback.** A server role whose environment file is incomplete refuses to start,
+  naming each missing variable, rather than picking up credentials from a home folder.
 
-Igor reads `appId` and `keyFile` and nothing else from the JSON. It does not need `owner` or
-`installationId`, because it asks GitHub which installation covers each repository.
+With `GITHUB_APP_IDENTITY` unset the variables belong to `default`, as in the skill, so the
+refusal says so: `GITHUB_APP_ID` is set for "default" and this Igor acts as "reviewer".
+
+The variable names are the `github-app` skill's environment contract. The skill reads
+credentials from the environment when `GITHUB_APP_IDENTITY` names the identity, so its `check`
+runs against the same `/etc/igor/<role>.env`. Igor does not depend on the skill. Igor needs
+neither `GITHUB_APP_OWNER` nor `GITHUB_APP_INSTALLATION_ID`, because it asks GitHub which
+installation covers each repository; they are accepted so one file serves both.
+
+**Rejected: falling back to the skill's stored files**, `~/.config/github-app/<identity>.json`
+and `<identity>.pem`, after the environment. A server role with an incomplete environment file
+would then silently act on credentials from the service user's home folder, a second place per
+role that the unit does not name.
+
+## Mint in TypeScript
+
+**Recommended: Igor mints tokens itself.** The mint is small: sign a JWT with RS256 using
+`node:crypto`, ask `GET /repos/{owner}/{repo}/installation` which installation covers the
+repository, and `POST /app/installations/{id}/access_tokens` for a token. It needs no
+dependency, and every step can be tested with an injected `fetch`.
 
 **Alternative: call the skill's script.** `github_app.py gh …` per `gh` call, and the `env`
 command's credential helper for git. Rejected, for four reasons:
@@ -85,11 +101,11 @@ command's credential helper for git. Rejected, for four reasons:
   Igor makes no local commits, because it publishes through the Git Data API, and its one local
   merge stops before committing.
 
-The cost of reimplementing is two readers of one file layout, which could drift. The layout is
-documented in the skill's README, and Igor's tests pin the fields it reads.
+The cost of reimplementing is two readers of one set of variables, which could drift. The
+variables are documented in the skill's README, and Igor's tests pin the ones it reads.
 
-The skill stays the operator's tool. `store-credentials` and `check` are how an operator sets up
-and diagnoses an identity, and the docs say so.
+The skill stays an optional operator tool. Its `check` confirms an App, its installation and its
+permissions, and the docs say so.
 
 ## How each call gets the token
 
@@ -173,7 +189,8 @@ written, not a fix.
 The startup check does what the skill's `check` does, against the repositories this role
 touches, and refuses on the first failure:
 
-1. credentials found for the identity;
+1. the environment holds the identity's credentials, or the refusal names each missing
+   variable;
 2. the key signs a JWT;
 3. `GET /app` accepts the JWT, giving the slug;
 4. each worked repository, and the lore repository, has an installation;
@@ -231,9 +248,9 @@ GITHUB_APP_ID=<App ID>
 GITHUB_APP_PRIVATE_KEY_FILE=/etc/igor/<role>.pem
 ```
 
-The key file is `0600` and owned by the service user. `GH_TOKEN` goes. These are the skill's
-server variables, and the skill's `check` runs against them as the service user. The skill's
-`env` command is not used, for the reasons under *Mint in TypeScript*.
+The env file and the key file are `0600` and owned by the service user. `GH_TOKEN` goes. These
+are the skill's environment variables, so the skill's `check` runs against this file as the
+service user. The skill's `env` command is not used, for the reasons under *Mint in TypeScript*.
 
 The shared `/etc/igor/env` keeps the seat tokens. #148's deploy workflow writes seat tokens and
 nothing of the App, which the operator installs once per role.

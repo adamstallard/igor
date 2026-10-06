@@ -1,28 +1,32 @@
-## 0. How this is built (Adam, 2026-10-04)
+## 0. How this is built (Adam, 2026-10-04 and 2026-10-05)
 
 - [ ] 0.1 Built with #156 on `one-claiming-surface`: gate two lands on that branch, with this
       change merged into it at that point, and #158 is closed in favour of #156. Both changes
       are archived together (`design.md`, *Sequencing with #156*)
+- [ ] 0.2 Credentials come only from the Igor's environment; nothing reads the `github-app`
+      skill's stored files (`design.md`, *Credentials come only from the environment*, decided
+      2026-10-05)
 
 ## 1. The agreement (gate one — this pull request)
 
 - [x] 1.1 `role-config`: an Igor's GitHub App identity is its role's name; no role file names an
-      App; credentials come from the host in the `github-app` skill's order
+      App; credentials come only from the Igor's environment, under the `github-app` skill's
+      variable names
 - [x] 1.2 `surface-adapter`: every GitHub call from `run` and `serve` acts as the App; tokens are
       minted on demand and used only in the first half of their life; an Igor knows its own bot
       account; it refuses to start when it cannot act as the App
 - [x] 1.3 `task-execution`: nothing that yields an App token reaches the worker or its tree
-- [x] 1.4 `design.md`: the call sites, the identity, minting in TypeScript against the script,
-      how each call gets the token, startup and mid-run failure, deployment, risks, and
-      sequencing with #156
+- [x] 1.4 `design.md`: the call sites, the identity, credentials from the environment only,
+      minting in TypeScript against the script, how each call gets the token, startup and
+      mid-run failure, deployment, risks, and sequencing with #156
 
 ## 2. Credentials and minting
 
-- [ ] 2.1 A new module, `src/app.ts`: find the identity's credentials in the skill's order
-      (`GITHUB_APP_*` when `GITHUB_APP_IDENTITY` names it, then
-      `$XDG_CONFIG_HOME/github-app/<identity>.json` with `appId` and optional `keyFile`, and
-      `<identity>.pem`). Each miss says where it looked; environment credentials for another
-      identity are named as such
+- [ ] 2.1 A new module, `src/app.ts`: read the identity's credentials from the environment only
+      (`GITHUB_APP_ID` and one of `GITHUB_APP_PRIVATE_KEY_FILE` or `GITHUB_APP_PRIVATE_KEY`, when
+      `GITHUB_APP_IDENTITY` names it). A refusal names each missing variable; environment
+      credentials for another identity are named as such. No file under the `github-app`
+      skill's configuration directory is read
 - [ ] 2.2 Sign the RS256 JWT with `node:crypto`, issued a minute early for clock skew; read the
       slug from `GET /app`
 - [ ] 2.3 Find the installation per repository with `GET /repos/{owner}/{repo}/installation`;
@@ -30,7 +34,8 @@
 - [ ] 2.4 Mint with `POST /app/installations/{id}/access_tokens`; hold the token and its
       `permissions` in memory; renew once half its life has passed
 - [ ] 2.5 Read the bot account from `GET /users/<slug>[bot]`: login and numeric id
-- [ ] 2.6 Tests with an injected `fetch` and a generated key: each lookup source, each refusal,
+- [ ] 2.6 Tests with an injected `fetch` and a generated key: each missing variable, stored
+      skill files ignored when the environment is incomplete, each refusal,
       renewal at half life, reuse within it, and no token written to disk or `process.env`
 
 ## 3. Every call as the App
@@ -58,8 +63,8 @@
       without it fails naming the permission
 - [ ] 4.3 A role file setting `github_app` is refused with the reason, in `REFUSED_KEYS`
       (`src/role.ts:117`)
-- [ ] 4.4 `explainRole` (`src/role.ts:643`) reports the identity and where its credentials came
-      from, without minting a token
+- [ ] 4.4 `explainRole` (`src/role.ts:643`) reports the identity and whether the environment
+      holds its credentials, naming any missing variable, without minting a token
 - [ ] 4.5 A credential refused mid-run (401 or 404 on a mint) opens `app:<identity>:credential`
       in whichever record owns credential stops when this is built (#65's breaker or #101's
       condition record); the Igor takes no new item, tries a mint once per cycle, and resumes
@@ -93,18 +98,22 @@ there.
 The wording of each is written when it is built.
 
 - [ ] 7.1 `deploy/igor.service`: rewrite the comment above `EnvironmentFile=` (lines 37-43) so
-      the per-instance file holds the App's identity, ID and key path, and no `GH_TOKEN`; drop
+      the per-instance file holds the App's identity, ID and key path, is readable only by the
+      service user, and holds no `GH_TOKEN`; drop
       the `-` on line 45, because every Igor now needs that file
 - [ ] 7.2 `deploy/env.example`: replace the `GH_TOKEN` section (lines 3-5, 21-26) with the three
-      `GITHUB_APP_*` lines and the key file's mode and owner
+      `GITHUB_APP_*` lines, the optional `GITHUB_APP_OWNER` and `GITHUB_APP_INSTALLATION_ID`,
+      and the env and key files' mode and owner
 - [ ] 7.3 `deploy/docker-compose.yml`: the same lines, and the key mounted read-only
 - [ ] 7.4 `docs/deployment.md`: step 1 of *Before it can run* (lines 44-47) creates and installs
       one App per role; line 119's `GH_TOKEN` passage names the App's file; the table at line
-      297 gets a row per startup refusal; say not to log `gh` in as the service user; name the
-      skill's `store-credentials` and `check` as the setup and diagnosis tools
+      297 gets a row per startup refusal; say not to log `gh` in as the service user; say that
+      the credentials come only from the environment file, and name the skill's `check`, run
+      against that file, as an optional diagnosis tool
 - [ ] 7.5 `docs/machine-accounts.md`: drop the machine-user section and the *Not built yet*
       paragraph (#156's task 5.4)
-- [ ] 7.6 `README.md`: *Running an Igor*, step 1 (lines 177-182), describes the App
+- [ ] 7.6 `README.md`: *Running an Igor*, step 1 (lines 177-182), describes the App, and that a
+      person running an Igor exports the same `GITHUB_APP_*` variables in their shell
 
 ## 8. Outside this change
 

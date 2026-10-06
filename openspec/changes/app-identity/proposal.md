@@ -23,10 +23,14 @@ Nothing in Igor mints one.
 ## What Changes
 
 **An Igor acts as the GitHub App named after its role.** `igor serve reviewer` acts as the
-github-app identity `reviewer`, whose App ID and key the host holds where the shared
-`github-app` skill keeps them: the Igor's environment on a server, or
-`~/.config/github-app/reviewer.{json,pem}` on a person's machine. Nothing in the lore repository
-names an App, a key or a key path.
+github-app identity `reviewer`. Nothing in the lore repository names an App, a key or a key
+path.
+
+**An Igor reads its App credentials only from its environment** (Adam, 2026-10-05). On a server
+that is the role's environment file, `/etc/igor/<role>.env`; a person running an Igor exports
+the same variables in their shell. The variables are the `github-app` skill's names, so the
+skill's `check` works against the same file, but Igor does not depend on the skill and never
+reads its stored files.
 
 **Every GitHub call `igor run` and `igor serve` make runs as that App, and nothing falls back to
 an ambient credential.** Igor mints the installation token itself, keeps it in memory, renews it
@@ -37,9 +41,9 @@ token is never written to disk, to the Igor's own environment, or to any git con
 requires: the search path, a home directory, network settings and one seat token. The tree it
 works in carries no credential either.
 
-**An Igor that cannot act as its App refuses to start, saying why.** Missing credentials, a key
-GitHub refuses, an App not installed where a repository is, a repository outside the
-installation, and a missing permission each refuse with a named reason. A credential that
+**An Igor that cannot act as its App refuses to start, saying why.** A missing credential
+variable, a key GitHub refuses, an App not installed where a repository is, a repository outside
+the installation, and a missing permission each refuse with a named reason. A credential that
 GitHub stops accepting while the Igor runs stops it taking new work until a token mints again.
 
 **An Igor knows its own bot account**: its login, `<slug>[bot]`, and numeric user id, read once
@@ -69,7 +73,8 @@ change is merged into `one-claiming-surface` at that point, and #158 is closed i
 
 ### Modified Capabilities
 
-- `role-config`: an Igor's GitHub App identity is its role's name.
+- `role-config`: an Igor's GitHub App identity is its role's name, and its credentials come only
+  from its environment.
 - `surface-adapter`: on GitHub, every call acts as the Igor's App, through a token minted on
   demand; an Igor knows its own bot account; it refuses to start when it cannot act as the App.
 - `task-execution`: the worker's environment and working tree hold nothing of the App.

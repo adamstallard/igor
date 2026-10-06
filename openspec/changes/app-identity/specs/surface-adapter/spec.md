@@ -87,7 +87,7 @@ The Igor SHALL NOT read its identity from `GET /user`, which describes a user an
 every repository the role works and on the lore repository, and SHALL refuse to start otherwise,
 naming the reason:
 
-- no credentials for the identity, saying where they were looked for;
+- missing or incomplete credential variables in its environment, naming each missing variable;
 - a private key that cannot sign;
 - GitHub refusing the App's credentials;
 - the App not installed on the account holding a repository, naming the repository;
@@ -107,8 +107,9 @@ waiting for an item to probe it.
 
 #### Scenario: Missing credentials refuse the start
 
-- **WHEN** `igor serve reviewer` starts and no credentials exist for the identity `reviewer`
-- **THEN** it refuses to start, naming the identity and the places it looked
+- **WHEN** `igor serve reviewer` starts with `GITHUB_APP_IDENTITY=reviewer` and no `GITHUB_APP_ID`
+  in its environment
+- **THEN** it refuses to start, naming the identity and `GITHUB_APP_ID` as missing
 - **AND** it makes no request to GitHub as anyone else
 
 #### Scenario: An App not installed on a repository refuses the start
