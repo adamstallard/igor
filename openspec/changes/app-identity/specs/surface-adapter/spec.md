@@ -88,6 +88,7 @@ every repository the role works and on the lore repository, and SHALL refuse to 
 naming the reason:
 
 - missing or incomplete credential variables in its environment, naming each missing variable;
+- both `GITHUB_APP_PRIVATE_KEY_FILE` and `GITHUB_APP_PRIVATE_KEY` set, naming both;
 - a private key that cannot sign;
 - GitHub refusing the App's credentials;
 - the App not installed on the account holding a repository, naming the repository;
@@ -111,6 +112,13 @@ waiting for an item to probe it.
   in its environment
 - **THEN** it refuses to start, naming the identity and `GITHUB_APP_ID` as missing
 - **AND** it makes no request to GitHub as anyone else
+
+#### Scenario: Two key variables refuse the start
+
+- **WHEN** `igor serve reviewer` starts with both `GITHUB_APP_PRIVATE_KEY_FILE` and
+  `GITHUB_APP_PRIVATE_KEY` set
+- **THEN** it refuses to start, naming both variables, rather than choosing one
+- **AND** it makes no request to GitHub
 
 #### Scenario: An App not installed on a repository refuses the start
 

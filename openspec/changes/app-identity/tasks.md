@@ -23,10 +23,11 @@
 ## 2. Credentials and minting
 
 - [ ] 2.1 A new module, `src/app.ts`: read the identity's credentials from the environment only
-      (`GITHUB_APP_ID` and one of `GITHUB_APP_PRIVATE_KEY_FILE` or `GITHUB_APP_PRIVATE_KEY`, when
-      `GITHUB_APP_IDENTITY` names it). A refusal names each missing variable; environment
-      credentials for another identity are named as such. No file under the `github-app`
-      skill's configuration directory is read
+      (`GITHUB_APP_ID` and exactly one of `GITHUB_APP_PRIVATE_KEY_FILE` or
+      `GITHUB_APP_PRIVATE_KEY`, when `GITHUB_APP_IDENTITY` names it). A refusal names each
+      missing variable, or both key variables when both are set; environment credentials for
+      another identity are named as such. `GITHUB_APP_OWNER` and `GITHUB_APP_INSTALLATION_ID`
+      are never read. No file under the `github-app` skill's configuration directory is read
 - [ ] 2.2 Sign the RS256 JWT with `node:crypto`, issued a minute early for clock skew; read the
       slug from `GET /app`
 - [ ] 2.3 Find the installation per repository with `GET /repos/{owner}/{repo}/installation`;
@@ -34,8 +35,10 @@
 - [ ] 2.4 Mint with `POST /app/installations/{id}/access_tokens`; hold the token and its
       `permissions` in memory; renew once half its life has passed
 - [ ] 2.5 Read the bot account from `GET /users/<slug>[bot]`: login and numeric id
-- [ ] 2.6 Tests with an injected `fetch` and a generated key: each missing variable, stored
-      skill files ignored when the environment is incomplete, each refusal,
+- [ ] 2.6 Tests with an injected `fetch` and a generated key: each missing variable, both key
+      variables set refused naming both, stored skill files ignored when the environment is
+      incomplete, `GITHUB_APP_OWNER` and `GITHUB_APP_INSTALLATION_ID` naming another account
+      leaving the installation found from the repositories, each refusal,
       renewal at half life, reuse within it, and no token written to disk or `process.env`
 
 ## 3. Every call as the App
@@ -102,14 +105,15 @@ The wording of each is written when it is built.
       service user, and holds no `GH_TOKEN`; drop
       the `-` on line 45, because every Igor now needs that file
 - [ ] 7.2 `deploy/env.example`: replace the `GH_TOKEN` section (lines 3-5, 21-26) with the three
-      `GITHUB_APP_*` lines, the optional `GITHUB_APP_OWNER` and `GITHUB_APP_INSTALLATION_ID`,
-      and the env and key files' mode and owner
+      `GITHUB_APP_*` lines, one key variable only, and the env and key files' mode and owner;
+      `GITHUB_APP_OWNER` or `GITHUB_APP_INSTALLATION_ID` may appear only as the skill's, for its
+      `check` when the App is installed on more than one account, and Igor ignores them
 - [ ] 7.3 `deploy/docker-compose.yml`: the same lines, and the key mounted read-only
 - [ ] 7.4 `docs/deployment.md`: step 1 of *Before it can run* (lines 44-47) creates and installs
       one App per role; line 119's `GH_TOKEN` passage names the App's file; the table at line
-      297 gets a row per startup refusal; say not to log `gh` in as the service user; say that
-      the credentials come only from the environment file, and name the skill's `check`, run
-      against that file, as an optional diagnosis tool
+      297 gets a row per startup refusal, including both key variables set; say not to log
+      `gh` in as the service user; say that the credentials come only from the environment
+      file, and name the skill's `check`, run against that file, as an optional diagnosis tool
 - [ ] 7.5 `docs/machine-accounts.md`: drop the machine-user section and the *Not built yet*
       paragraph (#156's task 5.4)
 - [ ] 7.6 `README.md`: *Running an Igor*, step 1 (lines 177-182), describes the App, and that a

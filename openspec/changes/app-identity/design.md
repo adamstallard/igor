@@ -51,9 +51,8 @@ environment, so each acts as whichever App that environment holds, and they don'
 
 **Decided by Adam, 2026-10-05: an Igor reads its App credentials only from its environment.**
 `GITHUB_APP_IDENTITY` names the identity the variables belong to, and must be the role's name.
-With it come `GITHUB_APP_ID` and one of `GITHUB_APP_PRIVATE_KEY_FILE` or
-`GITHUB_APP_PRIVATE_KEY`, and optionally `GITHUB_APP_OWNER` and `GITHUB_APP_INSTALLATION_ID`. On
-a server they come from the role's environment file, `/etc/igor/<role>.env`. A person running an Igor
+With it come `GITHUB_APP_ID` and exactly one of `GITHUB_APP_PRIVATE_KEY_FILE` or
+`GITHUB_APP_PRIVATE_KEY`. On a server they come from the role's environment file, `/etc/igor/<role>.env`. A person running an Igor
 exports the same variables in their shell.
 
 The reasons:
@@ -69,9 +68,17 @@ refusal says so: `GITHUB_APP_ID` is set for "default" and this Igor acts as "rev
 
 The variable names are the `github-app` skill's environment contract. The skill reads
 credentials from the environment when `GITHUB_APP_IDENTITY` names the identity, so its `check`
-runs against the same `/etc/igor/<role>.env`. Igor does not depend on the skill. Igor needs
-neither `GITHUB_APP_OWNER` nor `GITHUB_APP_INSTALLATION_ID`, because it asks GitHub which
-installation covers each repository; they are accepted so one file serves both.
+runs against the same `/etc/igor/<role>.env`. Igor does not depend on the skill.
+
+**Decided by Adam, 2026-10-05: Igor ignores `GITHUB_APP_OWNER` and `GITHUB_APP_INSTALLATION_ID`.**
+Igor finds its installation by asking GitHub which one covers its repositories, so it never reads
+them. They are the skill's. The skill mints without knowing a repository, so when the App is
+installed on more than one account its `check` needs one of them to choose. The role's
+environment file may carry them for that reason only.
+
+**Decided by Adam, 2026-10-05: both key variables set is a refusal to start.** With both
+`GITHUB_APP_PRIVATE_KEY_FILE` and `GITHUB_APP_PRIVATE_KEY` set, the Igor refuses to start,
+naming both, as the skill does, rather than choosing one.
 
 **Rejected: falling back to the skill's stored files**, `~/.config/github-app/<identity>.json`
 and `<identity>.pem`, after the environment. A server role with an incomplete environment file
@@ -190,7 +197,7 @@ The startup check does what the skill's `check` does, against the repositories t
 touches, and refuses on the first failure:
 
 1. the environment holds the identity's credentials, or the refusal names each missing
-   variable;
+   variable, or both key variables when both are set;
 2. the key signs a JWT;
 3. `GET /app` accepts the JWT, giving the slug;
 4. each worked repository, and the lore repository, has an installation;

@@ -30,7 +30,9 @@ path.
 that is the role's environment file, `/etc/igor/<role>.env`; a person running an Igor exports
 the same variables in their shell. The variables are the `github-app` skill's names, so the
 skill's `check` works against the same file, but Igor does not depend on the skill and never
-reads its stored files.
+reads its stored files. Igor ignores `GITHUB_APP_OWNER` and `GITHUB_APP_INSTALLATION_ID`, which
+are the skill's: it finds its installation from its repositories. Setting both key variables
+refuses the start, naming both (Adam, 2026-10-05).
 
 **Every GitHub call `igor run` and `igor serve` make runs as that App, and nothing falls back to
 an ambient credential.** Igor mints the installation token itself, keeps it in memory, renews it
@@ -42,7 +44,7 @@ requires: the search path, a home directory, network settings and one seat token
 works in carries no credential either.
 
 **An Igor that cannot act as its App refuses to start, saying why.** A missing credential
-variable, a key GitHub refuses, an App not installed where a repository is, a repository outside
+variable, both key variables set, a key GitHub refuses, an App not installed where a repository is, a repository outside
 the installation, and a missing permission each refuse with a named reason. A credential that
 GitHub stops accepting while the Igor runs stops it taking new work until a token mints again.
 
