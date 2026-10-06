@@ -96,8 +96,9 @@ gate two starts; both changes are archived together (`design.md`, *Built togethe
 - [ ] 5.3 Measure whether a pull request opened by a GitHub App links to its Linear issue. Needs a
       GitHub repository connected to Linear; `aura-workroom` is not connected
 - [ ] 5.4 When App support ships, update `docs/deployment.md`, which still says an Igor must be
-      a machine user, to describe the App as the only identity, and drop the
-      machine-user steps from `docs/machine-accounts.md`
+      a machine user, to describe the App as the only identity. The machine-user steps were
+      removed from `docs/machine-accounts.md` at review (Adam, 2026-10-06): no Igor runs yet,
+      so nobody needs them
 - [ ] 5.5 Store each channel's marker on the state branch, keyed by role and channel id (Adam,
       2026-10-06; `design.md`). The marker is the newest message already handled, after which
       the next poll asks Discord for messages. It is only a cache; the link check in 3.9 is what
