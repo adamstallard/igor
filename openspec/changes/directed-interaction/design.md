@@ -113,6 +113,12 @@ bot reads as having no write access (`permissions.push` false, measured above), 
 an Igor gets no reply. Revisit only if someone needs it. An Igor's word acting on another Igor is what #156 rules out for reviews, and
 allowing a reply but not an action would need the identity test this change avoided.
 
+**No per-thread exchange cap (decided 2026-10-06 by Adam).** Conversation is bounded by budget,
+not by a count of exchanges, and a fourth question is answered (task 5.3). A count bounds a proxy
+for budget, and GitHub issue comments, where an Igor is asked things, have no thread to count
+within. The runaway exchange a cap was meant to stop is the moderation question under Open, which
+a count would not fix. `docs/architecture.md` §5.4 no longer lists the cap.
+
 ## Roads not taken
 
 **A per-thread exchange cap.** Rejected twice over: it bounds a proxy for budget, and on the
@@ -142,14 +148,6 @@ Discord and Slack moderate participants directly — mute, throttle, roles. GitH
 a conversation, which does not restrain a collaborator, and blocking an account, which is
 nuclear. An Igor needs write access, so it sits on the wrong side of the only lock that bites.
 Budget bounds the spend; nothing bounds the noise.
-
-**Whether a per-thread exchange cap stands (raised 2026-10-06).** `docs/architecture.md` §5.4
-said to cap exchanges per thread at two or three. This change rejects any count (*Roads not
-taken*), and task 5.3 tests that a fourth question is answered. §5.4 now lists the cap as open
-under *Not built*, with [#162](https://github.com/adamstallard/igor/issues/162). *Recommend:* keep
-the rejection and delete the cap from §5.4. A count bounds a proxy for budget, and GitHub issue
-comments have no thread to count within. The runaway exchange it was meant to stop is the
-moderation item above, which a count would not fix.
 
 **How an App Igor learns it was mentioned (raised 2026-10-04).** The mentions source queries
 mentions of the Igor's own account, and on GitHub that account is now an App's bot. GitHub

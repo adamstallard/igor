@@ -1125,9 +1125,6 @@ No task in `directed-interaction` builds these. Building them is #162, which rem
   X?" is a legitimate question to put to an Igor. A question lore cannot answer is a
   repeated-retrieval miss, which is already a consolidation salience signal (§3.5), so questions
   people actually ask become demand-driven evidence of what lore is missing.
-- **Cap exchanges per thread at two or three — open, not decided.** `directed-interaction`
-  rejects any count of exchanges and bounds conversation by budget alone; which stands is open
-  in its `design.md`.
 
 ---
 
