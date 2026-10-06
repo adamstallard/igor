@@ -189,8 +189,11 @@ acceptable there, as it is on the tracker.
 **How the bot finds new messages (owner, 2026-10-04).** Each poll asks Discord for a channel's
 messages after the newest one already handled, then moves that marker to the newest message it
 has now handled. The marker, one per channel, is kept with Igor's other state, so any process
-of the role, or a restarted one, carries on where the last poll stopped. Where it is stored is
-specified when the Discord adapter is built (task 5.5).
+of the role, or a restarted one, carries on where the last poll stopped.
+
+**The marker lives on the state branch (owner, 2026-10-06).** Like the discovery watermark, it
+is keyed by role and channel id, shared by every process of the role, and survives restarts and
+new servers. It stays only a cache, as the next paragraph explains.
 
 **The link, not the marker, prevents a duplicate issue (owner, 2026-10-05).** Every issue an
 Igor creates from a chat message links that message. Before creating one, the Igor looks on

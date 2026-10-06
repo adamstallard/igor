@@ -89,7 +89,8 @@ gate two starts; both changes are archived together (`design.md`, *Built togethe
 
 ## 5. Outside this change
 
-- [ ] 5.1 A Linear adapter implementing the above — file an issue before archiving
+- [x] 5.1 A Linear adapter implementing the above — filed as #161, after the Discord adapter
+      (#160) (Adam, 2026-10-06)
 - [ ] 5.2 GitHub App credentials for `gh` and git — answered by #158 (`app-identity`), built
       in this change's gate two
 - [ ] 5.3 Measure whether a pull request opened by a GitHub App links to its Linear issue. Needs a
@@ -97,6 +98,7 @@ gate two starts; both changes are archived together (`design.md`, *Built togethe
 - [ ] 5.4 When App support ships, update `docs/deployment.md`, which still says an Igor must be
       a machine user, to describe the App as the only identity, and drop the
       machine-user steps from `docs/machine-accounts.md`
-- [ ] 5.5 When the Discord adapter is built, specify where each channel's marker is stored: the
-      newest message already handled, after which the next poll asks Discord for messages. The
-      marker only saves work; the link check in 3.9 is what prevents a duplicate issue
+- [ ] 5.5 Store each channel's marker on the state branch, keyed by role and channel id (Adam,
+      2026-10-06; `design.md`). The marker is the newest message already handled, after which
+      the next poll asks Discord for messages. It is only a cache; the link check in 3.9 is what
+      prevents a duplicate issue. Built with the Discord adapter (#160)

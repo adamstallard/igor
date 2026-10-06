@@ -56,7 +56,7 @@ instead, because:
 **Each poll asks Discord for a channel's messages after the newest one already handled**, then
 moves that marker to the newest message it has now handled. The marker is kept with Igor's
 other state (§5.0.2), so any process of the role, or a restarted one, carries on where the
-last poll stopped. Where it is stored is specified when the Discord adapter is built.
+last poll stopped. It lives on the state branch, keyed by role and channel id.
 
 **The marker only saves work; the link prevents a duplicate issue.** Every issue an Igor creates
 from a chat message links that message. Before creating one, the Igor looks on the claiming
@@ -948,8 +948,9 @@ Slack, ClickUp, GitHub, Linear, and Discord are *examples* of surfaces, not the
 architecture. An adapter provides: `search` returning normalized candidates, `claim`,
 `verify_claim`, `report`, and `identity`. Everything above that line is surface-agnostic.
 
-GitHub ships first on ubiquity — it is the one platform nearly every team has. Linear
-second (shares the assignment model), Discord third.
+GitHub ships first on ubiquity — it is the one platform nearly every team has. Discord
+second, Linear third: GitHub can serve as project management, and Discord directs work while
+Linear would be another claiming tracker.
 
 **Discord is a direction surface, never a claiming tracker.** A claiming tracker has a holder
 field, as GitHub and Linear do. Discord has none, so a claim there would be a bare message with
