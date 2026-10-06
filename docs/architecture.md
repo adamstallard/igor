@@ -110,9 +110,6 @@ which role took an issue and can hand work to a role by name. This was decided i
 such as `engineering.yaml`: it grants what they all may do, each specialist role narrows it, and
 a broad role like `fullstack` keeps it. (§6.0 covers how each kind of setting is inherited.)
 
-**Still in the code:** a role whose `extends` names two roles resolves to one Igor doing both
-jobs, with the union of their lanes and permissions (`src/role.ts`). #156 removes it.
-
 A lore entry's `role:frontend` scope is a **label**, not a reference to a role file: an entry
 can name a role before any role file defines it.
 

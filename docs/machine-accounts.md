@@ -3,9 +3,6 @@
 **An Igor acts on GitHub as a GitHub App.** Machine users, ordinary GitHub accounts that exist
 to run automation, are not supported as Igor identities at launch.
 
-**Not built yet:** App credentials for `gh` and git, and claiming by label, are specified in the
-`one-claiming-surface` and `app-identity` changes and not yet implemented.
-
 This document is the part of deployment that cannot be scripted, because it involves accepting
 terms, holding credentials, and granting access.
 
