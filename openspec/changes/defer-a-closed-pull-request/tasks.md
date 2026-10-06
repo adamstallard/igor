@@ -42,3 +42,9 @@
 - [ ] 5.4 An edit by an item's own author without write access leaves it in place; one by a writer
       lifts it
 - [ ] 5.5 Closing the item removes it from discovery, and nothing is asked
+
+## 6. Merging
+
+- [ ] 6.1 When merging, if `main` still says "until a reply or an edit answers it"
+      (`docs/architecture.md` §5.0.2), reword it to say only someone with write access lifts a
+      deferral. #101 carries the same task; whichever merges first does it
