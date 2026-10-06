@@ -934,8 +934,9 @@ Slack, ClickUp, GitHub, Linear, and Discord are *examples* of surfaces, not the
 architecture. An adapter provides: `search` returning normalized candidates, `claim`,
 `verify_claim`, `report`, and `identity`. Everything above that line is surface-agnostic.
 
-GitHub ships first on ubiquity — it is the one platform nearly every team has. Linear
-second (shares the assignment model), Discord third (forces the convention path).
+GitHub ships first on ubiquity — it is the one platform nearly every team has. Discord
+second, Linear third: GitHub can serve as project management, and Discord directs work while
+Linear would be another claiming tracker.
 
 ### 5.2 One claim mechanism, not two — **built**
 
@@ -1891,6 +1892,6 @@ Agreed in principle, not scoped, roughly in dependency order:
 9. Publishing to npm, and pinning the promotion workflow to a release (§6.6).
 10. Shared seats and the fleet-level budget policy, with a reserve where a person shares their
     seat (§6.5).
-11. Additional adapters: Linear, then Discord.
+11. Additional adapters: Discord (#160), then Linear (#161).
 12. Binaries in an artifact, refused or carried rather than corrupted (§6.7.3) — needs a role
     that can touch one.
