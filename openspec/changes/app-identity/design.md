@@ -264,12 +264,14 @@ nothing of the App, which the operator installs once per role.
 
 ## Risks
 
-- **The key sits on disk as the service user, and so does the worker.** A worker that can read
-  files outside its tree could read `/etc/igor/<role>.pem`. That is the exposure
-  `/etc/igor/<role>.env` already has with `GH_TOKEN` in it, so this change does not widen it.
-  `LoadCredential=` does not close it either, because `$CREDENTIALS_DIRECTORY` is readable by the
-  unit's processes. Whether a headless worker can read a path outside its working directory is
-  not measured. Task 6.3 measures it and files an issue if it can.
+- **The key sits on disk as the service user, and so does the worker.** A worker can read
+  `/etc/igor/<role>.pem`, and every other file the service user can read. Claude Code's path check
+  confines its Read tool and `head` and `tail` to the tree. But an allowed test command runs code
+  the worker writes, and that code reads anything. Measured on 2026-10-07 (task 6.3): a test file
+  written in the tree read a file outside it under `npm test`. `GH_TOKEN` in
+  `/etc/igor/<role>.env` has the same exposure, so this change does not widen it. `LoadCredential=`
+  does not close it, because `$CREDENTIALS_DIRECTORY` is readable by the unit's processes. Closing
+  it is #163.
 - **A host `gh` login is reachable through `HOME`.** The worker gets `HOME`, and `gh` reads a
   stored login from it. With `gh auth setup-git` gone nothing in Igor uses that login, but a
   worker permitted to run `gh` could. The deployment docs tell the operator not to log `gh` in

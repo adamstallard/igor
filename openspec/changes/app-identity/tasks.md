@@ -93,8 +93,9 @@ there.
 - [x] 6.2 How GraphQL spells a bot's login in `author { login }` (`src/github-adapter.ts:50`)
       compared with REST's `user.login`. Measured 2026-10-04: GraphQL `igor-generalist`, REST
       `igor-generalist[bot]`, so task 3.5 must match both or compare `databaseId`
-- [ ] 6.3 Whether a headless worker can read a file outside its working directory, such as the
-      App's key; if it can, file an issue before archiving
+- [x] 6.3 Whether a headless worker can read a file outside its working directory, such as the
+      App's key; if it can, file an issue before archiving. It can, through a test it writes and
+      runs: #163
 
 ## 7. Deployment and docs
 
