@@ -97,8 +97,8 @@ gate two starts; both changes are archived together (`design.md`, *Built togethe
       (#160) (Adam, 2026-10-06)
 - [ ] 5.2 GitHub App credentials for `gh` and git — answered by #158 (`app-identity`), built
       in this change's gate two
-- [ ] 5.3 Measure whether a pull request opened by a GitHub App links to its Linear issue. Needs a
-      GitHub repository connected to Linear; `aura-workroom` is not connected
+- [x] 5.3 Measure whether a pull request opened by a GitHub App links to its Linear issue. It
+      does: confirmed by Adam from use, 2026-10-07, so no measurement was taken
 - [ ] 5.4 When App support ships, update `docs/deployment.md`, which still says an Igor must be
       a machine user, to describe the App as the only identity. The machine-user steps were
       removed from `docs/machine-accounts.md` at review (Adam, 2026-10-06): no Igor runs yet,

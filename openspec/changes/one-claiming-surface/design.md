@@ -275,12 +275,11 @@ Also not established here: the assignee field. The earlier `linear-app` measurem
 app user cannot be assignee, and that the request reported success while changing nothing. The
 adapter must read the field back rather than trust the response.
 
-## Owed: a GitHub App's pull request linking to a Linear issue
+## A GitHub App's pull request links to its Linear issue
 
-**Not measured yet:** whether a pull request opened by a GitHub App links to its Linear issue
-the way a person's does. Linear links by the issue identifier in the branch name, title or
-description, not by author, so it is expected to. The measurement needs a GitHub repository
-connected to Linear's GitHub integration; `aura-workroom` is not connected.
+**Confirmed by Adam from use, 2026-10-07:** a pull request opened by a GitHub App links to its
+Linear issue as a person's does. Linear links by the issue identifier in the branch name, title or
+description, not by author.
 
 ## Holder field first, then the message
 
