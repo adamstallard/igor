@@ -117,14 +117,47 @@ The wording of each is written when it is built.
       file, and name the skill's `check`, run against that file, as an optional diagnosis tool
 - [ ] 7.5 Fold `docs/machine-accounts.md` into `docs/deployment.md` and delete it (Adam,
       2026-10-06). Its content becomes a subsection of *Before it can run*, e.g. *Giving an Igor its
-      GitHub App*, beside *Adding a seat somebody has given you*, and step 1 points to it. Keep it
-      to about 60 lines: drop the machine-user section and the *Not built yet* paragraph (#156's
-      task 5.4); replace *Separately: which seat pays* with a one-line link to `docs/seats.md`; and
-      point at the github-app skill's README for the steps that create the App, rather than
-      repeating them. If it can't be kept that short, keep it a separate page named
-      `docs/accounts.md`, titled "Giving an Igor its own accounts", and say why in the PR. Update the
-      links to it: `README.md` (*Running an Igor*, step 1), `docs/deployment.md` and
-      `deploy/env.example`
+      GitHub App*, beside *Adding a seat somebody has given you*, and step 1 points to it. Drop
+      the machine-user section and the *Not built yet* paragraph (#156's task 5.4), and replace *Separately: which seat pays* with a one-line link to
+      `docs/seats.md`. The subsection carries the steps that create, install and store the App
+      itself, not a link to the github-app skill's README, so an operator needs nothing outside
+      this repository (Adam, 2026-10-07). The steps, which may be reworded to fit the page but
+      keep every field and value:
+
+      ```markdown
+      1. **Create the App.** On GitHub, under the account that owns the repositories the role
+         works on and its lore repository: **Settings → Developer settings → GitHub Apps → New
+         GitHub App**.
+
+         | Field | Value |
+         |---|---|
+         | GitHub App name | Any free name, such as `igor-<role>`. Commits and claims show as `<name>[bot]`. |
+         | Homepage URL | Any; the lore repository's URL is fine. |
+         | Webhook | Untick **Active**. Igor polls; nothing receives events. |
+         | Repository permissions | **Contents**, **Issues** and **Pull requests**: Read and write. **Workflows**: Read and write only if the role changes files under `.github/workflows/`. |
+         | Where can this GitHub App be installed? | **Only on this account.** |
+
+         On the App's **General** page, copy the **App ID**, and under **Private keys** click
+         **Generate a private key**. GitHub downloads a `.pem` file; it is the App's password.
+
+      2. **Install it.** In the App's settings, **Install App**, then **Install** on the account,
+         choosing **Only select repositories**: every repository the role works on, and its lore
+         repository. One installation must cover them all, or the Igor refuses to start.
+
+      3. **Store it on the host.** Move the key to `/etc/igor/<role>.pem` and add the three
+         variables to `/etc/igor/<role>.env`, both `0600` and owned by the service user:
+
+             GITHUB_APP_IDENTITY=<role>
+             GITHUB_APP_ID=<App ID>
+             GITHUB_APP_PRIVATE_KEY_FILE=/etc/igor/<role>.pem
+
+         Start the Igor. If anything is missing or wrong, it refuses to start and names it.
+      ```
+
+      Keep the subsection to about 80 lines. If it can't be kept that short, keep it a separate
+      page named `docs/accounts.md`, titled "Giving an Igor its own accounts", and say why in the
+      PR. Update the links to it: `README.md` (*Running an Igor*, step 1), `docs/deployment.md`
+      and `deploy/env.example`
 - [ ] 7.6 `README.md`: *Running an Igor*, step 1 (lines 177-182), describes the App, and that a
       person running an Igor exports the same `GITHUB_APP_*` variables in their shell
 
