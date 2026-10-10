@@ -702,6 +702,13 @@ tracker is the source of truth for what is claimed.** An Igor that loses its sta
 an old item, finds it assigned or closed, and skips — so losing state costs API calls and
 triage tokens, never a duplicate claim.
 
+**A mark records how far one role has considered a source.** Two roles polling the same source
+each keep their own, so an item one role's lane passed over is still fresh to the other. The
+lane is applied after discovery, so a mark shared across roles would advance on a narrow role's
+rejection and drop the item below every other role's floor, where nothing lifts it back. A role
+is identified by its name: two processes running one role share a mark, and a renamed role
+starts again.
+
 **It lives on an orphan branch of the destination**, not on `main` and not on a laptop. The
 generalisation: **machine output goes in a machine venue on every surface** — its own channel
 in Slack or Discord, its own branch in git. Coordination claims already work that way, so
