@@ -76,6 +76,24 @@ gate two starts; both changes are archived together (`design.md`, *Built togethe
       "is my `igor:<role>` label gone". Remove today's assignee claim path in the same change
       that adds the label claim and App credentials (5.2), so no build is left without a way to
       claim (Adam, 2026-10-04)
+- [ ] 3.6a Reword the three messages that tell a person to unassign an item whose release did not
+      take, since unassigning frees nothing once the claim is a label (decided 2026-10-04, carried
+      from #146's task 8.6). They are `claimStuck()`, `stillAssigned()` and
+      `stoodDownStuck()` in `src/claiming.ts`, in the order below. **Wording carried verbatim, approved by the reviewer; may be reworded only with
+      their agreement:**
+
+      ```
+      **<role>** could not finish taking this and could not release it either, so it still carries
+      its `igor:<role>` label. Nothing was done. Remove the label to let another run pick it up.
+      ```
+
+      ```
+      This still carries the `igor:<role>` label — releasing it did not take. Remove the label to free it.
+      ```
+
+      ```
+      **<role>** stood down here, and could not remove its own `igor:<role>` label. Remove the label to free it.
+      ```
 - [ ] 3.7 A stop removes this Igor's own label or delegate, and a person assigning themselves
       afterwards keeps the item
 - [ ] 3.8 An Igor labelled by a person on an issue another Igor holds doesn't claim it, and
