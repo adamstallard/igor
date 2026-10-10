@@ -1021,7 +1021,7 @@ The cases that seemed to need shadow are better handled by scope. An item where 
 itself be disruptive — an incident ticket mid-outage — belongs outside the role's query, not
 inside a mode.
 
-### 5.4 Directed interaction — **scoped** (`directed-interaction`)
+### 5.4 Directed interaction — **built** (`directed-interaction`)
 
 The moment an Igor posts a claim, people reply to it. Having no answer for that means the
 behavior gets decided by accident.
@@ -1035,8 +1035,8 @@ harmless: a draft PR that exfiltrates a secret is closable, and the secret is st
 **Authority to instruct never exceeds authority over the artifact.** If someone cannot merge
 to a repository, their instruction to an Igor working in it carries no weight. Injection by an
 outsider therefore gains them nothing they could not already do directly. In practice
-"authorized" means the store-level `reviewers` — per-role lists once roles exist — plus anyone
-with write access to the repository in question.
+"authorized" means write access to the repository holding the artifact, read from the surface's
+own permission record.
 
 **Stop is the deliberate exception: unauthenticated, open to anyone.** A stop fails in the
 safe direction — worst case an Igor stands down and a human does the work. Everything that
@@ -1106,9 +1106,8 @@ already have, and the audit trail makes a successful steer discoverable afterwar
 **Staying out of threads:**
 
 - **Reply only when explicitly addressed**, never to every comment on a claimed item.
-- **Cap exchanges per thread** at two or three, then stop and leave it to a human. An Igor
-  still talking after four rounds is not converging.
 - **Cap conversational spend** as a fraction of cycle budget, so talking cannot starve work.
+  Nothing counts the replies.
 - **No free-form Igor-to-Igor conversation.** Agent exchange is structured — claims,
   handoffs, stand-downs. Two Igors in a polite loop would burn a week's allowance in an
   afternoon.
@@ -1122,25 +1121,30 @@ novel part, not the only part.
 - **Requested work outranks discovered work**, and this cuts across the fleet-level priority
   ordering (§2.1): a request to a low-priority role is served ahead of a discovered item in a
   high one, because the ordering exists to allocate *spare* capacity rather than to ignore
-  people. Cap requests per requester per period so one enthusiastic person cannot consume a
-  seat.
-- **Out-of-lane requests are declined with a route** — "not my lane, `igor-backend` covers it"
-  — which also makes the fleet legible to people who have no idea which Igor does what.
-- **Ambiguous requests get exactly one clarifying question**, then a hand-back rather than a
-  guess. The per-thread exchange cap enforces this automatically.
-- **An Igor is never "busy", only out of budget.** It fans out subagents, so serial attention
-  is not its constraint the way it is a human's. When the allowance is gone, say so with the
-  reset time and route via the handoff machinery (§6.4) pointed at the requester. Silence is
-  the worst available response.
-
-**Lore is queryable by humans, not only injected into agents.** "What's our convention for X?"
-is a legitimate question to put to an Igor. This closes a loop: a question lore cannot answer
-is a repeated-retrieval-miss, which is already a consolidation salience signal (§3.5) — so
-questions people actually ask become demand-driven evidence of what lore is missing.
+  people.
+- **Ambiguity gets a question rather than a guess**, and nothing counts the questions: a
+  question costs a comment, and a bad guess costs a wrong artifact and somebody's time. The
+  item then waits, through the deferral record, until someone answers.
 
 **Audit what was accepted.** Every instruction acted on, who gave it, and what changed as a
 result. If someone did successfully steer an Igor, that should be discoverable afterwards
 rather than invisible.
+
+#### Not built ([#162](https://github.com/adamstallard/igor/issues/162))
+
+No task in `directed-interaction` builds these. Building them is #162, which removes this list.
+
+- **Cap requests per requester per period**, so one enthusiastic person cannot consume a seat.
+- **Out-of-lane requests are declined with a route** — "not my lane, `igor-backend` covers it"
+  — which also makes the fleet legible to people who have no idea which Igor does what.
+- **An Igor is never "busy", only out of budget.** It fans out subagents, so serial attention
+  is not its constraint the way it is a human's. When the allowance is gone, say so with the
+  reset time and route via the handoff machinery (§6.4) pointed at the requester. Silence is
+  the worst available response.
+- **Lore is queryable by humans, not only injected into agents.** "What's our convention for
+  X?" is a legitimate question to put to an Igor. A question lore cannot answer is a
+  repeated-retrieval miss, which is already a consolidation salience signal (§3.5), so questions
+  people actually ask become demand-driven evidence of what lore is missing.
 
 ---
 

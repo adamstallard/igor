@@ -64,6 +64,61 @@ A count is also aimed at the wrong party. Once a stranger gets no reply, the onl
 partner left is a colleague with write access — whose fourth question is often the useful one,
 because the first three established what the Igor actually understood.
 
+### Two things a mention can ask for beyond an answer
+
+**Filing an issue** stays inside the narrowing rule because it is a role action like any other.
+There is no such action today — `ACTIONS` in `src/role.ts` is `comment`, `review-comment`,
+`draft-pr`, `pr`, `label`, `assign`, `unassign`, `close`, `merge`, `send` — so it needs one, and a
+role that does not grant it declines. The requester could open the issue themselves, which is
+what makes filing it on their behalf grant nothing.
+
+**Acting on an answer is an exception to *speaking only*, and not to *widening*.** The narrowing
+requirement has two clauses: a mention restricts the action space to what may be said, and it
+never widens what the role permits. Only the first gives way. Every option was proposed by the
+Igor, within its own role, before anyone replied; a reply chooses among them, which narrows the
+set of things the Igor was ready to do and adds none. The monotonic-merge argument — that a
+successful injection gains strictly less than the Igor could already do — therefore holds.
+
+What would break it is reading the options back out of the artifact. A description is editable
+by anyone with write access, so a question parsed from it is a question anyone could insert. The
+options are read from the asking Igor's own record instead, written when it posted them. That
+same record is what makes routing work: a different Igor, mentioned in the reply, matches the
+choice against the asker's record and acts within its own role.
+
+**Rejected: checkboxes in the description.** Considered for #139 and dropped. A ticked box
+notifies nobody, and once an Igor publishes its claim is released, so nothing re-reads its own
+pull request; REST exposes no edit fields at all, so who ticked it is only recoverable through
+GraphQL's `userContentEdits`; and it parses decisions out of editable text. A comment is
+attributable in REST, and a mention is what makes it visible.
+
+### Every Igor on GitHub is a GitHub App (amended 2026-10-04)
+
+[#156](https://github.com/adamstallard/igor/pull/156) settles that on GitHub every Igor is a
+GitHub App, which claims an issue with its `igor:<role>` label and cannot be an assignee. The
+scenario for filing an issue therefore says the Igor does not *claim* it, where it said it does
+not assign itself: an App cannot assign itself, and the label is what a claim would be. The
+scenario for a mention on a held item, task 3.3 and the proposal say the same for the same reason.
+
+**An Igor never has authority, measured.** On 2026-10-04 the collaborator-permission endpoint on
+this repository returned `permission: none` and `push: false` for two installed Apps' bot
+accounts, `dependabot[bot]` and `github-actions[bot]`. So under *Authority is
+`permissions.push`*, a comment from an Igor never instructs another: it cannot have an issue
+filed, and it cannot answer an Igor's question. That agrees with #156's rule that an Igor's
+review never counts, and needs no identity test of its own. It also means the frontend Igor
+asking a backend Igor, which *Refusing bot accounts* below wanted to keep, gets no reply under
+the rule as written.
+
+**One Igor questioning another through a mention stays ruled out (decided 2026-10-04).** An App's
+bot reads as having no write access (`permissions.push` false, measured above), so a mention from
+an Igor gets no reply. Revisit only if someone needs it. An Igor's word acting on another Igor is what #156 rules out for reviews, and
+allowing a reply but not an action would need the identity test this change avoided.
+
+**No per-thread exchange cap (decided 2026-10-06 by Adam).** Conversation is bounded by budget,
+not by a count of exchanges, and a fourth question is answered (task 5.3). A count bounds a proxy
+for budget, and GitHub issue comments, where an Igor is asked things, have no thread to count
+within. The runaway exchange a cap was meant to stop is the moderation question under Open, which
+a count would not fix. `docs/architecture.md` §5.4 no longer lists the cap.
+
 ## Roads not taken
 
 **A per-thread exchange cap.** Rejected twice over: it bounds a proxy for budget, and on the
@@ -93,3 +148,11 @@ Discord and Slack moderate participants directly — mute, throttle, roles. GitH
 a conversation, which does not restrain a collaborator, and blocking an account, which is
 nuclear. An Igor needs write access, so it sits on the wrong side of the only lock that bites.
 Budget bounds the spend; nothing bounds the noise.
+
+**How an App Igor learns it was mentioned (raised 2026-10-04).** The mentions source queries
+mentions of the Igor's own account, and on GitHub that account is now an App's bot. GitHub
+search for `mentions:dependabot[bot]` and `mentions:github-actions[bot]` returned 0 results on
+2026-10-04, against 3.9 million for `mentions:dependabot`. Searching by the bot's login finds
+nothing, and whether a person's `@<app-slug>` reaches the App by search or notification is not
+measured. Both additions above depend on it. *Recommend:* measure it with a real Igor App before
+gate two (task 8.9), and adjust the first requirement to what is found.
