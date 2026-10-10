@@ -7,23 +7,21 @@ placed on a clock, the hour stated for that seat SHALL be the later of the two �
 window it belongs to, and however the figure was arrived at. A reading taken from the seat and a
 figure derived from observations of it SHALL answer this question the same way.
 
-The seat is back when the last thing holding it clears. Naming the earlier hour states a return
-the seat does not keep, and the size of the error is not what makes it wrong: an hour that
-passes with the Igor still held is the same false promise whether it was early by five hours or
-by five days.
+The seat is back when the last thing holding it clears. Naming the earlier hour promises a
+return the seat does not keep, and the size of the error does not matter: an hour that passes
+with the Igor still held is the same false promise whether it was early by five hours or by five
+days.
 
-Stating it once, for the seat rather than for a path, is the point. Two paths answer this
-question — one for a seat whose usage the provider reports, one for a seat bounded by what was
-observed and recorded — and they answer it about the same seat in the same handoff. A rule that
-holds only where it happens to be written is a rule the other path can drift away from again,
-which is what happened: the derived path compared the two hours while the live path took the
-week by preference, and inside the last session of a week instance — where the session's return
-is the later — the live path named an hour up to five hours early.
+The rule is stated for the seat, not for a path. Two paths answer this question, one for a seat
+whose usage the provider reports and one for a seat bounded by what was observed and recorded,
+and both answer it about the same seat in the same handoff. A rule written into only one of them
+can drift from the other, and nothing about a seat's credential bears on when its windows
+reopen.
 
-The preference was not wrong about the common case. The week is the later of the two except
-inside the last session of one. It is wrong that a policy was decided per path, because
-correctness then depends on which path a seat happens to take, and nothing about a seat's
-credential bears on when its windows reopen.
+**Do not replace the comparison with a preference for the week.** The week is usually the later
+of the two, so preferring it is right most of the time, but inside the last session of a week
+instance the session returns later, and a preference for the week names an hour up to five hours
+early there.
 
 This governs which of a seat's own hours is stated. It does not change how seats are ordered
 against each other: the seats that serve a role are back when the first of them is back, so the
@@ -34,7 +32,7 @@ earliest hour across those seats is still what a handoff states.
 - **WHEN** a seat's own reading reports both windows exhausted, the week returning at 5pm and
   the session at 8pm
 - **THEN** the hour stated for that seat is 8pm
-- **AND** it is not the week's hour on the grounds that it is the week's
+- **AND** the week's hour is not chosen for being the week's
 
 #### Scenario: The later hour is stated for a seat that could not be read
 
@@ -64,9 +62,9 @@ earliest hour across those seats is still what a handoff states.
 ### Requirement: An hour is marked approximate where a stated reset does not fix it
 
 An hour a handoff states SHALL be marked approximate where no reset the provider stated fixes
-it — a cadence ceiling standing in for a reset a refusal never named, and an hour named while
-another window that is also holding the seat named no return. An hour the provider stated, and a window boundary tiled from one
-along the window's own cadence, SHALL NOT be marked.
+it: a cadence ceiling standing in for a reset a refusal never named, and an hour named while
+another window that is also holding the seat named no return. An hour the provider stated, and a
+window boundary tiled from one along the window's own cadence, SHALL NOT be marked.
 
 The flag says what kind of claim the hour is, and a person reads it in the sentence: a marked
 hour is reported as "back around" and an unmarked one as "back at". So the line it draws has to
@@ -77,13 +75,11 @@ an instance end computed that way is as exact as the reset it came from. A caden
 not: nothing was stated, and the hour is a bound on how late the return can be rather than the
 return.
 
-Taking the later of two stated hours narrows what the flag covers. A comparison between two
-returns the provider stated yields one of those returns — the provider's own hour, arrived at by
-ordering rather than by substitution — and marking it would tell a reader to doubt a figure that
-came from the same place as an unmarked one. Before this change the flag was raised on every
-seat blocked in both windows, because the hour was reached by a preference and could be early.
-With the comparison it can be early only where one of the two windows named no return, and that
-is the case that still raises it.
+The later of two stated hours is not marked. Comparing two returns the provider stated yields
+one of them, the provider's own hour, chosen by ordering rather than substituted, and marking it
+would tell a reader to doubt a figure that came from the same place as an unmarked one. A seat
+blocked in both windows has a marked hour only where one of the two windows named no return,
+because only then can the hour be early.
 
 #### Scenario: A compared pair of stated hours is exact
 
@@ -98,10 +94,10 @@ is the case that still raises it.
 #### Scenario: A cadence ceiling is still approximate
 
 - **WHEN** the hour stated stands in for a reset the provider never named
-- **THEN** it is marked approximate, as before
+- **THEN** it is marked approximate
 
 #### Scenario: A tiled boundary is still exact
 
 - **WHEN** the hour stated is the end of the instance a seat's spend was summed inside, tiled
   from a reset the provider stated
-- **THEN** it is not marked approximate, as before
+- **THEN** it is not marked approximate
