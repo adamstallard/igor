@@ -261,28 +261,38 @@ describe('a seat sitting exactly on its reserve', () => {
     })
   }
 
-  it('hedges the handoff hour once its week is at the reserve too', () => {
-    // The gate has a second at-reserve test, in the reset race, and a seat shut on one window
-    // states that window's hour flatly. A week sitting on noise instead of on nothing is the
-    // difference between an hour promised and an hour hedged.
-    const s = seat({ reserve: 0.57 })
-    const g = budgetGate(
-      { seats: [s], pools: [{ id: 'p', seats: ['adam'] }] },
-      { name: 'triage', seat: 'pool:p' },
-      [
-        {
-          seat: s,
-          usage: {
-            session: { percentUsed: 100, resetsAt: 'Sep 25 at 8pm (America/Los_Angeles)' },
-            week: { percentUsed: 43, resetsAt: 'Sep 25 at 4pm (America/Los_Angeles)' },
-            perModel: [],
+  it('moves the handoff hour to the week’s once its week is at the reserve too', () => {
+    // The gate has a second at-reserve test, in the reset race. A seat shut on one window
+    // states that window's hour and shut on both states the later, so a week sitting on noise
+    // instead of on nothing moves the answer off the session's hour and onto the week's.
+    // Asserting both arms is the point: with the week's the later, the same answer either way
+    // would mean nothing here was testing the week at all.
+    const shutOn = (reserve: number) => {
+      const s = seat({ reserve })
+      return budgetGate(
+        { seats: [s], pools: [{ id: 'p', seats: ['adam'] }] },
+        { name: 'triage', seat: 'pool:p' },
+        [
+          {
+            seat: s,
+            usage: {
+              session: { percentUsed: 100, resetsAt: 'Sep 25 at 4pm (America/Los_Angeles)' },
+              week: { percentUsed: 43, resetsAt: 'Sep 25 at 8pm (America/Los_Angeles)' },
+              perModel: [],
+            },
           },
-        },
-      ],
-      [],
-    )
-    expect(g.resetAt).toBe('Sep 25 at 4pm (America/Los_Angeles)')
-    expect(g.resetApproximate).toBe(true)
+        ],
+        [],
+        new Map(),
+        '2026-09-13T13:00:00.000Z',
+      )
+    }
+    // 100 − 57 − 43 is zero, so the week holds the seat too and its 8pm is the later of the two.
+    expect(shutOn(0.57).resetAt).toBe('Sep 25 at 8pm (America/Los_Angeles)')
+    // A point of headroom and only the session holds it.
+    expect(shutOn(0.56).resetAt).toBe('Sep 25 at 4pm (America/Los_Angeles)')
+    // Both are hours the provider stated, so neither answer is hedged.
+    expect(shutOn(0.57).resetApproximate).toBeUndefined()
   })
 
   /** Both sides of the pairing at once: the gate spends a seat exactly when its row shows
@@ -1614,23 +1624,106 @@ describe('a seat the provider refused is spent until it resets', () => {
     expect(g.resetAt).toBeUndefined()
   })
 
-  it('hedges the hour where the week was preferred over a session nothing can order it against', () => {
-    // Both windows are shut and the week is taken on preference, not on a comparison. Inside
-    // the last session of a week the session is the later of the two, so the stated hour can
-    // be early — a figure to hedge rather than a return to promise.
+  // A seat shut in both windows is back when the later of the two clears, whichever window
+  // that is. Pinned in both directions: a rule that names one window by preference states a
+  // return the seat does not keep on exactly the inputs the other preference gets right.
+  const bothShut = (sessionReset: string, weekReset: string) => {
     const s = seat()
-    const g = budgetGate(
+    return budgetGate(
       { seats: [s], pools: [{ id: 'p', seats: ['adam'] }] },
       { name: 'triage', seat: 'pool:p' },
       [{ seat: s, usage: {
-        session: { percentUsed: 100, resetsAt: 'Sep 13 at 8pm (America/Los_Angeles)' },
-        week: { percentUsed: 100, resetsAt: 'Sep 13 at 5pm (America/Los_Angeles)' },
+        session: { percentUsed: 100, resetsAt: sessionReset },
+        week: { percentUsed: 100, resetsAt: weekReset },
         perModel: [],
       } }],
       [],
+      new Map(),
+      NOW,
     )
-    expect(g.resetAt).toBe('Sep 13 at 5pm (America/Los_Angeles)')
+  }
+
+  it('states the session’s hour where the session is the later of two shut windows', () => {
+    // Inside the last session of a week instance the session is the later, and the week's
+    // hour passes with the seat still held. The week is the later everywhere else, which is
+    // what makes preferring it look safe: it is wrong by up to five hours on exactly these
+    // inputs and on no others.
+    const g = bothShut('Sep 13 at 8pm (America/Los_Angeles)', 'Sep 13 at 5pm (America/Los_Angeles)')
+    expect(g.resetAt).toBe('Sep 13 at 8pm (America/Los_Angeles)')
+    // Comparing two stated hours yields one of them, so there is nothing to hedge.
+    expect(g.resetApproximate).toBeUndefined()
+  })
+
+  it('states the week’s hour where the week is the later, rather than swapping the preference', () => {
+    const g = bothShut('Sep 13 at 5pm (America/Los_Angeles)', 'Sep 18 at 4pm (America/Los_Angeles)')
+    expect(g.resetAt).toBe('Sep 18 at 4pm (America/Los_Angeles)')
+    expect(g.resetApproximate).toBeUndefined()
+  })
+
+  it('leaves the week’s hour standing, hedged, where the session’s phrase places nowhere', () => {
+    // `"next Friday morning"` is not a moment, so there is nothing to order the week against
+    // and the rules already governing an unplaceable return decide it — deliberately
+    // undisturbed here. Ordering the two on their text would answer with whichever phrase
+    // sorts lower, which is not an answer about time at all.
+    const g = bothShut('next Friday morning', 'Sep 18 at 4pm (America/Los_Angeles)')
+    expect(g.resetAt).toBe('Sep 18 at 4pm (America/Los_Angeles)')
     expect(g.resetApproximate).toBe(true)
+    // And the same where it is the week's own phrase that places nowhere: the week's hour is
+    // still the one stated, still hedged.
+    const w = bothShut('Sep 18 at 4pm (America/Los_Angeles)', 'next Friday morning')
+    expect(w.resetAt).toBe('next Friday morning')
+    expect(w.resetApproximate).toBe(true)
+  })
+
+  it('states the same hour for a seat that was read and one derived from the same two returns', () => {
+    // The rule is about the seat, not about how its figures were reached. Same two returns,
+    // one seat judged on its own reading and one on what was observed and recorded: one
+    // answer. Run in both orders, so neither path can be right by preferring a window.
+    const earlier = '2026-09-13T17:00:00.000Z'
+    const later = '2026-09-13T20:00:00.000Z'
+    const read = (sessionReset: string, weekReset: string) => bothShut(sessionReset, weekReset)
+    const derived = (sessionReset: string, weekReset: string) =>
+      gate(seat(), [refusal({ resetsAt: sessionReset }), { ...refusal(), window: 'week', resetsAt: weekReset }], [])
+
+    for (const [sessionReset, weekReset] of [
+      [later, earlier],
+      [earlier, later],
+    ] as const) {
+      const r = read(sessionReset, weekReset)
+      const d = derived(sessionReset, weekReset)
+      expect(r.resetAt).toBe(later)
+      expect(d.resetAt).toBe(r.resetAt)
+      expect(d.resetApproximate).toBe(r.resetApproximate)
+    }
+  })
+
+  it('states the pool’s earliest hour once each seat states the later of its own two', () => {
+    // Per seat the later of its two shut windows, across the pool the earliest of those. The
+    // pool is not back at 16:00 or 17:00: each of those is one window of a seat the other
+    // window still holds.
+    const adam = seat()
+    const sam = seat({ id: 'sam', owner: 'sam' })
+    const shutBoth = (s: Seat, sessionReset: string, weekReset: string): SeatUsage => ({
+      seat: s,
+      usage: {
+        session: { percentUsed: 100, resetsAt: sessionReset },
+        week: { percentUsed: 100, resetsAt: weekReset },
+        perModel: [],
+      },
+    })
+    const g = budgetGate(
+      { seats: [adam, sam], pools: [{ id: 'p', seats: ['adam', 'sam'] }] },
+      { name: 'triage', seat: 'pool:p' },
+      [
+        shutBoth(adam, '2026-09-13T20:00:00.000Z', '2026-09-13T17:00:00.000Z'),
+        shutBoth(sam, '2026-09-13T16:00:00.000Z', '2026-09-13T18:00:00.000Z'),
+      ],
+      [],
+      new Map(),
+      NOW,
+    )
+    expect(g.resetAt).toBe('2026-09-13T18:00:00.000Z')
+    expect(g.resetApproximate).toBeUndefined()
   })
 
   it('states a stated hour flatly where one window shut the seat on its own', () => {
@@ -1646,6 +1739,23 @@ describe('a seat the provider refused is spent until it resets', () => {
       [],
     )
     expect(g.resetAt).toBe('Sep 13 at 8pm (America/Los_Angeles)')
+    expect(g.resetApproximate).toBeUndefined()
+  })
+
+  it('says nothing where the one window that shut the seat named no reset', () => {
+    // The week has room, so the week's hour is not the seat's to state and there is no second
+    // hour to fall back on. An hour invented here is one no reading gave.
+    const s = seat()
+    const g = budgetGate(
+      { seats: [s], pools: [{ id: 'p', seats: ['adam'] }] },
+      { name: 'triage', seat: 'pool:p' },
+      [{ seat: s, usage: { session: { percentUsed: 100 }, week: { percentUsed: 10 }, perModel: [] } }],
+      [],
+      new Map(),
+      NOW,
+    )
+    expect(g.exhausted()).toBe(true)
+    expect(g.resetAt).toBeUndefined()
     expect(g.resetApproximate).toBeUndefined()
   })
 
@@ -1721,10 +1831,11 @@ describe('a seat the provider refused is spent until it resets', () => {
   })
 
   it('states a shut week’s hour though the session that also shut the seat named none', () => {
-    // The seat returns on the later of its two shut windows. The week's is stated; the
-    // session's is unknown but at most a cadence out, so the week is either the later of the
-    // two or under five hours early — the same error the week preference already carries, and
-    // hedged the same way. Dropping it answers "not known" for an hour the reading gave.
+    // The seat returns on the later of its two shut windows, but only one of them named an
+    // hour, so there is nothing to compare and the week's stands. It rests on the session's
+    // own cadence: a session runs five hours, so the week is either the later of the two or
+    // under five hours early — bounded, which is why an hour is stated at all, and not fixed,
+    // which is why it is hedged. Dropping it answers "not known" for an hour the reading gave.
     const s = seat()
     const g = budgetGate(
       { seats: [s], pools: [{ id: 'p', seats: ['adam'] }] },

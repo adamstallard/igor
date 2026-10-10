@@ -26,10 +26,9 @@ export interface ServeOptions extends CycleOptions {
    * Rendered lore for the item about to be worked. Supplied per item rather than per cycle:
    * the store is a repository someone may have merged to while the loop was sleeping.
    *
-   * Required, not optional. It was optional, and `igor serve` simply never passed it — so the
-   * whole lore-firing capability was absent from the only command that runs continuously,
-   * while the tests that supply it directly stayed green. A caller that wants no lore has to
-   * say so.
+   * Keep this required. If it were optional, a caller could leave it out and the Igor would
+   * run with no lore at all, while every test stayed green, because the tests supply lore
+   * directly. A caller that wants no lore has to say so.
    */
   loreFor: (item: Candidate) => string | Promise<string>
   /** Injected in tests, so the wiring is exercised rather than only the rule it applies. */
@@ -81,10 +80,43 @@ export async function serve(
     summary.cycles = cycle
     emit({ kind: 'cycle-start', cycle })
 
+    // **A surface that does not answer ends the cycle.** Nothing about the items caused it, so
+    // every remaining item would get the same answer, and each one refused posts two comments
+    // per poll for as long as the outage lasts. That volume alone can trip a rate limit.
+    //
+    // Both item loops share `abandon`. The catch-up loop runs first, so a check only in the
+    // claim loop would miss an outage the catch-up loop meets.
+    //
+    // **The second one in a row ends the cycle, not the first.** A run cannot tell whether a
+    // failure is the surface's or the item's: `codeHost.produce` fails inside `execute` for a
+    // branch the item already owns, while a tracker that does not answer the completion
+    // unassign fails outside it, so neither the error nor what the run reached separates them.
+    // How many items fail does: an outage fails every item, and a bad item fails one. A table
+    // of error shapes is rejected, because the first error it doesn't list falls through.
+    //
+    // The count is of consecutive failures, so one wedged item cannot add up to a stop across a
+    // healthy cycle.
+    let abandoned = false
+    let inARow = 0
+    const abandon = (run: ItemRun): boolean => {
+      if (run.surfaceFailed !== true) {
+        inARow = 0
+        return false
+      }
+      // The first one is not reported as a cycle failure: the run reports its own reason
+      // per item, and a cycle that recovered on the next item did not fail.
+      if ((inARow += 1) < 2) return false
+      abandoned = true
+      summary.failures += 1
+      emit({ kind: 'cycle-failed', cycle, error: new Error(run.reason) })
+      return true
+    }
+
     try {
-      // Identity comes from the argument, never from the options: the two disagreeing would
-      // mean the loop screening holders as one Igor and claiming as another.
-      // `options.gate` rides along in the spread — `planCycle` reads it itself, only where
+      // Identity comes from the argument, never from the options: if the two disagreed, the
+      // loop would screen holders as one Igor and claim as another.
+      //
+      // `options.gate` reaches `planCycle` through the spread. `planCycle` calls it only where
       // there is something to triage, so triage spends the seat a worker would have chosen.
       const report = await planCycle(deps, role, { ...options, identity })
       summary.costUsd += report.triageCostUsd
@@ -113,9 +145,13 @@ export async function serve(
           await (options.note ?? noteHandoff)(deps.destination, candidate, run.reason).catch(() => undefined)
         }
         emit({ kind: 'worked', item: candidate, run, ...(gate.seat === undefined ? {} : { seat: gate.seat }) })
+        if (abandon(run)) break
       }
 
       for (const { candidate } of report.toClaim) {
+        // The outage the catch-up loop met answers every claim here the same way, and claiming
+        // is the louder of the two — a claim comment and a handoff on each.
+        if (abandoned) break
         // Checked between items rather than once per cycle: an item can take minutes, and a
         // shutdown or an exhausted budget should stop the next one rather than the next cycle.
         if (winding) {
@@ -138,10 +174,18 @@ export async function serve(
           await (options.note ?? noteHandoff)(deps.destination, candidate, run.reason).catch(() => undefined)
         }
         emit({ kind: 'worked', item: candidate, run, ...(gate.seat === undefined ? {} : { seat: gate.seat }) })
+        if (abandon(run)) break
       }
     } catch (error) {
-      // A cycle is allowed to fail. Nothing here is holding a claim — `runItem` owns that, and
-      // it hands off from inside its own error handling — so the next cycle simply retries.
+      // A cycle is allowed to fail, and the next one retries.
+      //
+      // **This catch cannot tell a cycle that failed holding nothing from one that failed
+      // holding an item.** It reports only the cycle, so an operator would see a cycle-level
+      // error and never the item left silent underneath it. Nothing holding a claim reaches
+      // here: `takeClaim` guards its claim window and `runItem` guards everything after it, and
+      // both release and refuse rather than throw. What reaches this catch is the cycle's own
+      // work: discovery, planning and triage. Any new path that can throw while holding a claim
+      // must release it itself, because nothing here will.
       summary.failures += 1
       emit({ kind: 'cycle-failed', cycle, error: error instanceof Error ? error : new Error(String(error)) })
     }
@@ -161,8 +205,9 @@ export function untilSignalled(
     process.on(s as NodeJS.Signals, h)
   },
 ): Promise<void> {
-  // The worker is detached, so nothing else signals it. Saying so here keeps it running while
-  // the loop winds down, rather than being killed the moment the signal lands.
+  // Without this, Igor's own signal handler kills every running worker and exits the moment
+  // the signal lands. Declaring a graceful shutdown lets the worker in hand finish while the
+  // loop winds down.
   windsDownOnSignal()
   return new Promise((resolve) => {
     for (const signal of ['SIGINT', 'SIGTERM']) on(signal, () => resolve())
