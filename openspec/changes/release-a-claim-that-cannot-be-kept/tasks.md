@@ -24,7 +24,8 @@
 
 - [x] 3.1 Everything after the claim is held runs inside one handler
 - [x] 3.2 The claim is handed back by the ordinary handoff, not a second vocabulary
-- [x] 3.3 Reported as `refused`, so no deferral is created for a cause that was not the item's
+- [x] 3.3 Reported as `refused` where a retry is cheap, so no deferral is created for a cause
+      that was not the item's; where it is not, handed off (8.3)
 - [x] 3.4 The body extracted rather than indented, so the diff is readable
 
 ## 4. The cycle
@@ -37,13 +38,13 @@
 
 ## 5. Saying so wherever a release does not take
 
-- [x] 5a.1 The stand-down appends the correction where the holder did not clear, and speaks at
+- [x] 5.1 The stand-down appends the correction where the holder did not clear, and speaks at
       all on a `lost` claim it could not give up — which said nothing before
-- [x] 5a.2 `handOff` reads the answer rather than assuming it, and corrects the handoff on the
+- [x] 5.2 `handOff` reads the answer rather than assuming it, and corrects the handoff on the
       item rather than only in the flags it returns
-- [x] 5a.3 `complete()`'s unassign does the same, so a published run cannot report `produced`
+- [x] 5.3 `complete()`'s unassign does the same, so a published run cannot report `produced`
       while the item stays assigned with nobody told
-- [x] 5a.4 **Wording carried verbatim, approved by the reviewer.** Appended where something was
+- [x] 5.4 **Wording carried verbatim, approved by the reviewer.** Appended where something was
       already said:
 
       ```
@@ -58,44 +59,43 @@
 
 ## 6. The write contract
 
-- [x] 5.1 `report` answers the posted comment's identity, or `undefined` where the surface will
+- [x] 6.1 `report` answers the posted comment's identity, or `undefined` where the surface will
       not say
-- [x] 5.2 `release` answers whether the holder field is clear
-- [x] 5.3 An answer that does not carry the assignees reads as not clear, argued in `design.md`
+- [x] 6.2 `release` answers whether the holder field is clear
+- [x] 6.3 An answer that does not carry the assignees reads as not clear, argued in `design.md`
 
 ## 7. Tests
 
-- [x] 6.1 Each failure path observed red before its fix
-- [x] 6.2 Every added test mutation-checked, including a negative pole for each
-- [x] 6.3 A tree that cannot be provisioned hands the claim back
-- [x] 6.4 An ordinary refusal is not flagged as a surface failure
-- [x] 6.5 A cycle abandons on a surface failure, and does not on an item refusal
+- [x] 7.1 Each failure path observed red before its fix
+- [x] 7.2 Every added test mutation-checked, including a negative pole for each
+- [x] 7.3 A tree that cannot be provisioned hands the claim back
+- [x] 7.4 An ordinary refusal is not flagged as a surface failure
+- [x] 7.5 A cycle abandons on a surface failure, and does not on an item refusal
 
 ## 8. What is left
 
-- [ ] 8.1 [#132](https://github.com/adamstallard/igor/issues/132) — the stop receipt still writes
-      `spoke: true` whatever the report did. Same requirement, a site this change does not reach
-- [ ] 8.2 File the third escape found while fixing #129 as its own issue if it is not closed here
-- [ ] 8.3a **`handOff`'s `posted` no longer means what `spoke` promises.** Dropping the
-      `&& posted` guard lets a correction land while `posted` stays false, so `spoke` is false on
-      an item that did get a message and `src/cli.ts:440` prints its "left no message" warning
-      wrongly. One stdout line; nothing on the item is wrong. Same defect as
-      [#132](https://github.com/adamstallard/igor/issues/132) at a second site — `spoke` derived
-      from one call's success rather than from what the item ended up with — and the fix is the
-      same piece of work: a fact on `HandoffOutcome`, and `spoke`'s derivation at five sites
-- [ ] 8.4 **An outage confined to the unassign endpoint never trips the breaker.** `handOff`
-      swallows a `release` throw and returns without `surfaceFailed`, which resets the counter, so
-      a pool alternating published and handed-off items never reaches two. Measured on six items
-      with that endpoint down: `failures: 0`. Kept as it is deliberately, argued in `design.md` —
-      each item still prints its own refusal reason, and the shapes a counter cannot separate are
-      what 8.3 is really about
-- [x] 8.3 **A failure after the worker ran hands off; one before it refuses and retries.** A
-      wedged item used to come back next cycle and spend the whole worker again to reach the same
-      failure — the main trigger being a closed pull request's leftover branch, which makes the
-      publish fail with 422. Now what a retry would cost decides what happens: a worker that ran
-      with nothing published means handing off, which defers the item until someone with write access answers.
-      What causes the close to be noticed at all is `defer-a-closed-pull-request`, #141
-- [ ] 8.5 When #156's label claim is built, reword the three strings in 2.4 and 5a.4 to name the
+- [ ] 8.1 [#132](https://github.com/adamstallard/igor/issues/132): the stop receipt writes
+      `spoke: true` whatever the report did. Same requirement, at a site this change does not
+      reach
+- [x] 8.2 File the third escape found while fixing #129 as its own issue, unless it is closed here.
+      It is closed here: `runItem` had no handler, so a tree that could not be provisioned left
+      the item held, and the handler in 3.1 now covers it (tested by 7.3)
+- [x] 8.3 **A failure after the worker ran hands off; one before it refuses and retries.** What a
+      retry would cost decides what happens. Where the worker ran and nothing was published, a
+      retry would spend the whole worker again to reach the same failure, so the item is handed
+      off and deferred until someone with write access answers. The main case is a closed pull
+      request's leftover branch, which makes the publish fail with 422. What makes the close
+      noticed at all is `defer-a-closed-pull-request`, #141
+- [x] 8.4 **`handOff`'s `posted` does not mean what `spoke` promises.** A correction can land
+      while `posted` stays false, so `spoke` is false on an item that did get a message, and
+      `src/cli.ts:440` wrongly prints its "left no message" warning. It is the same defect as
+      8.1, `spoke` derived from one call's success rather than from what the item ended up with,
+      and the same fix, so it is recorded on
+      [#132](https://github.com/adamstallard/igor/issues/132) and fixed there
+- [x] 8.5 **An outage confined to the unassign endpoint never ends the cycle.** No work: kept as
+      it is deliberately, with the measurement, in `design.md`, *Two in a row, because the flag
+      over-reports*
+- [x] 8.6 When #156's label claim is built, reword the three messages in 2.4 and 5.4 to name the
       `igor:<role>` label instead of the assignee. Decided 2026-10-04: the change that builds the
-      label claim makes this rewording, and this branch keeps the current text, which is true
-      until then. The new wording is in `design.md`, *When an Igor claims by label*
+      label claim makes the rewording, and this change keeps the current text, which is true
+      while Igor claims by assignee. Carried, with the new wording, as #156's task 3.6a

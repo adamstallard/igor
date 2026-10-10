@@ -195,9 +195,9 @@ claim:
 - A person removing the label is a stop (#156), and the handler never hands off a stopped run.
 
 **Decided 2026-10-04: the change that builds the label claim rewords the three approved messages,
-and this change keeps them.** Tasks 2.4 and 5a.4 carry them verbatim. Each tells the reader to
-unassign the item, which is true while Igor claims by assignee and frees nothing once the claim is
-a label. Their wordings for the label claim:
+and this change keeps them.** Each tells the reader to unassign the item, which is true while Igor
+claims by assignee and frees nothing once the claim is a label. Tasks 2.4 and 5.4 carry the
+current text, and #156's task 3.6a carries the wording for the label claim:
 
 ```
 **<role>** could not finish taking this and could not release it either, so it still carries
