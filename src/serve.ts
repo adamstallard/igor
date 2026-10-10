@@ -26,10 +26,9 @@ export interface ServeOptions extends CycleOptions {
    * Rendered lore for the item about to be worked. Supplied per item rather than per cycle:
    * the store is a repository someone may have merged to while the loop was sleeping.
    *
-   * Required, not optional. It was optional, and `igor serve` simply never passed it — so the
-   * whole lore-firing capability was absent from the only command that runs continuously,
-   * while the tests that supply it directly stayed green. A caller that wants no lore has to
-   * say so.
+   * Keep this required. If it were optional, a caller could leave it out and the Igor would
+   * run with no lore at all, while every test stayed green, because the tests supply lore
+   * directly. A caller that wants no lore has to say so.
    */
   loreFor: (item: Candidate) => string | Promise<string>
   /** Injected in tests, so the wiring is exercised rather than only the rule it applies. */
@@ -81,25 +80,22 @@ export async function serve(
     summary.cycles = cycle
     emit({ kind: 'cycle-start', cycle })
 
-    // **A surface that did not answer ends the cycle.** Nothing about the item produced it, so
-    // the next one gets the same answer — and doing that to a whole pool is two comments each
-    // per poll, for as long as the outage lasts, at a volume that is itself what trips a rate
-    // limit. Abandoning is what a throw used to do here, before the item-level paths learned to
-    // release and refuse instead of propagating.
+    // **A surface that does not answer ends the cycle.** Nothing about the items caused it, so
+    // every remaining item would get the same answer, and each one refused posts two comments
+    // per poll for as long as the outage lasts. That volume alone can trip a rate limit.
     //
-    // Shared by both item loops rather than written into one. The catch-up loop runs first, so
-    // a guard only on the second is a guard the outage never reaches.
+    // Both item loops share `abandon`. The catch-up loop runs first, so a check only in the
+    // claim loop would miss an outage the catch-up loop meets.
     //
-    // **The second one in a row ends the cycle, not the first.** Whether a failure is the
-    // surface's or the item's is not something the run can tell — `codeHost.produce` fails
-    // inside `execute` for a branch the item already owns, while a tracker that does not answer
-    // the completion unassign fails outside it, so neither the error nor what the run holds
-    // separates them. What does separate them is how many items they affect: an outage fails
-    // every item and a bad item fails one. Counting is that distinction, drawn from behaviour
-    // rather than from a table of error shapes — the mistake `src/claiming.ts` names as a guard
-    // per route being a guard that misses the next route.
+    // **The second one in a row ends the cycle, not the first.** A run cannot tell whether a
+    // failure is the surface's or the item's: `codeHost.produce` fails inside `execute` for a
+    // branch the item already owns, while a tracker that does not answer the completion
+    // unassign fails outside it, so neither the error nor what the run reached separates them.
+    // How many items fail does: an outage fails every item, and a bad item fails one. A table
+    // of error shapes is rejected, because the first error it doesn't list falls through.
     //
-    // Consecutive, so one wedged item does not accumulate a stop across a healthy cycle.
+    // The count is of consecutive failures, so one wedged item cannot add up to a stop across a
+    // healthy cycle.
     let abandoned = false
     let inARow = 0
     const abandon = (run: ItemRun): boolean => {
@@ -117,9 +113,10 @@ export async function serve(
     }
 
     try {
-      // Identity comes from the argument, never from the options: the two disagreeing would
-      // mean the loop screening holders as one Igor and claiming as another.
-      // `options.gate` rides along in the spread — `planCycle` reads it itself, only where
+      // Identity comes from the argument, never from the options: if the two disagreed, the
+      // loop would screen holders as one Igor and claim as another.
+      //
+      // `options.gate` reaches `planCycle` through the spread. `planCycle` calls it only where
       // there is something to triage, so triage spends the seat a worker would have chosen.
       const report = await planCycle(deps, role, { ...options, identity })
       summary.costUsd += report.triageCostUsd
@@ -180,15 +177,15 @@ export async function serve(
         if (abandon(run)) break
       }
     } catch (error) {
-      // A cycle is allowed to fail, and the next one simply retries.
+      // A cycle is allowed to fail, and the next one retries.
       //
       // **This catch cannot tell a cycle that failed holding nothing from one that failed
-      // holding an item.** It reports the cycle, so an operator sees a cycle-level error string
-      // and never the item-level silence underneath it. Nothing holding a claim should arrive
-      // here at all: `takeClaim` guards the assignment call through the verdict, and `runItem`
-      // guards everything after, both releasing and refusing rather than propagating. What
-      // reaches this catch is the cycle's own work — planning, triage, discovery. Any new path
-      // that can throw while holding a claim owes its own release; nothing here will do it.
+      // holding an item.** It reports only the cycle, so an operator would see a cycle-level
+      // error and never the item left silent underneath it. Nothing holding a claim reaches
+      // here: `takeClaim` guards its claim window and `runItem` guards everything after it, and
+      // both release and refuse rather than throw. What reaches this catch is the cycle's own
+      // work: discovery, planning and triage. Any new path that can throw while holding a claim
+      // must release it itself, because nothing here will.
       summary.failures += 1
       emit({ kind: 'cycle-failed', cycle, error: error instanceof Error ? error : new Error(String(error)) })
     }
@@ -208,8 +205,9 @@ export function untilSignalled(
     process.on(s as NodeJS.Signals, h)
   },
 ): Promise<void> {
-  // The worker is detached, so nothing else signals it. Saying so here keeps it running while
-  // the loop winds down, rather than being killed the moment the signal lands.
+  // Without this, Igor's own signal handler kills every running worker and exits the moment
+  // the signal lands. Declaring a graceful shutdown lets the worker in hand finish while the
+  // loop winds down.
   windsDownOnSignal()
   return new Promise((resolve) => {
     for (const signal of ['SIGINT', 'SIGTERM']) on(signal, () => resolve())
