@@ -2,7 +2,8 @@
 
 Two decisions made after this change passed both gates bear on it: the reserve line, specified
 on #143, and reading a seat's windows from the worker's stream. Neither changes this branch's code
-or tasks. The reserve line adds a case to one requirement, described below.
+or tasks. The reserve line adds one case, the hour a handoff states for a window the line has shut,
+and that case is specified on #143, beside the code that builds it.
 
 ### Terms
 
@@ -51,8 +52,11 @@ reset:
   written for one role and uses that role's `r`. Where the seat's and the role's reserves are both
   0, the line is at 100% throughout, and only a refusal shuts a window.
 
-In the spec, *An hour is marked approximate where a stated reset does not fix it* names the
-crossing as a marked case and says the crossing is the hour stated. A scenario pins both.
+**Specified on #143, not here (Adam, 2026-10-10).** This change's code does not state the
+crossing, so a requirement for it here would go into force with nothing meeting it. #143's spec
+carries the requirement and its scenario, beside the code that builds it. It fits this change's
+rule as it stands: *An hour is marked approximate where a stated reset does not fix it* already
+marks any hour that no stated reset fixes, and the crossing is one.
 
 ### When #143's gate two lands
 
