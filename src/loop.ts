@@ -1,10 +1,15 @@
-import type { Candidate, CodeHost, Comment, Tracker } from './adapter.js'
+import type { Artifact, Candidate, ClaimVerdict, CodeHost, Comment, Tracker } from './adapter.js'
 import type { Gate, SeatVerdict } from './budget.js'
-import { checkpoint, eligibleAfterStop, stopReceipt, takeClaim, type ClaimOptions } from './claiming.js'
-import { complete, execute, workerEnv, type ExecuteOptions, type ExecutionResult } from './execute.js'
+import {
+  checkpoint, eligibleAfterStop, stillAssigned, stopReceipt, takeClaim,
+  type ClaimOptions, type ClaimResult,
+} from './claiming.js'
+import {
+  complete, denialsFrom, execute, headlessClaude, workerEnv, type ExecuteOptions, type ExecutionResult, type WorkerOutput,
+} from './execute.js'
 import { handOffFrom, type HandoffReason } from './handoff.js'
 import type { Role } from './role.js'
-import type { TreeProvider } from './worktree.js'
+import type { ChangedFile, TreeProvider } from './worktree.js'
 import { appendRecord } from './state.js'
 import {
   advance, discover, EMPTY_STATE, freshCandidates, heldBelow, loadDiscoveryState, saveDiscoveryState,
@@ -21,9 +26,10 @@ import { systemPrompt, triageBatch, TRIAGE_MODEL } from './triage.js'
  * claim told other people to stand off, so every exit from here either produces an artifact,
  * posts a handoff, or posts a receipt. Releasing quietly is not among the outcomes.
  *
- * Failure hands off rather than retrying. A silent retry loop on a claimed item is precisely
- * the failure the claim protocol makes worst — everyone has backed off, and nothing is
- * happening or being said.
+ * A failure is never retried in silence. Everyone has backed off a claimed item, so a quiet
+ * retry loop leaves it with nothing happening and nothing said. Where a retry is cheap the item
+ * is refused and tried again next cycle, with a handoff saying so; where it is not, the item is
+ * handed off and waits for an answer.
  */
 
 /**
@@ -96,6 +102,13 @@ export interface ItemRun {
    * an action and denied a command at once, and each is a separate thing to fix.
    */
   cures: string[]
+  /**
+   * Set where a surface may have failed rather than the item: on every throw out of a claimed
+   * run, which cannot tell the two apart. `serve` ends the cycle on the second consecutive one.
+   * Without that, a tracker outage refuses and posts on every remaining item, two comments per
+   * item per poll, indefinitely, which is enough volume to trip the rate limit that caused it.
+   */
+  surfaceFailed?: true
 }
 
 export type Step = 'claiming' | 'settling' | 'working' | 'publishing' | 'completing'
@@ -132,12 +145,25 @@ export async function runItem(
     onSettle: () => step('settling'),
   })
   if (claim.outcome !== 'held') {
-    // Nothing was claimed, or someone else holds it. Neither owes a handoff: a refused claim
-    // means the Igor never told anyone to stand off, and a lost one means somebody else is
-    // now visibly on it. A stop gets a receipt rather than a handoff, because whoever issued
-    // it is presumably taking the work and composing a handoff would only delay the release.
+    // Nothing was claimed, someone else holds it, or the claim could not be finished. None owes
+    // a handoff: on a lost claim somebody else is now visibly on it, and a stop gets a receipt
+    // instead, because whoever issued it is presumably taking the work and composing a handoff
+    // would only delay the release.
+    //
+    // **A refused claim is not necessarily a silent one.** `takeClaim` refuses where its claim
+    // window threw. That path has already released the claim and, where the claim message may
+    // have landed, withdrawn it on the item, so `spoke` carries what it said rather than false.
+    //
+    // The one reader of `spoke`, the run summary in `src/cli.ts`, skips `refused` and `lost`
+    // runs, because both have released the claim. So any new `refused` path must release the
+    // claim itself: one that ended still holding it would be silent, and nothing would report it.
     if (claim.outcome === 'stopped' && claim.verdict) {
       await tracker.report(candidate, stopReceipt(role, claim.verdict)).catch(() => undefined)
+      // After the receipt, never before it. The receipt is what claims the release, and a
+      // clause correcting it that stands above it answers nothing.
+      if (claim.releaseStuck === true) {
+        await tracker.report(candidate, stillAssigned()).catch(() => undefined)
+      }
       return { outcome: 'stopped', candidate, reason: claim.reason, costUsd: 0, spoke: true, cures: [] }
     }
     return {
@@ -145,10 +171,157 @@ export async function runItem(
       candidate,
       reason: claim.reason,
       costUsd: 0,
-      spoke: false,
+      spoke: claim.spoke ?? false,
       cures: [],
+      ...(claim.surfaceFailed === true ? { surfaceFailed: true as const } : {}),
     }
   }
+
+  // **Everything from here runs with the claim held**, so this handler guards all of it.
+  // Without it, a throw from provisioning a tree, from a checkpoint or from the completion
+  // action would leave the item claimed and announced, with only a cycle-level error logged.
+  //
+  // The claim is given back as any other failure gives it back, by a handoff, which posts and
+  // then releases. Whether the run is then reported as refused or handed off depends on what a
+  // retry would cost: see the handler.
+  //
+  // **What the run reached is carried out with it.** A throw here does not always come before
+  // the work. The completion action is an unassign, so the last call of a successful run is a
+  // release, and a tracker that fails it lands here with a draft already open. A handoff
+  // composed without what the run reached would say "the work never started" beside that
+  // draft, and link it nowhere.
+  //
+  // **`reached` says how far the run got, never whose fault the throw was.** `codeHost.produce`
+  // runs inside `execute`, so an item's own `422` leaves `reached.result` empty, while the
+  // tracker 503 above finds it full. Read as item versus surface, it gets both backwards.
+  const reached: Reached = {}
+  try {
+    return await runClaimedItem(deps, candidate, role, identity, claim, options, reached)
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    const ran = reached.result ?? standIn(reached, role, detail)
+    // **Every return below spreads this**, so no exit can drop what the run spent: the ledger
+    // records a run only where `execution` is present, and an exit that leaves it off loses a
+    // paid worker from the budget.
+    const ended = {
+      candidate,
+      // The result's own cost, even when it is undefined: a killed worker reports no cost, and
+      // a zero would read as a run that was free.
+      costUsd: ran === undefined ? 0 : ran.costUsd,
+      ...(ran === undefined ? {} : { execution: ran }),
+      cures: ran?.cures ?? [],
+      surfaceFailed: true as const,
+      reason: `${candidate.id} was claimed and the run could not finish: ${detail}`,
+    }
+
+    // **A stop or a loss the run already saw gets no failure handoff.** A stop gets its receipt,
+    // since the graceful-handoff spec exempts a stop from a handoff. A loss gets silence, since
+    // the item is now somebody else's. Both key on the verdict the run read, never on the
+    // wording of a refusal.
+    const verdict = reached.verdict
+    if (verdict?.status === 'stopped' || verdict?.status === 'lost') {
+      const clear = await tracker.release(candidate, identity).then((c) => c, () => false)
+      const artifact = reached.published?.artifact.url
+      if (verdict.status === 'stopped') {
+        await tracker.report(candidate, stopReceipt(role, verdict, artifact)).catch(() => undefined)
+      } else if (artifact !== undefined) {
+        await tracker.report(candidate, handOverNote(role, verdict.by, artifact)).catch(() => undefined)
+      }
+      // If the release did not take, say so in either case. A needless comment costs one
+      // comment, but silence leaves the item held by this Igor with nobody told.
+      if (!clear) await tracker.report(candidate, stillAssigned()).catch(() => undefined)
+      return {
+        ...ended, outcome: verdict.status,
+        spoke: verdict.status === 'stopped' || artifact !== undefined || !clear,
+      }
+    }
+
+    // **What a retry would cost decides what happens next, not whose fault the throw was**,
+    // which nothing here can tell. A retry is *dear* where it would spend the whole worker again
+    // to reach the same failure: the worker ran and nothing was published. Then the item is
+    // handed off and waits in the deferral record until someone with write access answers.
+    // Otherwise the item is refused and tried again next cycle. Before the worker ran a retry
+    // is cheap, and once something is published the in-flight rule keeps the item off the claim
+    // path anyway, so deferring it would only stop that artifact being caught up. A run
+    // `execute` reports as refused is never dear: a stop or a loss is handled above, and the
+    // only other refusal is the action space, which carries a cure.
+    //
+    // Decided before the handoff is composed, because the handoff says which way it went.
+    const spent = reached.output !== undefined
+    const published = reached.published !== undefined
+    const retryIsDear = spent && !published && ran?.outcome !== 'refused'
+    const next = retryIsDear ? {} : { next: published ? ('published' as const) : ('retry' as const) }
+    const out = await handOffFrom(
+      tracker, candidate, role, identity, claim.claimedAt, { kind: 'failure', detail, ...next }, ran,
+    ).catch(() => ({ posted: false }))
+    return {
+      ...ended,
+      outcome: retryIsDear ? 'handed-off' : 'refused',
+      spoke: out.posted,
+      ...(retryIsDear ? { handoff: 'failure' as const } : {}),
+    }
+  }
+}
+
+/**
+ * What a run that threw before `execute` returned can still be shown to have done: the worker's
+ * own report, what it left in the tree, and whatever the host accepted. Its outcome is always
+ * `failed`, never `refused`, so the handler weighs the retry by whether the worker ran. It is
+ * undefined where neither the worker nor the host was reached, so a run that never started
+ * still says so.
+ *
+ * Carries the worker's denials for the record and its warning, and **no cures**: a cure cannot
+ * clear the failure that brought the run here, and a handoff carrying one is not deferred, so
+ * the worker would be paid again every cycle to meet the same failure.
+ */
+function standIn(reached: Reached, role: Role, detail: string): ExecutionResult | undefined {
+  const { output, published, changed } = reached
+  if (output === undefined && published === undefined) return undefined
+  const cost = output?.total_cost_usd
+  const denials = denialsFrom(output?.permission_denials, role.name)
+  return {
+    outcome: 'failed',
+    changed: changed ?? [],
+    refusals: [],
+    transcript: typeof output?.result === 'string' ? output.result : '',
+    costUsd: typeof cost === 'number' && Number.isFinite(cost) ? cost : undefined,
+    ...(typeof output?.session_id === 'string' && output.session_id !== '' ? { session: output.session_id } : {}),
+    ...(denials.length === 0 ? {} : { denials }),
+    ...(published === undefined ? {} : { artifact: published.artifact, caughtUp: published.caughtUp }),
+    reason: detail,
+  }
+}
+
+/**
+ * How far a claimed run got, for the handler that meets a throw from it. Each field is recorded
+ * where it happens rather than read off the result afterwards, because a throw from inside
+ * `execute` — a publish, the check that a resolution took — escapes with no result at all.
+ */
+interface Reached {
+  result?: ExecutionResult
+  /** What the worker returned. Present means the worker was paid for. */
+  output?: WorkerOutput
+  /** What the worker left in the tree, read before anything was published. */
+  changed?: ChangedFile[]
+  /** What the code host accepted, a pull request or a resolution onto one. */
+  published?: { artifact: Artifact; caughtUp: boolean }
+  /** The last claim verdict the run read. */
+  verdict?: ClaimVerdict
+}
+
+
+async function runClaimedItem(
+  deps: ItemDeps,
+  candidate: Candidate,
+  role: Role,
+  identity: string,
+  claim: ClaimResult,
+  options: RunOptions,
+  /** Filled as each point is passed, so a throw after it still knows what the run reached. */
+  reached: Reached,
+): Promise<ItemRun> {
+  const { tracker, codeHost, trees } = deps
+  const step = options.onStep ?? (() => {})
 
   // Budget is checked after claiming and before spending, so an Igor that cannot afford the
   // work says so on the item rather than claiming and going quiet.
@@ -172,20 +345,57 @@ export async function runItem(
   }
 
   step('working')
-  const execution = await execute(trees, tracker, codeHost, candidate, role, {
+  // Recorded when the host answers, not when `execute` returns: a throw after a publish — the
+  // check that a resolution took — escapes with the artifact already on the branch.
+  const recording: CodeHost = {
+    name: codeHost.name,
+    produce: async (request) => {
+      const artifact = await codeHost.produce(request)
+      reached.published = { artifact, caughtUp: false }
+      return artifact
+    },
+    resolve: async (request) => {
+      const sha = await codeHost.resolve(request)
+      // A resolution goes onto the artifact being caught up, which is the only caller of it.
+      const onto = options.catchUp
+      if (onto !== undefined) {
+        reached.published = { artifact: { kind: 'pull-request', ref: onto.ref, url: onto.url }, caughtUp: true }
+      }
+      return sha
+    },
+    catchUp: (request) => codeHost.catchUp(request),
+  }
+  const execution = await execute(trees, tracker, recording, candidate, role, {
     ...options,
     ...(options.lore === undefined ? {} : { lore: options.lore }),
-    // Named rather than left to the spread, which is a field nobody keeps correct. The worker
-    // authenticating as the seat the gate chose is the whole point, and a pull request points
-    // at its transcript only where the store arrives.
+    // The worker must authenticate as the seat the gate chose, so its token is passed by name
+    // rather than trusted to arrive through the spread above.
     ...(options.budget?.token === undefined ? {} : { seatToken: options.budget.token }),
     // Named alongside the token it goes with: a token source that cannot be read is the seat's
     // own misconfiguration, and the key that says so needs the seat's name.
     ...(options.budget?.seat === undefined ? {} : { seat: options.budget.seat }),
+    // A pull request links its transcript only where the store reaches `execute`.
     ...(options.store === undefined ? {} : { store: options.store }),
     onPublish: () => step('publishing'),
-    claimStatus: async () => (await checkpoint(tracker, claim, identity)).status,
+    onChanges: (changed) => {
+      reached.changed = changed
+    },
+    // The whole verdict is kept, not just its status, because a stop the handler meets after a
+    // throw needs a receipt naming who stopped it.
+    claimStatus: async () => {
+      reached.verdict = await checkpoint(tracker, claim, identity)
+      return reached.verdict.status
+    },
+    // Recorded the moment the worker returns, not when `execute` does: a publish that throws —
+    // the 422 a branch left by a closed pull request produces — escapes `execute` with the
+    // spend already made and no result to show for it.
+    worker: async (input) => {
+      const out = await (options.worker ?? headlessClaude)(input)
+      reached.output = out
+      return out
+    },
   })
+  reached.result = execution
 
   switch (execution.outcome) {
     case 'produced': {
@@ -210,16 +420,22 @@ export async function runItem(
     case 'refused': {
       // The claim went away mid-execution. A stop, most likely — so a receipt, not a handoff.
       const verdict = await checkpoint(tracker, claim, identity)
+      let stoodDown = true
       if (verdict.status === 'stopped' || verdict.status === 'lost') {
         // Released before anything is said, so the receipt is true by the time it can be read.
-        // `takeClaim` does this for a stand-down inside the settle window; standing down later
-        // is the same obligation, and skipping it left the Igor's name on an item it had just
-        // announced it was releasing.
-        await tracker.release(candidate, identity).catch(() => undefined)
+        // `takeClaim` does the same for a stand-down inside the settle window. Without it, the
+        // Igor's name stays on an item it has just announced it released.
+        //
+        // The answer is kept, not discarded: the receipt below ends "and released this", and
+        // where the holder did not clear that sentence is false on an item somebody is reading.
+        stoodDown = await tracker.release(candidate, identity).then((clear) => clear, () => false)
       }
       if (verdict.status === 'stopped') {
         const artifact = execution.artifact ? execution.artifact.url : undefined
         await tracker.report(candidate, stopReceipt(role, verdict, artifact)).catch(() => undefined)
+        // After the receipt, never before it: a correction posted first corrects nothing and
+        // leaves the false clause as the last word.
+        if (!stoodDown) await tracker.report(candidate, stillAssigned()).catch(() => undefined)
         return {
           outcome: 'stopped', candidate, reason: execution.reason, execution,
           costUsd: execution.costUsd, spoke: true, cures: execution.cures ?? [],
@@ -227,15 +443,23 @@ export async function runItem(
       }
       if (verdict.status === 'lost') {
         // Silent where there is nothing to hand over: whoever took it is visibly on it, and a
-        // message would only tell them what they just did. A draft left behind is different —
+        // message would only tell them what they just did. A draft left behind is different:
         // unannounced, it is work nobody knows exists.
+        //
+        // Never silent where the release did not take: this Igor's name is still on the item
+        // beside whoever took it, and nothing else on the item explains the second name.
         const artifact = execution.artifact
         if (artifact !== undefined) {
           await tracker.report(candidate, handOverNote(role, verdict.by, artifact.url)).catch(() => undefined)
         }
+        // A correction, never the standalone: a loss does not cut a run short — only a stop
+        // does — so reaching here means the run finished and published, and there is always a
+        // hand-over note above this to correct. `takeClaim` owns the standalone, for a loss
+        // found in the settle window where nothing has been said.
+        if (!stoodDown) await tracker.report(candidate, stillAssigned()).catch(() => undefined)
         return {
           outcome: 'lost', candidate, reason: execution.reason, execution,
-          costUsd: execution.costUsd, spoke: artifact !== undefined, cures: execution.cures ?? [],
+          costUsd: execution.costUsd, spoke: artifact !== undefined || !stoodDown, cures: execution.cures ?? [],
         }
       }
       // Still held, so the refusal was the action space rather than the claim: that is a
@@ -500,9 +724,9 @@ export interface CycleOptions extends RunOptions {
 }
 
 /**
- * The reason every candidate a held pool stopped the call for is recorded against. Exported
- * because this is the one group a reader is owed more than the phrase: which way there was no
- * seat, and when capacity comes back.
+ * The reason recorded against each candidate whose triage call no seat could pay for. Exported
+ * so the CLI can recognise it and say more than the phrase: why there was no seat, and when
+ * capacity comes back.
  */
 export const UNTRIAGED_NO_SEAT = 'no seat could pay for the triage call'
 
@@ -615,9 +839,10 @@ export async function planCycle(
   // somebody stopped do not consume triage slots — and both are told the limit, so they stop
   // looking once the cycle has enough work. The stop gate goes first because its answer is the
   // one a person is owed: an item that is both stopped and unanswered reports the stop.
-  // A stop and a handoff bind a catch-up exactly as they bind ordinary work. Somebody who
-  // said stop meant the artifact too; and the deferral record is what keeps a conflict the
-  // worker could not resolve from being retried at full worker cost every cycle after.
+  //
+  // A stop and a handoff bind a catch-up exactly as they bind ordinary work. Somebody who said
+  // stop meant the artifact too, and the deferral record is what keeps a conflict the worker
+  // could not resolve from being retried at full worker cost every cycle after.
   //
   // Gated through a report of its own so that **nothing here can hold the watermark**. An
   // ordinary item the tracker would not answer for sits above the mark, so `heldBelow` pulls

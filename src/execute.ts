@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process'
+import { stillAssigned } from './claiming.js'
 import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -1194,6 +1195,12 @@ export interface ExecuteOptions {
   /** How long between mid-run claim re-reads; zero checks on every worker event. */
   checkpointMs?: number
   onPublish?: () => void
+  /**
+   * Called with what the worker left in the tree, the moment it is read. A publish that throws
+   * escapes with no result, and the caller's account of the run is otherwise left saying it
+   * changed nothing.
+   */
+  onChanges?: (changed: ChangedFile[]) => void
   branchPrefix?: string
   /**
    * An artifact of the Igor's own to bring up to date, rather than an item to work.
@@ -1618,6 +1625,7 @@ export async function execute(
     // Nothing is taken out of it: the declaration channel is a directory outside the tree, so
     // no change the worker made is Igor's own and every one of them belongs to the artifact.
     const changed = await tree.changes()
+    options.onChanges?.(changed)
     // Read from a directory Igor made empty for this run and granted to the worker alone, so
     // anything here was written during this run rather than found in the clone. That is what
     // the place settles, and it is why no question is put to git about the file. Not being
@@ -1969,9 +1977,14 @@ export async function complete(
     return { action: role.completion, why: `role "${role.name}" does not permit its own completion action` }
   }
   switch (role.completion) {
-    case 'unassign':
-      await tracker.release(candidate, identity)
+    case 'unassign': {
+      // Asked of the surface, not inferred from the call returning. A completion that did not
+      // clear the holder leaves a published run reported as produced and the item still
+      // assigned to an Igor that has finished with it, with nobody told.
+      const clear = await tracker.release(candidate, identity)
+      if (!clear) await tracker.report(candidate, stillAssigned()).catch(() => undefined)
       return undefined
+    }
     case 'assign':
     case 'close':
       // Neither ships in this change; refusing loudly beats silently doing the default.
