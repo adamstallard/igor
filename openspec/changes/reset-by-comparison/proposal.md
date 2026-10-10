@@ -1,98 +1,66 @@
 ## Why
 
-Two paths pick the hour a handoff states, and they pick it differently.
+A seat blocked in both its windows comes back when the later of the two reopens, but the live
+path, for a seat whose usage the provider reports, named the week's hour without comparing.
+Inside the last session of a week the session reopens later, so a handoff said Igor would be
+back up to five hours before it was. The other path, `derivedReset`, for a seat nothing could
+read, already took the later of the two.
 
-`derivedWindow` — the path for a seat nothing could read — compares a seat's two blocked windows
-and takes the later. The live path — the one for a seat whose usage the provider reports — takes
-the week, by preference, without comparing. They disagree inside the last session of a week
-instance, where the session's return is the later of the two. There the live path names an hour
-up to five hours early, and a handoff says Igor is back before it is.
+**No requirement in force says which hour is named.** None of the 17 `seat-budget` requirements
+says which window's hour a seat states when both are shut. The nearest, *Scenario: The reset time
+reaches the handoff*, speaks of a single reset time. `graceful-handoff`'s *A budget handoff states
+when capacity returns* requires an hour without saying which. So the behaviour is unspecified
+rather than contrary to the spec, and this change adds the requirement for the code to follow.
 
-**It is pre-existing, and that was verified rather than assumed.** At reserve `0.57` with the
-week at 44% used — an exact figure, no float residue — `HEAD` before `71e1014` returns the same
-too-early hour with `resetApproximate: true`. `71e1014` widened the trigger set by the 179
-(reserve, used) pairs it brought into the both-windows-shut state: marginally more reachable
-than it was, not newly reachable.
+**The preference for the week was deferred, never decided.** `capacity-from-observation`'s
+design, archived at
+`openspec/changes/archive/2026-09-19-capacity-from-observation/design.md:69-78`, recorded it as
+*"left as it stands rather than decided in passing"*. Its argument weighs preferring the week,
+early by under five hours, against naming the session unconditionally, early by up to a week.
+Comparing the two hours is early by neither, and the note never weighed it. An archived design
+cannot be amended, so the question can only be settled by a requirement in force.
 
-**Nothing in force settles it, which is why this is a proposal and not a bug fix.** All 17
-in-force `seat-budget` requirements were read after `capacity-from-observation` archived in
-`f79e648`. None of them says which window's hour is named when both are shut — no "later of", no
-"by preference". The nearest text is `Scenario: The reset time reaches the handoff` — "the reset
-time recorded with the observation is what the handoff states" — which is singular and silent on
-two. `graceful-handoff`'s "A budget handoff states when capacity returns" requires an hour and
-says nothing about which. So the behaviour is underspecified rather than contradicted, and the
-fix is to add the specificity before changing the code to match it.
-
-**The deferral was never argued against on its merits.** The preference was recorded in
-`capacity-from-observation`'s design, now archived at
-`openspec/changes/archive/2026-09-19-capacity-from-observation/design.md:69-78`:
-
-> Where both of its windows are shut the live path takes the week by preference rather than by
-> comparing the two hours. The week is the later of the two except inside the last session of
-> one, so that preference is early by under five hours where naming the session is early by up
-> to a week. It is a policy and not a limit on what can be ordered — `resolveReset` would place
-> both — and it is **left as it stands rather than decided in passing**.
-
-Read what that argues. "Early by under five hours where naming the session is early by up to a
-week" is an argument against **naming the session unconditionally**. It is not an argument
-against **comparing**, which is early by nothing. The note says so itself — "a policy and not a
-limit on what can be ordered" — and then declines to decide. Comparing beats both of the options
-it weighed, and it was never the one weighed against them.
-
-Two things are true now that were not when it was deferred. `derivedReset` already takes the
-later, so the preference is no longer one consistent policy but one of two paths behaving
-differently, with nothing in the record giving a reason for the difference. And the archive is
-history: the note cannot be amended in place, so the policy it deferred has to be settled in
-force or not at all.
+**The defect predates `71e1014`.** At reserve `0.57` with the week 44% used, the code before
+`71e1014` names the same early hour. `71e1014` made the state slightly more reachable, adding 179
+(reserve, used) pairs that reach both windows shut, but did not create it.
 
 ## What Changes
 
-**A seat shut in both windows returns on the later of the two, on both paths.** The requirement
-is written about the seat, not about a path: however the two hours were arrived at — read from
-the provider, or derived from observations and record — the seat's stated hour is the later of
-them. The defect is not that one path is wrong; it is that the question has two answers, and a
-rule that lives in one path is a rule the other can drift away from again.
+**A seat shut in both windows returns on the later of the two, whichever path computed the
+hours.** The requirement is about the seat, not a path: whether the hours were read from the
+provider or derived from observations, the stated hour is the later one. Stating it once for the
+seat keeps the two paths from diverging again.
 
-**`resetApproximate` narrows, and the line it draws is stated.** Today the flag is described as
-"not a return the provider stated" and is raised on every seat blocked in both windows, because
-the week was reached by preference and could be early. With the comparison, a pair of stated
-hours yields one of those stated hours — the provider's own, arrived at by ordering rather than
-substitution — so it is not raised for that.
+**`resetApproximate` is raised only where no stated reset fixes the hour.** Before this change it
+was raised on every seat blocked in both windows, because the week was chosen by preference and
+could be early. Comparing two stated hours yields one of them, the provider's own, so it is no
+longer raised for that.
 
-Written down, the line is not quite the words the code's comment uses. It is whether a stated
-reset *fixes* the hour. A window boundary tiled from a stated reset along the window's own
-cadence is not a phrase the provider printed, and it is exact all the same — instances tile the
-timeline, so one reset places every boundary by subtraction — and it is deliberately unmarked
-today. What is marked is an hour no stated reset pins: a cadence ceiling standing in for a reset
-a refusal never named, and an hour named while another window also holding the seat named no
-return. Stating it that way keeps every current case on the side it is already on and removes
-one: the both-windows-shut hour.
+The test is whether a stated reset fixes the hour. A window boundary computed from a stated reset
+by the window's own cadence is exact, because a window's instances tile the timeline, so it is not
+marked. An hour that no stated reset fixes is marked: a cadence ceiling standing in for a reset a
+refusal never named, or an hour named while another window holding the seat named no return.
+Every case keeps the marking it had, except the both-windows-shut hour, which is no longer marked.
 
-**Ordering across seats is untouched.** The seats that serve a role are back when the first of
-them is back. Each seat answers with the later of its own two returns, and the earliest of those is still what the
-handoff states.
+**Ordering across seats is unchanged.** A role's seats are back when the first of them is back:
+each seat states the later of its own two returns, and the handoff states the earliest of those.
 
-Explicitly out of scope:
+Out of scope:
 
-- **A blocked window whose return cannot be placed on a clock.** The two paths also differ here:
-  the derived path takes a seat off the clock entirely where any blocked window names no
-  instant, and the live path names the week's hour, hedged, where the session named none.
-  That divergence *is* argued — a rolling sum has no boundary at all, where a session that named
-  no reset is bounded by its five-hour cadence — in the archived design and in the comment at
-  `src/budget.ts`'s `describeWindow`, which calls it deliberate. Overturning a reasoned decision
-  the issue never raises, inside a change about a decision that was never reasoned, would hand
-  back a spec that looks settled on a point nobody settled. The added requirement therefore
-  applies only where both returns can be placed, and says so.
-- **Anything about which seat is picked.** `chooseSeat` is untouched. This is only about the
-  hour stated once no seat could be picked. Once #148 is built, seat choice becomes the most
-  headroom, with the soonest reset as the tie-break; that changes which seat is picked, not which
-  hour is stated when none is.
-- **`graceful-handoff`.** "A budget handoff states when capacity returns" is the consumer of
-  this rule, not a participant in it, and needs no amendment: it requires an hour, and this says
-  which one.
-- **The `describeWindow` report.** Per-window reporting shows each window's own reset beside its
-  own figures. There is no comparison to make there and no hour standing for the seat as a
-  whole.
+- **A blocked window whose return cannot be placed on a clock.** The two paths differ here too.
+  The derived path takes the seat off the clock when any blocked window names no instant, while
+  the live path names the week's hour, marked approximate, when the session named none. That
+  difference was decided with its reason, in the archived design and at `describeWindow` in
+  `src/budget.ts`: a rolling sum has no boundary, while a session that named no reset is still
+  bounded by its five-hour cadence. This change leaves it alone, so the new requirement applies
+  only where both returns can be placed, and says so.
+- **Which seat is picked.** `chooseSeat` is unchanged. This concerns only the hour stated once no
+  seat could be picked. #148 changes seat choice to the most headroom, with the soonest reset
+  breaking ties, which changes which seat is picked, not which hour is stated when none is.
+- **`graceful-handoff`.** It requires a budget handoff to state an hour, and this change says
+  which hour, so it needs no amendment.
+- **The `describeWindow` report.** It shows each window's own reset beside that window's figures,
+  and states no hour for the seat as a whole.
 
 ## Capabilities
 
@@ -100,23 +68,23 @@ Explicitly out of scope:
 
 - `seat-budget`: a seat blocked in both windows returns on the later of the two, stated once for
   the seat rather than per path; and an hour is marked approximate where no stated reset fixes
-  it, with the both-windows case no longer among those.
+  it, which no longer includes the both-windows case.
 
-Both deltas are `ADDED`. The tempting `MODIFIED` target is "A seat at 100% is spent until its
-window resets", but that requirement is scoped to observations — it is the derived path's own
-text, and hanging the rule off it would re-entrench exactly the split being removed. A
-requirement about the hour a seat states, independent of how the figure was reached, is what
-makes the divergence hard to reintroduce.
+Both deltas are `ADDED`. The obvious `MODIFIED` target, *A seat at 100% is spent until its window
+resets*, is about observations, which is the derived path's own text, so hanging this rule on it
+would tie the rule to one path again. A requirement about the hour a seat states, however its
+figures were reached, is what keeps the paths from diverging.
 
 ## Impact
 
-- Removes a handoff that says Igor is back before it is, in the one state where the week is not
-  the later window.
-- Removes a hedge from the hour in the common case: two stated hours compared is the provider's
-  own answer, and reads as one.
-- Implementation lands in `src/budget.ts`, in the `live` block of `budgetGate` and the `Gate`
-  doc comment that documents the preference. `derivedReset` already behaves as required and is
-  expected not to change.
-- One test pins the behaviour being changed and must change with it —
-  `test/budget.test.ts:1617`. A second, at `test/budget.test.ts:1722`, keeps its assertions but
-  justifies itself by a policy that stops existing.
+- A handoff no longer says Igor is back before it is, in the one state where the week is not the
+  later window.
+- In the common case the hour is no longer marked approximate: comparing two stated hours gives
+  the provider's own answer.
+- `src/budget.ts`: the live block of `budgetGate` compares the two hours, and the `Gate` doc
+  comment describes the comparison instead of the preference. `derivedReset` already took the
+  later hour and is unchanged.
+- `test/budget.test.ts`: the two tests that asserted the week preference now assert the
+  comparison, and new tests cover a later week, a session whose reset phrase places nowhere, a
+  read seat and a derived seat stating the same hour, the earliest hour across a pool, and a seat
+  shut by one window that named no reset.
