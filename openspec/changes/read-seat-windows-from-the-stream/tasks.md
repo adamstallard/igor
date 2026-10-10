@@ -152,6 +152,14 @@
       6.1 as a clearing check whatever its readings, still under the hourly limit and the refusal,
       overage and line exclusions. Tests: a 401 opens the stop and records nothing; a success
       clears it and records its reading; a stopped seat is not re-probed within the hour
+- [ ] 6.8 **A seat is probed at its crossing before it is drawn on again** (Adam, 2026-10-10).
+      Where the gate (7.2, 7.3) finds that the line has risen past a seat's most recent unreset
+      reading, and that reading was at or past the line when taken, it starts no work on the seat
+      and selects it for a probe (6.1); the next gate call decides on the probe's reading. A probe
+      that records nothing leaves the gate deciding on the old reading. The hourly limit (6.6)
+      holds a seat probed within the hour. Tests: the three crossing scenarios in *A seat nothing
+      has read is probed on the Igor server with its own token*, and a seat probed within the hour
+      before its crossing staying held until the hour has passed
 
 ## 7. The line, in `src/budget.ts`'s gate (replaces the dollar bound and calibration admission)
 

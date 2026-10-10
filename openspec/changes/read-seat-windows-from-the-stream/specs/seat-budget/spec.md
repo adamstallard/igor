@@ -244,6 +244,15 @@ made on a seat whose most recent unreset reading of any window is at or past tha
 (*The reserve is untouchable*), since a probe's consumption is Igor's and the reading says the
 seat has none to give it.
 
+**A seat is probed at its crossing before it is drawn on again.** Where a seat's most recent
+unreset reading of a window was at or past that window's line, and the line has since risen past
+the reading, the gate SHALL NOT start work on the seat on that reading alone. A seat probe SHALL be
+made first, and the gate SHALL decide on the reading it records. The old reading is only a lower
+bound, and the owner may have used the seat since, so starting work on it can spend the margin the
+line keeps for them. A probe that records no observation SHALL leave the decision to the reading the
+gate already has, so a failed probe cannot shut a seat out. The hourly limit still applies: a seat
+probed less than an hour before its crossing stays held until a probe is allowed.
+
 **A probe checks the credential too.** A probe the provider answers with an authentication failure
 (HTTP 401) SHALL open the seat's credential stop, `seat:<id>:credential`, in whichever record owns
 that stop: the breaker #65 proposes, or the condition record #101 specifies, whichever lands first.
@@ -303,6 +312,22 @@ it could.
 - **WHEN** a seat's session reading has expired, and its most recent unreset week reading is at or
   past the week's line
 - **THEN** it is not probed while that remains so
+
+#### Scenario: A crossing is checked before work starts
+
+- **WHEN** a seat's week reading was at its line, and the line has since risen past it
+- **THEN** a seat probe is made before any work starts on the seat
+- **AND** the gate decides on the probe's reading
+
+#### Scenario: A probe at the crossing that finds the seat fuller holds it
+
+- **WHEN** the probe made at a crossing returns a reading at or past the line
+- **THEN** no work starts on the seat
+
+#### Scenario: A probe at the crossing that returns nothing does not shut the seat out
+
+- **WHEN** the probe made at a crossing records no observation
+- **THEN** the gate decides on the reading it already had
 
 #### Scenario: A probe refused its credential opens the stop
 

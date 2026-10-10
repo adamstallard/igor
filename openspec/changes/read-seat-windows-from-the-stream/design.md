@@ -594,6 +594,14 @@ seat whose line uses a non-zero reserve is not drawn on until a reading exists, 
 carried it past a provider threshold, or from a period at reserve 0. In that case tasks 6.x are
 not built as written, and what starts a fresh reserved seat goes back to Adam.
 
+**Probed at a crossing (Adam, 2026-10-10).** When the line rises past a seat's reading, the seat
+reopens on a reading that is only a lower bound. If the owner has used the seat since, the first
+item Igor starts there spends into the margin the line keeps for them, before that worker's own
+reading stops further work. A probe at the crossing reads the seat first, at the cost of one probe
+per crossing, and no more than one an hour. A probe that returns nothing leaves the gate on the old
+reading, which is the behaviour without the probe, so the probe can only add caution, never lock a
+seat out. It is built with the rest of section 6, so task 1.1 gates it too.
+
 ### Degrading: closed, not open
 
 No event, a malformed event, or an event with no numbers produces no row, and the run is recorded
