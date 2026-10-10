@@ -1,218 +1,203 @@
 # Design
 
-## Where the enforcement point goes
+## One handler around the claimed run
 
-Three sites had the same defect and were fixed separately. The question this change had to answer
-is whether to keep doing that.
+Everything that runs while a claim is held runs inside one handler in `runItem`, which hands the
+claim back the way any other failure does. That covers every way a held run can fail, the
+checkpoint and the completion action included, without naming any of them.
 
-**Guarding each call** is what produced three issues. The same lesson is argued in `undone()`'s
-docstring on [#103](https://github.com/adamstallard/igor/pull/103) — *a guard written per route is
-a guard that misses the next one*, about a comparison rather than a claim, and **not yet merged** —
-and this is that failure at one altitude up: the rule was enforced per call site while the
-requirement was about a state.
+**Rejected: a guard at each call that can fail.** That is how #128, #129 and the unhandled
+`runItem` arose: each call site was guarded on its own, and the next unguarded one was the next
+bug. The requirement is about a state, a claim being held, so it is enforced where that state
+begins and ends.
 
-**Guarding the window** inside `takeClaim` is right for the claim itself, because only that
-function knows whether the assignment landed before the announcement did. It does not reach the
-run around it.
+**`takeClaim` keeps its own guard for the claim itself.** Only `takeClaim` knows whether the claim
+landed before the announcement did. Its guard does not reach the run around it, which is why the
+handler is needed as well.
 
-**Guarding the run** is what closes the class: everything after the claim is held runs inside one
-handler, which hands the claim back the way any other failure does. That subsumes the checkpoint
-and completion escapes without naming them, which is the property a route-by-route guard lacks.
+The run under the claim is its own function, `runClaimedItem`, rather than a block indented inside
+the handler. Its name says what the handler protects: the phase that runs under a held claim.
 
-The body was **extracted rather than indented**. Wrapping it in place would have re-indented some
-140 lines and turned a reviewable diff into a reformat — and it reads better named: the extracted
-function is the phase that runs under a held claim, which is exactly the thing the handler is
-about.
+## Ending the cycle when the surface stops answering
 
-## Refused, not handed off
+When the tracker or host stops answering, the cycle ends instead of refusing each remaining item.
+Each refusal posts on its item, and the Igor's own posts bump the item's `updatedAt`, so the
+watermark does not keep the item out of the next poll: two comments per item per poll,
+indefinitely. Measured over four cycles: 24 comments, against 6 when the cycle is abandoned at the
+first failure. At twenty items on a five-minute poll, that volume alone trips the secondary rate
+limit that caused the outage.
 
-A surface failure returns `refused` rather than `handed-off`, although a handoff is what is
-posted. `shouldDefer` treats a `handed-off` run with a `failure` reason and no cures as a
-deferral, and a deferral parks the item until something answers on it. Nothing about the item
-produced a tracker outage, so parking it would suppress work for a reason that was never about it.
+So a run reports whether the surface caused its failure, as `surfaceFailed`, and `serve` ends the
+cycle on it. Each refusal still prints its own reason.
 
-## Why the cycle stops
+**Rejected: working the cause out in `serve`.** `serve` cannot: a claim the tracker declined to
+record is also a refusal, and that one is about the item, so it must not stop the cycle.
 
-Converting a throw into a per-item refusal removed something that was never the point of the
-throw: `serve` abandoned the cycle. Measured, with the Igor's own writes bumping `updatedAt` so
-the watermark does not bound it — 24 comments over four cycles against 6 for the frozen control.
-Two comments per item per poll, indefinitely, and at twenty items on a five-minute poll that
-volume is itself what trips the secondary rate limit that caused the outage.
+## Two in a row, because the flag over-reports
 
-So the run carries whether its cause was the surface, and the cycle breaks on it. Per-item
-visibility is kept, which is better than the throw gave: each refusal prints its own reason.
+`surfaceFailed` is set by `runItem`'s handler on every throw it catches, including throws that are
+entirely about the item. A branch left over from an earlier run makes `codeHost.produce` fail with
+`422 Reference already exists`, on that item only, every time. Ending the cycle on the first flag
+would end every cycle for as long as such an item existed, which is what "a refusal about the item
+does not stop the cycle" forbids.
 
-**Rejected: inferring it in `serve`.** It cannot be inferred — a claim the tracker declined to
-record is also a refusal, and that one is about the item and must not stop the cycle.
+**So the second consecutive surface failure ends the cycle, and one on its own does not.** An
+outage fails every item and a bad item fails one, and that count is the only distinction available.
+The counter is per cycle and resets on any run that is not a surface failure, so a wedged item
+cannot add up to a stop across a healthy cycle. Only an abandoned cycle counts as failed and emits
+`cycle-failed`.
 
-## Counting, because the flag says less than it looks like it says
+**Rejected: ending on the first flag, and narrowing when the flag is set.** Narrowing needs the
+item-versus-surface distinction that *What the run reached* records as unavailable. It would trade
+a bounded cost, one extra item attempted per cycle during a real outage, for a distinction nothing
+can draw.
 
-`surfaceFailed` is set by `runItem`'s outer handler on **every** throw it catches, including ones
-that are entirely about the item: a branch an earlier run orphaned makes `codeHost.produce` fail
-`422 Reference already exists` on that item and no other, deterministically. Breaking on the
-first one therefore ended every cycle for as long as such an item existed — the opposite of what
-"a refusal about the item does not stop the cycle" requires.
+**What the counter misses, measured.** A surface whose release call alone is failing never reaches
+two. `handOff` catches that throw and returns `released: false` without `surfaceFailed`, so a pool
+alternating published items with handed-off ones resets the counter on every other item. Observed
+on a pool of six with the unassign endpoint down: six items claimed, a worker spent on each,
+`failures: 0`, and no `cycle-failed`. Ending on the first flag would have stopped at the first
+item. The counter is kept because it handles the wedged item, which is the fault it exists for.
+Widening `surfaceFailed` to cover a caught release failure is rejected, because it would mark item
+faults as the surface's too.
 
-**The second consecutive one ends the cycle; one on its own does not.** How many items a fault
-affects is the one distinction available: an outage fails every item, a bad item fails one. The
-counter is per cycle and resets on any run that is not a surface failure, so a wedged item cannot
-accumulate a stop across a healthy cycle. Only the abandonment counts as a cycle failure and
-emits `cycle-failed`.
+## Writes return what the surface recorded
 
-**Rejected: keeping break-on-first and narrowing the flag instead.** Narrowing needs the
-item-versus-surface distinction the section below records as unavailable, so it trades a bounded
-cost — one extra item attempted per cycle during a real outage — for a distinction nothing can
-draw.
+`claim`, `report` and `release` each return what the surface recorded, so *unknown* is a value
+rather than a throw. A caller that only knows whether a write threw cannot tell *this did not
+happen* from *this happened and the answer was lost*. Guessing from that is where two of the three
+defects came from: a flag set after an `await` recorded *this process saw it succeed*, not *it may
+be on the item*, and a message asserted a release that had not happened.
 
-**Measured against the counter, and it does not cover everything.** A surface whose *release*
-call alone is failing is invisible to it: `handOff` swallows that throw and returns
-`released: false` without `surfaceFailed`, so a pool alternating published items with handed-off
-ones resets the counter on every other item and never reaches two. Observed on a pool of six with
-the unassign endpoint down: six items claimed, a worker spent on each, `failures: 0`, and no
-`cycle-failed`. Break-on-first caught that shape on the first item. The counter is still the
-better trade for the fault it was written for — the wedged item — and this shape is recorded
-rather than patched over, because widening `surfaceFailed` to cover a swallowed release would
-also mark item faults as the surface's.
+**An answer that does not carry the assignees reads as not clear**, deliberately. Reporting a
+release that did not happen leaves an item held with nobody told. Reporting a release that did
+happen as stuck costs one person one unassign on an item nobody holds.
 
-## Why the write contract widened
+## What the run reached
 
-The two bugs that got furthest were both a caller guessing what a write did from whether it threw.
-A flag set after an `await` recorded *this process saw it succeed*, not *it may be on the item*;
-a reason asserted a release that had not happened.
+The handler keeps a record, `reached`, filled as the run passes each point: `reached.output` when
+the worker returns, `reached.published` when the host accepts a pull request or a resolution, and
+`reached.result` when `execute` returns. A throw after the work therefore still composes its
+handoff from what the run did. Without the record, a tracker 503 on the completion unassign, the
+last call of a run that otherwise succeeded, would post "the work never started" beside a live pull
+request, with the artifact linked nowhere and the spend reported as zero.
 
-`claim` never had this problem, because it returns what the surface recorded. Extending the same
-discipline to `report` and `release` makes *unknown* representable instead of collapsing it into a
-throw. An answer that does not carry the assignees reads as **not clear**, deliberately: claiming
-a release that did not happen leaves an item held with nobody told, while reporting a release that
-did happen as stuck costs one person one unassign on an item nobody holds.
+**Rejected: reading `reached` as item versus surface.** It discriminates on the wrong axis: how far
+the run got, not whose fault it was. `codeHost.produce` is called inside `execute`, so the
+leftover-branch 422 throws before there is a result, and `reached.result` is empty for the item
+fault it would need to catch. The tracker 503 above, a surface fault, finds it full.
 
-## What the run reached, and what it does not tell you
-
-The handler holds a `reached.result`, filled the moment `execute` returns, so a throw after the
-work still composes its handoff from what the run actually did. Without it the completion
-action — an unassign, so the last call of a wholly successful run is a release — turns a tracker
-503 into "the work never started" posted beside a live pull request, with the artifact linked
-nowhere and the spend reported as zero.
-
-**Rejected: reading that same holder as *item versus surface*.** It is the obvious next use and it
-does not work. `codeHost.produce` is called inside `execute`, so a `422 Reference already exists`
-from a branch a previous run left behind throws before there is a result — the holder is empty for
-the item-specific fault it would need to catch. And it is full for the tracker 503 above, which is
-a surface fault. It discriminates, but on the wrong axis: *how far the run got*, not *whose fault
-it was*. The lesson stops there — the holder is right for composing the handoff, which is what it
-is for.
-
-**Rejected: an HTTP status table** — 4xx as the item's fault, 5xx and 429 as the surface's. That is
-the guard-per-route failure quoted above, one layer
-down: the next status code falls through it. Telling the two apart needs a distinction the adapters
-do not currently draw, which is why `surfaceFailed` is still unconditional in that handler, and why
-`serve` counts the flag rather than trusting any one instance of it.
-
-## Where the correction is posted, and who posts it
-
-`stillAssigned()` is a clause appended to a sentence that already claimed the release, so it has
-to follow that sentence. The rule is *after the claim it answers*, not *last on the item* —
-nothing else posted afterwards asserts a release, so nothing else can make it false again.
-
-Only `handOff` owns the sentence it corrects. The stand-down does not: the stop receipt is posted
-by `runItem` *after* `takeClaim` returns, so a correction written inside `takeClaim` stands above
-the claim it answers and leaves "released this" as the last word on the item. `takeClaim`
-therefore reports `releaseStuck` and `runItem` posts after its own receipt.
-
-**Rejected: releasing before the receipt in `runItem` instead**, so the receipt could be composed
-truthfully. `runItem` already releases there, and the release is not the part that is unknown —
-the receipt's wording is fixed and approved, and a second wording for the stuck case is a second
-sentence to keep correct.
-
-A `lost` stand-down is the exception and stays in `takeClaim`: nobody posts anything on that
-path, so `stoodDownStuck()` is standalone rather than a correction and has nothing to follow.
-
-**`handOff` corrects unconditionally.** Gating on whether the handoff posted asks a question the
-process cannot answer — a surface can accept the write and throw on the way home, which is why
-`takeClaim` sets `announced` before its call rather than after. Where nothing landed the sentence
-still stands on its own: the item is held, and saying so is true whether or not anybody read a
-handoff first. `complete()` already posts it with no antecedent at all — it owns no sentence,
-because a run that published asserted nothing about the release before this one.
-
-**Measured cost of dropping the guard:** one failing `report` call per handed-off item, where the
-surface took the claim message and had stopped answering by the handoff. A surface refusing
-everything costs nothing extra — the claim message fails inside `takeClaim`'s window, the run is
-refused there and `handOff` is never entered — so the cost is confined to an outage that begins
-mid-run. No cheaper variant exists: the flag the guard read cannot answer the question it was
-being asked.
-
-**Measured exception, on the catch-up path.** `catchUpItem` posts `resolvedNote` /
-`broughtCurrentNote` *after* `runItem` returns, so on a conflict resolved into a published
-artifact whose completion unassign did not clear, the correction sits one comment above that
-note rather than at the foot of the item. It is still after the only sentence that claimed a
-release — there is none on that path — so the requirement holds and the reader's last line is a
-true one. What they lose is the correction being the thing they end on.
+**Rejected: an HTTP status table**, with 4xx as the item's fault and 5xx and 429 as the surface's.
+The first status code it doesn't list falls through: the failure of a guard at each call site, one
+layer down. Telling the two apart needs a distinction the adapters don't draw. That is why
+`surfaceFailed` is set on every throw, and why `serve` counts it rather than trusting any one
+instance.
 
 ## Deciding by what a retry would cost
 
-The handler first returned `refused` for every throw, so a wedged item came back next cycle and
-the worker ran again to reach the same failure. The distinction the earlier drafts reached for —
-whether a throw was the surface's fault or the item's — is not answerable from here, as the
-counter's section records. **What a retry would cost is.** A throw before the worker ran is cheap
-to retry, and most of an outage lands there, so the item is refused and tried again. A throw
-after it ran would spend the whole worker again, so the item is handed off and waits in the
-deferral record until someone with write access answers — and that includes an outage that
-begins while a worker is running, which the handler cannot tell from a fault of the item's. A
-stop is the exception: a run `execute` reports as refused was stopped, or has published, or
-carries a cure, and is never handed off from here.
+Whether a throw was the surface's fault or the item's can't be answered from the handler. What a
+retry would cost can, and the handler decides on that:
 
-**Accepted cost: an outage that begins mid-worker parks one item** — decided at review, not
-merely observed. The worker returns, the next tracker call fails, and the item is handed off and
-deferred rather than retried. It is bounded: at most one item per serving process per outage,
-because the counter abandons the cycle on the second consecutive failure and every item after
-that fails at the claim, before any worker runs; and only where the deferral's own write
-succeeds, so a total outage parks nothing. In a partial one the item carries a visible handoff
-and waits for someone with write access to answer. The alternative is retrying these, which
-re-spends the worker on items that really are wedged — the leftover-branch 422 this rule exists
-to stop — and nothing here can tell the two apart. One item, visibly set down and restartable by
-a comment, is the cheaper of the two.
+- **Before the worker ran**, a retry is cheap, and most of an outage lands here. The item is
+  refused and tried again next cycle.
+- **After the worker ran, with nothing published**, a retry spends the whole worker again. The item
+  is handed off and deferred until someone with write access answers. That includes an outage that
+  begins while a worker is running, which the handler cannot tell from a fault of the item's.
+- **After something was published**, a retry is cheap again, because the in-flight rule keeps the
+  item off the claim path. A deferral there would only stop the pull request being caught up when
+  it later stops merging, until someone commented on the issue. So a completion unassign that
+  fails after a publish is refused, and so is a catch-up whose merge came out clean, which
+  publishes without running a worker.
+- **A run `execute` reports as refused** was stopped, has published, or carries a cure, and is
+  never handed off from here.
 
-**The signal is the worker returning, not `execute` returning.** The worker runs inside
-`execute`, before anything is published, and `codeHost.produce` has no handler — so a publish
-that throws escapes `execute` with the spend already made and no result. Reading only whether
-there was a result classifies exactly that case as never having started, and retries it: that is
-the leftover-branch 422, the case this exists for. The run wraps the worker it hands to
-`execute` and records the moment it returns. Measured: with the decision read off the result
-alone, the test for a publish failing after the worker ran goes red.
+**Refused, though a handoff is posted.** A refused run still posts a handoff on the item, but
+returns `refused` rather than `handed-off`. `shouldDefer` parks a `handed-off` run with a `failure`
+reason and no cures until somebody answers on it, and a tracker outage is no reason for the item
+to wait.
 
-**A published artifact makes a retry cheap again.** Once the run has opened a pull request, the
-in-flight rule keeps the item off the claim path, so a retry spends nothing — and a deferral
-there would only stop that pull request being caught up when it later stops merging, until
-someone commented on the issue. The completion unassign failing after a publish is refused, as
-"Refused, not handed off" has it. The same goes for a catch-up whose merge came out clean: it publishes
-without running a worker at all. So the item is handed off only where the worker ran *and*
-nothing was published. Both are recorded when they happen — the worker returning, the host
-accepting a pull request or a resolution — never read off the result, which a throw after the
-publish (the check that a resolution took) leaves absent.
+**Rejected: refusing every throw.** A wedged item would come back each cycle and run the worker
+again to reach the same failure.
 
-**Handed off, and only then deferred.** `shouldDefer` defers a `failure` handoff with no cures,
-and keeps a handoff carrying cures live, because a cure is a fault in the Igor's own
-configuration and the item did not produce it.
+**The signal is the worker returning, not `execute` returning.** The worker runs inside `execute`,
+before anything is published, and `codeHost.produce` has no handler, so a publish that throws
+escapes `execute` with the spend made and no result. Deciding from the result alone would treat that
+case as never started and retry it: the leftover-branch 422, the case this rule exists for. So the
+run wraps the worker it hands to `execute` and records when it returns, and records a publish when
+the host accepts it. Neither is read off the result, which a throw after the publish (the check that
+a resolution took) leaves absent. Measured: with the decision read off the result alone, the test
+for a publish failing after the worker ran goes red.
 
-## When an Igor claims by label (amended 2026-10-04)
+**Accepted at review: an outage that begins mid-worker parks one item.** The worker returns, the
+next tracker call fails, and the item is handed off and deferred rather than retried. The cost is
+bounded:
 
-[#156](https://github.com/adamstallard/igor/pull/156) settles that on GitHub every Igor is a
-GitHub App, which claims with its `igor:<role>` label and cannot be an assignee. The requirement
-here is about the holder field, whatever it is, so it now says the item is left *held* where it
-said *assigned*. The code on this branch is written for today's build, a machine user claiming by
-assignee, and stays correct for that build. When #156's label claim is built:
+- at most one item per serving process per outage, because the second consecutive failure ends the
+  cycle, and every later item fails at the claim, before any worker runs;
+- only where the deferral's own write succeeds, so a total outage parks nothing. In a partial one,
+  the item carries a visible handoff and waits for someone with write access to answer.
 
-- `release` answers whether this Igor's own label is gone, not whether the assignees are clear.
-  *An answer that does not carry the assignees reads as not clear* becomes the same rule about the
-  labels.
-- A person removing the label is a stop (#156). The stop exclusion in the handler covers it as
-  it covers any stop: a run that was stopped is never handed off from here.
+Retrying instead would re-spend the worker on items that really are wedged, such as the
+leftover-branch 422, and nothing here can tell the two apart. One item, visibly set down and
+restartable by a comment, costs less.
 
-**Decided 2026-10-04: the three approved wordings change in the change that builds the label
-claim, not here.** Tasks 2.4 and 5a.4 carry them verbatim. Each tells the reader to unassign the
-item, which is true while the build claims by assignee and frees nothing once the claim is a
-label. So they keep their current text on this branch, and the change that builds the label claim
-rewords them to:
+**A handoff carrying cures stays live.** `shouldDefer` defers only a `failure` handoff with no
+cures. A cure is a fault in the Igor's own configuration, not the item's.
+
+## Where the correction is posted
+
+`stillAssigned()` is a clause correcting a sentence that already claimed the release, so it is
+posted after that sentence. The rule is *after the claim it answers*, not *last on the item*:
+nothing posted afterwards asserts a release, so nothing can make it false again.
+
+**Only the code that posted a sentence posts its correction.** `handOff` owns its sentence. A
+stand-down does not: `runItem` posts the stop receipt after `takeClaim` returns, so a correction
+posted inside `takeClaim` would sit above the claim it answers, and leave "released this" as the
+last word on the item. So `takeClaim` reports `releaseStuck`, and `runItem` posts the correction
+after its own receipt.
+
+**Rejected: releasing before the receipt in `runItem`, so the receipt can be worded truthfully.**
+`runItem` already releases there, and the release is not what is unknown. The receipt's wording is
+fixed and approved, and a second wording for the stuck case is a second sentence to keep correct.
+
+**A `lost` stand-down is the exception, and stays in `takeClaim`.** Nothing is posted on that path,
+so `stoodDownStuck()` stands alone rather than correcting anything.
+
+**`handOff` posts the correction whether or not the handoff posted.** The process cannot know
+whether the handoff posted: a surface can accept a write and throw on the way back, which is why
+`takeClaim` sets `announced` before its call rather than after. Where nothing landed, the
+correction still stands on its own: the item is held, and saying so is true whether or not anybody
+read a handoff. `complete()` already posts it with nothing before it, because a run that published
+said nothing about the release.
+
+**Measured cost: one failing `report` call per handed-off item**, where the surface took the claim
+message and had stopped answering by the handoff. A surface refusing everything costs nothing
+extra: the claim message fails inside `takeClaim`, the run is refused there, and `handOff` is never
+entered. So the cost is confined to an outage that begins mid-run. Posting the correction only when
+the handoff posted would not be cheaper, because nothing can say whether it posted.
+
+**Measured exception, on the catch-up path.** `catchUpItem` posts `resolvedNote` or
+`broughtCurrentNote` after `runItem` returns. When a conflict resolves into a published artifact
+and the completion unassign does not clear, the correction sits one comment above that note
+instead of at the foot of the item. Nothing on that path claims a release, so the requirement holds
+and the reader's last line is true. What they lose is ending on the correction.
+
+## When an Igor claims by label
+
+[#156](https://github.com/adamstallard/igor/pull/156) decides that every Igor on GitHub is a GitHub
+App, which claims with its `igor:<role>` label and cannot be an assignee. The requirement here is
+about the holder field, whatever it is, so it says the item is left *held*. The code in this change
+claims by assignee, which is how Igor claims until #156's label claim is built. With the label
+claim:
+
+- `release` answers whether this Igor's own label is gone, and an answer that does not carry the
+  labels reads as not clear.
+- A person removing the label is a stop (#156), and the handler never hands off a stopped run.
+
+**Decided 2026-10-04: the change that builds the label claim rewords the three approved messages,
+and this change keeps them.** Tasks 2.4 and 5a.4 carry them verbatim. Each tells the reader to
+unassign the item, which is true while Igor claims by assignee and frees nothing once the claim is
+a label. Their wordings for the label claim:
 
 ```
 **<role>** could not finish taking this and could not release it either, so it still carries
@@ -226,4 +211,3 @@ This still carries the `igor:<role>` label — releasing it did not take. Remove
 ```
 **<role>** stood down here, and could not remove its own `igor:<role>` label. Remove the label to free it.
 ```
-
