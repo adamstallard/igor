@@ -219,6 +219,14 @@
       seat. Afterwards no gate reads `capacityUsd`. Update 'budget_share is a ceiling, not a
       reservation' (`test/budget.test.ts:534`) and add a test that a share is reached on a seat
       with a reading and no capacity figure
+- [ ] 7.11 **A handoff states the crossing for a window the line shut** (moved from #74,
+      `reset-by-comparison`, Adam, 2026-10-10). Where `budgetGate`'s `live` candidate builder, and
+      `derivedReset` on the derived path, find a window shut below 100%, the hour is the line's
+      crossing, `resetsAt − (1 − reading) ÷ r × window length`, with `resetApproximate` set. A
+      window at 100% still states its reset. Where both windows are shut, the later of the two
+      hours is stated, as #74 requires. Tests: the two scenarios of *A handoff for a window the
+      line shut states its crossing, marked approximate*, and a seat shut in both windows where
+      one window's crossing is later than the other's reset
 
 ## 8. Window length and schedule
 

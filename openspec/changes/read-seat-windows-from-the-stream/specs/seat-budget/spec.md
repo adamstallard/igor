@@ -520,6 +520,29 @@ reserve the line uses, and it comes before the reset.
 - **THEN** reporting says the seat is holding back
 - **AND** it names the instant at which 20% of the week remains, when the line reaches 94%
 
+### Requirement: A handoff for a window the line shut states its crossing, marked approximate
+
+Where a window is shut because its reading is at or above the seat's reserve line, and the reading
+is below 100%, the hour a handoff states for that window SHALL be the instant the line rises past
+the reading, not the window's reset, and it SHALL be marked approximate.
+
+The line rises toward 100% as the window runs down, so such a window reopens before its reset,
+and stating the reset would be late by up to the whole window. The crossing is marked because a
+reading is only a lower bound until its window resets: the owner may have spent since, so the
+seat can be back later than the crossing and never earlier. A reading of 100% is a refusal, and
+its window still returns at its reset.
+
+#### Scenario: A reserve line's crossing is stated, and hedged
+
+- **WHEN** a window is shut because its reading, below 100%, is at or above the seat's reserve line
+- **THEN** the hour stated for it is the instant the line rises past that reading, not its reset
+- **AND** it is marked approximate
+
+#### Scenario: A refused window still returns at its reset
+
+- **WHEN** a window is shut because its reading is 100%
+- **THEN** the hour stated for it is its reset
+
 ### Requirement: A seat's fullness is read from the seat, not supplied by a person
 
 How full a seat is SHALL be established from the seat itself — read directly where the seat's
