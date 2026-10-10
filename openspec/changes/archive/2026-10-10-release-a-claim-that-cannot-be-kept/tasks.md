@@ -74,9 +74,9 @@
 
 ## 8. What is left
 
-- [ ] 8.1 [#132](https://github.com/adamstallard/igor/issues/132): the stop receipt writes
+- [x] 8.1 [#132](https://github.com/adamstallard/igor/issues/132): the stop receipt writes
       `spoke: true` whatever the report did. Same requirement, at a site this change does not
-      reach
+      reach. Not done here: it is #132's work, filed and open
 - [x] 8.2 File the third escape found while fixing #129 as its own issue, unless it is closed here.
       It is closed here: `runItem` had no handler, so a tree that could not be provisioned left
       the item held, and the handler in 3.1 now covers it (tested by 7.3)
