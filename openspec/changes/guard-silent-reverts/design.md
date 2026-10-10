@@ -12,24 +12,15 @@ worker resolved to the artifact's own content differs from nothing and appears i
 **The revert is invisible in the same input the resolution is built from**, which is why no
 amount of care in reading that output finds it.
 
-Both of the proven instances are that shape reached two ways: one through a deletion that was
-dropped, one through a status code (`MD`) that matched no branch and threw on read. A third of
-the same class — a rename's second porcelain record parsed as a status line, leaving the old
-path in the tree and publishing the file twice — was fixed inside the original feature commit's
-own bug-hunter iterations. **That mechanism no longer exists**: #118 reads the tree with
-`--no-renames` and deleted the pairing outright, so porcelain emits no record of that shape for
-anything to misparse. The instance happened; the code it happened in is gone, and a reader going
-looking for it will not find it.
-
-**The class has been probed much harder since this was written, and every probe found another
-route.** #118 closed a path the run's own index invented, an intent-to-add path deleted before
-commit, an unmerged path whose own side had deleted it, and the base branch moving underneath the
-publish — four more ways for the artifact not to match what the worker did. It closed them only
-after three route-specific guards had each missed the next case, and only by replacing all three
-with one check asking the requirement's own question rather than a proxy for it.
-
-That is this change's own argument, learned again independently and at a cost. Reaching one shape
-by that many routes is why the shape is guarded rather than the instance.
+**The same shape is reached by many routes, so the shape is guarded, not each route.** The two
+proven instances reach it through a deletion that was dropped, and through a status code (`MD`)
+that matched no branch and threw on read. A third route, a rename's second porcelain record parsed
+as a status line, cannot occur any more: #118 reads the tree with `--no-renames`, so porcelain
+emits no such record. #118 also found four more ways for the artifact not to match what the worker
+did: a path the run's own index invented, an intent-to-add path deleted before commit, an unmerged
+path whose own side had deleted it, and the base branch moving underneath the publish. Three
+route-specific guards each missed the next case, and #118 closed them only by replacing all three
+with one check that asks the requirement's own question.
 
 ## Decisions
 
@@ -40,10 +31,9 @@ path"*, because without one every legitimate revert is a refusal. The decision i
 per-path declaration**, carried as structured data out of the working tree: one entry per path,
 each naming the base state it discards.
 
-This change first recommended **no escape at all** — every revert hands off, a person decides.
-Adam decided against it after reading that argument, and what moved it is recorded below rather
-than quietly dropped, because one of the two reasons given was weaker than it read and the other
-is now a cost being accepted rather than one that was refuted.
+**Decided by Adam: an escape, rather than none.** The alternative, every revert handed off for a
+person to decide, is under *Roads not taken*. It rested on two arguments. One does not hold, and
+the other is a cost this design accepts:
 
 **The authority argument does not carry.** It ran: what changed is read from the tree, never
 from what the worker said it did, so a declaration hands that authority back. But `changes()`
@@ -65,8 +55,7 @@ to attributable. It does not go away.
 
 ### Structured, because prose is what actually failed
 
-Adam's first instinct was the worker naming the reverted paths in prose, and the reason it is a
-field instead survives the flip. A path named in a sentence has to be matched against a path in
+The worker could name the reverted paths in prose instead. A path named in a sentence has to be matched against a path in
 the tree, and the failure mode of that match is a revert published because the worker spelled the
 path slightly differently, or named a directory, or described the file rather than naming it. The
 guard would be weakest exactly where the conflicting content is most confusing to the model —
@@ -77,9 +66,8 @@ answer is the same on every reading.
 
 ### Answering the objection this design inherits
 
-The rejected per-path field was rejected partly on the grounds that *a field whose only purpose
-is to switch off a safety check gets defaulted on*. That objection now applies to the chosen
-design, and three properties answer it. All three are in the requirement rather than left to the
+An escape of this kind invites the objection that *a field whose only purpose is to switch off a
+safety check gets defaulted on*. Three properties answer it. All three are in the requirement rather than left to the
 implementation, because a safety property that lives only in code is the one that gets relaxed.
 
 **It names paths and can never be blanket.** There is no wildcard, no per-resolution flag, and
@@ -224,8 +212,8 @@ smuggled in as a durability improvement on a field that is meant not to last.
 
 ## What the implementation found
 
-Three things the measurement said that this design did not, recorded here rather than only in
-the pull request, because they are what the next person touching this area needs.
+What measuring the implementation showed that this design had not said, recorded here rather than
+only in the pull request, because it is what the next person touching this area needs.
 
 **The declaration is read off disk, not out of the change list.** "A file the worker writes into
 the tree and the loop reads" was written as though the loop's one read of the tree would report
@@ -253,9 +241,9 @@ is not a path in the tree at all. The Igor makes a directory beside the clone, e
 worker that one directory and no other, and removes it with the tree; whatever is in it
 afterwards was put there by this run's worker, because nothing else could put anything there.
 
-Nothing inside the tree is reserved as a consequence. A file the repository keeps at the path the
-channel once used is ordinary content: carried into the artifact, compared like any other path,
-and authorizing nothing.
+Nothing inside the tree is reserved as a consequence. A file the repository keeps at any path in
+the tree is ordinary content: carried into the artifact, compared like any other path, and
+authorizing nothing.
 
 **The guard is bounded by what a published tree can carry, and says so loudly.** `git diff --raw`
 sees every path git tracks; `changes()` reads regular UTF-8 files and `resolve` sends `100644`
@@ -288,10 +276,11 @@ in between. The oracle read `git ls-tree -r` of the merge base, the base and hea
 earlier run of the same harness reported five, all of them the oracle still encoding the single
 content comparison this design replaced.
 
-**The mode-only skip is load-bearing rather than tidy.** A chmod on the base gives
-`before === after === head`, so without it the rewrite clause compares head's blob to the merge
-base's, finds them equal, and refuses every resolution that so much as leaves the file alone. A
-chmod *with* a content change has different blobs and is not swallowed by it.
+**The mode-only skip is required: without it, a base that only changes a file's mode refuses
+every resolution.** A chmod on the base gives `before === after === head`, so without the skip
+the rewrite clause compares head's blob to the merge base's, finds them equal, and refuses every
+resolution that so much as leaves the file alone. A chmod *with* a content change has different
+blobs, so the skip does not swallow it.
 
 ## Why a place, and not a question about a file
 
@@ -337,12 +326,16 @@ those failures has anywhere to live. No name is taken, so no filter can disagree
 commit is consulted, so no attribute state, index stage or pseudo-ref bears on it; the path is
 resolved by the process that reads it and never twice against two different resolvers.
 
-It does not settle *where the bytes came from*. A worker holding a `Bash(…)` grant can copy a
-committed file into the outbox, and no check on the file defeats a copy. Measured: driven
-through `execute()`, that route publishes and reports the revert as declared. What the place
-removes is the reading with **no actor in it** — a repository committing a file that speaks for
-every run that ever clones it, with nobody doing anything — and that was the whole of the hole.
-A worker that copies a declaration in has made a declaration; that is what the channel is for.
+**It does not settle *where the bytes came from*.** The directory settles *when* a write happened:
+during this run, by something in the worker's process tree. A worker holding a `Bash(…)` grant
+can copy a committed file into the outbox, and `readFile` follows a symbolic link, so a worker
+acting on repository content can still launder a committed declaration into it. Measured: driven
+through `execute()`, the copy publishes and reports the revert as declared. That is the injection
+class this design accepts rather than answers. The guards that would close each route, `lstat` for
+the link and a digest for the copy, are the route-by-route shape #118 showed misses the next
+route. What the place removes is the case with **no actor in it**: a repository committing a file
+that speaks for every run that ever clones it, with nobody doing anything. A worker that copies a
+declaration in has made a declaration, which is what the channel is for.
 
 **Measured, because `acceptEdits` does not reach outside the working directory.** With
 `--add-dir <outbox>` the worker's write into that directory succeeds. Without it the identical
@@ -375,13 +368,3 @@ files in it the surviving directory was still on disk when the rejection arrived
 five. The test that would catch it asserts that one `rm` outruns another, which is a flake by
 construction — and a test that fails for reasons unrelated to its subject costs a suite more than
 this gap does. Recorded rather than written.
-
-**What the place actually fixes, which is narrower than "one writer".** The directory settles
-*when* a write happened — during this run, by something in the worker's process tree — not where
-the bytes came from. `readFile` follows a symbolic link, and a `cp` out of the checkout writes an
-ordinary file, so a worker acting on repository content can still launder a committed declaration
-into the outbox. That is the injection class this design accepts rather than answers, and the
-guards that would close each route — `lstat` for the link, a digest for the copy — are the
-route-by-route shape [#118](https://github.com/adamstallard/igor/issues/118) already taught us
-misses the next route. What is genuinely gone is the case with no actor in it at all: a committed
-declaration that spoke for every run that ever cloned the repository, worker or no worker.
