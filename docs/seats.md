@@ -111,7 +111,14 @@ needs it.
 
 It will need rotating anyway. A `setup-token` credential lasts **one year** and the lifetime is
 not configurable, so at some point you will be asked to run the same command again. Nothing
-warns in advance; what happens is that the Igor stops and says it is not logged in.
+warns in advance.
+
+A revoked or expired token looks healthy from here — `claude auth status` answers the same for a
+live one and a dead one — so what happens is that the fleet finds out by trying: an Igor stops
+and says it is not logged in. The first few items fail that way; after that the seat is held out
+of rotation and `igor budget --credentials` says which credential was refused and how many runs
+ago. Handing over a new token releases it, with nothing else to run: the seat is held against the
+old credential, and a new one is a different string.
 
 ## Several people, one fleet
 
