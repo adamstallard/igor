@@ -3,8 +3,8 @@
 ## Since review: an unread seat is probed, not run (2026-09-28)
 
 Added 2026-09-28 on the branch of [#101](https://github.com/adamstallard/igor/pull/101), which
-absorbs `credential-breaker`'s stop into the condition record. This change had no `design.md`, and
-this note changes no requirement, scenario or task. It records how a decision made after review
+absorbs `credential-breaker`'s stop into this change's conditions. This change had no `design.md`,
+and this note changes no requirement, scenario or task. It records how a decision made after review
 bears on the credential condition, and how Adam settled the question it raised, the same day.
 
 ### The decision
@@ -26,7 +26,7 @@ are separate mechanisms, and nothing yet connects them.
 
 **A revoked seat nobody has read would open no condition.** Once #143's gate two lands, a seat with no
 unreset reading is never run. Its seat probe meets the 401, but a seat probe produces no handoff,
-so without the decision below it would mint no `seat:<id>:credential`, the condition record would
+so without the decision below it would mint no `seat:<id>:credential`, the condition would
 never open, and the seat would be out of rotation with no reason given. A seat revoked after a reading is unaffected: it keeps that reading
 until its window resets, its runs meet the 401, and the condition opens as specified here.
 
@@ -50,7 +50,7 @@ the credential changing. What is new is only which mechanism the probe is, and #
 
 **#65's credential breaker is folded into this change instead of merging.** Adam decided this on
 2026-10-11, since nobody runs Igor yet and two mechanisms owning one stop would be reviewed,
-built and then reconciled. This change's condition record is the only owner of the credential
+built and then reconciled. This change's conditions are the only owner of the credential
 stop. #65's code and tests are the starting point for its credential case (task 4.5).
 
 **What this change already covered.** Counting per seat rather than per role (a condition's scope
@@ -66,11 +66,11 @@ one; and no command that clears a condition. The cooldown's ceiling is in the co
 requirement.
 
 **What it leaves behind:** `credentialBreaker`'s own trailing count, `BREAKER_TRIP_AFTER` and its
-cooldown, which the record's count, threshold and cooldown replace. Their values are the starting
-point for task 6.2: a threshold of 3, because one refusal trips on a blip, two can be
-coincidence, and three items is a tolerable cost against holding a working seat out; and a
-cooldown of 15 minutes doubling to 6 hours, because a revoked credential can stay revoked for
-days, where a fixed hour spends twenty-four items a day and doubling spends about six in total.
+cooldown, which the condition's count, rebuilt from the log, and its threshold and cooldown replace.
+Their values are the starting point for task 6.2: a threshold of 3, because one refusal trips on a
+blip, two can be coincidence, and three items is a tolerable cost against holding a working seat
+out; and a cooldown of 15 minutes doubling to 6 hours, because a revoked credential can stay revoked
+for days, where a fixed hour spends twenty-four items a day and doubling spends about six in total.
 
 **Decided (Adam, 2026-10-11): no stored record.** #65 derived its count from
 `executions.ndjson` and rejected a separate store, because a summary beside a log can disagree

@@ -150,14 +150,15 @@ Explicitly out of scope:
   fix.
 - Releases #22 and anything else parked on a cause that was never about the item, without
   anybody commenting on each one.
-- Adds a reason for an Igor to be idle that is neither exhaustion, nor pacing, nor an empty
-  queue, which the cycle record has to distinguish or the fleet reads as broken when it is
-  waiting and as waiting when it is broken.
-- A stopped scope is visible only where somebody looks at the record. A fleet stopped on one
-  cure key is a strong signal and nothing currently surfaces it.
+- Adds a reason for an Igor to be idle that is neither exhaustion, nor pacing, nor an empty queue,
+  which the cycle record has to distinguish or the fleet reads as broken when it is waiting and as
+  waiting when it is broken. - A stopped scope is visible only where somebody looks at the decision
+  record. A fleet stopped on one cure key is a strong signal and nothing currently surfaces it.
 - A conditions listing ([#82](https://github.com/adamstallard/igor/pull/82)) can say why a
-  condition is open and what would clear it from **one** read. Were the credential stop left to
-  a mechanism of its own, the same answer would take a cross-reference against the execution
-  log.
-- `executions.ndjson` stops being load-bearing for a decision. It remains a log of what was run,
-  rather than becoming the input to whether a seat is usable.
+  condition is open and what would clear it from **one** mechanism. Were the credential stop left
+  to a mechanism of its own, the same answer would take two sets of rules read against each
+  other.
+- `executions.ndjson` becomes the input to whether a scope may take work. Conditions are rebuilt
+  from its run rows and condition rows, and #143's seat probes, recorded there, open and clear a
+  seat's credential condition. Every reader of it that counts runs has to skip the other rows
+  (task 2.3).
