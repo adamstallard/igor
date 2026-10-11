@@ -163,6 +163,39 @@ describe('creating the branch an artifact lives on', () => {
     expect(calls[3]?.body).toMatchObject({ ref: 'refs/heads/igor/fix-7', sha: 'commitsha' })
   })
 
+  it('keeps the executable bit on a script it lays over the base tree', async () => {
+    // The tree is the base's with these entries over it, so an entry's mode replaces the mode
+    // the base had. Written `100644`, a script the worker only edited stops being runnable.
+    reset()
+    answer = (endpoint) => {
+      if (endpoint.endsWith('/git/blobs')) return { sha: 'blobsha' }
+      if (endpoint.endsWith('/git/trees')) return { sha: 'treesha' }
+      if (endpoint.endsWith('/git/commits')) return { sha: 'commitsha' }
+      return null
+    }
+
+    await createBranchWithFiles(
+      'o/r',
+      'igor/fix-7',
+      'basesha',
+      [
+        { path: 'scripts/build.sh', content: '#!/bin/sh\necho built\n', executable: true },
+        { path: 'src/a.ts', content: 'fixed\n' },
+      ],
+      [],
+      'Fix the build script',
+    )
+
+    const tree = calls.find((c) => c.args[1] === 'repos/o/r/git/trees')
+    expect(tree?.body).toMatchObject({
+      base_tree: 'basesha',
+      tree: [
+        { path: 'scripts/build.sh', mode: '100755', type: 'blob', sha: 'blobsha' },
+        { path: 'src/a.ts', mode: '100644', type: 'blob', sha: 'blobsha' },
+      ],
+    })
+  })
+
   it('opens an artifact whose every change is a removal', async () => {
     // No blob to write, so the first call is the tree. Refused here, a run that deleted a
     // module publishes nothing and the worker was still paid for.

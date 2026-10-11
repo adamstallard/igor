@@ -44,11 +44,15 @@ export interface FileToCommit {
   path: string
   content: string
   /**
-   * Read only where a commit lands on a branch that already has the path. A tree entry's mode
-   * is what the tree says it is, so writing every blob `100644` takes the executable bit off a
-   * script that had one.
+   * Written as the entry's mode. Both publishing paths lay entries over a tree that may already
+   * hold the path, and the entry's mode replaces the one there: a script sent without this
+   * loses its executable bit.
    */
   executable?: boolean
+}
+
+function modeOf(file: FileToCommit): '100755' | '100644' {
+  return file.executable === true ? '100755' : '100644'
 }
 
 /**
@@ -67,13 +71,13 @@ export async function createBranchWithFiles(
   deletions: readonly string[],
   message: string,
 ): Promise<string> {
-  const blobs: { path: string; sha: string }[] = []
+  const blobs: { path: string; mode: string; sha: string }[] = []
   for (const file of files) {
     const blob = (await gh(
       ['api', `repos/${repo}/git/blobs`, '--method', 'POST', '--input', '-'],
       JSON.stringify({ content: file.content, encoding: 'utf-8' }),
     )) as { sha: string }
-    blobs.push({ path: file.path, sha: blob.sha })
+    blobs.push({ path: file.path, mode: modeOf(file), sha: blob.sha })
   }
 
   const tree = (await gh(
@@ -81,7 +85,7 @@ export async function createBranchWithFiles(
     JSON.stringify({
       base_tree: baseSha,
       tree: [
-        ...blobs.map((b) => ({ path: b.path, mode: '100644', type: 'blob', sha: b.sha })),
+        ...blobs.map((b) => ({ path: b.path, mode: b.mode, type: 'blob', sha: b.sha })),
         // A null sha is how the tree API says "not in this tree".
         ...deletions.map((path) => ({ path, mode: '100644', type: 'blob', sha: null })),
       ],
@@ -158,7 +162,7 @@ export async function commitOnBranch(
       ['api', `repos/${repo}/git/blobs`, '--method', 'POST', '--input', '-'],
       JSON.stringify({ content: file.content, encoding: 'utf-8' }),
     )) as { sha: string }
-    blobs.push({ path: file.path, mode: file.executable === true ? '100755' : '100644', sha: blob.sha })
+    blobs.push({ path: file.path, mode: modeOf(file), sha: blob.sha })
   }
 
   const tree = (await gh(

@@ -319,18 +319,30 @@ export class GitHubTracker implements Tracker {
     )
   }
 
-  async report(candidate: Candidate, message: string): Promise<void> {
-    await gh(
+  async report(candidate: Candidate, message: string): Promise<string | undefined> {
+    // The comment's own url, read off what GitHub answered rather than inferred from the call
+    // not throwing. A surface that answers nothing usable yields `undefined`, which says the
+    // write may have landed and was not confirmed — the one thing a throw cannot say.
+    const created = await gh<{ id?: number; html_url?: string }>(
       ['api', `repos/${candidate.repo}/issues/${candidate.native}/comments`, '--method', 'POST', '--input', '-'],
       JSON.stringify({ body: message }),
     )
+    return created.html_url ?? (created.id === undefined ? undefined : String(created.id))
   }
 
-  async release(candidate: Candidate, as: string): Promise<void> {
-    await gh(
+  async release(candidate: Candidate, as: string): Promise<boolean> {
+    // The DELETE answers with the issue as it now stands, so whether the holder field is clear
+    // is read rather than assumed.
+    //
+    // An answer that does not carry the assignees reads as *not clear*. The two wrong answers
+    // are not symmetric: claiming a release that did not happen leaves an item held with
+    // nobody told, while reporting a release that did happen as stuck costs one person one
+    // unassign on an item already unassigned.
+    const issue = await gh<{ assignees?: { login: string }[] }>(
       ['api', `repos/${candidate.repo}/issues/${candidate.native}/assignees`, '--method', 'DELETE', '--input', '-'],
       JSON.stringify({ assignees: [as] }),
     )
+    return issue.assignees !== undefined && !issue.assignees.some((a) => a.login === as)
   }
 
   linkage(candidate: Candidate): string {

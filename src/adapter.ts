@@ -123,9 +123,20 @@ export interface Tracker {
    */
   commentsSince(candidate: Candidate, since: string): Promise<Comment[]>
 
-  report(candidate: Candidate, message: string): Promise<void>
+  /**
+   * Says something on the item, and answers what the surface recorded — the posted comment's
+   * identity, or `undefined` where the surface will not say.
+   *
+   * The same discipline as `claim`, and for the same reason. A write's only channel back to its
+   * caller must not be whether it threw: a throw cannot separate *this did not happen* from
+   * *this happened and the answer was lost on the way home*, and a caller that guesses between
+   * them reconstructs remote state from a local boolean. `undefined` says the write may have
+   * landed and the surface did not report it, which is the honest third answer.
+   */
+  report(candidate: Candidate, message: string): Promise<string | undefined>
 
-  release(candidate: Candidate, as: string): Promise<void>
+  /** Gives the claim up, and answers whether the holder field is clear afterwards. */
+  release(candidate: Candidate, as: string): Promise<boolean>
 
   /** How an artifact refers back to an item on this tracker — `Closes #12`, a branch name, … */
   linkage(candidate: Candidate): string
@@ -143,7 +154,7 @@ export interface ArtifactRequest {
   baseSha?: string
   title: string
   body: string
-  files: { path: string; content: string }[]
+  files: { path: string; content: string; executable?: boolean }[]
   /**
    * Paths the work removed. Left out, the artifact looks complete to a reviewer and is not —
    * a refactor still carrying the module it removes, a rename with the file in two places.
