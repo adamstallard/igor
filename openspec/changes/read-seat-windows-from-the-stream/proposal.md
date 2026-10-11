@@ -50,8 +50,8 @@ tokens and the seat config.
 - **A seat nothing has read is probed on the server that runs the Igors**, with its own token: a
   minimal call on the cheapest model, read for its `rate_limit_event` and recorded as a `stream`
   reading. The probe is not free, and its cost is recorded. It is rate-limited, never runs on a
-  refused seat, and never runs on a person's machine. It is built only if a seat below every
-  threshold proves to emit the event (task 1.1).
+  refused seat, and never runs on a person's machine. A seat below every threshold emits the
+  event (task 1.1), so the probe can start a fresh seat.
 - **The reserve becomes a line on the reading that moves toward the reset** (Adam, 2026-09-28).
   For each window, Igor starts work on a seat only while its most recent unreset reading is below
   `1 − r × remaining`, where `remaining` is the fraction of the window still to come and `r` is the
@@ -94,8 +94,8 @@ fail-closed direction, and `design.md` records it as the rule's cost.
 
 Explicitly out of scope:
 
-- **Triage's model call.** As invoked it produces no reading (see `design.md`); whether to change
-  that, and where, is open.
+- **Triage's model call.** As invoked it produces no reading (see `design.md`). Switching it to
+  the stream is deferred until this change is built, and #75 is the fallback until then.
 - **Per-model weekly windows.** The event carries none. With `igor observe` removed, nothing reads
   them for a token seat; capacity never used them, and `igor budget` loses a display line. #75
   task 5.1 is where they are taken up.
@@ -127,9 +127,9 @@ Explicitly out of scope:
 - `src/cli.ts`: the `observe` command is removed, with `test/observe.test.ts`.
 - The serve loop gains the seat probe.
 - `capacity.ndjson` grows by up to two rows per worker run, at the execution log's rate rather
-  than a refusal's. It is still read whole; whether it should stay so is open in `design.md`.
+  than a refusal's. It is still read whole, a known limit to revisit before a fleet runs many seats.
 - `igor budget` shows each window's reading against its line, per role where a role reserves more,
   says when a seat is holding back, and can name a figure's route and show the provider's warning
   and overage state.
-- Every caveat in §6.3.3 carries over: whether a seat below every threshold reports numbers is
-  unverified, and the `rejected` shape is contributor-reported, not captured (#57, #15).
+- Every caveat in §6.3.3 carries over: the `rejected` shape is contributor-reported, not captured
+  (#57, #15).

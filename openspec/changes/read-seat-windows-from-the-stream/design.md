@@ -16,12 +16,14 @@ already produces. The event's fields:
 
 What is measured and what is not, carried into every decision below:
 
-- **Measured:** one capture, on one seat, past 75% of its week, with status `allowed_warning`.
+- **Measured:** one capture, on one seat, past 75% of its week, with status `allowed_warning`; and
+  one on a seat below every threshold (task 1.1), which still emits the event, with `utilization`
+  and `resetsAt` per window in `unifiedWindows` and none at the top level.
 - **Known without numbers:** events appear on ordinary runs. `progress-timeout` saw them with
   `status: "allowed"` and `rateLimitType: five_hour`; whether those carried `utilization` and
   `unifiedWindows` was not recorded.
-- **Unverified:** that a seat below every threshold reports the numbers; the `rejected` shape,
-  contributor-reported as `status: "rejected"`, `utilization: 1` and a non-zero exit (#57, #15).
+- **Unverified:** the `rejected` shape, contributor-reported as `status: "rejected"`,
+  `utilization: 1` and a non-zero exit (#57, #15).
 - **Absent:** per-model weekly windows.
 - **Undocumented:** the event itself. Reading it is an optimisation and never a correctness
   dependency.
@@ -153,6 +155,7 @@ The warning says the provider's threshold was crossed. `utilization` already car
 fact in finer grain, and the threshold is the provider's, not the operator's — the operator's is
 `reserve`. So the warning changes no gate decision in this change. It is recorded, and `igor
 budget` shows it, because a seat the provider is warning about is worth an operator's glance.
+Decided by Adam on 2026-10-11.
 
 Two uses were considered:
 
@@ -191,17 +194,16 @@ shape the envelope repeats it from the stream", but every fixture that sets it i
 `test/execute.test.ts` is hand-written; none is a capture. Finding out means spending a triage
 call on a seat, which this change does not do.
 
-Two ways to get one, neither decided here: switch triage to `stream-json --verbose` as the worker
-runs, or read `rate_limit_info` off the JSON envelope if a capture shows it is there. Neither is
-required here.
+There are two ways to get one: switch triage to `stream-json --verbose` as the worker runs, or read
+`rate_limit_info` off the JSON envelope if a capture shows it is there. **The switch is deferred
+until this change is built (Adam, 2026-10-11)**, and #75 is the fallback until then.
 
 **Who owns what (settled 2026-09-27 by Adam's decision on #75).** #75
 (`triage-refusal-calibrates`) is narrowed to a fallback (`08be738` on `triage-refusal`). If
 triage ever reads the stream, a triage call's *reading* belongs to this change, including a
 refusal that reading reports, which is recorded once under *A refusal the stream reports is not
 recorded twice*. #75 records a triage *refusal* only where the call carried no reading. While
-triage runs `--output-format json`, that is every triage refusal. Whether triage should switch is
-still an open question for this change.
+triage runs `--output-format json`, that is every triage refusal.
 
 ### `scheduled-observation` is withdrawn, `igor observe` included
 
@@ -588,13 +590,9 @@ probe of an idle reserved seat that returns a reading below its line opens it fo
 capacity figure and no calibration step. A probe of an idle seat that has a figure refreshes its
 fullness for the gate and the report.
 
-**If a seat below every threshold gets no event.** This is task 1.1's measurement, and it gates the
-probe. If the answer is no, a probe of a fresh seat returns nothing and records nothing. Its cost is
-bounded by the five-hour back-off. Under the line, the consequence is sharper than it was: a fresh
-seat whose line uses a non-zero reserve is not drawn on until a reading exists, and a declared
-`capacity_estimate`, which used to start it, is removed. Such a seat would start only once its owner's own use
-carried it past a provider threshold, or from a period at reserve 0. In that case tasks 6.x are
-not built as written, and what starts a fresh reserved seat goes back to Adam.
+**A seat below every threshold gets an event** (task 1.1, measured 2026-10-11). So a probe of a
+fresh reserved seat returns a reading, and that reading is what starts the seat: no capacity
+figure is needed.
 
 **Probed at a crossing (Adam, 2026-10-10).** When the line rises past a seat's reading, the seat
 reopens on a reading that is only a lower bound. If the owner has used the seat since, the first
@@ -712,21 +710,23 @@ says the role may draw on three seats, not a pool of three.
 - **Coordination across Igors** stays per process, until a reserved seat is actually shared by
   several Igors.
 
+## Settled on 2026-10-11
+
+- **What starts a fresh reserved seat:** the probe. Task 1.1 measured that a seat below every
+  threshold still emits a `rate_limit_event`, so the probe reads it.
+- **`allowed_warning` changes no gate decision.** It is recorded and reported, and the line uses
+  the utilization.
+- **Triage stays on `--output-format json` until this change is built.** Switching it to
+  `stream-json --verbose` is deferred to then, and #75 is the fallback until it switches.
+- **The observation log is read whole.** Up to two rows per worker run grows it at the execution
+  log's rate, which is still small. This is a known limit, to revisit before a fleet runs many
+  seats.
+
 ## Still open
 
-- **What starts a fresh reserved seat, if task 1.1 finds no event below every threshold.** Waiting on
-  the capture from Adam's new seat. Under the line such a seat is not drawn on without a reading, and
-  `capacity_estimate`, which used to start one, is removed. If fresh seats do emit events, the probe
-  starts them and there is nothing to decide.
 - **A guaranteed per-role share.** Not specified. Add it only if a role's reserve proves too weak a
   priority in practice. Choosing which roles a seat serves, and more seats, are the remedies.
 - **The `rejected` shape** (#57). The single-row rule is written against the contributor-reported
   shape and must be checked against the first captured refusal.
-- **`allowed_warning` has no gate behaviour.** The line uses the utilization itself. Please review this
-  rather than let it pass by default.
-- **Whether triage should switch to `stream-json --verbose`.**
-- **The observation log's size.** Up to two rows per worker run grows it at the execution log's rate.
-  Still small at today's volumes. Whether it should stay read whole is worth deciding before a fleet
-  runs many seats.
 - **Per-model weekly windows** have no source for a token seat once `igor observe` is removed. See
   *What is lost* above. #75 task 5.1 is where they are taken up.
