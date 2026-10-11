@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isStop } from '../src/signals.js'
+import { isGoAhead, isStop } from '../src/signals.js'
 import { labelVerdictFrom } from '../src/github-adapter.js'
 
 const BACKEND = 'igor-backend[bot]'
@@ -62,5 +62,52 @@ describe('a stop a go-ahead lifted before the claim', () => {
       verdict([at('stop', '10:05'), { body: 'go ahead', user: { login: FRONTEND }, created_at: '2026-10-11T10:10:00Z' }], true)
         .status,
     ).toBe('stopped')
+  })
+})
+
+describe('the Igors a go-ahead names', () => {
+  it('lifts a stop for every Igor where it names none', () => {
+    expect(isGoAhead('go ahead', FRONTEND)).toBe(true)
+    expect(isGoAhead('carry on, both of you', BACKEND)).toBe(true)
+  })
+
+  it('lifts a stop only for the Igors it names', () => {
+    expect(isGoAhead('go ahead @igor-backend', BACKEND)).toBe(true)
+    expect(isGoAhead('go ahead @igor-backend', FRONTEND)).toBe(false)
+    expect(isGoAhead('carry on @igor-backend, the build is fixed.', FRONTEND)).toBe(false)
+    expect(isGoAhead('resume @igor-backend and @igor-frontend', FRONTEND)).toBe(true)
+    expect(isGoAhead('continue @igor-backend, @igor-docs, and @igor-frontend', FRONTEND)).toBe(true)
+  })
+
+  it('reads its names as a stop does', () => {
+    for (const names of ['@igor-backend.', '**@igor-backend**', '(@igor-backend)', '@igor-backend & @igor-docs']) {
+      expect(isStop(`stop ${names}`, FRONTEND)).toBe(false)
+      expect(isGoAhead(`go ahead ${names}`, FRONTEND)).toBe(false)
+      expect(isStop(`stop ${names}`, BACKEND)).toBe(true)
+      expect(isGoAhead(`go ahead ${names}`, BACKEND)).toBe(true)
+    }
+  })
+
+  it('still lifts it for an Igor the same comment goes on to address', () => {
+    expect(isGoAhead('go ahead @igor-backend.\n\n@igor-frontend carry on too', FRONTEND)).toBe(true)
+  })
+
+  it('treats a go-ahead on a line of its own, then a paragraph to a person, as bare', () => {
+    expect(isGoAhead('go ahead\n\n@alice can you review what it makes?', FRONTEND)).toBe(true)
+  })
+})
+
+describe('a stop a go-ahead to another Igor answered', () => {
+  const self = { login: FRONTEND, accountId: 1, holder: 'igor:frontend' }
+  const at = (body: string, time: string) => ({ body, user: { login: 'alice' }, created_at: `2026-10-11T${time}:00Z` })
+
+  it('still stands this Igor\'s claim down', () => {
+    const comments = [at('stop', '10:05'), at('go ahead @igor-backend', '10:10')]
+    expect(labelVerdictFrom(self, ['igor:frontend'], [], comments, '2026-10-11T10:00:00Z', true).status).toBe('stopped')
+  })
+
+  it('is lifted by a go-ahead that names this Igor', () => {
+    const comments = [at('stop', '10:05'), at('go ahead @igor-frontend', '10:10')]
+    expect(labelVerdictFrom(self, ['igor:frontend'], [], comments, '2026-10-11T10:00:00Z', true).status).toBe('held')
   })
 })

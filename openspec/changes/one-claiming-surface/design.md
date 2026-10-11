@@ -427,10 +427,25 @@ go-ahead's time, and the run's checkpoints and a catch-up's give-back scan from 
 the claim saw lifted does not end the run that the claim began. A hand-over claim's stop is never
 lifted, by the decision above.
 
-**Open for Adam: whether a go-ahead can name an Igor.** A go-ahead that opens a comment counts
-for every Igor, whoever it names, so after a bare stop, "go ahead @igor-backend" lifts the stop
-for the frontend Igor too. Narrowing it the way a stop is narrowed is a decision about the
-go-ahead rule, which this change does not make.
+**Decided by Adam, 2026-10-11: a go-ahead that names Igors lifts a stop only for those.** A bare
+go-ahead still lifts a stop for every Igor on the item, and "go ahead @igor-backend" lifts it only
+for the backend Igor, mirroring the stop. Both read their names with one parser, so a stop and a
+go-ahead written the same way are meant for the same Igors. Every reader of a go-ahead follows:
+the cycle's cooldown gate, a claim's re-read, and through it a catch-up's give-back.
+
+**Open for Adam: where one parser over-reads, it over-lifts a go-ahead.** The parser reads names
+only straight after the verb and lets a list run on into the next clause. For a stop that errs
+toward stopping, the safe side. For a go-ahead it errs toward lifting: "go ahead and pick it back
+up, @igor-backend" names nobody straight after the phrase, so it reads as bare and lifts the
+frontend Igor's stop too, and "go ahead @igor-backend, @igor-frontend keep waiting" lifts it for
+the frontend Igor. Making the go-ahead err the other way means the two verbs no longer read every
+comment alike, which the one-parser decision rules out.
+
+**Open for Adam: a stop that names only a person.** "Stop — @alice is taking over" names an
+account, so it is not a bare stop, and it names no Igor, so it stops none: a stop said in plain
+words is missed because it mentions who takes over. "carry on, @alice approved it" likewise lifts
+a stop for no Igor. Reading names that match no Igor as no names would stop every Igor here, and
+is a decision about the rule Adam set, not a fix to how it is read.
 
 **A stop is the comment as created, not as last edited.** GitHub's `since` on an issue's comments
 filters on when each was last updated, so a stop said before a hand-over and edited later comes

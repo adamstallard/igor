@@ -155,6 +155,10 @@ A stop cancels a hand-over. Only a new hand-over restores it: on GitHub, the lab
 added again. A go-ahead, or the cooldown running out, lifts the stop for work found by the
 Igor's own search, and never restores a hand-over the stop cancelled.
 
+A go-ahead is read for whom it is meant as a stop is. A bare go-ahead lifts the stop for every
+Igor on the item. A go-ahead that names Igors, as "go ahead @igor-backend", SHALL lift it only for
+the Igors it names, and SHALL NOT lift it for an Igor it does not name.
+
 Where a stop is said on an item a person handed to the Igor while no run of the Igor is active
 on it, the Igor SHALL, on the next cycle that sees the stop, remove itself from the holder field
 and post a stop receipt, so that an item showing the Igor in its holder field is always one
@@ -184,6 +188,19 @@ never another Igor's.
 
 - **WHEN** someone signals on the surface that work may resume
 - **THEN** the item becomes eligible immediately
+
+#### Scenario: A bare go-ahead lifts the stop for every Igor
+
+- **WHEN** somebody says stop on an item two Igors work, and somebody then says "go ahead"
+  without naming anyone
+- **THEN** the stop is lifted for both Igors
+
+#### Scenario: A go-ahead that names an Igor lifts the stop only for that one
+
+- **WHEN** somebody says stop on an item two Igors work, and somebody then says
+  "go ahead @igor-backend"
+- **THEN** the stop is lifted for the backend Igor
+- **AND** the frontend Igor stays stopped until the cooldown runs out or a go-ahead meant for it
 
 #### Scenario: Handing the item back to the Igor is a go-ahead
 

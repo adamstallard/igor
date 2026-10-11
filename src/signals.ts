@@ -8,10 +8,19 @@
 
 /** Deliberate enough not to fire on prose, loose enough that nobody has to learn a syntax. */
 // Not `stop-gap`, which opens a sentence about something else entirely. The word boundary
-// alone matches before a hyphen, and this rule now gates unclaimed items rather than only
-// firing inside a claim the Igor already holds.
-const STOP = /^stop\b(?!-)/i
-const GO_AHEAD = /^(go ahead|go on|resume|carry on|continue|proceed|unblocked|all yours)\b/i
+// alone matches before a hyphen, and this rule gates unclaimed items as well as firing inside a
+// claim the Igor already holds. The word may sit in emphasis, `**Stop**`, `**Stop.**` or
+// `_stop_`, and the match runs past the closing markers so the names after it are read from the
+// right place. Strikethrough is a word taken back, never a stop. A code span counts only alone on
+// its line or before mentions, since "`stop()` is called twice" names a function rather than
+// asking for anything.
+const verb = (words: string): RegExp =>
+  new RegExp(
+    `^(?:[*_]{0,3}(?:${words})(?:\\b(?!-)(?![*_]*\\w)|(?=_+(?:\\W|$)))(?:[.!]?[*_]+)?|\`(?:${words})\`(?=[^\\S\\n]*(?:@|\\n|$)))`,
+    'i',
+  )
+const STOP = verb('stop')
+const GO_AHEAD = verb('go ahead|go on|resume|carry on|continue|proceed|unblocked|all yours')
 
 function addressed(text: string, identity: string, verb: RegExp): boolean {
   // A GitHub App's bot is `<slug>[bot]` to REST and `<slug>` to GraphQL and to a person
@@ -23,13 +32,18 @@ function addressed(text: string, identity: string, verb: RegExp): boolean {
     .replace(/\[bot\]$/i, '')
     .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   if (named === '') return false
-  // Further mentions may sit between the name and the verb, joined by spaces, commas, `and`, `&`,
-  // `/` or `+`, so `@a @b stop`, `@a and @b stop` and `@a/@b stop` are addressed to each. A name
-  // straight after `/` counts only as a mention of its own (`@a/@b`), never as the end of a path
-  // or a team (`@org/b`, `github.com/b`).
-  const others = `(?:[\\s,:&+/—-]+(?:and\\s+)?@[\\w.-]+(?:\\[bot\\])?)*`
+  // Further mentions may sit between the name and the verb, joined by spaces, commas, `and`, `or`,
+  // `and/or`, `&`, `/` or `+`, so `@a @b stop`, `@a and @b stop`, `@a or @b stop` and `@a/@b stop`
+  // are addressed to each. Any mention may sit in markup or brackets (`` `@a` ``, `**@a**`,
+  // `(@a)`), and an en dash separates as an em dash does (`@a – stop`). A line break joins two
+  // mentions only after a separator (`@a,` then `@b stop` on the next line), so a paragraph that
+  // opens "@b stop" does not reach back to a name above it. A name straight after `/`
+  // counts only as a mention of its own (`@a/@b`), never as the end of a path or a team
+  // (`@org/b`, `github.com/b`).
+  const closers = `[)\\]*\`~"']*`
+  const others = `(?:(?:[^\\S\\n]*[,:&+/–—-][\\s,:&+/–—-]*|[^\\S\\n]+)(?:(?:and|or)(?:/(?:and|or))?\\s+)?[(\\[*\`~"']*@[\\w.-]+(?:\\[bot\\])?${closers})*`
   const mention = new RegExp(
-    `(?:(?<![\\w@./-])@?|(?<=/)@)${named}(?:\\[bot\\])?(?!\\w)${others}[\\s,:—-]+`,
+    `(?:(?<![\\w@./-])@?|(?<=/)@)${named}(?:\\[bot\\])?(?!\\w)${closers}${others}[\\s,:–—-]+`,
     'gi',
   )
   // Every mention of the name is tried, so one in passing earlier in the comment does not hide a
@@ -60,31 +74,42 @@ export function isStop(body: string, identity: string): boolean {
   if (STOP.test(text)) {
     // A bare stop stops every Igor on the item; one that names accounts right after the word
     // stops only those, so `stop @igor-backend` leaves the frontend Igor working.
-    const named = namedAfterStop(text)
-    if (named.length === 0 || named.some((name) => sameAccountName(name, identity))) return true
+    if (opensFor(text, STOP, identity)) return true
   }
   // A comment that opens by stopping another Igor can still address this one further on.
   return addressed(text, identity, STOP)
 }
 
 /**
- * The accounts a stop names right after the word: `stop @a`, `stop @a, @b`, `stop @a and @b`,
- * `stop @a, @b, and @c`, `stop @a & @b`, `stop @a/@b`, `stop @a + @b`. A comma may stand alone
- * or come before a joiner (`and`, `&`, `/`, `+`). Empty for a bare stop, and for one whose first
- * word after `stop` is not a mention.
+ * Whether a comment that opens with `verb` is meant for this identity: a bare opening is meant
+ * for every Igor on the item, and one that names accounts straight after the verb only for
+ * those. A stop and a go-ahead read their names here, so the two cannot be read differently.
+ */
+function opensFor(text: string, verb: RegExp, identity: string): boolean {
+  const named = namedAfter(text, verb)
+  return named.length === 0 || named.some((name) => sameAccountName(name, identity))
+}
+
+/**
+ * The accounts named right after the opening `verb`: `stop @a`, `stop @a, @b`, `stop @a and @b`,
+ * `stop @a, @b, and @c`, `stop @a or @b`, `stop @a and/or @b`, `stop @a & @b`, `stop @a/@b`,
+ * `stop @a + @b`, and the same after a go-ahead phrase. A comma may stand alone or come before a
+ * joiner (`and`, `or`, `and/or`, `&`, `/`, `+`). Empty for a bare opening, and for one whose
+ * first word after the verb is not a mention.
  *
- * A mention may sit in markup or brackets (`` `@a` ``, `**@a**`, `(@a)`) and take a possessive.
+ * A mention may sit in markup or brackets (`` `@a` ``, `**@a**`, `(@a)`) and take a possessive
+ * with either apostrophe, anywhere in the list: `stop @a's and @b’s work` names both.
  * A login ends on a letter or digit, so the period ending a sentence, `stop @a.`, is not part of
  * the name; `_` and `.` inside one are, as Enterprise logins carry them. The list ends at the
  * first thing that is neither a mention nor a separator between two.
  *
  * A line break ends the list unless a separator comes before it: `stop` on a line of its own,
- * followed by a paragraph addressing a person, is a bare stop.
+ * followed by a paragraph addressing a person, is a bare stop, and the same holds for a go-ahead.
  */
-function namedAfterStop(text: string): string[] {
-  const mention = /[(\[*`~"']*@([A-Za-z0-9](?:[\w.-]*[A-Za-z0-9])?(?:\[bot\])?)[)\]*`~"']*(?:'s)?/iy
-  const separator = /[^\S\n]*(?:,\s*)?(?:(?:&|\+|\/|\band\b)\s*)?/iy
-  const rest = text.replace(/^stop\b/i, '')
+function namedAfter(text: string, verb: RegExp): string[] {
+  const mention = /[(\[*`~"']*@([A-Za-z0-9](?:[\w.-]*[A-Za-z0-9])?(?:\[bot\])?)(?:['’]s)?[)\]*`~"']*(?:['’]s)?/iy
+  const separator = /[^\S\n]*(?:,\s*)?(?:(?:&|\+|\/|\band\b|\bor\b)(?:\/(?:and|or)\b)?\s*)?/iy
+  const rest = text.slice(verb.exec(text)?.[0].length ?? 0)
   const names: string[] = []
   let at = /^[^\S\n]*[:,—–-]*[^\S\n]*/.exec(rest)![0].length
   for (;;) {
@@ -109,10 +134,14 @@ function sameAccountName(name: string, identity: string): boolean {
  * work may resume and the cooldown is over; nothing else about the protocol changes.
  *
  * Deliberately narrow: "we should go ahead with the redesign" is a remark about the work, not
- * permission to resume, so only an opening phrase or one addressed to this Igor counts. Unlike a
- * stop, an opening go-ahead counts whoever it names after the phrase.
+ * permission to resume, so only an opening phrase or one addressed to this Igor counts. Its names
+ * are read as a stop's are (decided by Adam, 2026-10-11): a bare go-ahead lifts a stop for every
+ * Igor on the item, and "go ahead @igor-backend" lifts it only for the Igors it names, so a
+ * person who lets one Igor resume does not resume another.
  */
 export function isGoAhead(body: string, identity: string): boolean {
   const text = body.trim()
-  return GO_AHEAD.test(text) || addressed(text, identity, GO_AHEAD)
+  if (GO_AHEAD.test(text) && opensFor(text, GO_AHEAD, identity)) return true
+  // A comment that opens by letting another Igor resume can still address this one further on.
+  return addressed(text, identity, GO_AHEAD)
 }

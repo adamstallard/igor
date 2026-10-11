@@ -491,6 +491,12 @@ describe('what may follow a stop', () => {
     expect(e.reason).toContain('30 minutes left')
   })
 
+  it('stays out where the go-ahead names only another Igor', async () => {
+    const e = await eligibleAfterStop({ ...base, since: said('go ahead @igor-other') })
+    expect(e.eligible).toBe(false)
+    expect((await eligibleAfterStop({ ...base, since: said('go ahead @igor-bot') })).eligible).toBe(true)
+  })
+
   it('becomes eligible once the cooldown elapses and nobody took it', async () => {
     expect((await eligibleAfterStop({ ...base, cooldownMinutes: 20 })).eligible).toBe(true)
   })
