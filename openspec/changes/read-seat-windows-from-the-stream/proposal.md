@@ -67,8 +67,7 @@ tokens and the seat config.
   figure in one item at a time to get it one, is removed: the line needs no figure. The probe holds
   off a seat at or past its line.
 - **No figure in dollars gates anything.** A role's `budget_share` is measured against the
-  reading on every path, and `capacity_estimate` is removed; a config that still carries it is
-  refused with a message saying to delete the line.
+  reading on every path, and `capacity_estimate` is removed.
 - **A role may declare a `reserve`**, raised by inheritance and never lowered, and applied to every
   seat it draws on. The larger of the seat's and
   the role's governs, so a role can hold back more than a lender and never less. It gives roles on a

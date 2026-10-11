@@ -581,11 +581,6 @@ whether Igor may start work on a seat is now decided by the seat's reading again
 reserve is untouchable*), and a figure in dollars is not an input to that, so the key has nothing
 left to do. A capacity is only ever derived from observations, and reported.
 
-`capacity_estimate` SHALL be refused wherever a seat declares it, because configuration refuses a
-key nobody reads. So that an operator upgrading an existing config is not left guessing, the
-refusal SHALL name the key, say that it was removed with the dollar bound (#143), and say to
-delete the line.
-
 `/usage` reports window percentages only to a credential the provider can resolve a
 subscription for. The credential a seat holds is a `setup-token` one, which carries no
 subscription identity, so `/usage` under it reports a per-invocation cost summary instead. The
@@ -601,13 +596,6 @@ a seat with no ceiling at all.
 - **THEN** the seat's usage is read directly where its credential yields a reading
 - **AND** otherwise how full it is comes from recorded observations of that seat
 - **AND** no human supplies how full the window is, in either case
-
-#### Scenario: A declared capacity is refused, saying how to fix it
-
-- **WHEN** a seat in an existing config declares `capacity_estimate`
-- **THEN** the config is refused at load
-- **AND** the refusal names `capacity_estimate`, says it was removed with the dollar bound (#143),
-  and says to delete the line
 
 #### Scenario: A seat is read through its own credential
 
@@ -746,8 +734,8 @@ capacity gets a reserved seat started* is false, and openspec will not archive a
 that drops a scenario.
 
 **Migration**: Replaced by *A seat's fullness is read from the seat, not supplied by a person*,
-added by this change. It keeps every other rule and scenario, and removes `capacity_estimate`:
-an existing config carrying it is refused with a message saying to delete the line.
+added by this change. It keeps every other rule and scenario, and removes `capacity_estimate`,
+which is no longer a seat key.
 
 ### Requirement: Recorded spend attributes a seat between its roles
 

@@ -286,7 +286,7 @@
 - [ ] 9.4 Leave `Observation.source`'s `'usage'` member in place, and test that a `usage` row is
       still read while nothing writes one
 - [ ] 9.5 Verify that `README.md`, `docs/deployment.md` and `docs/seats.md` still name no
-      `igor observe` command and no `capacity_estimate` other than its refusal
+      `igor observe` command and no `capacity_estimate`
 
 ## 10. Docs
 
@@ -362,18 +362,10 @@ the stream reading, the probe, the line, a role's reserve, and no dollar bound, 
       (`:409`), `capacityFor`'s declared argument and fallback (`:276`), and `boundsForSeats`'
       `capacityEstimate` input and rolling-window branch for a declared figure (`:504`, `:528`,
       and the rolling-window comment around `:560-568`). `src/keys.ts:5-6`'s example
-- [ ] 14.2 Take `capacity_estimate` out of `SEAT_KEYS` (`src/budget.ts:1340`), and refuse it with
-      its own message rather than the generic unknown-key one. **May be reworded**, provided it
-      names the key, says it was removed with the dollar bound (#143), and says to delete the
-      line:
-
-      ```
-      seat "adam".capacity_estimate was removed with the dollar bound (#143): a seat is now admitted on its reading, so delete this line
-      ```
-
-- [ ] 14.3 Tests: the refusal names the key, #143 and the fix. Remove or rewrite the tests that
+- [ ] 14.2 Take `capacity_estimate` out of `SEAT_KEYS` (`src/budget.ts:1340`). Add no message of
+      its own: the generic unknown-key refusal is all an old config gets (Adam, 2026-10-11)
+- [ ] 14.3 Tests: remove or rewrite the tests that
       declare it: `test/budget.test.ts:651`, `:663`, `:711`, `:733`, `:782-785`, `:826`, the parsing
       tests at `:878-937`, and `:1546-1558`; `test/capacity.test.ts` 'a declared capacity'
       (`:448-490`) and `:569-571`
-- [ ] 14.4 Verify that `README.md` describes `capacity_estimate` only as refused at load, in the
-      words the refusal in 14.2 actually uses
+- [ ] 14.4 Verify that `README.md` doesn't mention `capacity_estimate`

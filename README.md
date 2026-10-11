@@ -448,8 +448,7 @@ finds the Igor takes too much, or who uses the seat late in the window, raises t
 already running finishes, so an Igor can pass the line by about one run before the next reading
 stops it. A seat with a reserve that nothing has read is not drawn on until the server reads it,
 and `igor budget` says that is why it is idle. No figure in dollars decides anything, a role's
-`budget_share` included, and a seat declaring `capacity_estimate` is refused at load with a message
-saying to delete the line.
+`budget_share` included.
 
 **On a dedicated seat a reserve is pacing.** It holds capacity back for work that arrives later in
 the window, and at `1` it spends the window evenly. Dedicated seats default to `0`, which fills the

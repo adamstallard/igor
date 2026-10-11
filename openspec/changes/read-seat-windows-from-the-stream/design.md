@@ -448,12 +448,11 @@ shows it with its source. No gate reads it. The in-force *Capacity is recorded s
 error lowers the estimate that permitted it* carry `MODIFIED` deltas saying so.
 
 **`capacity_estimate` is removed in gate two (Adam, 2026-09-28).** It existed to start a reserved
-seat under the dollar bound, and the line does not need it. Config checking is strict, so an existing
-config that still carries the key is refused at load. That is accepted, and the refusal is made to
-say what to do: it names the key, says it was removed with the dollar bound (#143), and says to
-delete the line. The docs say the same to anyone upgrading. There is one case it used to cover that
-nothing now covers, a fresh reserved seat that emits no event below every threshold, and that waits
-on task 1.1.
+seat under the dollar bound, and the line does not need it. It leaves `SEAT_KEYS`, and nothing
+handles a config that still carries it beyond the strict check that refuses any unknown key: nobody
+runs Igor yet, so there is no config to migrate (Adam, 2026-10-11). The one case it used to cover,
+a fresh reserved seat below every threshold, needs nothing in its place: task 1.1 measured that
+such a seat still emits a `rate_limit_event`.
 
 **`budget_share` is measured against the reading (Adam, 2026-09-28).** It is a ceiling on one
 role's share of a seat, and is not the seat reserve. On the live path it is already measured against
@@ -698,8 +697,8 @@ block modifying a requirement that #148's change has removed fails archive.
 
 - **`budget_share` is measured against the reading**, on every path. No figure in dollars is a gate
   input anywhere (task 7.10).
-- **`capacity_estimate` is removed in gate two.** A config that still carries it is refused, and the
-  refusal names the key, cites #143 and says to delete the line (task 14.1).
+- **`capacity_estimate` is removed in gate two**, with no handling of an old config beyond the
+  strict check on unknown keys (task 14.1).
 - **A role's reserve is raised by inheritance, never lowered**, and a child reserve below its
   parent's is refused, naming both (task 12.1).
 - **The overshoot is accepted:** about one run per process, up to two if a run's last event comes
