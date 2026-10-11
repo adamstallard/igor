@@ -272,13 +272,13 @@ here, it broke us in March" — which nobody searches for because nobody knows t
 entire justification for unbidden firing, and it is why better search cannot replace the
 channel.
 
-**Open: may the worker query surfaces mid-task?** Reading the repository is obviously
-available. Searching Linear or Slack for the discussion behind an ambiguous item is not
-specified. Recommended: allow read-only surface search, capped in call count, with everything
-returned marked untrusted exactly as ingested content already is (§5.4). A human would read
-the original discussion before touching something ambiguous, and forbidding it buys no safety
-— the content is equally untrusted whether it arrives by firing or by fetching. The cap
-guards against rabbit-holing, not against attack.
+**Decided: the worker may search surfaces mid-task, read-only and capped.** Not built.
+Reading the repository is already available. Searching Linear or Slack for the discussion behind
+an ambiguous item is allowed too: read-only, capped in call count, with everything returned marked
+untrusted exactly as ingested content already is (§5.4). A human would read the original
+discussion before touching something ambiguous, and forbidding it buys no safety — the content is
+equally untrusted whether it arrives by firing or by fetching. The cap guards against
+rabbit-holing, not against attack.
 
 ### 3.3 Firing — **built** (injection; relevance filtering still ahead)
 
@@ -1976,3 +1976,17 @@ Agreed in principle, not scoped, roughly in dependency order:
 11. Additional adapters: Discord (#160), then Linear (#161).
 12. Binaries in an artifact, refused or carried rather than corrupted (§6.7.3) — needs a role
     that can touch one.
+
+## 9. Testing
+
+### 9.1 `src/cli.ts` is wiring, and its wiring is untested — **decided**
+
+Nothing in the test suite drives `src/cli.ts`, and that is accepted (#95). The module
+top-level-awaits `program.parseAsync()`, so importing it runs the CLI and no test can load it. A
+subprocess harness would catch wiring and nothing else, at the cost of slow tests and a kind of
+fixture the repository has none of.
+
+**The rule that keeps the untested part small:** each action in `cli.ts` is a few lines that
+parse, call and print. Anything with a branch in it is extracted into a module and tested there,
+as `src/staleness.ts` and `src/flags.ts` are. What no test catches is an argument passed in the
+wrong place, so a reviewer reads each action's few lines for exactly that.

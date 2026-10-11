@@ -359,9 +359,9 @@ rather than a prediction of what the implementation will achieve.
 ## Open Questions
 
 - Which embedding model for clustering, and does it run locally or through an API? Affects
-  whether repository content leaves the environment.
-- Should lore eventually live in its own repository rather than a path inside the operating
-  team's repo? Deferred until there is a second consumer.
+  whether repository content leaves the environment. Deferred until mining resumes.
+- **Decided (Adam, 2026-10-11): lore lives in its own repository, `igor-lore`,** not a path
+  inside the operating team's repository.
 
 ## Sources, ranked by evidence rather than by volume
 
