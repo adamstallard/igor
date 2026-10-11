@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { Candidate, Comment, HolderSetting, Tracker } from '../src/adapter.js'
 import type { Role } from '../src/role.js'
 import { findDirected } from '../src/loop.js'
-import { inFlightNotice, waitingNotice } from '../src/claiming.js'
+import { claimMessage, inFlightNotice, waitingNotice } from '../src/claiming.js'
 
 const role = { name: 'frontend', sources: [{ tracker: 'github', repo: 'o/r', query: 'is:issue' }] } as unknown as Role
 const holding = { holder: 'igor:frontend', distinctFromAssignee: true }
@@ -39,8 +39,8 @@ describe('items a person handed to this Igor', () => {
     expect(r.directed).toEqual([])
   })
 
-  it('answers a hand-over once: anything it said since is an answer', async () => {
-    const said = [{ author: ME, at: '2026-10-10T10:01:00Z', body: '**frontend** picked this up' }]
+  it('answers a hand-over once: its claim since is the answer', async () => {
+    const said = [{ author: ME, at: '2026-10-10T10:01:00Z', body: claimMessage(role, ME) }]
     const r = await findDirected(tracker([item(1)], () => person, () => said), role, ME, holding, { failures: [] })
     expect(r.directed).toEqual([])
   })
@@ -107,5 +107,13 @@ describe('an item handed over while work is in flight', () => {
     const r = await findDirected(tracker([own], () => person), role, ME, holding, { failures: [] })
     expect(r.directed).toEqual([])
     expect(r.waiting.map((w) => w.reason)).toEqual(['work already in flight: #6'])
+  })
+})
+
+describe('the claim a catch-up makes', () => {
+  it('does not answer a hand-over, which still directs the Igor once its pull request closes', async () => {
+    const said = [{ author: ME, at: '2026-10-10T10:01:00Z', body: claimMessage(role, ME, true) }]
+    const r = await findDirected(tracker([item(1)], () => person, () => said), role, ME, holding, { failures: [] })
+    expect(r.directed.map((d) => d.candidate.native)).toEqual(['1'])
   })
 })

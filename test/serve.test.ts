@@ -703,3 +703,46 @@ describe('an item handed over whose own artifact the cycle is catching up', () =
     expect(reported.some((m) => m.includes('is already open for it'))).toBe(false)
   })
 })
+
+describe('a handed-over item whose own pull request the cycle catches up', () => {
+  it('is caught up when a person handed it over after a stop, without waiting the cooldown', async () => {
+    const now = Date.now()
+    const iso = (m: number) => new Date(now - m * 60000).toISOString()
+    const item = { ...rotting(7), holders: ['igor:triage'], labels: ['igor:triage'] } as Candidate
+    const { d, caughtUp } = deps([item])
+    const reported: string[] = []
+    const comments = [{ author: 'adam', at: iso(10), body: 'stop' }]
+    Object.assign(d.tracker, {
+      directed: async () => [item],
+      holderSetBy: async () => ({ self: false, by: 'adam', at: iso(5) }),
+      commentsSince: async (_c: Candidate, since: string) => comments.filter((c) => Date.parse(c.at) >= Date.parse(since)),
+      report: async (_c: Candidate, m: string) => { reported.push(m) },
+    })
+    const { events, onEvent } = collect()
+    await serve(d, role(), 'igor-bot', { ...base, maxCycles: 1, onEvent })
+    const p = events.find((e) => e.kind === 'planned') as any
+    expect(p.report.toCatchUp).toHaveLength(1)
+    expect(caughtUp()).toHaveLength(1)
+  })
+
+  it('keeps the person\'s label, so the in-flight notice\'s promise holds once the pull request starts conflicting', async () => {
+    let cycle = 0
+    const said: { author: string; at: string; body: string }[] = []
+    const cur = () => ({ ...rotting(7, { mergeable: cycle <= 1 ? 'unknown' : 'conflicting' }), holders: ['igor:triage'], labels: ['igor:triage'] }) as Candidate
+    const { d, caughtUp } = deps([], { caughtUp: [{ outcome: 'conflict' }] })
+    const reported: string[] = []
+    const released: string[] = []
+    Object.assign(d.tracker, {
+      search: async () => { cycle += 1; return [cur()] },
+      directed: async () => [cur()],
+      holderSetBy: async () => ({ self: false, by: 'adam', at: '2026-09-13T00:00:00Z' }),
+      commentsSince: async () => said,
+      report: async (_c: Candidate, m: string) => { reported.push(`cycle${cycle}: ${m.slice(0, 120)}`); said.push({ author: 'igor-bot', at: new Date().toISOString(), body: m }) },
+      release: async () => { released.push(`cycle${cycle}`); return true },
+    })
+    await serve(d, role(), 'igor-bot', { ...base, maxCycles: 2 })
+    expect(caughtUp()).toHaveLength(1)
+    expect(reported.some((r) => r.includes('is already open for it'))).toBe(true)
+    expect(released).toEqual([])
+  })
+})

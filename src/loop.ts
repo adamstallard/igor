@@ -1,7 +1,7 @@
 import type { Artifact, Candidate, ClaimVerdict, CodeHost, Comment, Tracker } from './adapter.js'
 import type { Gate, SeatVerdict } from './budget.js'
 import {
-  checkpoint, eligibleAfterStop, inFlightNotice, standDown, stillHeld, stopReceipt, STOPPED_MARKER, takeClaim,
+  checkpoint, CLAIM_MARKER, eligibleAfterStop, inFlightNotice, standDown, stillHeld, stopReceipt, STOPPED_MARKER, takeClaim,
   waitingMarker, waitingNotice,
   type ClaimOptions, type ClaimResult,
 } from './claiming.js'
@@ -143,6 +143,7 @@ export async function runItem(
   step('claiming')
   const claim = await takeClaim(tracker, candidate, role, identity, {
     ...(options.claim ?? {}),
+    ...(options.catchUp === undefined ? {} : { catchUp: true }),
     onSettle: () => step('settling'),
   })
   if (claim.outcome !== 'held') {
@@ -586,7 +587,11 @@ export async function catchUpItem(
     }
   }
 
-  const run = await runItem(deps, candidate, role, identity, { ...options, catchUp: artifact })
+  // A person's label on the item is their hand-over, which a catch-up does not answer, so the
+  // run gives back its claim through a tracker that leaves that label where it is, on every exit.
+  const run = await runItem(
+    { ...deps, tracker: keepingLabel(deps.tracker) }, candidate, role, identity, { ...options, catchUp: artifact },
+  )
   // The claim comment said the Igor picked the item up; nothing else would say what it then
   // did. An ordinary run ends in a pull request that announces itself, and a catch-up ends on
   // a branch that already exists — so without this the item goes quiet mid-sentence.
@@ -610,6 +615,32 @@ export async function catchUpItem(
       .catch(() => undefined)
   }
   return run
+}
+
+/**
+ * The tracker as a catch-up sees it: giving back the claim removes the label only where this Igor
+ * put it there, and otherwise leaves it and answers that the claim is given back, which it is.
+ *
+ * Who set the label is read when the claim is given back, never from the cycle's candidate. A
+ * person can add or remove the label between the cycle reading the item and the release, and the
+ * claim itself puts back a label a person removed, which makes it this Igor's to remove.
+ *
+ * Where who set it cannot be read, the cycle's candidate decides. A candidate without the label
+ * means the claim put it there, so it is released as any claim is, and a release that does not
+ * take is reported. A candidate with the label could be showing a person's hand-over, so the label
+ * is kept: removing it is the mistake nothing on the item would explain, and saying it is still
+ * there would tell that person to take back what they handed over.
+ */
+function keepingLabel(tracker: Tracker): Tracker {
+  return Object.assign(Object.create(tracker) as Tracker, {
+    release: async (candidate: Candidate, as: string): Promise<boolean> => {
+      const person = await tracker.holderSetBy(candidate).then(
+        (set) => set?.self === false,
+        () => candidate.holders.includes(tracker.holder),
+      )
+      return person ? true : tracker.release(candidate, as)
+    },
+  })
 }
 
 /**
@@ -892,6 +923,17 @@ export async function planCycle(
   const asked: Pick<CycleReport, 'skipped' | 'skippedStopped' | 'skippedDeferred' | 'skippedUnreadable'> = {
     skipped: [], skippedStopped: 0, skippedDeferred: 0, skippedUnreadable: 0,
   }
+  // A catch-up on an item a person handed over since its stop is a go-ahead, so the stop gate is
+  // told when each was handed over. Read only for catch-ups carrying this Igor's label, which
+  // are few; one that cannot be read is gated as before.
+  const handedOver = new Map<string, string>()
+  if (holding !== undefined) {
+    for (const { candidate } of report.toCatchUp) {
+      if (!candidate.holders.includes(holding.holder)) continue
+      const set = await deps.tracker.holderSetBy(candidate).catch(() => undefined)
+      if (set !== undefined && !set.self) handedOver.set(candidate.id, set.at)
+    }
+  }
   const catchUps = await dropDeferred(
     comments,
     await dropStopped(
@@ -903,6 +945,7 @@ export async function planCycle(
       now,
       Infinity,
       holding,
+      handedOver,
     ),
     quiet,
     options.identity ?? '',
@@ -1215,6 +1258,11 @@ export async function dropStopped(
   wanted = Infinity,
   /** How the tracker's holder field shows this Igor, for who else holds an item. */
   holding?: Holding,
+  /**
+   * When a person last put this Igor in an item's holder field, by item id. A hand-over newer
+   * than the stop is a go-ahead, as a go-ahead comment is.
+   */
+  handedOver: ReadonlyMap<string, string> = new Map(),
 ): Promise<Candidate[]> {
   const window = stopWindow(now, cooldownMinutes)
   const kept: Candidate[] = []
@@ -1237,7 +1285,8 @@ export async function dropStopped(
       return kept
     }
     const stop = latestStop(spoken, identity)
-    if (stop === undefined) {
+    const handOver = handedOver.get(candidate.id)
+    if (stop === undefined || (handOver !== undefined && instant(handOver) > instant(stop.at))) {
       kept.push(candidate)
       continue
     }
@@ -1329,7 +1378,9 @@ export async function findDirected(
           }
           continue
         }
-        const answered = spoken.some((c) => c.author === identity && !c.body.includes(WAITING))
+        // Only a claim answers a hand-over: not a waiting notice, and not the claim a catch-up
+        // of the Igor's own pull request makes.
+        const answered = spoken.some((c) => c.author === identity && c.body.includes(CLAIM_MARKER))
         const stopped = spoken.some((c) => isStop(c.body, identity))
         if (answered || stopped) continue
         // Work already in flight, even this Igor's own: the hand-over waits for it to close,
@@ -1352,9 +1403,6 @@ export async function findDirected(
   }
   return { directed, waiting }
 }
-
-/** What every waiting notice carries, whatever holders it names. */
-const WAITING = '<!-- igor:waiting'
 
 const why = (error: unknown): string => (error instanceof Error ? error.message : String(error))
 

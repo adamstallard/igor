@@ -116,10 +116,11 @@ None.
 
 - `role-config`: one modified requirement (`extends` names at most one base) and one added (an
   Igor holds exactly one role).
-- `work-claiming`: three modified requirements (how a claim is expressed and resolved; settle
-  and stand-down; what follows a stop) and six added (one tracker per organization, the App's
-  label claim on GitHub, items held by others, a person directing an Igor, a person
-  reassigning an issue by removing the holding Igor's label first, issues created from chat).
+- `work-claiming`: four modified requirements (how a claim is expressed and resolved; settle
+  and stand-down; what follows a stop; giving back a claim that cannot be kept) and seven added
+  (one tracker per organization, the App's label claim on GitHub, items held by others, a person
+  directing an Igor, an item handed over while work is in flight, a person reassigning an issue
+  by removing the holding Igor's label first, issues created from chat).
 - `surface-adapter`: two modified requirements (the holder-field declaration; the GitHub
   adapter claims by label).
 - `task-execution`: one added requirement (a person approves every Igor pull request).

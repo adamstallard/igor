@@ -83,7 +83,21 @@ describe('the GitHub label claim', () => {
       { id: 2, event: 'labeled', actor: { login: 'adam', id: 5, type: 'User' }, label: { name: 'igor:reviewer' }, created_at: 'b' },
     ])
     expect(await tracker().holderSetBy(item)).toEqual({ self: false, by: 'adam', at: 'b' })
-    expect(await tracker().holderSetBy({ ...item, holders: [] })).toBeUndefined()
+  })
+
+  it('says nobody set its label once a removal follows the latest addition, whatever the candidate read', async () => {
+    gh.answers.set('GET repos/o/r/issues/7/events?per_page=100', () => [
+      { id: 2, event: 'labeled', actor: { login: 'adam', id: 5, type: 'User' }, label: { name: 'igor:reviewer' }, created_at: 'b' },
+      { id: 3, event: 'unlabeled', actor: { login: 'adam', id: 5, type: 'User' }, label: { name: 'igor:reviewer' }, created_at: 'c' },
+    ])
+    expect(await tracker().holderSetBy(item)).toBeUndefined()
+  })
+
+  it('reads its label from the events, not from a candidate read before a person added it', async () => {
+    gh.answers.set('GET repos/o/r/issues/7/events?per_page=100', () => [
+      { id: 2, event: 'labeled', actor: { login: 'adam', id: 5, type: 'User' }, label: { name: 'igor:reviewer' }, created_at: 'b' },
+    ])
+    expect(await tracker().holderSetBy({ ...item, holders: [] })).toEqual({ self: false, by: 'adam', at: 'b' })
   })
 
   it('refuses to claim without the role and account it claims as', async () => {

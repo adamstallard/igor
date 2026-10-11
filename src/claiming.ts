@@ -43,17 +43,31 @@ export interface ClaimResult {
 }
 
 /**
+ * The hidden line a claim message carries where the claim answers whatever brought the item to
+ * the Igor. A person's hand-over counts as answered once a comment carrying it follows the
+ * hand-over (`findDirected`).
+ */
+export const CLAIM_MARKER = '<!-- igor:claim -->'
+
+/**
+ * The hidden line a claim message carries instead where the Igor is bringing its own pull request
+ * up to date. That is not an answer to a person's hand-over, which still stands afterwards.
+ */
+export const CATCH_UP_MARKER = '<!-- igor:catch-up -->'
+
+/**
  * The claim message, posted on every claim, not only where a tracker has no holder field.
  *
  * It does three jobs, so it is never skipped: it names the specific Igor where the surface
  * shows only one shared identity, it tells people how to stop the Igor, and on a surface with
  * no holder field it is the only sign of the claim.
  */
-export function claimMessage(role: Role, identity: string): string {
+export function claimMessage(role: Role, identity: string, catchUp = false): string {
   const who = identity === role.name ? `**${role.name}**` : `**${role.name}** (\`${identity}\`)`
   return (
     `${who} picked this up and is working on it.\n\n` +
-    `Reply **stop** to hand it back — that works for anyone, immediately, no permission needed.`
+    `Reply **stop** to hand it back — that works for anyone, immediately, no permission needed.\n\n` +
+    (catchUp ? CATCH_UP_MARKER : CLAIM_MARKER)
   )
 }
 
@@ -203,6 +217,8 @@ export interface ClaimOptions {
    * item that names a holder, and the person has already chosen.
    */
   directed?: boolean
+  /** The claim is the Igor bringing its own pull request up to date; see `CATCH_UP_MARKER`. */
+  catchUp?: boolean
   onSettle?: () => void
 }
 
@@ -255,7 +271,7 @@ export async function takeClaim(
       // and a surface that accepted the write can still throw. Set afterwards, it would answer
       // a different question: whether this process saw the write succeed.
       announced = true
-      await tracker.report(candidate, claimMessage(role, identity))
+      await tracker.report(candidate, claimMessage(role, identity, options.catchUp === true))
     }
 
     // A directed item is checked at once rather than after the settle interval, which still

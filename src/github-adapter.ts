@@ -456,11 +456,19 @@ export class GitHubTracker implements Tracker {
     return labelVerdictFrom(self, labels, events, comments ?? [])
   }
 
+  /**
+   * Read from the item's events, never from `candidate.holders`: a cycle's candidate can be
+   * minutes old, and a catch-up that trusted it would keep a label the Igor had just put back
+   * itself, or remove one a person had just added. The label is on the item where its latest
+   * `labeled` event is newer than its latest `unlabeled` one.
+   */
   async holderSetBy(candidate: Candidate): Promise<HolderSetting | undefined> {
     const self = this.claimSelf()
-    if (!candidate.holders.includes(self.holder)) return undefined
-    const added = latestLabelEvent(await this.events(candidate), 'labeled', self.holder)
-    if (added?.actor == null) return undefined
+    const events = await this.events(candidate)
+    const added = latestLabelEvent(events, 'labeled', self.holder)
+    const removed = latestLabelEvent(events, 'unlabeled', self.holder)
+    if (added === undefined || (removed !== undefined && removed.id > added.id)) return undefined
+    if (added.actor == null) return undefined
     return { self: isSelf(added.actor, self), by: added.actor.login, at: added.created_at }
   }
 

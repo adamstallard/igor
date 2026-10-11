@@ -144,6 +144,7 @@ export interface Tracker {
 
   /**
    * Who last put this Igor in the item's holder field, or `undefined` where it is not there.
+   * Read from the tracker when asked, never from `candidate.holders`, which can be minutes old.
    * Tells a person handing the item over from the Igor's own claim, which matters because an
    * Igor that set the field and failed before its claim message also finds itself there.
    */

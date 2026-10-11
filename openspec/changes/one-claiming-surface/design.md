@@ -364,6 +364,30 @@ A handed-over item outside the role's query whose own pull request no longer mer
 its notice, until a person closes or fixes that pull request: catch-up scans only what the role's
 query returns.
 
+**Decided by Adam, 2026-10-11: a catch-up keeps a person's label.** Bringing the Igor's own pull
+request up to date on a handed-over item is not a claim of the hand-over, so that run gives back
+its claim without removing the `igor:<role>` label the person added, on every exit, and the
+hand-over still directs the Igor once the pull request closes. The give-back requirement gains a
+sentence saying so. Two mechanisms carry it:
+
+- The catch-up gives its claim back through a tracker that first reads, at that moment, who last
+  added the label: a person's label stays, and the Igor's own is removed. Reading when the claim
+  is given back, rather than from what the cycle saw minutes earlier, handles a person removing
+  or adding the label mid-cycle. Where who set it cannot be read, what the cycle saw decides: a
+  label it did not see was put there by the catch-up's own claim and is released as any claim
+  is; a label it saw is kept, because removing a person's hand-over is the mistake nothing on
+  the item would explain. **Measured 2026-10-11**
+  (`igor-throwaway-tests` #13): the App adding a label a person had already added recorded no
+  `labeled` event, so the person stays its setter through the catch-up's own claim.
+- A claim message carries a hidden line saying what it answers: `<!-- igor:claim -->`, or
+  `<!-- igor:catch-up -->` for a catch-up. Only the first answers a hand-over, so the catch-up's
+  comments leave it standing. Before this, any comment by the Igor after the hand-over counted as
+  its answer.
+
+**A hand-over newer than a stop lets the catch-up run.** The stop gate for catch-ups reads when
+each was handed over, for items carrying the Igor's label, and treats a hand-over after the stop
+as the go-ahead *What follows a stop* says it is.
+
 **Measured 2026-10-11** with the App `igor-generalist` on `igor-throwaway-tests` (issue #12):
 the startup check passed, with Workflows write reported missing. Adding `igor:generalist` read
 back as held; `holderSetBy` read the label's `labeled` event as the App's own by its id
