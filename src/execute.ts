@@ -312,8 +312,8 @@ export interface WorkerOutput {
  *
  * `total_cost_usd` is the same figures summed at list prices — `costBasis: "list"` in the
  * envelope says so. That sum is fine for comparing runs and useless for a per-model weekly
- * limit, which is a separate cap the aggregate cannot see. Keeping both costs nothing: the
- * envelope carries them and they were being discarded.
+ * limit, which is a separate cap the aggregate cannot see. Keeping both costs nothing, because
+ * the envelope carries them.
  */
 export interface ModelSpend {
   /** The canonical name rather than the dated id, so a month of records groups. */
@@ -958,8 +958,8 @@ export function claudeWorker(command = 'claude'): WorkerRunner {
           '--model',
           model,
           // Streamed rather than buffered, so the caller hears from the run while it runs. The
-          // terminal `result` event carries what the buffered blob used to, and the CLI refuses
-          // stream-json under -p unless --verbose comes with it.
+          // terminal `result` event carries everything the buffered `json` output does, and the
+          // CLI refuses stream-json under -p unless --verbose comes with it.
           '--output-format',
           'stream-json',
           '--verbose',
@@ -1291,8 +1291,8 @@ export interface Undone {
  * else — content equal to it, presence against a deletion, absence against an addition.
  *
  * One comparison of outcomes, with no branch per shape. A dropped deletion, a status code that
- * was misread, a rename whose old path came back: each is the same published tree, and a guard
- * written per route is a guard that misses the next one.
+ * was misread and a rename whose old path came back all produce the same published tree, so one
+ * check on that tree covers every route to it, including routes nobody has found yet.
  */
 export function undone(
   baseChanges: readonly BaseChange[],
@@ -1312,6 +1312,9 @@ export function undone(
     // a mode change, which nothing here reads. Treated as a revert it would refuse every
     // resolution that so much as leaves the file alone.
     if (change.before !== undefined && change.before === change.after) continue
+    // What publishes at this path comes from one of two places. `content` is the resolution's
+    // own text, where it writes the path. `blob` is head's copy, which publishes only where the
+    // resolution neither writes nor deletes the path. Both undefined means nothing publishes.
     const content = named ? written.get(change.path) : undefined
     const blob = content !== undefined || (named && removed.has(change.path)) ? undefined : change.head
     // The three clauses of the requirement, and they are not one comparison: a deletion is
@@ -1987,7 +1990,7 @@ export async function complete(
     }
     case 'assign':
     case 'close':
-      // Neither ships in this change; refusing loudly beats silently doing the default.
+      // Neither is implemented, and refusing loudly beats silently doing the default.
       return { action: role.completion, why: `completion "${role.completion}" is not implemented yet` }
   }
 }
