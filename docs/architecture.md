@@ -1650,15 +1650,21 @@ worktrees cannot check out the same branch — which does not bite, since each t
 branch. Moot for the first Igor, which runs one task at a time; recorded so nobody builds
 clone-per-task and has to unpick it.
 
-**Cleanup is a startup sweep, not an exit hook** — **built**. Release runs from a `finally`, which SIGKILL,
-an OOM kill and a power loss all skip, so a crashed run strands a full checkout and nothing ever
-reclaims it. `wire` removes `igor-tree-*` directories older than the worker's absolute ceiling
-plus an hour before the first cycle — the checkout and the `-outbox` beside it alike, because a
-run strands two directories and the one carrying its declaration is the one worth reclaiming. Age is the only safe signal: several processes of one role
-is the point of §6.7.1, so a tree that looks idle may belong to a live sibling, and the
-threshold sits above the longest a tree can be in use — the ceiling, and the clone and push
-either side of the worker — rather than close to it. A surviving tree is debris, never
-a checkpoint — its worker's context died with its process, so nothing resumes from it.
+**Cleanup is a startup sweep, not an exit hook** — **built**. A tree is released in a `finally`,
+and a `finally` doesn't run on SIGKILL, an OOM kill or a power loss, so a crashed run would leave
+its checkout behind for good. Instead, `wire` reclaims abandoned trees before the first cycle: it
+removes every `igor-tree-*` directory older than the worker's absolute ceiling plus an hour, and
+the `-outbox` directory beside each one. A crash strands both, and the outbox is the one holding
+the run's declarations.
+
+**Age is the only safe signal.** Several processes of one role can run at once (§6.7.1), so a
+tree that looks idle may belong to a live sibling. The threshold therefore sits above the longest
+a tree can be in use: the worker's ceiling, plus the clone before it and the push after it.
+Deleting a live sibling's tree corrupts its run, while leaving debris an hour longer only costs
+disk.
+
+A tree that survives a crash is debris, never a checkpoint: its worker's context died with its
+process, so nothing can resume from it.
 
 The **seam** this arrives behind is specified now, in `core-igor-loop`'s `task-execution`:
 execution obtains a disposable working tree through one provisioning function and assumes
