@@ -54,10 +54,6 @@ claiming account's write access.
       it in `design.md`. Requires #156's implementation; there is no machine-user path
 - [ ] 3.8 Every credentialled check degrades individually: one unreadable endpoint skips one
       check, not the run
-- [ ] 3.9 No superseded reconciliation workflow is on the default branch: an earlier Igor
-      workflow such as `promote-on-merge.yml`, matched by its job name and the command it runs,
-      not by its bytes, so a local edit to the current workflow is not read as superseded (Adam,
-      2026-10-11)
 
 ## 4. The report and the exit status
 

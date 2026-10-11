@@ -21,11 +21,6 @@ what neither the configuration nor an entry can show on its own. It SHALL inspec
   able to approve, requiring approvals blocks promotion outright.
 - **The merge-triggered reconciliation workflow is present on the default branch.** Without it
   promotion depends on someone having Igor installed and remembering to run it.
-- **No superseded reconciliation workflow is left behind.** A workflow on the default branch
-  that an earlier Igor wrote to promote or reconcile lore on merge, such as
-  `promote-on-merge.yml`, SHALL be a finding. A workflow SHALL be recognised by its job name and
-  the command it runs, never by comparing its bytes with a shipped template: by bytes, any local
-  edit to the current workflow would read as superseded.
 - **The workflow's own push is not blocked.** Where the default branch is protected and the
   workflow is present, that the actor the workflow pushes as may bypass the protection.
 - **The state branch.** That it is reachable, and that the credential holds the write permission
@@ -66,18 +61,6 @@ report SHALL name the command that covers it.
 - **THEN** it is reported as a finding
 - **AND** the finding states that promotion then depends on someone running reconciliation by
   hand
-
-#### Scenario: A superseded workflow is left in the repository
-
-- **WHEN** the default branch carries an earlier Igor workflow that promotes or reconciles lore on
-  merge, besides or instead of the current one
-- **THEN** it is reported as a finding naming the file
-
-#### Scenario: A locally edited current workflow is not superseded
-
-- **WHEN** the current reconciliation workflow's contents were edited after Igor wrote it, and its
-  job name and command are unchanged
-- **THEN** it is not reported as superseded
 
 #### Scenario: The workflow's actor cannot bypass the protection
 

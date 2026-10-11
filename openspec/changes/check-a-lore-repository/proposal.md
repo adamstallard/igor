@@ -51,9 +51,6 @@ inspects the destination and its repository:
   worker has been paid. Stated as a condition rather than a reference to a pull request, the
   way [#112](https://github.com/adamstallard/igor/pull/112) states the same dependency.
 - The four repository settings above.
-- No superseded reconciliation workflow, such as an old `promote-on-merge.yml`, is left on the
-  default branch. A workflow is matched by its job name and the command it runs rather than by
-  its bytes, so a local edit to the current workflow is not read as superseded.
 - The state branch is reachable, and the credential holds the write permission pushing to it
   needs. Reachability is read; **writability is inferred from the permission, never tested by
   writing** — see `design.md`.
