@@ -172,9 +172,9 @@ export async function serve(
 
       // A person handed these to this Igor while another Igor holds them. One notice each, which
       // the cycle stops finding once it is posted; nothing is claimed.
-      for (const { candidate, holders } of report.waiting) {
+      for (const { candidate, holders, notice } of report.waiting) {
         if (abandoned || winding) break
-        await deps.tracker.report(candidate, waitingNotice(role, holders ?? [])).catch(() => undefined)
+        await deps.tracker.report(candidate, notice ?? waitingNotice(role, holders ?? [])).catch(() => undefined)
       }
 
       for (const { candidate, directed } of report.toClaim) {

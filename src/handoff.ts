@@ -294,7 +294,10 @@ export function composeHandoff(role: Role, candidate: Candidate, handoff: Handof
           (directed ? `. ${relabel}` : ' — so it comes back to this rather than waiting for a reply')
         : reason.next === 'published'
           ? directed
-            ? `What it published stands. ${relabel}`
+            ? // Handing the item over again while the pull request is open changes nothing: a
+              // hand-over waits for work in flight to close.
+              `What it published stands. Once that pull request closes, add the \`igor:${role.name}\` ` +
+              `label again to have it try again`
             : 'What it published stands, and is caught up there if it stops merging'
           : directed
             ? relabel

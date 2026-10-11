@@ -377,7 +377,7 @@ function renderCycle(report: CycleReport, verbose: boolean): string {
     for (const c of directed) out.push(`  ${c.candidate.native.padStart(6)}  ${c.reason}`)
   }
   if (report.waiting.length > 0) {
-    out.push('', `handed to this Igor but held by another (${report.waiting.length}), owed a notice:`)
+    out.push('', `handed to this Igor but held or in flight (${report.waiting.length}), owed a notice:`)
     for (const c of report.waiting) out.push(`  ${c.candidate.native.padStart(6)}  ${c.reason}`)
   }
   out.push(...untriagedLines(report))
@@ -539,7 +539,7 @@ program
 
     // Owed whether or not anything is claimed, and usually the cycle's only finding.
     for (const c of report.waiting) {
-      await tracker.report(c.candidate, waitingNotice(role, c.holders ?? [])).catch(() => undefined)
+      await tracker.report(c.candidate, c.notice ?? waitingNotice(role, c.holders ?? [])).catch(() => undefined)
     }
     if (report.toClaim.length === 0) {
       process.stdout.write('\nnothing to claim\n')

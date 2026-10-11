@@ -527,9 +527,12 @@ describe('a directed handoff says how to hand the item over again', () => {
     expect(dear).not.toMatch(/will not retry/i)
   })
 
-  it('after saying what it published stands, without promising a catch-up', () => {
+  it('after what it published, only once that pull request closes, since a hand-over waits for it', () => {
     const text = compose({ kind: 'failure', detail: 'release failed', next: 'published' }, true)
-    expect(text).toContain(`What it published stands. ${RELABEL}`)
+    expect(text).toContain(
+      'What it published stands. Once that pull request closes, add the `igor:triage` label again to have it try again.',
+    )
+    expect(text).not.toContain(RELABEL)
     expect(text).not.toMatch(/caught up/)
   })
 

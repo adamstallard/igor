@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { Candidate, Comment, HolderSetting, Tracker } from '../src/adapter.js'
 import type { Role } from '../src/role.js'
 import { findDirected } from '../src/loop.js'
-import { waitingNotice } from '../src/claiming.js'
+import { inFlightNotice, waitingNotice } from '../src/claiming.js'
 
 const role = { name: 'frontend', sources: [{ tracker: 'github', repo: 'o/r', query: 'is:issue' }] } as unknown as Role
 const holding = { holder: 'igor:frontend', distinctFromAssignee: true }
@@ -73,5 +73,39 @@ describe('items a person handed to this Igor', () => {
     const r = await findDirected(t, role, ME, holding, report)
     expect(r.directed).toEqual([])
     expect(report.failures[0]).toMatch(/could not look for items handed to igor:frontend: 502/)
+  })
+})
+
+describe('an item handed over while work is in flight', () => {
+  const pr = { kind: 'pull-request', ref: '#5', url: 'https://github.com/o/r/pull/5', draft: true, author: 'igor-backend[bot]', mergeable: 'clean', branch: 'b', base: 'main' }
+  const inFlight = item(1, { inFlight: pr } as Partial<Candidate>)
+
+  it('is not claimed, and is owed one notice naming the pull request', async () => {
+    const r = await findDirected(tracker([inFlight], () => person), role, ME, holding, { failures: [] })
+    expect(r.directed).toEqual([])
+    expect(r.waiting.map((w) => [w.candidate.native, w.reason, w.notice])).toEqual([
+      ['1', 'work already in flight: #5', inFlightNotice(role, '#5', 'https://github.com/o/r/pull/5')],
+    ])
+    expect(r.waiting[0]?.notice).toContain('It takes this up once #5 closes.')
+  })
+
+  it('is told once while that pull request stays open', async () => {
+    const said = [{ author: ME, at: '2026-10-10T10:01:00Z', body: inFlightNotice(role, '#5', 'https://github.com/o/r/pull/5') }]
+    const r = await findDirected(tracker([inFlight], () => person, () => said), role, ME, holding, { failures: [] })
+    expect(r.waiting).toEqual([])
+    expect(r.directed).toEqual([])
+  })
+
+  it('is claimed once the pull request closes, the notice not counting as an answer', async () => {
+    const said = [{ author: ME, at: '2026-10-10T10:01:00Z', body: inFlightNotice(role, '#5', 'https://github.com/o/r/pull/5') }]
+    const r = await findDirected(tracker([item(1)], () => person, () => said), role, ME, holding, { failures: [] })
+    expect(r.directed.map((d) => d.candidate.native)).toEqual(['1'])
+  })
+
+  it("waits for this Igor's own pull request too", async () => {
+    const own = item(2, { inFlight: { ...pr, ref: '#6', author: ME, mergeable: 'conflicting' } } as Partial<Candidate>)
+    const r = await findDirected(tracker([own], () => person), role, ME, holding, { failures: [] })
+    expect(r.directed).toEqual([])
+    expect(r.waiting.map((w) => w.reason)).toEqual(['work already in flight: #6'])
   })
 })

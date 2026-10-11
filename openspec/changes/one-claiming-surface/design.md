@@ -345,14 +345,24 @@ never reads it, so an old receipt cannot stop a new claim.
 and the release every failure owes removes it. So a handoff or withdrawal on a handed-over item
 promises no return: it ends "To have it try again, add the `igor:<role>` label again".
 
-**Open, for Adam: a handed-over item with work already in flight.** The rule that a person's
-label starts the Igor (*A person can direct an Igor through the holder field*) and the
-universal rule that an item with an open pull request is skipped disagree, and neither text
-says which wins. The cycle skips such an item and says nothing on it, so a person who follows a
-waiting notice and removes the holding Igor's label sees nothing happen while that Igor's draft
-is open. For the same reason, a handoff on a handed-over item that published and then failed
-says to add the label again, which does nothing while that pull request can merge. What the
-Igor should do, and say, is a decision for the spec.
+**Decided by Adam, 2026-10-11: a handed-over item with work already in flight waits for it.**
+The rule that a person's label starts the Igor and the universal rule that an item with an open
+pull request is skipped disagreed, and no text said which wins. The gate-two build skipped such
+an item and said nothing, so a person who followed a waiting notice and removed the holding
+Igor's label saw nothing happen while that Igor's draft was open. Now the Igor does not claim
+it, and posts one notice naming the pull request and saying it takes the item up once that
+closes (*An item handed to an Igor waits for work already in flight*). The notice carries the
+same hidden marker as a waiting notice, so it is posted once while that pull request is open
+and does not count as answering the hand-over: when the pull request closes, the label still
+directs the Igor. A handed-over run that published and then failed says, in its handoff, that
+what it published stands and that handing the item over again once that pull request closes has
+it try again, rather than to re-add the label at once, which would change nothing. Where the
+pull request is the Igor's own and no longer merges, the cycle catches it up as for any item, and
+posts no in-flight notice: on a conflict the catch-up claims and releases, which would make the
+notice's promise false the moment it was posted.
+A handed-over item outside the role's query whose own pull request no longer merges waits, with
+its notice, until a person closes or fixes that pull request: catch-up scans only what the role's
+query returns.
 
 **Measured 2026-10-11** with the App `igor-generalist` on `igor-throwaway-tests` (issue #12):
 the startup check passed, with Workflows write reported missing. Adding `igor:generalist` read

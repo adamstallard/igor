@@ -141,6 +141,20 @@ export function waitingMarker(holders: readonly string[]): string {
 }
 
 /**
+ * Said, once, where a person handed an item to this Igor while work is already in flight on it,
+ * such as an open pull request. Claiming would duplicate work in review, so the Igor leaves the
+ * item until that work closes, when the label still on it directs the Igor. The marker keeps
+ * this from being posted twice and from counting as an answer to the hand-over.
+ */
+export function inFlightNotice(role: Role, ref: string, url: string): string {
+  return (
+    `**${role.name}** was asked to take this, but [${ref}](${url}) is already open for it. ` +
+    `It takes this up once ${ref} closes.\n\n` +
+    waitingMarker([ref])
+  )
+}
+
+/**
  * Said, once, where a person handed an item to this Igor while another Igor holds it. This Igor
  * does not claim it: a second label never hands an item over, or adding one would be a stop.
  */

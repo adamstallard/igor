@@ -1,7 +1,8 @@
 import type { Artifact, Candidate, ClaimVerdict, CodeHost, Comment, Tracker } from './adapter.js'
 import type { Gate, SeatVerdict } from './budget.js'
 import {
-  checkpoint, eligibleAfterStop, standDown, stillHeld, stopReceipt, STOPPED_MARKER, takeClaim, waitingMarker,
+  checkpoint, eligibleAfterStop, inFlightNotice, standDown, stillHeld, stopReceipt, STOPPED_MARKER, takeClaim,
+  waitingMarker, waitingNotice,
   type ClaimOptions, type ClaimResult,
 } from './claiming.js'
 import {
@@ -646,6 +647,8 @@ export interface CycleCandidate {
   directed?: true
   /** For a waiting notice: the holders that keep this Igor off the item. */
   holders?: string[]
+  /** For an item waiting on this Igor's word: what to post, once. */
+  notice?: string
 }
 
 export interface CycleReport {
@@ -688,8 +691,9 @@ export interface CycleReport {
   verdicts: { candidate: Candidate; outcome: 'proceed' | 'skip'; reason: string }[]
   toClaim: CycleCandidate[]
   /**
-   * Items a person handed to this Igor while another Igor holds them, owed one notice each.
-   * Not claimed: removing the holding Igor's label is how a person hands an item over.
+   * Items a person handed to this Igor while another Igor holds them, or while work is in flight
+   * on them, owed one notice each (`notice`). Not claimed: removing the holding Igor's label, or
+   * the work closing, is what hands the item over.
    */
   waiting: CycleCandidate[]
   /**
@@ -841,8 +845,10 @@ export async function planCycle(
   if (holding !== undefined && options.identity !== undefined) {
     const { directed, waiting } = await findDirected(deps.tracker, role, options.identity, holding, report)
     const taken = new Set(directed.map((d) => d.candidate.id))
-    report.toClaim.push(...directed.filter((d) => !catchingUp.has(d.candidate.id)))
-    report.waiting.push(...waiting)
+    // An item being caught up is this Igor's own work in flight: it is neither claimed nor owed a notice.
+    const notCaughtUp = (c: CycleCandidate): boolean => !catchingUp.has(c.candidate.id)
+    report.toClaim.push(...directed.filter(notCaughtUp))
+    report.waiting.push(...waiting.filter(notCaughtUp))
     for (let i = survivors.length - 1; i >= 0; i -= 1) {
       if (taken.has(survivors[i]!.id)) survivors.splice(i, 1)
     }
@@ -1317,13 +1323,27 @@ export async function findDirected(
         if (others.length > 0) {
           const marker = waitingMarker(others)
           if (!spoken.some((c) => c.author === identity && c.body.includes(marker))) {
-            waiting.push({ candidate, reason: `held by ${others.join(', ')}`, holders: others })
+            waiting.push({
+              candidate, reason: `held by ${others.join(', ')}`, holders: others, notice: waitingNotice(role, others),
+            })
           }
           continue
         }
         const answered = spoken.some((c) => c.author === identity && !c.body.includes(WAITING))
         const stopped = spoken.some((c) => isStop(c.body, identity))
-        if (answered || stopped || universalSkip(candidate, identity, holding) !== undefined) continue
+        if (answered || stopped) continue
+        // Work already in flight, even this Igor's own: the hand-over waits for it to close,
+        // and says so once. The marker keeps the notice from answering the hand-over.
+        const work = candidate.inFlight
+        if (work !== undefined) {
+          if (!spoken.some((c) => c.author === identity && c.body.includes(waitingMarker([work.ref])))) {
+            waiting.push({
+              candidate, reason: `work already in flight: ${work.ref}`, notice: inFlightNotice(role, work.ref, work.url),
+            })
+          }
+          continue
+        }
+        if (universalSkip(candidate, identity, holding) !== undefined) continue
         directed.push({ candidate, reason: `${setting.by} handed it to ${holding.holder}`, directed: true })
       } catch (error) {
         report.failures.push(`${candidate.id}: could not read who handed it to ${holding.holder}: ${why(error)}`)

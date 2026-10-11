@@ -300,6 +300,44 @@ by adding its `igor:<role>` label.
   after the Igor has started
 - **THEN** the Igor halts as it would for any stopped claim
 
+### Requirement: An item handed to an Igor waits for work already in flight
+
+Where a person hands an item to an Igor through its holder field, and the item already has work
+in flight, such as an open pull request, the Igor SHALL NOT claim it. On the next cycle that
+finds the item, it SHALL post one comment naming the work in flight and saying it takes the item
+up once that work closes, and SHALL NOT post it again while that work is open. Once the work
+closes, the hand-over directs the Igor as in *A person can direct an Igor through the holder
+field*. Claiming would duplicate work already in review, which no hand-over overrides, and
+saying nothing would leave the person who asked with no sign the Igor saw the request.
+
+Where the work in flight is the Igor's own pull request and it no longer merges, bringing it up
+to date is the Igor's own work on its own artifact, not a claim of the hand-over, and the item
+gets no such comment while that runs.
+
+Where a handed-over item's run published work and then could not finish, its handoff SHALL say
+that what it published stands and that, once that work closes, handing the item over again has
+the Igor try again. Handing it over while the work is still open changes nothing, so the
+handoff SHALL NOT suggest it.
+
+#### Scenario: Handed over while a pull request is open
+
+- **WHEN** a person adds `igor:frontend` to a GitHub issue that an open pull request references
+- **THEN** the `frontend` Igor does not claim it
+- **AND** it posts one comment naming that pull request and saying it takes the issue up once
+  the pull request closes
+
+#### Scenario: The pull request closes
+
+- **WHEN** the pull request closes and the `igor:frontend` label is still on the issue
+- **THEN** on its next cycle the `frontend` Igor posts the claim comment and starts work
+  without waiting the settle interval
+
+#### Scenario: A handed-over run published, then failed
+
+- **WHEN** an Igor working a handed-over item opens a pull request and then cannot finish
+- **THEN** its handoff says what it published stands, and that handing the item over again once
+  that pull request closes has it try again
+
 ### Requirement: A person reassigns an issue by removing the holding Igor's label first
 
 Where a person adds an App Igor's `igor:<role>` label to a GitHub issue that carries another

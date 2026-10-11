@@ -663,3 +663,43 @@ describe('items a person hands to this Igor by label', () => {
     expect(reported[0]).toContain('`igor:backend` holds it')
   })
 })
+
+describe('an item handed over while a pull request is open for it', () => {
+  it('posts one notice naming the pull request, and claims nothing', async () => {
+    const handed = {
+      ...issue(7), holders: ['igor:triage'],
+      inFlight: { kind: 'pull-request', ref: '#8', url: 'https://github.com/o/r/pull/8', draft: true, author: 'someone', mergeable: 'clean', branch: 'b', base: 'main' },
+    } as Candidate
+    const { d } = deps([])
+    const reported: string[] = []
+    Object.assign(d.tracker, {
+      directed: async () => [handed],
+      holderSetBy: async () => ({ self: false, by: 'adam', at: '2026-09-13T00:00:00Z' }),
+      report: async (_c: Candidate, m: string) => {
+        reported.push(m)
+      },
+    })
+    const s = await serve(d, role(), 'igor-bot', { ...base, maxCycles: 1 })
+    expect(s.worked).toBe(0)
+    expect(reported).toHaveLength(1)
+    expect(reported[0]).toContain('[#8](https://github.com/o/r/pull/8) is already open for it')
+  })
+})
+
+describe('an item handed over whose own artifact the cycle is catching up', () => {
+  it('is caught up, and gets no in-flight notice the catch-up has already made untrue', async () => {
+    const item = { ...rotting(7), holders: ['igor:triage'] } as Candidate
+    const { d, caughtUp } = deps([item], { caughtUp: [{ outcome: 'conflict' }] })
+    const reported: string[] = []
+    Object.assign(d.tracker, {
+      directed: async () => [item],
+      holderSetBy: async () => ({ self: false, by: 'adam', at: '2026-09-13T00:00:00Z' }),
+      report: async (_c: Candidate, m: string) => {
+        reported.push(m)
+      },
+    })
+    await serve(d, role(), 'igor-bot', { ...base, maxCycles: 1 })
+    expect(caughtUp()).toHaveLength(1)
+    expect(reported.some((m) => m.includes('is already open for it'))).toBe(false)
+  })
+})
