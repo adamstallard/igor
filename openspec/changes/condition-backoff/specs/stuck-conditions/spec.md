@@ -196,10 +196,97 @@ the cure it is trying to observe.
 - **THEN** the probe is whichever item the scope would take next, and the condition can still
   clear
 
+### Requirement: A seat's refused credential is a condition on that seat
+
+A run the provider refuses for authentication SHALL mint `seat:<id>:credential` for the seat it
+ran on, observed against a full cryptographic hash of the credential the run used. The refusal
+SHALL be recognised by the provider's own structured verdict, an authentication-error status, and
+never by the wording of a message, and only where the run also did not finish. A run that failed
+for any other reason SHALL NOT mint it.
+
+A seat whose credential condition is open SHALL be passed over before its headroom is checked,
+whatever its own reading says, and the reason given SHALL be that the provider refused its
+credential, not that its usage could not be read and not that it has no headroom.
+
+Nothing on the machine separates a revoked credential from a working one: `/usage` exits zero for
+either, and `claude auth status` reports the same fields for a valid `setup-token` and for a
+garbage string. The record of runs the provider refused is the only account of a refused
+credential, which is why the seat's own reading cannot overrule it.
+
+"Did not finish" is asked differently on the two paths into it. A non-zero exit has already said
+so, so an envelope silent about erroring is still a refusal there. A run that exited zero, and
+may have published a pull request, has to state that it errored before it can stop its own seat.
+The permissive test used where Igor decides what to *record* is wrong here: being permissive there
+costs a spurious capture, while here it costs a working seat, repeatedly.
+
+The hash is a full SHA-256, never a prefix, a suffix or a short digest. Execution records are
+committed, and a few characters of a token are credential material; a short digest is cheap to
+collide, and a collision reads as "the same credential resolved", which is exactly what clears a
+credential condition. A seat that names no token source forwards the ambient
+`CLAUDE_CODE_OAUTH_TOKEN` and `ANTHROPIC_API_KEY`, and its credential is the hash of the two
+together, so replacing either reads as a new credential.
+
+#### Scenario: A refused credential is named where it is refused
+
+- **WHEN** a run that did not finish comes back with the provider's authentication-error status
+- **THEN** `seat:<id>:credential` is minted for the seat it ran on
+- **AND** the execution record carries a full hash of the credential the run used
+
+#### Scenario: A failure that is not a credential refusal never counts
+
+- **WHEN** a seat's runs fail repeatedly for any other reason
+- **THEN** no credential condition opens, and the seat is still chosen
+
+#### Scenario: A seat's own reading does not overrule the condition
+
+- **WHEN** a seat with an open credential condition reports headroom, or reports nothing at all
+- **THEN** it is passed over, and the reason is the refused credential
+
+#### Scenario: The published record discloses no credential
+
+- **WHEN** a refusal is recorded to a log that is committed
+- **THEN** it carries a full cryptographic hash of the credential and no part of the credential
+
+### Requirement: Reporting tells a refused credential from an unreadable one, and clears nothing
+
+Budget reporting SHALL show a seat with an open credential condition on a line of the seat's own,
+distinctly from a seat whose credential could not be read. It SHALL offer a way to print which
+credential resolves for each seat, how many runs the provider refused it on, and when its next
+probe is due. Reading any of this SHALL NOT clear the condition, and no command SHALL clear it.
+
+The two are fixed by different people in different places: one is a token this machine could not
+read, the other a token the provider read and refused. A report that merged them would send
+somebody to check a path or a variable that is correct. The line is the seat's, not each
+window's, because a refused credential is true of both windows at once and of a seat with no
+window figures at all.
+
+There is no reset command because replacing a revoked credential always means presenting a
+different string, and the next resolution's hash is that fact. A command that cleared the
+condition on request would clear it for an operator who believed they had fixed the credential
+and had not, and the seat would go straight back to failing items.
+
+#### Scenario: A stopped seat reads as stopped on its credential
+
+- **WHEN** an operator inspects the budget and a seat's credential condition is open
+- **THEN** the report says so once, for the seat
+- **AND** it does not report that seat as having an unreadable credential
+
+#### Scenario: The condition can be inspected without being cleared
+
+- **WHEN** an operator asks for the credential state
+- **THEN** the credential that resolves, the number of refusals and when the next probe is due
+  are printed
+- **AND** the condition is unchanged by having been read
+
 ### Requirement: No recurrence count or cooldown is fixed here
 
 The recurrence threshold and the cooldown SHALL be configurable, and their defaults SHALL be
-marked provisional until run history exists to fit them against.
+marked provisional until run history exists to fit them against. The cooldown SHALL grow with each
+recurrence, up to a stated ceiling.
+
+The cooldown grows because a condition can last for days: a fixed wait spends a probe item every
+cooldown for as long as it lasts, while a doubling one spends a few in total. The ceiling keeps a
+condition that was fixed overnight from waiting longer than an operator would.
 
 Nothing here has been measured. The two items whose cost is recorded are $1.19 and $11.18 — 10×
 apart — so what a wasted repetition costs is not known to within an order of magnitude, and a

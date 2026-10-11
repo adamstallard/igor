@@ -43,13 +43,16 @@
       clearing it by default
 - [ ] 4.4 A condition carrying a discriminator also clears the moment a different one resolves,
       with no cooldown waited and no item spent
-- [ ] 4.5 #65's credential breaker is absorbed, not duplicated: the condition record's count
-      becomes the stop, the trailing count derived over `executions.ndjson` stops deciding
-      whether a seat is usable, and the seat's `!  out of rotation: …` line becomes its
-      condition line. Build the credential clear into §4 rather than beside it
-- [ ] 4.6 Correct the two messages that say a credential condition clears only on a different
-      credential — `credentialBreaker`'s `why` and `renderCredentials`' header in
-      `src/budget.ts` — since a probe on the unchanged credential clears it too
+- [ ] 4.5 Build the credential condition from #65's branch (`breaker`), which is folded in here
+      instead of merging (Adam, 2026-10-11). Carry over `credentialCure`, the full-hash
+      `tokenFingerprint` on execution records (including `ambientFingerprint` for a seat naming no
+      token source), the 401 test with its two paths, the `rejected` verdict that `chooseSeat`
+      checks before any headroom, `igor budget --credentials`, and their tests. Leave out
+      `credentialBreaker`'s own trailing count, trip count and cooldown: the condition record's
+      count, threshold and cooldown replace them, so no seat is held by two mechanisms
+- [ ] 4.6 The seat's credential line in `igor budget` is its condition line, and its messages say
+      that a credential condition clears both on a different credential and on a probe that does
+      not meet it
 - [ ] 4.7 Tests: cured, still broken, probe item unavailable, a second probe after a longer
       cooldown, a replaced credential clearing at once, and no seat held by two mechanisms
 
@@ -61,7 +64,9 @@
 ## 6. Constants
 
 - [ ] 6.1 Threshold and cooldown configurable, defaults marked provisional in the code
-- [ ] 6.2 Record what they were reasoned from, since nothing has measured them
+- [ ] 6.2 Record what they were reasoned from, since nothing has measured them. #65's reasoning
+      is the starting point (`design.md`, *Folded in from #65*): a threshold of 3, and a cooldown
+      of 15 minutes doubling to a ceiling of 6 hours
 
 ## 7. Merging
 
