@@ -34,7 +34,7 @@ issue, it is the only one that doesn't depend on Claude Code enforcing anything.
   password, or if the worker can read a credential the Igor holds or write the lore checkout or
   the Igor's installation.
 - **Without a worker user**, `serve` refuses to start unless passed `--same-user`, and `run`
-  runs the worker as the same user with a notice. This is a recommendation, flagged for Adam.
+  runs the worker as the same user with a notice (Adam, 2026-10-11).
 - **Deployment:** `deploy/igor.service` gains the worker's group and home and drops
   `NoNewPrivileges`, which blocks `sudo`. A new `deploy/sudoers.example` and a section in
   `docs/deployment.md` cover creating the user. `claude` moves out of the service user's home,
@@ -66,4 +66,4 @@ None.
   `docs/deployment.md`, and a paragraph in `docs/architecture.md` §6.3.2.
 - An operator upgrading must create the worker user, install the sudoers rule and move `claude`
   before `serve` starts again, or pass `--same-user`.
-- `igor doctor` (#113) gains no check here; design.md says why.
+- `igor doctor` (#113) gains no check (Adam, 2026-10-11); design.md says why.

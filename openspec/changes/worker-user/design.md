@@ -42,7 +42,7 @@ sudo --non-interactive --user=<worker> --preserve-env=<names> -- \
   stdio as pipes. With no terminal, sudo allocates no pty and the stream arrives as it does now
   (task 6.2 measures it).
 
-The sudoers rule, installed as `/etc/sudoers.d/igor`:
+The sudoers rule, installed as `/etc/sudoers.d/igor` (Adam accepted it on 2026-10-11):
 
 ```
 igor ALL=(igor-worker) NOPASSWD: ALL
@@ -191,7 +191,7 @@ The env files themselves are not probed: systemd reads them, so the Igor never l
 paths. The `/proc` probe covers what they contain, and the deployment guide puts them in a
 directory the worker cannot enter.
 
-### `igor doctor` gets no check
+### `igor doctor` gets no check (Adam, 2026-10-11)
 
 `igor doctor` (#113) reports on a lore repository and is run from wherever someone has a
 checkout, usually not the host and not as the service user. Isolation is a property of one
@@ -200,9 +200,7 @@ start-up check above is the place for it, and it refuses rather than reports. Un
 rule (*name the command that covers it*), the most it could add is one line saying the Igor
 checks worker isolation when it starts. That is a later edit to its branch, not one made here.
 
-### Without a worker user: `serve` refuses, `run` warns
-
-Recommended, and flagged for Adam:
+### Without a worker user: `serve` refuses, `run` warns (Adam, 2026-10-11)
 
 - **`serve` refuses to start** with no `IGOR_WORKER_USER`, unless passed `--same-user`. An
   unattended Igor on issues anyone can file is the case the issue says must not run without
