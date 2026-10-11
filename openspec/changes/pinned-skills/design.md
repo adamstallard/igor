@@ -157,8 +157,11 @@ Without `--bare`, a call also loads the service user's hooks, its `CLAUDE.md` an
 skills (`~/.claude/skills`), and the worked repository's own `.claude` settings, skills and
 `CLAUDE.md`. Namespacing keeps every `igor:<name>` skill from being replaced (measured), but the
 rest still reaches the worker. A dedicated Igor server's service user has none of the first
-three, and nor does the separate worker user of #175. Whether Igor should check that at start is
-a question in the PR; the spec does not require it.
+three, and nor does the separate worker user of #175.
+
+**Decided by Adam, 2026-10-11: Igor makes no startup check of them.** `docs/deployment.md`
+tells the operator to keep the service user and the worker user free of them, and why (task
+5.3). A check comes back only if a shared server becomes a supported setup.
 
 ### The startup check is a call with no token and an empty `HOME`
 

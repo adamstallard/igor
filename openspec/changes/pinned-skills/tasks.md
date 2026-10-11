@@ -93,3 +93,9 @@ Runs in `wire` (`src/wiring.ts`), before the first model call, only when `skills
         `update`, which pulls
 - [ ] 5.2 `docs/architecture.md`: a short subsection under §6 on where skills come from and why
       `--plugin-dir`, pointing at this change's `design.md`
+- [ ] 5.3 `docs/deployment.md`, in the skills section from 5.1, this note. It may be reworded, but it must
+      name both users, the three things, and the reason:
+
+      ```
+      Keep the service user and the worker user free of Claude Code hooks, a CLAUDE.md, and skills in ~/.claude/skills. Igor runs claude -p in normal mode, which loads all three into every call, so anything there reaches every worker and every model step.
+      ```
