@@ -5,16 +5,15 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 /**
- * The one seam through which execution gets a place to work.
+ * How execution gets a working copy. Only execution needs a checkout: discovery, triage,
+ * claiming and state all go through the API. A tree is disposable and made per task, so nothing
+ * may assume a checkout persists between tasks or is shared with another.
  *
- * Execution is the only stage that needs a checkout — discovery, triage, claiming and state
- * all go through the API. A tree is disposable and provisioned per task: nothing may assume a
- * checkout persists between tasks or is shared with another.
- *
- * Deliberately says nothing about *how* a tree is made. One Igor running one task at a time is
- * well served by a throwaway clone; many Igors on one server want a shared object store with
- * `git worktree add` per task, because fetch cost is paid once rather than N times. Naming a
- * shape here would bake in the clone-per-task assumption that arrangement exists to avoid.
+ * **`TreeProvider` deliberately says nothing about how a tree is made.** One Igor running one
+ * task at a time is well served by a throwaway clone; many Igors on one server would want a
+ * shared object store with `git worktree add` per task, so fetching is paid for once rather than
+ * per task. Naming a shape here would build in the clone-per-task assumption that arrangement
+ * exists to avoid.
  */
 
 export class TreeError extends Error {}
@@ -25,7 +24,10 @@ export const TREE_PREFIX = 'igor-tree-'
 export interface ChangedFile {
   path: string
   content: string
-  /** A deletion carries no content, and a binary is not reported at all. */
+  /**
+   * A deletion carries empty `content`. A binary file is reported like any other, its content
+   * read as UTF-8 and so mangled: see the unreadable-file case in `changes()`.
+   */
   kind: 'added' | 'modified' | 'deleted'
   /**
    * Whether the file is executable. Only a resolution reads it: it lays blobs over a tree the
@@ -33,25 +35,25 @@ export interface ChangedFile {
    */
   executable?: boolean
   /**
-   * The name git wrote, present only where `path` is not that name decoded and re-encoded —
-   * that is, only where the name is not text and `path` is the U+FFFD spelling of it.
-   *
-   * Its presence is the signal that this entry must not be published: see `named`.
+   * The name's bytes as git wrote them, present only where they are not valid UTF-8, so `path`
+   * is a lossy decoding with U+FFFD in place of the bytes that did not decode (`named` decides
+   * this). Execution never publishes a file that has one: it stops, and names the file by these
+   * bytes.
    */
   rawName?: Buffer
 }
 
 /**
- * Splits what the tree reported into what an artifact carries.
+ * Splits the changed files into the files an artifact writes and the paths it removes.
  *
  * A path can be reported both ways at once: a file removed with git and written back again is
  * a deletion record and an addition record for the one path. The file on disk wins, because a
- * tree carries each path once — a removal sent beside its own blob either drops the file from
- * the artifact or has the host reject the whole tree.
+ * tree carries each path once, and a removal sent beside its own blob either drops the file from
+ * the artifact or makes the host reject the whole tree.
  *
- * Shared rather than applied twice, because the second place to apply it is whatever tells a
- * person what the run did, and a count that disagrees with the artifact sends them looking for
- * a deletion that is not in the diff.
+ * Use this wherever the split is needed, including the handoff that tells a person what the run
+ * changed: a count computed separately can disagree with the artifact, and send the reader
+ * looking for a deletion that is not in the diff.
  */
 export function carried(changed: readonly ChangedFile[]): {
   written: ChangedFile[]
@@ -66,11 +68,11 @@ export function carried(changed: readonly ChangedFile[]): {
 }
 
 /**
- * One path the base changed since the merge base, as blob names on three sides.
+ * One path the base changed since the merge base, as the blob names on three sides.
  *
- * Shas rather than content: a resolution is checked against these, and the check asks only
- * whether two blobs are the same one. The content of every changed path on both sides would be
- * the whole of the base's diff held in memory for a question three forty-byte strings answer.
+ * Blob names rather than content: a resolution is checked against these, and the check asks
+ * only whether two blobs are the same one. Holding content instead would keep the whole of the
+ * base's diff in memory for a question three blob names answer.
  */
 export interface BaseChange {
   /** The name decoded, and — only where decoding lost it — the bytes git wrote. */
@@ -81,8 +83,8 @@ export interface BaseChange {
   /** The blob the base holds. Absent where the base deleted the path. */
   after?: string
   /**
-   * The blob the tree's own head holds, which is what a resolution publishes for this path
-   * unless it says otherwise. Absent where head does not hold the path.
+   * The blob the tree's own head holds: what a resolution publishes for this path unless it
+   * writes or deletes the path. Absent where head does not hold the path.
    */
   head?: string
 }
@@ -95,11 +97,11 @@ export interface MergeState {
   head: string
   broughtIn: string
   /**
-   * What the base changed since the merge base, against which a resolution is checked for
-   * reverts before it is published.
+   * What the base changed since the merge base. A resolution is checked against it for reverts
+   * before it is published.
    *
-   * Read here rather than at the publish site: the comparison needs the merge base and two
-   * trees this clone holds and a released tree can answer nothing.
+   * Computed here, in the clone, rather than by the code host that publishes: the comparison
+   * needs the merge base and two trees that only the clone holds.
    */
   baseChanges: BaseChange[]
 }
@@ -114,8 +116,8 @@ export function blobSha(content: string, algorithm: 'sha1' | 'sha256' = 'sha1'):
 }
 
 /**
- * Whether a string in hand is the blob a tree already holds, answered without writing either
- * one down.
+ * Whether `content` is the blob named `sha`, answered by hashing in memory rather than by
+ * writing anything to the repository.
  *
  * The length of the name settles the algorithm, which is the only place a repository's object
  * format is visible from here: forty hex characters is sha1, sixty-four is sha256.
@@ -148,18 +150,18 @@ export interface WorkingTree {
    */
   merge?(ref: string): Promise<MergeState>
   /**
-   * A directory the worker may write to that is not part of the repository, empty when the
-   * worker is given it and removed with the tree.
+   * A directory the worker may write to that is not part of the repository: empty when the
+   * worker is given it, and removed with the tree. A worker writes its revert declarations here,
+   * as a message to Igor rather than a change for the artifact.
    *
-   * This is where a worker leaves a message for Igor rather than a change for the artifact — a
-   * declaration that it meant to undo something the base did. It is deliberately not a path in
-   * the tree: a repository can commit a file at any path inside itself, and one that is on disk
-   * in every fresh clone, read as this run's word, would speak for every run forever.
+   * **Don't move it into the tree.** A repository can commit a file at any path inside itself,
+   * and a declaration committed there would be in every fresh clone and read as this run's, on
+   * every run.
    *
-   * What the place establishes is *when* — nothing is here until this run puts it here, so no
-   * file predates the run. It does not establish where the bytes came from: a worker that can
-   * run commands can copy a committed file in. What it removes is the reading with no actor in
-   * it at all, which is the one that speaks for every future run unasked.
+   * What the outbox guarantees is *when*: nothing is in it until this run puts it there. It does
+   * not show where the bytes came from, since a worker that can run commands can copy a
+   * committed file in. That case has a worker acting; what it rules out is a declaration that
+   * takes effect with nobody acting at all.
    */
   readonly outbox: string
   release(): Promise<void>
@@ -227,8 +229,9 @@ function nulSeparated(out: Buffer): Buffer[] {
 const PATHSPEC_BUDGET = 100_000
 
 /**
- * Which of `paths` the tree's own HEAD holds — the one question a removal has to answer, asked
- * of the tree an artifact is laid over rather than of a status flag that stands in for it.
+ * Which of `paths` the tree's own HEAD holds. A removal is valid only for a path HEAD holds,
+ * because HEAD is the tree an artifact is laid over, and no status flag answers this reliably
+ * (see `changes()`).
  *
  * **Keyed by the bytes git wrote, not by the decoded name.** Two names differing only in bytes
  * that do not decode share one string, so a set keyed on the string answers for one of them
@@ -257,10 +260,10 @@ async function heldByHead(treePath: string, paths: readonly Buffer[]): Promise<S
     const listed = await runBytes('git', [
       '-C',
       treePath,
-      // **A pathspec is a channel, and darwin normalises it.** `core.precomposeunicode` is on by
-      // default there and git precomposes `argv` before parsing it, so a name HEAD holds in
-      // decomposed form is matched by no pathspec at all — the check would say HEAD lacks a path
-      // it has, and drop a legitimate removal in silence. Off, the bytes are compared as written.
+      // **On macOS git normalises pathspecs, so this turns that off.** `core.precomposeunicode`
+      // is on by default there, and git precomposes `argv` before parsing it, so a name HEAD
+      // holds in decomposed form matches no pathspec: the check would say HEAD lacks a path it
+      // has, and silently drop a legitimate removal. Off, the bytes are compared as written.
       '-c',
       'core.precomposeunicode=false',
       'ls-tree',
@@ -302,11 +305,13 @@ export function statusRecords(status: Buffer): StatusRecord[] {
 }
 
 /**
- * Statuses that mean the file is gone: the work tree column reads `D`, or the index says
- * deleted and the work tree has nothing to add. `MD` counts as much as `AD` — a path the
- * merge staged and the worker then removed is a deletion, and read as an unreadable file
- * instead it is dropped from the files *and* the deletions, so the resolution keeps the
- * artifact's older copy and reverts the base's own change to that path on merge.
+ * Statuses that mean the file is gone: the work-tree column reads `D`, or the index says
+ * deleted and the work tree has nothing to add.
+ *
+ * `MD` must count, like `AD`: a path the merge staged and the worker then removed is a deletion.
+ * Missed, it would be treated as an unreadable file and dropped from both the files and the
+ * deletions, so the resolution would keep the artifact's older copy and undo the base's change
+ * to that path.
  */
 const GONE = /^(?:.D|D )$/
 
@@ -371,10 +376,10 @@ export function quoteName(name: Buffer): string {
  * in the sentence that reports it.
  *
  * What keeps the two sides apart is the parity of each backslash run: an escape always carries
- * an odd one, a doubled name never can. Only the escaped side is safe to put in markdown — a
- * backtick in an ordinary name passes through — so a new site that wraps one of these in a code
- * span must escape the ordinary branch too. Today the only one that does is the refusal, which
- * lists escaped names alone.
+ * an odd one, a doubled name never can. Only the escaped side is safe inside a markdown code
+ * span, because a backtick in an ordinary name passes through unescaped. The code spans
+ * execution writes, the unnameable-file refusal and `Undone.path`, wrap only names with
+ * `rawName`; a new site that wraps an ordinary name must escape that branch too.
  */
 export const showName = (file: Pick<ChangedFile, 'path' | 'rawName'>): string =>
   file.rawName === undefined ? file.path.replaceAll('\\', '\\\\') : quoteName(file.rawName)
@@ -473,18 +478,18 @@ export class ClonedTree implements WorkingTree {
         // unreadable file it says nothing at all, so the resolution keeps the artifact's copy
         // and the base's deletion comes back the moment the artifact merges.
         //
-        // `DU` is the shape that makes the HEAD check load-bearing here rather than tidy: the
-        // artifact branch deleted the path, so HEAD never held it, and the base's copy sitting
-        // in the tree is exactly what `conflictPrompt` invites the worker to remove.
+        // `DU` is why this needs the HEAD check too: the artifact branch deleted the path, so
+        // HEAD never held it, and the base's copy in the tree is exactly what `conflictPrompt`
+        // invites the worker to remove.
         if (UNMERGED.test(flags)) {
           if (!removable(name, path)) continue
           out.push({ ...name, content: '', kind: 'deleted' })
           continue
         }
-        // An unreadable file. A binary is not this case and never reaches here: `utf8`
-        // substitutes U+FFFD rather than throwing, so a binary is read as mojibake and
-        // published as text — see `docs/architecture.md` §6.7.3 for why nothing stops that.
-        // With `-uall` a directory never reaches here, which is what this used to swallow.
+        // An unreadable file is skipped. A binary is not this case and never reaches here:
+        // `utf8` substitutes U+FFFD rather than throwing, so a binary is read as mojibake and
+        // published as text (`docs/architecture.md` §6.7.3 says why nothing stops that). With
+        // `-uall`, a directory never reaches here either.
         continue
       }
       out.push({
@@ -535,9 +540,9 @@ export class ClonedTree implements WorkingTree {
       conflicts = unmerged.split('\0').filter((p) => p !== '')
       if (conflicts.length === 0) throw error
     }
-    // After the merge, although it asks about the two commits rather than about the tree.
-    // A merge that cannot run at all — unrelated histories — owes git's own sentence, and
-    // `merge-base` gets there first with an exit code and an empty stderr.
+    // Computed after the merge, though it needs only the two commits. Where the merge cannot
+    // run at all (unrelated histories), the merge's own error is the one to raise, and
+    // `merge-base` run first would fail instead, with an exit code and an empty stderr.
     return { conflicts, head, broughtIn, baseChanges: await this.baseChanges(head, broughtIn) }
   }
 
@@ -638,10 +643,10 @@ export class CloneProvider implements TreeProvider {
       await run('git', args)
       await mkdir(outbox, { recursive: true })
     } catch (error) {
-      // Both attempted whatever either does, and the original error rethrown: a failure to
-      // clean up is not the failure an operator has to read, and a rejection on the first
-      // removal must not leave the second undone. The same shape as `release()`, because two
-      // cleanup paths that differ are how one of them gets the bug back.
+      // Both removals are attempted whatever either does, and the original error is rethrown:
+      // a failure to clean up is not the failure an operator needs to read, and a rejection on
+      // the first removal must not skip the second. Keep this in step with `release()`, which
+      // removes the same two directories the same way.
       await Promise.allSettled([
         rm(outbox, { recursive: true, force: true }),
         rm(dir, { recursive: true, force: true }),
