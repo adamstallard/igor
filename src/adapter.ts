@@ -7,6 +7,8 @@
  * though only GitHub ships now.
  */
 
+import type { Accounts } from './signals.js'
+
 /**
  * Whether an artifact still merges into its base.
  *
@@ -131,6 +133,11 @@ export interface Comment {
   author: string
   at: string
   body: string
+  /**
+   * Which names this comment mentions are Igors, where it opens with a stop or a go-ahead and the
+   * surface could tell. Absent, every name counts as an Igor's.
+   */
+  accounts?: Accounts
 }
 
 export interface Tracker {

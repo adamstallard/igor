@@ -433,19 +433,28 @@ for the backend Igor, mirroring the stop. Both read their names with one parser,
 go-ahead written the same way are meant for the same Igors. Every reader of a go-ahead follows:
 the cycle's cooldown gate, a claim's re-read, and through it a catch-up's give-back.
 
-**Open for Adam: where one parser over-reads, it over-lifts a go-ahead.** The parser reads names
-only straight after the verb and lets a list run on into the next clause. For a stop that errs
-toward stopping, the safe side. For a go-ahead it errs toward lifting: "go ahead and pick it back
-up, @igor-backend" names nobody straight after the phrase, so it reads as bare and lifts the
-frontend Igor's stop too, and "go ahead @igor-backend, @igor-frontend keep waiting" lifts it for
-the frontend Igor. Making the go-ahead err the other way means the two verbs no longer read every
-comment alike, which the one-parser decision rules out.
+**Decided by Adam, 2026-10-11: where the names are unclear, a go-ahead errs toward lifting too
+little.** One parser reads both verbs, and it reads names only straight after the verb and lets
+a list run on into the next clause. For a stop that errs toward stopping, the safe side; for a
+go-ahead it would err toward lifting. So a go-ahead with no name straight after the phrase counts
+the mentions later on its opening line ("go ahead and pick it back up, @igor-backend" is for the
+backend Igor), and a list that runs straight on into a word loses its last name ("go ahead
+@igor-backend, @igor-frontend keep waiting" is for the backend Igor). Whether a go-ahead names an Igor is read before the trim, so "go ahead @alice,
+@igor-frontend keep waiting" lifts the stop for no Igor rather than reading as bare. A stop reads
+these comments as before. The parser stays shared; the two verbs differ only in what they make of what it read.
 
-**Open for Adam: a stop that names only a person.** "Stop — @alice is taking over" names an
-account, so it is not a bare stop, and it names no Igor, so it stops none: a stop said in plain
-words is missed because it mentions who takes over. "carry on, @alice approved it" likewise lifts
-a stop for no Igor. Reading names that match no Igor as no names would stop every Igor here, and
-is a decision about the rule Adam set, not a fix to how it is read.
+**Decided by Adam, 2026-10-11: a name that is no Igor's counts as no name.** "Stop — @alice is
+taking over" stops every Igor on the item, and "carry on, @alice approved it" lifts every stop.
+The name reading needs to know which names are Igors, and a role does not say: a role file may not
+name an App (`github_app` is refused, so one role cannot point at another's credentials), and an
+App's name is free (*Giving an Igor its GitHub App*). Every Igor is a GitHub App, though, and an
+App's bot account is `<slug>[bot]`, which the Igor already reads for itself at startup. So the
+GitHub tracker asks `GET /users/<name>[bot]` for each name the parser reads after an opening stop
+or go-ahead: a `Bot` is an Igor, a 404 is not, and anything else leaves the name
+unresolved. It keeps each answer for the life of the process and returns them on the comments it
+reads (`Comment.accounts`), so `isStop` and `isGoAhead` stay pure. An unresolved name counts as no
+name for a stop and as an Igor for a go-ahead, the safe side of each. Any App's bot counts as an
+Igor, so "stop @dependabot" stops no Igor, which is what it asks for.
 
 **A stop is the comment as created, not as last edited.** GitHub's `since` on an issue's comments
 filters on when each was last updated, so a stop said before a hand-over and edited later comes

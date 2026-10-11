@@ -109,11 +109,16 @@ the claim saw lifted. For a handed-over item the stop stands.
 A stop directed at an Igor SHALL take effect immediately, release the claim, and require no
 authorization. Stop MUST NOT be gated by identity, permission, or configuration.
 
-A stop is directed at an Igor when it opens a comment with "stop" and names nobody, or names that
+A stop is directed at an Igor when it opens a comment with "stop" and names no Igor, or names that
 Igor: "stop @igor-backend" or "@igor-backend stop". A bare "stop" stops every Igor on the item. A
-stop that names other accounts SHALL NOT stop an Igor it does not name, and SHALL NOT take that
+stop that names other Igors SHALL NOT stop an Igor it does not name, and SHALL NOT take that
 Igor's holder entry off: "stop @igor-backend" is meant for the backend Igor, and stopping the
 frontend Igor too would take back a hand-over nobody asked to take back.
+
+A name after "stop" that is no Igor's counts as no name, so "Stop — @alice is taking over" stops
+every Igor on the item. On GitHub every Igor is a GitHub App, so a name is an Igor's where GitHub
+has a bot account `<name>[bot]`. A name the tracker cannot resolve counts as no name, because
+stopping too many Igors is the safer error.
 
 #### Scenario: Anyone can stop an Igor
 
@@ -143,6 +148,12 @@ frontend Igor too would take back a hand-over nobody asked to take back.
 - **THEN** the backend Igor stops
 - **AND** the frontend Igor neither stops nor loses its label
 
+#### Scenario: A stop that names only a person stops every Igor
+
+- **WHEN** somebody comments "Stop — @alice is taking over" on an issue two Igors are working,
+  and `@alice` is a person
+- **THEN** both Igors stop
+
 ### Requirement: What follows a stop is read from the tracker, not from a second command
 
 After a stop, eligibility SHALL be determined by the tracker's state rather than by any
@@ -157,7 +168,15 @@ Igor's own search, and never restores a hand-over the stop cancelled.
 
 A go-ahead is read for whom it is meant as a stop is. A bare go-ahead lifts the stop for every
 Igor on the item. A go-ahead that names Igors, as "go ahead @igor-backend", SHALL lift it only for
-the Igors it names, and SHALL NOT lift it for an Igor it does not name.
+the Igors it names, and SHALL NOT lift it for an Igor it does not name. A name that is no Igor's
+counts as no name, as in a stop, so "carry on, @alice approved it" lifts the stop for every Igor.
+
+Where the names are unclear, a go-ahead errs the other way from a stop, because lifting a stop by
+mistake costs more than leaving one in place. A go-ahead with no name straight after the phrase
+SHALL count the mentions later on its opening line, and a list of names that runs straight on
+into a word SHALL lose its last name. Whether a go-ahead names an Igor is read before that loss,
+so one whose only Igor is the name it loses lifts the stop for no Igor. A name the tracker cannot
+resolve counts as an Igor's.
 
 Where a stop is said on an item a person handed to the Igor while no run of the Igor is active
 on it, the Igor SHALL, on the next cycle that sees the stop, remove itself from the holder field
@@ -201,6 +220,30 @@ never another Igor's.
   "go ahead @igor-backend"
 - **THEN** the stop is lifted for the backend Igor
 - **AND** the frontend Igor stays stopped until the cooldown runs out or a go-ahead meant for it
+
+#### Scenario: A go-ahead whose name comes later on its line
+
+- **WHEN** somebody says stop on an item two Igors work, and somebody then says
+  "go ahead and pick it back up, @igor-backend"
+- **THEN** the stop is lifted for the backend Igor only
+
+#### Scenario: A go-ahead whose list runs on into the next clause
+
+- **WHEN** somebody says stop on an item two Igors work, and somebody then says
+  "go ahead @igor-backend, @igor-frontend keep waiting"
+- **THEN** the stop is lifted for the backend Igor only
+
+#### Scenario: A go-ahead whose run-on list loses its only Igor
+
+- **WHEN** somebody says stop on an item two Igors work, and somebody then says
+  "go ahead @alice, @igor-frontend keep waiting", and `@alice` is a person
+- **THEN** the stop is lifted for neither Igor
+
+#### Scenario: A go-ahead that names only a person lifts the stop for every Igor
+
+- **WHEN** somebody says stop on an item two Igors work, and somebody then says
+  "carry on, @alice approved it", and `@alice` is a person
+- **THEN** the stop is lifted for both Igors
 
 #### Scenario: Handing the item back to the Igor is a go-ahead
 

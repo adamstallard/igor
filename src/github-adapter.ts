@@ -1,6 +1,6 @@
 import { gh, GhError, ghGraphql, ghPaginated } from './gh.js'
 import type { BotAccount } from './app.js'
-import { isGoAhead, isStop } from './signals.js'
+import { bareName, isGoAhead, isStop, namesToResolve, type Accounts } from './signals.js'
 import {
   AdapterError,
   daysSince,
@@ -266,12 +266,13 @@ function stopFrom(
   comments: readonly RawComment[],
   since: string,
   liftable = false,
+  accounts?: Accounts,
 ): { stop: ClaimVerdict } | { liftedAt?: string } | undefined {
   const floor = Date.parse(since)
   const stops = comments.filter((comment) => {
     const at = Date.parse(comment.created_at)
     if (!Number.isNaN(floor) && !Number.isNaN(at) && at < floor) return false
-    return isStop(comment.body ?? '', as)
+    return isStop(comment.body ?? '', as, accounts)
   })
   if (stops.length === 0) return undefined
   const verdict = (comment: RawComment): { stop: ClaimVerdict } => ({
@@ -287,7 +288,7 @@ function stopFrom(
   const latest = stops[stops.length - 1]!
   const lifting = comments.slice(comments.indexOf(latest) + 1).find((c) => {
     const body = c.body ?? ''
-    return c.user?.login !== as && !isStop(body, as) && isGoAhead(body, as)
+    return c.user?.login !== as && !isStop(body, as, accounts) && isGoAhead(body, as, accounts)
   })
   if (lifting === undefined) return verdict(latest)
   return Number.isNaN(Date.parse(lifting.created_at)) ? {} : { liftedAt: lifting.created_at }
@@ -324,8 +325,10 @@ export function labelVerdictFrom(
   comments: readonly RawComment[],
   since: string,
   liftable = false,
+  /** Which mentioned names are Igors; see `Accounts`. */
+  accounts?: Accounts,
 ): ClaimVerdict {
-  const stop = stopFrom(self.login, comments, since, liftable)
+  const stop = stopFrom(self.login, comments, since, liftable, accounts)
   if (stop !== undefined && 'stop' in stop) return stop.stop
   const held: ClaimVerdict =
     stop?.liftedAt === undefined ? { status: 'held' } : { status: 'held', liftedAt: stop.liftedAt }
@@ -375,6 +378,8 @@ export class GitHubTracker implements Tracker {
   readonly nativeHolderField = true
   readonly holderField = { holds: 'list', distinctFromAssignee: true } as const
   readonly holder: string
+  /** Whether each name mentioned after a stop or a go-ahead is an Igor, as `accountsIn` found. */
+  private readonly kinds = new Map<string, 'igor' | 'other'>()
 
   /**
    * `account` is the Igor's App's bot, which the startup check read. `GET /user` is never asked:
@@ -494,7 +499,40 @@ export class GitHubTracker implements Tracker {
     ])
     const puzzling = !labels.includes(self.holder) || labels.some((l) => isHolderLabel(l) && l !== self.holder)
     const events = puzzling ? await this.events(candidate) : undefined
-    return labelVerdictFrom(self, labels, events, comments ?? [], since, options.liftable === true)
+    const accounts = await this.accountsIn((comments ?? []).map((c) => c.body ?? ''))
+    return labelVerdictFrom(self, labels, events, comments ?? [], since, options.liftable === true, accounts)
+  }
+
+  /**
+   * Which names that `bodies` mention after a stop or a go-ahead are Igors. An Igor is a GitHub
+   * App, so a name is one where GitHub has a bot account `<name>[bot]`, the same read the Igor
+   * makes of its own account at startup. A 404 says the name is no Igor; any other failure leaves
+   * it unresolved. Answers are kept for the life of the process, since an account does not change
+   * kind.
+   */
+  async accountsIn(bodies: readonly string[]): Promise<Accounts> {
+    const names = [...new Set(bodies.flatMap(namesToResolve))]
+    const own = this.self.account === undefined ? undefined : bareName(this.self.account.login)
+    const found: Record<string, 'igor' | 'other'> = {}
+    for (const name of names) {
+      if (name === own) {
+        found[name] = 'igor'
+        continue
+      }
+      let kind = this.kinds.get(name)
+      if (kind === undefined) {
+        try {
+          const user = await gh<{ type?: string }>(['api', `users/${encodeURIComponent(`${name}[bot]`)}`])
+          kind = user?.type === 'Bot' ? 'igor' : 'other'
+        } catch (error) {
+          if (!(error instanceof GhError) || error.status !== 404) continue
+          kind = 'other'
+        }
+        this.kinds.set(name, kind)
+      }
+      found[name] = kind
+    }
+    return found
   }
 
   /**
@@ -519,12 +557,14 @@ export class GitHubTracker implements Tracker {
   }
 
   async commentsSince(candidate: Candidate, since: string): Promise<Comment[]> {
-    return commentsFrom(
+    const comments = commentsFrom(
       await ghPaginated<RawComment>([
         'api',
         `repos/${candidate.repo}/issues/${candidate.native}/comments?since=${encodeURIComponent(since)}&per_page=100`,
       ]),
     )
+    const accounts = await this.accountsIn(comments.map((c) => c.body))
+    return comments.map((c) => (namesToResolve(c.body).length === 0 ? c : { ...c, accounts }))
   }
 
   async report(candidate: Candidate, message: string): Promise<string | undefined> {

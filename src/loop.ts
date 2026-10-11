@@ -669,7 +669,7 @@ function keepingLabel(tracker: Tracker, floor: string): Tracker {
         floor,
       )
       const stopped = await tracker.commentsSince(candidate, from).then(
-        (spoken) => notBefore(spoken, from).some((c) => isStop(c.body, as)),
+        (spoken) => notBefore(spoken, from).some((c) => isStop(c.body, as, c.accounts)),
         () => false,
       )
       return stopped ? tracker.release(candidate, as) : true
@@ -1276,7 +1276,7 @@ function latestStop(spoken: readonly Comment[], identity: string): Comment | und
   let latest: Comment | undefined
   for (const comment of spoken) {
     const receipt = comment.author === identity && comment.body.includes(STOPPED_MARKER)
-    if (!receipt && !isStop(comment.body, identity)) continue
+    if (!receipt && !isStop(comment.body, identity, comment.accounts)) continue
     latest = comment
   }
   return latest
@@ -1364,7 +1364,7 @@ export async function dropStopped(
             // One comment can match both: "stop @igor — continue once I've looked" is a stop
             // by `^stop` and a go-ahead by what follows the address. A stop outranks, here as
             // in `verdictFrom`, so it can never be the permission to undo itself.
-            !isStop(c.body, identity),
+            !isStop(c.body, identity, c.accounts),
         ),
     })
     if (verdict.eligible) {

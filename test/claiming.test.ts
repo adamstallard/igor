@@ -422,7 +422,13 @@ describe('stop is unconditional', () => {
 
   it('takes no configuration, so nothing can disable it', () => {
     // The signature is the guarantee: there is no options parameter to pass a policy through.
-    expect(isStop.length).toBe(2)
+    // The one input beyond the text and the Igor says which names are Igors, and that can only
+    // widen a stop: a name that is no Igor counts as no name, which stops every Igor.
+    expect(isStop.length).toBe(3)
+    for (const accounts of [{}, { 'igor-other': 'igor' as const }, { 'igor-other': 'other' as const }]) {
+      expect(isStop('stop', 'igor-bot', accounts)).toBe(true)
+      expect(isStop('stop @igor-bot', 'igor-bot', accounts)).toBe(true)
+    }
   })
 
   it('still does not fire on two people talking to each other', () => {
