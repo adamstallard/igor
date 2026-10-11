@@ -114,8 +114,9 @@ None.
 
 ### Modified Capabilities
 
-- `role-config`: one modified requirement (`extends` names at most one base) and one added (an
-  Igor holds exactly one role).
+- `role-config`: two modified requirements (`extends` names at most one base; a role file that
+  sets `claim` is refused as any key that is not a role key is) and one added (an Igor holds
+  exactly one role).
 - `work-claiming`: five modified requirements (how a claim is expressed and resolved; settle
   and stand-down; who a stop is for; what follows a stop, and who a go-ahead is for; giving
   back a claim that cannot be kept) and seven added

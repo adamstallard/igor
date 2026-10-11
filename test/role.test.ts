@@ -46,7 +46,7 @@ describe('lineage', () => {
 
   it('rejects a role that names itself, since the filename is the name', () => {
     const dir = store({ org: ORG, frontend: 'name: frontend\n' })
-    expect(() => resolveRole(dir, 'frontend')).toThrow(/filename is the name/)
+    expect(() => resolveRole(dir, 'frontend')).toThrow(/names "name", which is not a role key/)
   })
 })
 
@@ -316,12 +316,12 @@ describe('claim wording is not a role setting', () => {
     // and needs no permission, so it is not an org's to rewrite. Dropping the key in silence
     // leaves whoever wrote it believing the fleet says what they told it to.
     const dir = store({ org: ORG, fe: 'sources: []\nseat: igor-1\nclaim: "Taking this"\n' })
-    expect(() => loadRole(config(dir), 'fe')).toThrow(/claim.*stop instruction/s)
+    expect(() => loadRole(config(dir), 'fe')).toThrow(/names "claim", which is not a role key/)
   })
 
   it('refuses it on the org base too, where it would reach every role', () => {
     const dir = store({ org: `${ORG}claim: "Taking this"\n`, fe: 'sources: []\nseat: igor-1\n' })
-    expect(() => loadRole(config(dir), 'fe')).toThrow(/claim/)
+    expect(() => loadRole(config(dir), 'fe')).toThrow(/names "claim", which is not a role key/)
   })
 })
 
@@ -429,16 +429,14 @@ describe('listing', () => {
 })
 
 describe('the GitHub App a role acts as', () => {
-  it('refuses a role file naming an App, saying where the App comes from', () => {
+  it('refuses a role file naming an App, as a key that is not a role key', () => {
     const dir = store({ org: 'allow: [comment, unassign]\n', reviewer: 'github_app: maintainer\n' })
-    expect(() => resolveRole(dir, 'reviewer')).toThrow(
-      /sets "github_app" — an Igor acts as the GitHub App named after its role, and its credentials come from its environment/,
-    )
+    expect(() => resolveRole(dir, 'reviewer')).toThrow(/names "github_app", which is not a role key/)
   })
 
   it('refuses a base naming an App, so no role inherits another Igor\'s App', () => {
     const dir = store({ org: 'allow: [comment, unassign]\ngithub_app: shared\n', reviewer: '' })
-    expect(() => resolveRole(dir, 'reviewer')).toThrow(/sets "github_app"/)
+    expect(() => resolveRole(dir, 'reviewer')).toThrow(/names "github_app", which is not a role key/)
   })
 
   it('explains the identity and whether the environment holds its credentials, without reading a key', () => {

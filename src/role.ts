@@ -90,8 +90,9 @@ const refuseUnknownKeys = keyCheck(RoleError)
 
 /**
  * Every key a role file may name, and every key its nested mappings may. Anything else is
- * refused by name — see `keyCheck`. `name` is not here: it has a refusal of its own, which says
- * where the name comes from instead of listing what it is not.
+ * refused by name — see `keyCheck`. Three keys stay out on purpose: `name`, because the filename
+ * is the name; `claim`, because the claim message is not a role's to replace; and `github_app`,
+ * because an Igor's App is its role's name and its credentials come from its environment.
  */
 const ROLE_KEYS = [
   'extends',
@@ -108,23 +109,6 @@ const ROLE_KEYS = [
   'cooldown_minutes',
   'poll_minutes',
 ]
-
-/**
- * Keys a role file may not set, each with the reason it may not. Kept out of the list above
- * because "not a role key" is the wrong answer to either: both are settings somebody reached
- * for deliberately, and what they need back is the reason, not a list of what they missed.
- */
-const REFUSED_KEYS: Record<string, string> = {
-  name: 'the filename is the name, as with lore entry ids',
-  claim:
-    'the claim message carries the stop instruction, the only notice a reader gets that ' +
-    'stopping is possible and permitted, so it is not a role\'s to replace',
-  // A role key could point one Igor at another Igor's App, whose credentials sit on the same
-  // server, through a lore-repository pull request nobody reviewing it would read that way.
-  github_app:
-    'an Igor acts as the GitHub App named after its role, and its credentials come from its ' +
-    'environment (GITHUB_APP_IDENTITY, GITHUB_APP_ID and a key), never from a role file',
-}
 
 const SOURCE_KEYS = ['tracker', 'repo', 'query']
 
@@ -155,9 +139,6 @@ export function readRoleFile(dir: string, name: string): Record<string, unknown>
   const raw = parseYaml(readFileSync(file, 'utf8')) as unknown
   if (raw === null) return {}
   if (!isRecord(raw)) throw new RoleError(`${file} must be a mapping`)
-  for (const [key, why] of Object.entries(REFUSED_KEYS)) {
-    if (key in raw) throw new RoleError(`${file} sets "${key}" — ${why}`)
-  }
   // Here rather than where each key is read: every path into a role file comes through this
   // function, so one check covers a role, the org base it inherits, and a parent read only for
   // what it contributes.

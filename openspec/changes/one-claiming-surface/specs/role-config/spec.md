@@ -41,6 +41,50 @@ and its ancestors say all it may do.
 - **AND** a later change to a `frontend` role extending `engineering` does not change what
   `fullstack` may do
 
+### Requirement: A role declares sources, lane, behaviour, permissions, and reviewers
+
+A role file SHALL support: `extends`, `seat`, `sources`, `lane`, `instructions`, `completion`,
+`allow`, `commands`, `budget_share`, and `reviewers`. Each `sources` entry MUST name a
+`tracker` and carry that tracker's own query verbatim. Entries failing validation SHALL be
+rejected rather than loaded.
+
+`commands` names the shell commands a worker may run, and is the only thing that lets one
+run anything at all. It is declared on the role and nowhere else: a worker that can edit
+files can edit a settings file in the repository it is working, so an allowlist read from
+there is one the worker can widen for itself.
+
+The claim message is not among them. It carries the stop instruction, which is the only notice
+a reader gets that stopping is possible and permitted, so it is not an org's to replace. A role
+that sets `claim` SHALL be refused, as any key a role file sets that is not a role key is: the
+guarantee is that the wording cannot be replaced, and dropping the key leaves whoever wrote it
+believing it was.
+
+#### Scenario: Well-formed role accepted
+
+- **WHEN** a role declares a tracker source, a lane, standing instructions, a completion
+  action, an allow list, and reviewers
+- **THEN** validation passes and the role loads
+
+#### Scenario: Unrecognized completion action rejected
+
+- **WHEN** a role declares a `completion` value outside the recognized set
+- **THEN** validation fails naming the field and the permitted values
+
+#### Scenario: Declared commands bound what the worker may run
+
+- **WHEN** a role declares `commands` and an item is executed
+- **THEN** the worker may run those commands and nothing else
+
+#### Scenario: Source without a tracker rejected
+
+- **WHEN** a `sources` entry omits `tracker`
+- **THEN** validation fails, because a query cannot be dispatched without knowing who executes it
+
+#### Scenario: Claim wording is not a role setting
+
+- **WHEN** a role file sets `claim`
+- **THEN** the role is refused, naming `claim` as a key that is not a role key
+
 ## ADDED Requirements
 
 ### Requirement: An Igor holds exactly one role

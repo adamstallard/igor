@@ -64,8 +64,8 @@
       repository, and refuse naming the first failure
 - [x] 4.2 Report a missing Workflows write at startup; a publish touching `.github/workflows/`
       without it fails naming the permission
-- [x] 4.3 A role file setting `github_app` is refused with the reason, in `REFUSED_KEYS`
-      (`src/role.ts:117`)
+- [x] 4.3 A role file setting `github_app` is refused as a key that is not a role key, by the
+      check that refuses every key nobody reads (`refuseUnknownKeys` in `src/role.ts`)
 - [x] 4.4 `explainRole` (`src/role.ts:643`) reports the identity and whether the environment
       holds its credentials, naming any missing variable, without minting a token
 - [x] 4.5 A credential refused mid-run (401 or 404 on a mint) opens `app:<identity>:credential`

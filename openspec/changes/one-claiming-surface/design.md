@@ -57,6 +57,15 @@ roles/fullstack.yaml     extends engineering, with a lane over both areas and it
 It repeats a couple of lane paths and the commands it needs. In exchange, its own file and its
 ancestors say everything it may do, and nothing in a sibling role can widen it.
 
+## A key no role reads is refused the same way, whichever it is
+
+**Decided by Adam, 2026-10-11: no role key gets a refusal of its own.** `name`, `claim` and
+`github_app` each had a reason of their own, which said why a role may not set it. Every key a role
+file sets that nobody reads is already refused as not a role key, and Igor has no users besides
+Adam, so nobody would reach for these three. A table whose only effect was to reword one error is
+not kept. The rules stand as they were: the filename is the name, the claim message is not a role's
+to replace, and a role cannot name an App.
+
 ## On GitHub, an Igor is a GitHub App
 
 **Decided by the owner, 2026-10-04: Igors are GitHub Apps only at launch.** Machine-user Igors
