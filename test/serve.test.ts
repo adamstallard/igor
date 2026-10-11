@@ -746,3 +746,24 @@ describe('a handed-over item whose own pull request the cycle catches up', () =>
     expect(released).toEqual([])
   })
 })
+
+describe('a handed-over item stopped while nothing ran', () => {
+  it('loses its label as a stop and gets a receipt, and is not claimed', async () => {
+    const handed = { ...issue(9), holders: ['igor:triage'], labels: ['igor:triage'] } as Candidate
+    const { d } = deps([])
+    const reported: string[] = []
+    const released: boolean[] = []
+    Object.assign(d.tracker, {
+      directed: async () => [handed],
+      holderSetBy: async () => ({ self: false, by: 'adam', at: '2026-09-13T00:00:00Z' }),
+      commentsSince: async () => [{ author: 'bob', at: '2026-09-13T01:00:00Z', body: 'stop' }],
+      release: async (_c: Candidate, _as: string, how?: { stop?: boolean }) => { released.push(how?.stop === true); return true },
+      report: async (_c: Candidate, m: string) => { reported.push(m) },
+    })
+    const s = await serve(d, role(), 'igor-bot', { ...base, maxCycles: 1 })
+    expect(s.worked).toBe(0)
+    expect(released).toEqual([true])
+    expect(reported).toHaveLength(1)
+    expect(reported[0]).toContain("stopped at bob's request and released this")
+  })
+})

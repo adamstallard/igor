@@ -392,6 +392,16 @@ again, because the stop after the hand-over cancelled it. Now `standDown` tells 
 it is giving back a stopped claim, and the catch-up's release then removes the label whoever set
 it, so the receipt is true and adding the label again hands the issue over anew.
 
+**Decided by Adam, 2026-10-11: a stop while nothing runs takes the label off.** Where somebody
+stops an Igor on a handed-over item while no run of it is active there, the next cycle that sees
+the stop removes the label and posts a stop receipt, so a label on an item always means it is
+handed over. The cycle tells such a stop apart by the Igor having said nothing since it: a run
+that met a stop answered it with a receipt.
+
+**Decided by Adam, 2026-10-11: a lifted stop does not restore a hand-over.** A stop cancels a
+hand-over, and only a new hand-over, the label removed and added again, restores it. A go-ahead
+or the cooldown lifts the stop for work the Igor's own search finds, never for a hand-over.
+
 **A stop is the comment as created, not as last edited.** GitHub's `since` on an issue's comments
 filters on when each was last updated, so a stop said before a hand-over and edited later comes
 back. Verification, the catch-up's give-back and the search for handed-over items each count a

@@ -1,6 +1,6 @@
 import type { Candidate } from './adapter.js'
 import type { CycleDeps, CycleOptions, CycleReport, ItemRun } from './loop.js'
-import { catchUpItem, planCycle, runItem } from './loop.js'
+import { catchUpItem, honourIdleStop, planCycle, runItem } from './loop.js'
 import type { Gate } from './budget.js'
 import { windsDownOnSignal } from './execute.js'
 import { noteHandoff, shouldDefer } from './deferred.js'
@@ -172,12 +172,18 @@ export async function serve(
 
       // A person handed these to this Igor while another Igor holds them. One notice each, which
       // the cycle stops finding once it is posted; nothing is claimed.
+      // Stops said while nothing was running: the label comes off, with a receipt.
+      for (const { candidate, stop } of report.stopped) {
+        if (abandoned || winding || stop === undefined) continue
+        await honourIdleStop(deps.tracker, candidate, role, identity, stop).catch(() => undefined)
+      }
+
       for (const { candidate, holders, notice } of report.waiting) {
         if (abandoned || winding) break
         await deps.tracker.report(candidate, notice ?? waitingNotice(role, holders ?? [])).catch(() => undefined)
       }
 
-      for (const { candidate, directed } of report.toClaim) {
+      for (const { candidate, directed, handedOverAt } of report.toClaim) {
         // The outage the catch-up loop met answers every claim here the same way, and claiming
         // is the louder of the two — a claim comment and a handoff on each.
         if (abandoned) break
@@ -199,7 +205,11 @@ export async function serve(
           ...options,
           budget: gate,
           lore,
-          ...(directed === true ? { claim: { ...options.claim, directed: true } } : {}),
+          // A directed claim scans for stops from the hand-over, so a stop said since the cycle
+          // read the item stops it.
+          ...(directed === true
+            ? { claim: { ...options.claim, directed: true, ...(handedOverAt === undefined ? {} : { since: handedOverAt }) } }
+            : {}),
         })
         summary.worked += 1
         // A run whose cost never arrived adds nothing here, so this total is a floor. The

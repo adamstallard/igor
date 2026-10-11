@@ -22,7 +22,7 @@ vi.mock('../src/loop.js', async (a) => ({
     return {
       returned: 0, fresh: 0, skippedUniversal: 0, skippedLane: 0, skippedStopped: 0, skippedDeferred: 0,
       skippedUnreadable: 0, triaged: 0, failures: [], skipped: [], verdicts: [], toClaim: plan.toClaim,
-      waiting: [{ candidate, reason: 'held by igor:backend', holders: ['igor:backend'] }],
+      waiting: [{ candidate, reason: 'held by igor:backend', holders: ['igor:backend'] }], stopped: [],
       toCatchUp: [], triageCostUsd: 0, triageCostUnreported: 0, untriaged: [], coldStart: false,
     }
   },

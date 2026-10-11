@@ -92,6 +92,15 @@ field: its `igor:<role>` label on GitHub, or itself as delegate on Linear. What 
 shows decides what happens next, by the rules for items someone else holds and for a person
 directing an Igor.
 
+A stop cancels a hand-over. Only a new hand-over restores it: on GitHub, the label removed and
+added again. A go-ahead, or the cooldown running out, lifts the stop for work found by the
+Igor's own search, and never restores a hand-over the stop cancelled.
+
+Where a stop is said on an item a person handed to the Igor while no run of the Igor is active
+on it, the Igor SHALL, on the next cycle that sees the stop, remove itself from the holder field
+and post a stop receipt, so that an item showing the Igor in its holder field is always one
+handed to it.
+
 On GitHub, when an Igor finds its `igor:<role>` label gone, it SHALL read the latest
 `unlabeled` event for that label from the issue's events. If that event's actor is the Igor's
 own bot account, the removal was the Igor's own release. If the actor is anyone else, the
@@ -122,6 +131,19 @@ never another Igor's.
 - **WHEN** a person who stopped an Igor later delegates the Linear issue to it again, or adds
   its `igor:<role>` label to the GitHub issue again
 - **THEN** the Igor treats the item as directed to it, without waiting the cooldown
+
+#### Scenario: A lifted stop does not restore a hand-over
+
+- **WHEN** a person hands an issue to an Igor, somebody stops it, and the stop is later lifted
+  by a go-ahead or by the cooldown running out
+- **THEN** the hand-over stays cancelled
+- **AND** only removing the `igor:<role>` label and adding it again hands the issue over again
+
+#### Scenario: A stop while nothing runs takes the label off
+
+- **WHEN** somebody stops an Igor on an issue whose `igor:<role>` label a person added, while no
+  run of that Igor is active on it
+- **THEN** on its next cycle the Igor removes the label and posts a stop receipt
 
 #### Scenario: A hand-over after a stop lets the Igor's own catch-up run
 

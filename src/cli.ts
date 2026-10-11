@@ -22,7 +22,7 @@ import { actAs, GhError } from './gh.js'
 import { AppError, canMint, canWriteWorkflows, startApp, type AppSession } from './app.js'
 import { claimRequested, contradictoryRunFlags } from './flags.js'
 import { explainRole, loadRole, rolesFrom, RoleError, type Role } from './role.js'
-import { catchUpItem, planCycle, runItem, UNTRIAGED_NO_SEAT, type CycleReport } from './loop.js'
+import { catchUpItem, honourIdleStop, planCycle, runItem, UNTRIAGED_NO_SEAT, type CycleReport } from './loop.js'
 import { waitingNotice } from './claiming.js'
 import { renderProgress } from './execute.js'
 import { serve, untilSignalled } from './serve.js'
@@ -376,6 +376,10 @@ function renderCycle(report: CycleReport, verbose: boolean): string {
     out.push('', `handed to this Igor by a person (${directed.length}), claimed without triage:`)
     for (const c of directed) out.push(`  ${c.candidate.native.padStart(6)}  ${c.reason}`)
   }
+  if (report.stopped.length > 0) {
+    out.push('', `handed to this Igor and stopped while nothing ran (${report.stopped.length}), label to take off:`)
+    for (const c of report.stopped) out.push(`  ${c.candidate.native.padStart(6)}  ${c.reason}`)
+  }
   if (report.waiting.length > 0) {
     out.push('', `handed to this Igor but held or in flight (${report.waiting.length}), owed a notice:`)
     for (const c of report.waiting) out.push(`  ${c.candidate.native.padStart(6)}  ${c.reason}`)
@@ -422,7 +426,7 @@ program
     const { tracker } = deps
     const { gate: gateFor, loreFor, record, store } = await wire(config, role, destination, out)
 
-    const work = async (item: Candidate, directed = false) => {
+    const work = async (item: Candidate, directed = false, handedOverAt?: string) => {
       const gate = await gateFor()
       const lore = loreFor(item)
       process.stdout.write(`\nworking ${item.id}  "${item.title}"\n  seat: ${gate.seat ?? '(unenforced)'}\n`)
@@ -432,7 +436,7 @@ program
       const live = process.stdout.isTTY === true
       let drawn = false
       const run = await runItem(deps, item, role, identity, {
-        ...(directed ? { claim: { directed: true } } : {}),
+        ...(directed ? { claim: { directed: true, ...(handedOverAt === undefined ? {} : { since: handedOverAt }) } } : {}),
         budget: gate,
         lore,
         store,
@@ -538,6 +542,9 @@ program
     }
 
     // Owed whether or not anything is claimed, and usually the cycle's only finding.
+    for (const c of report.stopped) {
+      if (c.stop !== undefined) await honourIdleStop(tracker, c.candidate, role, identity, c.stop).catch(() => undefined)
+    }
     for (const c of report.waiting) {
       await tracker.report(c.candidate, c.notice ?? waitingNotice(role, c.holders ?? [])).catch(() => undefined)
     }
@@ -547,7 +554,7 @@ program
     }
     const cap = opts.maxItems === undefined ? report.toClaim.length : Number(opts.maxItems)
     for (const c of report.toClaim.slice(0, cap)) {
-      const run = await work(c.candidate, c.directed === true)
+      const run = await work(c.candidate, c.directed === true, c.handedOverAt)
       // A closed budget stops the cycle rather than being rediscovered per item. Read off the
       // handoff kind rather than the prose, which is written for whoever reads the item.
       if (run.outcome === 'handed-off' && run.handoff === 'budget') {

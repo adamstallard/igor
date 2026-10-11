@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { Candidate, Comment, HolderSetting, Tracker } from '../src/adapter.js'
 import type { Role } from '../src/role.js'
-import { findDirected } from '../src/loop.js'
-import { claimMessage, inFlightNotice, waitingNotice } from '../src/claiming.js'
+import { findDirected, honourIdleStop } from '../src/loop.js'
+import { claimMessage, inFlightNotice, stopReceipt, waitingNotice } from '../src/claiming.js'
 
 const role = { name: 'frontend', sources: [{ tracker: 'github', repo: 'o/r', query: 'is:issue' }] } as unknown as Role
 const holding = { holder: 'igor:frontend', distinctFromAssignee: true }
@@ -115,5 +115,59 @@ describe('the claim a catch-up makes', () => {
     const said = [{ author: ME, at: '2026-10-10T10:01:00Z', body: claimMessage(role, ME, true) }]
     const r = await findDirected(tracker([item(1)], () => person, () => said), role, ME, holding, { failures: [] })
     expect(r.directed.map((d) => d.candidate.native)).toEqual(['1'])
+  })
+})
+
+describe('a stop on a handed-over item while nothing runs', () => {
+  const stopBy = (at: string) => ({ author: 'bob', at, body: 'stop' })
+
+  it('is owed the label off and a receipt', async () => {
+    const r = await findDirected(tracker([item(1)], () => person, () => [stopBy('2026-10-10T10:05:00Z')]), role, ME, holding, { failures: [] })
+    expect(r.directed).toEqual([])
+    expect(r.stopped.map((s) => [s.candidate.native, s.stop?.by])).toEqual([['1', 'bob']])
+  })
+
+  it('is not answered twice: a receipt after the stop means a run met it', async () => {
+    const said = [stopBy('2026-10-10T10:05:00Z'), { author: ME, at: '2026-10-10T10:06:00Z', body: stopReceipt(role, { status: 'stopped', by: 'bob' }) }]
+    const r = await findDirected(tracker([item(1)], () => person, () => said), role, ME, holding, { failures: [] })
+    expect(r.stopped).toEqual([])
+    expect(r.directed).toEqual([])
+  })
+
+  it('keeps the hand-over cancelled after the stop is lifted', async () => {
+    const said = [
+      stopBy('2026-10-10T10:05:00Z'),
+      { author: ME, at: '2026-10-10T10:06:00Z', body: stopReceipt(role, { status: 'stopped', by: 'bob' }) },
+      { author: 'bob', at: '2026-10-10T10:30:00Z', body: 'go ahead' },
+    ]
+    const r = await findDirected(tracker([item(1)], () => person, () => said), role, ME, holding, { failures: [] })
+    expect(r.directed).toEqual([])
+    expect(r.stopped).toEqual([])
+  })
+})
+
+describe('answering a stop said while nothing ran', () => {
+  it('takes the label off as a stop, then posts the receipt', async () => {
+    const calls: string[] = []
+    const t = {
+      holderField: { holds: 'list', distinctFromAssignee: true },
+      release: async (_c: Candidate, _as: string, how?: { stop?: boolean }) => { calls.push(`release stop=${how?.stop === true}`); return true },
+      report: async (_c: Candidate, m: string) => { calls.push(m); return 'u' },
+    } as unknown as Tracker
+    await honourIdleStop(t, item(1), role, ME, { status: 'stopped', by: 'bob', at: '2026-10-10T10:05:00Z' })
+    expect(calls[0]).toBe('release stop=true')
+    expect(calls[1]).toContain("stopped at bob's request and released this")
+    expect(calls).toHaveLength(2)
+  })
+
+  it('says the label is still there where the release did not take', async () => {
+    const said: string[] = []
+    const t = {
+      holderField: { holds: 'list', distinctFromAssignee: true },
+      release: async () => false,
+      report: async (_c: Candidate, m: string) => { said.push(m); return 'u' },
+    } as unknown as Tracker
+    await honourIdleStop(t, item(1), role, ME, { status: 'stopped', by: 'bob' })
+    expect(said.at(-1)).toContain('This still carries the `igor:frontend` label')
   })
 })

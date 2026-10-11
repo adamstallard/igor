@@ -191,6 +191,12 @@ export function waitingNotice(role: Role, holders: readonly string[]): string {
  */
 export const STOPPED_MARKER = '<!-- igor:stopped -->'
 
+/**
+ * The hidden line every stop receipt carries. A stop on a handed-over item counts as answered
+ * only by this Igor's comment carrying it: a notice or a claim after a stop is not its answer.
+ */
+export const RECEIPT_MARKER = '<!-- igor:receipt -->'
+
 /** The receipt owed on a stop: what exists so far, so nobody has to go looking. */
 export function stopReceipt(role: Role, verdict: ClaimVerdict, artifact?: string): string {
   const who = verdict.by ? ` at ${verdict.by}'s request` : ''
@@ -198,7 +204,7 @@ export function stopReceipt(role: Role, verdict: ClaimVerdict, artifact?: string
     ? `What exists so far: ${artifact}. It is yours to keep, continue, or discard.`
     : 'Nothing was produced, so there is nothing to clean up.'
   const mark = verdict.fromHolder === true ? `\n\n${STOPPED_MARKER}` : ''
-  return `**${role.name}** stopped${who} and released this. ${left}${mark}`
+  return `**${role.name}** stopped${who} and released this. ${left}${mark}\n\n${RECEIPT_MARKER}`
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
@@ -217,6 +223,12 @@ export interface ClaimOptions {
    * item that names a holder, and the person has already chosen.
    */
   directed?: boolean
+  /**
+   * Where the stop scan starts, in place of the claim time minus the settle interval. A directed
+   * claim passes the hand-over time, so a stop said between the cycle reading the item and this
+   * claim stops it.
+   */
+  since?: string
   /** The claim is the Igor bringing its own pull request up to date; see `CATCH_UP_MARKER`. */
   catchUp?: boolean
   onSettle?: () => void
@@ -225,9 +237,10 @@ export interface ClaimOptions {
 /**
  * Claims an item, then verifies the claim after the settle interval.
  *
- * The stop scan starts at `claimedAt` minus the settle interval, not at `claimedAt`. Surfaces
- * filter comments to the second, and some by modification time rather than creation, so a stop
- * posted in the same second as the claim could otherwise be missed. That second is when a
+ * The stop scan starts at `options.since` where given, and otherwise at `claimedAt` minus the
+ * settle interval, not at `claimedAt`. Surfaces filter comments to the second, and some by
+ * modification time rather than creation, so a stop posted in the same second as the claim could
+ * otherwise be missed. That second is when a
  * person is most likely to be reacting to the claim they just saw appear.
  */
 export async function takeClaim(
@@ -240,7 +253,7 @@ export async function takeClaim(
   const wait = options.wait ?? sleep
   const now = options.now ?? Date.now
   const claimedAt = new Date(now()).toISOString()
-  const since = new Date(now() - role.settleSeconds * 1000).toISOString()
+  const since = options.since ?? new Date(now() - role.settleSeconds * 1000).toISOString()
 
   // **The claim starts at the assignment call, so the guard opens before it.** That call can
   // apply on the surface and still throw, and on a surface with no holder field the claim is

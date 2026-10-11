@@ -1,7 +1,7 @@
 import type { Artifact, Candidate, ClaimVerdict, CodeHost, Comment, ReleaseHow, Tracker } from './adapter.js'
 import type { Gate, SeatVerdict } from './budget.js'
 import {
-  checkpoint, CLAIM_MARKER, eligibleAfterStop, inFlightNotice, standDown, stillHeld, stopReceipt, STOPPED_MARKER, takeClaim,
+  checkpoint, CLAIM_MARKER, eligibleAfterStop, inFlightNotice, RECEIPT_MARKER, standDown, stillHeld, stopReceipt, STOPPED_MARKER, takeClaim,
   waitingMarker, waitingNotice,
   type ClaimOptions, type ClaimResult,
 } from './claiming.js'
@@ -704,6 +704,10 @@ export interface CycleCandidate {
   holders?: string[]
   /** For an item waiting on this Igor's word: what to post, once. */
   notice?: string
+  /** For an item a person handed over: when, which is where its claim's stop scan starts. */
+  handedOverAt?: string
+  /** For a handed-over item stopped while nothing was running: the stop to answer. */
+  stop?: ClaimVerdict
 }
 
 export interface CycleReport {
@@ -751,6 +755,11 @@ export interface CycleReport {
    * the work closing, is what hands the item over.
    */
   waiting: CycleCandidate[]
+  /**
+   * Handed-over items somebody stopped while no run of this Igor was active on them. Each loses
+   * the label and gets a receipt, so a label on an item always means it is handed over.
+   */
+  stopped: CycleCandidate[]
   /**
    * Artifacts of the Igor's own that no longer merge. Kept apart from `toClaim` because they
    * cost no model call to decide on and are not claimed to act on — see `catchUpItem`.
@@ -836,6 +845,7 @@ export async function planCycle(
     verdicts: [],
     toClaim: [],
     waiting: [],
+    stopped: [],
     toCatchUp: [],
     triageCostUsd: 0,
     triageCostUnreported: 0,
@@ -898,12 +908,13 @@ export async function planCycle(
   // with no lane and no triage: the person exercised their own judgement, which is what those
   // stages stand in for. They are found wherever they are, not only where the role's query looks.
   if (holding !== undefined && options.identity !== undefined) {
-    const { directed, waiting } = await findDirected(deps.tracker, role, options.identity, holding, report)
+    const { directed, waiting, stopped } = await findDirected(deps.tracker, role, options.identity, holding, report)
     const taken = new Set(directed.map((d) => d.candidate.id))
     // An item being caught up is this Igor's own work in flight: it is neither claimed nor owed a notice.
     const notCaughtUp = (c: CycleCandidate): boolean => !catchingUp.has(c.candidate.id)
     report.toClaim.push(...directed.filter(notCaughtUp))
     report.waiting.push(...waiting.filter(notCaughtUp))
+    report.stopped.push(...stopped)
     for (let i = survivors.length - 1; i >= 0; i -= 1) {
       if (taken.has(survivors[i]!.id)) survivors.splice(i, 1)
     }
@@ -1373,9 +1384,10 @@ export async function findDirected(
   identity: string,
   holding: Holding,
   report: Pick<CycleReport, 'failures'>,
-): Promise<{ directed: CycleCandidate[]; waiting: CycleCandidate[] }> {
+): Promise<{ directed: CycleCandidate[]; waiting: CycleCandidate[]; stopped: CycleCandidate[] }> {
   const directed: CycleCandidate[] = []
   const waiting: CycleCandidate[] = []
+  const stopped: CycleCandidate[] = []
   const seen = new Set<string>()
   for (const repo of new Set(role.sources.map((s) => s.repo))) {
     let found: Candidate[]
@@ -1394,6 +1406,21 @@ export async function findDirected(
         // Created since the hand-over, not merely edited since it, which is all `since` asks
         // of a surface that filters on the edit time.
         const spoken = notBefore(await tracker.commentsSince(candidate, setting.at), setting.at)
+        // A stop since the hand-over cancels it, and a label on an item always means it is handed
+        // over, so a stop no run of this Igor answered takes the label off. Only a receipt at or
+        // after the stop answers it: a notice or a claim after a stop is not its answer.
+        const stop = latestStop(spoken, identity)
+        const receipted =
+          stop !== undefined &&
+          spoken.some((c) => c.author === identity && c.body.includes(RECEIPT_MARKER) && instant(c.at) >= instant(stop.at))
+        if (stop !== undefined && !receipted) {
+          stopped.push({
+            candidate,
+            reason: `stopped by ${stop.author || 'somebody'} while nothing was running`,
+            stop: { status: 'stopped', ...(stop.author === '' ? {} : { by: stop.author }), at: stop.at, reason: stop.body.trim().slice(0, 500) },
+          })
+          continue
+        }
         const others = candidate.holders.filter((h) => h !== holding.holder)
         if (others.length > 0) {
           const marker = waitingMarker(others)
@@ -1407,8 +1434,10 @@ export async function findDirected(
         // Only a claim answers a hand-over: not a waiting notice, and not the claim a catch-up
         // of the Igor's own pull request makes.
         const answered = spoken.some((c) => c.author === identity && c.body.includes(CLAIM_MARKER))
-        const stopped = spoken.some((c) => isStop(c.body, identity))
-        if (answered || stopped) continue
+        // A stop answered with a receipt still cancels the hand-over, lifted later or not: only a
+        // new hand-over, the label removed and added again, restores it.
+        const cancelled = stop !== undefined
+        if (answered || cancelled) continue
         // Work already in flight, even this Igor's own: the hand-over waits for it to close,
         // and says so once. The marker keeps the notice from answering the hand-over.
         const work = candidate.inFlight
@@ -1421,13 +1450,33 @@ export async function findDirected(
           continue
         }
         if (universalSkip(candidate, identity, holding) !== undefined) continue
-        directed.push({ candidate, reason: `${setting.by} handed it to ${holding.holder}`, directed: true })
+        directed.push({
+          candidate, reason: `${setting.by} handed it to ${holding.holder}`, directed: true, handedOverAt: setting.at,
+        })
       } catch (error) {
         report.failures.push(`${candidate.id}: could not read who handed it to ${holding.holder}: ${why(error)}`)
       }
     }
   }
-  return { directed, waiting }
+  return { directed, waiting, stopped }
+}
+
+/**
+ * Answers a stop said on a handed-over item while no run of this Igor was active on it: the
+ * label comes off, as any stop takes it off, and the stop gets its receipt. A release that does
+ * not take is said so after the receipt, as on every stop path.
+ */
+export async function honourIdleStop(
+  tracker: Tracker,
+  candidate: Candidate,
+  role: Role,
+  identity: string,
+  verdict: ClaimVerdict,
+): Promise<void> {
+  const clear = await standDown(tracker, candidate, identity, verdict)
+  const own = candidate.inFlight !== undefined && candidate.inFlight.author === identity ? candidate.inFlight.url : undefined
+  await tracker.report(candidate, stopReceipt(role, verdict, own)).catch(() => undefined)
+  if (!clear) await tracker.report(candidate, stillHeld(role)).catch(() => undefined)
 }
 
 const why = (error: unknown): string => (error instanceof Error ? error.message : String(error))
