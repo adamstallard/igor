@@ -174,12 +174,14 @@ and a `git` push. Credentials are what [Running an Igor](#running-an-igor) adds.
 A lore repository needs no credentials. An Igor needs two, and neither belongs in the
 repository.
 
-1. **Give the Igor an account of its own.** A claim only says who has your issue if the Igor
-   is somebody — run one as yourself and every claim says *you* took the work. So: a machine
-   account per Igor, with write access to the repositories it works, and not a GitHub App —
-   an App's bot user cannot be an issue assignee, so claiming degrades to a comment.
-   [`docs/machine-accounts.md`](docs/machine-accounts.md) has the steps and the traps, both of
-   which fail by being accepted and silently dropped rather than by erroring.
+1. **Give the Igor a GitHub App of its own.** A claim only says who has your issue if the Igor
+   is somebody — run one as yourself and every claim says *you* took the work. So: one GitHub
+   App per role, installed on the account holding the repositories the role works and the lore
+   repository. Igor reads the App only from its environment: `GITHUB_APP_IDENTITY` (the role's
+   name), `GITHUB_APP_ID` and `GITHUB_APP_PRIVATE_KEY_FILE`. On a server they go in the role's
+   environment file; running an Igor yourself, export them in the shell that starts it.
+   [Giving an Igor its GitHub App](docs/deployment.md#giving-an-igor-its-github-app) has the
+   steps. An Igor that cannot act as its App refuses to start and names what is missing.
 
 2. **Declare a seat and set its token.** A seat is a Claude subscription — trying this out,
    it is yours. In `igor.config.yaml`:
@@ -356,6 +358,17 @@ commands:
 reviewers: [sarah]
 ```
 
+**A role extends at most one base**, and a role naming two is refused. With two, its
+permissions would change whenever either base changed, without its own file changing, and the
+bases would conflict on fields where the last level wins, such as `completion`. A role spanning
+several areas gets its own lane and its own `allow` and `commands`, and shares what roles have
+in common through a base they all extend:
+
+```
+roles/engineering.yaml   extends org: what frontend, backend and fullstack share
+roles/fullstack.yaml     extends engineering, with a lane over both areas
+```
+
 `commands` is what the worker may run. Declare none and it can edit files and nothing else —
 which means it cannot build, test or type-check its own change, and will tell you so in the
 transcript rather than verifying. The list is read from the role and never from the repository
@@ -371,8 +384,8 @@ than an inherited `npm *` is a question only a matcher can answer, and a role th
 its way to one command can argue its way to all of them.
 
 The worker is spawned with an environment written out rather than inherited — a search path, a
-home directory, the host's proxy settings, and the token of the seat it spends. No `GH_TOKEN`
-and no other seat's token, because the worker has no use for either: it edits files in a
+home directory, the host's proxy settings, and the token of the seat it spends. Nothing of the
+Igor's GitHub App and no other seat's token, because the worker has no use for either: it edits files in a
 disposable clone, and claiming, commenting and publishing all happen afterwards in the loop.
 
 **Point a role only at work that is text.** A file the worker changed is read back out of the

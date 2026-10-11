@@ -1870,10 +1870,17 @@ role are interchangeable — that is the premise the name comes from.
 **A claim message is posted regardless.** Every claiming tracker pairs it with the holder field
 (§5.2). It carries the stop instruction and names the specific Igor.
 
-Interaction with worktrees (§6.7.2): fetching is shared and can use one read-only credential
-for the bare object store, while pushing is per-role and uses that role's own. A worktree is
-created per task and a task belongs to one Igor, so git identity is set when the worktree is
-created rather than configured globally.
+**The App is the role's name, and its credentials are in the Igor's environment.** `igor serve
+reviewer` acts as the App whose `GITHUB_APP_IDENTITY`, `GITHUB_APP_ID` and private key are in
+its environment, on a server `/etc/igor/reviewer.env`. No role file names an App: a lore pull
+request changing one could point an Igor at another Igor's App on the same server.
+
+**Igor mints the App's token itself and hands it to one process at a time.** It signs a JSON web
+token with the key, mints an installation token, and mints again once half the token's life has
+passed. Each `gh` call gets the token as `GH_TOKEN` in its own environment, and each clone and
+fetch gets a credential helper through `GIT_CONFIG_*` in its own. Nothing is written to disk or
+to a git config, so the worker, which inherits neither, never holds a credential for GitHub. An
+Igor that cannot act as its App on every repository it touches refuses to start, naming why.
 
 #### 6.9.1 The rule generalizes by claim primitive, not by surface
 

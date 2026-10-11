@@ -1,6 +1,6 @@
 ## 0. How this is built (Adam, 2026-10-04 and 2026-10-05)
 
-- [ ] 0.1 Built with #156 on `one-claiming-surface`: gate two lands on that branch, with this
+- [x] 0.1 Built with #156 on `one-claiming-surface`: gate two lands on that branch, with this
       change merged into it at that point, and #158 is closed in favour of #156. Both changes
       are archived together (`design.md`, *Sequencing with #156*)
 - [x] 0.2 Credentials come only from the Igor's environment; nothing reads the `github-app`
@@ -102,21 +102,21 @@ there.
 
 The wording of each is written when it is built.
 
-- [ ] 7.1 `deploy/igor.service`: rewrite the comment above `EnvironmentFile=` (lines 37-43) so
+- [x] 7.1 `deploy/igor.service`: rewrite the comment above `EnvironmentFile=` (lines 37-43) so
       the per-instance file holds the App's identity, ID and key path, is readable only by the
       service user, and holds no `GH_TOKEN`; drop
       the `-` on line 45, because every Igor now needs that file
-- [ ] 7.2 `deploy/env.example`: replace the `GH_TOKEN` section (lines 3-5, 21-26) with the three
+- [x] 7.2 `deploy/env.example`: replace the `GH_TOKEN` section (lines 3-5, 21-26) with the three
       `GITHUB_APP_*` lines, one key variable only, and the env and key files' mode and owner;
       `GITHUB_APP_OWNER` or `GITHUB_APP_INSTALLATION_ID` may appear only as the skill's, for its
       `check` when the App is installed on more than one account, and Igor ignores them
-- [ ] 7.3 `deploy/docker-compose.yml`: the same lines, and the key mounted read-only
-- [ ] 7.4 `docs/deployment.md`: step 1 of *Before it can run* (lines 44-47) creates and installs
+- [x] 7.3 `deploy/docker-compose.yml`: the same lines, and the key mounted read-only
+- [x] 7.4 `docs/deployment.md`: step 1 of *Before it can run* (lines 44-47) creates and installs
       one App per role; line 119's `GH_TOKEN` passage names the App's file; the table at line
       297 gets a row per startup refusal, including both key variables set; say not to log
       `gh` in as the service user; say that the credentials come only from the environment
       file, and name the skill's `check`, run against that file, as an optional diagnosis tool
-- [ ] 7.5 Fold `docs/machine-accounts.md` into `docs/deployment.md` and delete it (Adam,
+- [x] 7.5 Fold `docs/machine-accounts.md` into `docs/deployment.md` and delete it (Adam,
       2026-10-06). Its content becomes a subsection of *Before it can run*, e.g. *Giving an Igor its
       GitHub App*, beside *Adding a seat somebody has given you*, and step 1 points to it. Drop
       the machine-user section and the *Not built yet* paragraph (#156's task 5.4), and replace *Separately: which seat pays* with a one-line link to
@@ -159,9 +159,10 @@ The wording of each is written when it is built.
       page named `docs/accounts.md`, titled "Giving an Igor its own accounts", and say why in the
       PR. Update the links to it: `README.md` (*Running an Igor*, step 1), `docs/deployment.md`
       and `deploy/env.example`
-- [ ] 7.6 `README.md`: *Running an Igor*, step 1 (lines 177-182), describes the App, and that a
+- [x] 7.6 `README.md`: *Running an Igor*, step 1 (lines 177-182), describes the App, and that a
       person running an Igor exports the same `GITHUB_APP_*` variables in their shell
 
 ## 8. Outside this change
 
-- [ ] 8.1 When this is archived, tick #156's tasks 5.2 and 5.4 with a pointer here
+- [x] 8.1 When this is archived, tick #156's tasks 5.2 and 5.4 with a pointer here. Ticked
+      when gate two built both
