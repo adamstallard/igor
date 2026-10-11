@@ -436,8 +436,8 @@ the cycle's cooldown gate, a claim's re-read, and through it a catch-up's give-b
 **Decided by Adam, 2026-10-11: where the names are unclear, a go-ahead errs toward lifting too
 little.** One parser reads both verbs, and it reads names only straight after the verb and lets
 a list run on into the next clause. For a stop that errs toward stopping, the safe side; for a
-go-ahead it would err toward lifting. So a go-ahead with no name straight after the phrase counts
-the mentions later on its opening line ("go ahead and pick it back up, @igor-backend" is for the
+go-ahead it would err toward lifting. So a go-ahead with no Igor's name straight after the phrase
+counts the mentions later on its opening line ("go ahead and pick it back up, @igor-backend" is for the
 backend Igor), and a list that runs straight on into a word loses its last name ("go ahead
 @igor-backend, @igor-frontend keep waiting" is for the backend Igor). Whether a go-ahead names an Igor is read before the trim, so "go ahead @alice,
 @igor-frontend keep waiting" lifts the stop for no Igor rather than reading as bare. A stop reads
@@ -448,7 +448,8 @@ taking over" stops every Igor on the item, and "carry on, @alice approved it" li
 The name reading needs to know which names are Igors, and a role does not say: a role file may not
 name an App (`github_app` is refused, so one role cannot point at another's credentials), and an
 App's name is free (*Giving an Igor its GitHub App*). Every Igor is a GitHub App, though, and an
-App's bot account is `<slug>[bot]`, which the Igor already reads for itself at startup. So the
+App's bot account is `<slug>[bot]`, which the Igor already reads for itself at startup. **Decided
+by Adam, 2026-10-11: an Igor is recognised by that bot account.** So the
 GitHub tracker asks `GET /users/<name>[bot]` for each name the parser reads after an opening stop
 or go-ahead: a `Bot` is an Igor, a 404 is not, and anything else leaves the name
 unresolved. It keeps each answer for the life of the process and returns them on the comments it

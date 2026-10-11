@@ -107,20 +107,23 @@ export function isStop(body: string, identity: string, accounts?: Accounts): boo
  *
  * Where the parser could read too many names or too few, a go-ahead errs the other way from a
  * stop, since lifting a stop by mistake is the costlier error (Adam, 2026-10-11). Mentions later
- * on the opening line count where none follows the phrase, so "go ahead and pick it back up,
- * @igor-backend" is for the backend Igor alone. A list that runs straight on into a word loses
- * its last name, so "go ahead @igor-backend, @igor-frontend keep waiting" is for the backend Igor
- * alone. A name that is no Igor counts as no name, so "carry on, @alice approved it" lifts the
- * stop for every Igor; a name `accounts` could not resolve still counts. Whether it names an Igor
- * is read before the trim, so a trim that drops the only Igor leaves it for nobody.
+ * on the opening line count where no Igor's name follows the phrase, so "go ahead and pick it back
+ * up, @igor-backend" and "carry on, @alice approved it for @igor-backend" are for the backend Igor
+ * alone. Whichever names it reads, a run of them that goes straight on into a word loses its last,
+ * so "go ahead @igor-backend, @igor-frontend keep waiting" is for the backend Igor alone. A name
+ * that is no Igor counts as no name, so "carry on, @alice approved it" lifts the stop for every
+ * Igor; a name `accounts` could not resolve still counts. Whether it names an Igor is read before
+ * the trim, so a trim that drops the only Igor leaves it for nobody.
  */
 export function isGoAhead(body: string, identity: string, accounts?: Accounts): boolean {
   const text = body.trim()
   if (GO_AHEAD.test(text)) {
-    const { list, endsOnWord, later } = namesAfter(text, GO_AHEAD)
-    const named = list.length > 0 ? list : later
+    const { list, endsOnWord, later, laterEndsOnWord } = namesAfter(text, GO_AHEAD)
     const igor = (name: string): boolean => isIgor(name, identity, accounts, 'unresolved-is-igor')
-    const kept = list.length > 1 && endsOnWord ? list.slice(0, -1) : named
+    const usesList = list.some(igor)
+    const named = usesList ? list : later
+    const runsOn = usesList ? endsOnWord : laterEndsOnWord
+    const kept = named.length > 1 && runsOn ? named.slice(0, -1) : named
     if (named.some(igor) ? kept.filter(igor).some((name) => sameAccountName(name, identity)) : true) return true
   }
   // A comment that opens by letting another Igor resume can still address this one further on.
@@ -146,8 +149,10 @@ function isIgor(
 
 /**
  * What a comment opening with `verb` names: `list`, the accounts named straight after the verb;
- * `endsOnWord`, whether that list runs straight on into a word; and `later`, the mentions further
- * on the opening line.
+ * `endsOnWord`, whether that list runs straight on into a word; `later`, the mentions further on
+ * the line the list ends on, or on the opening line where the list is empty, and never past a line
+ * break the list's last separator crossed; and `laterEndsOnWord`, whether the last of those runs
+ * straight on into a word.
  *
  * `list` reads `stop @a`, `stop @a, @b`, `stop @a and @b`, `stop @a, @b, and @c`, `stop @a or @b`,
  * `stop @a and/or @b`, `stop @a & @b`, `stop @a/@b`, `stop @a + @b`, and the same after a go-ahead
@@ -162,13 +167,18 @@ function isIgor(
  *
  * A line break ends the list unless a separator comes before it: `stop` on a line of its own,
  * followed by a paragraph addressing a person, is a bare stop, and the same holds for a go-ahead.
+ * A separator carries the list over one line break, never over a blank line, so a paragraph that
+ * opens with a mention is never part of the list above it.
  */
-function namesAfter(text: string, verb: RegExp): { list: string[]; endsOnWord: boolean; later: string[] } {
+function namesAfter(
+  text: string,
+  verb: RegExp,
+): { list: string[]; endsOnWord: boolean; later: string[]; laterEndsOnWord: boolean } {
   const mention = /[(\[*_`~"']*@([A-Za-z0-9](?:[\w.-]*[A-Za-z0-9])?(?:\[bot\])?)(?:['’]s)?[)\]*_`~"']*(?:['’]s)?/iy
-  const separator = /[^\S\n]*(?:,\s*)?(?:(?:&|\+|\/|\band\b|\bor\b)(?:\/(?:and|or)\b)?\s*)?/iy
+  const separator = /[^\S\n]*(?:,[^\S\n]*(?:\n[^\S\n]*)?)?(?:(?:&|\+|\/|\band\b|\bor\b)(?:\/(?:and|or)\b)?[^\S\n]*(?:\n[^\S\n]*)?)?/iy
   const rest = text.slice(verb.exec(text)?.[0].length ?? 0)
   const list: string[] = []
-  let at = /^[^\S\n]*[:,—–-]*[^\S\n]*/.exec(rest)![0].length
+  let at = /^[^\S\n]*(?:[:,—–-]+[^\S\n]*(?:\n[^\S\n]*)?)?/.exec(rest)![0].length
   let end = at
   for (;;) {
     mention.lastIndex = at
@@ -181,10 +191,18 @@ function namesAfter(text: string, verb: RegExp): { list: string[]; endsOnWord: b
     at = separator.lastIndex
   }
   const endsOnWord = list.length > 0 && /^[^\S\n]+[A-Za-z]/.test(rest.slice(end))
-  const line = rest.slice(at).split('\n', 1)[0]!
-  const later = [...line.matchAll(MENTION)].map((m) => m[1]!)
-  return { list, endsOnWord, later }
+  const crossed = rest.slice(list.length > 0 ? end : 0, at).includes('\n')
+  const line = crossed ? '' : rest.slice(at).split('\n', 1)[0]!
+  const mentions = [...line.matchAll(MENTION)]
+  const later = mentions.map((m) => m[1]!)
+  const last = mentions[mentions.length - 1]
+  const laterEndsOnWord =
+    last !== undefined && RUNS_ON.test(line.slice(last.index + last[0].length))
+  return { list, endsOnWord, later, laterEndsOnWord }
 }
+
+/** What follows a mention that runs straight on into a word, past a possessive or closing markup. */
+const RUNS_ON = /^(?:['’]s)?[)\]*_`~"']*(?:['’]s)?[^\S\n]+[A-Za-z]/
 
 /**
  * A mention anywhere in text: not the end of another name, a path or a team, though it may sit in

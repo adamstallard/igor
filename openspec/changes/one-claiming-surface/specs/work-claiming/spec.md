@@ -172,9 +172,9 @@ the Igors it names, and SHALL NOT lift it for an Igor it does not name. A name t
 counts as no name, as in a stop, so "carry on, @alice approved it" lifts the stop for every Igor.
 
 Where the names are unclear, a go-ahead errs the other way from a stop, because lifting a stop by
-mistake costs more than leaving one in place. A go-ahead with no name straight after the phrase
-SHALL count the mentions later on its opening line, and a list of names that runs straight on
-into a word SHALL lose its last name. Whether a go-ahead names an Igor is read before that loss,
+mistake costs more than leaving one in place. A go-ahead with no Igor's name straight after the
+phrase SHALL count the mentions later on its opening line, and a list of names that runs straight
+on into a word SHALL lose its last name, whichever of the two the go-ahead reads. Whether a go-ahead names an Igor is read before that loss,
 so one whose only Igor is the name it loses lifts the stop for no Igor. A name the tracker cannot
 resolve counts as an Igor's.
 
