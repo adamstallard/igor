@@ -36,6 +36,10 @@
       the decision record
 - [ ] 3.4 Tests: a role stopped and a role sharing nothing still working; an operator telling
       the four idle reasons apart from the record alone
+- [ ] 3.5 Resolve each seat's credential and its hash before the condition gate declines a scope,
+      so a credential condition still sees a replaced credential while its scope is stopped and
+      clears at once rather than after the cooldown. Test: a seat stopped on token A, given token
+      B, is chosen on the next cycle with no probe taken
 
 ## 4. Clearing
 
