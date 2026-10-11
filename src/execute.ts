@@ -1,14 +1,18 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { stillAssigned } from './claiming.js'
 import { randomUUID } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import type { Artifact, Candidate, ClaimVerdict, CodeHost, InFlight, Tracker } from './adapter.js'
 import { resolveToken, type TokenSource, type Window } from './budget.js'
 import { recordObservation, WINDOW_LENGTH } from './capacity.js'
 import type { Action, Role } from './role.js'
 import {
   carried,
+  sameBlob,
   showName,
   withTree,
+  type BaseChange,
   type ChangedFile,
   type MergeState,
   type TreeProvider,
@@ -17,25 +21,26 @@ import {
 import { appendRecord, STATE_BRANCH, writeState } from './state.js'
 
 /**
- * Doing the work, once an item is claimed.
+ * Doing the work on a claimed item: **the worker edits files, and the loop decides what becomes
+ * of them.**
  *
- * The shape that matters: **the worker edits files, and the loop decides what becomes of
- * them.** The worker is never asked to take an action and trusted to stay inside the rules —
- * it produces changes in a disposable tree, and the loop reads that tree and performs only the
- * actions the role permits. A steered worker still cannot exceed the action space, because it
- * was never the thing holding the permissions.
+ * The worker produces changes in a disposable tree and is never asked to take an action. The
+ * loop reads that tree and performs only the actions the role permits. Keep it that way: a
+ * worker steered by an item's text cannot exceed the role only because it never holds the
+ * permissions.
  */
 
 export const EXECUTION_MODEL = 'claude-sonnet-5'
 
 export class ExecutionError extends Error {
   /**
-   * The worker's terminal event, where it produced one before exiting non-zero. The exit code
-   * alone cannot tell a crash from a seat with no capacity left, and the envelope that can say
-   * which is otherwise dropped at the reject.
+   * `output` is the worker's terminal event, where it produced one before exiting non-zero.
+   * The exit code alone cannot tell a crash from a seat with no capacity left; `usageLimit`
+   * reads this event to tell them apart, and without this field it is lost when the run throws.
    *
-   * `cure` is set only where the thrower enforces a configuration itself and so knows the key
-   * for certain. A failure whose cause is unknown carries none, and the item defers.
+   * `cure` names the configuration key to fix. Only a thrower that enforces that configuration
+   * itself sets it, because only that thrower knows the key for certain. A failure whose cause
+   * is unknown carries none, and the item defers.
    */
   constructor(
     message: string,
@@ -46,16 +51,16 @@ export class ExecutionError extends Error {
   }
 }
 
-/** Refusals are recorded rather than thrown: the point is that the run continues without them. */
+/** An action the loop declined to take, and why. Returned in the result rather than thrown. */
 export interface Refusal {
   action: Action | string
   why: string
 }
 
 /**
- * What the stream said about a run whose cost never arrived. Nothing here may be summed: an
- * event's `output_tokens` covers its own turn, and summing them measured 9 against a terminal
- * event's actual 429. Only `cache_read_input_tokens` grows monotonically.
+ * What the stream showed of a run that reported no cost. Don't sum anything here: each event's
+ * `output_tokens` covers its own turn only, and summing them gave 9 where the terminal event
+ * reported 429. Only `cache_read_input_tokens` grows monotonically, so its peak is what is kept.
  */
 export interface WorkerUsage {
   /** Assistant turns seen. Each is at least one billed call, so any count above zero is spend. */
@@ -71,10 +76,17 @@ export interface ExecutionResult {
   /** Whether `artifact` was brought up to date rather than opened by this run. */
   caughtUp?: boolean
   /**
-   * Whether a worker was handed a conflict and resolved it. False on a catch-up whose merge
-   * came out clean, where claiming a resolution would claim work nobody did.
+   * Set only where a worker was handed a conflict and resolved it. Absent on a catch-up whose
+   * merge came out clean: claiming a resolution there would claim work nobody did.
    */
   conflictResolved?: boolean
+  /**
+   * Base changes the published resolution undid on purpose, each with the state it discarded.
+   * Only declared undos reach here; an undeclared one fails the run and publishes nothing.
+   * Don't drop them from the run record: an undone base change is invisible in the diff, and a
+   * declaration is accepted only because it states the undo rather than hiding it.
+   */
+  reverts?: string[]
   changed: ChangedFile[]
   refusals: Refusal[]
   transcript: string
@@ -83,7 +95,7 @@ export interface ExecutionResult {
    * terminal event spent real money, and zero would read as a run that was free.
    */
   costUsd: number | undefined
-  /** Only where `costUsd` is undefined: what the stream did say before it was cut off. */
+  /** Only where `costUsd` is undefined: what the stream showed of the run instead. */
   usage?: WorkerUsage
   /** Per model, where the worker reported it. Absent from a run killed before its terminal event. */
   models?: ModelSpend[]
@@ -94,9 +106,9 @@ export interface ExecutionResult {
   /** What the sandbox stopped the worker doing, whatever the run went on to produce. */
   denials?: Denial[]
   /**
-   * Every configuration of this Igor's own that the run proved wrong, minted where each is
-   * enforced. A run can earn several — refused an action *and* denied a command — and each is
-   * a separate thing to fix, so all of them are kept.
+   * Configuration keys of this Igor's own that the run proved wrong, such as
+   * `role:<name>:commands`. Each is added only by the code that enforces it. Keep all of them:
+   * a run can be refused an action *and* denied a command, and each is a separate thing to fix.
    */
   cures?: string[]
   /** The worker's own log under `~/.claude/projects/`, which outlives the disposable clone. */
@@ -106,13 +118,13 @@ export interface ExecutionResult {
   /** Only on a budget stop or a failure. */
   terminalReason?: string
   /**
-   * The terminal envelope whole, for `recordExecution` to write out: on a budget stop, and on
-   * any run whose envelope named a limit in one of the provider's own fields, whatever the run
-   * then did with it.
+   * The whole terminal envelope, for `recordExecution` to write to `refusals/`. Set on a budget
+   * stop, and on any run not reported as a success whose envelope names a limit in a field the
+   * provider fills, whatever the run then did.
    *
-   * `apiErrorStatus` and `terminalReason` beside it are the two fields already known to
-   * matter. This is everything else — a refusal nobody has seen yet cannot be summarised into
-   * the fields a guess thought to keep, and it dies with the process unless it is carried.
+   * Kept whole rather than as more fields beside `apiErrorStatus` and `terminalReason`: nobody
+   * has yet captured a live limit refusal, so which fields matter is unknown, and whatever is
+   * not carried here is lost when the worker process exits.
    */
   limitEnvelope?: WorkerOutput
   reason: string
@@ -123,28 +135,28 @@ export function permits(role: Role, action: Action): boolean {
 }
 
 /**
- * A `commands` entry is a Claude Code permission pattern rather than a shell line, and a worker
- * shown `npm test:*` will type `npm test:*`. Only the two shapes that can be stated plainly are
- * stated; anything else is printed as written and unglossed — a worker shown a pattern it cannot
- * read is no worse off than one shown nothing, while a worker told it may run something it may
- * not spends the refused turn this exists to save.
+ * Turns a `commands` entry into words a worker can act on. An entry is a Claude Code permission
+ * pattern, not a shell line: shown `npm test:*` as written, a worker types `npm test:*`. Only
+ * the two shapes with a plain meaning are explained, `cmd:*` and a bare command. Anything else
+ * is returned as written: a worker shown a pattern it cannot read is no worse off than one
+ * shown nothing, while one told it may run something it may not wastes a turn on the refusal.
  */
 export function describeCommand(pattern: string): string {
-  // An entry that is not one line of plain text is one `Bash(…)` will never match, so saying it
-  // may be run is the wasted refused turn this exists to save. Format and control characters
-  // count: a soft hyphen inside `npx tsc` renders as a line no reader can tell from a correct
-  // one, which is the only way this can state a permission that does not exist.
+  // An entry with leading or trailing whitespace, whitespace other than a space, or a control
+  // or format character is returned as written: `Bash(…)` will never match it, so explaining it
+  // would promise a command the sandbox refuses. Format characters are the dangerous case: a
+  // soft hyphen inside `npx tsc` renders exactly like the correct line.
   if (pattern !== pattern.trim() || /[\s\p{Cc}\p{Cf}]/u.test(pattern.replace(/ /g, ''))) return pattern
   const prefix = pattern.endsWith(':*') ? pattern.slice(0, -2) : undefined
-  // A `*` anywhere but that trailing `:*` is a shape with no settled meaning, so it goes raw.
+  // A `*` anywhere but the trailing `:*`, or nothing before the `:*`, has no settled meaning.
   if (prefix !== undefined) return prefix === '' || prefix.includes('*') ? pattern : `${prefix} — with any arguments`
   return pattern.includes('*') ? pattern : `${pattern} — exactly that, no arguments`
 }
 
 /**
- * The trusted channel. The item never reaches here — it arrives fenced in the user message,
- * and this says so, so that instruction-shaped text in an item reads as information about the
- * task rather than as direction.
+ * The system prompt, the one channel the worker is told to trust. Don't put item text in it:
+ * the item arrives fenced in the user message (`workerPrompt`), and this prompt says so, so
+ * that text in the item shaped like an instruction reads as information about the task.
  */
 export function workerSystemPrompt(role: Role, allowed: readonly Action[], lore = ''): string {
   return [
@@ -154,9 +166,9 @@ export function workerSystemPrompt(role: Role, allowed: readonly Action[], lore 
     'anything. What becomes of your changes is decided outside this session, and only these',
     `actions are available to it: ${allowed.join(', ') || 'none'}.`,
     '',
-    // Stated here because the alternative is the sandbox: a worker that is only denied has to
-    // reverse-engineer its own permissions, and was watched doing so with the command it needed
-    // sitting in this list unmentioned.
+    // Listed so the worker does not have to learn its commands from the sandbox's refusals.
+    // A worker that is only denied works out its own permissions by trial, and one was seen
+    // doing so while the command it needed sat in this list, unmentioned.
     ...(role.commands.length > 0
       ? [
           'You may run these commands and no others:',
@@ -180,13 +192,16 @@ export function workerSystemPrompt(role: Role, allowed: readonly Action[], lore 
     ...(role.instructions.length > 0
       ? ['Standing instructions for this role:', ...role.instructions.map((i) => `  ${i.replace(/\n/g, '\n  ')}`)]
       : []),
-    // Lore sits with the standing instructions rather than with the item, because a human
-    // reviewed it. That is the whole function of the `active` gate.
+    // Lore goes in the trusted prompt, beside the standing instructions, because only entries a
+    // human has reviewed (status `active`) reach here. Don't pass unreviewed lore to it.
     ...(lore === '' ? [] : ['', lore]),
   ].join('\n')
 }
 
-/** Removes the linkage line wherever the worker repeated it, and tidies the blank lines it leaves. */
+/**
+ * Removes every line that is only the item's linkage (such as `Closes #12`), which the loop
+ * adds itself, and collapses the blank lines left behind.
+ */
 export function stripLinkage(transcript: string, linkage: string): string {
   const escaped = linkage.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   return transcript
@@ -213,14 +228,28 @@ export function workerPrompt(candidate: Candidate, linkage: string): string {
 }
 
 /**
- * What the worker is handed when an artifact of the Igor's own stopped merging: files with
- * conflict markers in them, which is the shape it already deals in.
+ * The prompt for a worker resolving a conflict on one of this Igor's own artifacts. The merge is
+ * already in the tree, so the worker is handed files with conflict markers in them: the same
+ * kind of work as any other item.
  *
- * It is not handed git. The merge is already in the tree, the loop will publish the result,
- * and nothing here asks the worker for a branch, a remote or a commit — so the action space
- * that bounds a steered worker is the same one it always had.
+ * Don't ask it for git, a branch, a remote or a commit. The loop publishes the result, so a
+ * worker steered by the item is bounded by the same actions as on any other run.
  */
-export function conflictPrompt(candidate: Candidate, artifact: InFlight, paths: readonly string[]): string {
+export function conflictPrompt(
+  candidate: Candidate,
+  artifact: InFlight,
+  outbox: string,
+  paths: readonly string[],
+  baseChanges: readonly BaseChange[] = [],
+): string {
+  const conflicted = new Set(paths)
+  // Only conflicted paths are listed: those are the ones this prompt asks the worker to decide,
+  // and the base's whole diff has no size limit. Undoing any other base change is refused and
+  // handed off, as the prompt tells the worker. A path whose name is not valid text is left
+  // out, because a declaration names a path as a string and could never cover it.
+  const versions = baseChanges.flatMap((c) =>
+    c.rawName === undefined && conflicted.has(c.path) ? [`- ${c.path}: ${c.after ?? 'deleted'}`] : [],
+  )
   return [
     `Resolve a merge conflict. ${artifact.base} has been merged into the branch behind ${artifact.ref},`,
     'and the merge left conflicts in the working tree.',
@@ -239,6 +268,23 @@ export function conflictPrompt(candidate: Candidate, artifact: InFlight, paths: 
     'touch files the merge did not conflict on, and do not run git — the loop publishes the',
     'result. Say so plainly and change nothing if a conflict needs a decision only a person',
     'can make.',
+    '',
+    `Dropping something ${artifact.base} did — publishing a file as it stood before the base`,
+    'touched it, or keeping a file the base deleted — stops the run and hands the item to a',
+    `person, unless you say you meant it. To say it, write this file — the whole path, which is`,
+    'outside the repository and is yours alone to write:',
+    '',
+    `  ${join(outbox, DECLARATION_FILE)}`,
+    '',
+    '  {"reverts": [{"path": "<path>", "discards": "<the base version below>"}]}',
+    '',
+    'One entry per path, spelled exactly; there is no wildcard and no entry covers a path it',
+    'does not name. It is read once this run ends and cannot reach the artifact, because it is',
+    'not in the repository. What the base holds:',
+    '',
+    '<base-versions>',
+    ...(versions.length > 0 ? versions : ['(none reported)']),
+    '</base-versions>',
     '',
     'Where a conflicted file has no markers because one side deleted what the other edited, the',
     'copy left on disk is the side that survived the delete — keep it to take that side, or delete',
@@ -267,12 +313,10 @@ export interface WorkerOutput {
 }
 
 /**
- * What one model cost a run, in the unit the limit is actually denominated in.
- *
- * `total_cost_usd` is the same figures summed at list prices — `costBasis: "list"` in the
- * envelope says so. That sum is fine for comparing runs and useless for a per-model weekly
- * limit, which is a separate cap the aggregate cannot see. Keeping both costs nothing: the
- * envelope carries them and they were being discarded.
+ * What one model cost a run. A seat has a weekly limit per model as well as an overall one, and
+ * `total_cost_usd` cannot show the per-model one: it is these figures summed across models at
+ * list prices (`costBasis: "list"` in the envelope says so). The sum is still right for
+ * comparing runs. The envelope carries both, so keeping both costs nothing.
  */
 export interface ModelSpend {
   /** The canonical name rather than the dated id, so a month of records groups. */
@@ -306,11 +350,10 @@ export function spendByModel(modelUsage: Record<string, unknown> | undefined): M
 }
 
 /**
- * One tool call the sandbox stopped, named with the configuration that would have permitted it.
+ * One tool call the sandbox stopped, with the configuration key that would have permitted it.
  *
- * The command alone identifies an incident. The cure identifies what to change, which is what
- * lets one fix answer every Igor that hit the same wall instead of each producing an anecdote
- * somebody has to read a transcript to understand.
+ * The command says what happened; the key says what to change, so one fix answers every Igor
+ * denied the same thing without anyone reading a transcript to find the cause.
  */
 export interface Denial {
   /** As the provider names it: `Bash`, `WebFetch`, and so on. */
@@ -326,16 +369,17 @@ export interface Denial {
   cure?: string
 }
 
-/** Enough to recognise a denial by. The cure is the part that has to be exact. */
+/** Characters kept of a denied command or tool name: enough to recognise it by. */
 export const DENIED_COMMAND_LIMIT = 200
 
 /**
- * Both strings here are the worker's own text, and a worker can be steered by an item anyone
- * can write. They reach a log where the reporter prefixes only the first line and a ledger
- * meant to be read whole, so: one line, bounded, and nothing a terminal acts on.
+ * Flattens worker text to one bounded line with nothing in it a terminal acts on. A denial's
+ * tool name and command are the worker's own text, and a worker can be steered by an item
+ * anyone can write. Both reach a log whose reporter prefixes only the first line, and a ledger
+ * meant to be read whole.
  *
- * `\s` is not that set. ESC is not whitespace, and left in, a denial repaints the lines above
- * it — the real warning erased, a forged one written with the reporter's own prefix.
+ * Don't narrow the pattern to `\s`. ESC is not whitespace, and left in, a denial can repaint
+ * the lines above it: erase the real warning and write a forged one with the reporter's prefix.
  */
 function oneLine(text: string): string {
   const flat = text.replace(/[\p{Cc}\p{Cf}\s]+/gu, ' ').trim()
@@ -357,9 +401,10 @@ export function denialsFrom(raw: unknown, roleName: string): Denial[] {
     const denial = asRecord(entry)
     const named = denial?.['tool_name']
     if (typeof named !== 'string') continue
-    // The name is the whole warning wherever there is no command, and an MCP server names its
-    // own tools, so it is no more trusted than the command is. Matched raw: a cure belongs to
-    // Bash itself, not to whatever cleans up looking like it.
+    // The tool name is flattened like the command: an MCP server names its own tools, so the
+    // name is no more trusted, and where there is no command it is all the warning shows. The
+    // cure is decided on the raw name, so only Bash itself earns one, never a name that only
+    // reads as `Bash` once flattened.
     const tool = oneLine(named)
     if (tool === '') continue
     const asked = asRecord(denial?.['tool_input'])?.['command']
@@ -373,7 +418,7 @@ export function denialsFrom(raw: unknown, roleName: string): Denial[] {
   return out
 }
 
-/** Fields whose vocabulary is the provider's own, so naming a limit in one is unambiguous. */
+/** A limit named in `stop_reason` or `terminal_reason`, fields the provider fills. */
 const LIMIT_FIELD = /(?:usage|rate)[ _-]?limit/i
 
 /**
@@ -387,7 +432,7 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
   return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : undefined
 }
 
-/** Ten digits is seconds and thirteen is milliseconds; anything else is not a time. */
+/** An epoch number below 1e11 is seconds, and below 1e15 milliseconds; nothing else is a time. */
 function fromEpoch(value: number): string | undefined {
   if (!Number.isFinite(value) || value <= 0) return undefined
   const ms = value < 1e11 ? value * 1000 : value
@@ -409,12 +454,14 @@ function asIso(value: unknown): string | undefined {
 }
 
 /**
- * Deliberately not `resolveReset`, though `reset.ts` exports it and it reads the very phrase
- * the provider is believed to print. It answers with the first such occurrence at or after the
- * moment it is given, so a reset already gone comes back a year out — straight past the
- * staleness guard in `usageLimit`, which compares against that same moment — and cutting the
- * phrase out of `envelope.result` takes any date the worker happened to quote from the item.
- * Wiring it in wants a horizon no real reset exceeds and a pattern anchored on reset wording.
+ * The reset time a limit envelope names, from `rate_limit_info` or from the envelope's text.
+ *
+ * Don't use `resolveReset` from `reset.ts` here, though it reads the very phrase the provider
+ * is believed to print. It answers with the first occurrence at or after the moment it is
+ * given, so a reset already gone comes back a year out, straight past the staleness check in
+ * `usageLimit`, which compares against that same moment. And cutting the phrase out of
+ * `envelope.result` also takes any date the worker quoted from the item. `resolveRecentReset`
+ * avoids the first problem; using it still needs a pattern anchored on the reset wording.
  */
 function resetFrom(envelope: WorkerOutput, info: Record<string, unknown> | undefined): string | undefined {
   for (const key of ['resetsAt', 'resets_at', 'resetAt', 'reset_at']) {
@@ -429,18 +476,19 @@ function resetFrom(envelope: WorkerOutput, info: Record<string, unknown> | undef
   return stamped?.[1] === undefined ? undefined : asIso(stamped[1])
 }
 
-/** The one signal that is the worker's own prose about an item, not the provider's vocabulary. */
+/** The `limitSignals` name for a match in `result`: the worker's prose, not a provider field. */
 const PROSE_SIGNAL = 'result'
 
 /**
- * Which of the guesses an envelope tripped, named. The list of patterns lives here and nowhere
- * else, so `usageLimit` and the refusal capture cannot drift apart about what a limit looks like.
+ * Names each envelope field that suggests a usage limit. These patterns live here and nowhere
+ * else, so `usageLimit` and the capture in `recordExecution` cannot disagree about what a limit
+ * looks like.
  *
- * Says nothing about whether the run stopped for one — that is `usageLimit`'s question, and it
- * asks more than this. `result` alone is the weak answer: it is worker prose written about an
- * item, so an item about rate limits trips it, and a capture naming only that signal is as
- * likely to be a crash as a refusal. Which is the reason to write the names down rather than
- * the verdict: the first reader has to be able to tell those two apart.
+ * It does not say whether the run stopped for a limit: `usageLimit` decides that, and asks
+ * more. `result` alone is weak evidence. It is the worker's prose about an item, so an item
+ * about rate limits trips it, and a capture matching only `result` is as likely a crash as a
+ * refusal. That is why the capture records which fields matched rather than a verdict: its
+ * first reader has to tell the two apart.
  */
 export function limitSignals(envelope: WorkerOutput): string[] {
   const status = asRecord(envelope.rate_limit_info)?.['status']
@@ -456,30 +504,27 @@ export function limitSignals(envelope: WorkerOutput): string[] {
 }
 
 /**
- * Whether a limit is named in a field the provider fills rather than in prose the worker wrote.
- *
- * This is what a capture is worth keeping on, whatever the run went on to do. Prose alone is
- * not: a crash on an item that discusses rate limits says the same words, and a `refusals/`
- * directory filled with those buries the first real refusal, which is the whole thing anyone
- * is waiting for.
+ * Whether a limit is named in a field the provider fills, rather than only in the worker's
+ * prose. This decides whether an envelope is captured whatever the run went on to do. Prose
+ * alone does not count: a crash on an item that discusses rate limits uses the same words, and
+ * `refusals/` filled with those buries the first real refusal, the capture anyone is waiting for.
  */
 export function structuralLimit(envelope: WorkerOutput): boolean {
   return limitSignals(envelope).some((signal) => signal !== PROSE_SIGNAL)
 }
 
 /**
- * Whether the terminal envelope is a seat with no capacity left, and when it comes back.
+ * Whether the terminal envelope is a seat with no capacity left, and when capacity returns.
  *
  * **These patterns are unverified against a live usage-limit error.** Nobody has captured one
- * from this provider, so which field carries it is a guess spread across the plausible
- * carriers; correct them here and nowhere else once one is seen. One to correct them from
- * arrives on its own: every envelope this fires on is written whole to `refusals/` on the
- * state branch.
+ * from this provider, so they guess across every field that might carry it. Correct them here
+ * and nowhere else once one is seen: every envelope this fires on is written whole to
+ * `refusals/` on the state branch.
  *
- * Wrong in the safe direction on purpose. An ambiguous envelope reads as an ordinary failure,
- * because a crash announced as "out of budget" buries a bug under a reason nobody will
- * question, while a budget stop announced as a crash costs one re-run. So nothing counts on a
- * run the provider reports as successful, whatever `limitSignals` found in it.
+ * It errs toward calling an ambiguous envelope an ordinary failure. A crash reported as "out of
+ * budget" hides a bug behind a reason nobody questions, while a budget stop reported as a
+ * crash costs one re-run. So a run the provider reports as successful never counts, whatever
+ * `limitSignals` found in it.
  */
 export function usageLimit(
   envelope: WorkerOutput | undefined,
@@ -504,19 +549,20 @@ function outOfCapacity(resetsAt: string | undefined): string {
 }
 
 /**
- * Which window a refusal exhausted. The envelope does not say, and the two are separate caps.
+ * Which window a refusal exhausted, session or week. The envelope does not say, and the two are
+ * separate caps.
  *
- * A reset further off than a session is long cannot be a session reset, so `week` there is
- * deduction. Nothing else is: a reset inside five hours fits either window, and a refusal
- * naming no reset fits both on no evidence. Both read as `session`, which is the safe
- * direction — a weekly refusal labelled so divides one session's spend by 1.0 and lowers the
- * capacity estimate, the direction `capacity-from-observation` §3 already accepts from a
- * co-consumer.
+ * Only one case is deduced: a reset further off than a session lasts cannot be a session reset,
+ * so it is `week`. Everything else reads as `session`, including a reset within a session's
+ * length, which fits either window, and a refusal naming no reset. That errs safely: a weekly
+ * refusal labelled `session` divides one session's spend by 100% used and so lowers the
+ * capacity estimate, the direction the seat-budget spec already accepts from another consumer
+ * of the seat ("A co-consumer makes the estimate low, not high").
  *
- * Nothing reads the window off the worker's own prose. `LIMIT_TEXT` leaves bare "rate limit"
- * out for the reason that applies doubly to "weekly": a failed run's `result` is model output,
- * and an item about a weekly report answers to it. Add a pattern here, and nowhere else, once
- * a live refusal has been captured and the wording is known rather than guessed.
+ * Don't read the window from the worker's prose. A failed run's `result` is model output, and
+ * an item about a weekly report would match "weekly": the reason `LIMIT_TEXT` leaves out bare
+ * "rate limit". Add a pattern here, and nowhere else, once a live refusal has been captured and
+ * its wording is known rather than guessed.
  */
 export function limitWindow(resetsAt: string | undefined, now: number = Date.now()): Window {
   if (resetsAt === undefined) return 'session'
@@ -526,8 +572,8 @@ export function limitWindow(resetsAt: string | undefined, now: number = Date.now
 }
 
 /**
- * One newline-delimited event off the worker's stream. Only the terminal `result` event is
- * modelled; the rest are ticks, and what they carry — usage, timing — stays open.
+ * One newline-delimited event from the worker's stream. Only the terminal `result` event's
+ * fields are typed; other events, which carry usage and timing, are left as untyped fields.
  */
 export interface WorkerEvent extends WorkerOutput {
   type: string
@@ -535,22 +581,22 @@ export interface WorkerEvent extends WorkerOutput {
 }
 
 /**
- * When a worker is killed. Silence means two different things and gets two windows: waiting on
- * a tool it dispatched, where a build or a test run is legitimately long, and waiting on the
- * model, where nothing legitimate is.
+ * The three limits a worker is killed on. Silence gets two windows because it means two
+ * things: waiting on a tool it dispatched, where a build or a test run is legitimately long,
+ * and waiting on the model, where nothing legitimate is. The third bounds the whole run.
  */
 export interface Limits {
-  /** Killed after this long with a dispatched tool still outstanding. */
+  /** Killed after this long without an event while a tool it dispatched has not returned. */
   toolMs: number
-  /** Killed after this long waiting on the model's next turn. */
+  /** Killed after this long without an event while waiting on the model's next turn. */
   modelMs: number
   /** Killed after this long overall, whatever the stream is doing. */
   ceilingMs: number
 }
 
 /**
- * Silence with a tool outstanding. Three times the longest a shell command may be given, which
- * also leaves room for a subagent or a fetch that nothing here bounds.
+ * Silence allowed while a tool runs: three times the longest a shell command may be given (ten
+ * minutes), which also leaves room for a subagent or a fetch that nothing here bounds.
  *
  * Provisional: no real task on a real item has been timed, so this is reasoned from the tool's
  * own bound rather than from how long work actually takes.
@@ -564,15 +610,14 @@ export const TOOL_SILENCE_MS = 30 * 60 * 1000
 export const MODEL_SILENCE_MS = 5 * 60 * 1000
 
 /**
- * The longest a worker may live. A backstop rather than a limit anyone meets: a worker emitting
- * steadily satisfies both silence windows and can still never finish. Set past the seat's
- * five-hour rate-limit window, so a run reaching it is not waiting on anything that resolves.
+ * The longest a worker may live, whatever its stream is doing. A worker that keeps emitting
+ * events satisfies both silence windows and can still never finish; this is what stops it. Set
+ * past the seat's five-hour rate-limit window, so a run that reaches it is not waiting on
+ * anything that resolves.
  *
- * **Two things derive from this, and both need it to exist.** `SWEEP_AFTER_MS` reclaims trees a
- * dead process left behind, and has to clear the longest a live tree can be held. And a sibling
- * process deciding whether a claim belongs to an Igor that has died can observe only how old
- * the claim is — a progress window resets on every event and bounds nothing, so without a
- * ceiling no claim age is ever conclusive and the item is unrecoverable.
+ * **`SWEEP_AFTER_MS` is derived from this; keep it that way.** The sweep deletes working trees
+ * older than its threshold, so the threshold has to clear the longest a live tree can be held.
+ * A sweep threshold below this ceiling deletes the tree of a worker that is still running.
  *
  * Provisional: anchored to the rate-limit window, not to any measured task.
  */
@@ -607,7 +652,7 @@ function inSidechain(event: WorkerEvent): boolean {
   return event.parent_tool_use_id !== undefined && event.parent_tool_use_id !== null
 }
 
-/** Usage rides on the assistant event's message, alongside the rest of the turn. */
+/** Token usage is on an assistant event's `message`, not on the event itself. */
 function usageOf(event: WorkerEvent): Record<string, unknown> | undefined {
   const message = event['message']
   if (typeof message !== 'object' || message === null) return undefined
@@ -618,21 +663,20 @@ function usageOf(event: WorkerEvent): Record<string, unknown> | undefined {
 function blocksOf(event: WorkerEvent): Block[] {
   const content = (event.message as { content?: unknown } | undefined)?.content
   if (!Array.isArray(content)) return []
-  // Both readers reach straight for `block.type`, from a stream listener where a throw is
-  // nobody's rejection.
+  // Non-objects are dropped because both readers, `watchWorker` and the progress counter in
+  // `execute`, read `block.type` straight off each block inside a stream listener, where a
+  // throw rejects nothing and abandons the rest of the chunk.
   return content.filter((block): block is Block => typeof block === 'object' && block !== null)
 }
 
 /**
- * What a person watching wants to know, which is not what the watchdog wants to know.
- *
- * The same events answer both. The watchdog asks only whether anything arrived, because a
- * worker that has stopped is the failure it exists to catch. Somebody at a terminal is asking
- * the opposite question — it is clearly alive, but is it reading, editing or checking its work
- * — and no count of tokens or turns answers that.
+ * What a person watching a run is shown: whether the worker is reading, editing or checking
+ * its work. The watchdog reads the same events but asks only whether anything arrived. A
+ * person can see the worker is alive and wants to know what it is doing, which no count of
+ * tokens or turns answers.
  */
 export interface Progress {
-  /** Named for what it is doing rather than which tool it called. */
+  /** An activity from `describeTool`, such as `running tests`, rather than the tool's name. */
   doing: string
   elapsedMs: number
   /** Distinct paths opened, written or edited. */
@@ -656,9 +700,10 @@ const DOING: Record<string, string> = {
 }
 
 /**
- * A tool call in words. Bash is the one worth reading closely, because it is most of what a
- * worker does and the only place "verifying its own change" is distinguishable from "looking
- * around" — measured at 93 bash calls in one run against 34 reads.
+ * A tool call as an activity, for `Progress.doing`. Only Bash is looked into: it is most of
+ * what a worker does (measured at 93 bash calls in one run against 34 reads), and its command
+ * is the only place a worker checking its own change (`running tests`) can be told apart from
+ * one looking around.
  */
 export function describeTool(name: string, input: Record<string, unknown> = {}): string {
   if (name !== 'Bash') return DOING[name] ?? name.toLowerCase()
@@ -680,18 +725,21 @@ export function renderProgress(progress: Progress): string {
 }
 
 export interface Watchdog {
-  /** Call for each event off the stream: it is both the tick and what says which window applies. */
+  /**
+   * Call for every event off the stream: each restarts the silence timer, and its tool calls
+   * and results decide which silence window applies next.
+   */
   progress: (event: WorkerEvent) => void
   cancel: () => void
 }
 
 /**
- * Kills on whichever limit breaches first, and says which. The three are different diagnoses
- * for whoever reads the handoff: a tool that never returned, a model that never answered, and
- * work one pass cannot finish.
+ * Kills the worker on whichever limit it breaches first, and the error names that limit. The
+ * three are different diagnoses for whoever reads the handoff: a tool that never returned, a
+ * model that never answered, and work one pass cannot finish.
  *
- * Which window applies is read from outstanding tool calls rather than from the last event's
- * type, because tools dispatched together return one at a time — a result arriving while a
+ * Which silence window applies is read from the tool calls still unanswered, not from the last
+ * event's type. Tools dispatched together return one at a time, and a result arriving while a
  * sibling still runs must not shorten the window under it.
  */
 export function watchWorker(limits: Limits, kill: (why: ExecutionError) => void): Watchdog {
@@ -729,10 +777,11 @@ export function watchWorker(limits: Limits, kill: (why: ExecutionError) => void)
     progress: (event) => {
       if (spent) return
       const blocks = blocksOf(event)
-      // A turn cannot resume until every tool it dispatched has come back, so prose at the top
-      // level is proof that none is still running — without which one unmatched id would hold
-      // the long window open for good. A subagent narrates inside its own branch while the
-      // call that spawned it runs, so its events prove nothing about the turn above.
+      // Text or thinking in the run's own turn means every tool it dispatched has returned,
+      // because the model writes again only once they all have, so the set is cleared. Without
+      // this, one `tool_use` whose result never arrives keeps the long tool window in force for
+      // the rest of the run. A subagent's events don't count: it writes text while the call that
+      // spawned it is still running.
       if (!inSidechain(event) && blocks.some(isProse)) outstanding.clear()
       for (const block of blocks) {
         if (block.type === 'tool_use' && block.id !== undefined) outstanding.add(block.id)
@@ -767,17 +816,18 @@ const FORWARDED = [
 const AMBIENT_TOKENS = ['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY'] as const
 
 /**
- * What the worker gets, written out rather than inherited.
+ * The worker's whole environment, built from a list rather than inherited: `PATH`, `HOME`, the
+ * network settings in `FORWARDED`, and one login.
  *
- * The worker has no use for a credential beyond the seat it spends: it edits files in a
- * disposable tree, and claiming, commenting, branching and publishing all happen afterwards in
- * the loop with the loop's own tokens. Inheriting the environment hands a worker that an item's
- * text can steer every token on the machine, one shell command from being read out.
+ * **Don't inherit `process.env`.** An item's text can steer the worker, and every token in this
+ * environment would be one shell command from being read out. The worker needs no credential
+ * beyond the seat it spends: it edits files in a disposable tree, and claiming, commenting,
+ * branching and publishing all happen afterwards in the loop, with the loop's own tokens.
  *
- * `PATH` is required — without it nothing in the tree resolves `node`. `HOME` is not, strictly:
- * a seat token authenticates `claude` on its own, and an operating system supplies a fallback
- * home. It is passed for the worked repository's toolchain, whose caches would otherwise land
- * in a directory the service user may not own.
+ * `PATH` is required: without it nothing in the tree resolves `node`. `HOME` is not, strictly,
+ * since a seat token authenticates `claude` on its own and the operating system supplies a
+ * fallback home. It is passed for the worked repository's toolchain, whose caches would
+ * otherwise land in a directory the service user may not own.
  */
 export async function workerEnv(
   seatToken: TokenSource = {},
@@ -794,9 +844,10 @@ export async function workerEnv(
   try {
     token = await resolveToken(seatToken, env)
   } catch (e) {
-    // The seat's token source is Igor's own configuration and this is where it is read, so the
-    // key is known rather than guessed at from an exit code later. `output` is explicitly
-    // absent: there is no envelope, and one invented here would be read as a capacity stop.
+    // The seat's token source is Igor's own configuration, read here, so the error can name the
+    // configuration key to fix (`cure`) for certain rather than leave it guessed from an exit
+    // code later. `output` stays undefined: the worker never ran, and an envelope invented here
+    // would be read as the seat running out of capacity.
     throw new ExecutionError(
       `the chosen seat ${(e as Error).message}`,
       undefined,
@@ -804,8 +855,8 @@ export async function workerEnv(
     )
   }
 
-  // A seat naming nothing leaves the worker on the ambient login, which is what `readUsage`
-  // does on the reading side and what an org running with no seats declared depends on.
+  // A seat that names no token runs the worker on the host's own login, as `readUsage` does
+  // when it reads usage. An org with no seats declared depends on this.
   if (token === undefined) {
     for (const name of AMBIENT_TOKENS) {
       const value = env[name]
@@ -820,11 +871,17 @@ export async function workerEnv(
 
 export interface WorkerInput {
   cwd: string
+  /**
+   * A directory outside `cwd` the worker may also write to, for what it has to tell Igor rather
+   * than put in the artifact. It is granted with `--add-dir`, because nothing outside `cwd` is
+   * writable otherwise — measured: the same write succeeds with the flag and is refused without.
+   */
+  outbox?: string
   system: string
   prompt: string
   model: string
   limits: Limits
-  /** Everything the worker's process gets, and never a superset of what this process holds. */
+  /** The worker's entire environment, from `workerEnv`; nothing is inherited. */
   env: NodeJS.ProcessEnv
   /** `--allowed-tools` specifications; empty leaves the worker unable to run commands. */
   allowedTools?: readonly string[]
@@ -838,8 +895,9 @@ export interface WorkerInput {
 export type WorkerRunner = (input: WorkerInput) => Promise<WorkerOutput>
 
 /**
- * Group leaders of the workers running now. A kill has to reach the group rather than the pid:
- * the worker's tool subprocesses are what hold the working tree, and they are not the worker.
+ * Pids of the running workers, each the leader of its own process group. A kill goes to the
+ * group rather than the pid: the worker's tool subprocesses are what hold the working tree, and
+ * they are not the worker.
  */
 const liveWorkers = new Set<number>()
 
@@ -847,8 +905,9 @@ let installed = false
 let windsDown = false
 
 /**
- * Declares that this process shuts down gracefully, so a signal is not the end of it and the
- * worker in hand is left to finish. Whatever is still running is caught on the way out.
+ * For a caller that shuts down gracefully on SIGINT and SIGTERM (`serve`): Igor's own handlers
+ * then leave the running worker to finish instead of killing it and exiting. Any worker still
+ * running when the process exits is killed then.
  */
 export function windsDownOnSignal(): void {
   windsDown = true
@@ -862,8 +921,8 @@ function killTree(child: ChildProcess): void {
   try {
     process.kill(-pid, 'SIGKILL')
   } catch {
-    // Ordinarily the group is already gone, because the worker exited on its own; cleanup owes
-    // no error for that. Signalling the pid covers the rest, where the group refused the kill.
+    // Usually the group is already gone because the worker exited by itself, which is not an
+    // error. Otherwise the group refused the kill, and signalling the pid is the fallback.
     child.kill('SIGKILL')
   }
 }
@@ -880,10 +939,10 @@ function killLiveWorkers(): void {
 }
 
 /**
- * A detached worker sits outside every group that would otherwise be signalled — the terminal's
- * foreground group above all — so Igor owes it the termination it no longer receives. Installed
- * on the first spawn rather than on import, since installing a handler suppresses the default
- * one and no importer asked for that.
+ * Kills the live workers when this process exits or is interrupted. A detached worker sits
+ * outside every group that would otherwise be signalled, the terminal's foreground group above
+ * all, so Ctrl-C never reaches it. Installed on the first spawn rather than on import, because
+ * a SIGINT or SIGTERM handler suppresses Node's default exit, and no importer asked for that.
  */
 function forwardTermination(): void {
   if (installed) return
@@ -900,7 +959,7 @@ function forwardTermination(): void {
 
 /** The command is a parameter so a test can drive a real stream without the real CLI. */
 export function claudeWorker(command = 'claude'): WorkerRunner {
-  return ({ cwd, system, prompt, model, limits, env, allowedTools = [], onEvent, signal }) =>
+  return ({ cwd, outbox, system, prompt, model, limits, env, allowedTools = [], onEvent, signal }) =>
     new Promise<WorkerOutput>((resolve, reject) => {
       if (signal?.aborted) return resolve({})
       const child = spawn(
@@ -911,8 +970,8 @@ export function claudeWorker(command = 'claude'): WorkerRunner {
           '--model',
           model,
           // Streamed rather than buffered, so the caller hears from the run while it runs. The
-          // terminal `result` event carries what the buffered blob used to, and the CLI refuses
-          // stream-json under -p unless --verbose comes with it.
+          // terminal `result` event carries everything the buffered `json` output does, and the
+          // CLI refuses stream-json under -p unless --verbose comes with it.
           '--output-format',
           'stream-json',
           '--verbose',
@@ -921,14 +980,19 @@ export function claudeWorker(command = 'claude'): WorkerRunner {
           // One argv element per specification, since a specification may contain a space —
           // `Bash(git commit -m *)` — and the flag is variadic, so it ends at the next one.
           ...(allowedTools.length > 0 ? ['--allowed-tools', ...allowedTools] : []),
-          // Scoped to this tree rather than bypassing checks wholesale. The tree is disposable
-          // and contains only the repository, so edits inside it are the whole point. This is
-          // also what grants editing at all: `--allowed-tools` adds to the mode rather than
-          // replacing it, and without the mode Write is refused however the tools are listed.
+          // `acceptEdits` lets the worker edit under the directories added below without
+          // asking, rather than bypassing permission checks wholesale. The tree is disposable and
+          // holds only the repository, so editing it is the point. Don't drop the mode: it is
+          // what grants editing at all, since `--allowed-tools` adds to the mode rather than
+          // replacing it, and without it Write is refused however the tools are listed.
           '--permission-mode',
           'acceptEdits',
           '--add-dir',
           cwd,
+          // The outbox is outside `cwd`, and `acceptEdits` alone does not reach outside it: the
+          // write is refused unless the directory is named here. One directory, made empty for
+          // this run and swept with the tree, rather than the checks lifted.
+          ...(outbox === undefined ? [] : ['--add-dir', outbox]),
         ],
         // Its own process group, so one kill reaches the tool subprocesses too. They outlive a
         // kill on the pid alone, still building and still writing to a tree about to be swept.
@@ -939,9 +1003,10 @@ export function claudeWorker(command = 'claude'): WorkerRunner {
       )
       forwardTermination()
       if (child.pid !== undefined) liveWorkers.add(child.pid)
-      // A StringDecoder, so a multi-byte character split across chunks is not decoded to two
-      // replacement characters and its line lost to the JSON parse. The same split on stderr
-      // costs no line, only the legibility of the message a non-zero exit is explained by.
+      // `setEncoding` decodes through a StringDecoder, so a multi-byte character split across
+      // chunks still decodes whole. Raw chunks would decode it to two replacement characters and
+      // lose its line to the JSON parse. On stderr the same split loses no line, only the
+      // legibility of the message that explains a non-zero exit.
       child.stdout.setEncoding('utf8')
       child.stderr.setEncoding('utf8')
 
@@ -974,12 +1039,13 @@ export function claudeWorker(command = 'claude'): WorkerRunner {
         try {
           event = JSON.parse(line) as WorkerEvent
         } catch {
-          // A line the stream never promised is not worth losing a run over, and it is not
-          // progress either: a worker still spewing noise has still stopped working.
+          // A line that isn't JSON is skipped rather than failing the run. It isn't progress
+          // either: a worker still emitting noise has still stopped working.
           return
         }
-        // Valid JSON is not an event. Read as one it throws inside the `data` listener, which
-        // settles nothing and abandons the rest of the chunk — where the terminal event is.
+        // JSON that isn't an object, such as a number or `null`, is skipped too. Read as an event
+        // it throws inside the `data` listener, which settles nothing and abandons the rest of
+        // the chunk, where the terminal event may be.
         if (typeof event !== 'object' || event === null) return
         // Every event is progress, whatever its type, and says which window applies next.
         watch.progress(event)
@@ -1016,8 +1082,9 @@ export function claudeWorker(command = 'claude'): WorkerRunner {
         // on stderr. Rejecting on the exit code alone throws away the explanation already in
         // hand, leaving "worker exited 1" for a cause the stream stated plainly.
         if (code !== 0) {
-          // The text beside `is_error` is not guaranteed to be text, and a worker promise that
-          // neither resolves nor rejects is one nothing above it can fail, hand off, or record.
+          // `result` is checked to be a string before `.trim()`: it isn't guaranteed to be one, and
+          // a throw here leaves a promise that never settles, which nothing above can fail, hand
+          // off or record.
           const said =
             final?.is_error === true && typeof final.result === 'string' ? final.result.trim() : undefined
           return reject(new ExecutionError(said || err.trim() || `worker exited ${code}`, final))
@@ -1033,32 +1100,40 @@ export function claudeWorker(command = 'claude'): WorkerRunner {
 export const headlessClaude: WorkerRunner = claudeWorker()
 
 /**
- * What a person reads. Kept short on purpose.
- *
- * The full transcript is already written to the state branch, so putting it here duplicates it
- * in the one place attention is scarce. Generating text is free and reading it is not, which
- * makes the reviewer's time the budget worth protecting — not the token count.
+ * The most of the worker's summary a pull request body carries, in characters. A longer one is
+ * cut, at a sentence end where one falls in the second half, and followed by a pointer to the
+ * full transcript on the lore store's state branch. The limit protects the reviewer's time:
+ * the body is where their attention goes, and generating more text costs far less than
+ * reading it.
  */
 export const PR_BODY_LIMIT = 700
 
-/** Where an item's transcript is written under the state branch. Derived here and nowhere else. */
+/**
+ * Where an item's transcript is written on the state branch. The code that writes it and the
+ * pull request's pointer to it both call this, so the pointer cannot name a different file.
+ */
 export function transcriptPath(candidate: Candidate): string {
   return `transcripts/${candidate.tracker}/${candidate.repo}/${candidate.native}.md`
 }
 
-/** Where the envelopes behind refusals land on the state branch, beside `capacity.ndjson`. */
+/**
+ * The directory on the state branch, beside `capacity.ndjson`, that keeps the worker's final
+ * envelope each time a seat refuses a run for an exhausted usage limit.
+ */
 export const REFUSALS_DIR = 'refusals'
 
 /**
- * One file per refusal, named for when it arrived and which item met it. Two properties are the
- * point: a second refusal cannot overwrite the first, which is the one everything is waiting
- * on; and each is a whole JSON document a person opens and quotes rather than a line to be cut
- * out of a log. The item and the random tail are what make the first claim true — two seats can
- * refuse in the same millisecond, and a name that collides has the later one land on the
- * earlier. The timestamp leads so the directory sorts into the order the refusals happened.
+ * One file per refusal, named `<time>-<item>-<random>`, so that no refusal overwrites another
+ * and the directory lists them in the order they happened.
  *
- * Everything outside a filename's safe set goes to `-`, the timestamp's own punctuation
- * included: a path is checked out onto a real filesystem, and `:` is not portable there.
+ * - The item and the random tail keep names apart: two seats can refuse in the same
+ *   millisecond, and on a collision the later file replaces the earlier one. Losing one
+ *   matters most for the first: no real refusal has been captured yet, and the limit patterns
+ *   in `usageLimit` are guesses until one is.
+ * - The time leads, so sorting by name sorts by when.
+ * - Each is a whole JSON document, for a person to open and quote, not a line cut out of a log.
+ * - Every run of characters outside `[A-Za-z0-9_-]` becomes `-`, the timestamp's `:` included:
+ *   the state branch is checked out onto real filesystems, and `:` is not portable there.
  */
 export function refusalPath(at: string, item: string): string {
   const name = `${at}-${item}-${randomUUID().slice(0, 8)}`.replace(/[^A-Za-z0-9_-]+/g, '-')
@@ -1074,9 +1149,10 @@ export interface TranscriptStore {
 }
 
 /**
- * Where to read the rest. A private store is never named: the link would 404 for an outside
- * reader and the repository's name is itself the disclosure the guard exists for. The path is
- * safe either way — it holds the worked repository, which the reader is already looking at.
+ * The line telling a pull request's reader where the full transcript is. Only a public store is
+ * named and linked. A private store is not: the link would 404 for an outside reader, and the
+ * store's name is itself what must not be disclosed. The path is printed either way, because
+ * the only repository it names is the one being worked, which the reader is already looking at.
  */
 function transcriptPointer(candidate: Candidate, store?: TranscriptStore): string {
   const path = transcriptPath(candidate)
@@ -1114,7 +1190,10 @@ export interface ExecuteOptions {
   onProgress?: (progress: Progress) => void
   /** How often `onProgress` may fire. A terminal wants a second; a log wants minutes. */
   progressMs?: number
-  /** Rendered lore for the trusted channel. Empty when the store is empty or over budget. */
+  /**
+   * Rendered lore, placed in the worker's system prompt (the trusted channel, apart from the
+   * item's own text). Empty when the store is empty or over budget.
+   */
   lore?: string
   /**
    * How the worker authenticates: the chosen seat's token source. A name, a path, or a
@@ -1123,12 +1202,17 @@ export interface ExecuteOptions {
    */
   seatToken?: TokenSource
   /**
-   * The chosen seat's id, for the cure key an unreadable token mints. The gate hands out the
-   * id and the token source together, so a token that can fail always arrives with a name.
+   * The chosen seat's id, which names the seat in the cure key (`seat:<id>:token`) recorded when
+   * its token source cannot be read. Pass it whenever `seatToken` is passed: without it, an
+   * unreadable token fails the run with no key saying which seat to fix. The gate hands out the
+   * id and the token source together.
    */
   seat?: string
   model?: string
-  /** A seam for tests; each limit defaults and callers are trusted with what they pass. */
+  /**
+   * Overrides for the worker's watchdog limits, for tests. A limit left out takes its default,
+   * and nothing checks the values passed.
+   */
   limits?: Partial<Limits>
   /**
    * Where the transcript will be written, so the pull request can point at it. Absent leaves
@@ -1136,18 +1220,20 @@ export interface ExecuteOptions {
    */
   store?: TranscriptStore
   /**
-   * The claim's status, asked at checkpoints while the worker runs and again before anything
-   * is decided. Reports the status rather than a boolean because a stop and a loss want
-   * opposite answers.
+   * Reads the claim's status: on worker events while the worker runs, at most once per
+   * `checkpointMs`, and once more after it, before anything is decided. Absent, the claim is
+   * taken as held. A status rather than a boolean, because a stop and a loss are handled
+   * differently: a stop kills the worker and publishes nothing, while a loss lets it finish and
+   * still publishes its work.
    */
   claimStatus?: () => Promise<ClaimVerdict['status']>
   /** How long between mid-run claim re-reads; zero checks on every worker event. */
   checkpointMs?: number
   onPublish?: () => void
   /**
-   * Called with what the worker left in the tree, the moment it is read. A publish that throws
-   * escapes with no result, and the caller's account of the run is otherwise left saying it
-   * changed nothing.
+   * Called with what the worker left in the tree as soon as it is read, before anything is
+   * published. A publish that throws leaves `execute` with no result, so without this the
+   * caller's record of the run would say it changed nothing.
    */
   onChanges?: (changed: ChangedFile[]) => void
   branchPrefix?: string
@@ -1174,15 +1260,145 @@ const CONFLICT_MARKER = /^(?:<{7} |\|{7} |>{7} )/m
  */
 const SEPARATOR_MARKER = /^={7}$/m
 
-/** How long a stop can go unanswered mid-run — short enough that whoever posted it is still watching. */
+/**
+ * The file a worker writes its revert declarations to, in the run's outbox: a directory outside
+ * the tree that Igor empties for the run and lets only the worker write. Only that location
+ * makes the file a declaration. A file of this name inside the repository, at any depth, is
+ * ordinary content: published and checked like any other file, and declaring nothing.
+ *
+ * Don't read declarations from the tree. A file committed there is in every fresh clone, so it
+ * would authorize the same revert on every run.
+ */
+export const DECLARATION_FILE = 'reverts.json'
+
+/** One path a resolution may undo, and the base state its author says they are discarding. */
+export interface Declaration {
+  path: string
+  /** The blob the base holds for that path, or `deleted` where the base deleted it. */
+  discards: string
+}
+
+/**
+ * The declarations in a worker's file, or none.
+ *
+ * Anything unreadable (not JSON, not `{"reverts": [...]}`, an entry without a string `path` and
+ * `discards`) is skipped rather than thrown. Having no declaration is safe: an undeclared
+ * revert is refused, and the refusal names the paths.
+ *
+ * There is no blanket form. A path is matched exactly, so a glob such as `src/*` declares only
+ * a file of that literal name. A path made only of `*` and `?`, or blank, is dropped outright
+ * as an attempt at a blanket declaration.
+ */
+export function declarations(content: string): Declaration[] {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(content)
+  } catch {
+    return []
+  }
+  const entries = (parsed as { reverts?: unknown })?.reverts
+  if (!Array.isArray(entries)) return []
+  return entries.flatMap((entry: unknown) => {
+    const { path, discards } = (entry ?? {}) as { path?: unknown; discards?: unknown }
+    if (typeof path !== 'string' || typeof discards !== 'string') return []
+    if (path.trim() === '' || /^[*?]+$/.test(path.trim())) return []
+    return [{ path, discards }]
+  })
+}
+
+/** A base change a resolution would undo, and whether the worker declared it. */
+export interface Undone {
+  /**
+   * The path for a person to read: the name itself, or, where the name is not text, its escaped
+   * bytes from `showName` inside a code span, the only form in which those are safe to print.
+   */
+  path: string
+  /** What the resolution discards: the base's blob for the path, or the base's deletion of it. */
+  discards: string
+  declared: boolean
+}
+
+/**
+ * Which of the base's changes the resolution would undo, each marked declared or not.
+ *
+ * The published tree is the artifact's head with `files` written over it and `deletions` taken
+ * out of it, so a path the resolution never mentions publishes head's own copy. Each base change
+ * is checked against that tree, not against how the worker got there: a dropped deletion, a
+ * misread status code and a rename whose old path came back all publish the same tree, so one
+ * check on it covers each of them, and any route nobody has found yet.
+ */
+export function undone(
+  baseChanges: readonly BaseChange[],
+  files: readonly { path: string; content: string }[],
+  deletions: readonly string[],
+  declared: readonly Declaration[],
+): Undone[] {
+  const written = new Map(files.map((f) => [f.path, f.content]))
+  const removed = new Set(deletions)
+  const out: Undone[] = []
+  for (const change of baseChanges) {
+    // A name that is not text can't appear in `files`, `deletions` or a declaration, which all name
+    // paths as strings. Such a path is checked on head's copy alone, which needs no name. A
+    // resolution that changed one never reaches `undone`: the run stops on it first.
+    const named = change.rawName === undefined
+    // Skip a change of mode alone: the same blob at the merge base and on the base. Nothing here
+    // reads modes, so counted as a content change it would treat every resolution that leaves
+    // the file alone as a revert, and refuse it.
+    if (change.before !== undefined && change.before === change.after) continue
+    // What publishes at this path comes from one of two places. `content` is the resolution's
+    // own text, where it writes the path. `blob` is head's copy, which publishes only where the
+    // resolution neither writes nor deletes the path. Both undefined means nothing publishes.
+    const content = named ? written.get(change.path) : undefined
+    const blob = content !== undefined || (named && removed.has(change.path)) ? undefined : change.head
+    // The base's change is undone in a different way for each kind of change:
+    // - the base deleted the path: undone if anything publishes there, whatever it holds;
+    // - the base added it: undone if nothing publishes there;
+    // - the base rewrote it: undone if what publishes is exactly the merge base's content.
+    // Don't compare a deletion against the merge base's content as well. A worker that resolves
+    // a delete/modify conflict by keeping its own edited file, which the conflict prompt
+    // invites, publishes content that matches nothing, and the deletion would be undone silently.
+    const restored =
+      change.after === undefined
+        ? content !== undefined || blob !== undefined
+        : change.before === undefined
+          ? content === undefined && blob === undefined
+          : content !== undefined
+            ? sameBlob(content, change.before)
+            : blob === change.before
+    if (!restored) continue
+    const discards = change.after === undefined ? 'deleted' : change.after
+    out.push({
+      path: named ? change.path : `\`${showName(change)}\``,
+      discards,
+      // A declaration covers this change only if its path and its `discards` both match exactly.
+      // One naming a base state the base does not hold is about some other change, and covers
+      // this one no more than a declaration for another path would.
+      declared: named && declared.some((d) => d.path === change.path && d.discards === discards),
+    })
+  }
+  return out
+}
+
+/**
+ * How one undone path is named in a refusal, in the resolution's commit message and in the
+ * run's record.
+ */
+const undoneAs = (u: Undone): string =>
+  u.discards === 'deleted' ? `${u.path}, which the base deleted` : `${u.path} (base blob ${u.discards})`
+
+/**
+ * How long a stop can go unnoticed mid-run while the worker is active: the claim is re-read on a
+ * worker event at most this often. Short enough that whoever posted the stop is still watching.
+ */
 const CHECKPOINT_INTERVAL_MS = 30_000
 
-/** A terminal redraw, not a log line. Callers wanting a log rate pass their own. */
+/** One progress report a second, for a terminal redraw. A log passes its own `progressMs`. */
 const PROGRESS_INTERVAL_MS = 1_000
 
 export function branchFor(role: Role, candidate: Candidate, prefix = 'igor'): string {
-  // Trim separators *after* slicing: cutting to length can land on a hyphen, and git rejects
-  // neither a trailing nor a doubled one but both read as a mistake.
+  // Trim hyphens after slicing, not before: the cut can end on one. A leading hyphen would double
+  // the one after the item number, and a trailing one would end the branch name; git accepts
+  // both, but they read as mistakes.
   const slug = candidate.title
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
@@ -1192,7 +1408,9 @@ export function branchFor(role: Role, candidate: Candidate, prefix = 'igor'): st
 }
 
 /**
- * Runs one claimed item end to end. The tree is released whatever happens, including a throw.
+ * Runs one claimed item end to end: runs a worker in a fresh tree and publishes what it changed,
+ * as a new pull request or, with `options.catchUp`, as a merge resolution on the artifact's own
+ * branch. The tree is released whatever happens, including a throw.
  */
 export async function execute(
   provider: TreeProvider,
@@ -1205,9 +1423,10 @@ export async function execute(
   const model = options.model ?? EXECUTION_MODEL
   const refusals: Refusal[] = []
   /**
-   * Keys added only by the code that enforces the constraint each one names — never derived
-   * from a message, an exit code or a guess. A set because one wall hit six times is one thing
-   * to fix, and spread last into a result so a key minted late is not dropped by a snapshot.
+   * Configuration keys this run proved wrong, each added only by the code that enforces the
+   * constraint it names — never derived from a message, an exit code or a guess. A set, because
+   * one constraint hit six times is one thing to fix. Read through `cured()` as each result is
+   * built, so a key added late in the run is not lost to an earlier copy.
    */
   const minted = new Set<string>()
   const cured = () => (minted.size === 0 ? {} : { cures: [...minted] })
@@ -1227,8 +1446,8 @@ export async function execute(
     const observed: WorkerUsage = { assistantTurns: 0, cacheReadTokensPeak: 0 }
     let session: string | undefined
 
-    // Counted whether or not anyone is watching: cheap, and it keeps the two paths from
-    // diverging in what they would have reported.
+    // Counted on every event whether or not `onProgress` is set. The count is cheap, and one code
+    // path means a watched run and an unwatched one cannot differ in what they count.
     const startedAt = Date.now()
     const touched = new Set<string>()
     let edits = 0
@@ -1249,11 +1468,12 @@ export async function execute(
       lastProgress = now
       options.onProgress({ doing, elapsedMs: now - startedAt, filesTouched: touched.size, edits })
     }
-    // What a killed run can still be shown to have done. Counted ahead of the checkpoint's
-    // early return, which would otherwise drop it on every run with no claim to re-read.
+    // Records what a killed run can still be shown to have done: its session id and the usage
+    // the stream reported. Called in `onEvent` ahead of the checkpoint's early return, which
+    // would otherwise skip it on every run with no `claimStatus` to re-read.
     const observe = (event: WorkerEvent) => {
-      // Taken off any event rather than the envelope alone: a worker killed mid-run never
-      // sends one, and its transcript is the one somebody will most want to read.
+      // Read from every event, not only the terminal envelope: a worker killed mid-run never
+      // sends that envelope, and its session log is the one somebody will most want to read.
       if (typeof event.session_id === 'string' && event.session_id !== '') session = event.session_id
       if (event.type !== 'assistant') return
       observed.assistantTurns++
@@ -1262,11 +1482,14 @@ export async function execute(
         observed.cacheReadTokensPeak = read
       }
     }
-    /** An unreported cost is left out rather than called zero, and what was seen stands in. */
+    /**
+     * Where the envelope reports no cost, `costUsd` is undefined rather than zero, and the usage
+     * counted from the stream stands in.
+     */
     const spend = (output: WorkerOutput = {}) => {
       const models = spendByModel(output.modelUsage)
-      // Anything but a finite number is the envelope declining to say. It arrives unvalidated,
-      // and a shape the record's arithmetic does not expect costs the whole record, not the cost.
+      // Anything but a finite number counts as no cost reported. The envelope arrives
+      // unvalidated, and a cost the record's arithmetic does not expect loses the whole record.
       const raw = output.total_cost_usd
       const cost = typeof raw === 'number' && Number.isFinite(raw) ? raw : undefined
       return {
@@ -1290,9 +1513,10 @@ export async function execute(
     }
 
     /**
-     * The two fields `usageLimit` reads and drops, kept only where it fired or the run failed.
-     * Its patterns are unverified against a live limit error, and a misclassification is only
-     * diagnosable where what it judged on was written down; on a healthy run they are noise.
+     * The two envelope fields `usageLimit` reads, kept only where it fired or the worker threw.
+     * Its patterns are unverified against a live limit error, and a misclassification can only
+     * be diagnosed where the fields it judged on were written down; on a healthy run they are
+     * noise.
      */
     const evidence = (output: WorkerOutput | undefined) => ({
       ...(output?.api_error_status === undefined || output.api_error_status === null
@@ -1301,8 +1525,9 @@ export async function execute(
       ...(output?.terminal_reason === undefined ? {} : { terminalReason: output.terminal_reason }),
     })
 
-    // Event arrival is the tick, throttled so a chatty worker costs no more tracker reads than
-    // a quiet one, and never two at once. A read that fails is not a stop.
+    // The claim is re-read on worker events, not on a timer, at most once per `checkpointMs`, so a
+    // chatty worker costs no more tracker reads than a quiet one, and never two reads at once. A
+    // read that fails is not a stop.
     const onEvent = (event: WorkerEvent) => {
       observe(event)
       watchProgress(event)
@@ -1326,7 +1551,8 @@ export async function execute(
         })
     }
 
-    // Held past the worker because its two commits are the parents the resolution needs.
+    // Set only on a catch-up, and kept past the worker: its two commits are the resolution's
+    // parents, and its base changes are what the resolution is checked against for reverts.
     let merge: MergeState | undefined
     if (artifact !== undefined) {
       if (tree.merge === undefined) {
@@ -1369,11 +1595,12 @@ export async function execute(
         const env = await workerEnv(options.seatToken, process.env, options.seat)
         worker = await (options.worker ?? headlessClaude)({
           cwd: tree.path,
+          outbox: tree.outbox,
           system: workerSystemPrompt(role, role.allow, options.lore ?? ''),
           prompt:
             artifact === undefined || merge === undefined
               ? workerPrompt(candidate, linkage)
-              : conflictPrompt(candidate, artifact, merge.conflicts),
+              : conflictPrompt(candidate, artifact, tree.outbox, merge.conflicts, merge.baseChanges),
           model,
           limits: { ...DEFAULT_LIMITS, ...options.limits },
           env,
@@ -1388,9 +1615,10 @@ export async function execute(
         // The tree is read even here. A worker can be killed hours into real editing, and the
         // record of a failure that says it changed nothing is a record of the wrong failure.
         const changed = await tree.changes().catch(() => [])
-        // A seat that ran out says so in its terminal event and then exits non-zero like any
-        // other fault. Reported as a failure it leaves a claim behind with no account of when
-        // the Igor could come back, which is the one thing the reader needs.
+        // A seat that ran out says so in its terminal event, then exits non-zero like any other
+        // fault, so the envelope is checked here. Reported as a failure, the item would wait in
+        // the deferral record with no word on when the Igor could come back; as a budget stop it
+        // is handed back to return when capacity does.
         const envelope = error instanceof ExecutionError ? error.output : undefined
         if (error instanceof ExecutionError && error.cure !== undefined) minted.add(error.cure)
         const limit = usageLimit(envelope)
@@ -1418,10 +1646,10 @@ export async function execute(
           ...trace(envelope),
           ...evidence(envelope),
           ...cured(),
-          // Classified a failure on purpose — `usageLimit` declined it, and an ambiguous
-          // envelope reads as an ordinary fault. The envelope is kept anyway where a provider
-          // field named a limit: what is unsafe to conclude from is still the shape nobody has
-          // seen, and a run that mentions one and dies is exactly where a pattern is wrong.
+          // A failure, because `usageLimit` declined the envelope, and an ambiguous one is read
+          // as an ordinary fault. The envelope is still kept whole where a provider field named a
+          // limit: a run that names one and dies is where `usageLimit`'s unverified patterns are
+          // most likely wrong, and the capture is what they get corrected from.
           ...(envelope !== undefined && structuralLimit(envelope) ? { limitEnvelope: envelope } : {}),
           reason: error instanceof Error ? error.message : String(error),
         }
@@ -1429,11 +1657,11 @@ export async function execute(
       worker = {}
     }
 
-    // Every reader downstream splits, trims or replaces this. A shape that is not prose is no
-    // transcript, and must not be what escapes the run with the item still claimed.
+    // Anything but a string counts as no transcript. Every reader downstream splits, trims or
+    // replaces it, and a non-string would throw there and escape the run with the item claimed.
     const transcript = typeof worker.result === 'string' ? worker.result : ''
-    // A refused command and a session log are worth the same to a reader whatever the run went
-    // on to do, so they ride with the cost into every outcome below.
+    // Spread into every outcome below: the cost, the denied commands and the session log matter
+    // to a reader whatever the run went on to do.
     const kept = {
       ...spend(worker),
       ...trace(worker),
@@ -1450,8 +1678,16 @@ export async function execute(
       // less, because a non-zero exit has already said the run did not finish.
       ...(worker.is_error !== false && structuralLimit(worker) ? { limitEnvelope: worker } : {}),
     }
+    // Every change in the tree belongs to the artifact, with nothing filtered out: the worker
+    // writes its declarations to the outbox, a directory outside the tree, so none of Igor's own
+    // files are among the changes.
     const changed = await tree.changes()
     options.onChanges?.(changed)
+    // The outbox is a directory Igor empties for each run and grants to the worker alone, so a
+    // declarations file there was written by this run's worker, not found in the clone, and git
+    // need not be asked whether it is new. A missing file means no declarations.
+    const wrote = await readFile(join(tree.outbox, DECLARATION_FILE), 'utf8').catch(() => '')
+    const declared = wrote === '' ? [] : declarations(wrote)
 
     // Read before anything is decided, not merely before publishing: a stop during a run that
     // changed nothing is still a stop, and owes a receipt rather than a handoff.
@@ -1529,9 +1765,10 @@ export async function execute(
       }
     }
 
-    // The action space, enforced where the actions actually happen. The order states the
-    // preference that `allow` only implies: task-execution admits reversible artifacts alone,
-    // and a draft is an offer — nothing announced as ready, unmergeable by accident.
+    // A draft pull request is preferred over a ready one wherever the role allows both, an order
+    // `allow` does not express: the task-execution spec admits only reversible artifacts by
+    // default, and a draft announces nothing as ready and cannot be merged by accident. `allow`
+    // is enforced here, where the pull request is opened.
     const PREFERRED: readonly Action[] = ['draft-pr', 'pr']
     const wanted: Action = PREFERRED.find((action) => permits(role, action)) ?? 'pr'
     if (!permits(role, wanted)) {
@@ -1539,8 +1776,8 @@ export async function execute(
         action: wanted,
         why: `role "${role.name}" permits ${role.allow.join(', ') || 'nothing'}`,
       })
-      // A fact about the role and not about the item: the next item meets it identically, and
-      // widening `allow` is the only thing that changes it. Known here, where it is enforced.
+      // The cure names the role, not the item: every item this role works meets the same refusal
+      // until `allow` is widened. It is added here because this is where `allow` is enforced.
       minted.add(`role:${role.name}:allow`)
       return {
         outcome: 'refused' as const,
@@ -1553,13 +1790,11 @@ export async function execute(
       }
     }
 
-    // A name that is not text is never published at the spelling decoding left behind. An
-    // artifact names a path as a string, so such a name has no form the tree API can carry: a
-    // modified file lands at a path no file on disk has and the branch carries it twice, a
-    // deletion removes nothing, and two names differing only in the bytes that did not decode
-    // collide on one path. The bytes are in hand here, and recovering a name only to publish
-    // it wrongly is a stranger state than never having recovered it — so the run stops, and
-    // the handoff names the file by those bytes rather than by the spelling that lost them.
+    // Stop on any changed path whose name is not text, rather than publish it under the spelling
+    // decoding left. An artifact names a path as a string, so such a name has no form the tree
+    // API can carry: a modified file lands at a path no file on disk has and the branch carries
+    // it twice, a deletion removes nothing, and two names differing only in the bytes that did
+    // not decode collide on one path. The failure names each file by its bytes, via `showName`.
     const unnameable = changed.flatMap((c) => (c.rawName === undefined ? [] : [`\`${showName(c)}\``]))
     if (unnameable.length > 0) {
       return {
@@ -1576,16 +1811,16 @@ export async function execute(
       }
     }
 
-    // Both publishing paths build their tree from the same call, so a removal rides either one
-    // as an entry over the base tree with no blob behind it. Nothing needs guarding against
-    // both coming out empty: a removal is only dropped in favour of a file at that same path,
-    // and an empty `changed` returned above.
+    // Both publishing paths, the new pull request and the resolution, take `files` and `deletions`
+    // from this one split, and each deletion goes over the base tree as an entry with no blob.
+    // Both lists cannot come out empty: `carried` drops a deletion only where a file is written
+    // at the same path, and an empty `changed` has already returned above.
     const { written, removed: deletions } = carried(changed)
     const files = written.map((c) => ({
       path: c.path,
       content: c.content,
-      // Carried only onto a branch that already has the path; `produce` builds a new tree,
-      // where every file is new and there is no mode to preserve.
+      // Sent only on a resolution, because only `resolve` reads it: `produce` writes every file
+      // as mode `100644`.
       ...(artifact !== undefined && c.executable === true ? { executable: true } : {}),
     }))
 
@@ -1593,17 +1828,19 @@ export async function execute(
     // commit carrying the same content leaves the merge base where it was, so the host
     // recomputes the conflict and the artifact goes on reporting that it cannot merge.
     if (artifact !== undefined && merge !== undefined) {
-      // Read off the content rather than off git, because the worker may have staged its
-      // edits. A worker that declined the conflict leaves the merge's own staged files in the
-      // tree, so without this the markers themselves would be published onto the branch.
+      // Refuse to publish any file still holding conflict markers. Read from the content, not from
+      // git, because the worker may have staged its edits. A worker that declined the conflict
+      // leaves the merge's own staged files in the tree, and without this check the markers
+      // themselves would be published onto the branch.
       //
-      // Every marker, not just the opening one: a worker that edits the top of a hunk and
-      // stops leaves `=======` and `>>>>>>>` behind, which is the ordinary way this goes wrong.
+      // Every marker, not just the opening one: a worker that edits the top of a hunk and stops
+      // leaves `=======` and `>>>>>>>` behind, which is the ordinary way this goes wrong.
       //
-      // And every file, not just the ones git reported unmerged. That list is taken before the
-      // worker runs, so a file the worker *creates* — a function moved out of the hunk, a note
-      // it wrote to itself — is on no list, and scoping to the list lets markers through in
-      // exactly the file most likely to have been written carelessly.
+      // Every file for the labelled markers, not only the ones git reported unmerged. That list
+      // is taken before the worker runs, so a file the worker creates — a function moved out of
+      // the hunk, a note it wrote to itself — is on no list, and scoping to the list lets markers
+      // through in exactly the file most likely to have been written carelessly. `=======` alone
+      // is looked for only in the listed files, where it cannot be a heading rule.
       const conflicted = new Set(merge.conflicts)
       const unresolved = files
         .filter(
@@ -1625,6 +1862,36 @@ export async function execute(
             unresolved.join(', '),
         }
       }
+      // Refuse a resolution that would undo one of the base's changes without a declaration.
+      // Asked of the tree the commit would publish, not of the paths the worker touched: a path
+      // resolved back to the artifact's own content matches HEAD, so it appears in no list of
+      // changes.
+      //
+      // Checked before every commit, not only before the `catchUp` call below: that call asks
+      // the host whether the branch merges, and a revert merges cleanly; and a lost claim
+      // publishes and returns without reaching it.
+      const reverts = undone(merge.baseChanges, files, deletions, declared)
+      const undeclared = reverts.filter((u) => !u.declared)
+      if (undeclared.length > 0) {
+        return {
+          outcome: 'failed' as const,
+          changed,
+          refusals,
+          transcript,
+          ...kept,
+          ...cured(),
+          reason:
+            `resolving ${artifact.ref} would undo what ${artifact.base} did to ` +
+            `${undeclared.map(undoneAs).join(', ')}, which no declaration covers, so nothing ` +
+            'was published',
+        }
+      }
+      // A declared revert is published and named: in the commit message, and in `reverts` on the
+      // result, which the caller writes to the run record and, on success, to the item. A
+      // declaration makes the undone change stated, not exempt: it is invisible in the diff
+      // either way.
+      const declaredAs = reverts.map(undoneAs)
+      const undoneRecord = declaredAs.length === 0 ? {} : { reverts: declaredAs }
       options.onPublish?.()
       await codeHost.resolve({
         repo: candidate.repo,
@@ -1632,18 +1899,22 @@ export async function execute(
         parents: [merge.head, merge.broughtIn],
         files,
         deletions,
-        message: `Merge ${artifact.base} into ${artifact.branch}`,
+        message:
+          `Merge ${artifact.base} into ${artifact.branch}` +
+          (declaredAs.length === 0
+            ? ''
+            : `\n\nDeclared undo of ${artifact.base}: ${declaredAs.join(', ')}`),
       })
-      // Asked once, of the host that owns the answer: a resolution that did not actually
-      // resolve is the one way this could run a worker at the same artifact every cycle
-      // forever. One request converts that into a single handoff, which the deferral record
-      // then keeps quiet until somebody answers it.
+      // After publishing, the host is asked once whether the branch now merges (`catchUp`, past
+      // the lost-claim return below). Without it, a resolution that did not resolve would run a
+      // worker at the same artifact every cycle forever; reported as a failure, it becomes one
+      // handoff, and the deferral record keeps the item quiet until somebody answers it.
       if (status === 'lost') {
-        // Publishing is still right — it is the Igor's own branch, and a merge nobody else
-        // was going to make is a favour to whoever took the item. Saying so on the item is
-        // not: it would be a note claiming credit on work somebody else now owns. Reported
-        // as refused so the claim protocol's own lost handling runs, exactly as it does on
-        // the produce path.
+        // The claim was lost while the worker ran. The resolution is published anyway: the branch
+        // is the Igor's own, and a merge nobody else was going to make helps whoever took the
+        // item. The result is `refused`, not `produced`, so the caller runs its lost-claim
+        // handling, as on the new-pull-request path, and the item gets no note announcing the
+        // resolution, which would claim credit on work somebody else now owns.
         return {
           outcome: 'refused' as const,
           artifact: { kind: 'pull-request' as const, ref: artifact.ref, url: artifact.url },
@@ -1653,6 +1924,7 @@ export async function execute(
           transcript,
           ...kept,
           ...cured(),
+          ...undoneRecord,
           reason: `lost mid-execution; brought ${artifact.ref} up to date and left it`,
         }
       }
@@ -1671,6 +1943,7 @@ export async function execute(
           transcript,
           ...kept,
           ...cured(),
+          ...undoneRecord,
           reason: `${artifact.ref} still does not merge into ${artifact.base} after the resolution was published`,
         }
       }
@@ -1684,23 +1957,28 @@ export async function execute(
         transcript,
         ...kept,
         ...cured(),
+        ...undoneRecord,
         reason:
-          merge.conflicts.length > 0
+          (merge.conflicts.length > 0
             ? `resolved a conflict on ${artifact.ref} and brought it up to date with ${artifact.base}`
-            : `brought ${artifact.ref} up to date with ${artifact.base}`,
+            : `brought ${artifact.ref} up to date with ${artifact.base}`) +
+          (declaredAs.length === 0
+            ? ''
+            : `, undoing what ${artifact.base} did to ${declaredAs.join(', ')} as declared`),
       }
     }
 
-    // Somebody took the item over while the worker ran. Publishing is still the right move —
-    // the tree is disposable, so discarding here destroys the diff for nobody's benefit — but
-    // it is offered rather than submitted: a draft, and nothing asked of the new holder.
+    // Where somebody took the item over while the worker ran, the work is still published: the
+    // tree is released after this run, so not publishing destroys the diff for nobody's benefit.
+    // It is offered rather than submitted: a draft, with no reviewers requested.
     const lost = status === 'lost'
 
     options.onPublish?.()
-    // Laid over the commit the tree was cut from rather than the base branch's head now.
-    // Reaching here means `artifact` is undefined — a defined one has a merge and takes the
-    // resolution path above — so the tree was cloned at no ref, which is the same default
-    // branch the pull request is opened against.
+    // Published over the commit the tree was cloned at, not the base branch's head now: where
+    // the base deleted a path during the run, removing it again is refused by the host, and the
+    // whole request with it. That commit is on the branch the pull request opens against:
+    // `artifact` is undefined here (a catch-up took the resolution path above), so the tree was
+    // cloned at no ref, the default branch.
     const baseSha = await tree.head?.()
     const opened = await codeHost.produce({
       repo: candidate.repo,
@@ -1744,9 +2022,9 @@ export async function execute(
 }
 
 /**
- * The completion action, taken from policy rather than hardcoded. Already validated to be
- * inside `allow` when the role resolved, so a role cannot complete by an action it is
- * forbidden from taking — this re-checks anyway, since it is the last gate before acting.
+ * Takes the role's own completion action. `permits` is checked again here even though role
+ * resolution already refuses a completion outside `allow`: this is the last check before the
+ * action is taken, and a role must never complete by an action it is forbidden.
  */
 export async function complete(
   tracker: Tracker,
@@ -1759,29 +2037,30 @@ export async function complete(
   }
   switch (role.completion) {
     case 'unassign': {
-      // Asked of the surface, not inferred from the call returning. A completion that did not
-      // clear the holder leaves a published run reported as produced and the item still
-      // assigned to an Igor that has finished with it, with nobody told.
+      // Trust the answer `release` gives, not the call returning. If the holder is not clear, the
+      // item stays assigned to an Igor that has finished with it while the run reports success,
+      // so the item gets a comment saying it is still assigned.
       const clear = await tracker.release(candidate, identity)
       if (!clear) await tracker.report(candidate, stillAssigned()).catch(() => undefined)
       return undefined
     }
     case 'assign':
     case 'close':
-      // Neither ships in this change; refusing loudly beats silently doing the default.
+      // Not implemented: refuse, rather than silently complete some other way.
       return { action: role.completion, why: `completion "${role.completion}" is not implemented yet` }
   }
 }
 
 /**
- * Records what happened to the state branch — the machine venue, never the default branch.
+ * Writes a run's records to the state branch, never to the default branch.
  *
- * Two shapes, because they answer different questions. The NDJSON log answers "what has this
- * Igor been doing and what did it cost", and stays small enough to read whole. The transcript
- * answers "why did it do *that*", is far larger, and is only wanted for one item at a time.
- *
- * A refusal adds a third, on its own in `refusals/`: the envelope that stopped the run, kept
- * whole because no pattern has ever been fitted to a real one.
+ * - `executions.ndjson`, one row per run: what this Igor has been doing and what it cost. Kept
+ *   small enough to read whole.
+ * - The transcript, one file per item: why the worker did what it did. Far larger, and only
+ *   wanted for one item at a time.
+ * - A refusal envelope in `refusals/`, where the run's envelope named a usage limit: kept whole,
+ *   because no pattern has yet been fitted to a real one.
+ * - A capacity observation, on a budget stop that has a seat.
  */
 export async function recordExecution(
   destination: string,
@@ -1793,31 +2072,33 @@ export async function recordExecution(
 ): Promise<void> {
   const path = transcriptPath(candidate)
   const at = new Date().toISOString()
-  // Asked once, though two records carry it. Each write is a round trip to the state branch,
-  // and a window asked again after three of them can answer differently about one refusal: a
-  // reset seconds the far side of the session boundary crosses back over it while the records
-  // are being written, and the capture then contradicts the observation derived from it.
+  // Read once for both the refusal capture and the capacity observation. Each write below is a
+  // round trip to the state branch, so a reset just over a session length away when this is
+  // read can be under it by the last write. Read twice, the capture would say `week` and the
+  // observation `session` about the same refusal.
   const window = limitWindow(result.resetsAt, Date.parse(at))
   const wroteTranscript = result.transcript.trim() !== ''
 
-  // First of the writes and the only one caught, which inverts the ordering argument below on
-  // purpose. Nobody has yet seen what this provider returns when it refuses a run for a spent
-  // window, so `usageLimit`'s patterns, `resetFrom`'s, and the reset phrase `Observation`
-  // never carries are all guesses at a shape this is the first chance to read. A ledger row
-  // lost to a flaky branch is a run nobody can account for; this envelope lost is the next
-  // exhausted window, hours or a week away. Caught because the reverse — a capture failing and
-  // taking the handoff with it — would be a worse bug than the one it exists to fix.
+  // **The only write that is caught**, and it goes first. The other writes are ordered so the
+  // most valuable lands before one fails (see the observation at the end); this one is caught
+  // instead, because if it threw it would take the run's ledger row, transcript and capacity
+  // observation with it. It goes first because nobody has yet seen what this provider returns
+  // when it refuses a run for a spent window: `usageLimit`'s patterns, `resetFrom`'s, and where
+  // the reset phrase sits are all guesses, and this envelope is the first chance to check them.
+  // A lost ledger row is one run nobody can account for; a lost envelope means waiting for the
+  // next exhausted window, hours or a week away.
   //
-  // Nothing redacts it. `envelope.result` is worker prose that came from an item and could say
-  // anything, and it is also where the reset phrase is believed to be, so a redaction removes
-  // the thing being captured. It is the same text the transcript below writes to the same
-  // branch — except on the path where the worker threw, which carries no transcript at all.
+  // Nothing is redacted. `envelope.result` is worker prose about an item and could say
+  // anything, but it is also where the reset phrase is believed to be, so redacting it removes
+  // the thing being captured. The transcript below writes the same text to the same branch,
+  // except on the path where the worker threw, which has no transcript.
   //
-  // Not only a budget stop. A seat can refuse after the worker has edited files, and that run
-  // publishes as `produced` with the envelope in hand — the evidence does not depend on how the
-  // run was classified. Prose alone still counts only where the run stopped for it: there the
-  // verdict is already on the record, while anywhere else it is as likely to be a crash on an
-  // item about rate limits, and those are what would bury the refusal this directory is for.
+  // Captured on any run whose envelope named a limit in a field the provider fills, not only a
+  // budget stop: a seat can refuse after the worker has edited files, and that run publishes as
+  // `produced`. A limit named only in the worker's prose is captured only on a budget stop,
+  // where the run's outcome already says it was refused. On any other run that prose is as
+  // likely a crash on an item about rate limits, and those would bury the refusals this
+  // directory is for.
   const captured = result.limitEnvelope
   if (captured !== undefined && (result.outcome === 'budget' || structuralLimit(captured))) {
     await writeState(
@@ -1829,22 +2110,22 @@ export async function recordExecution(
         url: candidate.url,
         role: role.name,
         ...(seat === undefined ? {} : { seat }),
-        // What the run did with it, because not every capture stopped one and the two are read
-        // very differently: a refusal that ends the run, against one met and published past.
+        // Not every capture stopped its run. A refusal that ended the run is read very differently
+        // from one the run met and then published past.
         outcome: result.outcome,
-        // What was concluded, beside what it was concluded from. A pattern fitted later has to
-        // be checked against the reading this made, and `at` is what `resolveReset` would have
-        // been handed — it answers with the first occurrence at or after the moment it is
-        // given, so a phrase read without that moment cannot be re-read.
+        // The reset this run concluded, beside the envelope it was concluded from, so a pattern
+        // fitted later can be checked against it. A reset phrase resolves only against a moment
+        // (`resolveReset` takes the first occurrence at or after the one it is given), and `at`
+        // is the moment to re-read it against.
         ...(result.resetsAt === undefined ? {} : { resetsAt: result.resetsAt }),
-        // Which cap was exhausted, where something was read to answer that. A capture from a
-        // run nothing stopped has no reset time behind it, and `session` from nothing is
-        // indistinguishable in the file from a real refusal that named no return. A budget
-        // stop always names one: the observation derived from the same refusal carries it,
-        // and the two disagreeing about one refusal makes the capture uncheckable.
+        // Written only where something was read to decide it: on a budget stop, which always gets
+        // a window, and where a reset was read. A capture from a run nothing stopped has no reset,
+        // and `session` written there would look like a real refusal that named no reset. On a
+        // budget stop the window must be written, and match the capacity observation below:
+        // two records disagreeing about one refusal make the capture impossible to check.
         ...(result.outcome === 'budget' || result.resetsAt !== undefined ? { window } : {}),
-        // Which guesses fired, because `result` alone is the one that a crash on an item about
-        // rate limits also trips — and the reader has to sort those out of this directory.
+        // Which patterns fired, not just the verdict. `result` alone also fires on a crash on an
+        // item about rate limits, and the reader has to tell those apart from refusals here.
         matched: limitSignals(captured),
         // Named only where there is one to open. The throw path writes none, and a refusal is
         // exactly where a reader follows the pointer.
@@ -1865,15 +2146,19 @@ export async function recordExecution(
       outcome: result.outcome,
       reason: result.reason,
       ...(result.artifact ? { artifact: result.artifact.ref, url: result.artifact.url } : {}),
-      // By the bytes where the name is not text, as the reason for refusing it names it. The
-      // decoded spelling here would send a reader looking for a file that is not on disk.
+      // `showName`, not `path`: a name that is not valid text is written as its bytes, the same
+      // form the reason for refusing it uses. The decoded `path` names no file on disk.
       changed: result.changed.map((c) => `${c.kind} ${showName(c)}`),
+      // What the resolution undid on purpose, beside what it changed. A reverted base change
+      // is invisible in the diff — a restored deletion reads as the file still being there —
+      // so the record is where it is legible at all.
+      ...(result.reverts === undefined ? {} : { reverts: result.reverts }),
       refusals: result.refusals,
       // A run that never reported a cost records none: zero would read as a run that was free.
       ...(result.costUsd === undefined ? {} : { costUsd: Number(result.costUsd.toFixed(4)) }),
       ...(result.usage === undefined ? {} : { usage: result.usage }),
-      // Rounded further than the dollar figure because these are the calibration input, and a
-      // ratio fitted to five decimal places of an estimate is false precision.
+      // Rounded to four places, as `costUsd` is: these are the calibration input, and a ratio
+      // fitted to more decimal places of an estimate is false precision.
       ...(result.models === undefined
         ? {}
         : { models: result.models.map((m) => ({ ...m, costUsd: Number(m.costUsd.toFixed(4)) })) }),
@@ -1881,10 +2166,10 @@ export async function recordExecution(
       // Every attempt, not one per cure: a command refused six times is a worker that kept
       // trying, and the count is the difference between a stray call and a blocked run.
       ...(result.denials === undefined ? {} : { denials: result.denials }),
-      // Every key, not the first: a run refused an action after a command was denied has two
-      // configurations wrong, and a record naming one parks the item behind the other.
+      // Every key, not only the first: a run can be refused an action and denied a command, which
+      // are two settings to fix. A record naming one leaves the item failing on the other.
       ...(result.cures === undefined ? {} : { cures: result.cures }),
-      // The one string that turns grepping a disposable clone's transcript into opening a file.
+      // The worker's own log outlives its disposable clone; this id names the file to open.
       ...(result.session === undefined ? {} : { session: result.session }),
       ...(result.apiErrorStatus === undefined ? {} : { apiErrorStatus: result.apiErrorStatus }),
       ...(result.terminalReason === undefined ? {} : { terminalReason: result.terminalReason }),
@@ -1908,31 +2193,31 @@ export async function recordExecution(
     )
   }
 
-  // A refusal is an observation at 100%, and on a seat bought for a fleet it is the only one
-  // obtainable: every other route needs a person signed in on that seat, and nobody signs in
-  // as this one. Written from here because this runs once per run, and only for a run that
-  // reached the provider — the budget check that stops an Igor before it spends produces no
-  // execution at all, so Igor's own bound cannot be recorded as the provider's refusal. A run
-  // naming no seat is attributable to none, and an observation owes one.
+  // A budget stop is written as a capacity observation at 100%. On a seat bought for a fleet it
+  // is the only observation available: every other way to read usage needs a person signed in
+  // on that seat, and nobody signs in as this one. It is written here because this runs once
+  // per run and only for runs that reached the provider. Igor's own budget check, which stops a
+  // run before it spends, produces no execution, so Igor's bound is never recorded as the
+  // provider's refusal. A run with no seat is skipped: an observation needs one.
   //
-  // Last of the three writes, because each is a separate call to a state branch over the
-  // network and the first to throw takes the rest with it. The next refusal supersedes this
-  // row; nothing supersedes the transcript ahead of it, which is this run's only account.
+  // **Keep this the last write.** The writes are separate calls to the state branch over the
+  // network, and the first one to throw skips the rest. The next refusal supersedes this row;
+  // nothing replaces the transcript written before it, which is the run's only account.
   if (result.outcome === 'budget' && seat !== undefined) {
     await recordObservation(destination, {
-      // Its own reading, later than the ledger row above by however long that write took. The
-      // span it vouches for ends here and `spendInInstance` is half-open at that end, so an
-      // observation stamped first drops the spend of the very run that was refused — and a
-      // refusal that divides nothing yields no figure, leaving the declared capacity that
-      // permitted the overspend standing. The window is the hoisted one regardless: one refusal
-      // owes one answer about which cap it hit.
+      // A fresh timestamp, not the hoisted `at`. The observation counts spend up to its own `at`,
+      // excluding that moment, and the ledger row above was stamped after the hoisted `at`. With
+      // that one, the observation would leave out the spend of the run that was refused; with
+      // no other spend, it yields no capacity figure, and the declared capacity that allowed
+      // the overspend stays in force. The window is the hoisted one: one refusal, one answer
+      // about which cap it hit.
       at: new Date().toISOString(),
       seat,
       window,
       percentUsed: 100,
-      // Absent where the provider named no return, or named one already past. That the seat
-      // refused is worth recording without it; `capacity-from-observation` §1 has such a row
-      // derive nothing rather than have it invent a position in a window.
+      // Absent where the provider named no reset, or one already past. The refusal is still worth
+      // recording: `capacity-from-observation` §1 has such a row derive nothing rather than
+      // invent a position in a window.
       ...(result.resetsAt === undefined ? {} : { resetsAt: result.resetsAt }),
       source: 'limit',
     })
