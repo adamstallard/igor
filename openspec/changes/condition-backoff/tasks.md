@@ -15,8 +15,9 @@
 
 - [ ] 2.1 Rebuild each condition (cure key, scope, first and last occurrence, count, state,
       cooldown, and the discriminator where the cure key does not identify what is stuck) from
-      `executions.ndjson`: its run rows carrying the cure key, and its condition rows. Store
-      nothing else
+      `executions.ndjson`: every row carrying the cure key, of whatever kind (a run, or a seat
+      probe once #143 writes one), and its condition rows. A row of the condition's scope without
+      the key is an outcome that does not meet it. Store nothing else
 - [ ] 2.2 Scope derived from the key rather than declared alongside it: role, seat or Igor
 - [ ] 2.3 Add a `kind` to execution-log rows, defaulting to a run so existing rows stay valid,
       and append a condition row when a probe is taken. Update every reader of the log that
@@ -64,6 +65,12 @@
       not meet it
 - [ ] 4.7 Tests: cured, still broken, probe item unavailable, a second probe after a longer
       cooldown, a replaced credential clearing at once, and no seat held by two mechanisms
+- [ ] 4.8 The GitHub App credential stop `serve` holds in memory becomes an Igor-scoped
+      condition, `app:<identity>:credential`, observed against a full hash of the App's private
+      key, so a rotated key clears it at once as a replaced seat token does (#170). It opens on
+      the first refusal, not after the recurrence threshold, as `app-identity` requires: a
+      refused App can do nothing on GitHub, so no item could find the cure. Its clearing check is
+      `serve`'s mint attempt, which spends no item, as a seat probe does for a seat
 
 ## 5. Not grading
 

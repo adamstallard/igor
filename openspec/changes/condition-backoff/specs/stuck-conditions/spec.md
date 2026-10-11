@@ -16,6 +16,10 @@ Recurrence is the trigger. A first occurrence is information — an unverified p
 carries the diff, and a handoff naming the missing command is how the cure gets found at all.
 The twentieth is waste, whatever the cause.
 
+One condition opens on its first occurrence: a refused GitHub App credential, which stops the
+Igor itself. An Igor whose App is refused can do nothing on GitHub, so no item it takes could
+find the cure, and `app-identity` already requires that it take no new item while refused.
+
 #### Scenario: A recurring condition stops the scope
 
 - **WHEN** one cure key has been recorded as the cause of a handoff enough times
@@ -25,6 +29,11 @@ The twentieth is waste, whatever the cause.
 
 - **WHEN** a cure key is recorded for the first time
 - **THEN** work continues, because one occurrence is what finds the cure
+
+#### Scenario: A refused App credential stops at once
+
+- **WHEN** GitHub refuses the Igor's App credential once
+- **THEN** the Igor-scoped condition opens, and the Igor takes no new item
 
 #### Scenario: The stop names its cure
 
