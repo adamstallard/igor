@@ -93,6 +93,15 @@ The plugin is named `igor` (decided by Adam, 2026-10-11), so skills load as `igo
 writes the one-line `plugin.json`; the startup check fails if the name differs, because no
 `igor:<name>` would be listed.
 
+### One plugin directory for every role
+
+**The coordinating agent's choice (2026-10-11), not Adam's; he can overrule it.** Every call
+carries the one `--plugin-dir <skills_dir>`, so every installed skill loads for every role. A
+role's `skills` list (#153) decides which skills its worker is directed to use and which Igor
+verifies, not what loads. A plugin directory per role would mean one directory per distinct
+list to install, pin and check at start, and it would protect little: a loaded skill the role
+does not list is neither directed nor granted, and #153's grants by path are per listed skill.
+
 ### The startup check is a `--bare` call with no credential
 
 The issue suggests reading the skill list from #144's startup self-test. That self-test is not
@@ -121,11 +130,14 @@ includes it, the paragraph and its requirement are removed (task 4.3).
 
 ### With #153 (`signed-publishing`, branch `spec-signed-replies`)
 
-- **`<skills>` in #153's design is `<skills_dir>/skills`.** Its grants are
-  `python3 <skills>/prose/scripts/prose.py check`, `… sign`,
-  `<skills>/bug-hunter/scripts/caller-result.sh` and `git add`. Its code runs `prose start`,
-  `verify-post` and `verify-staged` from the same place. A step that names a skill names
-  `igor:prose` or `igor:bug-hunter`.
+- **#153 works per skill in a role's `skills` list.** A name in the list must be installed
+  under `skills_dir`, or the role is refused at load; with `skills_dir` absent, any listed name
+  is. This change states no second refusal.
+- **`<skills>` in #153's design is `<skills_dir>/skills`.** A role that lists `prose` is granted
+  `python3 <skills>/prose/scripts/prose.py check` and `… sign`, and Igor's code runs
+  `prose start`, `verify-post` and `verify-staged` from the same place for it. A role that
+  lists `bug-hunter` is granted `<skills>/bug-hunter/scripts/caller-result.sh` and `git add`. A
+  step that names a skill names `igor:prose` or `igor:bug-hunter`.
 - **A grant by path needs the model to use that path.** Which directory Claude Code reports to
   the model when a plugin skill loads, the link's or the resolved clone's, needs a model call to
   see. Task 0.1 measures it.

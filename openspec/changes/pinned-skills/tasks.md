@@ -20,8 +20,6 @@
       ```
 - [ ] 1.2 `igor.config.example.yaml`: a commented `skills_dir: /opt/igor/skills`, saying it is
       the `igor` plugin directory and pointing at `docs/deployment.md`
-- [ ] 1.3 A check a step calls when it needs a skill: it refuses to start without `skills_dir`,
-      naming the key. #153's steps call it
 
 ## 2. The flag on every call
 

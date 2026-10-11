@@ -18,7 +18,9 @@ skills changed only on purpose. The issue named the directory with `--add-dir`; 
 - **Every `claude -p` Igor spawns carries `--plugin-dir <skills_dir>`**: the worker, triage, and
   every later step, with or without `--bare`. Each skill loads as `igor:<name>`. A skill named
   the same in the home directory or the worked repository loads under its own name beside it
-  and cannot replace it, and the flag gives the worker no file access (measured).
+  and cannot replace it, and the flag gives the worker no file access (measured). Every
+  installed skill loads for every role; a role's `skills` list (#153) decides what its worker
+  uses and what Igor verifies.
 - **Before its first model call, Igor confirms each installed skill loads under `--bare`.** It
   reads the skill list from the `system/init` event of a `claude -p --bare` call that holds no
   credential. That call fails to authenticate, at no cost, after printing the event.

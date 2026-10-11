@@ -13,8 +13,9 @@ SHALL use `igor:<name>`.
 `skills_dir` SHALL be an absolute path. A relative path is refused at load, because the only
 directory it could be relative to is the lore repository, which Igor writes to.
 
-Where `skills_dir` is absent, Igor loads no skills, and a step that needs a skill SHALL refuse
-to start, naming the missing key.
+Where `skills_dir` is absent, Igor loads no skills. No skill is then installed, so a role whose
+`skills` list names any skill is refused at load by role-config's *A role declares the skills
+its worker uses* (#153); this capability adds no refusal of its own.
 
 #### Scenario: An absolute directory is accepted
 
@@ -26,18 +27,16 @@ to start, naming the missing key.
 - **WHEN** `igor.config.yaml` sets `skills_dir: skills`
 - **THEN** loading the configuration fails, naming `skills_dir` and saying it must be absolute
 
-#### Scenario: A step that needs a skill does not run without one
-
-- **WHEN** `skills_dir` is absent and a role runs a step that needs a skill
-- **THEN** that step does not start
-- **AND** the failure names `skills_dir`
-
 ### Requirement: Every model call names the plugin directory
 
 Every `claude -p` process Igor spawns SHALL carry `--plugin-dir <skills_dir>` when
 `skills_dir` is set: the worker, triage, and every other model step. The flag SHALL be passed
 whether or not the call also passes `--bare`. Under `--bare`, a plugin named with
 `--plugin-dir` loads its skills, and the service user's home skills do not (measured).
+
+The flag loads every skill installed under `skills_dir` for every role. A role's `skills` list
+(#153) decides which skills its worker is directed to use and which of them Igor verifies; it
+does not decide what loads.
 
 A skill elsewhere with the same name as a pinned one, in the home directory or in the worked
 repository, loads under its own name beside `igor:<name>` and does not replace it (measured).
