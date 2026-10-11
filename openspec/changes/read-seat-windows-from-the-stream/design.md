@@ -571,12 +571,14 @@ seat at its dollar bound, and settles the earlier question about probing an unca
 
 **A probe checks the credential too (decided 2026-09-28).** A probe answered with an authentication
 failure (401) is not a probe that got no event: the five-hour back-off does not apply to it, so a
-stopped seat is re-checked hourly. It opens the seat's credential stop, `seat:<id>:credential`, in
-the condition record #101 specifies, which owns that stop (#65's breaker is folded into it). A probe
-that succeeds is the check that clears it. Against the exclusions: a seat whose credential stop is
-open is probed only as that clearing check, whatever its readings, and within the hourly limit. The
-refusal, overage and line exclusions still hold it off, because a seat any of them excludes could
-not be used even with its credential cleared, so the stop costs nothing while they last.
+stopped seat is re-checked hourly. It is recorded as a row in `executions.ndjson` carrying
+`seat:<id>:credential` and the credential's full hash, and #101 rebuilds the seat's credential
+condition from that row (#65's breaker is folded into #101). A probe that succeeds is recorded
+without the key, which is the check that clears it. Against the exclusions: a seat whose credential
+stop is open is probed only as that clearing check, whatever its readings, and within the hourly
+limit. The refusal, overage and line exclusions still hold it off, because a seat any of them
+excludes could not be used even with its credential cleared, so the stop costs nothing while they
+last.
 
 **Never on a seat with no token source.** Such a seat runs on the ambient login. A probe of it would
 read that login, which is not the seat.

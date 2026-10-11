@@ -254,13 +254,14 @@ gate already has, so a failed probe cannot shut a seat out. The hourly limit sti
 probed less than an hour before its crossing stays held until a probe is allowed.
 
 **A probe checks the credential too.** A probe the provider answers with an authentication failure
-(HTTP 401) SHALL open the seat's credential stop, `seat:<id>:credential`, in the condition record
-that owns that stop. A probe that succeeds SHALL count as the check that clears that stop. An
-authentication failure is not a probe that received no event, so the five-hour back-off SHALL NOT
-follow it. A seat whose credential stop is open SHALL be probed only as that clearing check,
-whatever its readings, and never more than once an hour. Every other exclusion above still applies
-to it: a seat refused, spending extra usage, or at its line could not be used if its credential were
-cleared, so it keeps its stop until it could.
+(HTTP 401) SHALL be recorded as a row in the execution log carrying the seat's credential key,
+`seat:<id>:credential`, and a full hash of the credential it used, which opens the seat's credential
+condition. A probe that succeeds SHALL be recorded without that key, and SHALL count as the check
+that clears that condition. An authentication failure is not a probe that received no event, so the
+five-hour back-off SHALL NOT follow it. A seat whose credential stop is open SHALL be probed only as
+that clearing check, whatever its readings, and never more than once an hour. Every other exclusion
+above still applies to it: a seat refused, spending extra usage, or at its line could not be used if
+its credential were cleared, so it keeps its stop until it could.
 
 #### Scenario: A reserved seat with no reading is probed
 

@@ -145,13 +145,14 @@
 - [ ] 6.6 The two limits are settled (Adam, 2026-09-27): at most one probe per seat per hour, and
       five hours before re-probing after a probe that got no event. Build them as constants, not
       configuration
-- [ ] 6.7 A probe answered with an authentication failure (401) opens `seat:<id>:credential` in the
-      condition record #101 specifies, which owns the credential stop. A probe that succeeds clears
-      it. A 401 is not "no event": the five-hour back-off does not follow it. A seat whose stop is
-      open is selected by 6.1 as a clearing check whatever its readings, still under the hourly
-      limit and the refusal, overage and line exclusions. Tests: a 401 opens the stop and records
-      nothing; a success clears it and records its reading; a stopped seat is not re-probed within
-      the hour
+- [ ] 6.7 A probe answered with an authentication failure (401) appends its row to
+      `executions.ndjson` (a row of its own kind, #101's task 2.3) carrying `seat:<id>:credential`
+      and the credential's full hash, which opens the seat's credential condition as #101 rebuilds
+      it. A probe that succeeds appends one without the key, which clears it. A 401 is not "no
+      event": the five-hour back-off does not follow it. A seat whose stop is open is selected by
+      6.1 as a clearing check whatever its readings, still under the hourly limit and the refusal,
+      overage and line exclusions. Tests: a 401 opens the stop and records nothing; a success clears
+      it and records its reading; a stopped seat is not re-probed within the hour
 - [ ] 6.8 **A seat is probed at its crossing before it is drawn on again** (Adam, 2026-10-10).
       Where the gate (7.2, 7.3) finds that the line has risen past a seat's most recent unreset
       reading, and that reading was at or past the line when taken, it starts no work on the seat
