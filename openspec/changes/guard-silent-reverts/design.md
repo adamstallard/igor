@@ -55,11 +55,11 @@ to attributable. It does not go away.
 
 ### Structured, because prose is what actually failed
 
-The worker could name the reverted paths in prose instead. A path named in a sentence has to be matched against a path in
-the tree, and the failure mode of that match is a revert published because the worker spelled the
-path slightly differently, or named a directory, or described the file rather than naming it. The
-guard would be weakest exactly where the conflicting content is most confusing to the model —
-which is where reverts come from in the first place.
+The worker could name the reverted paths in prose instead. A path named in a sentence has to be
+matched against a path in the tree, and the failure mode of that match is a revert published because
+the worker spelled the path slightly differently, or named a directory, or described the file rather
+than naming it. The guard would be weakest exactly where the conflicting content is most confusing
+to the model — which is where reverts come from in the first place.
 
 A structured entry either names a path that exists in the comparison or it does not, and the
 answer is the same on every reading.
@@ -67,8 +67,9 @@ answer is the same on every reading.
 ### Answering the objection this design inherits
 
 An escape of this kind invites the objection that *a field whose only purpose is to switch off a
-safety check gets defaulted on*. Three properties answer it. All three are in the requirement rather than left to the
-implementation, because a safety property that lives only in code is the one that gets relaxed.
+safety check gets defaulted on*. Three properties answer it. All three are in the requirement rather
+than left to the implementation, because a safety property that lives only in code is the one that
+gets relaxed.
 
 **It names paths and can never be blanket.** There is no wildcard, no per-resolution flag, and
 nothing a role or an org config can set. The only way to permit a revert is to write down the
