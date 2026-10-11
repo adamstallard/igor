@@ -10,6 +10,11 @@ fixes this for every piece of text an Igor publishes:
 
 ## What Changes
 
+- **A role lists the skills its worker uses (Adam, 2026-10-11).** `skills: [<name>, …]` names
+  pinned skills from #174's `igor` plugin. The org base may set it for every role and a role may
+  add to it, never remove; an unknown name is refused at load. Igor's code checks per listed
+  skill, and a role that lists neither `prose` nor `bug-hunter` publishes as today. Everything
+  below applies to a role according to its list.
 - **Every text a model writes for an Igor to publish is signed by the model step that wrote
   it.** That covers pull request descriptions, replies, questions, and any other model-written
   post to GitHub, Discord or Linear. The step signs with the prose skill's `prose sign`, which
@@ -48,6 +53,9 @@ governs them. Neither change is edited here: the rule lives in one place, and th
 
 ### Modified Capabilities
 
+- `role-config`: a role declares `skills`, the pinned skills its worker uses, inherited by
+  adding.
+
 - `task-execution`: owns producing the artifact, so it gains what is specific to a commit and a
   pull request. The commit is verified against the signed trees, the prose trailer and the
   issue title before `produce()` commits it. The pull request description is written by the
@@ -57,8 +65,8 @@ governs them. Neither change is edited here: the rule lives in one place, and th
 ## Impact
 
 - **Two more `claude -p` steps per change** (bug-hunter, then the prose pass), plus a third
-  when the prose pass edits files after bug-hunter signed its tree. Cost is to be measured on
-  real items before the steps are required for every role.
+  when the prose pass edits files after bug-hunter signed its tree. A role pays them only
+  for the skills it lists; task 4.1 measures the cost per item.
 - **Depends on the prose and bug-hunter skills** from the shared-skills repository, which is not
   public yet. Prose is in review there, and so is bug-hunter's caller-commits mode. Igor loads
   both from a pinned directory with `--add-dir`, as

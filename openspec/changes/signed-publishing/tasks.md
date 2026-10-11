@@ -11,11 +11,18 @@
       `prose.py start --session <uuid> --goals "<the item's reader goals>"` with the worker's
       `HOME` and `XDG_STATE_HOME`, put the printed rules in its system prompt, and pass
       `--session-id <uuid>` (design, item 1)
-- [ ] 0.6 Grant a role that produces signed text `prose.py check`, `prose.py sign`,
+- [ ] 0.6 Grant a role that lists `prose` or `bug-hunter` the commands its skills need:
+      `prose.py check`, `prose.py sign`,
       bug-hunter's `caller-result.sh` (by path into the pinned skills directory) and
       `git add`; run `start`, staging and verifying in Igor's code instead (design, item 2)
-- [ ] 0.7 A per-role opt-in in `org.yaml`: only a role that opts in runs the signing steps
-      (design, Which roles)
+- [ ] 0.7 `skills: [<name>, …]` on a role and the org base, merged by adding (never removing),
+      with an unknown name refused at load against what is installed under `skills_dir`; shown
+      by `role explain`. Tests for each `role-config` scenario (design, Which roles; Adam,
+      2026-10-11)
+- [ ] 0.8 Run each step, and each check, only for the skills the role lists: the bug-hunter
+      step and the `Bug-hunter:` check for `bug-hunter`; the prose pass, the footer check and
+      the `Prose:` check for `prose`. Tests: a role listing only `prose`, only `bug-hunter`, and
+      neither, each publishing a post and a commit
 
 ## 1. Verifying and publishing
 
@@ -51,4 +58,5 @@
 
 ## 4. Measuring
 
-- [ ] 4.1 Record the cost of each new step per item, to decide which roles require them
+- [ ] 4.1 Record the cost of each new step per item, so an org can choose which skills to list
+      for every role

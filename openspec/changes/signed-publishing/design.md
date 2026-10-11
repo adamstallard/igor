@@ -73,10 +73,22 @@ its claim in the very case `graceful-handoff` exists for, so that capability sta
 Adam accepted the recommendation on each question below on 2026-10-11. Items 1 to 4 were raised
 in review on 2026-10-04.
 
-### Which roles: opt in per role, until the cost is measured
+### Which roles: a role lists the skills its worker uses
 
-A role opts in to the signing steps in `org.yaml`. Whether every role that produces code must
-run them is decided once task 4.1 has measured their cost per item.
+**Decided by Adam, 2026-10-11.** The opt-in is a list of skills, not a switch for "posts" and
+"commits". A role declares `skills: [<name>, …]`, the pinned skills of #174's `igor` plugin its
+worker uses. The org base may set the list for every role, and a role may add to it;
+inheritance adds and never removes, so a skill the org requires stays required. A name that is
+not installed under `skills_dir` is refused at load.
+
+Igor's code verifies per listed skill. `prose` means every model-written post needs a valid
+`prose ✓` footer and every commit a matching `Prose:` trailer. `bug-hunter` means every commit
+needs a `Bug-hunter:` trailer bound to the staged tree. A role that lists neither publishes as
+it does today. Each skill's check is written in Igor's code, because only these two exist; a
+configurable table of checks would be configuration for two rows.
+
+Which skills an org lists for every role is its own choice, informed by the cost task 4.1
+measures.
 
 ### 1. Igor opens the prose hook's gate for its worker
 
@@ -109,7 +121,8 @@ in the server user's settings. Where it does not run, the steps above cost one `
 
 ### 2. The worker is granted the scripts it signs with, by path
 
-**Decided:** a role that produces signed text is granted the commands below, by path into the
+**Decided:** a role that lists `prose` or `bug-hunter` is granted the commands its skills
+need, from the list below, by path into the
 pinned skills directory from #152. Where Igor's own code can run a script instead, as in item
 1, it does, and the role needs no grant for it.
 
