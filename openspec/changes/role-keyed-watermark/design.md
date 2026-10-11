@@ -30,42 +30,29 @@ wrongly, and would forbid a file-per-role shape that satisfies the promise perfe
 Cost is one state entry per role per source. The entries are a `lastSeen` string each and the set
 is bounded by the configuration, so this is not a consideration.
 
-### It is an addition, not a modification of the requirement it is in tension with
+### It modifies the requirement it was in tension with
 
-*Watermarks reduce reconsideration without governing it* opens "Discovery SHALL record a
-per-source watermark", which is the wording a reader would expect this change to edit.
+**Decided (Adam, 2026-10-11): modify, not add.** *Watermarks reduce reconsideration without
+governing it* opens "Discovery SHALL record a per-source watermark", the wording a reader would
+expect this change to edit. One requirement about what the mark is keyed by reads better than the
+in-force one beside a second that narrows it, where a reader meets the looser wording first.
 
 **Measured:** `openspec`'s `## MODIFIED Requirements` replaces the whole requirement body on
 archive. `openspec/changes/archive/2026-09-23-keep-artifacts-mergeable/specs/work-triage/spec.md`
 holds a modified *Items with work already in flight are skipped*, and the archived block is
 byte-identical to the in-force text in `openspec/specs/work-triage/spec.md` — prose, scenarios and
-all.
+all. So the block here carries the in-force text, including the preview paragraph
+`preview-persists-nothing` archived on 2026-09-23, with the role scope written into it.
 
-`preview-persists-nothing` held a `MODIFIED` block on exactly that requirement while it was open.
-A second open modification of the same requirement would have been written against the in-force
-text, which did not then contain preview's paragraph — so whichever archived second would have
-silently dropped the other's text. That was the invisible collision, and the reason for adding.
+**Two open modifications of one requirement clobber each other.** Each is written against the
+in-force text, so whichever archives second silently drops the other's wording, and `openspec
+validate` does not cross-check between open changes. Checked 2026-10-11: no other open change, on
+`main` or on an open pull request's branch, modifies this requirement. A change that comes to
+modify it before this one archives has to be written against this block, or wait.
 
-**It no longer holds.** `preview-persists-nothing` archived on 2026-09-23
-(`openspec/changes/archive/2026-09-23-preview-persists-nothing`), so its paragraph is in force and
-there is no second open modification to collide with. Rechecked 2026-09-26: no other open change
-modifies this requirement.
-
-What adding costs is that "per-source watermark" stays in force beside a requirement that narrows
-it. It is a narrowing rather than a contradiction: there is still a watermark per source, and the
-new requirement says whose. Both #99 and #70 made the same call for the same reason.
-
-**The condition this section wrote for has been met.** `preview-persists-nothing` archived before
-this landed, so modifying is now available and, by the argument above, arguably cleaner: one
-requirement about what the mark is keyed by reads better than two. The addition remains correct
-either way, so this is a choice rather than a defect — **left open for review, not taken here.**
-
-What the addition costs, stated once more now that it is a live choice rather than a forced one:
-`openspec/specs/work-discovery/spec.md:44` goes on saying "Discovery SHALL record a per-source
-watermark" beside a requirement that narrows it, and `openspec/specs/work-triage/spec.md:333`
-goes on saying "marks advance per source". Both are narrowings rather than contradictions — there
-is still a mark per source, and the new requirement says whose — but a reader meets the looser
-wording first.
+`openspec/specs/work-triage/spec.md:333` still says "marks advance per source". That is a
+narrowing rather than a contradiction — there is still a mark per source, and this requirement says
+whose.
 
 ### The role is its name, and a rename is a cold start
 

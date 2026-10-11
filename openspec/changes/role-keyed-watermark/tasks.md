@@ -1,10 +1,11 @@
 ## 1. Spec
 
-- [x] 1.1 One added `work-discovery` requirement: a watermark records how far one role has
-      considered a source, keyed by role as well as source (#104)
-- [x] 1.2 Added rather than modifying *Watermarks reduce reconsideration without governing it*,
-      since `preview-persists-nothing` holds an open `MODIFIED` block on it and `MODIFIED`
-      replaces the whole body on archive
+- [x] 1.1 One modified `work-discovery` requirement, *Watermarks reduce reconsideration without
+      governing it*: a watermark records how far one role has considered a source, keyed by role
+      as well as source (#104)
+- [x] 1.2 Modified rather than added beside it (Adam, 2026-10-11): the block carries the in-force
+      text, since `MODIFIED` replaces the whole body on archive, and no other open change or open
+      pull request branch modifies the requirement (checked 2026-10-11)
 - [x] 1.3 The three consequences settled in the requirement rather than left to the code: every
       source cold-starts once, the role is its name so a rename cold-starts, and an unresolvable
       mark is left in place

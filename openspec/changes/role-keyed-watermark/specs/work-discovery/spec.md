@@ -1,6 +1,20 @@
-## ADDED Requirements
+## MODIFIED Requirements
 
-### Requirement: A watermark records how far one role has considered a source
+### Requirement: Watermarks reduce reconsideration without governing it
+
+Discovery SHALL record a watermark per role and source so previously seen items are not
+reconsidered indefinitely. A watermark is an efficiency measure only.
+
+A cycle that decided nothing SHALL NOT advance the watermark. Where discovery ran to show
+somebody what a cycle would decide, nothing was decided and nothing is settled, so the items it
+examined remain exactly as unexamined as before it ran.
+
+The watermark advances on a cycle that acted even over the items it skipped, because deciding not
+to act on an item is still having considered it, and reconsidering it every cycle would cost the
+model call again for the same answer. That reasoning is what a preview lacks. What it costs to
+hold the mark back is a later cycle paying for the same triage call — which is the efficiency this
+requirement already declines to treat as governing. What advancing costs is the items themselves:
+marked seen, never rediscovered, never worked.
 
 A watermark SHALL be scoped to the role whose consideration it records as well as to the source
 it bounds. Where two roles poll the same source, each SHALL have a mark of its own, and an item
@@ -35,6 +49,22 @@ from a dead one, and a rule that removed what it could not resolve would delete 
 every role that was not running. Deleting a live mark costs candidates; keeping a dead one costs
 bytes in a file whose entries are bounded by the configuration that wrote them. The in-force
 reading that state is a cache settles which way that trade goes.
+
+#### Scenario: Seen items not re-triaged
+
+- **WHEN** discovery runs twice with no intervening tracker activity
+- **THEN** the second run performs no triage calls
+
+#### Scenario: New items picked up
+
+- **WHEN** an item is created after the last watermark
+- **THEN** it appears in the next discovery run
+
+#### Scenario: A preview leaves the mark where it found it
+
+- **WHEN** a cycle runs to show what it would claim, and claims nothing
+- **THEN** the stored watermark is unchanged
+- **AND** a later cycle that acts still finds every item the preview examined
 
 #### Scenario: One role's lane rejection does not hide the item from another
 

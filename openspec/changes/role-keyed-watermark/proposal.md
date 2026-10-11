@@ -42,8 +42,8 @@ this is a gap in **what the key represents**, which is why it is a requirement r
 
 ## What Changes
 
-**One added `work-discovery` requirement: a watermark records how far one role has considered a
-source.** The mark is scoped to the role as well as the source, so an item one role's lane
+**One modified `work-discovery` requirement, *Watermarks reduce reconsideration without governing
+it*: a watermark records how far one role has considered a source.** The mark is scoped to the role as well as the source, so an item one role's lane
 rejected is still fresh to another role polling the same source.
 
 It settles three things the implementation must not be left to decide:
@@ -71,14 +71,11 @@ says so, but a requirement naming the string would be satisfied by a key that co
 and still shares a map wrongly, and would forbid a shape — a file per role — that satisfies it
 perfectly well.
 
-**It is added rather than modifying *Watermarks reduce reconsideration without governing it*,**
-whose "per-source watermark" is the wording in tension with it. `preview-persists-nothing` holds
-an open `## MODIFIED Requirements` block on that same requirement, and `MODIFIED` replaces the
-whole requirement body on archive — verified against
-`openspec/changes/archive/2026-09-23-keep-artifacts-mergeable/`, whose archived block is
-byte-identical to the in-force text. Two open modifications of one requirement therefore clobber
-each other in whichever order they land, invisibly, because `openspec validate` does not
-cross-check between open changes. `design.md` carries the reasoning and the alternative.
+**It modifies *Watermarks reduce reconsideration without governing it*** rather than adding a
+second requirement beside it, so the in-force "per-source watermark" wording is replaced instead of
+narrowed from elsewhere. `MODIFIED` replaces the whole requirement body on archive, so the block
+carries the in-force text, with the role scope written into it. `design.md` carries the reasoning
+and the collision this rules out.
 
 ### Explicitly out of scope
 
