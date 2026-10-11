@@ -29,8 +29,7 @@ what neither the configuration nor an entry can show on its own. It SHALL inspec
   role, claiming an issue with its `igor:<role>` label and a claim comment. For each role, the
   report SHALL say whether its identity is an App installed on the repository it claims on, with
   the permissions the label and the comment need. These SHALL be read before anything is
-  claimed, rather than inferred from a claim that did not stick. An identity that is not an App
-  SHALL be a finding, because machine users are not supported.
+  claimed, rather than inferred from a claim that did not stick.
 
 A condition another command already reports, or that the configuration loader already refuses,
 SHALL NOT be re-implemented here; where the report would otherwise be silent about it, the
@@ -69,12 +68,6 @@ report SHALL name the command that covers it.
 - **THEN** it is reported as a finding
 - **AND** the finding states that the workflow's own push is blocked by the rule it exists to
   work around
-
-#### Scenario: A role's identity is not an App
-
-- **WHEN** a role's configured GitHub identity is an ordinary user account rather than a GitHub App
-- **THEN** it is reported as a finding naming that role
-- **AND** the finding states that machine users are not supported
 
 #### Scenario: A role's App cannot label the repository it claims on
 

@@ -56,7 +56,7 @@ inspects the destination and its repository:
   writing** — see `design.md`.
 - Each role's GitHub identity is an App installed on the repository it claims on, with the
   permissions its `igor:<role>` label and claim comment need. On GitHub every Igor is a GitHub
-  App (#156), and an identity that is not one is a finding; see `design.md`.
+  App (#156); see `design.md`.
 
 **Depends on #156's implementation.** `doctor` is built after App support lands, so it checks
 Apps only. It has no interim check of a claiming account's write access.

@@ -47,8 +47,8 @@ claiming account's write access.
 - [ ] 3.6 The state branch is reachable, and the credential holds the write permission pushing
       to it needs — read from the permission, never by writing
 - [ ] 3.7 Each role's GitHub identity is an App installed on the repository it claims on,
-      with the permissions its `igor:<role>` label and claim comment need; an identity that is
-      not an App is a finding. This replaces the deployment table's
+      with the permissions its `igor:<role>` label and claim comment need. This replaces the
+      deployment table's
       `the tracker did not record <account> as holding <item>` row, checkable before a claim.
       Confirm against the live API where an installation's permissions can be read, and record
       it in `design.md`. Requires #156's implementation; there is no machine-user path

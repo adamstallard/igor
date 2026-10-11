@@ -112,10 +112,7 @@ not supported. Two checks change.
 
 **The identity check is a check of each role's App.** An App claims by label, so the question is
 whether each role's App is installed on the repository it claims on, with the permissions the
-label and the claim comment need. An identity that is not an App is a finding.
-[#150](https://github.com/adamstallard/igor/pull/150) already expects this check: its gate-two
-test excludes an Igor's review by the reviewer's `Bot` account type, and a machine user's review
-would pass as a person's.
+label and the claim comment need.
 
 **"Another account could approve" means another person.** An Igor's approval never counts for a
 person's (#156), and every Igor pull request needs a person's. An App's bot also reads
@@ -125,6 +122,7 @@ already leaves the Apps out.
 
 **Sequenced after App support (decided 2026-10-04).** `doctor` is built after #156's
 implementation, so the only identity it ever meets is an App, and the App check is the only
-identity check it has. There is no interim check of a claiming account's write access, and no
-reporting mode for an identity that is not yet an App: a role whose identity is not an App is a
-finding, as the spec states.
+identity check it has. There is no interim check of a claiming account's write access.
+
+**An identity that is not an App is not reported (Adam, 2026-10-11).** Igor does not report old
+configurations: nobody runs Igor yet, so such a check is code that supports no user.
