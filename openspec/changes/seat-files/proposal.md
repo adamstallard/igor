@@ -1,28 +1,25 @@
 ## Why
 
-A seat is someone's Claude subscription. **The holder decides what their seat does and how much,
-and the operator configures exactly that on their behalf.** The holder chooses which of the team's
-roles it serves and what `reserve` it keeps. Directing your seat this way is the same as directing
+A seat is someone's Claude subscription. Whether lending one to a team's Igors fits Anthropic's
+terms turns on whether usage on the seat stays its owner's, directed by them, or is someone else
+driving it (`code.claude.com/docs/en/legal-and-compliance`). Directing your seat is like directing
 your own agent to work on what your teammates file: the use is still yours, set by standing
-instructions. Whether lending a seat fits Anthropic's terms turns on exactly this
-(`code.claude.com/docs/en/legal-and-compliance`): whether usage on a seat is its owner's, or
-someone else driving it.
+instructions.
 
-Nothing records or enforces that today. Every seat lives in the one `igor.config.yaml` under
-`budget.seats`, and which roles draw on a seat follows from pool membership and each role's
-`seat:`. An edit to a pool can put a seat to work for a new role without its holder seeing it.
+Two things make that true here, and neither depends on a review rule:
 
-**The holder's approval needs one file per seat, because CODEOWNERS matches paths, not lines.**
-An entry inside the shared config cannot have an owner of its own. A file can: one CODEOWNERS line
-per seat file, with "require review from code owners" on the lore repository's default branch,
-means any change to what a seat does needs its holder's approval, and git keeps the record of what
-they agreed to. The operator still makes the edits; the holder approves them.
+- **The lender states the terms themselves, in a pull request of their own.** It adds
+  `seats/<id>.yaml`, which names the roles their seat serves and the `reserve` it keeps. The
+  operator merges it. Today every seat lives in the one `igor.config.yaml`, which the operator
+  writes, and which roles draw on a seat follows from pool membership the lender never sees.
+- **The lender can revoke their token at any time, and that stops the seat at once.** It is their
+  veto over anything the operator does with the seat afterwards, including an edit to their file
+  they did not want. Withdrawing and objecting are the same act: revoking the token at Anthropic.
 
 The token has to reach the server too. Today a holder sends their `setup-token` to the operator
-over a trusted channel, which every team improvises. This change gives every team a recommended
-way built on what the seat file already is: the holder encrypts the token to the server's public
-key and puts the ciphertext in their seat file, so only the server can read it, and lending a seat
-is one pull request, from a fork if need be.
+over a trusted channel, which every team improvises. This change makes lending one pull request:
+the holder encrypts the token to the server's public key and puts the ciphertext in their seat
+file, so only the server can read it, and they can open the pull request from a fork.
 
 Tracked in [#148](https://github.com/adamstallard/igor/issues/148), with the seat-choice rule
 from [#147](https://github.com/adamstallard/igor/issues/147).
@@ -33,9 +30,7 @@ from [#147](https://github.com/adamstallard/igor/issues/147).
   `roles/<name>.yaml`. The filename is the seat's id. It declares the holder (`owner`), the
   `reserve`, whether the seat is `dedicated`, the `roles` it serves, and its token.
 - **`budget` leaves `igor.config.yaml`.** Seats are read from `seats/`, and pools are gone, so the
-  mapping has nothing left in it. A config that still declares it is refused by the config's
-  existing unknown-key refusal, with no dedicated message (Adam, 2026-10-11). The one migration is
-  moving `adamstallard/igor-lore`'s seat into `seats/adam.yaml`.
+  mapping has nothing left in it.
 - **A lent seat's token travels as ciphertext in its file**, as `encrypted_token`, encrypted with
   age to the public key committed as `seats/recipient.txt`. Igor decrypts it with the private key
   whose path `igor.config.yaml` names as `seatKey`. No GitHub secret, workflow or runner is
@@ -47,23 +42,18 @@ from [#147](https://github.com/adamstallard/igor/issues/147).
 - **Pools are removed.** A role's seats are every seat whose file lists it. Among those it can
   use, the Igor picks the one with the most headroom under its line, and the soonest weekly reset
   breaks a tie. A role may still name a single seat, which must list it.
-- **Igor warns, and does not refuse, when the holder's approval is not enforced:** a seat file
-  with no code owner, or a default branch without the code-owner review rule. GitHub enforces the
-  rule; a refusal would give GitHub's settings a kill switch over the fleet.
-- **A holder with no GitHub account on the lore repository** has the operator stand in as the
-  seat file's code owner, and `igor doctor` says so for that seat.
 - **`igor seat add`** lends a seat in one step: it reads the token without echoing it, encrypts
-  it, writes the seat file and its CODEOWNERS line, and opens the pull request. Run again, it
-  rotates the token.
+  it, writes the seat file, and opens the pull request. Run again, it rotates the token.
 - **The `work-triage` requirements stop saying "pool"**, and speak of the seats serving a role.
-- **Docs and templates for both sides.** The operator guide in `docs/deployment.md`, with a
-  CODEOWNERS template under `deploy/`. The lender guide in `docs/seats.md`.
+- **Docs for both sides.** The operator guide in `docs/deployment.md`; the lender guide in
+  `docs/seats.md`, which says what a lender trusts the operator with and that revoking the token
+  is how they withdraw or object.
 
 ## Capabilities
 
 ### New Capabilities
 
-None. `setup-check` gains requirements here, and is created by whichever of this change and
+None. `setup-check` gains a requirement here, and is created by whichever of this change and
 `check-a-lore-repository` archives first.
 
 ### Modified Capabilities
@@ -73,8 +63,8 @@ None. `setup-check` gains requirements here, and is created by whichever of this
 - `work-triage`: the model-stage and untriaged-reporting requirements are worded for the seats
   serving a role instead of a pool. Two are re-added under new names, because their scenario names
   said "pool".
-- `setup-check`: `igor doctor` reports the operator standing in for a holder, the code-owner
-  review rule, and whether the committed public key matches the server's private key.
+- `setup-check`: `igor doctor` reports whether the committed public key matches the server's
+  private key.
 
 ## Impact
 
@@ -88,7 +78,7 @@ None. `setup-check` gains requirements here, and is created by whichever of this
 - A new dependency on the `age-encryption` package.
 - `docs/deployment.md`, `docs/seats.md`, `docs/architecture.md` §6.5.1, `README.md`,
   `igor.config.example.yaml`, `deploy/`.
-- `adamstallard/igor-lore`: `seats/adam.yaml` and a CODEOWNERS file.
+- `adamstallard/igor-lore`: `seats/adam.yaml`.
 - Build order: `condition-backoff` (#101), then `read-seat-windows-from-the-stream` (#143), then
   this. The `MODIFIED` blocks here are written against #143's text where #143 modifies the same
   requirement.

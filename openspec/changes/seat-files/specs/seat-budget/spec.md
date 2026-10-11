@@ -27,8 +27,9 @@ Seats SHALL be read from `seats/` and from nowhere else. Where `seats/` is absen
 file, no seats are declared and budget is not enforced. Files in `seats/` other than `*.yaml`,
 such as `recipient.txt`, are not seats.
 
-One file per seat is what makes a holder's approval possible: CODEOWNERS matches paths, not
-lines, so an entry inside a shared file cannot have an owner of its own.
+One file per seat lets a lender state the terms of their seat in a pull request of their own,
+touching nothing else, and lets anyone read those terms, and who changed them, from that file's
+history.
 
 #### Scenario: A seat file declares a seat
 
@@ -86,12 +87,12 @@ Neither form runs or reads anything on the server beyond the seat's own token, s
 on telling an operator's seat file from a lender's. `token_command` is run by Igor's own process
 with that process's environment, which holds every other seat's token and the GitHub token, so
 whoever could merge one could run code on the server. That is acceptable while every
-configuration change gets careful review, and a hole once seats are contributed permissively.
+configuration change gets careful review, and a hole once lending a seat is meant to be easy.
 
 The variable's name is fixed because a free choice is the same hole by other means. A seat file
 naming `GH_TOKEN` would hand the GitHub token to `claude` as a seat credential. A seat file naming
 another seat's variable would spend that seat under a different id, with a reserve and roles its
-holder never approved.
+holder never chose.
 
 #### Scenario: A command is refused, naming the key
 
@@ -221,7 +222,7 @@ and that link is what this requirement exists to remove.
 
 #### Scenario: Taking a role off a seat takes effect on the next load
 
-- **WHEN** a holder's approved change removes `generalist` from their seat file's `roles`
+- **WHEN** a merged change removes `generalist` from a seat file's `roles`
 - **THEN** `generalist` no longer draws on that seat once the configuration is next loaded
 
 ### Requirement: A role draws on the seat with the most headroom
@@ -291,64 +292,6 @@ a session refills within hours.
 - **WHEN** no seat that serves a role is eligible
 - **THEN** the Igor hands off rather than stopping silently
 
-### Requirement: Igor warns, and does not refuse, when a holder's approval is not enforced
-
-When Igor loads the seat files it SHALL warn, once per process and on stderr, for each seat file
-that has no code owner, and once where code-owner review is not required on the lore repository's
-default branch. It SHALL NOT refuse to start, or decline any work, on either ground.
-
-A seat file's code owner SHALL be read from the lore checkout's CODEOWNERS file, the first of
-`.github/CODEOWNERS`, `CODEOWNERS` and `docs/CODEOWNERS` that exists, by GitHub's rule that the
-last matching line wins. A seat file no line matches, or whose last matching line names nobody,
-has no code owner.
-
-Whether code-owner review is required SHALL be read first from the rules GitHub reports as active
-on the default branch, which any credential that can read the repository may read. Where none
-requires code-owner review, it SHALL be read from classic branch protection. Where that cannot be
-read, Igor SHALL warn that it cannot tell whether the rule is in force, naming the permission the
-read needs, and SHALL NOT report the rule as either in force or not.
-
-GitHub enforces the holder's approval, and an administrator can turn it off. A refusal would make
-GitHub's settings a kill switch over the fleet, stopping every Igor over a setting nobody on the
-fleet changed; a warning tells the operator and keeps working.
-
-#### Scenario: A seat file with no code owner is a warning
-
-- **WHEN** no CODEOWNERS line matches `seats/bob.yaml`
-- **THEN** Igor warns, naming `seats/bob.yaml`
-- **AND** it loads and works as it otherwise would
-
-#### Scenario: The last matching line decides the owner
-
-- **WHEN** CODEOWNERS has `/seats/ @operator` and, after it, `/seats/bob.yaml @bob`
-- **THEN** `seats/bob.yaml`'s code owner is `@bob`, and no warning is given for it
-
-#### Scenario: The review rule off is a warning
-
-- **WHEN** no ruleset on the default branch requires code-owner review, and classic branch
-  protection reports it off
-- **THEN** Igor warns that code-owner review is not required on that branch
-- **AND** it loads and works as it otherwise would
-
-#### Scenario: A ruleset requiring code-owner review answers the question
-
-- **WHEN** a ruleset active on the default branch has a pull-request rule requiring code-owner
-  review
-- **THEN** no warning about the rule is given, and classic branch protection is not read
-
-#### Scenario: A rule Igor cannot read is reported as unknown
-
-- **WHEN** no ruleset requires code-owner review and reading classic branch protection is refused
-  for want of permission
-- **THEN** Igor warns that it cannot tell whether the rule is in force, naming Administration read
-  as the permission needed and `igor doctor` as the check to run
-- **AND** it does not report the rule as off
-
-#### Scenario: Each warning is given once
-
-- **WHEN** an Igor loads its seat files on every cycle of a long-running process
-- **THEN** each warning is printed once for that process
-
 ### Requirement: `igor seat add` lends a seat in one step
 
 `igor seat add <id>` SHALL be run by a holder in a clone of the lore repository, or of their fork
@@ -360,7 +303,7 @@ of it, and SHALL:
 3. Encrypt it to that key, and base64-encode the result on one line.
 4. Where `seats/<id>.yaml` does not exist on the default branch, write it with the holder's GitHub
    login as `owner`, the `reserve` and `roles` given as options, and the ciphertext as
-   `encrypted_token`, and add a CODEOWNERS line making the holder its code owner.
+   `encrypted_token`.
 5. Where `seats/<id>.yaml` already exists on the default branch, replace its `encrypted_token` and
    change nothing else. This is how a token is rotated.
 6. Commit on a new branch, push it to the lore repository where the holder may, and otherwise to
@@ -378,7 +321,7 @@ copy. Whoever replaces `recipient.txt` receives every token encrypted to it afte
 - **WHEN** a holder runs `igor seat add bob --reserve 0.5 --roles generalist` and `seats/bob.yaml`
   does not exist
 - **THEN** a pull request adds `seats/bob.yaml`, carrying ciphertext only the server's key
-  decrypts, and a CODEOWNERS line naming the holder
+  decrypts
 
 #### Scenario: A holder without write access lends from a fork
 
@@ -568,26 +511,23 @@ credential pays, and the fallback is what it runs on.
 
 **Reason**: Pools are dropped (Adam, 2026-09-28; #148). A pool grouped seats for a role and
 ordered them, and both jobs move to the seats. A seat's own file lists the roles it serves, so its
-holder approves which roles draw on it, and the gate orders eligible seats by headroom rather than
-by a list an operator edits without the holder seeing.
+lender states which roles draw on it, and the gate orders eligible seats by headroom rather than
+by a list an operator edits without the lender seeing.
 
 **Migration**: Grouping is *A role's seats are the seats whose files list it*; ordering is *A role
 draws on the seat with the most headroom*, which carries the rules this requirement stated that do
 not depend on pools: a seat without headroom is passed over, a reserved seat nothing has read is
-not the fallback, and exhausting every seat is a handoff. A config declaring `pools` is refused by
-the config's unknown-key refusal, because `budget` is no longer a config key.
+not the fallback, and exhausting every seat is a handoff.
 
 ### Requirement: A seat names its token through exactly one mechanism
 
 **Reason**: Every seat is a seat file, and a seat file may not name `token_command` or
 `token_file` (Adam, 2026-10-04). `token_command` runs on the Igor server with every other seat's
 token in its environment, and `token_file` reads a path the seat file chooses, so neither may
-appear in a file whose review is permissive. The scenarios about files and commands are false.
+appear in a file a lender contributes. The scenarios about files and commands are false.
 
 **Migration**: *A seat file names its token only by ciphertext or its own variable*, and *A
-seat's token travels as ciphertext in its file*. An operator who used `token_command` or
-`LoadCredential=` with `token_file` writes the token, or a secret store's output, into the
-server's env file under `IGOR_SEAT_<ID>`, or encrypts it into the seat file.
+seat's token travels as ciphertext in its file*.
 
 ### Requirement: A budget refuses a key nobody reads, and a list that is not a list
 
@@ -595,6 +535,4 @@ server's env file under `IGOR_SEAT_<ID>`, or encrypts it into the seat file.
 no longer exist. Seats are files under `seats/`, and pools are dropped.
 
 **Migration**: A seat file refuses a key nobody reads (*A seat is a file under `seats/`, and its
-filename is its id*). A config still declaring `budget` is refused by the config's existing
-unknown-key refusal, with no dedicated message (Adam, 2026-10-11). The one config that had seats,
-`adamstallard/igor-lore`'s, is migrated by hand.
+filename is its id*).

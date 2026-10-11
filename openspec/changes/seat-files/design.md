@@ -1,8 +1,8 @@
 ## Context
 
 The proposal says what must be true. This file covers the parts where how is a choice: how a token
-reaches the server, how a seat is chosen without pools, how Igor reads whether the holder's
-approval is enforced, and which paths CODEOWNERS has to cover for that approval to mean anything.
+reaches the server, how a seat is chosen without pools, and what a lender's control over their
+seat rests on.
 
 Build order is `condition-backoff` (#101), `read-seat-windows-from-the-stream` (#143), then this
 change. Where this file says "line", "reading" or "headroom", it means them as #143 defines them: a
@@ -15,21 +15,21 @@ observation of the window.
 - **2026-09-28:** one file per seat; pools dropped.
 - **2026-10-04:** no seat file may name `token_command` or `token_file`; this change removes the
   in-force pool requirement; seat choice is most headroom, soonest reset as tie-break (#147).
-- **2026-10-11:** a holder with no GitHub account on the lore repository has the operator stand in
-  as code owner, and `igor doctor` reports it. Igor warns, and does not refuse, when a seat file
-  has no code owner or the code-owner review rule is not in force.
-- **2026-10-11: an old `budget.seats` gets no dedicated refusal or migration message.** Nobody runs
-  Igor on such a config except `adamstallard/igor-lore`, which is migrated by hand (task 8.1).
-  Once seats move to `seats/`, `budget` is a key the config does not read, and the generic
-  unknown-key refusal is all an old config gets.
+- **2026-10-11: nothing is specified whose only job is handling an older setup.** Igor has no
+  users yet. `adamstallard/igor-lore`'s one seat is moved by hand (task 6.1).
 - **2026-10-11: the token travels as ciphertext in the seat file**, replacing the GitHub-secret
   and deploy-workflow model chosen on 2026-09-28. The section below has the reasons.
 - **2026-10-11, accepted as this design proposed:** `token_env` is fixed to `IGOR_SEAT_<ID>`; a
   role naming a seat its file does not list is refused; the seat-choice details below; per-role
   reserves stay on the role (#143); base64 age through the `age-encryption` package; the
-  CODEOWNERS layout below; the seat-id format; `roles` required and possibly empty; an unknown
-  role refused; the config key `seatKey`. The `work-triage` requirements that say "pool" are
-  reworded here.
+  seat-id format; `roles` required and possibly empty; an unknown role refused; the config key
+  `seatKey`. The `work-triage` requirements that say "pool" are reworded here.
+- **2026-10-11: the lender's control is their token, not a review rule.** Adam: "vetoing or
+  revoking should be done by revoking their token, not through some other process." This
+  supersedes three answers given earlier the same day: a CODEOWNERS line per seat file with
+  code-owner review required, Igor warning at load when either is missing, and `igor doctor`
+  reporting the operator standing in as code owner for a holder with no GitHub account. None of
+  them is specified. *What a lender's control rests on* below has the reasoning.
 
 ## How the token reaches the server
 
@@ -117,8 +117,8 @@ states, made a rule.
 
 Without it, a contributed seat file could name `GH_TOKEN`, and Igor would hand the GitHub token to
 `claude` as a seat credential. Or it could name another seat's variable, and spend that seat under
-its own id, with its own reserve and roles, past the holder who approved the other file. Both are
-one line in a file whose review is permissive by design. A seat id holds only lowercase letters,
+its own id, with a reserve and roles that seat's holder never chose. Both are one line in a file
+an operator may merge without much scrutiny, since lending is meant to be easy. A seat id holds only lowercase letters,
 digits and hyphens, so no two ids map to the same name.
 
 ### The ciphertext is one line, and says what it is
@@ -149,13 +149,6 @@ has to be. Nothing writes it to disk or to an argument list.
 is taken of the decrypted token, not the ciphertext. age encryption is randomized, so a holder who
 re-encrypts the same token produces a different ciphertext, and a digest of that would read as a
 new credential and clear a condition the provider would only refuse again.
-
-### A merged seat file reaches the server when its checkout does
-
-Igor reads seats from its lore checkout when it loads, and nothing in Igor updates that checkout.
-A merged seat file, a new one or a rotated token, takes effect once the operator pulls the
-checkout and restarts the Igors. That is how a merged role change reaches the server too. The
-operator guide says so.
 
 ## How a seat is chosen without pools
 
@@ -190,80 +183,32 @@ spreads load, where listed order drained one seat before touching the next.
 Exhausting every seat that serves the role is a handoff, as exhausting a pool was.
 
 **Rejected: keeping pools, or an `order` key, beside the seat files.** Either brings back an
-operator-controlled ordering the holder does not approve. A holder who wants their seat used last
+operator-controlled ordering the lender never stated. A holder who wants their seat used last
 raises its reserve, which lowers its line and so its headroom.
 
-## How Igor reads whether the holder's approval is enforced
+## What a lender's control rests on
 
-Two questions, read when Igor loads the seat files: does each seat file have a code owner, and is
-code-owner review required on the lore repository's default branch. Either failing is a warning on
-stderr, never a refusal. The answer is read once per process.
+**The lender states the terms, and revoking the token is their veto.** Their own pull request adds
+`seats/<id>.yaml` with the roles their seat serves and the reserve it keeps, so the terms on which
+it is used are theirs, in a file whose history shows who changed what. Afterwards the operator can
+edit that file like any other in the lore repository, and nothing in Igor or GitHub asks the
+lender first. What stops a use the lender did not agree to is revoking the token at Anthropic,
+which ends the seat at once, wherever the token is and whatever any file says.
 
-### Code owners are read from the checkout
+**Rejected: a CODEOWNERS line per seat file, with code-owner review required.** It made the lender
+approve every change to their file. It needs settings only an administrator controls and that an
+administrator can turn off, warnings and checks to notice when they are off, a stand-in for a
+lender without a GitHub account, and a lender who wants to rotate their own token waiting on a
+review only they could give. Revoking already gives the lender a veto that needs none of it, and
+that works the same for a lender with no GitHub account.
 
-The lore repository is checked out where Igor runs, so CODEOWNERS is read from disk, with no
-network call and no permission. GitHub uses the first of `.github/CODEOWNERS`, `CODEOWNERS` and
-`docs/CODEOWNERS` that exists, and Igor reads the same one. The owner of `seats/<id>.yaml` is
-decided by GitHub's rule: the last matching line wins. A seat file whose last matching line names
-nobody, or that no line matches, has no code owner, and Igor warns, naming the file.
+**Who controls `seats/recipient.txt`.** Whoever can merge to the lore repository's default branch
+can replace it, and every token encrypted afterwards is readable by whoever holds the matching
+private key. That is the operator, who is trusted with every token anyway, since the server
+decrypts them. `igor seat add` reads it from the default branch, never from a pull request, so a
+pull request cannot redirect a lender's token before it merges.
 
-### The review rule is read from GitHub, and may be unreadable
+**A merged seat file reaches the server when its lore checkout does.** Igor reads seats from the
+checkout when it loads. Igor pulling its own lore checkout between cycles is tracked separately,
+as [#176](https://github.com/adamstallard/igor/issues/176).
 
-Igor's credential on GitHub is an App installation token (#156), with Contents, Issues and Pull
-requests. GitHub offers two places the rule can live, and they need different permissions:
-
-- **A ruleset.** `GET /repos/{owner}/{repo}/rules/branches/{branch}` returns every active rule on a
-  branch, and needs only Metadata read, which every installation has. A `pull_request` rule with
-  `require_code_owner_review: true` means the rule is in force.
-- **Classic branch protection.**
-  `GET /repos/{owner}/{repo}/branches/{branch}/protection/required_pull_request_reviews` needs
-  Administration read, which an Igor's App does not have and should not be given.
-
-So Igor reads the rulesets first. If one requires code-owner review, the question is answered. If
-none does, Igor asks the classic endpoint:
-
-| Classic answer | Igor's warning |
-|---|---|
-| `require_code_owner_reviews: true` | none |
-| `false`, or 404 "Branch not protected" | the rule is not in force on `<branch>` |
-| 403, or any other failure | it cannot tell whether the rule is in force: classic branch protection needs Administration read, which this credential lacks. A ruleset is readable by any credential, and `igor doctor` checks with the operator's |
-
-"Cannot tell" is never reported as "not in force", or as in force. The operator guide recommends a
-ruleset, so the check works with the credential Igor already has.
-
-Neither check sees **bypass actors**. A ruleset's bypass list can let an admin, or the Actions
-actor added for the reconcile workflow, merge a seat change without the holder's review. The rules
-endpoint does not report bypass actors, and the ruleset endpoint that does needs Administration.
-`igor doctor`, with the operator's credential, reports bypass actors on a ruleset covering `seats/`.
-
-### Who owns what
-
-A code owner on the seat file is not enough on its own. The holder's approval means something only
-if nobody can route around the file:
-
-| Path | Code owner | Why |
-|---|---|---|
-| `/seats/` | the operator | A new seat file's first pull request is reviewed under the base branch's CODEOWNERS, which has no line for it yet |
-| `/seats/<id>.yaml` | that seat's holder | The holder approves every change to their seat. Listed after `/seats/`, so it wins |
-| `/seats/recipient.txt` | the operator | Whoever replaces it receives every token encrypted afterwards |
-| `/.github/` | the operator | CODEOWNERS itself, and the workflows, which run with the repository's permissions |
-| `/igor.config.yaml` | the operator | It names `seatKey` |
-
-The lore repository's other paths, entries and roles among them, get no code owner from this
-change. The template says so, because a `*` line would put every lore pull request behind the
-operator's review.
-
-### A holder with no GitHub account
-
-Such a holder cannot be a code owner, so the operator's line stands in for them, and the seat
-file's code owner is someone other than its `owner`. `igor doctor` reports it for that seat:
-which seat, who stands in, and that the holder's approval is then given outside GitHub. Load does
-not warn about it, because the seat file does have a code owner.
-
-## Still to measure
-
-- **What happens when a holder authors a change to their own seat file.** GitHub does not count an
-  author's approval, and the holder is that file's only code owner, so the pull request may wait
-  for a review nobody else can give. The first pull request is not affected: `/seats/` gives it the
-  operator as code owner. Rotation is affected, since a rotation is the holder's own pull request
-  changing `encrypted_token`. Task 1.1 measures it, and the lender guide says what to do.
