@@ -16,7 +16,14 @@ import { tempDir } from './tmp.js'
  * is the seam: the same pull request, the same commits, the same landed files, differing only
  * in which commit came first.
  */
-class FakeGhError extends Error {}
+class FakeGhError extends Error {
+  constructor(
+    message: string,
+    readonly status?: number,
+  ) {
+    super(message)
+  }
+}
 
 interface RawPull {
   number: number
@@ -44,6 +51,49 @@ let openDuringScan: number | undefined
 let refuseSinglePullRequest = false
 /** Whether the state branch refuses the write, as a ruleset or a missing push right does. */
 let refuseStateWrite = false
+
+interface RawComment {
+  user: { login: string }
+  body: string
+  created_at: string
+  issue_url: string
+}
+/** Every conversation comment, on whichever pull request. */
+let conversation: RawComment[] = []
+/** The clock a posted comment is stamped with. */
+let clock = '2026-01-01T00:00:00Z'
+/** Who a posted comment is authored by: the job's actor, or a person running it locally. */
+let poster = 'github-actions[bot]'
+/** The status a post is refused with, as a token that may only read pull requests is refused. */
+let refusePost: number | undefined
+/** Whether reading comments fails, as a rate limit makes it fail. */
+let refuseCommentRead = false
+/** What a refused post says, which is not always a missing permission. */
+let refusalMessage = 'Resource not accessible by integration'
+
+/**
+ * A comment as GitHub records it — and as GitHub records it, it is activity: the pull request's
+ * `updated_at` becomes the comment's `created_at`, to the second.
+ */
+function postComment(number: number, body: string, at: string, author: string): void {
+  conversation.push({
+    user: { login: author },
+    body,
+    created_at: at,
+    issue_url: `https://api.github.com/repos/org/lore/issues/${number}`,
+  })
+  const pull = pulls.find((p) => p.number === number)
+  if (pull) pull.updated_at = at
+}
+
+function serveComments(endpoint: string): RawComment[] {
+  if (refuseCommentRead) throw new FakeGhError('rate limited', 403)
+  const one = /^repos\/org\/lore\/issues\/(\d+)\/comments\?/.exec(endpoint)
+  if (one) return conversation.filter((c) => c.issue_url.endsWith(`/issues/${one[1]}`))
+  const since = /^repos\/org\/lore\/issues\/comments\?since=([^&]+)&/.exec(endpoint)
+  if (since) return conversation.filter((c) => Date.parse(c.created_at) >= Date.parse(since[1] as string))
+  throw new FakeGhError(`unexpected endpoint: ${endpoint}`)
+}
 
 function prNumber(endpoint: string): number {
   return Number(/\/pulls\/(\d+)\//.exec(endpoint)?.[1])
@@ -96,9 +146,17 @@ function servePulls(query: URLSearchParams): unknown {
 
 vi.mock('../src/gh.js', () => ({
   GhError: FakeGhError,
-  gh: async (args: readonly string[]) => {
+  gh: async (args: readonly string[], input?: string) => {
     const endpoint = args[1] ?? ''
     requests.push(endpoint)
+    const post = /^repos\/org\/lore\/issues\/(\d+)\/comments$/.exec(endpoint)
+    if (post && args.includes('POST')) {
+      if (refusePost !== undefined) {
+        throw new FakeGhError(refusalMessage, refusePost)
+      }
+      postComment(Number(post[1]), (JSON.parse(input ?? '{}') as { body: string }).body, clock, poster)
+      return { id: conversation.length }
+    }
     const list = /^repos\/org\/lore\/pulls\?(.+)$/.exec(endpoint)
     if (list) return servePulls(new URLSearchParams(list[1] as string))
     const one = /^repos\/org\/lore\/pulls\/(\d+)$/.exec(endpoint)
@@ -123,6 +181,7 @@ vi.mock('../src/gh.js', () => ({
   },
   ghPaginated: async (args: readonly string[]) => {
     requests.push(args[1] ?? '')
+    if ((args[1] ?? '').includes('comments')) return serveComments(args[1] ?? '')
     return landed.get(prNumber(args[1] ?? '')) ?? []
   },
 }))
@@ -138,7 +197,8 @@ vi.mock('../src/state.js', () => ({
   },
 }))
 
-const { reconcile } = await import('../src/reconcile.js')
+const { reconcile, renderReconciliation } = await import('../src/reconcile.js')
+const { comment, comments } = await import('../src/github.js')
 
 function entry(id: string): Entry {
   return {
@@ -199,6 +259,12 @@ beforeEach(() => {
   openDuringScan = undefined
   refuseSinglePullRequest = false
   refuseStateWrite = false
+  conversation = []
+  clock = '2026-01-01T00:00:00Z'
+  poster = 'github-actions[bot]'
+  refusePost = undefined
+  refuseCommentRead = false
+  refusalMessage = 'Resource not accessible by integration'
 })
 
 describe('a pull request somebody opened by hand', () => {
@@ -1017,5 +1083,312 @@ describe('what asking who merged costs', () => {
       'repos/org/lore/commits/sha7',
       'repos/org/lore/pulls/7',
     ])
+  })
+})
+
+describe('reading and writing a pull request’s comments', () => {
+  it('reads none from a pull request nobody has commented on', async () => {
+    expect(await comments('org/lore', 5)).toEqual([])
+  })
+
+  it('reads a nudge among several comments, with its author and its instant', async () => {
+    postComment(5, 'Looks fine to me.', '2026-02-01T09:00:00Z', 'sarah')
+    postComment(5, '<!-- igor:quiet-proposal quiet-since=2026-01-05 -->\nQuiet.', '2026-02-09T11:22:33Z', 'adam')
+    postComment(6, 'Elsewhere.', '2026-02-10T09:00:00Z', 'sarah')
+
+    const read = await comments('org/lore', 5)
+
+    expect(read.map((c) => c.author)).toEqual(['sarah', 'adam'])
+    expect(read[1]).toEqual({
+      number: 5,
+      author: 'adam',
+      body: '<!-- igor:quiet-proposal quiet-since=2026-01-05 -->\nQuiet.',
+      createdAt: '2026-02-09T11:22:33Z',
+    })
+  })
+
+  it('refuses a post the token is not permitted to make, with the status', async () => {
+    refusePost = 403
+    await expect(comment('org/lore', 5, 'hello')).rejects.toMatchObject({ status: 403 })
+    expect(conversation).toEqual([])
+  })
+})
+
+describe('a quiet proposal is nudged once per quiet spell', () => {
+  const path = `${ENTRIES_DIR}/use-query-hook.md`
+
+  /** An open proposal last touched at `updatedAt`. */
+  function quietProposal(number: number, updatedAt: string, assignees = ['sarah']): void {
+    pulls.push({
+      number,
+      state: 'open',
+      merged_at: null,
+      updated_at: updatedAt,
+      html_url: `https://github.com/org/lore/pull/${number}`,
+      assignees: assignees.map((login) => ({ login })),
+      merged_by: null,
+    })
+    commits.set(number, [`sha${number}`])
+    filesAt.set(`sha${number}`, touched(path))
+    landed.set(number, touched(path))
+  }
+
+  /** One run at `at`, posting as `who`. */
+  async function runAt(dir: string, at: string, who = 'github-actions[bot]') {
+    clock = at
+    poster = who
+    return reconcile(config(dir), { now: new Date(at) })
+  }
+
+  const nudges = (): RawComment[] => conversation.filter((c) => c.body.startsWith('<!-- igor:'))
+
+  it('posts one nudge across five runs in a day', async () => {
+    const dir = store()
+    quietProposal(5, '2026-01-05T10:00:00Z')
+
+    for (const hour of ['09', '11', '13', '15', '17']) {
+      await runAt(dir, `2026-02-01T${hour}:00:00Z`)
+    }
+
+    expect(nudges()).toHaveLength(1)
+    expect(nudges()[0]?.issue_url).toMatch(/\/issues\/5$/)
+  })
+
+  it('adds nothing on a person’s local run after the job nudged', async () => {
+    const dir = store()
+    quietProposal(5, '2026-01-05T10:00:00Z')
+
+    await runAt(dir, '2026-02-01T09:00:00Z')
+    const local = await runAt(dir, '2026-02-01T15:00:00Z', 'sarah')
+
+    expect(nudges()).toHaveLength(1)
+    expect(local.nudged).toEqual([])
+  })
+
+  it('recognizes a nudge a person’s own run posted as ours', async () => {
+    const dir = store()
+    quietProposal(5, '2026-01-05T10:00:00Z')
+
+    await runAt(dir, '2026-02-01T09:00:00Z', 'sarah')
+    await runAt(dir, '2026-02-20T09:00:00Z')
+
+    expect(nudges().map((c) => c.user.login)).toEqual(['sarah'])
+  })
+
+  it('still reports a proposal whose only activity is the nudge, from when it went quiet', async () => {
+    const dir = store()
+    quietProposal(5, '2026-01-05T10:00:00Z')
+
+    await runAt(dir, '2026-02-01T09:00:00Z')
+    const next = await runAt(dir, '2026-02-02T09:00:00Z')
+
+    expect(next.stale).toEqual([expect.objectContaining({ pr: 5, lastActivity: '2026-01-05' })])
+  })
+
+  it('nudges again once somebody replies and the proposal goes quiet again', async () => {
+    const dir = store()
+    quietProposal(5, '2026-01-05T10:00:00Z')
+
+    await runAt(dir, '2026-02-01T09:00:00Z')
+    postComment(5, 'Sorry — will look.', '2026-02-03T08:00:00Z', 'sarah')
+    // Inside the window after the reply: active, so neither reported nor nudged.
+    const active = await runAt(dir, '2026-02-05T09:00:00Z')
+    const quietAgain = await runAt(dir, '2026-02-20T09:00:00Z')
+
+    expect(active.stale).toEqual([])
+    expect(nudges()).toHaveLength(2)
+    expect(nudges()[1]?.body).toContain('quiet-since=2026-02-03')
+    expect(quietAgain.stale).toEqual([
+      expect.objectContaining({ pr: 5, lastActivity: '2026-02-03' }),
+    ])
+  })
+
+  it('never nudges again a proposal nobody answers, and goes on reporting it', async () => {
+    const dir = store()
+    quietProposal(5, '2026-01-05T10:00:00Z')
+
+    const runs = []
+    for (const at of [
+      '2026-02-01T09:00:00Z',
+      '2026-02-03T09:00:00Z',
+      '2026-02-20T09:00:00Z',
+      '2026-06-01T09:00:00Z',
+      '2027-02-01T09:00:00Z',
+    ]) {
+      runs.push(await runAt(dir, at))
+    }
+
+    expect(nudges()).toHaveLength(1)
+    for (const r of runs) {
+      expect(r.stale).toEqual([expect.objectContaining({ pr: 5, lastActivity: '2026-01-05' })])
+    }
+  })
+
+  it('posts where nobody is assigned, and says nobody was notified', async () => {
+    const dir = store()
+    quietProposal(5, '2026-01-05T10:00:00Z', [])
+
+    const result = await runAt(dir, '2026-02-01T09:00:00Z')
+
+    expect(nudges()).toHaveLength(1)
+    expect(result.nudged).toEqual([{ pr: 5, assignees: [] }])
+    expect(renderReconciliation(result, ['abram'])).toContain(
+      'nudged    #5 — commented on the pull request, but nobody is assigned, so nobody was notified',
+    )
+  })
+
+  it('keeps the stale line exactly as it was', async () => {
+    const dir = store()
+    quietProposal(5, '2026-01-05T10:00:00Z')
+
+    const report = renderReconciliation(await runAt(dir, '2026-02-01T09:00:00Z'), ['abram'])
+
+    expect(report).toContain(
+      'stale     #5 last active 2026-01-05, assigned sarah — escalate to abram\n  https://github.com/org/lore/pull/5\n',
+    )
+  })
+})
+
+describe('a nudge that cannot be posted fails the run', () => {
+  const path = `${ENTRIES_DIR}/use-query-hook.md`
+
+  function quietProposal(number: number): void {
+    pulls.push({
+      number,
+      state: 'open',
+      merged_at: null,
+      updated_at: '2026-01-05T10:00:00Z',
+      html_url: `https://github.com/org/lore/pull/${number}`,
+      assignees: [{ login: 'sarah' }],
+      merged_by: null,
+    })
+    commits.set(number, [`sha${number}`])
+    filesAt.set(`sha${number}`, touched(`${ENTRIES_DIR}/other-${number}.md`))
+    landed.set(number, touched(`${ENTRIES_DIR}/other-${number}.md`))
+  }
+
+  it('still promotes, and names the missing permission', async () => {
+    const dir = store()
+    writeEntry(dir, entry('use-query-hook'))
+    mergedPr(7)
+    commits.set(7, ['sha7'])
+    filesAt.set('sha7', touched(path))
+    landed.set(7, touched(path))
+    quietProposal(5)
+    refusePost = 403
+
+    clock = '2026-02-01T09:00:00Z'
+    const result = await reconcile(config(dir), { now: new Date(clock) })
+
+    expect(result.promoted.map((p) => p.id)).toEqual(['use-query-hook'])
+    expect(loadEntry(dir, 'use-query-hook').entry?.status).toBe('active')
+    expect(result.nudged).toEqual([])
+    expect(result.unnudged).toEqual([
+      { pr: 5, reason: expect.stringContaining('`pull-requests: write`') },
+    ])
+    expect(renderReconciliation(result, [])).toMatch(/^unnudged {2}#5 — not permitted to comment/m)
+  })
+
+  it('posts on the next run once the permission is granted', async () => {
+    const dir = store()
+    quietProposal(5)
+    refusePost = 403
+    clock = '2026-02-01T09:00:00Z'
+    await reconcile(config(dir), { now: new Date(clock) })
+
+    refusePost = undefined
+    clock = '2026-02-01T10:00:00Z'
+    const next = await reconcile(config(dir), { now: new Date(clock) })
+
+    expect(next.nudged).toEqual([{ pr: 5, assignees: ['sarah'] }])
+    expect(next.unnudged).toEqual([])
+    expect(conversation).toHaveLength(1)
+  })
+
+  it('posts nothing where it cannot read whether it already nudged', async () => {
+    const dir = store()
+    quietProposal(5)
+    refuseCommentRead = true
+
+    clock = '2026-02-01T09:00:00Z'
+    const result = await reconcile(config(dir), { now: new Date(clock) })
+
+    expect(conversation).toEqual([])
+    expect(result.stale).toEqual([])
+    expect(result.unnudged).toEqual([
+      { pr: 5, reason: expect.stringContaining('could not be read') },
+    ])
+    expect(result.unnudged[0]?.reason).toContain('https://github.com/org/lore/pull/5')
+  })
+
+  it('never dates a nudged proposal from its nudge when its comments cannot be read', async () => {
+    const dir = store()
+    quietProposal(5)
+    clock = '2026-02-01T09:00:00Z'
+    await reconcile(config(dir), { now: new Date(clock) })
+
+    refuseCommentRead = true
+    clock = '2026-02-20T09:00:00Z'
+    const result = await reconcile(config(dir), { now: new Date(clock) })
+
+    // The nudge moved the pull request's date to 2026-02-01, the day it was posted.
+    expect(result.stale.filter((s) => s.lastActivity === '2026-02-01')).toEqual([])
+    expect(result.unnudged.map((u) => u.pr)).toEqual([5])
+  })
+
+  it('says what GitHub said when a refusal is not a missing permission', async () => {
+    const dir = store()
+    quietProposal(5)
+    refusePost = 403
+    refusalMessage = 'You have exceeded a secondary rate limit'
+
+    clock = '2026-02-01T09:00:00Z'
+    const result = await reconcile(config(dir), { now: new Date(clock) })
+
+    expect(result.unnudged[0]?.reason).toContain('secondary rate limit')
+  })
+})
+
+describe('a window that is not a number of days', () => {
+  it('posts nothing on a proposal active an hour ago', async () => {
+    const dir = store()
+    pulls.push({
+      number: 5,
+      state: 'open',
+      merged_at: null,
+      updated_at: '2026-02-01T08:00:00Z',
+      html_url: 'https://github.com/org/lore/pull/5',
+      assignees: [{ login: 'sarah' }],
+      merged_by: null,
+    })
+    commits.set(5, ['sha5'])
+    filesAt.set('sha5', touched(`${ENTRIES_DIR}/use-query-hook.md`))
+    landed.set(5, touched(`${ENTRIES_DIR}/use-query-hook.md`))
+
+    clock = '2026-02-01T09:00:00Z'
+    // `--stale-after 7d` reaches here as NaN, and every comparison against NaN is false.
+    for (const staleAfterDays of [Number('7d'), -7, 0]) {
+      await reconcile(config(dir), { now: new Date(clock), staleAfterDays }).catch(() => undefined)
+    }
+    expect(conversation).toEqual([])
+  })
+
+  it('reads the recent comments rather than failing on a window longer than the calendar', async () => {
+    const dir = store()
+    pulls.push({
+      number: 5,
+      state: 'open',
+      merged_at: null,
+      updated_at: '2026-02-01T08:00:00Z',
+      html_url: 'https://github.com/org/lore/pull/5',
+      assignees: [{ login: 'sarah' }],
+      merged_by: null,
+    })
+
+    clock = '2026-02-01T09:00:00Z'
+    const result = await reconcile(config(dir), { now: new Date(clock), staleAfterDays: 1e9 })
+
+    expect(result.unnudged).toEqual([])
+    expect(conversation).toEqual([])
   })
 })

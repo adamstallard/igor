@@ -221,6 +221,25 @@ deleted, and reports pull requests that have gone quiet past a window, for escal
 store-level `reviewers`. There is no daemon, so it runs at invocation: where the workflow is
 installed that is every merge, and where it is not, whenever someone next uses the tool.
 
+**A quiet proposal is told so on its own pull request**, because in the workflow the report
+goes to the log of a run that succeeded, which nobody opens. The comment notifies the
+assignees, who are already subscribed. It is posted once per quiet spell, and the comment is
+the record: reconciliation reads the pull request's comments back rather than keeping a note.
+Two things make that hold.
+
+- **It recognizes its nudge by a marker in the body, not by author.** The job comments as its
+  actor and a local run as whoever ran it, so an author test would nudge twice.
+- **The nudge does not count as activity.** Posting it moves `updated_at`, so a rule asking
+  "anything since?" would nudge once a window forever. A second nudge needs `updatedAtInstant`
+  strictly later than the last nudge, and GitHub sets `updated_at` to a comment's `created_at`
+  exactly, so the nudge alone never qualifies. The day the proposal went quiet travels in the
+  marker, since the pull request's own date is now the nudge's.
+
+A recently nudged proposal therefore looks active by its date. One read of the destination's
+comments from the start of the window, asked only when an open pull request is inside it,
+finds such proposals. A nudge that cannot be posted fails the run once the promotions and
+rejections are written: a green log is the surface this replaces.
+
 A second promoter was retired rather than kept beside it. A merge-triggered job diffing the
 push for changed entry files cannot see a rejection at all — the deletion happens on the
 proposal branch, so it is in no diff of the push — and a merge whose every candidate was

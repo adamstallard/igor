@@ -147,20 +147,61 @@ test to hold on to.
 
 ## Permissions
 
-`templates/reconcile-on-merge.yml` grants `contents: write` and `pull-requests: read`. Commenting
-on a pull request is `POST /repos/{owner}/{repo}/issues/{number}/comments` — the issues endpoint,
-addressed by the pull request's number — and for a pull request it is governed by the
-`pull-requests` scope, so the template needs `pull-requests: write` and specifically **not**
-`issues: write`. Verify that on the first deployment rather than trusting this paragraph: the
-requirement that a failed nudge names the missing permission and fails the run exists so that
-getting it wrong is loud.
+`templates/reconcile-on-merge.yml` grants `contents: write` and `pull-requests: write`.
+Commenting on a pull request is `POST /repos/{owner}/{repo}/issues/{number}/comments` — the
+issues endpoint, addressed by the pull request's number — and for a pull request it is governed
+by the `pull-requests` scope, so the template needs `pull-requests: write` and specifically
+**not** `issues: write`. That is documentation, not measurement, and task 5.2 is to confirm it
+on a real destination. The requirement that a failed nudge names the missing permission and
+fails the run exists so that getting it wrong is loud.
 
-## Left open
+The template's commit step runs `if: ${{ !cancelled() }}`. Without it, the reconcile step
+failing on a nudge skips the commit, and the promotions and rejections written before the
+failure are discarded with the runner.
 
-- **A proposal nobody ever answers is nudged exactly once.** That is the deliberate reading of
-  "do not mute the surface", but it means a proposal can still rot, now with a single unanswered
-  comment on it. The alternatives are a repeat interval much longer than the window, or nudging
-  again only when the assignee set changes. Both add a knob, and nothing has been run.
-- **A store reviewer who is not subscribed to the pull request is not reached.** The nudge names
-  them; only an @mention would notify them, and `lore-review` forbids that for contributing
-  authors on grounds that apply here too. Escalating past the assignees remains stdout's job.
+## What the implementation contradicted
+
+**A recently nudged proposal is not free to find.** The cost section above says a backlog of
+active proposals costs nothing and only quiet ones pay. That holds for posting, and not for
+reporting. A nudge moves `updated_at`, so for a window after it the proposal passes the window
+test as active and never reaches the per-pull-request read. Yet the requirement says the run
+still reports it as quiet. Reading each open pull request's comments would cost one request per
+open pull request on every run, so the implementation asks once instead: the destination's
+comments from the start of the window, `GET /repos/{repo}/issues/comments?since=…`, paginated,
+and only when some open pull request is inside the window. A destination with no open pull
+requests pays nothing. Any other destination pays one read per run, plus a page for every
+hundred comments in the window.
+
+**`updated_at` equals the comment's `created_at`, measured.** The idempotence rule depends on it:
+were `updated_at` a second later, the nudge alone would satisfy "strictly later" and the
+proposal would be nudged once a window forever. On `adamstallard/igor`, issues #100 and #62,
+whose last activity is a comment and nothing else, carry `updated_at` equal to that comment's
+`created_at` to the second. Every case one second apart (#107, #133, #158 among them) is a
+comment followed by a close, and the close is the later activity. No pull request on that
+repository has a comment as its last activity, so the equality is measured on issues, whose
+endpoint is the same one a pull request's comment is posted through.
+
+**A failed read of the recent comments fails the run, even where no nudge was owed.** Exiting
+zero instead was considered and rejected: a recently nudged proposal would then drop out of the
+report inside a green run's log, which is the failure this change replaces. Every other GitHub
+read in `reconcile` already fails the run when it throws. This stops applying if that read ever
+gains a fallback that still reports a nudged proposal.
+
+**A failed read of one proposal's comments leaves it out of the stale lines** and names it, with
+its URL, as unnudged. Its quiet date is unknowable without the comments: where it was nudged,
+the pull request's own date is the nudge's.
+
+**The marker is anchored to the start of the body.** A reply quoting the raw text of a nudge
+would otherwise read as a newer nudge, and the reply would earn no second one.
+
+## Settled at gate one
+
+Adam settled all three, on [#81](https://github.com/adamstallard/igor/pull/81#issuecomment-5758914255):
+
+- **A proposal nobody ever answers is nudged exactly once.** Re-announcing is the defect, and
+  both alternatives add an interval nobody can set from evidence. The stdout report, and the
+  store reviewers the nudge names, are what remain for it.
+- **A nudge that cannot be posted fails the run**, after the promotions and rejections are
+  written, accepting that a transient GitHub failure turns a merge's reconcile red.
+- **A store reviewer who is not subscribed to the pull request is not reached.** An @mention
+  contradicts `lore-review`, and assigning store reviewers would overload what assignment means.

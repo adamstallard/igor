@@ -141,6 +141,15 @@ The state branch lives here too, so it has to be a repository the Igor can push 
    then silently never fires. The job runs the same `reconcile` you would run locally, so it
    promotes what merged and records what a reviewer deleted — run `reconcile` yourself on a
    store without the workflow, or to read the report of proposals that have gone quiet.
+
+   **A proposal with no activity for a week gets one comment on its own pull request**, which
+   notifies its assignees. The comment says how long it has been quiet, names the store
+   reviewers, and spells out the three ways to end it, rejection being the permanent one.
+   It is posted once per quiet spell: a reply followed by another quiet week earns a second,
+   and silence earns nothing more. Whichever run posts it, the job's or your own, the next
+   recognizes it. The workflow needs `pull-requests: write` to comment, and a run that cannot
+   comment fails, after committing its promotions and rejections.
+
    Exactly one job may promote lore on push: two of them race on the same commit and disagree
    about what a reviewer deleted, so delete any other workflow in `.github/workflows` that
    promotes or reconciles lore. Where a later Igor ships a new version of that file,

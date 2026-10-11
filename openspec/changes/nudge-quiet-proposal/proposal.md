@@ -85,7 +85,10 @@ Explicitly out of scope:
   `pull-requests: read`; until it has it, every merge's reconcile run goes red, which is loud
   and correct.
 - Each quiet proposal costs one more request per run — reading its comments back — on top of the
-  one or two `isProposal` already costs it. Only proposals already past the window pay it;
-  `src/github.ts` has no comment primitive today and gains two.
+  one or two `isProposal` already costs it. Only proposals already past the window pay it.
+  Finding a proposal nudged within the window costs one more read per run for the whole
+  destination; `design.md` says why.
+- `src/github.ts` reads a pull request's comments, reads the destination's recent comments,
+  and posts a comment.
 - Implementation lands in `src/reconcile.ts`, which [#71](https://github.com/adamstallard/igor/pull/71)
   and [#76](https://github.com/adamstallard/igor/pull/76) both edit.
