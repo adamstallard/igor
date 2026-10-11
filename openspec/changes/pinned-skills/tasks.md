@@ -6,9 +6,10 @@
       model: the link under `<dir>/skills/` or the clone it resolves to. **If the skill does not
       run, stop: the choice of flag goes back to Adam.** If the reported directory is the
       clone, #153's grants and the paragraph in 4.1 name the clone's path instead. Done
-      2026-10-11 with a setup-token through `apiKeyHelper`: the skill runs under `--bare` only
-      as the opening `/igor:<name>`, and its base directory is the plugin's. See `design.md`,
-      *Measured with a model*
+      2026-10-11 with a seat's setup-token: in normal mode the model invokes `igor:<name>`
+      through the Skill tool and the skill runs, with the plugin's base directory. Under
+      `--bare` the token runs as an API key, not as a seat, so Igor never passes `--bare`. See
+      `design.md`, *Measured with a model*
 - [ ] 0.2 Confirm the shared-skills commit to pin carries bug-hunter's caller-commits mode
       (`caller-result.sh`) and prose's `start`, `check`, `sign`, `verify-staged` and
       `verify-post`
@@ -31,24 +32,25 @@
       the spawn at `:965`), `runClaude` (`src/triage.ts:145`) and `runUsage`
       (`src/budget.ts:235`). #143's seat probe and #153's steps use it too
 - [ ] 2.2 Tests: the worker's and triage's arguments carry `--plugin-dir <skills_dir>` when it
-      is set, and no `--plugin-dir` when it is not
+      is set, and no `--plugin-dir` when it is not; no call's arguments include `--bare`
 
 ## 3. Startup check
 
 Runs in `wire` (`src/wiring.ts`), before the first model call, only when `skills_dir` is set.
 
-- [ ] 3.1 Run `claude -p --bare --plugin-dir <skills_dir> --output-format stream-json --verbose`
-      with a one-word prompt, stdin closed, and an environment of `PATH` and `HOME` only. Read
+- [ ] 3.1 Run `claude -p --plugin-dir <skills_dir> --output-format stream-json --verbose`
+      with a one-word prompt, stdin closed, from an empty temporary directory, and an
+      environment of `PATH` and a `HOME` that is another empty temporary directory. Read
       the `system/init` event's `skills`, then stop the process. Refuse to start when
       `igor:<name>` is missing for a skill under `<skills_dir>/skills/`, or when no init event
       arrives. Messages (may be reworded):
 
       ```
-      skill <name> is installed in <skills_dir>/skills, but claude -p --bare --plugin-dir <skills_dir> does not load it as igor:<name>
+      skill <name> is installed in <skills_dir>/skills, but claude -p --plugin-dir <skills_dir> does not load it as igor:<name>
       ```
 
       ```
-      claude -p --bare --plugin-dir <skills_dir> printed no system/init event, so Igor cannot confirm its skills load
+      claude -p --plugin-dir <skills_dir> printed no system/init event, so Igor cannot confirm its skills load
       ```
 - [ ] 3.2 Report each skill and the commit its files come from (`git -C <resolved dir>
       rev-parse HEAD`), one startup line per skill:
@@ -58,7 +60,7 @@ Runs in `wire` (`src/wiring.ts`), before the first model call, only when `skills
       ```
 - [ ] 3.3 Tests: each refusal above with its message; a passing check starts; the check's
       environment holds no `CLAUDE_CODE_OAUTH_TOKEN` and no `ANTHROPIC_API_KEY` even when the
-      process has them
+      process has them, and its `HOME` is not the service user's
 
 ## 4. The worker's system prompt
 

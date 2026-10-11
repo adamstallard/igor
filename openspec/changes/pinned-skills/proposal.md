@@ -1,14 +1,15 @@
 ## Why
 
 Igor's model steps run skills: #153 (`signed-publishing`) has a worker run `prose` and
-`bug-hunter`. Today `claude -p` finds skills in the service user's `~/.claude/skills`, but
-`--bare` skips that directory, and `--bare` is due to become the default for `-p` (#144). On
-that day every skill would stop loading, silently.
+`bug-hunter`. Today `claude -p` finds skills only in the service user's `~/.claude/skills`, at
+whatever version was last installed there, and a same-named skill in the worked repository
+runs in its place.
 
 Issue [#152](https://github.com/adamstallard/igor/issues/152) decides the fix: Igor loads its
 skills from one pinned directory that it names on every call, holding a copy of the shared
 skills changed only on purpose. The issue named the directory with `--add-dir`; Adam chose
-`--plugin-dir` instead on #174, after the measurement in `design.md`.
+`--plugin-dir` instead on #174, after the measurement in `design.md`. Adam also decided that
+Igor never passes `--bare`: under it, a seat's token runs as an API key, not as a seat.
 
 ## What Changes
 
@@ -16,14 +17,15 @@ skills changed only on purpose. The issue named the directory with `--add-dir`; 
   It holds `.claude-plugin/plugin.json` and the skills under `skills/`, installed by the
   shared-skills manager. Igor adds no installer.
 - **Every `claude -p` Igor spawns carries `--plugin-dir <skills_dir>`**: the worker, triage, and
-  every later step, with or without `--bare`. Each skill loads as `igor:<name>`. A skill named
+  every later step, never with `--bare`. Each skill loads as `igor:<name>`, and the worker
+  invokes it through the Skill tool. A skill named
   the same in the home directory or the worked repository loads under its own name beside it
   and cannot replace it, and the flag gives the worker no file access (measured). Every
   installed skill loads for every role; a role's `skills` list (#153) decides what its worker
   uses and what Igor verifies.
-- **Before its first model call, Igor confirms each installed skill loads under `--bare`.** It
-  reads the skill list from the `system/init` event of a `claude -p --bare` call that holds no
-  credential. That call fails to authenticate, at no cost, after printing the event.
+- **Before its first model call, Igor confirms each installed skill loads.** It reads the skill
+  list from the `system/init` event of a `claude -p` call with no token and an empty `HOME`.
+  That call fails to authenticate, at no cost, after printing the event.
 - **The worker is told where its skills are**, as a fallback until the shared skills find their
   scripts from the directory they were loaded from. Their instructions name home-directory
   paths today.
@@ -50,6 +52,5 @@ capability's requirements change. The rule covers every call, so it lives in one
   The skills check here uses no seat, so it neither depends on them nor duplicates them.
 - `docs/deployment.md` gains the install procedure: a root-owned plugin directory outside the
   service's writable paths, filled by the manager from a clone at a fixed commit.
-- **Under `--bare`, a skill runs only when a call opens with `/igor:<name>`** (task 0.1): the
-  model has no Skill tool there. Igor then runs each skill as its own step. Whether Igor passes
-  `--bare` at all is open, with Adam.
+- **#144's risk stands:** if `--bare` becomes the default for `claude -p`, Igor must opt out
+  explicitly.

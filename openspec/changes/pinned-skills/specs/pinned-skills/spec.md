@@ -30,9 +30,12 @@ its worker uses* (#153); this capability adds no refusal of its own.
 ### Requirement: Every model call names the plugin directory
 
 Every `claude -p` process Igor spawns SHALL carry `--plugin-dir <skills_dir>` when
-`skills_dir` is set: the worker, triage, and every other model step. The flag SHALL be passed
-whether or not the call also passes `--bare`. Under `--bare`, a plugin named with
-`--plugin-dir` loads its skills, and the service user's home skills do not (measured).
+`skills_dir` is set: the worker, triage, and every other model step. No call SHALL pass
+`--bare` (decided by Adam, 2026-10-11): under `--bare` a seat's token runs as an API key, with
+no `rate_limit_event`, so the call is not read as a seat (measured).
+
+The worker invokes an `igor:<name>` skill itself, through the Skill tool, when its task calls
+for it (measured).
 
 The flag loads every skill installed under `skills_dir` for every role. A role's `skills` list
 (#153) decides which skills its worker is directed to use and which of them Igor verifies; it
@@ -51,31 +54,25 @@ repository, loads under its own name beside `igor:<name>` and does not replace i
 - **WHEN** Igor spawns a triage call with `skills_dir` set
 - **THEN** its arguments include `--plugin-dir` followed by `skills_dir`
 
+#### Scenario: No call passes --bare
+
+- **WHEN** Igor spawns any `claude -p`
+- **THEN** its arguments do not include `--bare`
+
 #### Scenario: No directory, no flag
 
 - **WHEN** `skills_dir` is absent
 - **THEN** no `claude -p` call carries `--plugin-dir`
 
-### Requirement: A call under `--bare` uses a skill only as its opening command
-
-Under `--bare`, the model has no Skill tool, and it cannot be added back; a skill runs only
-when the call's prompt opens with `/igor:<name>` (measured). Where Igor passes `--bare`, a step
-that uses a skill SHALL be its own `claude -p` call whose prompt opens with `/igor:<name>`. A
-step SHALL NOT rely on the model invoking a skill mid-task under `--bare`.
-
-#### Scenario: A skill step opens with the skill's command
-
-- **WHEN** Igor runs a step that uses `bug-hunter` under `--bare`
-- **THEN** the step's prompt opens with `/igor:bug-hunter`
-
 ### Requirement: Igor confirms its skills load before its first model call
 
 Before it spawns its first `claude -p` that could spend a seat, Igor SHALL run
-`claude -p --bare --plugin-dir <skills_dir> --output-format stream-json --verbose` with an
-environment holding only `PATH` and `HOME`. It SHALL read the `skills` list of the
-`system/init` event and confirm that `igor:<name>` is in it for every entry under
-`<skills_dir>/skills/`. With no credential, a `--bare` call cannot authenticate, so the call
-costs nothing. It prints the event first, then exits with `Not logged in` (measured).
+`claude -p --plugin-dir <skills_dir> --output-format stream-json --verbose` from an empty
+temporary directory, with an environment holding only `PATH` and a `HOME` that is another empty
+temporary directory. It SHALL read the `skills` list of the `system/init` event and confirm that
+`igor:<name>` is in it for every entry under `<skills_dir>/skills/`. With no token and no
+stored login, the call cannot authenticate, so it costs nothing. It prints the event first,
+then exits with `Not logged in` (measured).
 
 Igor SHALL refuse to start when an installed skill is missing from the list, or when no
 `system/init` event arrives. It SHALL report the commit each skill's files come from, so a
@@ -103,6 +100,7 @@ change in what is loaded shows in the log.
 
 - **WHEN** Igor runs the check
 - **THEN** the call's environment holds no seat token and no API key
+- **AND** its `HOME` holds no stored login
 
 ### Requirement: The worker is told where its skills are
 
