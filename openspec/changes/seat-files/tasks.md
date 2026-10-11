@@ -156,11 +156,18 @@ measurement.
 
 ## 8. `igor doctor`
 
-Composes with `check-a-lore-repository` (#113). Whichever builds second adds this to the command
+Composes with `check-a-lore-repository` (#113). Whichever builds second adds these to the command
 the other built.
 
 - [ ] 8.1 The key match, per *The check says whether the server's key matches the committed one*,
       with a test for each of its scenarios
+- [ ] 8.2 The notice workflow, per *The check says whether seat owners are told of changes to
+      their seat files*, read from the default branch the way the reconciliation-workflow check
+      reads its file, with a test for each of its scenarios. The finding, worded so:
+
+      ```
+      .github/workflows/seat-notice.yml is missing from <branch>, so no lender is told when a pull request changes their seat file, and revoking their token is their only veto. Run `igor init` to write it.
+      ```
 
 ## 9. Docs and templates
 

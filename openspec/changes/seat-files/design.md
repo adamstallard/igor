@@ -260,3 +260,12 @@ operator guide says to tell them some other way.
   its own self-hosted workflow and run code on the server.
 - **Igor commenting from the server.** Igor watches its roles' sources, not the lore repository's
   pull requests, and a notice that waits on the server being up is no notice when it is down.
+
+**Decided 2026-10-11 (Adam): `igor doctor` reports a missing `seat-notice.yml`.** Without it no
+lender is ever told of a change, and nothing else fails or reports it. The check reads the default
+branch, as the reconciliation-workflow check in `check-a-lore-repository` does.
+
+**Decided 2026-10-11 (Adam): a change to `seats/recipient.txt` notifies nobody.** A new public
+key affects only tokens encrypted after it lands; every token already on the server stays as it
+was. Each lender meets the new key when they next rotate, since `igor seat add` reads it from the
+default branch.

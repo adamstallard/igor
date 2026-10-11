@@ -56,7 +56,7 @@ from [#147](https://github.com/adamstallard/igor/issues/147).
 
 ### New Capabilities
 
-None. `setup-check` gains a requirement here, and is created by whichever of this change and
+None. `setup-check` gains requirements here, and is created by whichever of this change and
 `check-a-lore-repository` archives first.
 
 ### Modified Capabilities
@@ -67,7 +67,7 @@ None. `setup-check` gains a requirement here, and is created by whichever of thi
   serving a role instead of a pool. Two are re-added under new names, because their scenario names
   said "pool".
 - `setup-check`: `igor doctor` reports whether the committed public key matches the server's
-  private key.
+  private key, and whether the seat-notice workflow is on the default branch.
 
 ## Impact
 
