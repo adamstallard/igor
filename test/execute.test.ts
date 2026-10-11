@@ -2679,6 +2679,31 @@ describe('an artifact carries the removals as well as the edits', () => {
   })
 })
 
+describe('an artifact carries each file\'s mode', () => {
+  it('publishes the mode the worker\'s tree holds, edited or new', async () => {
+    // The artifact's tree is the base's with these files over it, so a file sent without its
+    // mode loses the executable bit it had: a script the worker only edited stops being
+    // runnable in the pull request.
+    const { provider } = fakeProvider([
+      { path: 'scripts/build.sh', content: '#!/bin/sh\necho built\n', kind: 'modified', executable: true },
+      { path: 'scripts/new.sh', content: '#!/bin/sh\necho new\n', kind: 'added', executable: true },
+      { path: 'src/a.ts', content: 'fixed', kind: 'modified' },
+    ])
+    const { host, seen } = fakeCodeHost()
+    const { t } = fakeTracker()
+
+    await execute(provider, t, host, candidate(), role(), {
+      worker: async () => ({ result: 'Done.', total_cost_usd: 0.01 }),
+    })
+
+    expect(seen[0]?.files).toEqual([
+      { path: 'scripts/build.sh', content: '#!/bin/sh\necho built\n', executable: true },
+      { path: 'scripts/new.sh', content: '#!/bin/sh\necho new\n', executable: true },
+      { path: 'src/a.ts', content: 'fixed' },
+    ])
+  })
+})
+
 describe('the base the artifact is laid over', () => {
   it('is the commit the tree was cut from, not the branch head at publish time', async () => {
     // The base branch moves while the worker runs, and a publish that re-reads its head lays

@@ -27,8 +27,8 @@ export interface ChangedFile {
   /** A deletion carries no content, and a binary is not reported at all. */
   kind: 'added' | 'modified' | 'deleted'
   /**
-   * Whether the file is executable. Only a resolution reads it: it lays blobs over a tree the
-   * branch already has, so a mode assumed here replaces the mode that is there.
+   * Whether the file has an executable bit on disk. Both publishing paths publish it as the
+   * file's mode, so a mode assumed here replaces the one the branch already has.
    */
   executable?: boolean
   /**

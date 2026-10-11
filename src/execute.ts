@@ -1584,9 +1584,9 @@ export async function execute(
     const files = written.map((c) => ({
       path: c.path,
       content: c.content,
-      // Carried only onto a branch that already has the path; `produce` builds a new tree,
-      // where every file is new and there is no mode to preserve.
-      ...(artifact !== undefined && c.executable === true ? { executable: true } : {}),
+      // Sent on both paths: each lays these files over a tree that may already hold them, and
+      // a file sent without it loses the executable bit it has there.
+      ...(c.executable === true ? { executable: true } : {}),
     }))
 
     // The resolution goes on the branch that exists, with both sides as parents. A one-parent
