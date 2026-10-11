@@ -180,95 +180,51 @@ describe('append — levels accumulate', () => {
   })
 })
 
-describe('siblings union — an Igor that does two jobs', () => {
+describe('one base per role', () => {
   const TWO = {
     org: 'allow: [comment, draft-pr, unassign]\ncompletion: unassign\nlane:\n  labels:\n    excludes: [Human]\n',
-    backend: 'lane:\n  paths:\n    under: ["server/**"]\n',
-    frontend: 'lane:\n  paths:\n    under: ["web/**"]\n',
+    engineering: 'allow: [comment, draft-pr, unassign]\ncommands: ["npm test:*", "npm run lint"]\n',
+    backend: 'extends: engineering\nlane:\n  paths:\n    under: ["server/**"]\n',
+    frontend: 'extends: engineering\nlane:\n  paths:\n    under: ["web/**"]\n',
   }
 
-  it('covers what either parent covers, rather than only their overlap', () => {
-    // Conjoining siblings would give Milton items under server/** AND web/**, so he would find
-    // nothing at all — the failure that motivated resolving over the graph.
+  it('refuses a role naming two bases, naming both and saying how to build a broad role', () => {
     const dir = store({ ...TWO, milton: 'extends: [backend, frontend]\n' })
-    expect(resolveRole(dir, 'milton').role.lane.paths!.under).toEqual([['server/**', 'web/**']])
+    expect(() => resolveRole(dir, 'milton')).toThrow(
+      'role "milton" extends backend and frontend; a role extends at most one base. For a role ' +
+        'spanning several areas, give it its own lane, allow and commands, and put what the roles ' +
+        'share in a base they all extend',
+    )
   })
 
-  it('still cannot escape a constraint the parents share', () => {
-    const dir = store({ ...TWO, milton: 'extends: [backend, frontend]\n' })
-    expect(resolveRole(dir, 'milton').role.lane.labels!.excludes).toEqual(['Human'])
-  })
-
-  it('unions permissions between siblings without either one widening', () => {
-    // backend may draft-pr and frontend may not; Milton does both jobs, so he may.
+  it('builds a role spanning two areas through one shared base', () => {
     const dir = store({
       ...TWO,
-      backend: 'allow: [comment, draft-pr, unassign]\n',
-      frontend: 'allow: [comment, unassign]\n',
-      milton: 'extends: [backend, frontend]\n',
+      fullstack: 'extends: engineering\nlane:\n  paths:\n    under: ["server/**", "web/**"]\ncommands: ["npm test:*"]\n',
     })
-    expect(resolveRole(dir, 'milton').role.allow.sort()).toEqual(['comment', 'draft-pr', 'unassign'])
+    const { role } = resolveRole(dir, 'fullstack')
+    expect(role.extends).toEqual(['org', 'engineering'])
+    expect(role.lane.paths!.under).toEqual([['server/**', 'web/**']])
+    expect(role.lane.labels!.excludes).toEqual(['Human'])
+    expect(role.commands).toEqual(['npm test:*'])
   })
 
-  it('cannot reach past what the parents share above them', () => {
-    // The safety property that makes unioning siblings acceptable at all.
+  it('is not widened when a sibling base changes', () => {
     const dir = store({
       ...TWO,
-      backend: 'allow: [comment, unassign]\n',
-      frontend: 'allow: [comment, unassign]\n',
-      milton: 'extends: [backend, frontend]\nallow: [comment, unassign, merge]\n',
+      frontend: 'extends: engineering\nallow: [comment, unassign]\n',
+      fullstack: 'extends: engineering\nallow: [comment, draft-pr, unassign]\n',
     })
-    expect(() => resolveRole(dir, 'milton')).toThrow(/widens allow with merge/)
+    expect(resolveRole(dir, 'fullstack').role.allow).toEqual(['comment', 'draft-pr', 'unassign'])
   })
 
-  it('does not treat one sibling permitting more as the other widening', () => {
-    // Read as a flat chain, frontend would look like it widened backend's allow.
-    const dir = store({
-      ...TWO,
-      backend: 'allow: [comment, unassign]\n',
-      frontend: 'allow: [comment, draft-pr, unassign]\n',
-      milton: 'extends: [backend, frontend]\n',
-    })
-    expect(() => resolveRole(dir, 'milton')).not.toThrow()
+  it('inherits commands it does not list, and replaces them with a subset where it does', () => {
+    const dir = store({ ...TWO, quiet: 'extends: engineering\ncommands: ["npm run lint"]\n' })
+    expect(resolveRole(dir, 'backend').role.commands).toEqual(['npm test:*', 'npm run lint'])
+    expect(resolveRole(dir, 'quiet').role.commands).toEqual(['npm run lint'])
   })
 
-  it('unions commands between siblings, as it does permissions', () => {
-    const dir = store({
-      ...TWO,
-      backend: 'commands: ["npm test:*"]\n',
-      frontend: 'commands: ["npm run lint"]\n',
-      milton: 'extends: [backend, frontend]\n',
-    })
-    expect(resolveRole(dir, 'milton').role.commands.sort()).toEqual(['npm run lint', 'npm test:*'])
-  })
-
-  it('takes the most restrictive parent ceiling, so combining cannot raise it', () => {
-    const dir = store({
-      ...TWO,
-      backend: 'budget_share: 0.5\n',
-      frontend: 'budget_share: 0.2\n',
-      milton: 'extends: [backend, frontend]\n',
-    })
-    expect(resolveRole(dir, 'milton').role.budgetShare).toBe(0.2)
-  })
-
-  it('leaves the lane unconstrained when one job is unconstrained', () => {
-    // "Anything, or this" is anything — a constrained sibling must not narrow a free one.
-    const dir = store({ ...TWO, anything: 'sources: []\n', milton: 'extends: [backend, anything]\n' })
-    expect(resolveRole(dir, 'milton').role.lane.paths).toBeUndefined()
-  })
-
-  it('takes the looser age bound across siblings', () => {
-    const dir = store({
-      ...TWO,
-      backend: 'lane:\n  age:\n    max_days: 30\n',
-      frontend: 'lane:\n  age:\n    max_days: 90\n',
-      milton: 'extends: [backend, frontend]\n',
-    })
-    expect(resolveRole(dir, 'milton').role.lane.age!.maxDays).toBe(90)
-  })
-
-  it('still narrows down a chain, so extending one parent is unaffected', () => {
+  it('still narrows down a chain', () => {
     const dir = store({ ...TWO, deep: 'extends: [backend]\nlane:\n  paths:\n    under: ["server/api/**"]\n' })
     expect(resolveRole(dir, 'deep').role.lane.paths!.under).toEqual([['server/**'], ['server/api/**']])
   })
@@ -497,5 +453,41 @@ describe('the GitHub App a role acts as', () => {
       GITHUB_APP_PRIVATE_KEY_FILE: '/nonexistent.pem',
     })
     expect(present).toContain('credentials:   in the environment')
+  })
+})
+
+describe('an organization claims on one tracker', () => {
+  const noSeats = { seats: [], pools: [] } as unknown as OrgBudget
+  const src = (tracker: string, repo = 'o/r') => `sources:\n  - {tracker: ${tracker}, repo: ${repo}, query: "is:open"}\n`
+
+  it('loads where every role claims on one tracker', () => {
+    const dir = store({ org: ORG, a: src('github'), b: src('github', 'o/other') })
+    expect(() => loadRole(config(dir, noSeats), 'a')).not.toThrow()
+  })
+
+  it('refuses roles that claim on two trackers, naming both', () => {
+    const dir = store({ org: ORG, a: src('github'), b: src('linear') })
+    expect(() => loadRole(config(dir, noSeats), 'a')).toThrow(
+      /claim on more than one tracker: github \(a\); linear \(b\)/,
+    )
+  })
+
+  it('refuses a role that claims on Discord, which directs work and holds no claims', () => {
+    const dir = store({ org: ORG, chat: src('discord') })
+    expect(() => loadRole(config(dir, noSeats), 'chat')).toThrow(
+      /claims on discord, which directs work and cannot hold claims/,
+    )
+  })
+
+  it('leaves a broken other role to its own load', () => {
+    const dir = store({ org: ORG, a: src('github'), broken: 'extends: [a, org]\n' })
+    expect(() => loadRole(config(dir, noSeats), 'a')).not.toThrow()
+  })
+})
+
+describe('a cycle in the chain of bases', () => {
+  it('is named in the order the roles extend', () => {
+    const dir = store({ a: 'extends: b\n', b: 'extends: c\n', c: 'extends: b\n' })
+    expect(() => resolveRole(dir, 'a')).toThrow('role inheritance cycles: a -> b -> c -> b')
   })
 })

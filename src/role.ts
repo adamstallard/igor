@@ -42,9 +42,8 @@ export interface Source {
 
 /**
  * Inclusive constraints are a **conjunction of disjunctions**: a candidate satisfies a group by
- * matching any member, and it must satisfy every group. Extending a role adds a group, which
- * narrows; combining two roles crosses their groups, which widens. See `mergeLane` and
- * `unionLane`.
+ * matching any member, and it must satisfy every group. Each level of a role's chain adds a
+ * group, which narrows. See `mergeLane`.
  *
  * Flattening the groups would break the append promise. With org declaring `includes: [ai]` and
  * a role declaring `includes: [frontend]`, one flat list read as "any of" matches an item
@@ -176,72 +175,38 @@ export function listRoles(dir: string): string[] {
 }
 
 /**
- * The parents a role actually inherits from. The org base is the default parent, which is what
- * keeps conventions from drifting between roles that each restate them.
+ * The one base a role inherits from, or none. The org base is the default, which is what keeps
+ * conventions from drifting between roles that each restate them.
+ *
+ * **Two bases are refused.** A role with two would take whatever both allow, so a change to
+ * either base would change what it may do without its own file changing, and nobody reviewing
+ * that change would see the role it widened. The two would also conflict on every field where
+ * the last level wins, such as `completion`.
  */
-function parentsOf(dir: string, name: string): string[] {
+function parentOf(dir: string, name: string): string | undefined {
   const raw = readRoleFile(dir, name)
   const declared = strArray(raw['extends'], `${name}.extends`)
-  const implicit =
-    declared.length === 0 && name !== ORG_ROLE && existsSync(join(dir, ROLES_DIR, `${ORG_ROLE}.yaml`))
-  return implicit ? [ORG_ROLE] : declared
+  if (declared.length > 1) {
+    throw new RoleError(
+      `role "${name}" extends ${declared.join(' and ')}; a role extends at most one base. For a ` +
+        `role spanning several areas, give it its own lane, allow and commands, and put what the ` +
+        `roles share in a base they all extend`,
+    )
+  }
+  if (declared.length === 1) return declared[0]
+  return name !== ORG_ROLE && existsSync(join(dir, ROLES_DIR, `${ORG_ROLE}.yaml`)) ? ORG_ROLE : undefined
 }
 
-/**
- * Resolves `extends` depth-first into a base-to-derived ordering, so later levels override
- * earlier ones. Used for the order-sensitive fields — instructions, settings, provenance.
- * Permissions and lanes are resolved over the inheritance graph instead, because a flat list
- * cannot tell a parent from a sibling. See `capabilitiesOf`.
- */
-function lineage(dir: string, name: string, seen: string[] = []): string[] {
-  if (seen.includes(name)) {
-    throw new RoleError(`role inheritance cycles: ${[...seen, name].join(' -> ')}`)
-  }
-  const resolved = parentsOf(dir, name)
-
-  const out: string[] = []
-  for (const parent of resolved) {
-    for (const ancestor of lineage(dir, parent, [...seen, name])) {
-      if (!out.includes(ancestor)) out.push(ancestor)
+/** The role's chain of bases, base first, so later levels override earlier ones. */
+function lineage(dir: string, name: string): string[] {
+  const chain = [name]
+  for (let parent = parentOf(dir, name); parent !== undefined; parent = parentOf(dir, parent)) {
+    if (chain.includes(parent)) {
+      throw new RoleError(`role inheritance cycles: ${[...chain, parent].join(' -> ')}`)
     }
+    chain.push(parent)
   }
-  out.push(name)
-  return out
-}
-
-/**
- * Combines two *sibling* lanes: an Igor that does two jobs works on what either job covers.
- *
- * Inclusive constraints are a conjunction of disjunctions, and a union of two of those is still
- * expressible as one — `(a and b) or c` distributes to `(a or c) and (b or c)` — so the cross
- * product of the two sides' groups is the union. An unconstrained side unions to unconstrained,
- * since "anything, or this" is anything.
- *
- * Exclusions are unioned rather than intersected. Strict set algebra would intersect them, but
- * an exclusion is a safety rail and over-excluding is the direction to be wrong in. In practice
- * siblings share their exclusions through a common ancestor, so the two rarely differ.
- */
-function unionLane(a: Lane, b: Lane): Lane {
-  const merged: Lane = {}
-
-  const cross = (x?: string[][], y?: string[][]): string[][] | undefined => {
-    if (x === undefined || y === undefined) return undefined // unconstrained wins
-    return x.flatMap((left) => y.map((right) => [...new Set([...left, ...right])]))
-  }
-
-  const includes = cross(a.labels?.includes, b.labels?.includes)
-  const excludes = [...new Set([...(a.labels?.excludes ?? []), ...(b.labels?.excludes ?? [])])]
-  if (includes || excludes.length) {
-    merged.labels = { ...(includes ? { includes } : {}), ...(excludes.length ? { excludes } : {}) }
-  }
-
-  const under = cross(a.paths?.under, b.paths?.under)
-  if (under) merged.paths = { under }
-
-  // The looser bound: an item old enough for either job is in the combined lane.
-  const ages = [a.age?.maxDays, b.age?.maxDays]
-  if (ages.every((d) => d !== undefined)) merged.age = { maxDays: Math.max(...(ages as number[])) }
-  return merged
+  return chain.reverse()
 }
 
 function mergeLane(base: Lane, next: Lane): Lane {
@@ -343,25 +308,18 @@ interface Capabilities {
 }
 
 /**
- * Resolves permissions and lane over the inheritance *graph* rather than a flattened list,
- * because the two directions mean opposite things.
- *
- * **Siblings union. Levels conjoin.** An Igor listing two parents does both jobs, so its lane
- * covers what either covers; an Igor extending one parent is a narrower version of it. A flat
- * ordering cannot express that difference, and reading a sibling as a descendant produces two
- * wrong answers at once: a combined Igor whose lane is the intersection of its jobs, and thus
- * matches almost nothing, and a spurious "widens allow" error when one sibling permits
- * something another does not.
- *
- * Safety survives the union: a union of two parents is still bounded by what they share above
- * them, so combining roles can never reach past their common ancestor.
+ * Resolves permissions and lane down the role's chain of bases. Each level may only narrow:
+ * `allow` and `commands`, where a level sets them, replace what it inherits with a subset of it,
+ * and are inherited unchanged where it does not; each level's lane is conjoined with the lane
+ * above it; `budget_share` may only fall.
  */
 function capabilitiesOf(dir: string, name: string, seen: string[] = []): Capabilities {
   if (seen.includes(name)) {
     throw new RoleError(`role inheritance cycles: ${[...seen, name].join(' -> ')}`)
   }
   const raw = readRoleFile(dir, name)
-  const inherited = parentsOf(dir, name).map((p) => capabilitiesOf(dir, p, [...seen, name]))
+  const base = parentOf(dir, name)
+  const inherited = base === undefined ? [] : [capabilitiesOf(dir, base, [...seen, name])]
 
   let allow: Action[] | undefined
   let commands: string[] | undefined
@@ -374,18 +332,17 @@ function capabilitiesOf(dir: string, name: string, seen: string[] = []): Capabil
 
   for (const parent of inherited) {
     if (parent.allow !== undefined) {
-      allow = allow === undefined ? parent.allow : [...new Set([...allow, ...parent.allow])]
+      allow = parent.allow
       allowFrom.push(...parent.allowFrom)
     }
     if (parent.commands !== undefined) {
-      commands = commands === undefined ? parent.commands : [...new Set([...commands, ...parent.commands])]
+      commands = parent.commands
       commandsFrom.push(...parent.commandsFrom)
     }
-    lane = lane === undefined ? parent.lane : unionLane(lane, parent.lane)
+    lane = parent.lane
     laneFrom.push(...parent.laneFrom)
     if (parent.budgetShare !== undefined) {
-      // A ceiling: take the most restrictive parent, so combining roles cannot raise it.
-      budgetShare = budgetShare === undefined ? parent.budgetShare : Math.min(budgetShare, parent.budgetShare)
+      budgetShare = parent.budgetShare
       shareFrom.push(...parent.shareFrom)
     }
   }
@@ -631,6 +588,47 @@ function checkSeat({ role, from }: ResolvedRole, budget: OrgBudget): void {
   )
 }
 
+/** Trackers that direct work and have no holder field, so nothing can be claimed on them. */
+const DIRECTING_ONLY = ['discord']
+
+/**
+ * Refuses a role that claims where no claim can be held, and an organization whose roles claim
+ * on more than one tracker. Claims exist so that Igors do not work the same item, and an Igor
+ * cannot see a claim held on a tracker it does not read.
+ *
+ * Other roles are read only for which tracker they claim on. One that fails to resolve is left
+ * to its own load to report, so a broken role does not stop every other Igor.
+ */
+function checkClaimingTracker({ role }: ResolvedRole, dir: string): void {
+  const directing = role.sources.find((s) => DIRECTING_ONLY.includes(s.tracker))
+  if (directing !== undefined) {
+    throw new RoleError(
+      `role "${role.name}" claims on ${directing.tracker}, which directs work and cannot hold claims: ` +
+        `it has no holder field. Claim on the organization's tracker; a request in ` +
+        `${directing.tracker} becomes an issue there`,
+    )
+  }
+  const claimedOn = new Map<string, string[]>()
+  for (const name of listRoles(dir)) {
+    let sources: Source[]
+    try {
+      sources = name === role.name ? role.sources : resolveRole(dir, name).role.sources
+    } catch {
+      continue
+    }
+    for (const tracker of new Set(sources.map((s) => s.tracker))) {
+      claimedOn.set(tracker, [...(claimedOn.get(tracker) ?? []), name])
+    }
+  }
+  if (claimedOn.size > 1) {
+    const which = [...claimedOn].map(([tracker, roles]) => `${tracker} (${roles.join(', ')})`)
+    throw new RoleError(
+      `this organization's roles claim on more than one tracker: ${which.join('; ')}. An Igor ` +
+        `cannot see a claim held on a tracker it does not read, so all of them claim on one`,
+    )
+  }
+}
+
 export function loadRole(config: Config, name: string): ResolvedRole {
   const available = listRoles(config.destination)
   if (available.length === 0) {
@@ -642,6 +640,7 @@ export function loadRole(config: Config, name: string): ResolvedRole {
   }
   const resolved = resolveRole(config.destination, name)
   checkSeat(resolved, config.budget)
+  checkClaimingTracker(resolved, config.destination)
   return resolved
 }
 
