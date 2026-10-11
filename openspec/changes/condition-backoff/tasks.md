@@ -11,13 +11,17 @@
       seat token names the seat, an action-space refusal names the role's `allow`, and a crash
       whose cause is unknown still mints none and still defers
 
-## 2. The condition record
+## 2. Conditions from the execution log
 
-- [ ] 2.1 One record — cure key, scope, first and last occurrence, count, state, and the
-      discriminator where the cure key does not identify what is stuck — in the state branch,
-      keyed by cure key so several Igors write one condition
+- [ ] 2.1 Rebuild each condition (cure key, scope, first and last occurrence, count, state,
+      cooldown, and the discriminator where the cure key does not identify what is stuck) from
+      `executions.ndjson`: its run rows carrying the cure key, and its condition rows. Store
+      nothing else
 - [ ] 2.2 Scope derived from the key rather than declared alongside it: role, seat or Igor
-- [ ] 2.3 Concurrent writers converge on one count rather than overwriting each other
+- [ ] 2.3 Add a `kind` to execution-log rows, defaulting to a run so existing rows stay valid,
+      and append a condition row when a probe is taken. Update every reader of the log that
+      counts runs (spend attribution, capacity, `igor budget`, the credential report) to skip
+      rows of any other kind
 - [ ] 2.4 A handoff observed against a different discriminator closes the open occurrence and
       starts a new count rather than adding to it, with scope still derived from the key alone
 - [ ] 2.5 Tests: two Igors on one key, a restart mid-condition, a key whose scope is a seat, and
@@ -48,8 +52,9 @@
       `tokenFingerprint` on execution records (including `ambientFingerprint` for a seat naming no
       token source), the 401 test with its two paths, the `rejected` verdict that `chooseSeat`
       checks before any headroom, `igor budget --credentials`, and their tests. Leave out
-      `credentialBreaker`'s own trailing count, trip count and cooldown: the condition record's
-      count, threshold and cooldown replace them, so no seat is held by two mechanisms
+      `credentialBreaker`'s own trailing count, trip count and cooldown: the condition's count,
+      rebuilt from the log, and its threshold and cooldown replace them, so no seat is held by two
+      mechanisms
 - [ ] 4.6 The seat's credential line in `igor budget` is its condition line, and its messages say
       that a credential condition clears both on a different credential and on a probe that does
       not meet it

@@ -69,11 +69,13 @@ require anybody to have predicted the consequence correctly.
 
 A condition SHALL be keyed by what would cure it, and SHALL stop exactly what that cure governs:
 a refused command stops the role whose `commands` refused it, an unreadable seat stops every
-role drawing on that seat, a credential belonging to an Igor stops that Igor. The record SHALL
-live in the state branch keyed by the cure key, so the same cure met by several Igors is one
-condition.
+role drawing on that seat, a credential belonging to an Igor stops that Igor. A condition
+SHALL be rebuilt from the execution log on the state branch, with no stored record of its own:
+from the run rows that carry its cure key, and from condition rows the loop appends for what no
+run shows, such as a probe being taken. Every Igor appends to the one log, so the same cure met
+by several Igors is one condition.
 
-Where the cure key does not by itself identify what is stuck, the record SHALL also carry a
+Where the cure key does not by itself identify what is stuck, each occurrence SHALL also carry a
 discriminator: an opaque value naming what the condition was observed against, absent wherever
 the key already says it. Occurrences observed against different discriminators are different
 occurrences of the same condition — one does not count toward the other, and a handoff carrying
@@ -83,13 +85,19 @@ however many discriminators that seat has been observed against.
 
 For most cures the key is the identity. `role:web:commands` fully says what is stuck and what a
 person would edit, and two Igors meeting it met the same thing. A key naming a seat's credential
-names the seat and not the credential, so one seat's two tokens produce the identical key — and
-a record reading that key with a count and an open state cannot answer the question its own stop
-turns on: is this about the credential resolving now? A condition is an occurrence and not a
-thing; a cure key opens, clears and reopens over its life, so a record keyed on the cure alone
+names the seat and not the credential, so one seat's two tokens produce the identical key — and a
+condition rebuilt from that key with a count and an open state cannot answer the question its own
+stop turns on: is this about the credential resolving now? A condition is an occurrence and not a
+thing; a cure key opens, clears and reopens over its life, so a condition keyed on the cure alone
 answers for the last occurrence when asked about this one. The discriminator is the part of an
-occurrence's identity the cure key cannot express, which is why it belongs on the record rather
-than alongside it as context.
+occurrence's identity the cure key cannot express, which is why it is on every row of that
+occurrence rather than alongside it as context.
+
+**No condition state is stored apart from the log.** A summary written beside a log can disagree
+with it, a run logged and its summary not updated or the reverse, and that disagreement is a bug
+nobody can diagnose from either side. Rebuilding every condition from one log rules it out, and
+appends from several Igors cannot overwrite each other. Rows that are not runs carry a kind, so
+every reader that counts runs, such as spend attribution, skips them.
 
 Keying by the process that hit the condition would count one cure five times, back off five
 times over, and clear five times — with the fifth Igor still discovering for itself something
@@ -109,7 +117,7 @@ capacity that was never affected.
 #### Scenario: A cure key that does not identify what is stuck carries a discriminator
 
 - **WHEN** a cure key names a seat's credential, which does not say which credential
-- **THEN** the record carries what the condition was observed against, and a handoff observed
+- **THEN** each occurrence carries what the condition was observed against, and a handoff observed
   against a different one is a new occurrence rather than the next count of the open one
 
 #### Scenario: A role-scoped condition leaves other roles working
@@ -121,6 +129,13 @@ capacity that was never affected.
 
 - **WHEN** a seat's token cannot be read
 - **THEN** every role drawing on that seat stops, whatever their own configuration says
+
+#### Scenario: A probe is taken once
+
+- **WHEN** a condition's cooldown has passed and one Igor has appended a row saying it is taking
+  the probe
+- **THEN** no other Igor takes a probe item for that condition until the probe's outcome is in
+  the log
 
 #### Scenario: The count survives the process
 

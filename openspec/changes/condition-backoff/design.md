@@ -38,8 +38,8 @@ condition, #143's seat probe tests the credential without spending an item.
 
 **A seat probe that gets a 401 opens `seat:<id>:credential`, and a seat probe that succeeds counts
 as the clearing check.** It is specified on [#143](https://github.com/adamstallard/igor/pull/143),
-where the seat probe is. The condition record owns that stop, so the seat probe opens and clears it
-there; `credential-breaker` is folded into this change (*Folded in from #65*, below).
+where the seat probe is. This change's conditions own that stop, so the seat probe opens and clears
+it there; `credential-breaker` is folded into this change (*Folded in from #65*, below).
 
 For this change that means a seat-scoped credential condition clears without spending an item: the
 seat probe is its clearing probe. Nothing in this change's requirements has to change for it. The
@@ -72,12 +72,12 @@ coincidence, and three items is a tolerable cost against holding a working seat 
 cooldown of 15 minutes doubling to 6 hours, because a revoked credential can stay revoked for
 days, where a fixed hour spends twenty-four items a day and doubling spends about six in total.
 
-**Open for review: a stored record against a derived one.** #65 derived its count from
-`executions.ndjson` and rejected a separate store, because a summary written beside a log can
-disagree with it, and that disagreement is a bug nobody can diagnose from either side. This
-change's record is such a store; task 4.5 makes its count the stop. The record holds what the log
-does not (a condition's state, its cooldown, and one count across every Igor and restart), but
-whether its count should itself be derived from the log is worth deciding before §2 is built.
+**Decided (Adam, 2026-10-11): no stored record.** #65 derived its count from
+`executions.ndjson` and rejected a separate store, because a summary beside a log can disagree
+with it. That holds here too, so a condition is rebuilt from the same log: from run rows carrying
+its cure key, and from condition rows appended for what no run shows. The one such row the spec
+needs is a probe being taken, so a second Igor waits rather than taking a probe item of its own.
+Rows that are not runs carry a `kind`, and readers that count runs skip them (task 2.3).
 
 Two facts from #65 that the spec does not carry:
 

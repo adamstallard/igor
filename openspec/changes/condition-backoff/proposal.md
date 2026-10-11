@@ -34,21 +34,21 @@ in a position to decide it. What an Igor can know for certain is that it has don
 broken thing N times. One unverified pull request is information; twenty is waste, whatever the
 cause.
 
-**Scope follows the cure.** A refused command is role-scoped, an unreadable seat is seat-scoped,
-an Igor's own credential is Igor-scoped. The record lives in the state branch keyed by the cure
-key, so five Igors meeting one cure is one condition — counted once, cleared once — rather than
-five discovering it separately. It also keeps the stop as small as it can honestly be: a role
-refused one command says nothing about any other role.
+**Scope follows the cure.** A refused command is role-scoped, an unreadable seat is seat-scoped, an
+Igor's own credential is Igor-scoped. A condition is rebuilt from the execution log every Igor
+appends to, keyed by the cure, so five Igors meeting one cure is one condition — counted once,
+cleared once — rather than five discovering it separately. It also keeps the stop as small as it can
+honestly be: a role refused one command says nothing about any other role.
 
 **What the condition was observed against, where the cure key does not say it.** For most cures
 the key is the identity: `role:web:commands` fully names what is stuck. `seat:<id>:credential`
 does not — it names the seat, not the credential, so a seat's two tokens produce the identical
 key. [#65](https://github.com/adamstallard/igor/pull/65)'s counting loop already needs two
 conditions for that reason, matching `record.cures?.includes(key) === true &&
-record.tokenFingerprint === fingerprint` (`src/budget.ts`). So the record carries a
+record.tokenFingerprint === fingerprint` (`src/budget.ts`). So each occurrence carries a
 discriminator: an opaque value naming what the condition was observed against, absent for every
-condition whose key already says it. It is not context alongside the record — it is the part of
-the occurrence's identity the cure key cannot express, and without it a record reading
+condition whose key already says it. It is not context alongside the occurrence — it is the part
+of the occurrence's identity the cure key cannot express, and without it a condition rebuilt as
 `seat:adam:credential, count 3, open` cannot answer the question its own stop turns on: is this
 about the credential resolving now?
 
@@ -73,22 +73,22 @@ resolves a different discriminator, with no cooldown waited and no item spent. T
 because most cures are unobservable from inside the loop — an allowlist edited elsewhere
 announces nothing. A credential changing is observable, so a seat an operator has already fixed
 comes back immediately rather than after a backoff that lengthens each time it is wrong. That is
-the one capability a credential-shaped stop had that this record did not, and it is kept here
+the one capability a credential-shaped stop had that this change did not, and it is kept here
 instead of left to a second mechanism.
 
-**One record, one stop, one report —
-[#86](https://github.com/adamstallard/igor/issues/86).** Once §2–§3 exist, a 401 feeds two
-mechanisms on one cure key: #65's breaker counting trailing rows in `executions.ndjson` against
-a token fingerprint, and a condition record counting handoffs. Same seat, two thresholds, two
-clocks — held if either says so, free only when both agree. The condition record owns the record
-and the stop; #65's breaker is absorbed into §4 rather than duplicated beside it, which is what
-the clause above is for. #86 is answered by this change and closed by the implementation of §4,
-not by this text.
+**One condition, one stop, one report —
+[#86](https://github.com/adamstallard/igor/issues/86).** Built beside it, #65's breaker and this
+change would both count a 401 on one cure key: two thresholds, two clocks, a seat held if either
+says so and free only when both agree. Instead #65 is folded into this change (Adam, 2026-10-11):
+nobody runs Igor yet, so nothing needs the breaker in the meantime, and its code and tests are
+the starting point for the credential case (`design.md`, *Folded in from #65*). #86 is answered
+by this change and closed by the implementation of §4, not by this text.
 
-**#65 merges as it stands.** It is the only thing stopping a revoked seat today, and §2–§4 are
-unimplemented: stripping its breaker now leaves nothing holding the seat. The duplication begins
-only when the general mechanism is built, which is when the absorption happens. Nothing here is
-a blocker on #65.
+**No stored record (Adam, 2026-10-11).** A condition is rebuilt from the execution log
+(`executions.ndjson`), which every Igor already appends to: from the run rows carrying its cure
+key, and from a few condition rows for what no run shows, such as a probe being taken. A record
+kept beside the log could disagree with it, and appends cannot overwrite each other the way
+concurrent writes to one record can.
 
 **A measurement that contradicts what #65 documents.** #65's two operator-facing messages say a
 credential condition clears one way — `credentialBreaker`'s `why` ends *"resolving a different
