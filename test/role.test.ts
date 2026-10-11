@@ -471,3 +471,31 @@ describe('listing', () => {
     expect(() => resolveRole(store({ org: ORG }), 'nope')).toThrow(RoleError)
   })
 })
+
+describe('the GitHub App a role acts as', () => {
+  it('refuses a role file naming an App, saying where the App comes from', () => {
+    const dir = store({ org: 'allow: [comment, unassign]\n', reviewer: 'github_app: maintainer\n' })
+    expect(() => resolveRole(dir, 'reviewer')).toThrow(
+      /sets "github_app" — an Igor acts as the GitHub App named after its role, and its credentials come from its environment/,
+    )
+  })
+
+  it('refuses a base naming an App, so no role inherits another Igor\'s App', () => {
+    const dir = store({ org: 'allow: [comment, unassign]\ngithub_app: shared\n', reviewer: '' })
+    expect(() => resolveRole(dir, 'reviewer')).toThrow(/sets "github_app"/)
+  })
+
+  it('explains the identity and whether the environment holds its credentials, without reading a key', () => {
+    const dir = store({ org: 'allow: [comment, unassign]\n', reviewer: '' })
+    const resolved = resolveRole(dir, 'reviewer')
+    const missing = explainRole(resolved, { GITHUB_APP_IDENTITY: 'reviewer', GITHUB_APP_PRIVATE_KEY_FILE: '/nonexistent.pem' })
+    expect(missing).toContain('github app:    reviewer')
+    expect(missing).toContain('credentials:   the GitHub App "reviewer" is missing GITHUB_APP_ID in its environment')
+    const present = explainRole(resolved, {
+      GITHUB_APP_IDENTITY: 'reviewer',
+      GITHUB_APP_ID: '1',
+      GITHUB_APP_PRIVATE_KEY_FILE: '/nonexistent.pem',
+    })
+    expect(present).toContain('credentials:   in the environment')
+  })
+})

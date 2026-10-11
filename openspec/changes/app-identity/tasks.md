@@ -3,7 +3,7 @@
 - [ ] 0.1 Built with #156 on `one-claiming-surface`: gate two lands on that branch, with this
       change merged into it at that point, and #158 is closed in favour of #156. Both changes
       are archived together (`design.md`, *Sequencing with #156*)
-- [ ] 0.2 Credentials come only from the Igor's environment; nothing reads the `github-app`
+- [x] 0.2 Credentials come only from the Igor's environment; nothing reads the `github-app`
       skill's stored files (`design.md`, *Credentials come only from the environment*, decided
       2026-10-05)
 
@@ -22,20 +22,20 @@
 
 ## 2. Credentials and minting
 
-- [ ] 2.1 A new module, `src/app.ts`: read the identity's credentials from the environment only
+- [x] 2.1 A new module, `src/app.ts`: read the identity's credentials from the environment only
       (`GITHUB_APP_ID` and exactly one of `GITHUB_APP_PRIVATE_KEY_FILE` or
       `GITHUB_APP_PRIVATE_KEY`, when `GITHUB_APP_IDENTITY` names it). A refusal names each
       missing variable, or both key variables when both are set; environment credentials for
       another identity are named as such. `GITHUB_APP_OWNER` and `GITHUB_APP_INSTALLATION_ID`
       are never read. No file under the `github-app` skill's configuration directory is read
-- [ ] 2.2 Sign the RS256 JWT with `node:crypto`, issued a minute early for clock skew; read the
+- [x] 2.2 Sign the RS256 JWT with `node:crypto`, issued a minute early for clock skew; read the
       slug from `GET /app`
-- [ ] 2.3 Find the installation per repository with `GET /repos/{owner}/{repo}/installation`;
+- [x] 2.3 Find the installation per repository with `GET /repos/{owner}/{repo}/installation`;
       refuse repositories on more than one installation, naming the accounts
-- [ ] 2.4 Mint with `POST /app/installations/{id}/access_tokens`; hold the token and its
+- [x] 2.4 Mint with `POST /app/installations/{id}/access_tokens`; hold the token and its
       `permissions` in memory; renew once half its life has passed
-- [ ] 2.5 Read the bot account from `GET /users/<slug>[bot]`: login and numeric id
-- [ ] 2.6 Tests with an injected `fetch` and a generated key: each missing variable, both key
+- [x] 2.5 Read the bot account from `GET /users/<slug>[bot]`: login and numeric id
+- [x] 2.6 Tests with an injected `fetch` and a generated key: each missing variable, both key
       variables set refused naming both, stored skill files ignored when the environment is
       incomplete, `GITHUB_APP_OWNER` and `GITHUB_APP_INSTALLATION_ID` naming another account
       leaving the installation found from the repositories, each refusal,
@@ -43,40 +43,41 @@
 
 ## 3. Every call as the App
 
-- [ ] 3.1 `ghRaw` (`src/gh.ts:33`): when an identity is set, spawn `gh` with an explicit
+- [x] 3.1 `ghRaw` (`src/gh.ts:33`): when an identity is set, spawn `gh` with an explicit
       environment carrying `GH_TOKEN` and without `GITHUB_TOKEN`, `GH_ENTERPRISE_TOKEN` or
       `GITHUB_ENTERPRISE_TOKEN`; with none set, spawn as today. Rewrite the module comment at
       `src/gh.ts:3-5`, which says credentials are whatever the user set up
-- [ ] 3.2 `CloneProvider.provision` (`src/worktree.ts:485-486`): remove `gh auth setup-git`; give
+- [x] 3.2 `CloneProvider.provision` (`src/worktree.ts:485-486`): remove `gh auth setup-git`; give
       `git clone` the per-command `GIT_CONFIG_*` helper, numbered after any already present
-- [ ] 3.3 `ClonedTree.merge` (`src/worktree.ts:445-447`): the same for both `git fetch` calls
-- [ ] 3.4 `GitHubTracker.identity` (`src/github-adapter.ts:240-246`): return the App's bot login
+- [x] 3.3 `ClonedTree.merge` (`src/worktree.ts:445-447`): the same for both `git fetch` calls
+- [x] 3.4 `GitHubTracker.identity` (`src/github-adapter.ts:240-246`): return the App's bot login
       instead of calling `GET /user`, and expose the numeric id for #156's task 3.5
-- [ ] 3.5 `staleOwnArtifact` (`src/predicate.ts:39-44`) and every other actor comparison accept
+- [x] 3.5 `staleOwnArtifact` (`src/predicate.ts:39-44`) and every other actor comparison accept
       both spellings of the bot login, or compare ids, per the measurement in 6.2
-- [ ] 3.6 Tests: an ambient `GH_TOKEN` never reaches `gh`; the clone's `.git/config` and the
+- [x] 3.6 Tests: an ambient `GH_TOKEN` never reaches `gh`; the clone's `.git/config` and the
       global git config hold no helper afterwards; a person's command spawns `gh` unchanged
 
 ## 4. Starting and stopping
 
-- [ ] 4.1 `run` and `serve` (`src/cli.ts:381-383`, `src/cli.ts:529-531`): run the startup check
+- [x] 4.1 `run` and `serve` (`src/cli.ts:381-383`, `src/cli.ts:529-531`): run the startup check
       in `design.md` before discovery, over the role's source repositories and the lore
       repository, and refuse naming the first failure
-- [ ] 4.2 Report a missing Workflows write at startup; a publish touching `.github/workflows/`
+- [x] 4.2 Report a missing Workflows write at startup; a publish touching `.github/workflows/`
       without it fails naming the permission
-- [ ] 4.3 A role file setting `github_app` is refused with the reason, in `REFUSED_KEYS`
+- [x] 4.3 A role file setting `github_app` is refused with the reason, in `REFUSED_KEYS`
       (`src/role.ts:117`)
-- [ ] 4.4 `explainRole` (`src/role.ts:643`) reports the identity and whether the environment
+- [x] 4.4 `explainRole` (`src/role.ts:643`) reports the identity and whether the environment
       holds its credentials, naming any missing variable, without minting a token
-- [ ] 4.5 A credential refused mid-run (401 or 404 on a mint) opens `app:<identity>:credential`
+- [x] 4.5 A credential refused mid-run (401 or 404 on a mint) opens `app:<identity>:credential`
       in whichever record owns credential stops when this is built (#65's breaker or #101's
       condition record); the Igor takes no new item, tries a mint once per cycle, and resumes
-      on success
-- [ ] 4.6 Tests for each refusal message, the Workflows report, and the mid-run stop and recovery
+      on success. Neither record exists yet, so `serve` holds the stop itself (`design.md`, *What
+      the implementation found*); moving it into the record is #170
+- [x] 4.6 Tests for each refusal message, the Workflows report, and the mid-run stop and recovery
 
 ## 5. The worker
 
-- [ ] 5.1 Test through the real spawn path that the worker's environment holds no `GH_TOKEN`,
+- [x] 5.1 Test through the real spawn path that the worker's environment holds no `GH_TOKEN`,
       `GITHUB_APP_*` or `GIT_CONFIG_*` while the Igor acts as an App (`workerEnv`,
       `src/execute.ts:781`)
 

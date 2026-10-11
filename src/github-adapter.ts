@@ -1,4 +1,5 @@
 import { gh, ghGraphql, ghPaginated } from './gh.js'
+import type { BotAccount } from './app.js'
 import { isStop } from './signals.js'
 import {
   AdapterError,
@@ -47,7 +48,7 @@ query($q: String!, $n: Int!, $after: String) {
         state
         createdAt
         updatedAt
-        author { login }
+        author { __typename login }
         labels(first: 50) { nodes { name } }
         assignees(first: 10) { nodes { login } }
         timelineItems(itemTypes: [CROSS_REFERENCED_EVENT, CONNECTED_EVENT], first: 20) {
@@ -69,7 +70,7 @@ fragment pr on PullRequest {
   mergeable
   headRefName
   baseRefName
-  author { login }
+  author { __typename login }
 }`
 
 interface RawPr {
@@ -81,7 +82,25 @@ interface RawPr {
   mergeable?: 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN' | null
   headRefName?: string
   baseRefName?: string
-  author?: { login: string } | null
+  author?: Actor | null
+}
+
+/** An author as GraphQL reports one. */
+interface Actor {
+  login: string
+  /** `Bot` for a GitHub App's bot account. */
+  __typename?: string
+}
+
+/**
+ * The login as REST spells it. GraphQL drops the `[bot]` an App's bot account carries everywhere
+ * else (measured 2026-10-04: `igor-generalist` against REST's `igor-generalist[bot]`), so without
+ * this an Igor's own pull request reads as somebody else's work. Spelled here, as each author is
+ * read, so every comparison downstream compares one spelling with another of the same kind.
+ */
+export function loginOf(actor: Actor | null | undefined): string {
+  if (!actor) return ''
+  return actor.__typename === 'Bot' && !actor.login.endsWith('[bot]') ? `${actor.login}[bot]` : actor.login
 }
 
 export interface RawIssue {
@@ -92,7 +111,7 @@ export interface RawIssue {
   state: 'OPEN' | 'CLOSED'
   createdAt: string
   updatedAt: string
-  author: { login: string } | null
+  author: Actor | null
   labels: { nodes: { name: string }[] }
   assignees: { nodes: { login: string }[] }
   timelineItems: { nodes: ({ source?: RawPr | null; subject?: RawPr | null } | null)[] }
@@ -114,7 +133,7 @@ function inFlightFrom(issue: RawIssue): InFlight | undefined {
         ref: `#${pr.number}`,
         url: pr.url,
         draft: pr.isDraft,
-        author: pr.author?.login ?? '',
+        author: loginOf(pr.author),
         // An artifact whose branch or base did not come back is unknown however it reported
         // its mergeability: acting on one means merging into a branch named by nothing.
         mergeable: branch === '' || base === '' ? 'unknown' : mergeabilityFrom(pr.mergeable),
@@ -148,7 +167,7 @@ export function normalizeIssue(repo: string, issue: RawIssue, now: number = Date
     url: issue.url,
     title: issue.title,
     body,
-    author: issue.author?.login ?? '',
+    author: loginOf(issue.author),
     state: issue.state === 'OPEN' ? 'open' : 'closed',
     labels: issue.labels.nodes.map((l) => l.name),
     assignees: issue.assignees.nodes.map((a) => a.login),
@@ -235,14 +254,22 @@ export class GitHubTracker implements Tracker {
   /** GitHub has assignees, so a claim is visible where people already look. */
   readonly nativeHolderField = true
 
-  private login?: string
+  /**
+   * `account` is the Igor's App's bot, which the startup check read. `GET /user` is never asked:
+   * it describes a user, and an installation token has none behind it.
+   */
+  constructor(private readonly self: { account?: BotAccount } = {}) {}
 
   async identity(): Promise<string> {
-    if (this.login === undefined) {
-      const me = await gh<{ login: string }>(['api', 'user', '--jq', '{login}'])
-      this.login = me.login
+    if (this.self.account === undefined) {
+      throw new AdapterError('this tracker was built without the App bot account it acts as')
     }
-    return this.login
+    return this.self.account.login
+  }
+
+  /** The App's bot account's numeric id, which an event's actor is compared with. */
+  get accountId(): number | undefined {
+    return this.self.account?.id
   }
 
   /**
@@ -350,13 +377,46 @@ export class GitHubTracker implements Tracker {
   }
 }
 
+/**
+ * Refuses a publish that changes a workflow file where the App's installation cannot write
+ * workflows, naming the permission. GitHub refuses such a commit too, but with an error that
+ * names neither the permission nor the path.
+ */
+export function refuseWorkflows(
+  paths: readonly string[],
+  canWriteWorkflows: boolean,
+): void {
+  if (canWriteWorkflows) return
+  const workflows = paths.filter((path) => path.startsWith('.github/workflows/'))
+  if (workflows.length > 0) {
+    throw new AdapterError(
+      `this changes ${workflows.join(', ')}, which needs the App's Workflows write permission, ` +
+        `and its installation lacks it`,
+    )
+  }
+}
+
 export class GitHubCodeHost implements CodeHost {
   readonly name = 'github'
+
+  /**
+   * `canWriteWorkflows` is read from the installation at startup. Left out, nothing is refused
+   * here and GitHub decides.
+   */
+  constructor(private readonly options: { canWriteWorkflows?: boolean } = {}) {}
+
+  private checkWorkflows(request: { files: readonly { path: string }[]; deletions: readonly string[] }): void {
+    refuseWorkflows(
+      [...request.files.map((f) => f.path), ...request.deletions],
+      this.options.canWriteWorkflows ?? true,
+    )
+  }
 
   async produce(request: ArtifactRequest): Promise<Artifact> {
     if (request.files.length === 0 && request.deletions.length === 0) {
       throw new AdapterError('an artifact needs at least one changed path')
     }
+    this.checkWorkflows(request)
     const base = request.base ?? (await defaultBranch(request.repo))
     // The sha the caller's tree was cut from, in preference to the branch head now. Reading the
     // head here is a round-trip that buys a race: the base branch can delete a path inside the
@@ -394,6 +454,7 @@ export class GitHubCodeHost implements CodeHost {
     if (request.files.length === 0 && request.deletions.length === 0) {
       throw new AdapterError('a resolution needs at least one changed path')
     }
+    this.checkWorkflows(request)
     return commitOnBranch(
       request.repo,
       request.branch,

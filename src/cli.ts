@@ -18,9 +18,10 @@ import {
 } from './store.js'
 import { eligibleToPropose, idsOnDefaultBranch, propose, upstreamHoldsTheName, ProposeError } from './propose.js'
 import { reconcile, promoteInPlace, renderReconciliation } from './reconcile.js'
-import { GhError } from './gh.js'
+import { actAs, GhError } from './gh.js'
+import { AppError, canMint, canWriteWorkflows, startApp, type AppSession } from './app.js'
 import { claimRequested, contradictoryRunFlags } from './flags.js'
-import { explainRole, loadRole, rolesFrom, RoleError } from './role.js'
+import { explainRole, loadRole, rolesFrom, RoleError, type Role } from './role.js'
 import { catchUpItem, planCycle, runItem, UNTRIAGED_NO_SEAT, type CycleReport } from './loop.js'
 import { renderProgress } from './execute.js'
 import { serve, untilSignalled } from './serve.js'
@@ -302,6 +303,29 @@ role
     process.stdout.write(`${explainRole(loadRole(config, name))}\n`)
   })
 
+/**
+ * Starts acting as the role's GitHub App, or refuses to start, naming why. Runs before any other
+ * GitHub call, so nothing `run` or `serve` does reaches GitHub as anyone else: from here every
+ * `gh` call carries the App's token, and so do the clones and fetches of the trees it hands out.
+ */
+async function actAsApp(role: Role, destination: string, warn: (line: string) => void) {
+  const session: AppSession = await startApp(
+    role.name,
+    [...role.sources.map((s) => s.repo), destination],
+    process.env,
+  )
+  for (const warning of session.warnings) warn(warning)
+  const token = () => session.tokens.token()
+  actAs(token)
+  const tracker = new GitHubTracker({ account: session.account })
+  const codeHost = new GitHubCodeHost({ canWriteWorkflows: canWriteWorkflows(session.tokens.permissions) })
+  return {
+    session,
+    identity: session.account.login,
+    deps: { tracker, codeHost, trees: new CloneProvider(1, token), destination },
+  }
+}
+
 /** A floor reads as one: a cycle that spent money it cannot account for must not look cheap. */
 function triageSpend(report: CycleReport): string {
   const amount = `$${report.triageCostUsd.toFixed(4)}`
@@ -379,15 +403,13 @@ program
     if (contradiction !== undefined) throw new RoleError(contradiction)
     const config = loadConfig(program.opts()['config'])
     const role = loadRole(config, name).role
-    const tracker = new GitHubTracker()
-    const identity = await tracker.identity()
     const destination = await repoFromCheckout(config.destination)
-    const deps = { tracker, codeHost: new GitHubCodeHost(), trees: new CloneProvider(), destination }
-
     const out = {
       say: (line: string) => process.stdout.write(`  ${line}\n`),
       warn: (line: string) => process.stderr.write(`  ! ${line}\n`),
     }
+    const { identity, deps } = await actAsApp(role, destination, out.warn)
+    const { tracker } = deps
     const { gate: gateFor, loreFor, record, store } = await wire(config, role, destination, out)
 
     const work = async (item: Candidate) => {
@@ -527,13 +549,11 @@ program
   .action(async (name: string, opts) => {
     const config = loadConfig(program.opts()['config'])
     const role = loadRole(config, name).role
-    const tracker = new GitHubTracker()
-    const identity = await tracker.identity()
     const destination = await repoFromCheckout(config.destination)
-    const deps = { tracker, codeHost: new GitHubCodeHost(), trees: new CloneProvider(), destination }
 
     const stamp = () => new Date().toISOString().slice(11, 19)
     const say = (line: string) => process.stdout.write(`${stamp()} ${line}\n`)
+    const { session, identity, deps } = await actAsApp(role, destination, (line) => say(`! ${line}`))
     const { gate, loreFor, record, store } = await wire(config, role, destination, {
       say: (line) => say(`  ${line}`),
       warn: (line) => say(`  ! ${line}`),
@@ -543,6 +563,7 @@ program
       ...(opts.poll === undefined ? {} : { pollMinutes: Number(opts.poll) }),
       ...(opts.cycles === undefined ? {} : { maxCycles: Number(opts.cycles) }),
       until: untilSignalled(),
+      credential: () => canMint(session.tokens),
       gate,
       loreFor,
       store,
@@ -567,6 +588,9 @@ program
           }
           case 'cycle-failed':
             say(`cycle ${e.cycle} failed: ${e.error.message}`)
+            break
+          case 'credential-refused':
+            say(`cycle ${e.cycle}: taking no new work, ${e.reason}`)
             break
           case 'sleeping':
             say(`sleeping ${e.minutes}m`)
@@ -643,6 +667,7 @@ try {
     // The superclass of GitHubError and StateError both: every one of these carries a sentence
     // written to be read, and a host where `gh` is missing prints it rather than a stack trace.
     error instanceof GhError ||
+    error instanceof AppError ||
     error instanceof RoleError ||
     error instanceof TriageError ||
     error instanceof BudgetError ||

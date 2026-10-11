@@ -277,6 +277,26 @@ nothing of the App, which the operator installs once per role.
   worker permitted to run `gh` could. The deployment docs tell the operator not to log `gh` in
   as the service user.
 
+## What the implementation found
+
+**The credential stop lives in `serve`, because no record owns credential stops yet.** Neither
+#65's breaker nor #101's condition record was on `main` when this was built, so nothing could
+hold `app:<identity>:credential`. `serve` asks `canMint` before each cycle and before each item.
+While no token mints, it takes no new item and reports the refusal, naming the App. The next cycle
+asks again, so work resumes without an item spent to find out. The requirement is met. Moving the
+stop into whichever record lands is #170.
+
+**Comment authors are compared by login, label events by id.** The requirement prefers the
+numeric id wherever a read reports one. The stop rule's reads, the label events, are compared by
+id. Comment authors are still compared with the Igor's login, as `stillDeferred` and `dropStopped`
+did before this change: REST spells a bot's login `<slug>[bot]`, which no person's login can
+match, since a login cannot contain a bracket. GraphQL drops the `[bot]` (measured 2026-10-04),
+so the GitHub adapter adds it back to every author it reads there, and every comparison downstream
+compares like with like.
+
+**A refused or missing App token never falls back.** A `gh` call whose token cannot be minted
+fails as a `GhError` without spawning `gh`, so no call reaches GitHub on an ambient login.
+
 ## Sequencing with #156
 
 #156 decides that today's assignee claim is removed in the same change that adds the label

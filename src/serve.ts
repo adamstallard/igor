@@ -37,6 +37,12 @@ export interface ServeOptions extends CycleOptions {
   sleep?: (ms: number) => Promise<void>
   /** Resolves when the process should wind down. */
   until?: Promise<void>
+  /**
+   * Whether the Igor can still act as its surface identity: `true`, or why not. Asked before each
+   * cycle's work and before each item, so a credential GitHub stops accepting stops new work
+   * until it is accepted again.
+   */
+  credential?: () => Promise<true | string>
 }
 
 export type ServeEvent =
@@ -47,6 +53,8 @@ export type ServeEvent =
   // detaches it from the role's share, which is computed per seat.
   | { kind: 'worked'; item: Candidate; run: ItemRun; seat?: string }
   | { kind: 'cycle-failed'; cycle: number; error: Error }
+  /** The surface credential was refused, so the cycle takes no new item. */
+  | { kind: 'credential-refused'; cycle: number; reason: string }
   | { kind: 'sleeping'; minutes: number }
   | { kind: 'stopping'; reason: string }
 
@@ -112,7 +120,19 @@ export async function serve(
       return true
     }
 
-    try {
+    // **A refused credential takes no new item, and says whose it was.** The question costs a
+    // mint at most, never an item, and it is asked again next cycle, which is how the Igor
+    // resumes once the credential works without waiting for an item to probe it.
+    const refused = async (): Promise<boolean> => {
+      const answer = (await options.credential?.()) ?? true
+      if (answer === true) return false
+      emit({ kind: 'credential-refused', cycle, reason: answer })
+      // The claim loop checks this before its own question, so one refusal is reported once.
+      abandoned = true
+      return true
+    }
+
+    if (!(await refused())) try {
       // Identity comes from the argument, never from the options: if the two disagreed, the
       // loop would screen holders as one Igor and claim as another.
       //
@@ -129,6 +149,7 @@ export async function serve(
           emit({ kind: 'stopping', reason: 'asked to stop between items' })
           break
         }
+        if (await refused()) break
         // Catching up counts against the gate like any other work. The quiet path spends
         // nothing, but the conflicting one spends a worker, and it is the same gate that
         // decides whether there is a worker to spend.
@@ -158,6 +179,7 @@ export async function serve(
           emit({ kind: 'stopping', reason: 'asked to stop between items' })
           break
         }
+        if (await refused()) break
         const gate = await options.gate()
         if (gate.exhausted()) {
           emit({ kind: 'stopping', reason: gate.reason })

@@ -14,9 +14,16 @@ const STOP = /^stop\b(?!-)/i
 const GO_AHEAD = /^(go ahead|go on|resume|carry on|continue|proceed|unblocked|all yours)\b/i
 
 function addressed(text: string, identity: string, verb: RegExp): boolean {
-  const named = identity.replace(/^@/, '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  // A GitHub App's bot is `<slug>[bot]` to REST and `<slug>` to GraphQL and to a person
+  // typing a mention, so the name matches with or without the suffix. The lookbehind refuses a
+  // name that ends another one (`@code-reviewer`, `bob@reviewer`, `@org/reviewer`); the
+  // lookahead ends the name where `\b` cannot, after the `]`.
+  const named = identity
+    .replace(/^@/, '')
+    .replace(/\[bot\]$/i, '')
+    .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   if (named === '') return false
-  const match = text.match(new RegExp(`@?${named}\\b[\\s,:—-]+(.*)$`, 'is'))
+  const match = text.match(new RegExp(`(?<![\\w@./-])@?${named}(?:\\[bot\\])?(?!\\w)[\\s,:—-]+(.*)$`, 'is'))
   return match?.[1] !== undefined && verb.test(match[1].trim())
 }
 

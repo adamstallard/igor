@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { daysSince, extractPaths } from '../src/adapter.js'
 import {
-  commentsFrom, GitHubTracker, normalizeIssue, verdictFrom, type RawComment, type RawIssue,
+  commentsFrom, GitHubCodeHost, GitHubTracker, loginOf, normalizeIssue, refuseWorkflows, verdictFrom,
+  type RawComment, type RawIssue,
 } from '../src/github-adapter.js'
 
 const NOW = Date.parse('2026-09-13T00:00:00Z')
@@ -251,5 +252,54 @@ describe('daysSince', () => {
 
   it('treats an unparseable date as no age rather than NaN', () => {
     expect(daysSince('not a date', NOW)).toBe(0)
+  })
+})
+
+describe('the App as author', () => {
+  it("spells a bot author as REST does, so the Igor's own pull request reads as its own", () => {
+    // Measured 2026-10-04: GraphQL `igor-generalist`, REST `igor-generalist[bot]`.
+    const c = normalizeIssue(
+      'o/r',
+      issue({
+        author: { login: 'igor-generalist', __typename: 'Bot' },
+        timelineItems: { nodes: [{ source: pr({ author: { login: 'igor-generalist', __typename: 'Bot' } }) }] },
+      }),
+      NOW,
+    )
+    expect(c.author).toBe('igor-generalist[bot]')
+    expect(c.inFlight?.author).toBe('igor-generalist[bot]')
+  })
+
+  it("leaves a person's login as it is", () => {
+    expect(loginOf({ login: 'adam', __typename: 'User' })).toBe('adam')
+    expect(loginOf({ login: 'x[bot]', __typename: 'Bot' })).toBe('x[bot]')
+    expect(loginOf(null)).toBe('')
+  })
+
+  it("is the App's bot account, never GET /user", async () => {
+    const tracker = new GitHubTracker({ account: { login: 'acme-reviewer[bot]', id: 99 } })
+    expect(await tracker.identity()).toBe('acme-reviewer[bot]')
+    expect(tracker.accountId).toBe(99)
+    await expect(new GitHubTracker().identity()).rejects.toThrow(/without the App bot account/)
+  })
+})
+
+describe('a publish that changes a workflow', () => {
+  it('fails naming the Workflows permission where the installation lacks it', () => {
+    expect(() => refuseWorkflows(['src/a.ts', '.github/workflows/ci.yml'], false)).toThrow(
+      /\.github\/workflows\/ci\.yml, which needs the App's Workflows write permission/,
+    )
+    expect(() => refuseWorkflows(['.github/workflows/ci.yml'], true)).not.toThrow()
+    expect(() => refuseWorkflows(['.github/CODEOWNERS'], false)).not.toThrow()
+  })
+
+  it('is refused before anything is written', async () => {
+    const host = new GitHubCodeHost({ canWriteWorkflows: false })
+    await expect(
+      host.produce({
+        repo: 'o/r', branch: 'b', base: 'main', baseSha: 'abc', title: 't', body: 'b', draft: true,
+        files: [{ path: '.github/workflows/ci.yml', content: 'x' }], deletions: [],
+      }),
+    ).rejects.toThrow(/Workflows write/)
   })
 })

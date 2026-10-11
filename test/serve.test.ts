@@ -570,3 +570,38 @@ describe('a published artifact that stopped merging', () => {
     expect(s.failures).toBe(2)
   })
 })
+
+describe('a surface credential refused while serving', () => {
+  it('takes no new item, says which identity was refused, and resumes once a token mints', async () => {
+    const { d, searches } = deps([issue(1)])
+    const { events, onEvent } = collect()
+    const answers: (true | string)[] = ['GitHub would not mint a token for the App "triage": 401 Bad credentials', true, true]
+    const s = await serve(d, role(), 'igor-bot', {
+      ...base,
+      maxCycles: 2,
+      onEvent,
+      credential: async () => answers.shift() ?? true,
+    })
+    const refused = events.filter((e) => e.kind === 'credential-refused')
+    expect(refused).toEqual([
+      { kind: 'credential-refused', cycle: 1, reason: 'GitHub would not mint a token for the App "triage": 401 Bad credentials' },
+    ])
+    // The refused cycle searched nothing and worked nothing; the next one did both.
+    expect(searches()).toBe(1)
+    expect(s.worked).toBe(1)
+  })
+
+  it('stops between items when the credential is refused mid-cycle', async () => {
+    const { d } = deps([issue(1), issue(2)])
+    const { events, onEvent } = collect()
+    const answers: (true | string)[] = [true, true, 'refused']
+    const s = await serve(d, role(), 'igor-bot', {
+      ...base,
+      maxCycles: 1,
+      onEvent,
+      credential: async () => answers.shift() ?? 'refused',
+    })
+    expect(s.worked).toBe(1)
+    expect(events.filter((e) => e.kind === 'credential-refused')).toHaveLength(1)
+  })
+})

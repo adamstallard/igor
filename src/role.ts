@@ -2,6 +2,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { parse as parseYaml } from 'yaml'
 import { poolFor, type OrgBudget } from './budget.js'
+import { credentialProblem } from './app.js'
 import { keyCheck } from './keys.js'
 import type { Config } from './config.js'
 
@@ -119,6 +120,11 @@ const REFUSED_KEYS: Record<string, string> = {
   claim:
     'the claim message carries the stop instruction, the only notice a reader gets that ' +
     'stopping is possible and permitted, so it is not a role\'s to replace',
+  // A role key could point one Igor at another Igor's App, whose credentials sit on the same
+  // server, through a lore-repository pull request nobody reviewing it would read that way.
+  github_app:
+    'an Igor acts as the GitHub App named after its role, and its credentials come from its ' +
+    'environment (GITHUB_APP_IDENTITY, GITHUB_APP_ID and a key), never from a role file',
 }
 
 const SOURCE_KEYS = ['tracker', 'repo', 'query']
@@ -639,13 +645,21 @@ export function loadRole(config: Config, name: string): ResolvedRole {
   return resolved
 }
 
-/** Renders the effective role with the level each value came from — the point of `explain`. */
-export function explainRole({ role, from }: ResolvedRole): string {
+/**
+ * Renders the effective role with the level each value came from — the point of `explain`.
+ *
+ * It also says which GitHub App the role acts as and whether `env` holds that App's
+ * credentials, naming what is missing. It reads no key and mints no token.
+ */
+export function explainRole({ role, from }: ResolvedRole, env: NodeJS.ProcessEnv = process.env): string {
   const at = (key: string) => (from[key] ? `  [${from[key]}]` : '  [default]')
+  const problem = credentialProblem(role.name, env)
   const lines = [
     `role: ${role.name}`,
     role.extends.length ? `inherits: ${role.extends.join(' -> ')}` : 'inherits: nothing',
     '',
+    `github app:    ${role.name}  [the role's name]`,
+    `credentials:   ${problem === undefined ? 'in the environment' : problem}`,
     `seat:          ${role.seat ?? '(none)'}${at('seat')}`,
     `completion:    ${role.completion}${at('completion')}`,
     `allow:         ${role.allow.join(', ') || '(none)'}${at('allow')}`,
