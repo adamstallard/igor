@@ -569,12 +569,12 @@ probed later in the window without anything else changing. This replaces the ear
 seat at its dollar bound, and settles the earlier question about probing an uncalibrated seat past
 `1 − reserve`: the moving line applies, not a fixed one.
 
-**A probe checks the credential too (decided 2026-09-28).** A probe answered with an
-authentication failure (401) is not a probe that got no event: the five-hour back-off does not
-apply to it, so a stopped seat is re-checked hourly. It opens the seat's credential stop, `seat:<id>:credential`, in whichever
-record owns it: #65's breaker or #101's condition record, whichever lands first. A probe that
-succeeds is the check that clears it. Against the exclusions: a seat whose credential stop is open
-is probed only as that clearing check, whatever its readings, and within the hourly limit. The
+**A probe checks the credential too (decided 2026-09-28).** A probe answered with an authentication
+failure (401) is not a probe that got no event: the five-hour back-off does not apply to it, so a
+stopped seat is re-checked hourly. It opens the seat's credential stop, `seat:<id>:credential`, in
+the condition record #101 specifies, which owns that stop (#65's breaker is folded into it). A probe
+that succeeds is the check that clears it. Against the exclusions: a seat whose credential stop is
+open is probed only as that clearing check, whatever its readings, and within the hourly limit. The
 refusal, overage and line exclusions still hold it off, because a seat any of them excludes could
 not be used even with its credential cleared, so the stop costs nothing while they last.
 
