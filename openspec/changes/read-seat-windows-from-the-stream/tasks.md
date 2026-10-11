@@ -305,8 +305,7 @@ the stream reading, the probe, the line, a role's reserve, and no dollar bound, 
 ## 11. Left open, recorded so they are not lost
 
 - [ ] 11.1 Triage: capture whether `--output-format json`'s single envelope carries
-      `rate_limit_info`, and record the answer in `design.md` — the owner of any triage reading is
-      the reviewer's decision (this change or `triage-refusal-calibrates`, #75)
+      `rate_limit_info`, and record the answer in `design.md`
 - [x] 11.2 `MODIFIED`, `RENAMED` and `REMOVED`-plus-`ADDED` deltas for the in-force passages
       `design.md` lists under *In-force text this overtakes* — written in gate one, on Adam's
       decisions of 2026-09-27 and 2026-09-28, and archive-tested in a scratch copy
