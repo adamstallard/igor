@@ -14,6 +14,8 @@
 - [ ] 0.6 Grant a role that produces signed text `prose.py check`, `prose.py sign`,
       bug-hunter's `caller-result.sh` (by path into the pinned skills directory) and
       `git add`; run `start`, staging and verifying in Igor's code instead (design, item 2)
+- [ ] 0.7 A per-role opt-in in `org.yaml`: only a role that opts in runs the signing steps
+      (design, Which roles)
 
 ## 1. Verifying and publishing
 

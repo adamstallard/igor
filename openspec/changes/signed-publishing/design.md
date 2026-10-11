@@ -68,18 +68,20 @@ its claim in the very case `graceful-handoff` exists for, so that capability sta
 - **Does not prove who signed.** The footer is a hash, not a key: anyone can run `prose sign`.
   It shows the text is unchanged since signing, which is all the posting code needs to know.
 
-## Open Questions
+## Decided questions
 
-Items 1 to 4 were raised in review on 2026-10-04, and Adam approved recording them here.
+Adam accepted the recommendation on each question below on 2026-10-11. Items 1 to 4 were raised
+in review on 2026-10-04.
 
-### Which roles
+### Which roles: opt in per role, until the cost is measured
 
-Every role that produces code, or opt-in per role in `org.yaml`, decided after measuring the
-cost.
+A role opts in to the signing steps in `org.yaml`. Whether every role that produces code must
+run them is decided once task 4.1 has measured their cost per item.
 
-### 1. The prose hook would block a worker's first write
+### 1. Igor opens the prose hook's gate for its worker
 
-**Recommended (Adam liked it), pending one measurement.**
+**Decided:** Igor runs `prose start` for the worker's session id itself, before the worker
+starts.
 
 If prose's hooks are installed for the user Igor runs as, the first-write gate blocks a
 worker's first file write until prose's first call has run in that session. The gate is per
@@ -105,15 +107,15 @@ seat's OAuth token (#144), so it is no way around the gate. #152 loads skills wi
 which loads a skill but not its hooks, so whether the gate runs in a worker depends on the hooks
 in the server user's settings. Where it does not run, the steps above cost one `start` call.
 
-### 2. The worker must be allowed to run the scripts it signs with
+### 2. The worker is granted the scripts it signs with, by path
+
+**Decided:** a role that produces signed text is granted the commands below, by path into the
+pinned skills directory from #152. Where Igor's own code can run a script instead, as in item
+1, it does, and the role needs no grant for it.
 
 `prose check`, `prose sign` and bug-hunter's scripts in caller-commits mode are shell commands
-the model step runs. The `commands` list in igor-lore's `roles/org.yaml` allows none of them
-today, so a step told to sign could not.
-
-**Recommendation:** a role that produces signed text is granted these commands, by path into
-the pinned skills directory from #152. Where Igor's own code can run a script instead, as in
-item 1, it does, and the role needs no grant for it.
+the model step runs, and the `commands` list in igor-lore's `roles/org.yaml` allows none of
+them without this grant.
 
 | Step | Run by | Why |
 | --- | --- | --- |
@@ -134,26 +136,27 @@ So the grant, with `<skills>` the pinned directory:
 
 Bug-hunter's tests run under the `npm test` and `npx vitest run` entries the list already holds.
 
-### 3. "Staged tree" assumes an index Igor does not have
+### 3. The clone's staged tree is measured against the API's tree before either is trusted
+
+**Decided:** measure first (task 0.4), and if the two trees can differ, sign and verify against
+the API's tree instead of the clone's index.
 
 `prose verify-staged` checks the git index, but Igor builds its commit through the Git Data
-API (`createBranchWithFiles`) and never stages in its clone. The design compares the signed
-trees with the sha `POST /git/trees` returns. That holds only if Igor stages in the clone
-(`git add -A`, task 2.1) and `git write-tree` there equals the API's tree sha, with the same
-modes, deletions and symlinks.
+API (`createBranchWithFiles`) and never stages in its clone. Comparing the signed trees with
+the sha `POST /git/trees` returns holds only if Igor stages in the clone (`git add -A`, task
+2.1) and `git write-tree` there equals the API's tree sha, with the same modes, deletions and
+symlinks.
 
-The code as it stands suggests they can differ: `createBranchWithFiles` writes every blob as
-`100644` and its content as UTF-8, so an executable or a symlink would not survive it.
+The modes are where they can differ: `createBranchWithFiles` writes an executable file as
+`100755` and every other file as `100644`, so the two trees agree only if the clone's modes map
+onto those two exactly. The measurement stages a change in a clone, runs `git write-tree`,
+builds the same tree through the Git Data API, and compares the shas, with a deletion and an
+executable file among the changes.
 
-**Recommendation:** measure before building on it (task 0.4). Stage in a clone, run
-`git write-tree`, build the same tree through the Git Data API, and compare the shas, with a
-deletion and an executable file among the changes. If they can differ, the code signs and
-verifies against the API's tree instead of the clone's index.
+### 4. Igor's posting code refuses an unsigned post
 
-### 4. Igor's own posts bypass the hook
+**Decided:** a test that Igor itself refuses a post without a valid footer, with no hook
+installed (task 1.4).
 
 Prose's posting hook guards only posts made from a Claude Code session. Igor posts from its
 own code, so `prose verify-post` in Igor's posting code is the only guard.
-
-**Recommendation:** a test that Igor itself refuses a post without a valid footer, with no hook
-installed (task 1.4).
