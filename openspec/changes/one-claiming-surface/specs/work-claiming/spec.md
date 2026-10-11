@@ -57,6 +57,14 @@ back, and changes nothing else.
 The settle interval does not apply where a person handed the item to the Igor; see *A person
 can direct an Igor through the holder field*.
 
+The re-read SHALL look for a stop said since the cycle that chose the item read it, or, for an
+item a person handed over, since the hand-over. A cycle works its items one after another, so a
+stop said on one while it works another comes after the cycle read it and before the claim;
+looking only back to the claim would miss it.
+For an item the Igor's own search found, a go-ahead later in the comments than the latest stop
+lifts it, as it would at the next cycle, and the run that follows SHALL NOT be stopped by the stop
+the claim saw lifted. For a handed-over item the stop stands.
+
 #### Scenario: Claim confirmed
 
 - **WHEN** a re-read after the settle interval shows the Igor still holding the claim
@@ -83,6 +91,57 @@ can direct an Igor through the holder field*.
 
 - **WHEN** an operator tunes the settle interval
 - **THEN** the new value governs subsequent verification
+
+#### Scenario: A stop said while the cycle worked another item
+
+- **WHEN** a cycle chooses two items, and somebody says stop on the second while the Igor works
+  the first
+- **THEN** the claim on the second sees the stop, and the Igor stands down with a receipt
+
+#### Scenario: A stop answered by a go-ahead before the claim
+
+- **WHEN** somebody says stop on an item the Igor's search found, and somebody says go ahead
+  after it, both before the Igor claims it
+- **THEN** the claim holds and the run is not stopped by that stop
+
+### Requirement: Stop is unconditional and open to anyone
+
+A stop directed at an Igor SHALL take effect immediately, release the claim, and require no
+authorization. Stop MUST NOT be gated by identity, permission, or configuration.
+
+A stop is directed at an Igor when it opens a comment with "stop" and names nobody, or names that
+Igor: "stop @igor-backend" or "@igor-backend stop". A bare "stop" stops every Igor on the item. A
+stop that names other accounts SHALL NOT stop an Igor it does not name, and SHALL NOT take that
+Igor's holder entry off: "stop @igor-backend" is meant for the backend Igor, and stopping the
+frontend Igor too would take back a hand-over nobody asked to take back.
+
+#### Scenario: Anyone can stop an Igor
+
+- **WHEN** any party issues a stop for a claimed item
+- **THEN** the Igor releases the claim and ceases work on it
+- **AND** no permission check is performed
+
+#### Scenario: Stop cannot be disabled
+
+- **WHEN** configuration attempts to restrict who may stop an Igor
+- **THEN** validation fails, because stop fails safe and must remain available
+
+#### Scenario: Stop is recorded
+
+- **WHEN** a stop is honoured
+- **THEN** the record names who issued it and when
+
+#### Scenario: A bare stop stops every Igor on the item
+
+- **WHEN** somebody comments "stop" on an issue two Igors are working
+- **THEN** both stop
+
+#### Scenario: A stop that names an Igor stops only that one
+
+- **WHEN** somebody comments "stop @igor-backend, frontend will take this" on an issue that
+  carries both `igor:backend` and `igor:frontend`
+- **THEN** the backend Igor stops
+- **AND** the frontend Igor neither stops nor loses its label
 
 ### Requirement: What follows a stop is read from the tracker, not from a second command
 

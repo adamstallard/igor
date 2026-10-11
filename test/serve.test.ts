@@ -17,6 +17,7 @@ import type { CycleDeps } from '../src/loop.js'
 import type { Role } from '../src/role.js'
 import type { TreeProvider, WorkingTree } from '../src/worktree.js'
 import { serve, untilSignalled, type ServeEvent } from '../src/serve.js'
+import { labelVerdictFrom } from '../src/github-adapter.js'
 import { tempDir } from './tmp.js'
 
 const role = (over: Partial<Role> = {}): Role =>
@@ -765,5 +766,44 @@ describe('a handed-over item stopped while nothing ran', () => {
     expect(released).toEqual([true])
     expect(reported).toHaveLength(1)
     expect(reported[0]).toContain("stopped at bob's request and released this")
+  })
+})
+
+describe('a stop said while the cycle works another item', () => {
+  it('is seen by the claim on that item, which stands down with a receipt', async () => {
+    const { d } = deps([issue(1), issue(2)])
+    // Comments per item, as GitHub keeps them: `since` filters on the edit time, the verdict on
+    // the creation time.
+    const comments: Record<string, { body: string; user: { login: string }; created_at: string; updated_at: string }[]> = {}
+    const say = (id: string, login: string, body: string) => {
+      const at = new Date().toISOString()
+      ;(comments[id] ??= []).push({ body, user: { login }, created_at: at, updated_at: at })
+    }
+    const outcomes: Record<string, string> = {}
+    Object.assign(d.tracker, {
+      verifyClaim: async (c: Candidate, as: string, since: string) =>
+        labelVerdictFrom({ login: as, accountId: 1, holder: 'igor:triage' }, ['igor:triage'], undefined,
+          (comments[c.id] ?? []).filter((m) => Date.parse(m.updated_at) >= Date.parse(since)), since),
+      report: async (c: Candidate, m: string) => { say(c.id, 'igor-bot', m) },
+    })
+    const { events, onEvent } = collect()
+    await serve(d, role({ settleSeconds: 0 }), 'igor-bot', {
+      ...base,
+      maxCycles: 1,
+      onEvent,
+      // While item 1 is worked, somebody stops item 2, and the claim on item 2 comes later than
+      // its own settle window reaches back.
+      worker: async () => {
+        if (!(comments['github:o/r#2'] ?? []).some((m) => m.user.login === 'bob')) {
+          say('github:o/r#2', 'bob', 'stop')
+          // Longer than the checkpoint's one-second look back, so only the claim's scan can see it.
+          await new Promise((r) => setTimeout(r, 1500))
+        }
+        return { result: 'no change needed', total_cost_usd: 0 }
+      },
+    })
+    for (const e of events) if (e.kind === 'worked') outcomes[e.item.id] = e.run.outcome
+    expect(outcomes['github:o/r#2']).toBe('stopped')
+    expect((comments['github:o/r#2'] ?? []).some((m) => m.body.includes("stopped at bob's request"))).toBe(true)
   })
 })

@@ -1,6 +1,6 @@
 import { gh, GhError, ghGraphql, ghPaginated } from './gh.js'
 import type { BotAccount } from './app.js'
-import { isStop } from './signals.js'
+import { isGoAhead, isStop } from './signals.js'
 import {
   AdapterError,
   daysSince,
@@ -252,25 +252,45 @@ export interface ClaimSelf {
 }
 
 /**
- * The first stop in `comments` created at or after `since`, as a verdict, or `undefined`. A
- * comment whose creation time cannot be read counts.
+ * A stop in `comments` created at or after `since`, as a verdict, or `undefined`. A comment whose
+ * creation time cannot be read counts. `comments` are in creation order.
+ *
+ * Not `liftable`, the first stop decides. `liftable`, the last one does, and a go-ahead after it
+ * in the list, by anyone but this Igor and not itself a stop, lifts it; a stop said after the
+ * go-ahead still stands. List order decides rather than the time, which GitHub gives to the second,
+ * so a go-ahead in the same second as a stop lifts it only if it came after. A lifted stop answers
+ * `liftedAt`, the creation time of the go-ahead that lifted it, where that time can be read.
  */
-function stopFrom(as: string, comments: readonly RawComment[], since: string): ClaimVerdict | undefined {
+function stopFrom(
+  as: string,
+  comments: readonly RawComment[],
+  since: string,
+  liftable = false,
+): { stop: ClaimVerdict } | { liftedAt?: string } | undefined {
   const floor = Date.parse(since)
-  for (const comment of comments) {
-    const body = comment.body ?? ''
+  const stops = comments.filter((comment) => {
     const at = Date.parse(comment.created_at)
-    if (!Number.isNaN(floor) && !Number.isNaN(at) && at < floor) continue
-    if (isStop(body, as)) {
-      return {
-        status: 'stopped',
-        ...(comment.user ? { by: comment.user.login } : {}),
-        at: comment.created_at,
-        reason: body.trim().slice(0, 500),
-      }
-    }
-  }
-  return undefined
+    if (!Number.isNaN(floor) && !Number.isNaN(at) && at < floor) return false
+    return isStop(comment.body ?? '', as)
+  })
+  if (stops.length === 0) return undefined
+  const verdict = (comment: RawComment): { stop: ClaimVerdict } => ({
+    stop: {
+      status: 'stopped',
+      ...(comment.user ? { by: comment.user.login } : {}),
+      at: comment.created_at,
+      reason: (comment.body ?? '').trim().slice(0, 500),
+    },
+  })
+  if (!liftable) return verdict(stops[0]!)
+
+  const latest = stops[stops.length - 1]!
+  const lifting = comments.slice(comments.indexOf(latest) + 1).find((c) => {
+    const body = c.body ?? ''
+    return c.user?.login !== as && !isStop(body, as) && isGoAhead(body, as)
+  })
+  if (lifting === undefined) return verdict(latest)
+  return Number.isNaN(Date.parse(lifting.created_at)) ? {} : { liftedAt: lifting.created_at }
 }
 
 /**
@@ -284,7 +304,8 @@ function stopFrom(as: string, comments: readonly RawComment[], since: string): C
  * **A stop is one created at or after `since`.** GitHub's `since` filters on when a comment was
  * last updated, so it also returns an older comment edited since then, and a stop said before
  * the claim, perhaps before a hand-over that answered it, is not a stop of this claim.
- * Creation time decides.
+ * Creation time decides. With `liftable`, a go-ahead after the last stop lifts it, and a held
+ * verdict carries the go-ahead's time as `liftedAt`; see `stopFrom`.
  *
  * **This Igor's label gone means it was removed, and the latest `unlabeled` event says by whom.**
  * The Igor's own bot account is its own release: no receipt. Anyone else is a stop by that person,
@@ -302,9 +323,12 @@ export function labelVerdictFrom(
   events: readonly RawEvent[] | undefined,
   comments: readonly RawComment[],
   since: string,
+  liftable = false,
 ): ClaimVerdict {
-  const stop = stopFrom(self.login, comments, since)
-  if (stop !== undefined) return stop
+  const stop = stopFrom(self.login, comments, since, liftable)
+  if (stop !== undefined && 'stop' in stop) return stop.stop
+  const held: ClaimVerdict =
+    stop?.liftedAt === undefined ? { status: 'held' } : { status: 'held', liftedAt: stop.liftedAt }
 
   if (!labels.includes(self.holder)) {
     const removed = events === undefined ? undefined : latestLabelEvent(events, 'unlabeled', self.holder)
@@ -325,7 +349,7 @@ export function labelVerdictFrom(
       return { status: 'lost', by: added.actor.login }
     }
   }
-  return { status: 'held' }
+  return held
 }
 
 const isSelf = (actor: { id: number; type?: string }, self: Pick<ClaimSelf, 'accountId'>): boolean =>
@@ -454,7 +478,12 @@ export class GitHubTracker implements Tracker {
    * Two reads in the ordinary case, the labels and the comments since the claim. The events are
    * read only where a label needs explaining: this Igor's is gone, or another Igor's is there.
    */
-  async verifyClaim(candidate: Candidate, _as: string, since: string): Promise<ClaimVerdict> {
+  async verifyClaim(
+    candidate: Candidate,
+    _as: string,
+    since: string,
+    options: { liftable?: boolean } = {},
+  ): Promise<ClaimVerdict> {
     const self = this.claimSelf()
     const [labels, comments] = await Promise.all([
       this.labels(candidate),
@@ -465,7 +494,7 @@ export class GitHubTracker implements Tracker {
     ])
     const puzzling = !labels.includes(self.holder) || labels.some((l) => isHolderLabel(l) && l !== self.holder)
     const events = puzzling ? await this.events(candidate) : undefined
-    return labelVerdictFrom(self, labels, events, comments ?? [], since)
+    return labelVerdictFrom(self, labels, events, comments ?? [], since, options.liftable === true)
   }
 
   /**

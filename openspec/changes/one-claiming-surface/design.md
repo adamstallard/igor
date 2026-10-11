@@ -402,6 +402,36 @@ that met a stop answered it with a receipt.
 hand-over, and only a new hand-over, the label removed and added again, restores it. A go-ahead
 or the cooldown lifts the stop for work the Igor's own search finds, never for a hand-over.
 
+**Decided by Adam, 2026-10-11: a stop that names an Igor stops only that Igor.** A bare "stop"
+still stops every Igor on the item. A stop that names accounts right after the word, as
+`stop @igor-backend`, or before it, as `@igor-backend stop`, stops only those it names, so the
+frontend Igor keeps working, and keeps a label a person added, when somebody tells the backend
+Igor to stop. Before this, any comment opening with "stop" stopped every Igor, and once a stop
+while nothing runs took the label off, a stop meant for one Igor spent another's hand-over.
+A stop counts wherever in the comment it addresses the Igor, not only at its first mention, and
+never on a quoted line: a reply quoting an old "@igor-frontend stop" is not a new stop.
+
+**Decided by Adam, 2026-10-11: a claim scans for stops from when its cycle read the item.** A
+cycle works its items one after another, and a claim scanned for stops only from the claim
+minus the settle interval, so a stop said on one item while the cycle worked another was never
+seen, and the item was worked over it. The cycle now records when it began reading
+(`CycleReport.readAt`), and every claim it makes scans from there, or, for a handed-over item,
+from the hand-over. The same defect is on `main`; fixing it here was Adam's call.
+
+**A go-ahead lifts the stop before it in the comment list, not by the clock.** The wider window
+lets a claim see a stop that a go-ahead already answered, so a claim from the Igor's own search
+treats the latest stop as lifted by a go-ahead after it, from anyone but the Igor. GitHub dates
+comments to the second and returns them in creation order, so "after" is the position in the
+list, in the claim's re-read and in the cycle's stop gate alike. The held verdict carries the
+go-ahead's time, and the run's checkpoints and a catch-up's give-back scan from there, so a stop
+the claim saw lifted does not end the run that the claim began. A hand-over claim's stop is never
+lifted, by the decision above.
+
+**Open for Adam: whether a go-ahead can name an Igor.** A go-ahead that opens a comment counts
+for every Igor, whoever it names, so after a bare stop, "go ahead @igor-backend" lifts the stop
+for the frontend Igor too. Narrowing it the way a stop is narrowed is a decision about the
+go-ahead rule, which this change does not make.
+
 **A stop is the comment as created, not as last edited.** GitHub's `since` on an issue's comments
 filters on when each was last updated, so a stop said before a hand-over and edited later comes
 back. Verification, the catch-up's give-back and the search for handed-over items each count a

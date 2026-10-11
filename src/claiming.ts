@@ -40,6 +40,8 @@ export interface ClaimResult {
   spoke?: boolean
   /** Set where a person handed the item to this Igor; see `ClaimOptions.directed`. */
   directed?: true
+  /** Set where a go-ahead lifted a stop the claim's check found; see `ClaimVerdict.liftedAt`. */
+  liftedAt?: string
 }
 
 /**
@@ -293,12 +295,15 @@ export async function takeClaim(
       options.onSettle?.()
       await wait(role.settleSeconds * 1000)
     }
-    const verdict = await tracker.verifyClaim(candidate, identity, since)
+    // A go-ahead lifts a stop for work the Igor found itself, never for a hand-over the stop
+    // cancelled.
+    const verdict = await tracker.verifyClaim(candidate, identity, since, { liftable: options.directed !== true })
 
     if (verdict.status === 'held') {
       return {
         outcome: 'held', candidate, claimedAt, verdict, reason: 'claim stands',
         ...(options.directed === true ? { directed: true as const } : {}),
+        ...(verdict.liftedAt === undefined ? {} : { liftedAt: verdict.liftedAt }),
       }
     }
 
@@ -398,13 +403,16 @@ export async function standDown(
  * from the last check would leave a gap between checkpoints where a stop could land and never
  * be seen, and missing a stop is the failure this mechanism exists to prevent. Re-reading the
  * same comments each time costs less.
+ *
+ * Where a go-ahead lifted a stop when the claim was checked, the scan starts at that go-ahead
+ * instead, so the stop it lifted does not end the run it allowed.
  */
 export async function checkpoint(
   tracker: Tracker,
   claim: ClaimResult,
   identity: string,
 ): Promise<ClaimVerdict> {
-  const since = new Date(Date.parse(claim.claimedAt) - 1000).toISOString()
+  const since = claim.liftedAt ?? new Date(Date.parse(claim.claimedAt) - 1000).toISOString()
   return tracker.verifyClaim(claim.candidate, identity, since)
 }
 
@@ -413,7 +421,7 @@ export interface EligibilityInput {
   stoppedAt: string
   cooldownMinutes: number
   /**
-   * Everything said on the item since the stop, in any order. Fetched on demand, because it
+   * Everything said on the item after the stop, in creation order. Fetched on demand, because it
    * costs a request per item and most verdicts do not need it.
    */
   since: () => Promise<{ body: string; at: string }[]>

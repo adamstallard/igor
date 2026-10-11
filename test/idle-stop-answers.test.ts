@@ -56,4 +56,12 @@ describe('a stop on a handed-over item that no receipt answered', () => {
     const r = await findDirected(tracker([item(1)], () => person, () => said), role, ME, holding, { failures: [] })
     expect(show(r).stopped).toBe(1)
   })
+  it('is not one addressed to another Igor, which neither stops this Igor nor takes its label off', async () => {
+    const said = [
+      { author: ME, at: '2026-10-10T10:01:00Z', body: waitingNotice(role, ['igor:backend']) },
+      { author: 'adam', at: '2026-10-10T10:05:00Z', body: 'stop @igor-backend, frontend will take this' },
+    ]
+    const r = await findDirected(tracker([item(1, { holders: ['igor:frontend', 'igor:backend'] })], () => person, () => said), role, ME, holding, { failures: [] })
+    expect(show(r).stopped).toBe(0)
+  })
 })

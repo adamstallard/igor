@@ -146,6 +146,20 @@ describe('taking a claim', () => {
     expect(Date.parse(log.verifiedSince[0]!)).toBe(NOW - 10_000)
   })
 
+  it('lets a go-ahead lift a stop for its own claim, never for a hand-over or a checkpoint', async () => {
+    const { t } = tracker({ status: 'held' })
+    const liftable: (boolean | undefined)[] = []
+    const verify = t.verifyClaim.bind(t)
+    t.verifyClaim = async (c, as, since, o) => {
+      liftable.push(o?.liftable)
+      return verify(c, as, since, o)
+    }
+    const claim = await takeClaim(t, candidate(), role(), 'igor-bot', opts)
+    await takeClaim(t, candidate(), role(), 'igor-bot', { ...opts, directed: true })
+    await checkpoint(t, claim, 'igor-bot')
+    expect(liftable).toEqual([true, false, undefined])
+  })
+
   it('posts no claim message on a surface where the caller announces itself', async () => {
     const { t, log } = tracker({ status: 'held' })
     await takeClaim(t, candidate(), role(), 'igor-bot', { ...opts, announce: false })
@@ -422,6 +436,29 @@ describe('stop is unconditional', () => {
     expect(isStop('Stop-gap until the real fix lands', 'igor-bot')).toBe(false)
     expect(isStop('@igor-bot stop-gap measures are fine', 'igor-bot')).toBe(false)
     expect(isStop('stop. I will take it from here', 'igor-bot')).toBe(true)
+  })
+})
+
+describe('a stop that names an Igor', () => {
+  // Decided by Adam, 2026-10-11: a bare stop stops every Igor on the item; one that names Igors
+  // stops only those.
+  it('stops only the Igors it names', () => {
+    expect(isStop('stop @igor-backend, frontend will take this', 'igor-frontend[bot]')).toBe(false)
+    expect(isStop('stop @igor-backend, frontend will take this', 'igor-backend[bot]')).toBe(true)
+    expect(isStop('stop @igor-backend and @igor-frontend', 'igor-frontend[bot]')).toBe(true)
+    expect(isStop('stop @igor-frontend[bot]', 'igor-frontend[bot]')).toBe(true)
+  })
+
+  it('still stops everyone where it names nobody', () => {
+    expect(isStop('stop', 'igor-frontend[bot]')).toBe(true)
+    expect(isStop('stop, I have got this', 'igor-frontend[bot]')).toBe(true)
+    expect(isStop('stop. I will take it from here', 'igor-frontend[bot]')).toBe(true)
+  })
+
+  it('keeps the addressed form and its boundaries', () => {
+    expect(isStop('@igor-frontend stop', 'igor-frontend[bot]')).toBe(true)
+    expect(isStop('@code-reviewer stop', 'reviewer[bot]')).toBe(false)
+    expect(isStop('stop @code-reviewer', 'reviewer[bot]')).toBe(false)
   })
 })
 

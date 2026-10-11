@@ -160,7 +160,11 @@ export async function serve(
           break
         }
         emit({ kind: 'working', item: candidate, ...(gate.seat === undefined ? {} : { seat: gate.seat }) })
-        const run = await catchUpItem(deps, candidate, role, identity, { ...options, budget: gate })
+        const run = await catchUpItem(deps, candidate, role, identity, {
+          ...options,
+          budget: gate,
+          claim: { ...options.claim, since: report.readAt },
+        })
         summary.worked += 1
         summary.costUsd += run.costUsd ?? 0
         if (shouldDefer(run.outcome, run.handoff, run.cures)) {
@@ -205,11 +209,12 @@ export async function serve(
           ...options,
           budget: gate,
           lore,
-          // A directed claim scans for stops from the hand-over, so a stop said since the cycle
-          // read the item stops it.
-          ...(directed === true
-            ? { claim: { ...options.claim, directed: true, ...(handedOverAt === undefined ? {} : { since: handedOverAt }) } }
-            : {}),
+          // A claim scans for stops from when the cycle read the item, or for a handed-over item
+          // from the hand-over, so a stop said while the cycle worked other items stops it.
+          claim:
+            directed === true
+              ? { ...options.claim, directed: true, since: handedOverAt ?? report.readAt }
+              : { ...options.claim, since: report.readAt },
         })
         summary.worked += 1
         // A run whose cost never arrived adds nothing here, so this total is a floor. The

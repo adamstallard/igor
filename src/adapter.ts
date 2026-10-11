@@ -85,6 +85,12 @@ export interface ClaimVerdict {
    * Nothing a person wrote marks such a stop, so the receipt carries the mark the cooldown reads.
    */
   fromHolder?: true
+  /**
+   * Set on a held verdict where a go-ahead lifted a stop, to the go-ahead's creation time on the
+   * surface's clock. A later check scans for stops from here, so the stop it lifted does not end
+   * the run.
+   */
+  liftedAt?: string
 }
 
 /**
@@ -167,13 +173,20 @@ export interface Tracker {
   /**
    * Re-reads the item to answer held / lost / stopped in one operation, rather than adding a
    * second one. `since` bounds the scan for a stop to what arrived after the claim.
+   *
+   * With `liftable`, a go-ahead after the latest stop in the comments lifts it, as it does for the
+   * cycle's own stop gate. A directed claim and a mid-run checkpoint leave it off: only a new
+   * hand-over restores a hand-over a stop cancelled, and a stop during a run ends that run.
    */
-  verifyClaim(candidate: Candidate, as: string, since: string): Promise<ClaimVerdict>
+  verifyClaim(candidate: Candidate, as: string, since: string, options?: { liftable?: boolean }): Promise<ClaimVerdict>
 
   /**
    * What has been said on an item since a moment, so the loop can ask whether anyone answered
    * something it left. Distinct from `verifyClaim`, which reads comments to reach a verdict
    * and returns the verdict rather than the material.
+   *
+   * The comments arrive in creation order, which decides whether a go-ahead follows a stop where
+   * the two share a timestamp.
    */
   commentsSince(candidate: Candidate, since: string): Promise<Comment[]>
 

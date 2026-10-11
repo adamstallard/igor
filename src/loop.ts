@@ -589,8 +589,7 @@ export async function catchUpItem(
 
   // A person's label on the item is their hand-over, which a catch-up does not answer, so the
   // run gives back its claim through a tracker that leaves that label where it is, on every exit.
-  // The earliest a stop of this run can have been said: the floor `takeClaim` scans a claim's
-  // stops from.
+  // The earliest a stop of this run can have been said: the run's start less the settle interval.
   const floor = new Date((options.claim?.now ?? Date.now)() - role.settleSeconds * 1000).toISOString()
   const run = await runItem(
     { ...deps, tracker: keepingLabel(deps.tracker, floor) }, candidate, role, identity, { ...options, catchUp: artifact },
@@ -631,10 +630,10 @@ export async function catchUpItem(
  *
  * A stop of this run releases the label as any stop does, whether or not the run saw it: one that
  * lands after the run's last checkpoint, while the resolution is being pushed, is still a stop.
- * A stop of this run is one created at or after both the hand-over and `floor`, the run's start
- * less the settle interval. A stop said before either belongs to something else, such as one a
- * go-ahead or the cooldown already lifted, and a catch-up that ends any other way keeps the
- * label. Creation time decides, never the read's `since`, which a surface may apply to when a
+ * A stop of this run is one created at or after the hand-over, `floor`, the run's start less the
+ * settle interval, and, where the claim's check found a stop a go-ahead lifted, that go-ahead. A
+ * stop said before any of them belongs to something else, such as one a go-ahead or the cooldown
+ * already lifted, and a catch-up that ends any other way keeps the label. Creation time decides, never the read's `since`, which a surface may apply to when a
  * comment was last edited. A comment with no readable time counts. Where the comments cannot be
  * read, the label is kept.
  *
@@ -645,7 +644,15 @@ export async function catchUpItem(
  * there would tell that person to take back what they handed over.
  */
 function keepingLabel(tracker: Tracker, floor: string): Tracker {
+  // The go-ahead that lifted a stop the claim's check found, read off the check's held verdict.
+  // Only the claim's check is liftable, so a checkpoint's verdict never sets it.
+  let liftedAt: string | undefined
   return Object.assign(Object.create(tracker) as Tracker, {
+    verifyClaim: async (...args: Parameters<Tracker['verifyClaim']>): Promise<ClaimVerdict> => {
+      const verdict = await tracker.verifyClaim(...args)
+      if (verdict.status === 'held' && verdict.liftedAt !== undefined) liftedAt = verdict.liftedAt
+      return verdict
+    },
     release: async (candidate: Candidate, as: string, how?: ReleaseHow): Promise<boolean> => {
       // A stop removes the label whoever put it there, as any stop removes this Igor from the
       // holder field: the person who stopped it hands it over again by adding the label anew.
@@ -657,7 +664,10 @@ function keepingLabel(tracker: Tracker, floor: string): Tracker {
       // A failed read keeps a label the cycle saw, without asking whether a stop cancelled it.
       if (set === null) return candidate.holders.includes(tracker.holder) ? true : tracker.release(candidate, as)
       if (set?.self !== false) return tracker.release(candidate, as)
-      const from = Date.parse(set.at) > Date.parse(floor) ? set.at : floor
+      const from = [set.at, liftedAt].reduce<string>(
+        (a, b) => (b !== undefined && Date.parse(b) > Date.parse(a) ? b : a),
+        floor,
+      )
       const stopped = await tracker.commentsSince(candidate, from).then(
         (spoken) => notBefore(spoken, from).some((c) => isStop(c.body, as)),
         () => false,
@@ -761,6 +771,12 @@ export interface CycleReport {
    */
   stopped: CycleCandidate[]
   /**
+   * When the cycle began reading its items. A claim the cycle makes later scans for stops from
+   * here, so a stop said while the cycle worked other items is seen; a stop said earlier was the
+   * cycle's to read, and its reading decided whether the item came this far.
+   */
+  readAt: string
+  /**
    * Artifacts of the Igor's own that no longer merge. Kept apart from `toClaim` because they
    * cost no model call to decide on and are not claimed to act on — see `catchUpItem`.
    */
@@ -831,6 +847,7 @@ export async function planCycle(
 ): Promise<CycleReport> {
   const now = options.now ?? Date.now()
   const report: CycleReport = {
+    readAt: new Date(now).toISOString(),
     role: role.name,
     returned: 0,
     fresh: 0,
@@ -1247,7 +1264,9 @@ function instant(iso: string): number {
 }
 
 /**
- * The most recent stop, because the cooldown runs from the last one anybody issued.
+ * The most recent stop, because the cooldown runs from the last one anybody issued: the last in
+ * `spoken`, which is in creation order, so two stops in the same second, or one with no readable
+ * time, are ordered as they were said.
  *
  * A stop made by removing this Igor's label leaves no comment of its own, so this Igor's receipt
  * for it counts as the stop, at the receipt's time. Only this Igor's own: anyone can copy the
@@ -1258,7 +1277,7 @@ function latestStop(spoken: readonly Comment[], identity: string): Comment | und
   for (const comment of spoken) {
     const receipt = comment.author === identity && comment.body.includes(STOPPED_MARKER)
     if (!receipt && !isStop(comment.body, identity)) continue
-    if (latest === undefined || instant(comment.at) >= instant(latest.at)) latest = comment
+    latest = comment
   }
   return latest
 }
@@ -1335,9 +1354,10 @@ export async function dropStopped(
       since: async () =>
         spoken.filter(
           (c) =>
-            // Only what followed the stop. The window is wider than the stop, so an earlier
-            // go-ahead is in hand here and would otherwise lift a stop issued after it.
-            instant(c.at) >= instant(stop.at) &&
+            // Only what followed the stop, in the order it was said. The window is wider than
+            // the stop, so an earlier go-ahead is in hand here and would otherwise lift a stop
+            // issued after it, in the same second or before.
+            spoken.indexOf(c) > spoken.indexOf(stop) &&
             // Nothing the Igor says to itself is permission to resume, and a stop is the
             // wrong place to rely on its own receipt never matching a go-ahead.
             c.author !== identity &&

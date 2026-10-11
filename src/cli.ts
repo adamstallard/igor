@@ -426,7 +426,7 @@ program
     const { tracker } = deps
     const { gate: gateFor, loreFor, record, store } = await wire(config, role, destination, out)
 
-    const work = async (item: Candidate, directed = false, handedOverAt?: string) => {
+    const work = async (item: Candidate, directed = false, since?: string) => {
       const gate = await gateFor()
       const lore = loreFor(item)
       process.stdout.write(`\nworking ${item.id}  "${item.title}"\n  seat: ${gate.seat ?? '(unenforced)'}\n`)
@@ -436,7 +436,7 @@ program
       const live = process.stdout.isTTY === true
       let drawn = false
       const run = await runItem(deps, item, role, identity, {
-        ...(directed ? { claim: { directed: true, ...(handedOverAt === undefined ? {} : { since: handedOverAt }) } } : {}),
+        claim: { ...(directed ? { directed: true } : {}), ...(since === undefined ? {} : { since }) },
         budget: gate,
         lore,
         store,
@@ -533,7 +533,7 @@ program
 
     for (const c of report.toCatchUp) {
       const gate = await gateFor()
-      const run = await catchUpItem(deps, c.candidate, role, identity, { budget: gate, store })
+      const run = await catchUpItem(deps, c.candidate, role, identity, { budget: gate, store, claim: { since: report.readAt } })
       process.stdout.write(`  ${c.candidate.id}: ${run.reason}\n`)
       if (shouldDefer(run.outcome, run.handoff, run.cures)) {
         await noteHandoff(destination, c.candidate, run.reason).catch(() => undefined)
@@ -554,7 +554,7 @@ program
     }
     const cap = opts.maxItems === undefined ? report.toClaim.length : Number(opts.maxItems)
     for (const c of report.toClaim.slice(0, cap)) {
-      const run = await work(c.candidate, c.directed === true, c.handedOverAt)
+      const run = await work(c.candidate, c.directed === true, c.handedOverAt ?? report.readAt)
       // A closed budget stops the cycle rather than being rediscovered per item. Read off the
       // handoff kind rather than the prose, which is written for whoever reads the item.
       if (run.outcome === 'handed-off' && run.handoff === 'budget') {
