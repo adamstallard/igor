@@ -49,7 +49,8 @@ The failure in hand is one more. At three or more, the item is set down. A run r
 without a `kind`, which is every row written today.
 
 A count at or past three after a lifted deferral sets the item down on the first identical
-failure. That is deliberate (spec, *In a row*). An edit or a reply leaves no row here, so the
+failure. That is deliberate (spec, *In a row*; accepted by Adam, 2026-10-11): the answer that
+lifted the deferral did not cure the failure, and the alternative posts three more times. An edit or a reply leaves no row here, so the
 sequence carries on through it.
 
 ## What "identical" means: source and masked message
@@ -63,8 +64,8 @@ and `code-host` set `surfaceFailed`.
 The tree provider mints its git token through the code host's credential. A mint that fails
 inside a clone is still tagged `tree`, because the tag follows the interface the loop called.
 That is the right answer for the cycle rule: an expired clone token fails every item, and the
-cycle rule is about the tracker or code host not answering. It is also the case the first open
-question is about.
+cycle rule is about the tracker or code host not answering. A failure every item meets is caught
+by its own rule instead (*A failure every item meets ends the cycle*, below).
 
 **The message is masked before comparing.** In order:
 
@@ -81,8 +82,8 @@ the log sees what was compared.
   second.
 - **Rejected: the raw message.** A clone's message names its temporary directory, which differs
   every run, so no two would ever match and the breaker would never trip.
-- **Accepted risk.** Two failures whose messages differ only in a number, such as `HTTP 404` and
-  `HTTP 500`, count as identical. Both are the same call failing on the same item, and either way
+- **Accepted risk (Adam, 2026-10-11).** Two failures whose messages differ only in a number, such
+  as `HTTP 404` and `HTTP 500`, count as identical. Both are the same call failing on the same item, and either way
   the item is set down after three and comes back when answered.
 
 ## Outages: an `outage` row excludes the cycle's failures
@@ -101,10 +102,27 @@ or after `since` and before the outage row, does not count.
 - **Rejected: count no tracker or code-host failure at all.** Adam named a tracker or code-host
   call during the claim as a failure the breaker counts.
 
-A single item that meets an outage alone in its cycle has no second run to end the cycle, so its
-failure counts. That costs it one place in its count per outage cycle. It is accepted: with one
-run in the cycle, nothing can tell the item's failure from an outage, which is why the cycle rule
-counts two.
+A single item that meets an outage, or a failure every item meets, alone in its cycle has no
+second run to end the cycle, so its failure counts. That costs it one place in its count per
+such cycle. Adam accepted this on 2026-10-11: with one run in the cycle, nothing can tell the
+item's failure from an outage, which is why both cycle rules count two.
+
+## A failure every item meets ends the cycle (Adam, 2026-10-11)
+
+A full disk or an expired clone token fails every item before the worker, and in the working
+tree, so it is not a surface failure. Counted only per item, it would claim and post on every
+item for three cycles and then set down the whole backlog, which would stay deferred after the
+cause was fixed until someone answered each item.
+
+So the loop applies the outage rule's test, two in a row, to failures before the worker: when
+two runs in a row, of different items, fail with the same `source` and `signature`, the cycle
+ends. `serve` appends an `outage` row naming both items, the same row the surface rule writes, so
+*Counting* excludes both failures with no new row kind. This does not make a tree failure a
+surface failure: `surfaceFailed` still follows only the tracker and code-host tags.
+
+The comparison needs nothing from the log. The loop keeps the previous run's item, source and
+signature for the length of one cycle, which a crash loses at no cost: the next cycle starts
+comparing afresh.
 
 ## Where the set-down is said
 

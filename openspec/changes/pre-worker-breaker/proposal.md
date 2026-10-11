@@ -44,11 +44,14 @@ two-in-a-row rule counts a run only where a call to the tracker or the code host
 failure in the working tree or in the Igor's own code does not count. Which call failed is known
 from which surface's call threw, not read from the error's wording.
 
+**A failure every item meets ends the cycle (Adam, 2026-10-11).** When two runs in a row, of
+different items, fail before the worker identically, as a full disk or an expired clone token
+makes them, the cycle ends and neither failure counts toward its item's breaker. An item alone in
+its cycle counts such a failure once. Without this, every item would be claimed and posted on
+three times and then set down, and stay down after the cause was fixed.
+
 Out of scope:
 
-- **A failure every item meets, such as a full disk.** It is not a surface failure, so it does
-  not end the cycle. Each item is claimed and fails on three cycles, is then set down, and waits
-  for an answer even after the disk is fixed.
 - **Making the threshold configurable.** Three is a constant, chosen as #101's credential
   threshold was: one trips on a blip, two can be coincidence.
 - **Catch-ups the code host settles on its own.** They take no claim and post nothing, so there
@@ -62,8 +65,9 @@ None.
 
 ### Modified Capabilities
 
-- `work-claiming`: a failure before the worker that repeats three times sets the item down, and
-  only a tracker or code-host failure counts as the surface failing. Both are added as
+- `work-claiming`: a failure before the worker that repeats three times sets the item down, two
+  identical ones on different items in a row end the cycle, and only a tracker or code-host
+  failure counts as the surface failing. Both are added as
   requirements of their own rather than as changes to *A claim that cannot be kept is given back,
   out loud*, which `one-claiming-surface` also modifies.
 
@@ -74,7 +78,8 @@ None.
   the third. Its claim-window path does the same for a refused claim.
 - `src/claiming.ts`: the claim withdrawal carries the set-down sentence on the third failure.
 - `src/handoff.ts`: a `set-down` tail for a failure handoff.
-- `src/serve.ts`: appends an outage row when it ends a cycle, naming the items it covers.
+- `src/serve.ts`: ends a cycle on two identical failures before the worker on different items in
+  a row, and appends an outage row whenever it ends a cycle, naming the items it covers.
 - `src/wiring.ts`, `src/cli.ts`: write a row for each failure before the worker, and supply the
   count reader.
 - Readers of `executions.ndjson`: any that counts runs skips rows carrying a `kind`, the rule

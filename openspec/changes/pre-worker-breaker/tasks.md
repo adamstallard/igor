@@ -1,7 +1,8 @@
 ## 1. The agreement (gate one, this pull request)
 
 - [x] 1.1 `work-claiming`: only a tracker or code host failing counts as the surface failing; a
-      failure before the worker that repeats three times sets the item down
+      failure before the worker that repeats three times sets the item down; two identical ones
+      on different items in a row end the cycle
 - [x] 1.2 `design.md`: the count rebuilt from `executions.ndjson`, what "identical" means, how an
       outage is excluded, and where the set-down is said
 
@@ -14,8 +15,8 @@
       claimed-run handler and in `takeClaim`'s claim window (whose calls are all the tracker's).
       Update the `surfaceFailed` doc comment in `ItemRun` and the comment above `abandon` in
       `src/serve.ts`, which say every throw counts
-- [ ] 2.3 Tests: two items in a row failing to clone do not end the cycle; two failing on a
-      tracker call do; a code-host failure after the worker ran counts
+- [ ] 2.3 Tests: two items in a row failing to clone in different ways do not end the cycle; two
+      failing on a tracker call do; a code-host failure after the worker ran counts
 
 ## 3. The breaker
 
@@ -58,6 +59,12 @@
       is `condition-backoff`'s task 2.3 too; whichever lands first adds it. Today's spend
       readers only sum cost, which a row without one leaves unchanged, so check each rather
       than assume
+- [ ] 4.5 `serve` ends a cycle when two runs in a row, of different items, fail before the worker
+      with the same source and signature, keeping the previous run's item, source and signature
+      for the cycle only, and appends the same `outage` row as 4.2, naming both items
+- [ ] 4.6 Tests, one per scenario in *Two identical failures before the worker on different items
+      end the cycle*: the cycle ends and neither count moves; different failures continue and
+      both count; an item alone in its cycle counts once
 
 ## 5. Close
 

@@ -16,7 +16,7 @@ the cycle one item early when a real outage follows it.
 #### Scenario: A working tree that cannot be provisioned is not a surface failure
 
 - **WHEN** an item's run fails because its working tree could not be cloned, and the next item's
-  run fails the same way
+  run fails in its working tree in a different way
 - **THEN** the cycle continues to the remaining items and is not recorded as failed
 
 #### Scenario: A tracker that does not answer is still a surface failure
@@ -56,7 +56,8 @@ The answer that lifted it did not cure the failure.
 memory.
 
 **An outage is not the item's failure.** A run that failed in a cycle the outage rule then ended
-SHALL NOT count toward any item's breaker. Without this, an outage of three polls sets down the
+SHALL NOT count toward any item's breaker, and neither SHALL a run that *Two identical failures
+before the worker on different items end the cycle* ended. Without this, an outage of three polls sets down the
 items that sort first, each waiting for an answer about a fault that was never theirs.
 
 **The deferral SHALL lift exactly as any handed-back item's does** (`work-triage`, *An item handed
@@ -124,3 +125,38 @@ record is a cache, and failing toward the work is the right direction for one.
 
 - **WHEN** a run fails before the worker and the run record cannot be read
 - **THEN** the run is refused and the item is tried again next cycle
+
+### Requirement: Two identical failures before the worker on different items end the cycle
+
+A failure every item meets, such as a full disk or an expired clone token, is not a surface
+failure, and it is not any one item's failure either. When two runs in a row, of different items,
+fail before the worker identically, the cycle SHALL end and its remaining items SHALL NOT be
+attempted. **Identical** has the meaning *A failure before the worker that repeats sets the item
+down* gives it: the same source and the same masked message. Neither run SHALL count toward its
+item's breaker.
+
+Without this rule, such a failure claims and posts on every item for three cycles and then sets
+down the whole backlog, which stays deferred after the cause is fixed until someone answers each
+item.
+
+An item that meets such a failure alone in its cycle, with no second run to compare, SHALL count
+it toward its breaker, once per cycle. With one run, nothing tells the item's failure from the
+environment's.
+
+#### Scenario: Two items failing to clone the same way end the cycle
+
+- **WHEN** an item's working tree fails to clone, and the next item's working tree fails to clone
+  the same way
+- **THEN** the cycle ends and the remaining items are not attempted
+- **AND** neither failure counts toward its item's breaker
+
+#### Scenario: Two items failing in different ways do not end the cycle
+
+- **WHEN** two items in a row fail before the worker, in different ways
+- **THEN** the cycle continues to the remaining items
+- **AND** each failure counts toward its own item's breaker
+
+#### Scenario: An item alone in its cycle counts the failure
+
+- **WHEN** a cycle runs one item, and it fails before the worker in a way every item would
+- **THEN** the failure counts once toward that item's breaker
