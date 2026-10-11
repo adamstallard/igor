@@ -50,5 +50,6 @@ capability's requirements change. The rule covers every call, so it lives in one
   The skills check here uses no seat, so it neither depends on them nor duplicates them.
 - `docs/deployment.md` gains the install procedure: a root-owned plugin directory outside the
   service's writable paths, filled by the manager from a clone at a fixed commit.
-- **If task 0.1 finds that a plugin skill does not run under `--bare`**, gate two stops and the
-  choice of flag goes back to Adam.
+- **Under `--bare`, a skill runs only when a call opens with `/igor:<name>`** (task 0.1): the
+  model has no Skill tool there. Igor then runs each skill as its own step. Whether Igor passes
+  `--bare` at all is open, with Adam.

@@ -1,11 +1,14 @@
 ## 0. Before building
 
-- [ ] 0.1 With `ANTHROPIC_API_KEY`, run `claude -p --bare --plugin-dir <dir>` against a plugin
+- [x] 0.1 With `ANTHROPIC_API_KEY`, run `claude -p --bare --plugin-dir <dir>` against a plugin
       the manager filled (symlinks into a clone) and ask the model to use `igor:prose`. Record
       in `design.md` whether the skill runs, and which directory Claude Code reports to the
       model: the link under `<dir>/skills/` or the clone it resolves to. **If the skill does not
       run, stop: the choice of flag goes back to Adam.** If the reported directory is the
-      clone, #153's grants and the paragraph in 4.1 name the clone's path instead
+      clone, #153's grants and the paragraph in 4.1 name the clone's path instead. Done
+      2026-10-11 with a setup-token through `apiKeyHelper`: the skill runs under `--bare` only
+      as the opening `/igor:<name>`, and its base directory is the plugin's. See `design.md`,
+      *Measured with a model*
 - [ ] 0.2 Confirm the shared-skills commit to pin carries bug-hunter's caller-commits mode
       (`caller-result.sh`) and prose's `start`, `check`, `sign`, `verify-staged` and
       `verify-post`

@@ -56,6 +56,18 @@ repository, loads under its own name beside `igor:<name>` and does not replace i
 - **WHEN** `skills_dir` is absent
 - **THEN** no `claude -p` call carries `--plugin-dir`
 
+### Requirement: A call under `--bare` uses a skill only as its opening command
+
+Under `--bare`, the model has no Skill tool, and it cannot be added back; a skill runs only
+when the call's prompt opens with `/igor:<name>` (measured). Where Igor passes `--bare`, a step
+that uses a skill SHALL be its own `claude -p` call whose prompt opens with `/igor:<name>`. A
+step SHALL NOT rely on the model invoking a skill mid-task under `--bare`.
+
+#### Scenario: A skill step opens with the skill's command
+
+- **WHEN** Igor runs a step that uses `bug-hunter` under `--bare`
+- **THEN** the step's prompt opens with `/igor:bug-hunter`
+
 ### Requirement: Igor confirms its skills load before its first model call
 
 Before it spawns its first `claude -p` that could spend a seat, Igor SHALL run

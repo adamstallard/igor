@@ -6,11 +6,45 @@ directory and is due to become the default for `-p` (#144). The issue named the 
 `--add-dir`. The measurement below found that `--add-dir` loads the skills but does not keep
 them pinned, and Adam chose `--plugin-dir` on #174 (2026-10-11).
 
-**This rests on task 0.1.** No API key was available, so no measurement reached a model. If
-task 0.1 finds that a plugin skill does not run under `--bare`, gate two stops and the choice of
-flag goes back to Adam.
+**Task 0.1 found that a plugin skill runs under `--bare` only as the call's opening slash
+command** (below). The model has no Skill tool there, so it cannot reach for a skill mid-task.
+Whether Igor passes `--bare` at all is open, with Adam.
 
-## Measured, 2026-10-11
+## Measured with a model, 2026-10-11 (task 0.1)
+
+Run by the coordinating agent: Claude Code 2.1.296, model haiku, the `claude-adam-personal`
+setup-token, a scratch plugin `igor` holding one skill `canary` that replies `PLUGIN-CANARY-OK`
+and its base directory, run from a fresh `/tmp` directory. Its results, verbatim:
+
+1. **Without `--bare`:** the token authenticates through `CLAUDE_CODE_OAUTH_TOKEN`;
+   `igor:canary` loads; the model calls the Skill tool with `igor:canary`, and the skill runs.
+   The base directory it receives is the plugin's own skill directory (`<plugin>/skills/canary`).
+2. **Under `--bare` with `CLAUDE_CODE_OAUTH_TOKEN`:** authentication fails ("OAuth session
+   expired and could not be refreshed", `apiKeySource: none`). `claude --help` confirms: under
+   `--bare`, "Anthropic auth is strictly ANTHROPIC_API_KEY or apiKeyHelper via --settings (OAuth
+   and keychain are never read)".
+3. **Under `--bare` with the same setup-token supplied by `apiKeyHelper` in a `--settings`
+   file:** it authenticates (`apiKeySource: apiKeyHelper`), and the model runs.
+4. **Under `--bare`, the model has no Skill tool.** The default tool set is Bash, Edit and Read
+   only. `igor:canary` appears in the init event's skills list, but the model can't invoke it,
+   and it went searching the disk instead. `--tools "Read,Skill"` yields only `Read`: Skill
+   cannot be added back.
+5. **Under `--bare`, a prompt of `/igor:canary` runs the skill** (the slash form), and it
+   receives the plugin's base directory.
+
+What follows for this change:
+
+- **The conditional decision holds.** Adam chose `--plugin-dir` provided a plugin skill runs
+  under `--bare`, and one does, when the call starts with `/igor:<name>`.
+- **Under `--bare`, Igor runs each skill as its own step:** a `claude -p` call whose prompt
+  starts with `/igor:<name>`. *A call under `--bare` uses a skill only as its opening command*
+  in the spec says so.
+- **The base directory is the plugin's**, `<skills_dir>/skills/<name>`, not a resolved clone.
+  So #153's grants under `<skills_dir>/skills` match the path the model is given. The setup does
+  not say whether `canary` was a symlink, as the manager installs; if it was a plain directory,
+  a link's reported path is the one point still unmeasured.
+
+## Measured without a credential, 2026-10-11
 
 Claude Code 2.1.296 on macOS. Every call ran under `env -i PATH=… HOME=…`, so no credential was
 present. The `system/init` event arrives before authentication, so loading could be measured
@@ -138,9 +172,16 @@ includes it, the paragraph and its requirement are removed (task 4.3).
   `prose start`, `verify-post` and `verify-staged` from the same place for it. A role that
   lists `bug-hunter` is granted `<skills>/bug-hunter/scripts/caller-result.sh` and `git add`. A
   step that names a skill names `igor:prose` or `igor:bug-hunter`.
-- **A grant by path needs the model to use that path.** Which directory Claude Code reports to
-  the model when a plugin skill loads, the link's or the resolved clone's, needs a model call to
-  see. Task 0.1 measures it.
+- **A grant by path needs the model to use that path.** Task 0.1 found that a plugin skill is
+  given `<skills_dir>/skills/<name>` as its base directory, the path the grants name.
+- **Under `--bare`, each skill is its own step.** #153's commit steps already are: bug-hunter
+  and the prose pass are separate `claude -p` calls Igor starts, so each can open with
+  `/igor:bug-hunter` or `/igor:prose`. The worker needs no skill call: Igor runs `prose start`
+  and puts the rules in its system prompt (#153, item 1). A step whose main task is something
+  else, such as writing a reply that it then signs, has no Skill tool under `--bare`. It can
+  still run `prose.py sign` by path, which prints the rules itself, but it does not get the
+  skill's instructions unless its prompt opens with `/igor:prose`, with the task as the
+  command's arguments. That form is not measured.
 - **Hooks.** The install wires none, and the plugin declares none, so prose's first-write gate
   never runs in a worker. Igor's `prose start` (#153, item 1) still runs.
 - **`prose start` writes its session mark** under `$XDG_STATE_HOME`, or `~/.local/state`
