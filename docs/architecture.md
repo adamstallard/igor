@@ -1317,6 +1317,15 @@ threshold it crossed in `surpassedThreshold` — or `rejected`; `isUsingOverage`
 usage is being spent. `unifiedWindows` reported the five-hour window at 7% while the event was
 about the weekly one, so every window appears to be included whichever one is being warned about.
 
+**A seat below every threshold reports too** (measured 2026-10-11, on a seat at 42% of its
+five-hour window and 11% of its week, status `allowed`). The event arrives with `utilization`
+and `resetsAt` for both windows inside `unifiedWindows`, and with no top-level `utilization` or
+`surpassedThreshold`: the top level carries `status`, `resetsAt`, `rateLimitType`,
+`isUsingOverage`, and `overageStatus` with `overageDisabledReason`. So `unifiedWindows` is where a
+reading is taken, whatever the status. **A run gets one event, right after its first API call's
+response**, and none after later calls, so a reading describes the seat as the run began. The
+captures are kept with the `read-seat-windows-from-the-stream` change.
+
 **What Igor does with it.**
 
 - **Every worker run is a reading of its own seat**, taken with the seat's own credential: no
@@ -1331,9 +1340,6 @@ about the weekly one, so every window appears to be included whichever one is be
 
 **Still open.**
 
-- **A seat below every threshold.** This capture was past 75% of the week. Events are known to
-  appear on ordinary runs, but whether one on a seat under every threshold carries the numbers is
-  unverified; a fresh seat's first run settles it.
 - **Per-model weekly windows** do not appear in the event, so per-model tracking still needs
   another source.
 - **The exhausted shape** is contributor-reported as `status: "rejected"`, `utilization: 1`, and a

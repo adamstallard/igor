@@ -1,19 +1,25 @@
 ## 1. Before building against it
 
-- [ ] 1.1 **Taken before anything below is built, and gates the seat probe.** Measure whether a seat below every warning threshold emits
-      a `rate_limit_event` at all, and if it does, whether the event carries `utilization` and
-      `unifiedWindows`. Take the capture on the fresh Max seat Adam is buying, before anything
-      else runs on it: one minimal `claude -p … --output-format stream-json --verbose` call under
-      its `setup-token`, with the full stream kept. Record the answer in `design.md` and in
-      `docs/architecture.md` §6.3.3. If no event arrives, the stream reading (sections 2–5) is
-      still built, because a reading that arrives only past a threshold is still worth recording.
-      The seat probe (section 6) is not built as written, and what starts a fresh reserved seat
-      goes back to Adam as `design.md` *A seat probe* describes, since under the line such a seat
-      is not drawn on without a reading
-- [ ] 1.1a In the same capture, and on the next few ordinary worker runs, record **when** in a run
-      each `rate_limit_event` arrives relative to the run's first and last API call. This bounds
-      how far past its line one run can carry a seat (`design.md`, *How far past the line one
-      Igor can go*); record the answer there
+- [x] 1.1 **Taken before anything below is built, and gates the seat probe.** Measure whether a seat
+      below every warning threshold emits a `rate_limit_event` at all, and if it does, whether the
+      event carries `utilization` and `unifiedWindows`. Take the capture on the fresh Max seat Adam
+      is buying, before anything else runs on it: one minimal `claude -p … --output-format
+      stream-json --verbose` call under its `setup-token`, with the full stream kept. Record the
+      answer in `design.md` and in `docs/architecture.md` §6.3.3. If no event arrives, the stream
+      reading (sections 2–5) is still built, because a reading that arrives only past a threshold is
+      still worth recording. The seat probe (section 6) is not built as written, and what starts a
+      fresh reserved seat goes back to Adam as `design.md` *A seat probe* describes, since under the
+      line such a seat is not drawn on without a reading. Measured 2026-10-11 on
+      `claude-adam-personal` rather than a fresh seat, since it was below every threshold (42% of
+      the five-hour window, 11% of the week, `allowed`): an event arrives, with `utilization` and
+      `resetsAt` per window in `unifiedWindows` and none at the top level. The probe is built as
+      written. Captures in `captures/`
+- [x] 1.1a In the same capture, and on the next few ordinary worker runs, record **when** in a run
+      each `rate_limit_event` arrives relative to the run's first and last API call. This bounds how
+      far past its line one run can carry a seat (`design.md`, *How far past the line one Igor can
+      go*); record the answer there. Measured 2026-10-11: one event per run, right after the first
+      API call's response, none after later calls; so the bound is about two runs per process
+      (`design.md`)
 - [ ] 1.2 Keep the capture as a test fixture beside the 2026-09-27 one from §6.3.3, so the parser
       is tested against what the provider sent rather than what was guessed
 

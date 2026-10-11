@@ -365,14 +365,15 @@ back.
 Igor "hands off any in progress" at the bound, and that is replaced: stopping mid-item wastes what
 was spent. This is the rule calibration admission already had for a run that crossed.
 
-**How far past the line one Igor can go.** Between readings an Igor does not see its own spend.
-The gate before an item sees the last reading the previous run carried, and that reading is
-timed when its event arrived. So an Igor can pass the line by the item it admits plus whatever the
-previous run spent after its last event. Where a run's last event arrives near its end, that is
-about one run's spend, which is the cost Adam accepted. Where it arrives near the start, it can
-approach two. How late in a run the last event arrives is unmeasured, and task 1.1a measures it.
-Adam accepted this bound on 2026-09-28, as stated: about one run per process, up to two if a run's
-last event comes early. Every run carries a fresh reading, so the overshoot does not compound.
+**How far past the line one Igor can go.** Between readings an Igor does not see its own spend. The
+gate before an item sees the last reading the previous run carried, and that reading is timed when
+its event arrived. So an Igor can pass the line by the item it admits plus whatever the previous run
+spent after its last event. Where a run's last event arrives near its end, that is about one run's
+spend, which is the cost Adam accepted. Where it arrives near the start, it can approach two.
+Measured 2026-10-11 (task 1.1a): a run gets one event, right after its first API call's response, so
+the last event is also the first, and the bound is the upper one, about two runs per process. Adam
+accepted this bound on 2026-09-28, as stated: about one run per process, up to two if a run's last
+event comes early. Every run carries a fresh reading, so the overshoot does not compound.
 
 **Per Igor, not coordinated (settled by Adam, 2026-09-28).** Every Igor on a seat reads the same
 whole-seat reading, so they are held to one line without adding up each other's books. Each
