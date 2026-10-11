@@ -116,9 +116,16 @@ cause was fixed until someone answered each item.
 
 So the loop applies the outage rule's test, two in a row, to failures before the worker: when
 two runs in a row, of different items, fail with the same `source` and `signature`, the cycle
-ends. `serve` appends an `outage` row naming both items, the same row the surface rule writes, so
-*Counting* excludes both failures with no new row kind. This does not make a tree failure a
-surface failure: `surfaceFailed` still follows only the tracker and code-host tags.
+ends. Whichever cycle ended appends an `outage` row naming both items, the same row the surface
+rule writes, so *Counting* excludes both failures with no new row kind. This does not make a
+tree failure a surface failure: `surfaceFailed` still follows only the tracker and code-host
+tags.
+
+**Both cycles apply it: `serve`'s and the single cycle `igor run` runs.** They share no cycle
+code: `serve` keeps its surface-failure count in `src/serve.ts`, and `src/cli.ts` runs its own
+loop over the items it claims. A rule in only one of them would let the other set down the whole
+backlog, so the comparison is one function both loops call. The coordinating agent decided this
+on 2026-10-11, not Adam.
 
 The comparison needs nothing from the log. The loop keeps the previous run's item, source and
 signature for the length of one cycle, which a crash loses at no cost: the next cycle starts

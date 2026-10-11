@@ -80,6 +80,7 @@ None.
 - `src/handoff.ts`: a `set-down` tail for a failure handoff.
 - `src/serve.ts`: ends a cycle on two identical failures before the worker on different items in
   a row, and appends an outage row whenever it ends a cycle, naming the items it covers.
+- `src/cli.ts`: its single cycle ends on the same two failures and appends the same outage row.
 - `src/wiring.ts`, `src/cli.ts`: write a row for each failure before the worker, and supply the
   count reader.
 - Readers of `executions.ndjson`: any that counts runs skips rows carrying a `kind`, the rule

@@ -59,12 +59,14 @@
       is `condition-backoff`'s task 2.3 too; whichever lands first adds it. Today's spend
       readers only sum cost, which a row without one leaves unchanged, so check each rather
       than assume
-- [ ] 4.5 `serve` ends a cycle when two runs in a row, of different items, fail before the worker
-      with the same source and signature, keeping the previous run's item, source and signature
-      for the cycle only, and appends the same `outage` row as 4.2, naming both items
+- [ ] 4.5 Both cycles end when two runs in a row, of different items, fail before the worker
+      with the same source and signature: `serve`'s, and the single cycle `igor run` runs in
+      `src/cli.ts`. The two share no cycle code, so put the comparison in one function both call,
+      keeping the previous run's item, source and signature for the cycle only. Each cycle that
+      ends this way appends the same `outage` row as 4.2, naming both items
 - [ ] 4.6 Tests, one per scenario in *Two identical failures before the worker on different items
-      end the cycle*: the cycle ends and neither count moves; different failures continue and
-      both count; an item alone in its cycle counts once
+      end the cycle*, through both `serve` and `igor run`: the cycle ends and neither count moves;
+      different failures continue and both count; an item alone in its cycle counts once
 
 ## 5. Close
 
