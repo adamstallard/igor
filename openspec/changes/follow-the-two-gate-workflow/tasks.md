@@ -44,6 +44,9 @@ Line numbers are as of `main` at `511e519`.
 - [ ] 3.6 Tests against fixtures: current, superseded by a revision, not superseded by a
       merge, answered, not answered by an unrelated Igor post or someone else's comment,
       dismissed, comment-only, several authors
+- [ ] 3.7 Where #151 has stopped counting a bare mention as work in flight, `inFlightFrom` still
+      counts an open pull request authored by the Igor's App on the branch `branchFor` names for
+      the item, without a Development link (design, Decided 2026-10-11)
 
 ## 4. Authority
 

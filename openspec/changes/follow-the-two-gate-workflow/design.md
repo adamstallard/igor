@@ -60,6 +60,16 @@ they were listed as questions 11–13, and Adam confirmed them.
   named the assignee, and the rediscovery scenario in `work-triage` says the Igor released its
   claim where it said it unassigned itself. Amended 2026-10-04.
 
+## Decided (Adam, 2026-10-11)
+
+- **A gate-one spec pull request keeps its issue in flight because it is recognisable as the
+  Igor's own, not through a link.** It is recognised by its author, the Igor's App (`Bot`), and
+  its branch, which `branchFor` names after the item (`igor/<role>/<n>-<slug>`). A Development
+  link is not used: it sets `willCloseTarget`, so merging gate one would close the issue with
+  nothing built. This settles the open question in Risks, *A mention alone already makes an
+  issue "in flight"*, for #151: when #151 stops counting a bare mention as work in flight, an
+  Igor's own gate-one pull request still counts.
+
 ## Decisions made here
 
 Each of these follows from the settled decisions above, or from requirements already in force.
@@ -375,12 +385,12 @@ reversed question 5 on 2026-10-04.
   any open pull request's body creates the `CROSS_REFERENCED_EVENT` that `inFlightFrom` reads,
   and `inFlightFrom` returns the first open pull request it finds. So an issue that an unrelated
   open pull request merely discusses is skipped as work in flight. Observed on 2026-09-28: issue
-  #139 reads as in flight because open PR #140 mentions it. Filed as #151. Fixing it by counting only real links
-  (`willCloseTarget`, or a Development link) would make gate one's `Answers #n` PR invisible, so
-  gate one then needs a link that marks the work without closing the issue. That has to be
-  settled here or on #151 before this change's implementation lands. Gate one relies on that same event,
-  so this change neither fixes nor worsens it. It does mean a spec pull request that discusses
-  another issue makes that issue skip. This may deserve its own issue.
+  #139 reads as in flight because open PR #140 mentions it. Filed as #151. Counting only real
+  links (`willCloseTarget`) would make gate one's `Answers #n` pull request invisible, so an
+  Igor's own gate-one pull request is recognised by its author and branch instead (Decided,
+  2026-10-11). Until #151 lands, gate one relies on the mention event, so this change neither
+  fixes nor worsens the problem; a spec pull request that discusses another issue still makes
+  that issue skip.
 
 ## Roads not taken
 
