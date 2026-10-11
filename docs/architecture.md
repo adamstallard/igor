@@ -1657,8 +1657,9 @@ removes every `igor-tree-*` directory older than the worker's absolute ceiling p
 the `-outbox` directory beside each one. A crash strands both, and the outbox is the one holding
 the run's declarations.
 
-**Age is the only safe signal.** Several processes of one role can run at once (§6.7.1), so a
-tree that looks idle may belong to a live sibling. The threshold therefore sits above the longest
+**Age is the only safe signal.** Several Igor processes can share one temp directory: different
+roles already do when run by hand, and §6.7.1 plans several processes of one role. So a tree that
+looks idle may belong to a live sibling. The threshold therefore sits above the longest
 a tree can be in use: the worker's ceiling, plus the clone before it and the push after it.
 Deleting a live sibling's tree corrupts its run, while leaving debris an hour longer only costs
 disk.
