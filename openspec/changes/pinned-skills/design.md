@@ -1,84 +1,84 @@
 ## Context
 
 Issue [#152](https://github.com/adamstallard/igor/issues/152) decides that Igor loads its skills
-from one pinned directory, passed to every `claude -p` with `--add-dir`, because `--bare` skips
-skills in the home directory and is due to become the default for `-p` (#144). This design
-records what a measurement showed about that mechanism, including where it contradicts the
-issue, and how the change composes with #153, #144 and #143.
+from one pinned directory named on every `claude -p`, because `--bare` skips skills in the home
+directory and is due to become the default for `-p` (#144). The issue named the directory with
+`--add-dir`. The measurement below found that `--add-dir` loads the skills but does not keep
+them pinned, and Adam chose `--plugin-dir` on #174 (2026-10-11).
+
+**This rests on task 0.1.** No API key was available, so no measurement reached a model. If
+task 0.1 finds that a plugin skill does not run under `--bare`, gate two stops and the choice of
+flag goes back to Adam.
 
 ## Measured, 2026-10-11
 
-Claude Code 2.1.296 on macOS. The scratch setup, under the job's temporary directory:
+Claude Code 2.1.296 on macOS. Every call ran under `env -i PATH=… HOME=…`, so no credential was
+present. The `system/init` event arrives before authentication, so loading could be measured
+without one. Each call then ended `is_error: true`, `Not logged in · Please run /login`,
+`total_cost_usd: 0`, exit 1. Skills were installed by the shared-skills manager
+(`skills.py install --no-hook prose bug-hunter`, with `SHARED_SKILLS_TARGET` set) from a clone
+checked out at `6d0ae49`, as absolute symlinks into the clone.
 
-- a directory whose `.claude/skills/` held one plain skill, one skill linked by a relative
-  symlink, a command under `.claude/commands/` and an agent under `.claude/agents/`;
-- a second directory filled by the shared-skills manager (`skills.py install prose bug-hunter
-  --no-hook` with `SHARED_SKILLS_TARGET` set), from a clone checked out at `6d0ae49`.
+### `--plugin-dir`, the mechanism this change uses
 
-Every call ran under `env -i PATH=… HOME=…`, so no credential was present. **No API key was
-available**, so no call reached a model. The `system/init` event arrives before authentication,
-though, so loading could be measured without one. Each call ended `is_error: true`,
-`Not logged in · Please run /login`, `total_cost_usd: 0`, exit 1.
+The plugin directory held `.claude-plugin/plugin.json` (`{"name": "igor", …}`) and the
+manager's links under `skills/`.
+
+| invocation | relevant skills in `system/init` |
+|---|---|
+| `--bare --plugin-dir <dir>` | `igor:prose`, `igor:bug-hunter`. No home skills. |
+| `--plugin-dir <dir>`, no `--bare`, with a `prose` in `HOME`'s `.claude/skills` and a repository skill in the working directory | `prose` and the repository's skill, beside `igor:prose` and `igor:bug-hunter` |
+
+- **A plugin skill's name carries the plugin's name**, so a same-named skill elsewhere loads
+  beside it and cannot replace it.
+- **The plugin loads under `--bare`** and appears in the event's `plugins` list.
+- **`--plugin-dir` grants no file access.** `claude --help` describes `--add-dir` as
+  "Additional directories to allow tool access to"; `--plugin-dir` only loads a plugin.
+
+### What holds whichever flag is used
+
+- **`--bare` drops the home skills.** `prose` and `bug-hunter`, installed in Adam's
+  `~/.claude/skills`, were missing under `--bare`.
+- **A skill's scripts resolve their shared library through the manager's link.** `prose.py`
+  takes its directory from `Path(__file__).resolve()`, and bug-hunter's `caller-result.sh` from
+  `cd -P "$(dirname "$0")"`. Run through the links, both worked: `caller-result.sh` printed a
+  full result block.
+- **The manager installs without hooks.** It has `install --no-hook`. And with
+  `SHARED_SKILLS_TARGET` set but `SHARED_SKILLS_HOOK_HOME` unset, it wires no hooks anyway
+  (`auto_enable_hooks`).
+- **The skills' own instructions point at the home directory.** Prose's `SKILL.md` defines its
+  scripts directory as `~/.agents/skills/prose/scripts` or `~/.claude/skills/prose/scripts`.
+  Bug-hunter's names `~/.agents/skills/bug-hunter/scripts/caller-result.sh`, then the
+  `~/.claude` one. On an Igor server those paths are missing or hold an unpinned copy.
+
+### Rejected: `--add-dir`
+
+The issue's choice. Measured with a directory whose `.claude/skills/` held the skills:
 
 | invocation | skills in `system/init` |
 |---|---|
-| `--bare --add-dir <dir>` | the two skills from `<dir>`, plus the built-in ones. No home skills. |
+| `--bare --add-dir <dir>` | the skills from `<dir>`, including through a symlink, plus the built-in ones |
 | `--bare` alone | the built-in skills only |
-| `--add-dir <dir>`, no `--bare` | the home skills, the two from `<dir>`, and the built-in ones |
-| `--bare --add-dir <manager-installed dir>` | `prose` and `bug-hunter`, through the manager's absolute symlinks |
+| `--add-dir <dir>`, no `--bare` | the home skills, the skills from `<dir>`, and the built-in ones |
 
-### What the issue's design holds
+It loads the skills, but it fails the issue's purpose, a pinned copy, in two ways:
 
-- **`--bare` skips home skills, and `--add-dir` brings skills back.** `prose` and `bug-hunter`,
-  installed in Adam's `~/.claude/skills`, were missing under `--bare`. Skills under the added
-  directory loaded, including through a symlink. This matches the docs the issue quotes.
-- **Under `--bare`, commands and agents in the added directory do not load.** Without `--bare`
-  they do: `pinned-cmd` appeared in `slash_commands` and `pinned-agent` in `agents`.
-- **A skill's scripts resolve their shared library through the link.** `prose.py` takes its
-  directory from `Path(__file__).resolve()`, and bug-hunter's `caller-result.sh` from
-  `cd -P "$(dirname "$0")"`. Run through the installed links, both worked: `caller-result.sh`
-  printed a full result block.
-- **The manager can install without hooks.** It has `install --no-hook`. And with
-  `SHARED_SKILLS_TARGET` set but `SHARED_SKILLS_HOOK_HOME` unset, it wires no hooks anyway
-  (`auto_enable_hooks`).
-- **The `system/init` event lists loaded skills by name**, under `skills`. It is the first
-  event, and it arrives even when the call then fails to authenticate. That is what makes the
-  startup check free.
+1. **Without `--bare`, a skill of the same name elsewhere replaces the pinned one.** Measured
+   by reading the skill listing the session sends:
+   - with a same-named skill in a temporary `HOME`'s `.claude/skills/`, the home copy's
+     description was sent;
+   - with one in the working directory's `.claude/skills/`, the repository's copy was sent, even
+     when the repository was itself passed with `--add-dir` ahead of the pinned directory.
 
-### What contradicts the issue
+   The `system/init` list showed the name once either way, so a check could not see it. Guards
+   would have had to refuse a home copy at start and stop an item whose repository ships one.
+2. **It gives the worker edit access to the skills.** Under the worker's `acceptEdits`, a write
+   under an added directory succeeds (`WorkerInput.outbox`, `src/execute.ts`). A worker an item
+   steers could rewrite `prose.py`, the script Igor's own code runs to verify that worker's
+   signature. Igor would have had to refuse to start wherever it could write the directory.
 
-1. **"It works with or without `--bare`" holds for loading, but not for pinning.** Without
-   `--bare`, a skill of the same name elsewhere takes precedence over the one in the added
-   directory. Two cases were measured by reading the skill listing the session sends:
-   - a `pinned-hello` in a temporary `HOME`'s `.claude/skills/`: the home copy's description was
-     sent;
-   - a `pinned-hello` in the working directory's `.claude/skills/`: the repository's copy was
-     sent, also when the repository was itself passed with `--add-dir` ahead of the pinned
-     directory.
-
-   The `system/init` list shows the name once either way, so it cannot detect this. Under
-   `--bare`, where a worker's own `--add-dir <cwd>` also loads the repository's skills, which
-   copy wins is **not measured**: the listing is only sent once a call authenticates.
-2. **The skills' own instructions point at the home directory.** Prose's `SKILL.md` defines its
-   scripts directory as `~/.agents/skills/prose/scripts` or `~/.claude/skills/prose/scripts`.
-   Bug-hunter's names `~/.agents/skills/bug-hunter/scripts/caller-result.sh`, then the
-   `~/.claude` one. On an Igor server those paths are missing or, worse, an unpinned copy. A
-   grant by path into the pinned directory, as #153 decides, would deny the command the skill
-   tells the model to run.
-3. **The issue's example path is writable by the service.** `deploy/igor.service` sets
-   `ReadWritePaths=/srv/igor`, and `/srv/igor/skills` is under it. `--add-dir` grants tool
-   access (`claude --help`: "Additional directories to allow tool access to"). Under the
-   worker's `acceptEdits`, Igor measured before that a write under an added directory succeeds
-   (`WorkerInput.outbox`, `src/execute.ts`). A worker an item steers could then rewrite
-   `prose.py`, the script Igor's own code runs to verify that worker's signature.
-
-### Measured, not taken: `--plugin-dir`
-
-`claude -p --bare --plugin-dir <dir>`, with a `.claude-plugin/plugin.json` and
-`skills/prose` linked to the installed skill, loaded the skill as `igor-pinned:prose`. A plugin
-skill's name carries the plugin's name, so a same-named skill elsewhere cannot replace it, and
-`--plugin-dir` grants no file access. The issue decided `--add-dir`, so this change follows it.
-The PR raises the trade as a question.
+Under `--add-dir`, commands and agents in the directory also loaded without `--bare` and not
+with it, so behaviour would differ across the flip.
 
 ## Decisions
 
@@ -86,91 +86,61 @@ The PR raises the trade as a question.
 
 Token sources already name server paths there (`token_file`), so a server path in the team's
 file is not new. It must be absolute: relative to the configuration, it would land in the lore
-repository, which Igor writes to. The skills Igor expects are the ones installed there. There
-is no second list to keep in step with the directory.
+repository, which Igor writes to. The skills Igor expects are the ones installed under
+`skills/`; there is no second list to keep in step with the directory.
 
-### The directory and its clone are read-only to Igor, checked at start
-
-File ownership is the guard, because it holds against every route: a worker's Edit tool, a
-Bash command it was granted, and Igor's own code. A `--disallowed-tools` rule covers only the
-first. The deployment puts the directory and the shared-skills clone under `/opt/igor`, owned
-by root. The unit's `ProtectSystem=strict` makes that path read-only to the service in any
-case, and `ReadWritePaths=/srv/igor` does not reach it.
-
-The check is `access(W_OK)` on `skills_dir`, on its `.claude/skills/`, and on each skill's
-resolved directory. Root can write everywhere, so an Igor run as root with `skills_dir` set
-refuses to start. The unit runs as `User=igor`.
+The plugin is named `igor`, so skills load as `igor:prose` and `igor:bug-hunter`. The deployment
+writes the one-line `plugin.json`; the startup check fails if the name differs, because no
+`igor:<name>` would be listed.
 
 ### The startup check is a `--bare` call with no credential
 
-The issue suggests reading the skill list from the `system/init` event of #144's startup
-self-test. That self-test is not yet specified, it runs once per seat, and it runs without
-`--bare`, because a seat token does not authenticate under `--bare`. The check here instead
-runs once, with no seat, under `--bare`: the mode this change exists for. It lists exactly the
-skills the added directory supplies, since `--bare` hides the home ones. Its failure to
-authenticate is guaranteed, because `--bare` reads only `ANTHROPIC_API_KEY` or an
-`apiKeyHelper`, and the environment holds neither.
+The issue suggests reading the skill list from #144's startup self-test. That self-test is not
+yet specified, runs once per seat, and runs without `--bare`, because a seat token does not
+authenticate under `--bare`. The check here runs once, with no seat, under `--bare`: the mode
+this change exists for. Its failure to authenticate is certain, because `--bare` reads only
+`ANTHROPIC_API_KEY` or an `apiKeyHelper`, and the environment holds neither. Adam accepted
+keeping the two separate.
 
-Where #144's self-test lands later, it may read the same list from its own event. This check
-does not depend on it.
+### No guard against a same-named skill
 
-### A same-named copy is refused, not ranked
+Adam accepted stopping an item whose repository ships a same-named skill, if that still applied
+under `--plugin-dir`. It does not. The repository's `prose` loads as `prose`, beside
+`igor:prose`, and replaces nothing. A step that needs the pinned skill asks for `igor:prose`, and
+#153 grants its scripts by path under `<skills_dir>/skills`, so the repository's copy cannot run
+its own scripts either. The same holds for a copy in the home directory.
 
-Precedence is undocumented, unmeasured under `--bare`, and different without it, so Igor does
-not try to arrange for the pinned copy to win. It refuses the two places a copy was measured to
-win from:
+### The worker is told the pinned paths, until the skills find their own
 
-- **The service user's home directory**, at start. That copy is a deployment mistake, and it
-  affects every item.
-- **The worked repository**, per item, before the worker spawns. The repository is the work,
-  so Igor cannot remove the copy without publishing a deletion. The item stops with the reason
-  instead.
-
-Repository skills with other names are untouched. Igor's own repository ships four `openspec-*`
-skills, none of which is a shared skill.
-
-### The worker is told the pinned paths
-
-Igor puts one paragraph in the worker's system prompt (task 5.1), naming
-`<skills_dir>/.claude/skills` and telling it to use that in place of a home-directory path
-from a skill's instructions. The lasting fix is upstream: a skill's instructions could take
-its scripts directory from where Claude Code loaded the skill. The PR raises that as a question
-for the shared-skills repository.
+The worker's system prompt names `<skills_dir>/skills` and tells it to use that in place of a
+home-directory path from a skill's instructions (task 4.1). A shared-skills change, in progress,
+makes each skill find its scripts from the directory it was loaded from. Once the pinned commit
+includes it, the paragraph and its requirement are removed (task 4.3).
 
 ## How it composes
 
 ### With #153 (`signed-publishing`, branch `spec-signed-replies`)
 
-- **`<skills>` in #153's design is `<skills_dir>/.claude/skills`.** Its grants are
+- **`<skills>` in #153's design is `<skills_dir>/skills`.** Its grants are
   `python3 <skills>/prose/scripts/prose.py check`, `… sign`,
   `<skills>/bug-hunter/scripts/caller-result.sh` and `git add`. Its code runs `prose start`,
-  `verify-post` and `verify-staged` from the same place.
-- **A grant by path needs the model to use that path.** The system-prompt paragraph above makes
-  it do so. Which directory Claude Code reports to the model when a skill loads, the link's or
-  the resolved clone's, needs a model call to see. Task 0.1 measures it with an API key.
-- **Hooks.** #153 notes that `--add-dir` loads a skill but not its hooks. This change installs
-  none (`--no-hook`), so prose's first-write gate never runs in a worker. Igor's `prose start`
-  (#153, item 1) still runs and costs one call.
-- **Read-only directories.** `prose start` writes its session mark under `$XDG_STATE_HOME`, or
-  `~/.local/state` without it, and the unit sets `ProtectHome=read-only`. That is for #153's
-  task 0.5 to provide for. Nothing here writes there.
+  `verify-post` and `verify-staged` from the same place. A step that names a skill names
+  `igor:prose` or `igor:bug-hunter`.
+- **A grant by path needs the model to use that path.** Which directory Claude Code reports to
+  the model when a plugin skill loads, the link's or the resolved clone's, needs a model call to
+  see. Task 0.1 measures it.
+- **Hooks.** The install wires none, and the plugin declares none, so prose's first-write gate
+  never runs in a worker. Igor's `prose start` (#153, item 1) still runs.
+- **`prose start` writes its session mark** under `$XDG_STATE_HOME`, or `~/.local/state`
+  without it, and the unit sets `ProtectHome=read-only`. That is for #153's task 0.5.
 
 ### With #144 (`--bare` as the default)
 
-The flag works with and without `--bare`, so nothing here waits on the flip, and nothing here
-changes how a seat authenticates. The pinning guards matter most before the flip, because
-without `--bare` is where shadowing was measured.
+The flag works with and without `--bare`, and nothing here changes how a seat authenticates.
 
 ### With #143 (`seat-from-stream`)
 
-The seat probe is a `claude -p` and carries the flag like any other call, which is harmless: it
-allows no tools. #143's switch of triage to `stream-json --verbose` changes the output flags,
-not this one. One argument builder for every call keeps the two from drifting (task 2.1).
-`runUsage` in `src/budget.ts` carries the flag while it exists; #143's gate two removes it.
-
-## Not measured
-
-- **Which copy wins under `--bare`** when the worked repository holds a same-named skill. The
-  per-item guard stops the item either way, so the design does not depend on the answer.
-- **Whether a skill runs, and which path Claude Code reports for it, under `--bare`.** That
-  needs `ANTHROPIC_API_KEY`, which was not available. Task 0.1.
+The seat probe is a `claude -p` and carries the flag like any other call. #143's switch of
+triage to `stream-json --verbose` changes the output flags, not this one. One argument builder
+for every call keeps the two from drifting (task 2.1). `runUsage` in `src/budget.ts` carries the
+flag while it exists; #143's gate two removes it.
