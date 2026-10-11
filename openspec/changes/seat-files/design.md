@@ -193,7 +193,9 @@ raises its reserve, which lowers its line and so its headroom.
 it is used are theirs, in a file whose history shows who changed what. Afterwards the operator can
 edit that file like any other in the lore repository, and nothing in Igor or GitHub asks the
 lender first. What stops a use the lender did not agree to is revoking the token at Anthropic,
-which ends the seat at once, wherever the token is and whatever any file says.
+which ends the seat at once, wherever the token is and whatever any file says. A veto is only as
+good as the lender's chance to use it, so a pull request changing their file mentions them
+(*The lender hears about a change to their seat file* below).
 
 **Rejected: a CODEOWNERS line per seat file, with code-owner review required.** It made the lender
 approve every change to their file. It needs settings only an administrator controls and that an
@@ -212,3 +214,49 @@ pull request cannot redirect a lender's token before it merges.
 checkout when it loads. Igor pulling its own lore checkout between cycles is tracked separately,
 as [#176](https://github.com/adamstallard/igor/issues/176).
 
+## The lender hears about a change to their seat file
+
+**Decided 2026-10-11 (Adam): a pull request touching `seats/<id>.yaml` @-mentions that seat's
+owner on the pull request**, so their veto does not depend on watching the file's history.
+
+**Chosen: a workflow on GitHub-hosted runners, triggered by `pull_request_target` on `seats/**`.**
+It ships as `templates/seat-notice.yml`, and `igor init` installs it beside
+`reconcile-on-merge.yml`. On each push to a pull request that touches `seats/`, it posts one
+comment mentioning the owner of each seat file the pull request changes, renames or deletes, and
+whom no earlier notice on that pull request already mentioned.
+
+`pull_request_target` is the trigger that can comment on a pull request from a fork, which is
+where most lenders' and some operators' changes come from. It runs the default branch's copy of
+the workflow with a token that can write to the repository, which is exactly why it is dangerous
+when a workflow reads the pull request's head: a fork's code or data would run with that token.
+So this workflow reads nothing from the head:
+
+- **No checkout.** It runs `gh api` calls and a shell script that are all in the workflow file on
+  the default branch.
+- **Only the list of changed paths**, from the pull-requests API, each read line by line, quoted,
+  and matched against `^seats/[a-z0-9][a-z0-9-]*\.yaml$` before it is used at all. A path is never
+  expanded by the shell, interpolated into the workflow with `${{ }}`, or passed to anything but
+  that match and the contents call below.
+- **The owner comes from the default branch's copy** of each matching file, never from the pull
+  request's. A seat file the pull request adds has no default-branch copy, so it mentions nobody:
+  its author is the lender, or an operator declaring a seat by hand.
+- **The token is scoped** to `contents: read` and `pull-requests: write`.
+
+An owner is mentioned only when the default-branch file's `owner` is a GitHub login and is not the
+pull request's author. A lender whose `owner` is not a GitHub login cannot be mentioned; the
+operator guide says to tell them some other way.
+
+**Rejected alternatives:**
+
+- **A line in the pull request template** asking the author to mention the owner. It relies on the
+  author, and the author who would skip it is the one making a change the lender would object to.
+- **A CODEOWNERS line per seat file without a review requirement.** GitHub would request the
+  owner's review, which notifies them. But a code owner must have write access to the repository,
+  so a lender contributing from a fork cannot be one, and it brings back the per-seat CODEOWNERS
+  maintenance Adam removed.
+- **The `pull_request` trigger.** A pull request from a fork gets a read-only token under it and
+  cannot comment.
+- **A self-hosted runner.** Ruled out for this repository already: a fork's pull request can bring
+  its own self-hosted workflow and run code on the server.
+- **Igor commenting from the server.** Igor watches its roles' sources, not the lore repository's
+  pull requests, and a notice that waits on the server being up is no notice when it is down.

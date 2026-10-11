@@ -198,8 +198,10 @@ leaks.
   - **Declaring a seat by hand:** a seat file naming `token_env: IGOR_SEAT_<ID>`, and the token in
     `/etc/igor/env`; a secret store's output goes there too
   - **What the lender keeps:** they can revoke their token at any time, which stops the seat at
-    once; an edit to their seat file they did not agree to is answered that way, so tell them
-    about changes to their file
+    once, and that is how they answer an edit to their seat file they did not agree to. The
+    `seat-notice.yml` workflow mentions them on any pull request changing their file; keep it
+    installed (`igor init` puts it there), and tell a lender whose `owner` is not a GitHub login
+    about a change some other way
   - **Checking it:** `igor doctor`, and `igor budget` showing the new seat as readable
   - **When things go wrong:** removing a seat (delete its file); a lender withdrawing (they revoke
     the token; delete the file); a leaked server key (above); a leaked seat token (its holder
@@ -212,9 +214,10 @@ leaks.
       your seat file after it merges; what the operator does to protect the token (the server's
       private key; it travels encrypted in a file anyone may be able to read, and only that key
       opens it); what bounds that trust (a `setup-token` only makes model requests, the reserve
-      limits Igor's share, you can watch your usage at claude.ai); and **revoking the token at
-      Anthropic is how you withdraw or object to anything: it stops the seat at once, whatever any
-      file says**
+      limits Igor's share, you can watch your usage at claude.ai); that you are mentioned on any
+      pull request that changes your seat file, as long as `owner` is your GitHub login; and
+      **revoking the token at Anthropic is how you withdraw or object to anything: it stops the
+      seat at once, whatever any file says**
 - [ ] 9.5 `docs/seats.md`, **getting the token:** `claude setup-token`, once, in your own
       terminal, and why it never goes into chat, email, or a file unencrypted
 - [ ] 9.6 `docs/seats.md`, **lending it:** `igor seat add` in one step, and the manual equivalent
@@ -230,8 +233,9 @@ leaks.
 
       then a pull request adding `seats/<id>.yaml`, with that output as `encrypted_token`, their
       reserve and the roles it serves
-- [ ] 9.7 `docs/seats.md`, **afterwards:** watching your usage at claude.ai, and your seat file's
-      history; **changing your mind:** rotating (`igor seat add` again, or the manual steps,
+- [ ] 9.7 `docs/seats.md`, **afterwards:** watching your usage at claude.ai, and what to do when
+      you are mentioned on a pull request changing your seat file (say so there if you object; revoke
+      the token if it merges anyway); **changing your mind:** rotating (`igor seat add` again, or the manual steps,
       changing only `encrypted_token`), changing roles or reserve (a pull request to your file),
       withdrawing or objecting (revoke at Anthropic, which takes effect at once), and the one-year
       expiry (#145)
@@ -261,3 +265,78 @@ leaks.
       level, read by the seat-file reader, and every `igor:budget` and `igor:seats` fence in the
       docs is retagged `igor:seat`
 - [ ] 9.13 `igor budget` names, for each seat, the roles its file lists
+
+## 10. Telling a lender about a change to their seat file
+
+- [ ] 10.1 `templates/seat-notice.yml`, worded so. The comment's text is the deliverable too:
+
+      ```yaml
+      # Tells a seat's owner when a pull request changes their seat file, by mentioning them on it.
+      # Revoking their token is a lender's veto over how their seat is used, and this is how they
+      # hear about a change in time to use it.
+      #
+      # It runs on pull_request_target, so it also runs for pull requests from forks, with a token
+      # that can comment. That trigger runs with this repository's permissions, so this job reads
+      # nothing from the pull request's head: no checkout and no file contents, only the list of
+      # changed paths, each matched against the seat-file pattern before use. The owner comes from
+      # the default branch's copy of the file. Keep it that way: reading or running the head here
+      # would hand a fork's code a token that can write to this repository.
+      name: Notify seat owners
+
+      on:
+        pull_request_target:
+          types: [opened, reopened, synchronize, ready_for_review]
+          paths: ['seats/**']
+
+      permissions:
+        contents: read
+        pull-requests: write
+
+      jobs:
+        notify:
+          runs-on: ubuntu-latest
+          steps:
+            - name: Mention the owner of each seat file this pull request changes
+              env:
+                GH_TOKEN: ${{ github.token }}
+                REPO: ${{ github.repository }}
+                PR: ${{ github.event.pull_request.number }}
+                DEFAULT: ${{ github.event.repository.default_branch }}
+                AUTHOR: ${{ github.event.pull_request.user.login }}
+              run: |
+                set -euo pipefail
+                marker='<!-- igor-seat-notice -->'
+                told=$(gh api --paginate "repos/$REPO/issues/$PR/comments" \
+                  --jq ".[] | select(.body | startswith(\"$marker\")) | .body" \
+                  | grep -oE '@[A-Za-z0-9-]+' | sort -u || true)
+                lines=()
+                while IFS= read -r path; do
+                  [[ "$path" =~ ^seats/[a-z0-9][a-z0-9-]*\.yaml$ ]] || continue
+                  owner=$(gh api "repos/$REPO/contents/$path?ref=$DEFAULT" --jq .content 2>/dev/null \
+                    | base64 -d | sed -n 's/^owner:[[:space:]]*\([A-Za-z0-9-]*\)[[:space:]]*$/\1/p' \
+                    | head -n 1) || continue
+                  [[ "$owner" =~ ^[A-Za-z0-9](-?[A-Za-z0-9])*$ ]] || continue
+                  [[ "$(tr A-Z a-z <<<"$owner")" == "$(tr A-Z a-z <<<"$AUTHOR")" ]] && continue
+                  grep -qixF "@$owner" <<<"$told" && continue
+                  told+=$'\n'"@$owner"
+                  lines+=("- @$owner: this pull request changes your seat file, \`$path\`.")
+                done < <(gh api --paginate "repos/$REPO/pulls/$PR/files" \
+                  --jq '.[] | .filename, (.previous_filename // empty)' | sort -u)
+                [[ ${#lines[@]} -eq 0 ]] && exit 0
+                body="$marker"$'\n'"$(printf '%s\n' "${lines[@]}")"$'\n\n'
+                body+="Your seat serves the roles and keeps the reserve its file states. If you don't agree to this change, say so here. To stop your seat being used at all, revoke its token at Anthropic: that takes effect at once, whatever this pull request does."
+                gh api "repos/$REPO/issues/$PR/comments" -f body="$body" > /dev/null
+      ```
+
+- [ ] 10.2 `src/init.ts`: `igor init` installs `seat-notice.yml` beside `reconcile-on-merge.yml`,
+      under the same rules for an existing file
+- [ ] 10.3 Tests in `test/template.test.ts`: the template parses; its only trigger is
+      `pull_request_target` with `paths: ['seats/**']`; its permissions are exactly
+      `contents: read` and `pull-requests: write`; it runs on `ubuntu-latest`; it has no
+      `uses:` step and no `actions/checkout`; and no expression in it reads
+      `github.event.pull_request.head`
+- [ ] 10.4 Tests of the script, run under bash with `gh` faked: each scenario of *A pull request
+      that changes a seat file mentions that seat's owner*, and a path such as
+      `seats/$(touch x).yaml` or one containing a space or `*`, which is neither run nor expanded
+- [ ] 10.5 In `adamstallard/igor-lore`, with task 6.1: add `.github/workflows/seat-notice.yml`
+      from the template

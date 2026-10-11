@@ -292,6 +292,72 @@ a session refills within hours.
 - **WHEN** no seat that serves a role is eligible
 - **THEN** the Igor hands off rather than stopping silently
 
+### Requirement: A pull request that changes a seat file mentions that seat's owner
+
+The lore repository SHALL carry a workflow, shipped as `templates/seat-notice.yml` and installed
+by `igor init`, that comments on every pull request changing, renaming or deleting a file at
+`seats/<id>.yaml`, @-mentioning that seat's owner. The owner SHALL be read from the default
+branch's copy of the file. An owner SHALL be mentioned at most once per pull request, SHALL NOT be
+mentioned on a pull request they opened, and SHALL NOT be mentioned where `owner` is not a GitHub
+login.
+
+The workflow SHALL run on GitHub-hosted runners, triggered by `pull_request_target` so that it can
+comment on pull requests from forks, and SHALL read nothing from the pull request's head: no
+checkout and no file contents, only the list of changed paths, each matched against
+`^seats/[a-z0-9][a-z0-9-]*\.yaml$` before use. Its token SHALL be limited to reading contents and
+writing pull requests.
+
+Revoking the token is a lender's veto over how their seat is used, and a veto is worth only as
+much as the lender's chance to use it. Without the mention, a lender learns of a change to their
+seat's roles or reserve only by watching the file's history.
+
+`pull_request_target` runs with a token that can write to the repository. A workflow on it that
+read the pull request's head would hand a fork's code or data that token, which is why reading
+nothing from the head is part of the requirement and not a detail of the template.
+
+#### Scenario: An operator's change mentions the lender
+
+- **WHEN** an operator opens a pull request adding a role to `seats/bob.yaml`, whose `owner` on the
+  default branch is `bob`
+- **THEN** a comment on the pull request mentions `@bob`
+
+#### Scenario: A pull request from a fork is noticed too
+
+- **WHEN** a pull request from a fork changes `seats/bob.yaml`
+- **THEN** `@bob` is mentioned on it
+
+#### Scenario: The owner is taken from the default branch
+
+- **WHEN** a pull request changes `seats/bob.yaml`'s `owner` from `bob` to `mallory`
+- **THEN** `@bob` is mentioned, and `@mallory` is not
+
+#### Scenario: A deleted seat file mentions its owner
+
+- **WHEN** a pull request deletes `seats/bob.yaml`
+- **THEN** `@bob` is mentioned
+
+#### Scenario: A new seat file mentions nobody
+
+- **WHEN** a pull request adds `seats/carol.yaml`, which the default branch does not have
+- **THEN** no one is mentioned for it
+
+#### Scenario: The lender's own pull request does not mention them
+
+- **WHEN** `bob` opens a pull request rotating the token in `seats/bob.yaml`
+- **THEN** no one is mentioned for it
+
+#### Scenario: A later push does not repeat a mention
+
+- **WHEN** a pull request already mentioned `@bob`, and a later push to it also changes
+  `seats/dana.yaml`
+- **THEN** a new comment mentions `@dana` only
+
+#### Scenario: A path that is not a seat file is ignored
+
+- **WHEN** a pull request changes `seats/recipient.txt`, or a file whose name does not match the
+  seat-file pattern
+- **THEN** no one is mentioned for it, and its contents are not read
+
 ### Requirement: `igor seat add` lends a seat in one step
 
 `igor seat add <id>` SHALL be run by a holder in a clone of the lore repository, or of their fork

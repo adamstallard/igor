@@ -42,6 +42,9 @@ from [#147](https://github.com/adamstallard/igor/issues/147).
 - **Pools are removed.** A role's seats are every seat whose file lists it. Among those it can
   use, the Igor picks the one with the most headroom under its line, and the soonest weekly reset
   breaks a tie. A role may still name a single seat, which must list it.
+- **A pull request that changes a seat file mentions its owner**, through a workflow `igor init`
+  installs, so the lender hears of a change in time to revoke. It runs on `pull_request_target`
+  on GitHub-hosted runners and reads nothing from the pull request's head.
 - **`igor seat add`** lends a seat in one step: it reads the token without echoing it, encrypts
   it, writes the seat file, and opens the pull request. Run again, it rotates the token.
 - **The `work-triage` requirements stop saying "pool"**, and speak of the seats serving a role.
@@ -74,7 +77,8 @@ None. `setup-check` gains a requirement here, and is created by whichever of thi
 - `src/config.ts`: `budget` leaves `CONFIG_KEYS`; `seatKey` joins it.
 - `src/role.ts`: a role's seats come from the seat files; `requireSeat` checks the named seat
   lists the role.
-- `src/cli.ts`: `igor seat add`.
+- `src/cli.ts`: `igor seat add`. `src/init.ts` and `templates/seat-notice.yml`: the notice
+  workflow.
 - A new dependency on the `age-encryption` package.
 - `docs/deployment.md`, `docs/seats.md`, `docs/architecture.md` §6.5.1, `README.md`,
   `igor.config.example.yaml`, `deploy/`.
