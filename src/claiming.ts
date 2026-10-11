@@ -374,7 +374,8 @@ export async function standDown(
   verdict: ClaimVerdict,
 ): Promise<boolean> {
   if (verdict.status === 'lost' && tracker.holderField.holds === 'single') return true
-  return tracker.release(candidate, identity).then((clear) => clear, () => false)
+  const how = verdict.status === 'stopped' ? { stop: true } : {}
+  return tracker.release(candidate, identity, how).then((clear) => clear, () => false)
 }
 
 /**

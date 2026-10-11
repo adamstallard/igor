@@ -47,4 +47,34 @@ describe('a catch-up on an item a person handed over', () => {
     await catchUpItem(w.deps, item([]), role, 'igor-bot')
     expect([...w.labels]).toEqual(['igor:triage'])
   })
+
+  it('takes the label off on a stop, so the receipt is true, and a new hand-over directs the Igor', async () => {
+    const w = world(['igor:triage'], () => ({ self: false, by: 'adam', at: '2026-10-10T00:00:00Z' }),
+      { status: 'stopped', by: 'bob', at: '2026-10-10T01:00:00Z' })
+    await catchUpItem(w.deps, item(['igor:triage']), role, 'igor-bot')
+    expect([...w.labels]).toEqual([])
+    expect(w.said.some((m) => m.includes("stopped at bob's request and released this"))).toBe(true)
+    expect(w.said.some((m) => m.startsWith('This still carries'))).toBe(false)
+
+    // Adam hands it over again after the pull request closed.
+    const closed = { ...item(['igor:triage']), inFlight: undefined } as Candidate
+    const t = Object.assign(Object.create(w.deps.tracker), {
+      directed: async () => [closed],
+      holderSetBy: async () => ({ self: false, by: 'adam', at: '2026-10-10T03:00:00Z' }),
+      commentsSince: async (_c: Candidate, since: string) =>
+        [
+          { author: 'bob', at: '2026-10-10T01:00:00Z', body: 'stop' },
+          ...w.said.map((b) => ({ author: 'igor-bot', at: '2026-10-10T01:00:01Z', body: b })),
+        ].filter((c) => Date.parse(c.at) >= Date.parse(since)),
+    })
+    const r = await findDirected(t, role, 'igor-bot', { holder: 'igor:triage', distinctFromAssignee: true }, { failures: [] })
+    expect(r.directed).toHaveLength(1)
+  })
+
+  it('keeps the label on a stop that is not a stop of this run, such as a loss', async () => {
+    const w = world(['igor:triage'], () => ({ self: false, by: 'adam', at: '2026-10-10T00:00:00Z' }),
+      { status: 'lost', by: 'igor-other[bot]' })
+    await catchUpItem(w.deps, item(['igor:triage']), role, 'igor-bot')
+    expect([...w.labels]).toEqual(['igor:triage'])
+  })
 })

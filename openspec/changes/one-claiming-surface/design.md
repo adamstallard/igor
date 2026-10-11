@@ -384,6 +384,19 @@ sentence saying so. Two mechanisms carry it:
   comments leave it standing. Before this, any comment by the Igor after the hand-over counted as
   its answer.
 
+**Decided by Adam, 2026-10-11: a stop is the one exit from a catch-up that removes a person's
+label.** "Every exit keeps the label" and the approved stop rule, that a stop removes the Igor
+from the holder field and only a new hand-over undoes it, disagreed for a stop. As built at
+first, the label stayed, the receipt said "released this", and the label never directed the Igor
+again, because the stop after the hand-over cancelled it. Now `standDown` tells the release that
+it is giving back a stopped claim, and the catch-up's release then removes the label whoever set
+it, so the receipt is true and adding the label again hands the issue over anew.
+
+**A stop is the comment as created, not as last edited.** GitHub's `since` on an issue's comments
+filters on when each was last updated, so a stop said before a hand-over and edited later comes
+back. Verification, the catch-up's give-back and the search for handed-over items each count a
+stop only where it was created inside the window they ask about.
+
 **A hand-over newer than a stop lets the catch-up run.** The stop gate for catch-ups reads when
 each was handed over, for items carrying the Igor's label, and treats a hand-over after the stop
 as the go-ahead *What follows a stop* says it is.

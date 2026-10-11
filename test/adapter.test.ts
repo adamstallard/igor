@@ -167,6 +167,8 @@ const comment = (over: Partial<RawComment> = {}): RawComment => ({
   ...over,
 })
 
+/** A `since` before every fixture, so it leaves what a verdict reads unchanged. */
+const EVER = '1970-01-01T00:00:00Z'
 const SELF = { login: 'acme-reviewer[bot]', accountId: 99, holder: 'igor:reviewer' }
 let nextId = 1
 const event = (kind: 'labeled' | 'unlabeled', label: string, actor: { login: string; id: number; type: string }, id = nextId++): RawEvent => ({
@@ -178,61 +180,78 @@ const OTHER_IGOR = { login: 'acme-backend[bot]', id: 77, type: 'Bot' }
 
 describe('verifying a label claim', () => {
   it('holds while the Igor carries its label', () => {
-    expect(labelVerdictFrom(SELF, ['bug', 'igor:reviewer'], undefined, [])).toEqual({ status: 'held' })
+    expect(labelVerdictFrom(SELF, ['bug', 'igor:reviewer'], undefined, [], EVER)).toEqual({ status: 'held' })
   })
 
   it("keeps the claim when a person added another Igor's label, even in the settle interval", () => {
     const events = [event('labeled', 'igor:reviewer', ME), event('labeled', 'igor:backend', ADAM)]
-    expect(labelVerdictFrom(SELF, ['igor:reviewer', 'igor:backend'], events, [])).toEqual({ status: 'held' })
+    expect(labelVerdictFrom(SELF, ['igor:reviewer', 'igor:backend'], events, [], EVER)).toEqual({ status: 'held' })
   })
 
   it('loses the claim to another Igor that added its own label', () => {
     const events = [event('labeled', 'igor:reviewer', ME), event('labeled', 'igor:backend', OTHER_IGOR)]
-    expect(labelVerdictFrom(SELF, ['igor:reviewer', 'igor:backend'], events, [])).toEqual({
+    expect(labelVerdictFrom(SELF, ['igor:reviewer', 'igor:backend'], events, [], EVER)).toEqual({
       status: 'lost', by: 'acme-backend[bot]',
     })
   })
 
   it('reads a person removing the label as a stop that names them', () => {
     const events = [event('labeled', 'igor:reviewer', ME), event('unlabeled', 'igor:reviewer', ADAM)]
-    expect(labelVerdictFrom(SELF, ['bug'], events, [])).toEqual({
+    expect(labelVerdictFrom(SELF, ['bug'], events, [], EVER)).toEqual({
       status: 'stopped', by: 'adamstallard', at: '2026-10-04T00:00:00Z', reason: 'removed the igor:reviewer label', fromHolder: true,
     })
   })
 
   it("reads its own removal as its release, matched by the bot's id", () => {
     const events = [event('unlabeled', 'igor:reviewer', ADAM, 10), event('labeled', 'igor:reviewer', ADAM, 11), event('unlabeled', 'igor:reviewer', ME, 12)]
-    expect(labelVerdictFrom(SELF, [], events, [])).toEqual({ status: 'lost' })
+    expect(labelVerdictFrom(SELF, [], events, [], EVER)).toEqual({ status: 'lost' })
   })
 
   it('orders events by id, never by time, so the latest removal decides', () => {
     // Two events in one second: only the ids say which came last (measured 2026-10-04).
     const events = [event('unlabeled', 'igor:reviewer', ME, 21), event('unlabeled', 'igor:reviewer', ADAM, 20)]
-    expect(labelVerdictFrom(SELF, [], events, []).status).toBe('lost')
+    expect(labelVerdictFrom(SELF, [], events, [], EVER).status).toBe('lost')
     const reversed = [event('unlabeled', 'igor:reviewer', ME, 20), event('unlabeled', 'igor:reviewer', ADAM, 21)]
-    expect(labelVerdictFrom(SELF, [], reversed, []).status).toBe('stopped')
+    expect(labelVerdictFrom(SELF, [], reversed, [], EVER).status).toBe('stopped')
   })
 
   it('does not take a person who shares the bot id number for the bot', () => {
     const events = [event('unlabeled', 'igor:reviewer', { login: 'someone', id: 99, type: 'User' })]
-    expect(labelVerdictFrom(SELF, [], events, []).status).toBe('stopped')
+    expect(labelVerdictFrom(SELF, [], events, [], EVER).status).toBe('stopped')
   })
 
   it('reports a stop comment ahead of everything, since a stop owes a receipt', () => {
     const events = [event('labeled', 'igor:backend', OTHER_IGOR)]
-    const v = labelVerdictFrom(SELF, ['igor:reviewer', 'igor:backend'], events, [comment({ body: 'stop, I have got this' })])
+    const v = labelVerdictFrom(SELF, ['igor:reviewer', 'igor:backend'], events, [comment({ body: 'stop, I have got this' })], EVER)
     expect(v.status).toBe('stopped')
     expect(v.by).toBe('alice')
     expect(v.reason).toBe('stop, I have got this')
   })
 
   it('ignores a comment that is not a stop, and one with no body or author', () => {
-    expect(labelVerdictFrom(SELF, ['igor:reviewer'], undefined, [comment(), comment({ body: null, user: null })])).toEqual({ status: 'held' })
+    expect(labelVerdictFrom(SELF, ['igor:reviewer'], undefined, [comment(), comment({ body: null, user: null })], EVER)).toEqual({ status: 'held' })
   })
 
   it('truncates a very long stop, since the receipt quotes it', () => {
-    const v = labelVerdictFrom(SELF, ['igor:reviewer'], undefined, [comment({ body: `stop ${'x'.repeat(1000)}` })])
+    const v = labelVerdictFrom(SELF, ['igor:reviewer'], undefined, [comment({ body: `stop ${'x'.repeat(1000)}` })], EVER)
     expect(v.reason).toHaveLength(500)
+  })
+
+  it('reads a stop created before `since` as no stop, though GitHub returns it because it was edited since', () => {
+    const edited = comment({ body: 'stop, waiting on the design (edit: design done)', created_at: '2026-10-09T00:00:00Z' })
+    expect(labelVerdictFrom(SELF, ['igor:reviewer'], undefined, [edited], '2026-10-11T00:00:00Z')).toEqual({ status: 'held' })
+  })
+
+  it('reads a stop created at or after `since` as a stop', () => {
+    const at = comment({ body: 'stop', created_at: '2026-10-11T00:00:00Z' })
+    const after = comment({ body: 'stop', created_at: '2026-10-11T00:00:01Z' })
+    expect(labelVerdictFrom(SELF, ['igor:reviewer'], undefined, [at], '2026-10-11T00:00:00Z').status).toBe('stopped')
+    expect(labelVerdictFrom(SELF, ['igor:reviewer'], undefined, [after], '2026-10-11T00:00:00Z').status).toBe('stopped')
+  })
+
+  it('reads a stop whose creation time cannot be parsed as a stop', () => {
+    const undated = comment({ body: 'stop', created_at: 'not a time' })
+    expect(labelVerdictFrom(SELF, ['igor:reviewer'], undefined, [undated], '2026-10-11T00:00:00Z').status).toBe('stopped')
   })
 
   it('finds the latest event of a kind for one label', () => {

@@ -251,10 +251,16 @@ export interface ClaimSelf {
   holder: string
 }
 
-/** The first stop in `comments`, as a verdict, or `undefined`. */
-function stopFrom(as: string, comments: readonly RawComment[]): ClaimVerdict | undefined {
+/**
+ * The first stop in `comments` created at or after `since`, as a verdict, or `undefined`. A
+ * comment whose creation time cannot be read counts.
+ */
+function stopFrom(as: string, comments: readonly RawComment[], since: string): ClaimVerdict | undefined {
+  const floor = Date.parse(since)
   for (const comment of comments) {
     const body = comment.body ?? ''
+    const at = Date.parse(comment.created_at)
+    if (!Number.isNaN(floor) && !Number.isNaN(at) && at < floor) continue
     if (isStop(body, as)) {
       return {
         status: 'stopped',
@@ -275,6 +281,11 @@ function stopFrom(as: string, comments: readonly RawComment[]): ClaimVerdict | u
  * **A stop comment outranks everything.** It carries a receipt obligation, and someone who stops
  * an Igor may well remove its label in the same breath.
  *
+ * **A stop is one created at or after `since`.** GitHub's `since` filters on when a comment was
+ * last updated, so it also returns an older comment edited since then, and a stop said before
+ * the claim, perhaps before a hand-over that answered it, is not a stop of this claim.
+ * Creation time decides.
+ *
  * **This Igor's label gone means it was removed, and the latest `unlabeled` event says by whom.**
  * The Igor's own bot account is its own release: no receipt. Anyone else is a stop by that person,
  * and the receipt names them. The two cases are exhaustive, because an Igor that loses a race
@@ -290,8 +301,9 @@ export function labelVerdictFrom(
   labels: readonly string[],
   events: readonly RawEvent[] | undefined,
   comments: readonly RawComment[],
+  since: string,
 ): ClaimVerdict {
-  const stop = stopFrom(self.login, comments)
+  const stop = stopFrom(self.login, comments, since)
   if (stop !== undefined) return stop
 
   if (!labels.includes(self.holder)) {
@@ -453,7 +465,7 @@ export class GitHubTracker implements Tracker {
     ])
     const puzzling = !labels.includes(self.holder) || labels.some((l) => isHolderLabel(l) && l !== self.holder)
     const events = puzzling ? await this.events(candidate) : undefined
-    return labelVerdictFrom(self, labels, events, comments ?? [])
+    return labelVerdictFrom(self, labels, events, comments ?? [], since)
   }
 
   /**

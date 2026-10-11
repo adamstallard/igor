@@ -12,7 +12,8 @@ const item = (holders: string[] = []): Candidate => ({ id: 'github:o/r#7', track
   inFlight: { kind: 'pull-request', ref: '#71', url: 'u', draft: true, author: 'igor-bot', mergeable: 'conflicting', branch: 'igor/triage/7', base: 'main' } } as unknown as Candidate)
 
 describe('a catch-up that cannot read who set the label when it gives its claim back', () => {
-for (const verdict of [{ status: 'held' }, { status: 'stopped', by: 'adam', at: '2026-10-11T02:00:00Z', reason: 'said stop' }]) {
+// Exits other than a stop. A stop removes the label without asking who set it (catch-up-hand-over.test.ts).
+for (const verdict of [{ status: 'held' }, { status: 'lost', by: 'igor-other[bot]' }]) {
   it(`releases the label its own claim put on an item the cycle read without it (${verdict.status})`, async () => {
     const w = world(new Set<string>(), verdict)
     await catchUpItem(w.deps, item(), role, 'igor-bot')

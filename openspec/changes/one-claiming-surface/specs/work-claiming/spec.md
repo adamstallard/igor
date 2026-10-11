@@ -162,7 +162,8 @@ holding the claim in silence.
 **Giving the claim back never takes back a person's hand-over.** Where a person put the Igor in
 the holder field, as by adding its `igor:<role>` label, and the run is the Igor bringing its own
 artifact up to date rather than answering that hand-over, releasing the claim SHALL leave that
-holder entry in place. Bringing its own work up to date is not a claim of the hand-over (*An item
+holder entry in place, except where a person stops the Igor: a stop removes the Igor from the
+holder field, as every stop does, and the person hands the item over again by adding it anew. Bringing its own work up to date is not a claim of the hand-over (*An item
 handed to an Igor waits for work already in flight*), and removing the person's entry would spend
 a hand-over the Igor has not answered.
 
@@ -229,9 +230,16 @@ caller that must tell them apart cannot do it from a thrown error alone.
 #### Scenario: A catch-up gives its claim back and keeps a person's label
 
 - **WHEN** an Igor brings its own pull request up to date on an issue whose `igor:<role>` label a
-  person added, and the run ends in any way
+  person added, and the run ends other than by a stop
 - **THEN** the label is still on the issue afterwards
 - **AND** once that pull request closes, the label directs the Igor as for any hand-over
+
+#### Scenario: A stop during a catch-up takes the label off
+
+- **WHEN** a person stops an Igor while it brings its own pull request up to date on an issue
+  whose `igor:<role>` label a person added
+- **THEN** the label is removed, and the stop receipt says the Igor released the issue
+- **AND** adding the label again later hands the issue over again
 
 ## ADDED Requirements
 

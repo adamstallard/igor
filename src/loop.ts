@@ -1,4 +1,4 @@
-import type { Artifact, Candidate, ClaimVerdict, CodeHost, Comment, Tracker } from './adapter.js'
+import type { Artifact, Candidate, ClaimVerdict, CodeHost, Comment, ReleaseHow, Tracker } from './adapter.js'
 import type { Gate, SeatVerdict } from './budget.js'
 import {
   checkpoint, CLAIM_MARKER, eligibleAfterStop, inFlightNotice, standDown, stillHeld, stopReceipt, STOPPED_MARKER, takeClaim,
@@ -589,8 +589,11 @@ export async function catchUpItem(
 
   // A person's label on the item is their hand-over, which a catch-up does not answer, so the
   // run gives back its claim through a tracker that leaves that label where it is, on every exit.
+  // The earliest a stop of this run can have been said: the floor `takeClaim` scans a claim's
+  // stops from.
+  const floor = new Date((options.claim?.now ?? Date.now)() - role.settleSeconds * 1000).toISOString()
   const run = await runItem(
-    { ...deps, tracker: keepingLabel(deps.tracker) }, candidate, role, identity, { ...options, catchUp: artifact },
+    { ...deps, tracker: keepingLabel(deps.tracker, floor) }, candidate, role, identity, { ...options, catchUp: artifact },
   )
   // The claim comment said the Igor picked the item up; nothing else would say what it then
   // did. An ordinary run ends in a pull request that announces itself, and a catch-up ends on
@@ -619,11 +622,21 @@ export async function catchUpItem(
 
 /**
  * The tracker as a catch-up sees it: giving back the claim removes the label only where this Igor
- * put it there, and otherwise leaves it and answers that the claim is given back, which it is.
+ * put it there, or where a person stopped the Igor, and otherwise leaves it and answers that the
+ * claim is given back, which it is.
  *
  * Who set the label is read when the claim is given back, never from the cycle's candidate. A
  * person can add or remove the label between the cycle reading the item and the release, and the
  * claim itself puts back a label a person removed, which makes it this Igor's to remove.
+ *
+ * A stop of this run releases the label as any stop does, whether or not the run saw it: one that
+ * lands after the run's last checkpoint, while the resolution is being pushed, is still a stop.
+ * A stop of this run is one created at or after both the hand-over and `floor`, the run's start
+ * less the settle interval. A stop said before either belongs to something else, such as one a
+ * go-ahead or the cooldown already lifted, and a catch-up that ends any other way keeps the
+ * label. Creation time decides, never the read's `since`, which a surface may apply to when a
+ * comment was last edited. A comment with no readable time counts. Where the comments cannot be
+ * read, the label is kept.
  *
  * Where who set it cannot be read, the cycle's candidate decides. A candidate without the label
  * means the claim put it there, so it is released as any claim is, and a release that does not
@@ -631,14 +644,25 @@ export async function catchUpItem(
  * is kept: removing it is the mistake nothing on the item would explain, and saying it is still
  * there would tell that person to take back what they handed over.
  */
-function keepingLabel(tracker: Tracker): Tracker {
+function keepingLabel(tracker: Tracker, floor: string): Tracker {
   return Object.assign(Object.create(tracker) as Tracker, {
-    release: async (candidate: Candidate, as: string): Promise<boolean> => {
-      const person = await tracker.holderSetBy(candidate).then(
-        (set) => set?.self === false,
-        () => candidate.holders.includes(tracker.holder),
+    release: async (candidate: Candidate, as: string, how?: ReleaseHow): Promise<boolean> => {
+      // A stop removes the label whoever put it there, as any stop removes this Igor from the
+      // holder field: the person who stopped it hands it over again by adding the label anew.
+      if (how?.stop === true) return tracker.release(candidate, as)
+      const set = await tracker.holderSetBy(candidate).then(
+        (setting) => setting,
+        () => null,
       )
-      return person ? true : tracker.release(candidate, as)
+      // A failed read keeps a label the cycle saw, without asking whether a stop cancelled it.
+      if (set === null) return candidate.holders.includes(tracker.holder) ? true : tracker.release(candidate, as)
+      if (set?.self !== false) return tracker.release(candidate, as)
+      const from = Date.parse(set.at) > Date.parse(floor) ? set.at : floor
+      const stopped = await tracker.commentsSince(candidate, from).then(
+        (spoken) => notBefore(spoken, from).some((c) => isStop(c.body, as)),
+        () => false,
+      )
+      return stopped ? tracker.release(candidate, as) : true
     },
   })
 }
@@ -1367,7 +1391,9 @@ export async function findDirected(
       try {
         const setting = await tracker.holderSetBy(candidate)
         if (setting === undefined || setting.self) continue
-        const spoken = await tracker.commentsSince(candidate, setting.at)
+        // Created since the hand-over, not merely edited since it, which is all `since` asks
+        // of a surface that filters on the edit time.
+        const spoken = notBefore(await tracker.commentsSince(candidate, setting.at), setting.at)
         const others = candidate.holders.filter((h) => h !== holding.holder)
         if (others.length > 0) {
           const marker = waitingMarker(others)

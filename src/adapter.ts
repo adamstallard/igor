@@ -193,7 +193,7 @@ export interface Tracker {
    * Gives the claim up, removing only what names this Igor, and answers whether the holder field
    * is clear of it afterwards, read back.
    */
-  release(candidate: Candidate, as: string): Promise<boolean>
+  release(candidate: Candidate, as: string, how?: ReleaseHow): Promise<boolean>
 
   /** An open item in `repo` whose description links `url`, as its link, or `undefined`. */
   findLinking(repo: string, url: string): Promise<string | undefined>
@@ -203,6 +203,12 @@ export interface Tracker {
 
   /** How an artifact refers back to an item on this tracker — `Closes #12`, a branch name, … */
   linkage(candidate: Candidate): string
+}
+
+/** Why a claim is being given back, where that changes what the release removes. */
+export interface ReleaseHow {
+  /** A person stopped the Igor. A stop removes this Igor from the holder field, whoever put it there. */
+  stop?: boolean
 }
 
 export interface ArtifactRequest {

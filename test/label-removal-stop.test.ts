@@ -19,6 +19,7 @@ describe('a stop made by removing the label', () => {
       [{ id: 1, event: 'labeled', actor: { login: ME, id: 7, type: 'Bot' }, label: { name: 'igor:frontend' }, created_at: '2026-10-10T11:50:00Z' },
        { id: 2, event: 'unlabeled', actor: { login: 'alice', id: 9, type: 'User' }, label: { name: 'igor:frontend' }, created_at: '2026-10-10T11:58:00Z' }],
       [],
+      '1970-01-01T00:00:00Z',
     )
     // What is then on the item: the claim message and the Igor's own stop receipt.
     const spoken: Comment[] = [
@@ -38,6 +39,7 @@ describe('a stop made by removing the label', () => {
       ['igor:frontend'],
       undefined,
       [{ body: receipt, user: { login: ME }, created_at: '2026-10-10T11:59:00Z' }],
+      '1970-01-01T00:00:00Z',
     )
     expect(verdict.status).toBe('held')
   })
