@@ -10,100 +10,104 @@ seat's line for a window rises from `1 − reserve` just after a reset to 100% a
 the larger of the seat's and the role's reserve, and a reading is the seat's most recent unreset
 observation of the window.
 
-## Decisions already made (Adam)
+## Decisions (Adam)
 
-- **2026-09-28:** one file per seat; tokens encrypted to the server's public key and delivered as
-  GitHub Actions secrets by a deploy workflow on a self-hosted runner; the runner guarded by a
-  private repository or a runner group restricted to the deploy workflow on `main`; pools dropped.
+- **2026-09-28:** one file per seat; pools dropped.
 - **2026-10-04:** no seat file may name `token_command` or `token_file`; this change removes the
   in-force pool requirement; seat choice is most headroom, soonest reset as tie-break (#147).
 - **2026-10-11:** a holder with no GitHub account on the lore repository has the operator stand in
   as code owner, and `igor doctor` reports it. Igor warns, and does not refuse, when a seat file
   has no code owner or the code-owner review rule is not in force.
 - **2026-10-11: an old `budget.seats` gets no dedicated refusal or migration message.** Nobody runs
-  Igor on such a config except `adamstallard/igor-lore`, which is migrated by hand (task 9.1).
+  Igor on such a config except `adamstallard/igor-lore`, which is migrated by hand (task 8.1).
   Once seats move to `seats/`, `budget` is a key the config does not read, and the generic
-  unknown-key refusal is all an old config gets. This replaces #148's earlier wording, "refused at
-  load with a message saying where seats now live".
+  unknown-key refusal is all an old config gets.
+- **2026-10-11: the token travels as ciphertext in the seat file**, replacing the GitHub-secret
+  and deploy-workflow model chosen on 2026-09-28. The section below has the reasons.
+- **2026-10-11, accepted as this design proposed:** `token_env` is fixed to `IGOR_SEAT_<ID>`; a
+  role naming a seat its file does not list is refused; the seat-choice details below; per-role
+  reserves stay on the role (#143); base64 age through the `age-encryption` package; the
+  CODEOWNERS layout below; the seat-id format; `roles` required and possibly empty; an unknown
+  role refused; the config key `seatKey`. The `work-triage` requirements that say "pool" are
+  reworded here.
 
 ## How the token reaches the server
 
-**Chosen: encrypt the token to the server, and deliver the ciphertext as a GitHub secret.**
+**The holder encrypts their token to the server's public key, and the ciphertext goes in their
+seat file.** The pull request that adds `seats/<id>.yaml` carries it, as `encrypted_token`. The
+server reads the seat file from its lore checkout and decrypts the token with its private key when
+it reads the seat. No GitHub secret, no workflow and no runner are involved, and a lender needs no
+access to the lore repository beyond opening a pull request, so they can contribute from a fork.
 
 1. The server has an age keypair, made with `age-keygen` as the service user. The private key
-   stays on the server, `0600`, at the path `igor.config.yaml` names as `seatKey`. The public key
-   is committed to the lore repository as `seats/recipient.txt`.
-2. The holder runs `claude setup-token`, encrypts the token to that public key, and stores the
-   ciphertext with `gh secret set IGOR_SEAT_<ID>` on the lore repository. They open a pull request
-   adding `seats/<id>.yaml`, which names `token_env: IGOR_SEAT_<ID>`. `igor seat add` does all of
-   it.
-3. A deploy workflow on a self-hosted runner, the Igor server itself, runs on a push to `main`. It
-   writes every `IGOR_SEAT_*` secret into a seat env file, updates the lore checkout, and restarts
-   the Igors.
-4. Igor decrypts a seat's token with the private key when it reads it.
+   stays on the server at the path `igor.config.yaml` names as `seatKey`. The public key is
+   committed as `seats/recipient.txt`.
+2. The holder runs `claude setup-token`, encrypts the token to that public key, and opens a pull
+   request adding `seats/<id>.yaml` with the ciphertext in it. `igor seat add` does all of it.
+3. Once the pull request merges and the server's lore checkout has it, Igor decrypts the token
+   with the private key whenever it reads the seat.
 
-Rotating is `igor seat add` again. Revoking is deleting the secret, or revoking the token at
-Anthropic. Rotating the server key means every holder re-encrypts.
+Rotating is the same pull request with new ciphertext: `igor seat add` again. Revoking is
+revoking the token at Anthropic, which takes effect at once, or removing the seat file.
 
-**Who can read a token: the server admin, and nobody else.** Every design gives the server admin
-access, because the server must hold the token to use it. With plain repository secrets every
-writer could read every token too, since a workflow on any pushed branch runs with the
-repository's secrets and can send them anywhere. Here such a writer gets only ciphertext, and
-nothing is in git history.
+### The server's private key is the whole protection
 
-**Options rejected:**
+Anyone can read a seat file, and on a public lore repository that means anyone at all. What
+keeps the token secret is the private key alone, so its handling is the part of this design an
+operator must get right:
 
-- **Plain repository secrets:** every writer can read every token.
+- **Who can read it:** the service user and root. The file is `0600`, owned by the service user.
+- **Backup:** kept somewhere off the server that only the operator can read. Lost, every seat goes
+  unreadable until each holder re-encrypts to a new key.
+- **Rotation:** a new keypair, the new public key committed, and every holder re-encrypting with
+  `igor seat add`. Old ciphertext stays readable by the old key, so a rotation after a leak also
+  needs every holder to revoke their token and issue a new one.
+- **A leak:** treat every seat token as leaked. Rotate the key, and every holder revokes at
+  Anthropic and re-issues.
+
+### Why ciphertext in history no longer rules this out
+
+The 2026-09-28 model rejected an encrypted file in git because the ciphertext stays in history
+forever, readable by anyone who later holds the key. That permanence adds little:
+
+- A decrypted token is useful only while it is valid. A `setup-token` expires after a year (#145),
+  its holder can revoke it at any time, and after a rotation the old ciphertext decrypts to a dead
+  token.
+- What history exposes is therefore tokens still valid when the key leaks. Every design is
+  exposed to a server-key leak the same way, because the server must hold every token it uses:
+  under the secret model the same leak exposed the same live tokens through the env file.
+
+### Options rejected
+
+- **Plain repository secrets:** every writer can read every token, since a workflow on any pushed
+  branch runs with the repository's secrets and can send them anywhere.
+- **Secrets delivered by a deploy workflow on a self-hosted runner,** the 2026-09-28 model. On a
+  public repository a fork's pull request can bring its own `runs-on: self-hosted` workflow and run
+  code on the server, which holds every decrypted token. The only guards are a private repository
+  or an organization's runner group restricted to the deploy workflow, and `igor-lore` is public
+  and on a personal account, which has no runner groups. It also needs lenders to have `write`, to
+  set a secret.
+- **A pull model:** a GitHub-hosted workflow publishes a short-lived ciphertext artifact, and the
+  server polls for it. It costs a workflow and repository secrets, and its exposure is no better
+  against a determined attacker, who can read the artifact while it lives.
 - **Environment secrets restricted to `main`:** safe, but only an admin can add a seat.
-- **An encrypted file in git:** only the server can read tokens, but the ciphertext stays in
-  history forever, readable by anyone who later holds the key.
 - **A secrets manager with write-only drop paths:** needs another service.
 - **A one-time drop page on the server:** needs a public endpoint, which Igor's polling design
   avoids.
 - **Each holder runs their own runner:** breaks the rule that nothing runs on a seat holder's
   machine.
 
-**This is recommended, not required.** An operator who prefers another way writes a seat file by
-hand, naming `token_env`, collects the token however they like, and puts it in the server's env
-file. A secret store's output goes into that file too.
+### An operator's own seat may name `token_env` instead
 
-### The ciphertext is one line, and says what it is
+A seat file carries `encrypted_token` or `token_env`, never both. `token_env` serves the seat
+whose token the operator holds and puts in the server's env file by hand, such as `igor-lore`'s
+`adam` seat or a fleet seat bought for the team, or a token a secret store writes there. It names
+a variable and runs nothing, so it is as safe in a contributed file as ciphertext is, and it costs
+the operator no encryption step for a token already on the server. Its value is a plain token.
 
-A GitHub secret, a systemd `EnvironmentFile=` line and a Compose `env_file` line all have to carry
-it, and the last two do not reliably carry a multi-line value. So the secret holds the binary age
-ciphertext, base64-encoded on one line with no wrapping. Igor treats a `token_env` value as
-ciphertext when it begins with `YWdlLWVuY3J5cHRpb24ub3JnL3Yx`, which is `age-encryption.org/v1`,
-the first line of every age file, in base64. Anything else is a plain token. A `setup-token`
-begins `sk-ant-`, so the two cannot be confused.
-
-Rejected: a seat file key such as `encrypted: true`. The value already says which it is, and a key
-is one more thing a lender can get wrong, in the one place where getting it wrong means a token
-nobody can read.
-
-Rejected: ASCII-armored age (`age -a`). It is multi-line, and its parser rejects re-wrapped
-lines, so the deploy workflow would have to re-encode it anyway.
-
-### Encryption and decryption use the `age-encryption` package
-
-Igor shells out to `git`, `gh` and `claude` rather than reimplementing them, so shelling out to
-`age` would be the house style. The package is chosen instead because of who runs `igor seat
-add`: a lender, on their own machine. With the package, that lender needs Node and `gh`, and no
-`age` binary. The server needs `age-keygen` once, to make the keypair, and nothing after. The
-package is Filippo Valsorda's TypeScript implementation of the same format.
-
-The decrypted token lives only in the Igor process and the worker it spawns, which is where it
-has to be. Nothing writes it to disk or to an argument list.
-
-### The deploy workflow owns a file of its own
-
-The workflow writes `/etc/igor/seats.env`, replacing it whole on every run. The unit reads it with
-a second `EnvironmentFile=` after `/etc/igor/env`. The operator's own file is never touched, so a
-token the operator installed by hand survives every deploy, and a secret deleted from GitHub
-disappears from the server on the next deploy. Where both files name one variable, systemd takes
-the later one, `seats.env`; `igor doctor` reports any name defined in both.
-
-The workflow restarts the Igors with `sudo systemctl restart 'igor@*'`. The service user gets
-that one command in sudoers and nothing else.
+Kept rather than requiring every seat to carry ciphertext: an operator would otherwise encrypt
+their own token to their own server only to decrypt it again, and a seat whose token lives in a
+secret store would need a re-encryption each time the store rotates it.
 
 ### `token_env` is fixed by the seat's id
 
@@ -117,7 +121,27 @@ its own id, with its own reserve and roles, past the holder who approved the oth
 one line in a file whose review is permissive by design. A seat id holds only lowercase letters,
 digits and hyphens, so no two ids map to the same name.
 
-This is not in #148's decisions, and is listed under *Open* for Adam.
+### The ciphertext is one line, and says what it is
+
+`encrypted_token` holds the binary age ciphertext, base64-encoded on one line with no wrapping, so
+it sits in YAML as a plain scalar. Igor checks that it begins with `YWdlLWVuY3J5cHRpb24ub3JnL3Yx`,
+which is `age-encryption.org/v1`, the first line of every age file, in base64. A value that does
+not is refused at load, and the refusal tells the holder to revoke the token: a plain token in a
+seat file is a credential committed to git.
+
+Rejected: ASCII-armored age (`age -a`). It is multi-line and its parser rejects re-wrapped lines,
+which a YAML block scalar indented wrongly produces.
+
+### Encryption and decryption use the `age-encryption` package
+
+Igor shells out to `git`, `gh` and `claude` rather than reimplementing them, so shelling out to
+`age` would be the house style. The package is chosen instead because of who runs `igor seat
+add`: a lender, on their own machine. With the package, that lender needs Node and `gh`, and no
+`age` binary. The server needs `age-keygen` once, to make the keypair. The package is Filippo
+Valsorda's TypeScript implementation of the same format.
+
+The decrypted token lives only in the Igor process and the worker it spawns, which is where it
+has to be. Nothing writes it to disk or to an argument list.
 
 ### Decryption composes with #101's credential condition
 
@@ -125,6 +149,13 @@ This is not in #148's decisions, and is listed under *Open* for Adam.
 is taken of the decrypted token, not the ciphertext. age encryption is randomized, so a holder who
 re-encrypts the same token produces a different ciphertext, and a digest of that would read as a
 new credential and clear a condition the provider would only refuse again.
+
+### A merged seat file reaches the server when its checkout does
+
+Igor reads seats from its lore checkout when it loads, and nothing in Igor updates that checkout.
+A merged seat file, a new one or a rotated token, takes effect once the operator pulls the
+checkout and restarts the Igors. That is how a merged role change reaches the server too. The
+operator guide says so.
 
 ## How a seat is chosen without pools
 
@@ -215,7 +246,7 @@ if nobody can route around the file:
 | `/seats/` | the operator | A new seat file's first pull request is reviewed under the base branch's CODEOWNERS, which has no line for it yet |
 | `/seats/<id>.yaml` | that seat's holder | The holder approves every change to their seat. Listed after `/seats/`, so it wins |
 | `/seats/recipient.txt` | the operator | Whoever replaces it receives every token encrypted afterwards |
-| `/.github/` | the operator | CODEOWNERS itself, and the deploy workflow, which handles every secret |
+| `/.github/` | the operator | CODEOWNERS itself, and the workflows, which run with the repository's permissions |
 | `/igor.config.yaml` | the operator | It names `seatKey` |
 
 The lore repository's other paths, entries and roles among them, get no code owner from this
@@ -229,29 +260,10 @@ file's code owner is someone other than its `owner`. `igor doctor` reports it fo
 which seat, who stands in, and that the holder's approval is then given outside GitHub. Load does
 not warn about it, because the seat file does have a code owner.
 
-## Open
+## Still to measure
 
-- **The `token_env` name is bound to the seat's id.** Not among #148's decisions. Recommended, for
-  the reasons above.
-- **A role naming a seat that does not list it is refused.** Recommended: otherwise `seat:` puts
-  a seat to work for a role its holder never approved.
-- **An eligible seat with no reading ranks as 0% used.** The alternative ranks it last, so a new
-  dedicated seat would wait until every read seat had less headroom than its line. Recommended as
-  written.
-- **The week's reset is the tie-break.** #147 leaned that way, as the window actually lost.
-- **Per-role reserves stay on the role, not in the seat file.** #148's direction mentioned
-  per-role reserves in the seat file. #143 puts a role's reserve on the role, for every seat it
-  draws on, and it can only raise a seat's reserve, never lower it. So the holder's floor needs no
-  per-role entry in their file.
-- **`igor-lore` is public and on a personal account.** A public repository can't host the runner
-  safely, and runner groups exist only for organizations, so neither guard is available to it.
-  `seats/adam.yaml` keeps its token in the server's env file by hand (task 9.1). The deploy
-  workflow needs the repository made private, or moved to an organization.
-- **Whether `write` access lets a holder run `gh secret set`.** GitHub's REST docs say
-  "collaborator access"; its settings page says admin for the web form. Task 1.1 measures it, and
-  the lender guide is written from the result.
 - **What happens when a holder authors a change to their own seat file.** GitHub does not count an
   author's approval, and the holder is that file's only code owner, so the pull request may wait
   for a review nobody else can give. The first pull request is not affected: `/seats/` gives it the
-  operator as code owner. Task 1.2 measures a later one, such as a holder raising their reserve,
-  and the lender guide says what to do.
+  operator as code owner. Rotation is affected, since a rotation is the holder's own pull request
+  changing `encrypted_token`. Task 1.1 measures it, and the lender guide says what to do.

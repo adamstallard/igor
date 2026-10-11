@@ -16,7 +16,8 @@ the accepted ones:
 | `reserve` | no | as *Seats are named configuration entities with an owner and a reserve* defines it; 0 when absent |
 | `dedicated` | no | `true` for a seat nobody works on |
 | `roles` | yes | a list of the role names this seat serves; it MAY be empty |
-| `token_env` | no | the environment variable holding the seat's token, as *A seat file names its token only by its own variable* constrains it |
+| `encrypted_token` | no | the seat's token, encrypted to the server's public key, as *A seat's token travels as ciphertext in its file* defines it |
+| `token_env` | no | the environment variable holding the seat's token, as *A seat file names its token only by ciphertext or its own variable* constrains it |
 
 `roles` SHALL be a list of strings, each naming a role file under `roles/` other than the org
 base. A name with no role file SHALL be refused, naming the seat file, the name, and the roles
@@ -31,9 +32,9 @@ lines, so an entry inside a shared file cannot have an owner of its own.
 
 #### Scenario: A seat file declares a seat
 
-- **WHEN** `seats/adam.yaml` declares an owner, a reserve of 0.5, `roles: [generalist]` and
-  `token_env: IGOR_SEAT_ADAM`
-- **THEN** a seat `adam` is declared with that owner, reserve, role and token variable
+- **WHEN** `seats/bob.yaml` declares an owner, a reserve of 0.5, `roles: [generalist]` and an
+  `encrypted_token`
+- **THEN** a seat `bob` is declared with that owner, reserve, role and token
 
 #### Scenario: A redundant id is refused
 
@@ -65,43 +66,48 @@ lines, so an entry inside a shared file cannot have an owner of its own.
 - **WHEN** `seats/` holds `recipient.txt` beside the seat files
 - **THEN** it is not read as a seat
 
-### Requirement: A seat file names its token only by its own variable
+### Requirement: A seat file names its token only by ciphertext or its own variable
 
-A seat file SHALL name its token, where it names one, only with `token_env`, and its value SHALL
-be `IGOR_SEAT_` followed by the seat's id uppercased, with every character other than a letter or
-digit replaced by `_`. A seat file naming `token_command` or `token_file` SHALL be refused, naming
-the file and the key, and saying a seat file names its token only with `token_env`. A seat file
-whose `token_env` is any other name SHALL be refused, naming the file, the name it gave and the
-name it must give. An id holds only lowercase letters, digits and hyphens, so no two ids yield
-the same variable.
+A seat file SHALL name its token, where it names one, with exactly one of `encrypted_token` and
+`token_env`. A seat file naming both SHALL be refused, naming the file and both keys. A seat file
+naming `token_command` or `token_file` SHALL be refused, naming the file and the key, and saying a
+seat file names its token only with `encrypted_token` or `token_env`.
 
-A seat file naming no token reads through whatever login is ambient, as a seat naming none did
+`token_env` SHALL be `IGOR_SEAT_` followed by the seat's id uppercased, with every character other
+than a letter or digit replaced by `_`. A seat file whose `token_env` is any other name SHALL be
+refused, naming the file, the name it gave and the name it must give. An id holds only lowercase
+letters, digits and hyphens, so no two ids yield the same variable. The variable holds a plain
+token the operator put in the server's environment.
+
+A seat file naming neither reads through whatever login is ambient, as a seat naming no token did
 before seat files existed.
 
-The variable holds either a plain token the operator put there, or ciphertext the deploy workflow
-wrote. Neither form runs or reads anything on the server, so nothing depends on telling an
-operator's seat file from a lender's. `token_command` is run by Igor's own process with that
-process's environment, which holds every other seat's token and the GitHub token, so whoever could
-merge one could run code on the server. That is acceptable while every configuration change gets
-careful review, and a hole once seats are contributed permissively.
+Neither form runs or reads anything on the server beyond the seat's own token, so nothing depends
+on telling an operator's seat file from a lender's. `token_command` is run by Igor's own process
+with that process's environment, which holds every other seat's token and the GitHub token, so
+whoever could merge one could run code on the server. That is acceptable while every
+configuration change gets careful review, and a hole once seats are contributed permissively.
 
-The name is fixed because a free choice is the same hole by other means. A seat file naming
-`GH_TOKEN` would hand the GitHub token to `claude` as a seat credential. A seat file naming another
-seat's variable would spend that seat under a different id, with a reserve and roles its holder
-never approved.
-
-An operator who keeps tokens in a secret store puts the store's output into the server's env file.
+The variable's name is fixed because a free choice is the same hole by other means. A seat file
+naming `GH_TOKEN` would hand the GitHub token to `claude` as a seat credential. A seat file naming
+another seat's variable would spend that seat under a different id, with a reserve and roles its
+holder never approved.
 
 #### Scenario: A command is refused, naming the key
 
 - **WHEN** a seat file declares `token_command`
 - **THEN** it is refused, naming the file and `token_command`
-- **AND** the refusal says a seat file names its token only with `token_env`
+- **AND** the refusal says a seat file names its token only with `encrypted_token` or `token_env`
 
 #### Scenario: A file path is refused, naming the key
 
 - **WHEN** a seat file declares `token_file`
 - **THEN** it is refused, naming the file and `token_file`
+
+#### Scenario: Both forms are refused
+
+- **WHEN** a seat file declares both `encrypted_token` and `token_env`
+- **THEN** it is refused, naming the file and both keys
 
 #### Scenario: Another variable is refused
 
@@ -115,44 +121,53 @@ An operator who keeps tokens in a secret store puts the store's output into the 
 
 #### Scenario: A seat naming no token reads the ambient login
 
-- **WHEN** a seat file names no `token_env`
+- **WHEN** a seat file names neither `encrypted_token` nor `token_env`
 - **THEN** the seat reads through whatever login is ambient
 
-### Requirement: A seat's token may be ciphertext, which Igor decrypts with the server's key
+### Requirement: A seat's token travels as ciphertext in its file
 
-A `token_env` value beginning with `YWdlLWVuY3J5cHRpb24ub3JnL3Yx`, the base64 of
-`age-encryption.org/v1`, SHALL be read as an age ciphertext, base64-encoded on one line. Igor
-SHALL decrypt it with the age identity at the path `igor.config.yaml` names as `seatKey`,
-resolved against the config file's directory, and use the plaintext as the seat's token. Any
-other value SHALL be used as the token itself.
+A seat file's `encrypted_token` SHALL be an age ciphertext, encrypted to the public key committed
+as `seats/recipient.txt` and base64-encoded on one line. Igor SHALL decrypt it with the age
+identity at the path `igor.config.yaml` names as `seatKey`, resolved against the config file's
+directory, and use the plaintext as the seat's token.
+
+A value that does not begin with `YWdlLWVuY3J5cHRpb24ub3JnL3Yx`, the base64 of
+`age-encryption.org/v1`, SHALL be refused at load, naming the file, and saying that a plain token
+committed to the repository is to be revoked at Anthropic and replaced with ciphertext. A plain
+token in a seat file is a credential in git history, and the refusal is the only place anybody is
+told.
 
 Decryption SHALL happen where the token is read, whenever it is read, and the plaintext SHALL NOT
 be written to disk, to an argument list, or to any record. Where decryption fails, the seat SHALL
 be reported unreadable with the reason, and no other credential SHALL be used in its place: no
-`seatKey` declared, a key file that cannot be read, a key that does not match, or a malformed
-ciphertext.
+`seatKey` declared, a key file that cannot be read, a key that does not match, or a ciphertext
+that does not decrypt.
 
 A seat's credential, wherever another rule compares or digests it, SHALL be the plaintext token.
 age encryption is randomized, so one token encrypted twice yields two ciphertexts, and comparing
 ciphertexts would read a re-encrypted token as a new credential.
 
-`seatKey` is optional. A configuration whose seats hold only plain tokens needs none.
+`seatKey` is optional. A configuration with no `encrypted_token` needs none.
+
+The private key is the whole of the token's protection: a seat file is readable by everyone who
+can read the lore repository, which may be anyone.
 
 #### Scenario: Ciphertext is decrypted
 
-- **WHEN** `IGOR_SEAT_ADAM` holds a base64 age ciphertext encrypted to the server's public key,
-  and `seatKey` names the matching private key
+- **WHEN** `seats/bob.yaml`'s `encrypted_token` was encrypted to the server's public key, and
+  `seatKey` names the matching private key
 - **THEN** the seat's token is the decrypted plaintext
 
-#### Scenario: A plain token is used as it is
+#### Scenario: A plain token in a seat file is refused
 
-- **WHEN** `IGOR_SEAT_ADAM` holds a `setup-token` beginning `sk-ant-`
-- **THEN** that value is the seat's token, and no key is read
+- **WHEN** a seat file's `encrypted_token` is a `setup-token` beginning `sk-ant-`
+- **THEN** it is refused at load, naming the file
+- **AND** the refusal says to revoke that token at Anthropic and replace it with ciphertext
 
 #### Scenario: Ciphertext with no key is unreadable, not substituted
 
-- **WHEN** a seat's variable holds ciphertext and the configuration declares no `seatKey`
-- **THEN** the seat is reported unreadable, saying the token is encrypted and no `seatKey` is
+- **WHEN** a seat file carries `encrypted_token` and the configuration declares no `seatKey`
+- **THEN** the seat is reported unreadable, saying its token is encrypted and no `seatKey` is
   declared
 - **AND** no other credential is used in its place
 
@@ -165,7 +180,7 @@ ciphertexts would read a re-encrypted token as a new credential.
 
 #### Scenario: Re-encrypting a token is the same credential
 
-- **WHEN** a holder encrypts the same token a second time and the deploy writes the new ciphertext
+- **WHEN** a holder encrypts the same token a second time and the new ciphertext merges
 - **THEN** the seat's credential is unchanged
 
 ### Requirement: A role's seats are the seats whose files list it
@@ -336,20 +351,20 @@ fleet changed; a warning tells the operator and keeps working.
 
 ### Requirement: `igor seat add` lends a seat in one step
 
-`igor seat add <id>` SHALL be run by a holder in a clone of the lore repository, and SHALL:
+`igor seat add <id>` SHALL be run by a holder in a clone of the lore repository, or of their fork
+of it, and SHALL:
 
 1. Read the public key from `seats/recipient.txt` on the lore repository's default branch on
    GitHub, not from the working tree.
 2. Read the token from the terminal without echoing it, and refuse an empty one.
 3. Encrypt it to that key, and base64-encode the result on one line.
-4. Store the result as the repository secret `IGOR_SEAT_<ID>`, passing it to `gh secret set` on
-   standard input.
-5. Where `seats/<id>.yaml` does not exist on the default branch, write it with the holder's
-   GitHub login as `owner`, the `reserve` and `roles` given as options, and `token_env`; add a
-   CODEOWNERS line making the holder its code owner; commit both on a new branch; push it; and
-   open a pull request.
-6. Where `seats/<id>.yaml` already exists on the default branch, change no file and open no pull
-   request: the secret alone is replaced, which is how a token is rotated.
+4. Where `seats/<id>.yaml` does not exist on the default branch, write it with the holder's GitHub
+   login as `owner`, the `reserve` and `roles` given as options, and the ciphertext as
+   `encrypted_token`, and add a CODEOWNERS line making the holder its code owner.
+5. Where `seats/<id>.yaml` already exists on the default branch, replace its `encrypted_token` and
+   change nothing else. This is how a token is rotated.
+6. Commit on a new branch, push it to the lore repository where the holder may, and otherwise to
+   their fork, and open a pull request against the default branch.
 
 The token SHALL NOT be written to disk, to an argument list, or to any process's environment. The
 command SHALL refuse, before reading the token, where `seats/recipient.txt` is absent on the
@@ -362,14 +377,18 @@ copy. Whoever replaces `recipient.txt` receives every token encrypted to it afte
 
 - **WHEN** a holder runs `igor seat add bob --reserve 0.5 --roles generalist` and `seats/bob.yaml`
   does not exist
-- **THEN** the secret `IGOR_SEAT_BOB` holds ciphertext only the server's key decrypts
-- **AND** a pull request adds `seats/bob.yaml` and a CODEOWNERS line naming the holder
+- **THEN** a pull request adds `seats/bob.yaml`, carrying ciphertext only the server's key
+  decrypts, and a CODEOWNERS line naming the holder
+
+#### Scenario: A holder without write access lends from a fork
+
+- **WHEN** the holder cannot push to the lore repository
+- **THEN** the branch is pushed to their fork and the pull request opened from there
 
 #### Scenario: Running it again rotates the token
 
 - **WHEN** a holder runs `igor seat add bob` and `seats/bob.yaml` exists on the default branch
-- **THEN** `IGOR_SEAT_BOB` is replaced with the new ciphertext
-- **AND** no file changes and no pull request is opened
+- **THEN** the pull request changes only that file's `encrypted_token`
 
 #### Scenario: The key comes from the default branch
 
@@ -539,7 +558,7 @@ credential pays, and the fallback is what it runs on.
 
 #### Scenario: A seat naming no token is still a seat
 
-- **WHEN** the gate chooses a seat whose file names no `token_env`
+- **WHEN** the gate chooses a seat whose file names neither `encrypted_token` nor `token_env`
 - **THEN** the call is made, on the ambient login, as that configuration already permits
 - **AND** the seat is recorded as having paid
 
@@ -560,15 +579,15 @@ the config's unknown-key refusal, because `budget` is no longer a config key.
 
 ### Requirement: A seat names its token through exactly one mechanism
 
-**Reason**: Every seat is a seat file, and a seat file may name its token only with `token_env`
-(Adam, 2026-10-04). `token_command` runs on the Igor server with every other seat's token in its
-environment, and `token_file` reads a path the seat file chooses, so neither may appear in a file
-whose review is permissive. With one mechanism left, "exactly one of three" describes nothing, and
-its scenarios about files and commands are false.
+**Reason**: Every seat is a seat file, and a seat file may not name `token_command` or
+`token_file` (Adam, 2026-10-04). `token_command` runs on the Igor server with every other seat's
+token in its environment, and `token_file` reads a path the seat file chooses, so neither may
+appear in a file whose review is permissive. The scenarios about files and commands are false.
 
-**Migration**: *A seat file names its token only by its own variable*. An operator who used
-`token_command` or `LoadCredential=` with `token_file` writes the token, or a secret store's
-output, into the server's env file under `IGOR_SEAT_<ID>`.
+**Migration**: *A seat file names its token only by ciphertext or its own variable*, and *A
+seat's token travels as ciphertext in its file*. An operator who used `token_command` or
+`LoadCredential=` with `token_file` writes the token, or a secret store's output, into the
+server's env file under `IGOR_SEAT_<ID>`, or encrypts it into the seat file.
 
 ### Requirement: A budget refuses a key nobody reads, and a list that is not a list
 

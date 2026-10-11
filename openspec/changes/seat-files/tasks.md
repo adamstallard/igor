@@ -6,19 +6,16 @@ measurement.
 
 ## 1. Measure what the guides depend on
 
-- [ ] 1.1 Measure whether a collaborator with `write`, not `admin`, can run
-      `gh secret set IGOR_SEAT_TEST --repo <lore>` on a personal-account repository and on an
-      organization's. Record the result in `design.md` under *Open*, and write the lender guide's
-      access sentence (task 10.9) from it
-- [ ] 1.2 On a test repository with a ruleset requiring code-owner review and no required
+- [ ] 1.1 On a test repository with a ruleset requiring code-owner review and no required
       approvals, measure what happens when a seat's holder, the file's only code owner, opens a
-      pull request changing that file. Record whether it can merge, and what the operator must do
-      if it cannot. The lender guide's *Afterwards* section says it
-- [ ] 1.3 Measure `GET /repos/{owner}/{repo}/rules/branches/{branch}` with an Igor's App
+      pull request changing that file, as a rotation does. Record whether it can merge, and what
+      the operator must do if it cannot, in `design.md` under *Still to measure*. The lender
+      guide's *Afterwards* and *Changing your mind* sections say it
+- [ ] 1.2 Measure `GET /repos/{owner}/{repo}/rules/branches/{branch}` with an Igor's App
       installation token: confirm it returns a ruleset's `pull_request` rule with
       `require_code_owner_review`, and that the classic protection endpoint answers 403 to the
       same token. Record both responses' shapes in `design.md`
-- [ ] 1.4 Confirm `age-encryption` decrypts what `age -r <recipient> | base64 | tr -d '\n'`
+- [ ] 1.3 Confirm `age-encryption` decrypts what `age -r <recipient> | base64 | tr -d '\n'`
       produces on macOS and Linux, after `base64 -d`, and that `age-keygen -y` derives the same
       recipient the package derives from the identity
 
@@ -46,35 +43,39 @@ measurement.
       file under `seats/`*; a config declaring `budget` is refused naming `budget`; no `seats/`
       means budget is not enforced; `recipient.txt` is not read as a seat
 
-## 3. One token variable, possibly encrypted
 
-- [ ] 3.1 `TokenSource` keeps `tokenEnv` alone. `resolveToken` loses the `tokenFile` and
-      `tokenCommand` branches, and `runTokenCommand` and `TOKEN_COMMAND_TIMEOUT_MS` go
-- [ ] 3.2 A seat file naming `token_command` or `token_file`, or another variable, is refused:
+## 3. The token: ciphertext in the file, or the seat's own variable
+
+- [ ] 3.1 `TokenSource` becomes `encryptedToken` or `tokenEnv`. `resolveToken` loses the
+      `tokenFile` and `tokenCommand` branches, and `runTokenCommand` and
+      `TOKEN_COMMAND_TIMEOUT_MS` go
+- [ ] 3.2 Refusals at load, worded so:
 
       ```
-      seats/<id>.yaml names `token_command`. A seat file names its token only with token_env: IGOR_SEAT_<ID>, a variable in the server's environment. Put the token, or your secret store's output, in the server's env file under that name.
-      seats/<id>.yaml names `token_file`. A seat file names its token only with token_env: IGOR_SEAT_<ID>, a variable in the server's environment. Put the token, or your secret store's output, in the server's env file under that name.
+      seats/<id>.yaml names `token_command`. A seat file names its token only with encrypted_token, the token encrypted to seats/recipient.txt, or token_env: IGOR_SEAT_<ID>, a variable in the server's environment.
+      seats/<id>.yaml names `token_file`. A seat file names its token only with encrypted_token, the token encrypted to seats/recipient.txt, or token_env: IGOR_SEAT_<ID>, a variable in the server's environment.
+      seats/<id>.yaml names both encrypted_token and token_env. Keep one.
       seats/<id>.yaml names token_env: <given>. A seat's token variable is IGOR_SEAT_ plus its id: IGOR_SEAT_<ID>.
+      seats/<id>.yaml: encrypted_token is not an age ciphertext. If it is a token, it is now in this repository's history: revoke it at Anthropic, then run `igor seat add <id>` with a new one.
       ```
 
-- [ ] 3.3 Add the `age-encryption` dependency. `resolveToken` decrypts a value beginning
-      `YWdlLWVuY3J5cHRpb24ub3JnL3Yx` with the identity at `seatKey`, read when needed and not
-      cached beyond the process
+- [ ] 3.3 Add the `age-encryption` dependency. `resolveToken` decrypts `encryptedToken` with the
+      identity at `seatKey`, read when needed and not cached beyond the process
 - [ ] 3.4 Decryption failures report the seat unreadable, worded so, after the existing `seat
       "<id>"` subject:
 
       ```
-      holds an encrypted token in IGOR_SEAT_<ID>, and igor.config.yaml names no seatKey to decrypt it with.
-      holds an encrypted token in IGOR_SEAT_<ID>, and the key at <path> could not be read: <reason>
-      holds a token in IGOR_SEAT_<ID> encrypted to a different key from the one at <path>. Its holder re-encrypts it to seats/recipient.txt with `igor seat add <id>`.
-      holds a value in IGOR_SEAT_<ID> that starts like an age ciphertext and is not one: <reason>
+      carries an encrypted token, and igor.config.yaml names no seatKey to decrypt it with.
+      carries an encrypted token, and the key at <path> could not be read: <reason>
+      carries a token encrypted to a different key from the one at <path>. Its holder re-encrypts it to seats/recipient.txt with `igor seat add <id>`.
+      carries an encrypted token that could not be decrypted: <reason>
       ```
 
 - [ ] 3.5 #101's credential digest is taken of the decrypted token. Test: the same token encrypted
       twice yields one digest
-- [ ] 3.6 Tests: each scenario of *A seat's token may be ciphertext*; the plaintext appears in no
-      record, transcript or handoff; the existing `token_file` and `token_command` tests in
+- [ ] 3.6 Tests: each scenario of *A seat file names its token only by ciphertext or its own
+      variable* and *A seat's token travels as ciphertext in its file*; the plaintext appears in
+      no record, transcript or handoff; the existing `token_file` and `token_command` tests in
       `test/budget.test.ts` are removed with the code they test
 
 ## 4. Which seats a role draws on
@@ -130,15 +131,15 @@ measurement.
 
 - [ ] 6.4 Tests: each scenario of *Igor warns, and does not refuse*; no warning stops a load
 
+
 ## 7. `igor seat add`
 
 - [ ] 7.1 `src/cli.ts`: `igor seat add <id> [--reserve <r>] [--roles <a,b>] [--dedicated]`. The
-      repository comes from the clone's `origin`; the holder's login from `gh api user`
-- [ ] 7.2 Read `seats/recipient.txt` from the default branch with `gh api`. Read the token with
-      echo off. Encrypt with `age-encryption`, base64 on one line, and pass it to
-      `gh secret set IGOR_SEAT_<ID> --repo <repo>` on standard input
-- [ ] 7.3 A new seat: write `seats/<id>.yaml` and the CODEOWNERS line, commit on branch
-      `seat/<id>`, push, and open a pull request with `gh pr create`. The file it writes:
+      lore repository comes from the clone's `upstream` remote where there is one, and otherwise
+      `origin`; the holder's login from `gh api user`
+- [ ] 7.2 Read `seats/recipient.txt` from the lore repository's default branch with `gh api`. Read
+      the token with echo off. Encrypt with `age-encryption`, base64 on one line
+- [ ] 7.3 A new seat: write `seats/<id>.yaml` and the CODEOWNERS line. The file it writes:
 
       ```yaml
       # <id>'s seat: a Claude subscription lent to this team's Igors.
@@ -148,27 +149,49 @@ measurement.
       reserve: <r>
       # The roles that may draw on this seat. Remove one to stop it; add one to allow it.
       roles: [<roles>]
-      # The server's variable holding this seat's token, encrypted so only the server can read it.
-      token_env: IGOR_SEAT_<ID>
+      # Your token, encrypted to the Igor server's key in seats/recipient.txt. Only the server can
+      # decrypt it. Rotate it with `igor seat add <id>`.
+      encrypted_token: <ciphertext>
       ```
 
-- [ ] 7.4 An existing seat: replace the secret, change nothing else, and say so:
+- [ ] 7.4 An existing seat: replace `encrypted_token` and change nothing else
+- [ ] 7.5 Commit on branch `seat/<id>`. Push to the lore repository where `gh api` says the holder
+      may push, and otherwise to their fork, creating it with `gh repo fork` where it does not
+      exist. Open the pull request through `gh`. Its body:
 
       ```
-      Replaced IGOR_SEAT_<ID>. The server reads the new token after the next deploy, which runs on the next push to <branch>; the operator can run the deploy workflow by hand to apply it now.
+      Lends seat <id> to this team's Igors: <reserve> reserve, serving <roles>. The token is encrypted to seats/recipient.txt, so only the Igor server can read it. After merging, the operator pulls the server's lore checkout and restarts the Igors.
       ```
 
-- [ ] 7.5 Refusals before the token is read: no `seats/recipient.txt` on the default branch; an
-      invalid id; not in a clone of the lore repository
-- [ ] 7.6 Tests, with `gh` faked: the scenarios of *`igor seat add` lends a seat in one step*, and
-      that no argument list or written file contains the token
+      and, for a rotation:
 
-## 8. `igor doctor`
+      ```
+      Rotates seat <id>'s token. Nothing else about the seat changes. After merging, the operator pulls the server's lore checkout and restarts the Igors.
+      ```
+
+- [ ] 7.6 Refusals before the token is read: no `seats/recipient.txt` on the default branch; an
+      invalid id; not in a clone of the lore repository or of a fork of it
+- [ ] 7.7 Tests, with `gh` faked: the scenarios of *`igor seat add` lends a seat in one step*, and
+      that no argument list, written file or child environment contains the token
+
+## 8. Migrating `adamstallard/igor-lore`
+
+- [ ] 8.1 In `adamstallard/igor-lore`, on a branch and pull request: add `seats/adam.yaml` with
+      `owner: adamstallard`, `reserve: 0.5`, `roles: [generalist]` and
+      `token_env: IGOR_SEAT_ADAM`; delete `budget` from `igor.config.yaml`, `capacity_estimate`
+      and `token_command` with it; delete `seat: adam` and its comment from `roles/org.yaml`; add
+      `.github/CODEOWNERS` from the template with `@adamstallard` on every line. The token stays in
+      the server's env file as `IGOR_SEAT_ADAM`, put there by hand from the keychain entry
+      `claude-adam-personal`
+- [ ] 8.2 Turn on a ruleset on `igor-lore`'s `main` requiring code-owner review, and confirm the
+      load-time warnings are silent and `igor doctor` reports nothing about seats
+
+## 9. `igor doctor`
 
 Composes with `check-a-lore-repository` (#113). Whichever builds second adds these to the command
 the other built.
 
-- [ ] 8.1 Who approves each seat file, the review rule, bypass actors, and unowned
+- [ ] 9.1 Who approves each seat file, the review rule, bypass actors, and unowned
       `recipient.txt`, `.github/` and `igor.config.yaml`, per *The check says who approves each
       seat file*. The stand-in finding, worded so:
 
@@ -176,23 +199,8 @@ the other built.
       seats/<id>.yaml: @<codeowner> approves changes for <owner>, who is not a code owner of this file. Their approval is given outside GitHub. If they have an account on this repository, add: /seats/<id>.yaml @<login>
       ```
 
-- [ ] 8.2 The runner guard, per *The check says whether the deploy runner is guarded*
-- [ ] 8.3 The key match and env-file overlap, per *The check says whether the server's key
-      matches the committed one*
-- [ ] 8.4 Tests for each scenario of the three requirements
-
-## 9. Migrating `adamstallard/igor-lore`
-
-- [ ] 9.1 In `adamstallard/igor-lore`, on a branch and pull request: add `seats/adam.yaml` with
-      `owner: adamstallard`, `reserve: 0.5`, `roles: [generalist]` and
-      `token_env: IGOR_SEAT_ADAM`; delete `budget` from `igor.config.yaml`, `capacity_estimate`
-      and `token_command` with it; delete `seat: adam` and its comment from `roles/org.yaml`; add
-      `.github/CODEOWNERS` from the template with `@adamstallard` on every line. The token stays in
-      the server's env file as `IGOR_SEAT_ADAM`, put there by hand from the keychain entry
-      `claude-adam-personal`. No secret, no deploy workflow: the repository is public and on a
-      personal account, so neither runner guard is available (`design.md`, *Open*)
-- [ ] 9.2 Turn on a ruleset on `igor-lore`'s `main` requiring code-owner review, and confirm the
-      load-time warnings are silent and `igor doctor` reports only the runner finding
+- [ ] 9.2 The key match, per *The check says whether the server's key matches the committed one*
+- [ ] 9.3 Tests for each scenario of the two requirements
 
 ## 10. Docs and templates
 
@@ -201,52 +209,7 @@ then the lender guide, and ends with a working seat. Every key and token the flo
 where it is created, where it lives, who can read it, how it is rotated, and what to do if it
 leaks.
 
-- [ ] 10.1 `deploy/deploy-seats.yml`, the deploy workflow template, copied to
-      `.github/workflows/` in the lore repository:
-
-      ```yaml
-      # Deploys this lore repository to the Igor server, which is this workflow's runner. It
-      # writes every IGOR_SEAT_* secret to /etc/igor/seats.env, updates the lore checkout, and
-      # restarts the Igors. Only a push to main runs it.
-      #
-      # The runner must run nothing else. Keep this repository private, or put the runner in a
-      # group whose selected workflows are only this file on main. On a public repository with
-      # neither, a fork's pull request can run code on the server, which holds every seat's
-      # decrypted token. `igor doctor` checks for one of the two.
-      name: deploy-seats
-      on:
-        push:
-          branches: [main]
-          paths: ['seats/**', 'roles/**', 'igor.config.yaml', '.github/workflows/deploy-seats.yml']
-        workflow_dispatch:
-      permissions:
-        contents: read
-      concurrency: deploy-seats
-      jobs:
-        deploy:
-          runs-on: [self-hosted, igor]
-          steps:
-            # Every secret is in SECRETS; only IGOR_SEAT_* reach the file. A secret holds
-            # ciphertext only the server's key decrypts, or a plain token an admin set.
-            - name: Write seat tokens
-              env:
-                SECRETS: ${{ toJSON(secrets) }}
-              run: |
-                umask 077
-                node -e '
-                  const all = JSON.parse(process.env.SECRETS)
-                  const lines = Object.entries(all)
-                    .filter(([name, value]) => /^IGOR_SEAT_[A-Z0-9_]+$/.test(name) && !/[\r\n]/.test(value))
-                    .map(([name, value]) => `${name}=${value}`)
-                  process.stdout.write(lines.join("\n") + "\n")
-                ' > /etc/igor/seats.env
-            - name: Update the lore checkout
-              run: git -C /srv/igor/lore pull --ff-only
-            - name: Restart the Igors
-              run: sudo systemctl restart 'igor@*'
-      ```
-
-- [ ] 10.2 `deploy/CODEOWNERS`, the template:
+- [ ] 10.1 `deploy/CODEOWNERS`, the template:
 
       ```
       # Who approves changes to this lore repository's seats. GitHub enforces it only where a
@@ -266,97 +229,93 @@ leaks.
       /seats/example.yaml   @HOLDER
       ```
 
-- [ ] 10.3 `deploy/igor.service`: a second `EnvironmentFile=-/etc/igor/seats.env` after
-      `/etc/igor/env`, and the `LoadCredential=` example removed. Its comment:
+- [ ] 10.2 `deploy/igor.service`: the `LoadCredential=` example and its comment go
+- [ ] 10.3 `deploy/env.example`: the `LoadCredential=` and `token_file` paragraph goes. The seat
+      variable paragraph says the name is fixed and when to use one:
 
       ```
-      # Written by the lore repository's deploy workflow, and replaced whole on every deploy, so
-      # edit /etc/igor/env instead. Where both name a variable, this file wins.
-      ```
-
-- [ ] 10.4 `deploy/env.example`: the `LoadCredential=` and `token_file` paragraph goes. The seat
-      variable paragraph says the name is fixed, and where a deployed seat's token comes from:
-
-      ```
-      # One per seat, named IGOR_SEAT_ plus the seat's id, uppercased, with anything but a letter
-      # or digit becoming an underscore: seat `fleet-1` reads IGOR_SEAT_FLEET_1. The seat file
-      # under seats/ in the lore repository names the same variable, and Igor refuses any other.
+      # A seat whose token you hold yourself, named IGOR_SEAT_ plus the seat's id, uppercased,
+      # with anything but a letter or digit becoming an underscore: seat `fleet-1` reads
+      # IGOR_SEAT_FLEET_1. Its seat file under seats/ in the lore repository names the same
+      # variable with token_env, and Igor refuses any other.
       #
-      # A seat lent through `igor seat add` is not set here: the deploy workflow writes it to
-      # /etc/igor/seats.env. Set one here for a seat whose token you hold yourself.
+      # A seat lent through `igor seat add` is not set here: its token is encrypted in its seat
+      # file, and Igor decrypts it with the key igor.config.yaml names as seatKey.
       ```
 
-- [ ] 10.5 `docs/deployment.md`, the operator guide, replacing *Adding a seat somebody has given
+- [ ] 10.4 `docs/deployment.md`, the operator guide, replacing *Adding a seat somebody has given
       you* and *Keeping the token out of your shells* with sections covering:
-  - **The server keypair:** `age-keygen -o /etc/igor/seat-key.txt` as the service user, `0600`;
-    commit `age-keygen -y` of it as `seats/recipient.txt`; name its path as `seatKey`; back it up;
-    rotating it, which means every holder runs `igor seat add` again
-  - **The self-hosted runner:** registering the server as a runner for the lore repository with
-    the runner's own registration token, labelled `igor`, run as the service user; the guard, a
-    private repository or a runner group restricted to `deploy-seats.yml` on `main`, and that a
-    personal-account repository has only the first
-  - **The deploy workflow:** copying `deploy/deploy-seats.yml`; creating `/etc/igor/seats.env`
-    owned by the service user; the sudoers line letting the service user run
-    `systemctl restart igor@*` and nothing else
+  - **The server keypair, first and prominently, since it is the whole protection:**
+    `age-keygen -o /etc/igor/seat-key.txt` as the service user, `0600`, owned by the service
+    user; commit `age-keygen -y` of it as `seats/recipient.txt`; name its path as `seatKey`; back
+    it up off the server where only the operator can read it, and what losing it costs (every
+    holder re-encrypts); rotating it (a new keypair, the new public key committed, every holder
+    runs `igor seat add`); a leaked key (rotate, and every holder revokes at Anthropic and
+    re-issues, because old ciphertext in history decrypts with the old key)
   - **Repository settings:** a ruleset on the default branch requiring a pull request and
-    code-owner review; CODEOWNERS from `deploy/CODEOWNERS`; who needs `write` to run
-    `gh secret set` (from task 1.1); the bypass list, and why `seats/` should have none
-  - **Declaring a seat by hand:** a seat file naming `token_env`, and the token in
+    code-owner review; CODEOWNERS from `deploy/CODEOWNERS`; that lenders need no access beyond
+    opening a pull request, from a fork if need be; the bypass list, and why `seats/` should have
+    none
+  - **Taking in a seat:** reviewing the pull request (the file's `roles` and `reserve`, its
+    CODEOWNERS line, and that `recipient.txt` is untouched), merging it, then pulling the server's
+    lore checkout and restarting the Igors, since nothing else updates it
+  - **Declaring a seat by hand:** a seat file naming `token_env: IGOR_SEAT_<ID>`, and the token in
     `/etc/igor/env`; a secret store's output goes there too
   - **Checking it:** `igor doctor`, and `igor budget` showing the new seat as readable
-  - **When things go wrong:** removing a seat (delete the file and the secret); a holder leaving;
-    a leaked server key (rotate it, and every holder revokes and re-issues their token); a leaked
-    seat token (its holder revokes it at Anthropic)
+  - **When things go wrong:** removing a seat (delete its file and its CODEOWNERS line); a holder
+    leaving (the same, and they revoke the token); a leaked server key (above); a leaked seat token
+    (its holder revokes it at Anthropic and runs `igor seat add` with a new one)
   - The *When something is wrong* table gains the refusals of tasks 2.2, 3.2, 3.4 and 4.1, and
     loses its `pool:` rows
-- [ ] 10.6 `docs/seats.md`, the lender guide, rewritten around the file. **Before lending:** this is
+- [ ] 10.5 `docs/seats.md`, the lender guide, rewritten around the file. **Before lending:** this is
       your file, and nothing about your seat changes without your review; lending means trusting
       the server's operator, who can use your token within your subscription, and what they do to
-      protect it (the private key, who can merge configuration, the runner guard); what bounds that
-      trust (a `setup-token` only makes model requests, you can revoke it at any time, the reserve
+      protect it (the private key, who can merge configuration); your token travels encrypted in a
+      file anyone may be able to read, and only the server's key opens it; what bounds that trust
+      (a `setup-token` only makes model requests, you can revoke it at any time, the reserve
       limits Igor's share, you can watch your usage at claude.ai)
-- [ ] 10.7 `docs/seats.md`, **getting the token:** `claude setup-token`, once, in your own
-      terminal, and why it never goes into chat or email
-- [ ] 10.8 `docs/seats.md`, **lending it:** `igor seat add` in one step, and the manual equivalent
+- [ ] 10.6 `docs/seats.md`, **getting the token:** `claude setup-token`, once, in your own
+      terminal, and why it never goes into chat, email, or a file unencrypted
+- [ ] 10.7 `docs/seats.md`, **lending it:** `igor seat add` in one step, and the manual equivalent
       for someone without Igor installed:
 
       ```sh
-      git clone <lore-repo> && cd <lore-repo>
+      git clone <lore-repo> && cd <lore-repo>      # or your fork of it
+      git pull <lore-repo> main                    # recipient.txt as main has it
       read -rs TOKEN    # paste the token: not shown, and not kept in your shell history
-      printf %s "$TOKEN" | age -r "$(cat seats/recipient.txt)" | base64 | tr -d '\n' \
-        | gh secret set IGOR_SEAT_<ID>
+      printf %s "$TOKEN" | age -r "$(cat seats/recipient.txt)" | base64 | tr -d '\n'; echo
       unset TOKEN
       ```
 
-      then a pull request adding `seats/<id>.yaml` with their reserve and the roles it serves,
-      and its CODEOWNERS line. `seats/recipient.txt` is read from an up-to-date `main`
-- [ ] 10.9 `docs/seats.md`, **afterwards:** approving changes to your seat file, what happens when
-      you change it yourself (task 1.2), watching your usage at claude.ai; **changing your mind:**
-      rotating (the same steps again), withdrawing (delete the secret and the file, or revoke at
-      Anthropic, which takes effect at once), and the one-year expiry (#145). Who may run
-      `gh secret set`, from task 1.1
-- [ ] 10.10 `docs/seats.md` *What the floor rests on* and *Several people, one fleet* describe the
+      then a pull request adding `seats/<id>.yaml`, with that output as `encrypted_token`, their
+      reserve and the roles it serves, and its CODEOWNERS line
+- [ ] 10.8 `docs/seats.md`, **afterwards:** approving changes to your seat file, what happens when
+      you change it yourself (task 1.1), watching your usage at claude.ai; **changing your mind:**
+      rotating (`igor seat add` again, or the manual steps, changing only `encrypted_token`),
+      withdrawing (revoke at Anthropic, which takes effect at once, and a pull request removing
+      the file), and the one-year expiry (#145)
+- [ ] 10.9 `docs/seats.md` *What the floor rests on* and *Several people, one fleet* describe the
       line (#143) and choice by headroom, with no pool and no listed order
-- [ ] 10.11 `README.md`: the quick start declares a seat file and puts the token in the
+- [ ] 10.10 `README.md`: the quick start declares a seat file and puts the token in the
       environment, with the shell wrapper `docs/deployment.md` already has; `token_command` and
       `token_file` go. *Budgets* loses `pools:` and `pool:engineering`, and its sample `igor budget`
       output loses the `pool engineering:` line
-- [ ] 10.12 `docs/architecture.md` §6.5.1: a seat file lists the roles it serves, and the seat is
+- [ ] 10.11 `docs/architecture.md` §6.5.1: a seat file lists the roles it serves, and the seat is
       chosen by headroom; "Order is the whole allocation mechanism today" and the `pools:`
-      example go. §6.3.2's list of token mechanisms becomes `token_env` alone
-- [ ] 10.13 `igor.config.example.yaml`: `budget` goes, replaced by a comment pointing at `seats/`
+      example go. §6.3.2's list of token mechanisms becomes `encrypted_token` and `token_env`
+- [ ] 10.12 `igor.config.example.yaml`: `budget` goes, replaced by a comment pointing at `seats/`
       and `seatKey`:
 
       ```yaml
       # Seats are files under seats/, one per Claude subscription, each approved by its holder.
       # See docs/seats.md for lending one and docs/deployment.md for running the server.
       #
-      # The age private key that decrypts seat tokens the deploy workflow delivered. Only needed
-      # once a seat's token is encrypted; a plain token in the env file needs no key.
+      # The age private key that decrypts the encrypted_token in each seat file. Only needed once
+      # a seat carries one; a seat naming token_env needs no key.
       # seatKey: /etc/igor/seat-key.txt
       ```
 
-- [ ] 10.14 `test/documented-config.test.ts`: the `budget` and `seats` levels become one `seat`
+- [ ] 10.13 `test/documented-config.test.ts`: the `budget` and `seats` levels become one `seat`
       level, read by the seat-file reader, and every `igor:budget` and `igor:seats` fence in the
       docs is retagged `igor:seat`
-- [ ] 10.15 `igor budget` names, for each seat, the roles its file lists
+- [ ] 10.14 `igor budget` names, for each seat, the roles its file lists

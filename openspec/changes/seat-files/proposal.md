@@ -20,8 +20,9 @@ they agreed to. The operator still makes the edits; the holder approves them.
 
 The token has to reach the server too. Today a holder sends their `setup-token` to the operator
 over a trusted channel, which every team improvises. This change gives every team a recommended
-way built on GitHub, which Igor already uses: the token is encrypted to the server's public key
-and stored as a GitHub Actions secret, so only the server can read it.
+way built on what the seat file already is: the holder encrypts the token to the server's public
+key and puts the ciphertext in their seat file, so only the server can read it, and lending a seat
+is one pull request, from a fork if need be.
 
 Tracked in [#148](https://github.com/adamstallard/igor/issues/148), with the seat-choice rule
 from [#147](https://github.com/adamstallard/igor/issues/147).
@@ -30,16 +31,19 @@ from [#147](https://github.com/adamstallard/igor/issues/147).
 
 - **Every seat is a file, `seats/<id>.yaml`, in the lore repository**, the way a role is
   `roles/<name>.yaml`. The filename is the seat's id. It declares the holder (`owner`), the
-  `reserve`, whether the seat is `dedicated`, the `roles` it serves, and `token_env`.
+  `reserve`, whether the seat is `dedicated`, the `roles` it serves, and its token.
 - **`budget` leaves `igor.config.yaml`.** Seats are read from `seats/`, and pools are gone, so the
   mapping has nothing left in it. A config that still declares it is refused by the config's
   existing unknown-key refusal, with no dedicated message (Adam, 2026-10-11). The one migration is
   moving `adamstallard/igor-lore`'s seat into `seats/adam.yaml`.
-- **A seat file names its token only by `token_env`**, and that name is `IGOR_SEAT_` plus the
-  seat's id. `token_command` and `token_file` are refused in a seat file, naming the key. Neither
-  form runs or reads anything, so Igor never needs to know who wrote a seat file.
-- **A `token_env` value may be ciphertext.** Igor decrypts it with the server's age private key,
-  whose path `igor.config.yaml` names as `seatKey`. A plain token in the variable still works.
+- **A lent seat's token travels as ciphertext in its file**, as `encrypted_token`, encrypted with
+  age to the public key committed as `seats/recipient.txt`. Igor decrypts it with the private key
+  whose path `igor.config.yaml` names as `seatKey`. No GitHub secret, workflow or runner is
+  involved. The private key is the whole protection, and the operator guide treats it so.
+- **An operator's own seat may name `token_env` instead**, which must be `IGOR_SEAT_` plus the
+  seat's id, for a token the operator puts in the server's env file. `token_command` and
+  `token_file` are refused in a seat file, naming the key. Neither remaining form runs or reads
+  anything else, so Igor never needs to know who wrote a seat file.
 - **Pools are removed.** A role's seats are every seat whose file lists it. Among those it can
   use, the Igor picks the one with the most headroom under its line, and the soonest weekly reset
   breaks a tie. A role may still name a single seat, which must list it.
@@ -49,11 +53,11 @@ from [#147](https://github.com/adamstallard/igor/issues/147).
 - **A holder with no GitHub account on the lore repository** has the operator stand in as the
   seat file's code owner, and `igor doctor` says so for that seat.
 - **`igor seat add`** lends a seat in one step: it reads the token without echoing it, encrypts
-  it, sets the `IGOR_SEAT_<ID>` secret, writes the seat file and its CODEOWNERS line, and opens
-  the pull request.
-- **Docs and templates for both sides.** The operator guide in `docs/deployment.md`, with a deploy
-  workflow, a CODEOWNERS file and a unit change under `deploy/`. The lender guide in
-  `docs/seats.md`.
+  it, writes the seat file and its CODEOWNERS line, and opens the pull request. Run again, it
+  rotates the token.
+- **The `work-triage` requirements stop saying "pool"**, and speak of the seats serving a role.
+- **Docs and templates for both sides.** The operator guide in `docs/deployment.md`, with a
+  CODEOWNERS template under `deploy/`. The lender guide in `docs/seats.md`.
 
 ## Capabilities
 
@@ -64,11 +68,13 @@ None. `setup-check` gains requirements here, and is created by whichever of this
 
 ### Modified Capabilities
 
-- `seat-budget`: seats come from seat files, the token from `token_env` alone, possibly encrypted.
-  Pools and the budget mapping's key checks are removed. Seat choice is by headroom.
+- `seat-budget`: seats come from seat files, the token from ciphertext in the file or the seat's
+  own variable. Pools and the budget mapping's key checks are removed. Seat choice is by headroom.
+- `work-triage`: the model-stage and untriaged-reporting requirements are worded for the seats
+  serving a role instead of a pool. Two are re-added under new names, because their scenario names
+  said "pool".
 - `setup-check`: `igor doctor` reports the operator standing in for a holder, the code-owner
-  review rule, the runner guard, and whether the committed public key matches the server's
-  private key.
+  review rule, and whether the committed public key matches the server's private key.
 
 ## Impact
 

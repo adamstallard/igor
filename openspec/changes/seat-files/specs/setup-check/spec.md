@@ -48,43 +48,15 @@ has an account.
 - **THEN** it is reported as a finding, saying whoever replaces it receives every token encrypted
   afterwards
 
-### Requirement: The check says whether the deploy runner is guarded
-
-Where the lore repository has a workflow that runs on a self-hosted runner, `igor doctor` SHALL
-report whether one of two guards holds, and SHALL report a finding where neither does:
-
-- the lore repository is private; or
-- the runner is in a runner group whose selected workflows are only the deploy workflow on the
-  default branch.
-
-Where the second cannot be read with the credential the check has, it SHALL be reported as
-unchecked, naming the permission it needs, and a public repository with the guard unchecked SHALL
-still be a finding.
-
-A pull request from a fork can target a self-hosted runner on a public repository and run
-whatever it carries on the Igor server, which holds every seat's decrypted token.
-
-#### Scenario: A public repository with an unrestricted runner
-
-- **WHEN** the lore repository is public and its self-hosted runner is in no restricted group
-- **THEN** it is reported as a finding naming both guards
-
-#### Scenario: A private repository is guarded
-
-- **WHEN** the lore repository is private
-- **THEN** no finding about the runner guard is reported
-
 ### Requirement: The check says whether the server's key matches the committed one
 
 Where `igor.config.yaml` declares `seatKey`, `igor doctor` SHALL report whether the public key
 derived from that private key equals the one committed in `seats/recipient.txt`, and SHALL report a
 finding where it does not, where the key file cannot be read, or where `seats/recipient.txt` is
-absent. Where it can read both the operator's env file and the one the deploy workflow writes, it
-SHALL report any `IGOR_SEAT_*` variable defined in both, saying the deploy workflow's is the one the
-service reads.
+absent.
 
-A mismatched key fails silently twice over: every token encrypted from then on is unreadable on
-the server, and nothing says so until each seat is reported unreadable in turn.
+A mismatched key fails silently: every token encrypted from then on is unreadable on the server,
+and nothing says so until each seat is reported unreadable in turn.
 
 #### Scenario: A rotated key not committed
 
