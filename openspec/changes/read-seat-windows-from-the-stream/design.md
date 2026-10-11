@@ -645,8 +645,8 @@ scenarios became false are `REMOVED` and re-`ADDED` under new names.
   is drawn on only where its line is the whole window*, and `MODIFIED`. No capacity figure admits a
   seat, calibration admission is gone, and its scenarios are kept as instances of the no-reading rule.
 - ***A pool is an ordered list of seats, and order is the allocation mechanism*** — "A seat declaring
-  a reserve is drawn on only once it has a capacity figure". Now it is drawn on while read below its
-  line.
+  a reserve is drawn on only once it has a capacity figure". This change carries no delta for it,
+  because the `seat-files` change removes it (see *Pools are dropped* below).
 - ***The reserve is untouchable*** — the dollar bound, and "rather than as a distance from a reading".
   Now the moving line on the reading, with the role's reserve, the overshoot, and the per-Igor note.
 - ***Capacity is recorded spend divided by the fraction it consumed*** — "a bound on Igor that is
@@ -675,23 +675,24 @@ Adam decided that pools are dropped
 ([#148](https://github.com/adamstallard/igor/issues/148)). A seat's own file lists the roles it
 serves, and among the eligible seats under their line the Igor picks the one with the most
 headroom, with the soonest reset breaking ties
-([#147](https://github.com/adamstallard/igor/issues/147)). Nothing of it is specified yet.
+([#147](https://github.com/adamstallard/igor/issues/147)). The open change `seat-files`
+specifies it, and builds after this one.
 
-This change used pools in two places:
+**This change carries no delta for *A pool is an ordered list of seats, and order is the
+allocation mechanism*.** `seat-files` removes that requirement (decided 2026-10-04, Adam), and a
+block here modifying it would fail archive once that removal lands. What a block here would have
+said, that a seat has headroom while read below its line and that exhausting every seat is a
+handoff, is in `seat-files`' requirement on choosing a seat.
 
-- **As a remedy for a greedy role**, in *A role may hold back more of a seat than the seat does*.
-  The requirement and this design now name the remedy as choosing which roles a seat serves.
-  That is true of a pool today and of a seat's own file after #148. The scenario about a pool of
-  three seats now says the role may draw on three seats.
-- **In the `MODIFIED` block for *A pool is an ordered list of seats, and order is the allocation
-  mechanism***. It is kept. The block only replaces "has a capacity figure" with "read below its
-  line", so the in-force requirement stops contradicting the line while pools exist. Removing the
-  requirement and specifying how a seat is chosen belong to #148's change.
+Until `seat-files` archives, the in-force pool requirement still says a reserved seat is drawn on
+only once it has a capacity figure. That text is in force only between this change's archive and
+`seat-files`', and contradicts *A seat with no reading is drawn on only where its line is the
+whole window* for that interval.
 
-**Decided 2026-10-04 (Adam): #148's change removes the pool requirement**, written against
-whatever text is in force when #148 is specified. If #148 is specified before this change
-archives, this change drops its `MODIFIED` block for the requirement instead of carrying it: a
-block modifying a requirement that #148's change has removed fails archive.
+Pools also appear as **a remedy for a greedy role**, in *A role may hold back more of a seat than
+the seat does*. The requirement and this design name the remedy as choosing which roles a seat
+serves, which is true of a pool today and of a seat's own file under `seat-files`. Its scenario
+says the role may draw on three seats, not a pool of three.
 
 ## Settled on 2026-09-28, after the questions this design raised
 
