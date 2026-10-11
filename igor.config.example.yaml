@@ -1,7 +1,7 @@
-# Copy this to igor.config.yaml in the repository that holds your lore, and COMMIT it
-# there. It is shared team configuration — uncommitted, these values drift between
-# whoever runs the tool and entries score differently depending on whose machine
-# computed them.
+# Configuration for one team's lore. It belongs at the root of the repository holding
+# that lore, and COMMITTED there: uncommitted, these values drift between whoever runs
+# the tool and entries score differently depending on whose machine computed them.
+# `igor init` writes it from this file, with the values only you can choose left blank.
 #
 # It does not belong inside a clone of Igor. Igor is a shared public tool; this file
 # describes your team. The tool refuses to start if it finds a config inside itself.

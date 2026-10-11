@@ -9,12 +9,24 @@ import {
   type Candidate,
   type ClaimVerdict,
   type Comment,
+  type CatchUp,
+  type CatchUpRequest,
   type CodeHost,
   type InFlight,
+  type Mergeability,
+  type ResolutionRequest,
   type Source,
   type Tracker,
 } from './adapter.js'
-import { branchSha, createBranchWithFiles, defaultBranch, openPullRequest, requestReviewers } from './github.js'
+import {
+  branchSha,
+  commitOnBranch,
+  createBranchWithFiles,
+  defaultBranch,
+  mergeIntoBranch,
+  openPullRequest,
+  requestReviewers,
+} from './github.js'
 
 /**
  * One request returns issues with their labels, assignees and linked pull requests, at a
@@ -40,13 +52,24 @@ query($q: String!, $n: Int!, $after: String) {
         assignees(first: 10) { nodes { login } }
         timelineItems(itemTypes: [CROSS_REFERENCED_EVENT, CONNECTED_EVENT], first: 20) {
           nodes {
-            ... on CrossReferencedEvent { source { ... on PullRequest { number url state isDraft } } }
-            ... on ConnectedEvent { subject { ... on PullRequest { number url state isDraft } } }
+            ... on CrossReferencedEvent { source { ...pr } }
+            ... on ConnectedEvent { subject { ...pr } }
           }
         }
       }
     }
   }
+}
+
+fragment pr on PullRequest {
+  number
+  url
+  state
+  isDraft
+  mergeable
+  headRefName
+  baseRefName
+  author { login }
 }`
 
 interface RawPr {
@@ -54,6 +77,11 @@ interface RawPr {
   url: string
   state: 'OPEN' | 'CLOSED' | 'MERGED'
   isDraft: boolean
+  /** Computed asynchronously, so `UNKNOWN` — or nothing at all — is the ordinary first answer. */
+  mergeable?: 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN' | null
+  headRefName?: string
+  baseRefName?: string
+  author?: { login: string } | null
 }
 
 export interface RawIssue {
@@ -79,10 +107,30 @@ function inFlightFrom(issue: RawIssue): InFlight | undefined {
   for (const node of issue.timelineItems.nodes) {
     const pr = node?.source ?? node?.subject
     if (pr && pr.state === 'OPEN') {
-      return { kind: 'pull-request', ref: `#${pr.number}`, url: pr.url, draft: pr.isDraft }
+      const branch = pr.headRefName ?? ''
+      const base = pr.baseRefName ?? ''
+      return {
+        kind: 'pull-request',
+        ref: `#${pr.number}`,
+        url: pr.url,
+        draft: pr.isDraft,
+        author: pr.author?.login ?? '',
+        // An artifact whose branch or base did not come back is unknown however it reported
+        // its mergeability: acting on one means merging into a branch named by nothing.
+        mergeable: branch === '' || base === '' ? 'unknown' : mergeabilityFrom(pr.mergeable),
+        branch,
+        base,
+      }
     }
   }
   return undefined
+}
+
+/** Anything but a stated `CONFLICTING` is `unknown` rather than a pessimistic guess. */
+function mergeabilityFrom(raw: RawPr['mergeable']): Mergeability {
+  if (raw === 'MERGEABLE') return 'clean'
+  if (raw === 'CONFLICTING') return 'conflicting'
+  return 'unknown'
 }
 
 /**
@@ -271,18 +319,30 @@ export class GitHubTracker implements Tracker {
     )
   }
 
-  async report(candidate: Candidate, message: string): Promise<void> {
-    await gh(
+  async report(candidate: Candidate, message: string): Promise<string | undefined> {
+    // The comment's own url, read off what GitHub answered rather than inferred from the call
+    // not throwing. A surface that answers nothing usable yields `undefined`, which says the
+    // write may have landed and was not confirmed — the one thing a throw cannot say.
+    const created = await gh<{ id?: number; html_url?: string }>(
       ['api', `repos/${candidate.repo}/issues/${candidate.native}/comments`, '--method', 'POST', '--input', '-'],
       JSON.stringify({ body: message }),
     )
+    return created.html_url ?? (created.id === undefined ? undefined : String(created.id))
   }
 
-  async release(candidate: Candidate, as: string): Promise<void> {
-    await gh(
+  async release(candidate: Candidate, as: string): Promise<boolean> {
+    // The DELETE answers with the issue as it now stands, so whether the holder field is clear
+    // is read rather than assumed.
+    //
+    // An answer that does not carry the assignees reads as *not clear*. The two wrong answers
+    // are not symmetric: claiming a release that did not happen leaves an item held with
+    // nobody told, while reporting a release that did happen as stuck costs one person one
+    // unassign on an item already unassigned.
+    const issue = await gh<{ assignees?: { login: string }[] }>(
       ['api', `repos/${candidate.repo}/issues/${candidate.native}/assignees`, '--method', 'DELETE', '--input', '-'],
       JSON.stringify({ assignees: [as] }),
     )
+    return issue.assignees !== undefined && !issue.assignees.some((a) => a.login === as)
   }
 
   linkage(candidate: Candidate): string {
@@ -294,10 +354,23 @@ export class GitHubCodeHost implements CodeHost {
   readonly name = 'github'
 
   async produce(request: ArtifactRequest): Promise<Artifact> {
-    if (request.files.length === 0) throw new AdapterError('an artifact needs at least one file')
+    if (request.files.length === 0 && request.deletions.length === 0) {
+      throw new AdapterError('an artifact needs at least one changed path')
+    }
     const base = request.base ?? (await defaultBranch(request.repo))
-    const baseSha = await branchSha(request.repo, base)
-    await createBranchWithFiles(request.repo, request.branch, baseSha, request.files, request.title)
+    // The sha the caller's tree was cut from, in preference to the branch head now. Reading the
+    // head here is a round-trip that buys a race: the base branch can delete a path inside the
+    // worker's run, and a removal of a path the base tree no longer holds is refused with
+    // `422 GitRPC::BadObjectState` — the whole request, so nothing publishes.
+    const baseSha = request.baseSha ?? (await branchSha(request.repo, base))
+    await createBranchWithFiles(
+      request.repo,
+      request.branch,
+      baseSha,
+      request.files,
+      request.deletions,
+      request.title,
+    )
     const pr = await openPullRequest(
       request.repo,
       request.branch,
@@ -308,5 +381,26 @@ export class GitHubCodeHost implements CodeHost {
     )
     if (request.reviewers?.length) await requestReviewers(request.repo, pr.number, request.reviewers)
     return { kind: 'pull-request', ref: `#${pr.number}`, url: pr.url }
+  }
+
+  async catchUp(request: CatchUpRequest): Promise<CatchUp> {
+    if (request.branch === '' || request.base === '') {
+      throw new AdapterError('catching up needs both the artifact\'s branch and its base')
+    }
+    return mergeIntoBranch(request.repo, request.branch, request.base)
+  }
+
+  async resolve(request: ResolutionRequest): Promise<string> {
+    if (request.files.length === 0 && request.deletions.length === 0) {
+      throw new AdapterError('a resolution needs at least one changed path')
+    }
+    return commitOnBranch(
+      request.repo,
+      request.branch,
+      request.parents,
+      request.files,
+      request.deletions,
+      request.message,
+    )
   }
 }

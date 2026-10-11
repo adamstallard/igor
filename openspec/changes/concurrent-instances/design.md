@@ -136,3 +136,22 @@ is not needed is a schedule of writes on somebody's issue.
 coordinator.
 
 **Knowing how many processes are running.** Nothing needs the number.
+
+## Since review: the reserve becomes a line checked against a stream reading (2026-09-28)
+
+Recorded 2026-09-28. This changes no requirement or task here.
+
+Adam decided that a seat's reserve is a line that rises toward the reset, checked against the
+seat's latest unreset stream reading ([`docs/architecture.md` §6.3.4](../../../docs/architecture.md#634-a-seats-reserve-is-a-line-that-moves-toward-the-reset--decided-2026-09-28-specified-on-143-not-built)).
+The line is `1 − r × remaining` with `r = max(seat reserve, role reserve)`, since a role file may
+set its own reserve. It is specified on [#143](https://github.com/adamstallard/igor/pull/143) and
+not built. Its accepted cost is that Igor sees its own spend only in the next reading, so each Igor can
+overshoot the line by at most one run.
+
+The proposal's *Per-process budget* says concurrency "spends faster without spending
+differently", because the gate is checked before each item. Under the line that stops being quite
+true. Each process checks the gate before its own item, and none of them sees the others' runs
+until a reading arrives. So the overshoot is one run per process, not one run per Igor, and N
+ranks can start N runs past the line before any of them reads it. This is the same slack #143
+leaves open for several Igors on one seat, and it would be settled with that. Nothing needs to be
+decided here before then.

@@ -28,6 +28,10 @@ const pr = (over: Record<string, unknown> = {}) => ({
   url: 'https://github.com/o/r/pull/99',
   state: 'OPEN' as const,
   isDraft: false,
+  mergeable: 'MERGEABLE' as const,
+  headRefName: 'igor/fixer/42-a-bug',
+  baseRefName: 'main',
+  author: { login: 'igor-bot' },
   ...over,
 })
 
@@ -72,7 +76,39 @@ describe('work in flight', () => {
       ref: '#99',
       url: 'https://github.com/o/r/pull/99',
       draft: false,
+      author: 'igor-bot',
+      mergeable: 'clean',
+      branch: 'igor/fixer/42-a-bug',
+      base: 'main',
     })
+  })
+
+  it('reports an unmergeable artifact as conflicting, and anything unstated as unknown', () => {
+    // `unknown` is not a pessimistic `conflicting`. GitHub computes mergeability
+    // asynchronously, so every freshly opened artifact answers nothing on the first ask —
+    // and reading that as a conflict would send a worker at each one on the cycle it was born.
+    const of = (over: Record<string, unknown>) =>
+      normalizeIssue('o/r', issue({ timelineItems: { nodes: [{ source: pr(over) }] } }), NOW).inFlight
+        ?.mergeable
+    expect(of({ mergeable: 'CONFLICTING' })).toBe('conflicting')
+    expect(of({ mergeable: 'UNKNOWN' })).toBe('unknown')
+    expect(of({ mergeable: null })).toBe('unknown')
+    expect(of({ mergeable: undefined })).toBe('unknown')
+  })
+
+  it('reports an artifact with no branch or base as unknown, whatever it said about merging', () => {
+    // Acting on one means asking the host to merge into a branch named by nothing.
+    const of = (over: Record<string, unknown>) =>
+      normalizeIssue('o/r', issue({ timelineItems: { nodes: [{ source: pr(over) }] } }), NOW).inFlight
+    expect(of({ mergeable: 'CONFLICTING', headRefName: undefined })?.mergeable).toBe('unknown')
+    expect(of({ mergeable: 'CONFLICTING', baseRefName: undefined })?.mergeable).toBe('unknown')
+  })
+
+  it('carries who opened the artifact, and survives a deleted author', () => {
+    const of = (over: Record<string, unknown>) =>
+      normalizeIssue('o/r', issue({ timelineItems: { nodes: [{ source: pr(over) }] } }), NOW).inFlight?.author
+    expect(of({})).toBe('igor-bot')
+    expect(of({ author: null })).toBe('')
   })
 
   it('ignores a merged or closed pull request', () => {

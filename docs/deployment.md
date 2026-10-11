@@ -21,6 +21,22 @@ Igor shells out rather than reimplementing, so four things must be on the path:
 The floor is 26 rather than something older because Igor resolves provider reset phrases with
 `Temporal`, which 26 is the first release to ship unflagged.
 
+**"On the path" means the service's path, not your shell's.** A service inherits no shell
+profile, and systemd's default `PATH` doesn't include `~/.local/bin`, which is where `claude`'s
+native installer puts it for whoever ran the installer. `deploy/igor.service` sets
+`Environment=PATH=` with the service user's `~/.local/bin` first. Check that it's right with
+`sudo -u igor sh -lc 'command -v claude'` and edit the unit to match. If it's wrong, every
+triage and worker call fails to start. The same applies to `gh` if it came from Homebrew
+(`/opt/homebrew/bin` on macOS, `/home/linuxbrew/.linuxbrew/bin` on Linux).
+
+**Don't let `claude` update itself on the server.** A native install updates in the background,
+and a release is expected to change how `claude -p` authenticates: `--bare` will become its
+default, and bare mode ignores a seat's `setup-token`
+([igor#144](https://github.com/adamstallard/igor/issues/144)). The unit sets
+`DISABLE_AUTOUPDATER=1`, so an upgrade only happens when you run `claude update` as the service
+user and then restart the Igors. Read the release notes before you do. Claude Code's setup
+docs say apt, dnf and apk installs don't update themselves either.
+
 ## Before it can run
 
 Three things, in this order. None can be automated, and the first two are the ones people miss.
@@ -257,6 +273,10 @@ igor budget                 # what each seat has left, and what state each one i
 igor run <role> --plan      # what it would claim right now, claiming nothing
 ```
 
+`--plan` persists nothing: no watermark, no cycle record. Looking at the backlog does not
+consume it, so this is safe to run when something is already wrong. `--claim` is not a preview
+and the two are refused together, so the claim lines a preview prints are run without `--plan`.
+
 Everything an Igor did is on the `igor-state` branch of the lore repository:
 `executions/` for what it worked and what that cost, one `.ndjson` file per UTC day,
 `discovery.json` for the watermarks, `transcripts/` for why it did what it did, and
@@ -276,7 +296,14 @@ checkout needed.
 | `role "x" names no seat` | seats are declared but this role names none; set `seat:` on it or on a level it inherits from. Omitting it used to fall through to the first pool declared, which may be a person's |
 | `the tracker did not record <account> as holding <item>` | the machine account lacks write access — GitHub accepts the assignment and silently drops it |
 | nothing is ever claimed | run `igor run <role> --plan`; the funnel prints where every candidate was dropped |
+| `9 left untriaged — the budget is used up, back at …` | every seat the role may use is held. Nothing is wrong with the host: triage is a spend, so it does not run where the gate names no seat, and those nine items wait rather than being decided about. It keeps discovering and keeps reading comments, so a **stop** still lands |
+| `9 left untriaged — no seat's usage could be read …` | the same stop, for a reason a clock will not clear: the sentence names what to go and look at, and only "used up" means spend |
 | an item was claimed and nothing happened | there is no such case; every path that holds a claim posts before releasing. If you find one, it is a bug |
+
+An Igor that is quiet is not necessarily an Igor that is broken, and the cycle line says
+which. `Not logged in · Please run /login` is **not** what it looks like when every seat is held: triage no
+longer falls back to whatever login is ambient, so that message means what it says, and running
+`/login` on a machine whose seats are simply held fixes nothing.
 
 To stop an Igor working a particular item, comment **stop** on it. That works for anyone, needs
 no permission, and is not configurable. To stop an Igor entirely, stop the service — it will

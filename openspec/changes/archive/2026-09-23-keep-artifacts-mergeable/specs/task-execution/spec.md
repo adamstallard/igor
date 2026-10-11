@@ -13,9 +13,14 @@ stale in a state only a person can see.
 Resolution happens on the existing artifact because replacing it would discard whatever review
 has accumulated against it, which is a cost paid by the reviewer rather than the Igor.
 
-#### Scenario: A base that merges cleanly costs no model
+Bringing it up to date starts with the code host: the base is merged into the artifact's branch
+server-side. Where that comes out clean the cycle for the item ends there; where it conflicts,
+a worker resolves it.
 
-- **WHEN** an artifact's base has moved and merges without conflict
+#### Scenario: A conflict that has cleared costs no model
+
+- **WHEN** the base is merged into an artifact reported as no longer merging, and the merge
+  comes out clean after all
 - **THEN** the artifact is brought up to date without invoking a worker
 
 #### Scenario: A conflict is resolved, not regenerated

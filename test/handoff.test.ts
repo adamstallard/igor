@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
+import { stillAssigned } from '../src/claiming.js'
 import type { Candidate, Tracker } from '../src/adapter.js'
 import type { ExecutionResult } from '../src/execute.js'
 import type { Role } from '../src/role.js'
-import { composeHandoff, handOffFrom, stepsFrom, suggest, type HandoffReason } from '../src/handoff.js'
+import { composeHandoff, handOffFrom, noCapacity, stepsFrom, suggest, type HandoffReason } from '../src/handoff.js'
 import { shouldDefer } from '../src/deferred.js'
 
 const NOW = Date.parse('2026-09-13T12:00:00Z')
@@ -33,8 +34,19 @@ const result = (over: { [K in keyof ExecutionResult]?: ExecutionResult[K] | unde
   return merged as unknown as ExecutionResult
 }
 
-function tracker(opts: { reportThrows?: boolean; releaseThrows?: boolean } = {}) {
+function tracker(
+  opts: {
+    reportThrows?: boolean
+    /** A transient refusal, up again by the next call. */
+    reportFailsOnce?: boolean
+    /** A write the surface accepted and a client that threw anyway — a timeout, a killed `gh`. */
+    reportPostsThenThrows?: boolean
+    releaseThrows?: boolean
+    releaseLeavesHolder?: boolean
+  } = {},
+) {
   const log = { reported: [] as string[], released: [] as string[] }
+  let reports = 0
   const t: Tracker = {
     name: 'fake',
     nativeHolderField: true,
@@ -44,12 +56,18 @@ function tracker(opts: { reportThrows?: boolean; releaseThrows?: boolean } = {})
     commentsSince: async () => [],
     verifyClaim: async () => ({ status: 'held' }),
     report: async (_c, m) => {
+      reports += 1
       if (opts.reportThrows) throw new Error('surface unreachable')
+      if (opts.reportFailsOnce === true && reports === 1) throw new Error('503 from the surface')
       log.reported.push(m)
+      if (opts.reportPostsThenThrows === true) throw new Error('timeout after the write')
     },
     release: async (_c, as) => {
       if (opts.releaseThrows) throw new Error('cannot unassign')
       log.released.push(as)
+      // The surface answered, and the holder field did not clear — distinct from the throw
+      // above, which is the surface not answering at all.
+      return opts.releaseLeavesHolder !== true
     },
     linkage: () => 'Closes #7',
   }
@@ -86,6 +104,48 @@ describe('composed from state, never from a model', () => {
       NOW,
     )
     expect(remaining[0]).toContain('role may not open one')
+  })
+
+  it('counts a removal as work rather than as nothing', () => {
+    // A run whose every change was a removal publishes a pull request. Counted only as edits,
+    // the handoff says a draft was opened over no changes at all.
+    const { done } = stepsFrom(
+      CLAIMED,
+      result({ changed: [{ path: 'src/gone.ts', content: '', kind: 'deleted' }] }),
+      NOW,
+    )
+    expect(done).toEqual(['claimed this 12 minutes ago', 'removed 1 file', 'opened #9 as a draft'])
+  })
+
+  it('counts what the artifact carries, not what git reported twice', () => {
+    // A path written back after being removed is two records for one file. Counted as both,
+    // the handoff sends the reader looking for a deletion that is not in the diff.
+    const { done } = stepsFrom(
+      CLAIMED,
+      result({
+        changed: [
+          { path: 'src/a.ts', content: '', kind: 'deleted' },
+          { path: 'src/a.ts', content: 'rewritten', kind: 'added' },
+        ],
+      }),
+      NOW,
+    )
+    expect(done).toEqual(['claimed this 12 minutes ago', 'changed 1 file', 'opened #9 as a draft'])
+  })
+
+  it('says a removal that was never published is gone too', () => {
+    // The alternative branch reads "nothing usable was produced", one line under a Done list
+    // that has just said a file was removed.
+    const { remaining } = stepsFrom(
+      CLAIMED,
+      result({
+        outcome: 'failed',
+        artifact: undefined,
+        changed: [{ path: 'src/gone.ts', content: '', kind: 'deleted' }],
+      }),
+      NOW,
+    )
+    expect(remaining.join(' ')).toMatch(/never published.*gone with the working copy/)
   })
 
   it('does not claim files were changed when none were', () => {
@@ -295,7 +355,7 @@ describe('posting it', () => {
     const spy: Tracker = {
       ...t,
       report: async () => { order.push('report') },
-      release: async () => { order.push('release') },
+      release: async () => { order.push('release'); return true },
     }
     await handOffFrom(spy, candidate(), role(), 'igor-bot', CLAIMED, { kind: 'budget' }, result(), NOW)
     expect(order).toEqual(['report', 'release'])
@@ -315,6 +375,58 @@ describe('posting it', () => {
     const out = await handOffFrom(t, candidate(), role(), 'igor-bot', CLAIMED, { kind: 'budget' }, result(), NOW)
     expect(out.posted).toBe(true)
     expect(out.released).toBe(false)
+  })
+
+  it('corrects the handoff on the item, not only in the flags it returns', async () => {
+    // The handoff text says the Igor released this, and it is posted before the release is
+    // attempted — by design. Where the release then does not take, the flags told the caller
+    // and the item was left carrying the false sentence.
+    const { t, log } = tracker({ releaseThrows: true })
+    const out = await handOffFrom(t, candidate(), role(), 'igor-bot', CLAIMED, { kind: 'budget' }, result(), NOW)
+
+    expect(out.released).toBe(false)
+    expect(log.reported.at(-1)).toBe(stillAssigned())
+  })
+
+  it('reads a surface that answers "still assigned" the same as one that does not answer', async () => {
+    const { t, log } = tracker({ releaseLeavesHolder: true })
+    const out = await handOffFrom(t, candidate(), role(), 'igor-bot', CLAIMED, { kind: 'budget' }, result(), NOW)
+
+    expect(out.released).toBe(false)
+    expect(log.reported.at(-1)).toBe(stillAssigned())
+  })
+
+  it('corrects a handoff the surface took and the client never saw acknowledged', async () => {
+    // Whether the correction is owed turns on whether the handoff may be on the item, not on
+    // whether this process saw the write succeed — the distinction `takeClaim` already draws
+    // with `announced`. A surface can accept the write and throw on the way home, and that
+    // leaves the false sentence where somebody reads it with nothing to answer it.
+    const { t, log } = tracker({ reportPostsThenThrows: true, releaseLeavesHolder: true })
+    const out = await handOffFrom(t, candidate(), role(), 'igor-bot', CLAIMED, { kind: 'budget' }, result(), NOW)
+
+    expect(out.posted).toBe(false)
+    expect(out.released).toBe(false)
+    expect(log.reported.at(-1)).toBe(stillAssigned())
+  })
+
+  it('still says the item is held where the handoff itself never landed', async () => {
+    // A surface that refused the handoff and answered the release is up again by the second
+    // call, and the item is genuinely still assigned. The sentence stands alone the same way
+    // `complete()`'s does: a claim message is above it, and what it says is true.
+    const { t, log } = tracker({ reportFailsOnce: true, releaseLeavesHolder: true })
+    const out = await handOffFrom(t, candidate(), role(), 'igor-bot', CLAIMED, { kind: 'budget' }, result(), NOW)
+
+    expect(out.posted).toBe(false)
+    expect(log.reported).toEqual([stillAssigned()])
+  })
+
+  it('says nothing extra where the release did take', async () => {
+    // The pole: every handoff would otherwise gain a second comment.
+    const { t, log } = tracker()
+    const out = await handOffFrom(t, candidate(), role(), 'igor-bot', CLAIMED, { kind: 'budget' }, result(), NOW)
+
+    expect(out.released).toBe(true)
+    expect(log.reported).toHaveLength(1)
   })
 
   it('still posts when the worker could not be invoked at all', async () => {
@@ -346,5 +458,31 @@ describe('finding nothing is a result, not a breakdown', () => {
   it('still says what it did and what is left', () => {
     expect(text).toMatch(/found nothing it could usefully change/)
     expect(text).toMatch(/needs a person to look/)
+  })
+})
+
+describe('the same sentence where nothing was claimed', () => {
+  // A cycle that triaged nothing has no item to hand back and no seat to name, and still owes
+  // the reader what a handoff owes them. One composer, so the two cannot come to disagree.
+  const resetAt = new Date(NOW + 3 * 3600_000).toISOString()
+
+  it('states the hour without naming a seat that ran out', () => {
+    const text = noCapacity({ blocked: 'spent', resetAt }, NOW)
+    expect(text).toBe('the budget is used up, back at 2026-09-13 15:00 UTC (in about 3 hours)')
+  })
+
+  it('hedges a derived hour here too', () => {
+    expect(noCapacity({ blocked: 'spent', resetAt, resetApproximate: true }, NOW)).toContain('back around')
+  })
+
+  it('sends an unusable pool somewhere other than to look at spend', () => {
+    const text = noCapacity({ blocked: 'absent' }, NOW)
+    expect(text).toContain('not declared')
+    expect(text).not.toContain('is used up')
+    expect(text).not.toMatch(/not known/)
+  })
+
+  it('says the hour is unknown rather than inventing one', () => {
+    expect(noCapacity({ blocked: 'spent' }, NOW)).toMatch(/not known/)
   })
 })

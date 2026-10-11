@@ -108,8 +108,8 @@ than per process — processes are free, accounts are not.
 
 The GitHub account and the Claude subscription seat are different things and are configured
 separately. A machine account says who acts on the repository; a seat says whose allowance pays
-for the reasoning (§6.5.1). An Igor may act as `milton` while spending from a pool that includes
-three people's spare capacity, and that is the normal arrangement rather than an edge case.
+for the reasoning (§6.5.1). An Igor may act as `milton` while using seats that three people have
+set aside for its roles, and that is the normal arrangement rather than an edge case.
 
 Provisioning a seat is a different conversation with a different person — the one whose
 allowance it is. [`seats.md`](seats.md) is the page to send them.
