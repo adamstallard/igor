@@ -1650,14 +1650,22 @@ worktrees cannot check out the same branch — which does not bite, since each t
 branch. Moot for the first Igor, which runs one task at a time; recorded so nobody builds
 clone-per-task and has to unpick it.
 
-**Cleanup is a startup sweep, not an exit hook** — **built**. Release runs from a `finally`, which SIGKILL,
-an OOM kill and a power loss all skip, so a crashed run strands a full checkout and nothing ever
-reclaims it. `wire` removes `igor-tree-*` directories older than the worker's absolute ceiling
-plus an hour before the first cycle. Age is the only safe signal: several processes of one role
-is the point of §6.7.1, so a tree that looks idle may belong to a live sibling, and the
-threshold sits above the longest a tree can be in use — the ceiling, and the clone and push
-either side of the worker — rather than close to it. A surviving tree is debris, never
-a checkpoint — its worker's context died with its process, so nothing resumes from it.
+**Cleanup is a startup sweep, not an exit hook** — **built**. A tree is released in a `finally`,
+and a `finally` doesn't run on SIGKILL, an OOM kill or a power loss, so a crashed run would leave
+its checkout behind for good. Instead, `wire` reclaims abandoned trees before the first cycle: it
+removes every `igor-tree-*` directory older than the worker's absolute ceiling plus an hour, and
+the `-outbox` directory beside each one. A crash strands both, and the outbox is the one holding
+the run's declarations.
+
+**Age is the only safe signal.** Several Igor processes can share one temp directory: different
+roles already do when run by hand, and §6.7.1 plans several processes of one role. So a tree that
+looks idle may belong to a live sibling. The threshold therefore sits above the longest
+a tree can be in use: the worker's ceiling, plus the clone before it and the push after it.
+Deleting a live sibling's tree corrupts its run, while leaving debris an hour longer only costs
+disk.
+
+A tree that survives a crash is debris, never a checkpoint: its worker's context died with its
+process, so nothing can resume from it.
 
 The **seam** this arrives behind is specified now, in `core-igor-loop`'s `task-execution`:
 execution obtains a disposable working tree through one provisioning function and assumes
@@ -1712,6 +1720,79 @@ commit, and the `DU` path the artifact branch itself deleted and the base modifi
 reaches by following the conflict prompt's own instruction to delete the file to accept the base's
 removal. **The one case where HEAD is not the base** is a worker that ran `git commit`: nothing
 grants that command, and such a run already fails loudly on a `base_tree` the host cannot resolve.
+
+### 6.7.2b A resolution may not undo what the base did, unless it says so
+
+**When a worker resolves a conflict on an Igor's own pull request, the resolution is refused if
+it would silently undo a change the base made.** The resolution is published as a commit with
+two parents, the artifact's head and the base it takes in, so its tree *is* the merge result. A
+path the resolution never mentions publishes the artifact's copy, and if the base changed that
+path, the change is gone the moment the artifact merges. **Review cannot catch it:** a reverted
+deletion reads as the file still being there, a reverted rewrite as the file being unchanged, and
+the diff against the base looks unremarkable.
+
+Before the commit, `undone()` takes each path the base changed since the merge base and compares
+what stood there then, what the base holds now, and what this commit would publish: the
+resolution's own file, its own deletion, or head's copy for a path it never mentions. The base's
+change is undone in a different way for each kind of change:
+
+- the base deleted the path: undone if anything publishes there, whatever it holds;
+- the base added it: undone if nothing publishes there;
+- the base rewrote it: undone if what publishes is exactly the merge base's content.
+
+Taking the base's side, combining both sides, honouring a deletion the base made and meeting a
+change the artifact already had all pass. The blobs are read in `merge()`, as two `--raw` diffs
+off the merge base, because only the clone holds the merge base and both trees: the code host
+that publishes has neither.
+
+**One check of the published tree, not one per way of getting there.** The two instances behind
+this guard, a dropped deletion and a status code that threw on read, are the same outcome reached
+two ways, and checking the outcome covers routes nobody has found yet. #118 reached the same
+conclusion for removals: it replaced three route-specific checks, each of which missed the next
+case, with one that asks HEAD the requirement's own question
+([#118](https://github.com/adamstallard/igor/issues/118)). This check runs on the change list
+that read produces, and compares against the tree that list would publish.
+
+**An undone base change is publishable where the worker declares it.** The worker writes
+`reverts.json`, as `{"reverts": [{"path": …, "discards": …}]}`, one entry per path naming the
+blob the base holds, or `deleted` where the base deleted the path, into the run's **outbox**, and
+the loop reads it there.
+
+The outbox is a directory beside the clone, never inside it. The Igor makes it empty for the
+run, and grants the worker that one directory with `--add-dir`, measured to be needed: nothing
+outside the working directory is writable otherwise. It is removed in the same `release()` as the
+tree, first, and whether or not the tree's removal succeeds; where a crash runs no `release()`,
+the startup sweep above reclaims it. So whatever is in it was put there during this run, and that
+is how a declaration is known to be this run's. **No file the repository keeps can be one**, at
+any path: a committed declaration would be in every fresh clone and authorize the same revert on
+every run, each reporting a declaration nobody made.
+
+**Rejected: deciding provenance by asking about the file.** Whether a file on disk is the one the
+repository keeps cannot be answered reliably. The answer fails wherever the filesystem's idea of
+a path and git's differ (a symbolic link at the path or above it, a case variant, a merge that
+rewrites the file), and wherever a clean filter or an attribute change makes a checkout differ
+from its blob. The outbox answers by place instead, so no path inside the tree is reserved: a
+`reverts.json` the repository keeps is ordinary content, carried and compared like any other.
+
+Three properties keep a declaration from becoming a switch that ends up always on. **It can
+never be blanket:** no wildcard, no per-resolution flag, nothing a role or an org config can set,
+so the permission is given again for each resolution. **It names what it overrides:** a
+declaration naming a state the base does not hold authorizes nothing, and one written for a path
+cannot apply to another. **A declared revert is still reported**, on the commit, on the item and
+in the run record, because almost the whole value of the guard is that an undone base change
+stops being invisible.
+
+**Untrusted text can reach the declaration, and that is an accepted cost.** A worker reads the
+item, the diff and the conflicting content, and an injection that can produce the revert can
+produce the declaration beside it. Reporting does not prevent that; it makes the revert name
+itself and the change it discarded, so the attack is attributable rather than silent. The
+alternative, refusing every revert, leaves a legitimate one no way through an Igor at all. The
+case for that alternative is in `guard-silent-reverts`'s `design.md`.
+
+Two false negatives are known and accepted. **Partial erosion**, content matching neither side,
+is treated as a resolution, because nothing distinguishes it from a legitimate combination. And a
+**binary** file, read as UTF-8 (§6.7.3), can never hash to the merge base's blob, so a binary
+restored to it is not caught; that is part of the binary problem in §6.7.3, not a separate gap.
 
 ### 6.7.3 A binary in an artifact is corrupted, not dropped — **known, and deliberately unguarded**
 

@@ -97,6 +97,7 @@ function deps(found: Candidate[], opts: { searchThrows?: boolean; verdict?: Clai
       }
       return {
         path: tempDir('igor-serve-'),
+        outbox: tempDir('igor-serve-outbox-'),
         repo: 'o/r',
         changes: async () => [],
         release: async () => {},
