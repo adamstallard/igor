@@ -89,7 +89,7 @@ file is not new. It must be absolute: relative to the configuration, it would la
 repository, which Igor writes to. The skills Igor expects are the ones installed under
 `skills/`; there is no second list to keep in step with the directory.
 
-The plugin is named `igor`, so skills load as `igor:prose` and `igor:bug-hunter`. The deployment
+The plugin is named `igor` (decided by Adam, 2026-10-11), so skills load as `igor:prose` and `igor:bug-hunter`. The deployment
 writes the one-line `plugin.json`; the startup check fails if the name differs, because no
 `igor:<name>` would be listed.
 
