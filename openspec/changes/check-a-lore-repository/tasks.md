@@ -56,7 +56,8 @@ claiming account's write access.
       check, not the run
 - [ ] 3.9 No superseded reconciliation workflow is on the default branch: an earlier Igor
       workflow such as `promote-on-merge.yml`, matched by its job name and the command it runs,
-      not by its bytes, so a locally edited copy is still found (Adam, 2026-10-11)
+      not by its bytes, so a local edit to the current workflow is not read as superseded (Adam,
+      2026-10-11)
 
 ## 4. The report and the exit status
 
