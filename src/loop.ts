@@ -1,7 +1,7 @@
 import type { Artifact, Candidate, ClaimVerdict, CodeHost, Comment, Tracker } from './adapter.js'
 import type { Gate, SeatVerdict } from './budget.js'
 import {
-  checkpoint, eligibleAfterStop, stillAssigned, stopReceipt, takeClaim,
+  checkpoint, eligibleAfterStop, standDown, stillHeld, stopReceipt, STOPPED_MARKER, takeClaim, waitingMarker,
   type ClaimOptions, type ClaimResult,
 } from './claiming.js'
 import {
@@ -14,7 +14,7 @@ import { appendRecord } from './state.js'
 import {
   advance, discover, EMPTY_STATE, freshCandidates, heldBelow, loadDiscoveryState, saveDiscoveryState,
 } from './discovery.js'
-import { countStages, screen, staleOwnArtifact, universalSkip } from './predicate.js'
+import { countStages, screen, staleOwnArtifact, universalSkip, type Holding } from './predicate.js'
 import { isStop } from './signals.js'
 import { fingerprint, loadDeferrals, stillDeferred, type DeferralState } from './deferred.js'
 import { systemPrompt, triageBatch, TRIAGE_MODEL } from './triage.js'
@@ -162,7 +162,7 @@ export async function runItem(
       // After the receipt, never before it. The receipt is what claims the release, and a
       // clause correcting it that stands above it answers nothing.
       if (claim.releaseStuck === true) {
-        await tracker.report(candidate, stillAssigned()).catch(() => undefined)
+        await tracker.report(candidate, stillHeld(role)).catch(() => undefined)
       }
       return { outcome: 'stopped', candidate, reason: claim.reason, costUsd: 0, spoke: true, cures: [] }
     }
@@ -220,7 +220,7 @@ export async function runItem(
     // wording of a refusal.
     const verdict = reached.verdict
     if (verdict?.status === 'stopped' || verdict?.status === 'lost') {
-      const clear = await tracker.release(candidate, identity).then((c) => c, () => false)
+      const clear = await standDown(tracker, candidate, identity, verdict)
       const artifact = reached.published?.artifact.url
       if (verdict.status === 'stopped') {
         await tracker.report(candidate, stopReceipt(role, verdict, artifact)).catch(() => undefined)
@@ -229,7 +229,7 @@ export async function runItem(
       }
       // If the release did not take, say so in either case. A needless comment costs one
       // comment, but silence leaves the item held by this Igor with nobody told.
-      if (!clear) await tracker.report(candidate, stillAssigned()).catch(() => undefined)
+      if (!clear) await tracker.report(candidate, stillHeld(role)).catch(() => undefined)
       return {
         ...ended, outcome: verdict.status,
         spoke: verdict.status === 'stopped' || artifact !== undefined || !clear,
@@ -250,9 +250,11 @@ export async function runItem(
     const spent = reached.output !== undefined
     const published = reached.published !== undefined
     const retryIsDear = spent && !published && ran?.outcome !== 'refused'
+    // A directed claim's handoff says how to hand the item over again instead, since the release
+    // removes the label a person added; `handOffFrom` reads that off the claim.
     const next = retryIsDear ? {} : { next: published ? ('published' as const) : ('retry' as const) }
     const out = await handOffFrom(
-      tracker, candidate, role, identity, claim.claimedAt, { kind: 'failure', detail, ...next }, ran,
+      tracker, candidate, role, identity, claim, { kind: 'failure', detail, ...next }, ran,
     ).catch(() => ({ posted: false }))
     return {
       ...ended,
@@ -337,7 +339,7 @@ async function runClaimedItem(
       ...(options.budget.blocked === undefined ? {} : { blocked: options.budget.blocked }),
       ...(options.budget.passedOver === undefined ? {} : { passedOver: options.budget.passedOver }),
     }
-    const out = await handOffFrom(tracker, candidate, role, identity, claim.claimedAt, reason)
+    const out = await handOffFrom(tracker, candidate, role, identity, claim, reason)
     return {
       outcome: 'handed-off', candidate, reason: 'budget exhausted before starting',
       costUsd: 0, spoke: out.posted, handoff: 'budget', cures: [],
@@ -428,14 +430,14 @@ async function runClaimedItem(
         //
         // The answer is kept, not discarded: the receipt below ends "and released this", and
         // where the holder did not clear that sentence is false on an item somebody is reading.
-        stoodDown = await tracker.release(candidate, identity).then((clear) => clear, () => false)
+        stoodDown = await standDown(tracker, candidate, identity, verdict)
       }
       if (verdict.status === 'stopped') {
         const artifact = execution.artifact ? execution.artifact.url : undefined
         await tracker.report(candidate, stopReceipt(role, verdict, artifact)).catch(() => undefined)
         // After the receipt, never before it: a correction posted first corrects nothing and
         // leaves the false clause as the last word.
-        if (!stoodDown) await tracker.report(candidate, stillAssigned()).catch(() => undefined)
+        if (!stoodDown) await tracker.report(candidate, stillHeld(role)).catch(() => undefined)
         return {
           outcome: 'stopped', candidate, reason: execution.reason, execution,
           costUsd: execution.costUsd, spoke: true, cures: execution.cures ?? [],
@@ -456,7 +458,7 @@ async function runClaimedItem(
         // does — so reaching here means the run finished and published, and there is always a
         // hand-over note above this to correct. `takeClaim` owns the standalone, for a loss
         // found in the settle window where nothing has been said.
-        if (!stoodDown) await tracker.report(candidate, stillAssigned()).catch(() => undefined)
+        if (!stoodDown) await tracker.report(candidate, stillHeld(role)).catch(() => undefined)
         return {
           outcome: 'lost', candidate, reason: execution.reason, execution,
           costUsd: execution.costUsd, spoke: artifact !== undefined || !stoodDown, cures: execution.cures ?? [],
@@ -467,7 +469,7 @@ async function runClaimedItem(
       // with nothing in it names a cure of its own, and the run carries any it met on the way.
       const cures = execution.cures ?? []
       const out = await handOffFrom(
-        tracker, candidate, role, identity, claim.claimedAt,
+        tracker, candidate, role, identity, claim,
         { kind: 'failure', detail: execution.reason, ...(cures.length === 0 ? {} : { cures }) }, execution,
       )
       return {
@@ -486,7 +488,7 @@ async function runClaimedItem(
         ...(options.budget?.seat === undefined ? {} : { seat: options.budget.seat }),
         ...(execution.resetsAt === undefined ? {} : { resetAt: execution.resetsAt }),
       }
-      const out = await handOffFrom(tracker, candidate, role, identity, claim.claimedAt, reason, execution)
+      const out = await handOffFrom(tracker, candidate, role, identity, claim, reason, execution)
       return {
         outcome: 'handed-off', candidate, reason: execution.reason, execution,
         costUsd: execution.costUsd, spoke: out.posted, handoff: 'budget', cures: execution.cures ?? [],
@@ -509,7 +511,7 @@ async function runClaimedItem(
         execution.outcome === 'nothing-to-do'
           ? { kind: 'nothing-to-do', detail: declineReason(execution.transcript) }
           : { kind: 'failure', detail: execution.reason, ...(cures.length === 0 ? {} : { cures }) }
-      const out = await handOffFrom(tracker, candidate, role, identity, claim.claimedAt, reason, execution)
+      const out = await handOffFrom(tracker, candidate, role, identity, claim, reason, execution)
       return {
         outcome: 'handed-off', candidate, reason: execution.reason, execution,
         costUsd: execution.costUsd, spoke: out.posted, handoff: reason.kind, cures,
@@ -640,6 +642,10 @@ export interface CycleDeps extends ItemDeps {
 export interface CycleCandidate {
   candidate: Candidate
   reason: string
+  /** A person put this Igor in the holder field: claim it without the settle interval. */
+  directed?: true
+  /** For a waiting notice: the holders that keep this Igor off the item. */
+  holders?: string[]
 }
 
 export interface CycleReport {
@@ -681,6 +687,11 @@ export interface CycleReport {
   /** Model verdicts, both ways — a skip with a reason is as useful as a claim. */
   verdicts: { candidate: Candidate; outcome: 'proceed' | 'skip'; reason: string }[]
   toClaim: CycleCandidate[]
+  /**
+   * Items a person handed to this Igor while another Igor holds them, owed one notice each.
+   * Not claimed: removing the holding Igor's label is how a person hands an item over.
+   */
+  waiting: CycleCandidate[]
   /**
    * Artifacts of the Igor's own that no longer merge. Kept apart from `toClaim` because they
    * cost no model call to decide on and are not claimed to act on — see `catchUpItem`.
@@ -765,12 +776,20 @@ export async function planCycle(
     skipped: [],
     verdicts: [],
     toClaim: [],
+    waiting: [],
     toCatchUp: [],
     triageCostUsd: 0,
     triageCostUnreported: 0,
     failures: [],
     coldStart: false,
   }
+
+  // Who this Igor is in the tracker's holder field. Unknown in a preview that names no identity,
+  // where every holder reads as somebody else.
+  const holding: Holding | undefined =
+    options.identity === undefined
+      ? undefined
+      : { holder: deps.tracker.holder, distinctFromAssignee: deps.tracker.holderField.distinctFromAssignee }
 
   const stored = options.sinceDays === undefined ? await loadDiscoveryState(deps.destination) : EMPTY_STATE
   const { results, failures } = await discover({ [deps.tracker.name]: deps.tracker }, role.sources, stored, now)
@@ -789,7 +808,7 @@ export async function planCycle(
   for (const result of results) {
     for (const candidate of result.candidates) {
       const artifact = staleOwnArtifact(candidate, options.identity)
-      if (artifact === undefined || universalSkip(candidate, options.identity) !== undefined) continue
+      if (artifact === undefined || universalSkip(candidate, options.identity, holding) !== undefined) continue
       if (catchingUp.has(candidate.id)) continue
       catchingUp.add(candidate.id)
       report.toCatchUp.push({ candidate, reason: `${artifact.ref} no longer merges into ${artifact.base}` })
@@ -800,7 +819,7 @@ export async function planCycle(
         ? result.fresh
         : freshCandidates(result.candidates, undefined, now, options.sinceDays)
 
-    const screened = screen(role.lane, fresh, options.identity)
+    const screened = screen(role.lane, fresh, options.identity, holding)
     const counts = countStages(screened)
     report.returned += result.returned
     report.fresh += fresh.length
@@ -813,6 +832,19 @@ export async function planCycle(
       } else if (!catchingUp.has(t.candidate.id)) {
         survivors.push(t.candidate)
       }
+    }
+  }
+
+  // Items a person handed to this Igor go ahead of everything the model would decide about,
+  // with no lane and no triage: the person exercised their own judgement, which is what those
+  // stages stand in for. They are found wherever they are, not only where the role's query looks.
+  if (holding !== undefined && options.identity !== undefined) {
+    const { directed, waiting } = await findDirected(deps.tracker, role, options.identity, holding, report)
+    const taken = new Set(directed.map((d) => d.candidate.id))
+    report.toClaim.push(...directed.filter((d) => !catchingUp.has(d.candidate.id)))
+    report.waiting.push(...waiting)
+    for (let i = survivors.length - 1; i >= 0; i -= 1) {
+      if (taken.has(survivors[i]!.id)) survivors.splice(i, 1)
     }
   }
 
@@ -863,6 +895,8 @@ export async function planCycle(
       options.identity ?? '',
       asked,
       now,
+      Infinity,
+      holding,
     ),
     quiet,
     options.identity ?? '',
@@ -876,7 +910,7 @@ export async function planCycle(
   report.toCatchUp = report.toCatchUp.filter((c) => catchingUpStill.has(c.candidate.id))
 
   const awake = await dropStopped(
-    comments, survivors, role.cooldownMinutes, options.identity ?? '', report, now, limit,
+    comments, survivors, role.cooldownMinutes, options.identity ?? '', report, now, limit, holding,
   )
   const considered = await dropDeferred(comments, awake, quiet, options.identity ?? '', report, limit)
   // Survivors the cap never reached. Nothing examined them and nothing decided about them, so
@@ -1128,11 +1162,18 @@ function instant(iso: string): number {
   return Number.isNaN(t) ? -Infinity : t
 }
 
-/** The most recent stop, because the cooldown runs from the last one anybody issued. */
+/**
+ * The most recent stop, because the cooldown runs from the last one anybody issued.
+ *
+ * A stop made by removing this Igor's label leaves no comment of its own, so this Igor's receipt
+ * for it counts as the stop, at the receipt's time. Only this Igor's own: anyone can copy the
+ * marker into a comment.
+ */
 function latestStop(spoken: readonly Comment[], identity: string): Comment | undefined {
   let latest: Comment | undefined
   for (const comment of spoken) {
-    if (!isStop(comment.body, identity)) continue
+    const receipt = comment.author === identity && comment.body.includes(STOPPED_MARKER)
+    if (!receipt && !isStop(comment.body, identity)) continue
     if (latest === undefined || instant(comment.at) >= instant(latest.at)) latest = comment
   }
   return latest
@@ -1166,6 +1207,8 @@ export async function dropStopped(
   report: Pick<CycleReport, 'skipped' | 'skippedStopped' | 'skippedUnreadable'>,
   now: number,
   wanted = Infinity,
+  /** How the tracker's holder field shows this Igor, for who else holds an item. */
+  holding?: Holding,
 ): Promise<Candidate[]> {
   const window = stopWindow(now, cooldownMinutes)
   const kept: Candidate[] = []
@@ -1197,6 +1240,7 @@ export async function dropStopped(
       stoppedAt: stop.at,
       cooldownMinutes,
       identity,
+      ...(holding === undefined ? {} : { holding }),
       now,
       since: async () =>
         spoken.filter(
@@ -1230,6 +1274,70 @@ export async function dropStopped(
   return kept
 }
 
+/**
+ * Items whose holder field a person set to this Igor, read from the tracker each cycle.
+ *
+ * `directed` is what this Igor should claim now, without the settle interval. An item counts
+ * only where a person, not this Igor, last set the field, and this Igor has said nothing on it
+ * since apart from a waiting notice: so a person's hand-over is answered once, an Igor's own
+ * leftover label is not mistaken for one, and a hand-over after a stop is a go-ahead that skips
+ * the cooldown. A stop posted after the hand-over still holds it.
+ *
+ * `waiting` is what a person handed to this Igor while another Igor holds it, where no notice
+ * about those holders has been posted since.
+ *
+ * A read that fails leaves its item to the next cycle and is reported; it never ends the cycle.
+ */
+export async function findDirected(
+  tracker: Tracker,
+  role: Role,
+  identity: string,
+  holding: Holding,
+  report: Pick<CycleReport, 'failures'>,
+): Promise<{ directed: CycleCandidate[]; waiting: CycleCandidate[] }> {
+  const directed: CycleCandidate[] = []
+  const waiting: CycleCandidate[] = []
+  const seen = new Set<string>()
+  for (const repo of new Set(role.sources.map((s) => s.repo))) {
+    let found: Candidate[]
+    try {
+      found = await tracker.directed(repo)
+    } catch (error) {
+      report.failures.push(`${repo}: could not look for items handed to ${holding.holder}: ${why(error)}`)
+      continue
+    }
+    for (const candidate of found) {
+      if (seen.has(candidate.id) || candidate.state === 'closed') continue
+      seen.add(candidate.id)
+      try {
+        const setting = await tracker.holderSetBy(candidate)
+        if (setting === undefined || setting.self) continue
+        const spoken = await tracker.commentsSince(candidate, setting.at)
+        const others = candidate.holders.filter((h) => h !== holding.holder)
+        if (others.length > 0) {
+          const marker = waitingMarker(others)
+          if (!spoken.some((c) => c.author === identity && c.body.includes(marker))) {
+            waiting.push({ candidate, reason: `held by ${others.join(', ')}`, holders: others })
+          }
+          continue
+        }
+        const answered = spoken.some((c) => c.author === identity && !c.body.includes(WAITING))
+        const stopped = spoken.some((c) => isStop(c.body, identity))
+        if (answered || stopped || universalSkip(candidate, identity, holding) !== undefined) continue
+        directed.push({ candidate, reason: `${setting.by} handed it to ${holding.holder}`, directed: true })
+      } catch (error) {
+        report.failures.push(`${candidate.id}: could not read who handed it to ${holding.holder}: ${why(error)}`)
+      }
+    }
+  }
+  return { directed, waiting }
+}
+
+/** What every waiting notice carries, whatever holders it names. */
+const WAITING = '<!-- igor:waiting'
+
+const why = (error: unknown): string => (error instanceof Error ? error.message : String(error))
+
 export const DECISIONS_PATH = 'decisions.ndjson'
 
 /**
@@ -1250,7 +1358,12 @@ export async function recordDecisions(
 ): Promise<void> {
   // A cycle whose only decision was a catch-up has no fresh items and no failures, and its
   // one decision would otherwise go unwritten — which is the cycle most worth a record.
-  if (report.fresh === 0 && report.failures.length === 0 && report.toCatchUp.length === 0) return
+  if (
+    report.fresh === 0 &&
+    report.failures.length === 0 &&
+    report.toCatchUp.length === 0 &&
+    !report.toClaim.some((c) => c.directed === true)
+  ) return
   await write(
     destination,
     DECISIONS_PATH,
@@ -1280,6 +1393,10 @@ export async function recordDecisions(
           item: c.candidate.id, stage: 'catch-up', outcome: 'proceed', reason: c.reason,
         })),
         ...report.verdicts.map((v) => ({ item: v.candidate.id, stage: 'model', outcome: v.outcome, reason: v.reason })),
+        // A directed item reaches no stage that records it, so it is named here.
+        ...report.toClaim
+          .filter((c) => c.directed === true)
+          .map((c) => ({ item: c.candidate.id, stage: 'directed', outcome: 'proceed', reason: c.reason })),
         // Recorded so the items are named rather than only counted, and as their own outcome:
         // reading one of these back as a skip would say triage decided something about it.
         ...report.untriaged.map((u) => ({ item: u.candidate.id, stage: 'model', outcome: 'untriaged', reason: u.reason })),

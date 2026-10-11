@@ -1,5 +1,6 @@
 import type { Candidate, ClaimVerdict, Tracker } from './adapter.js'
 import { isGoAhead } from './signals.js'
+import { heldByOthers, type Holding } from './predicate.js'
 import type { Role } from './role.js'
 
 /**
@@ -37,6 +38,8 @@ export interface ClaimResult {
    * announcing has said anything: the claim message, then its withdrawal.
    */
   spoke?: boolean
+  /** Set where a person handed the item to this Igor; see `ClaimOptions.directed`. */
+  directed?: true
 }
 
 /**
@@ -66,11 +69,20 @@ export function claimMessage(role: Role, identity: string): string {
  * It names no cause. What failed goes to the run's record, because the protocol keeps tracker
  * errors off the item.
  */
-export function claimWithdrawn(role: Role): string {
+export function claimWithdrawn(role: Role, directed = false): string {
   return (
     `**${role.name}** could not finish taking this and has released it. ` +
-    `Nothing was done, so there is nothing to clean up.`
+    `Nothing was done, so there is nothing to clean up.` +
+    (directed ? ` ${relabelSentence(role)}` : '')
   )
+}
+
+/**
+ * Said after a directed claim is released: the release removed the label a person added, which
+ * was the only thing bringing the item to this Igor.
+ */
+export function relabelSentence(role: Role): string {
+  return `To have it try again, add the \`igor:${role.name}\` label again.`
 }
 
 /**
@@ -80,10 +92,13 @@ export function claimWithdrawn(role: Role): string {
  * false. It names the one action that clears the name, because nothing else will: the next run
  * cannot take an item somebody else appears to hold.
  */
-export function claimStuck(role: Role): string {
+export function claimStuck(role: Role, directed = false): string {
   return (
-    `**${role.name}** could not finish taking this and could not release it either, so it is ` +
-    `still assigned. Nothing was done. Unassign it to let another run pick it up.`
+    `**${role.name}** could not finish taking this and could not release it either, so it still carries ` +
+    `its \`igor:${role.name}\` label. Nothing was done. Remove the label to let another run pick it up.` +
+    // The label is still there, so adding it again records nothing: only a removal and a fresh
+    // addition is a new hand-over.
+    (directed ? ` To have **${role.name}** try again, remove the label and add it again.` : '')
   )
 }
 
@@ -94,8 +109,8 @@ export function claimStuck(role: Role): string {
  * still true about what happened, except for its clause about releasing. It names no cause,
  * which goes to the run's record.
  */
-export function stillAssigned(): string {
-  return 'This is still assigned — releasing it did not take. Unassign it to free it.'
+export function stillHeld(role: Role): string {
+  return `This still carries the \`igor:${role.name}\` label — releasing it did not take. Remove the label to free it.`
 }
 
 /**
@@ -106,8 +121,47 @@ export function stillAssigned(): string {
  * silence leaves two apparent holders and nothing to explain the second.
  */
 export function stoodDownStuck(role: Role): string {
-  return `**${role.name}** stood down here, and could not clear its own name from it. Unassign it to free it.`
+  return `**${role.name}** stood down here, and could not remove its own \`igor:${role.name}\` label. Remove the label to free it.`
 }
+
+/**
+ * Said where a claim was lost on a holder field that holds one value. The field already names
+ * the winner, so clearing it would remove the winner's claim; this reply is all the loser does.
+ */
+export function handingBack(role: Role): string {
+  return `**${role.name}** was beaten to this and is handing it back. Nothing was done.`
+}
+
+/**
+ * The hidden line a waiting notice carries, naming the holders it was posted about, so the
+ * notice is posted once while the issue's labels stay as they are.
+ */
+export function waitingMarker(holders: readonly string[]): string {
+  return `<!-- igor:waiting ${[...holders].sort().join(' ')} -->`
+}
+
+/**
+ * Said, once, where a person handed an item to this Igor while another Igor holds it. This Igor
+ * does not claim it: a second label never hands an item over, or adding one would be a stop.
+ */
+export function waitingNotice(role: Role, holders: readonly string[]): string {
+  const held = holders.map((h) => `\`${h}\``).join(', ')
+  return (
+    `**${role.name}** was asked to take this, but ${held} holds it. ` +
+    `Removing ${holders.length === 1 ? 'that label' : 'those labels'} hands it to **${role.name}**.\n\n` +
+    waitingMarker(holders)
+  )
+}
+
+/**
+ * The hidden line a receipt carries where the stop was a removal from the holder field. Such a
+ * stop leaves no comment of its own, so this line, on this Igor's receipt, is what the cooldown
+ * after a stop is measured from.
+ *
+ * Read only by the cooldown, never by `isStop`: a claim's own stop scan would otherwise read the
+ * Igor's old receipt as a fresh stop of the new claim.
+ */
+export const STOPPED_MARKER = '<!-- igor:stopped -->'
 
 /** The receipt owed on a stop: what exists so far, so nobody has to go looking. */
 export function stopReceipt(role: Role, verdict: ClaimVerdict, artifact?: string): string {
@@ -115,7 +169,8 @@ export function stopReceipt(role: Role, verdict: ClaimVerdict, artifact?: string
   const left = artifact
     ? `What exists so far: ${artifact}. It is yours to keep, continue, or discard.`
     : 'Nothing was produced, so there is nothing to clean up.'
-  return `**${role.name}** stopped${who} and released this. ${left}`
+  const mark = verdict.fromHolder === true ? `\n\n${STOPPED_MARKER}` : ''
+  return `**${role.name}** stopped${who} and released this. ${left}${mark}`
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
@@ -128,6 +183,12 @@ export interface ClaimOptions {
   now?: () => number
   /** Skip the claim message — used only by callers that post their own. */
   announce?: boolean
+  /**
+   * A person put this Igor in the holder field, so the item is directed to it: the field is not
+   * written again, and work starts without the settle interval. No other Igor competes for an
+   * item that names a holder, and the person has already chosen.
+   */
+  directed?: boolean
   onSettle?: () => void
 }
 
@@ -159,7 +220,7 @@ export async function takeClaim(
   // call added here later is covered without anyone remembering to guard it.
   let announced = false
   try {
-    if (tracker.nativeHolderField) {
+    if (tracker.nativeHolderField && options.directed !== true) {
       const recorded = await tracker.claim(candidate, identity)
       if (!recorded) {
         // GitHub accepts an assignment naming a non-collaborator and silently drops it, so a
@@ -169,8 +230,8 @@ export async function takeClaim(
           candidate,
           claimedAt,
           reason:
-            `the tracker did not record ${identity} as holding ${candidate.id} — ` +
-            `most likely it lacks write access to ${candidate.repo}`,
+            `the tracker did not record ${identity} as holding ${candidate.id}: ` +
+            `read back after it was written, the holder field does not name it`,
         }
       }
     }
@@ -183,12 +244,19 @@ export async function takeClaim(
       await tracker.report(candidate, claimMessage(role, identity))
     }
 
-    options.onSettle?.()
-    await wait(role.settleSeconds * 1000)
+    // A directed item is checked at once rather than after the settle interval, which still
+    // catches a person who took it back between the cycle finding it and this claim.
+    if (options.directed !== true) {
+      options.onSettle?.()
+      await wait(role.settleSeconds * 1000)
+    }
     const verdict = await tracker.verifyClaim(candidate, identity, since)
 
     if (verdict.status === 'held') {
-      return { outcome: 'held', candidate, claimedAt, verdict, reason: 'claim stands' }
+      return {
+        outcome: 'held', candidate, claimedAt, verdict, reason: 'claim stands',
+        ...(options.directed === true ? { directed: true as const } : {}),
+      }
     }
 
     // Standing down releases this Igor's claim whether it was lost or stopped: another holder is
@@ -198,8 +266,10 @@ export async function takeClaim(
     // correction depends on what else will be said. On a stop, the caller posts a receipt saying
     // "released this", and the correction must follow it, so the caller gets `releaseStuck` and
     // posts it. Nobody posts anything on a lost claim, so its standalone message is posted here.
-    const stoodDown = await tracker.release(candidate, identity).then((clear) => clear, () => false)
-    if (!stoodDown && verdict.status === 'lost') {
+    const stoodDown = await standDown(tracker, candidate, identity, verdict)
+    if (verdict.status === 'lost' && tracker.holderField.holds === 'single') {
+      await tracker.report(candidate, handingBack(role)).catch(() => undefined)
+    } else if (!stoodDown && verdict.status === 'lost') {
       await tracker.report(candidate, stoodDownStuck(role)).catch(() => undefined)
     }
 
@@ -235,7 +305,12 @@ export async function takeClaim(
     )
     if (announced) {
       await tracker
-        .report(candidate, stillHeld === undefined ? claimWithdrawn(role) : claimStuck(role))
+        .report(
+          candidate,
+          stillHeld === undefined
+            ? claimWithdrawn(role, options.directed === true)
+            : claimStuck(role, options.directed === true),
+        )
         .catch(() => undefined)
     }
     const releaseRefused = stillHeld
@@ -253,6 +328,23 @@ export async function takeClaim(
             `failed too, so it is still held if the claim landed: ${releaseRefused}`,
     }
   }
+}
+
+/**
+ * Gives a claim up after a verdict, and answers whether the holder field is clear of this Igor.
+ *
+ * On a single-valued holder field, a lost claim changes nothing: the field already names the
+ * winner, and a release would clear the winner's claim. A stop removes this Igor on any field.
+ * A release the surface refuses reads as not clear.
+ */
+export async function standDown(
+  tracker: Tracker,
+  candidate: Candidate,
+  identity: string,
+  verdict: ClaimVerdict,
+): Promise<boolean> {
+  if (verdict.status === 'lost' && tracker.holderField.holds === 'single') return true
+  return tracker.release(candidate, identity).then((clear) => clear, () => false)
 }
 
 /**
@@ -282,6 +374,8 @@ export interface EligibilityInput {
    */
   since: () => Promise<{ body: string; at: string }[]>
   identity: string
+  /** How the tracker's holder field shows this Igor; see `heldByOthers`. */
+  holding?: Holding
   now?: number
 }
 
@@ -306,7 +400,7 @@ export interface Eligibility {
  */
 export async function eligibleAfterStop(input: EligibilityInput): Promise<Eligibility> {
   const now = input.now ?? Date.now()
-  const others = input.candidate.assignees.filter((a) => a !== input.identity)
+  const others = heldByOthers(input.candidate, input.identity, input.holding)
   if (others.length > 0) {
     return { eligible: false, reason: `${others.join(', ')} took it` }
   }

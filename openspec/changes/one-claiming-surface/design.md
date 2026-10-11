@@ -317,3 +317,65 @@ is undone the same way as any claim.
 **Decided by the owner: a person handing an item back after a stop skips the cooldown too**,
 whether by delegating it again or adding the label again. Handing it back is an explicit
 go-ahead, which the accepted stop requirement already lets cut the cooldown short.
+
+## What the implementation found
+
+**Nothing in Igor merges a pull request, so *A person approves every Igor pull request* holds
+with no new code (task 4.1).** The `merge` action in a role's `allow` gates nothing, and the
+only merge Igor makes brings a base branch into its own artifact's branch. A guard that counted
+reviews would have no caller. The first code that merges a pull request must refuse one the
+Igor opened and count no `Bot` review as a person's approval.
+
+**An item a person hands over is found wherever it is, not only where the role's query looks.**
+Each cycle searches the role's repositories for open issues carrying the Igor's `igor:<role>`
+label. One counts as handed over when the label's latest `labeled` event names a person and the
+Igor has said nothing on the issue since, apart from a waiting notice. So a hand-over is
+answered once; the Igor's own label, left behind by a crash or a release that did not take, is
+not mistaken for one; and a label added again after a stop skips the cooldown. A stop posted
+after the label still holds the item. A handed-over item skips the lane and the model stage, as
+`igor run --claim` already does, because the person exercised the judgement those stand in for.
+
+**A stop made by removing the label holds the item for the cooldown, through the receipt.** No
+comment marks such a stop, and the cycle reads stops from comments. So the receipt for a stop
+read from the holder field carries a hidden line, `<!-- igor:stopped -->`, and the cycle reads a
+comment by this Igor carrying it as a stop at the receipt's time. The claim's own verification
+never reads it, so an old receipt cannot stop a new claim.
+
+**A release spends a hand-over.** The label is all that brings a handed-over item to the Igor,
+and the release every failure owes removes it. So a handoff or withdrawal on a handed-over item
+promises no return: it ends "To have it try again, add the `igor:<role>` label again".
+
+**Open, for Adam: a handed-over item with work already in flight.** The rule that a person's
+label starts the Igor (*A person can direct an Igor through the holder field*) and the
+universal rule that an item with an open pull request is skipped disagree, and neither text
+says which wins. The cycle skips such an item and says nothing on it, so a person who follows a
+waiting notice and removes the holding Igor's label sees nothing happen while that Igor's draft
+is open. For the same reason, a handoff on a handed-over item that published and then failed
+says to add the label again, which does nothing while that pull request can merge. What the
+Igor should do, and say, is a decision for the spec.
+
+**Measured 2026-10-11** with the App `igor-generalist` on `igor-throwaway-tests` (issue #12):
+the startup check passed, with Workflows write reported missing. Adding `igor:generalist` read
+back as held; `holderSetBy` read the label's `labeled` event as the App's own by its id
+(337663049); removing the label through `DELETE .../labels/igor%3Ageneralist` read back as
+released, a second removal answered 404 and read as released, and verification afterwards read
+the removal as the Igor's own release.
+
+**The waiting notice is posted once per set of holders.** It carries a hidden line naming the
+holders it was about, `<!-- igor:waiting igor:backend -->`, and the cycle posts no second one
+while a comment by the Igor carrying that line exists since its label was added.
+
+**Task 3.9 is built as the claiming tracker's half, with no chat surface to call it.** No chat
+adapter exists yet (#160). `issueFromChat` in `src/chat.ts` holds the rule, finding an issue that
+links the message before creating one and posting the link back only where the chat lacks it,
+behind a `ChatSurface` interface the Discord adapter implements. The GitHub tracker finds a
+linking issue by searching descriptions and keeping only those carrying the whole link, since a
+link to message 3 is the start of a link to message 30. GitHub's search index lags a new issue
+by seconds to a minute, so a chat surface that read the same message twice within that time
+could create a second issue; the channel marker (task 5.5, built with #160) is what keeps a
+message from being read twice that quickly.
+
+**A role naming two bases is refused when it loads, and the organization's trackers are checked
+there too.** `loadRole` resolves every other role only to read which tracker it claims on, and a
+role that fails to resolve is skipped rather than refusing the one being loaded, so one broken
+role still breaks only its own lane.

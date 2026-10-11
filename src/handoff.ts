@@ -1,4 +1,4 @@
-import { stillAssigned } from './claiming.js'
+import { relabelSentence, stillHeld } from './claiming.js'
 import type { Artifact, Candidate, Tracker } from './adapter.js'
 import type { ExecutionResult } from './execute.js'
 import type { Role } from './role.js'
@@ -63,7 +63,8 @@ export type HandoffReason =
        * What happens to the item next, where that is not "nothing until somebody answers". Absent
        * means the default sentence, "It will not retry", which is true of every handoff the
        * deferral record then holds. A caller whose item comes back unasked says so here, or the
-       * item carries a promise the next cycle breaks.
+       * item carries a promise the next cycle breaks. On a directed handoff, `retry` and the
+       * default both read as the sentence saying how to hand the item over again.
        */
       next?: 'retry' | 'published'
     }
@@ -76,6 +77,11 @@ export interface Handoff {
   remaining: string[]
   suggested: string[]
   artifact?: Artifact
+  /**
+   * Set where a person handed the item to this Igor. Releasing it removes the label they added,
+   * so the handoff says how to hand it over again in place of any promise that it comes back.
+   */
+  directed?: true
 }
 
 const MINUTE = 60_000
@@ -274,23 +280,37 @@ export function noCapacity(
 }
 
 export function composeHandoff(role: Role, candidate: Candidate, handoff: Handoff, now: number = Date.now()): string {
+  const reason = handoff.reason
+  const directed = handoff.directed === true
+  // A directed item's hand-over is the label a person added, and the release that follows this
+  // handoff removes it, so nothing brings the item back but the person: every tail says so.
+  const relabel = relabelSentence(role).replace(/\.$/, '')
+  const tail =
+    reason.kind !== 'failure'
+      ? undefined
+      : reason.cures !== undefined && reason.cures.length > 0
+        ? `Nothing about this item caused that — ${keys(reason.cures)} ` +
+          `${reason.cures.length === 1 ? 'is' : 'are'} what would change it` +
+          (directed ? `. ${relabel}` : ' — so it comes back to this rather than waiting for a reply')
+        : reason.next === 'published'
+          ? directed
+            ? `What it published stands. ${relabel}`
+            : 'What it published stands, and is caught up there if it stops merging'
+          : directed
+            ? relabel
+            : reason.next === 'retry'
+              ? 'It will try again next cycle'
+              : 'It will not retry'
   const why =
-    handoff.reason.kind === 'budget'
-      ? noCapacity(handoff.reason, now)
-      : handoff.reason.kind === 'nothing-to-do'
-        ? handoff.reason.detail
+    reason.kind === 'budget'
+      ? noCapacity(reason, now) + (directed ? `. ${relabel}` : '')
+      : reason.kind === 'nothing-to-do'
+        ? directed
+          ? `${reason.detail.replace(/\.$/, '')}. ${relabel}`
+          : reason.detail
         : // Another layer's sentence, and several of them end in a full stop of their own —
           // the seat's "export it." among them, which the reader then meets as "export it.."
-          `it hit something it could not get past: ${handoff.reason.detail.replace(/\.$/, '')}. ` +
-          (handoff.reason.cures !== undefined && handoff.reason.cures.length > 0
-            ? `Nothing about this item caused that — ${keys(handoff.reason.cures)} ` +
-              `${handoff.reason.cures.length === 1 ? 'is' : 'are'} what would change it — so it ` +
-              'comes back to this rather than waiting for a reply'
-            : handoff.reason.next === 'retry'
-              ? 'It will try again next cycle'
-              : handoff.reason.next === 'published'
-                ? 'What it published stands, and is caught up there if it stops merging'
-                : 'It will not retry')
+          `it hit something it could not get past: ${reason.detail.replace(/\.$/, '')}. ${tail}`
 
   const who =
     handoff.suggested.length > 0 ? `${handoff.suggested.join(' or ')} could pick this up.` : ''
@@ -368,7 +388,7 @@ export async function handOff(
   // nothing landed the correction still stands on its own: the item is held, and saying so is
   // true whether or not anybody read a handoff first.
   if (!released) {
-    await tracker.report(candidate, stillAssigned()).catch(() => undefined)
+    await tracker.report(candidate, stillHeld(role)).catch(() => undefined)
   }
 
   return { posted, released, text, ...(error === undefined ? {} : { error }) }
@@ -383,12 +403,13 @@ export async function handOffFrom(
   candidate: Candidate,
   role: Role,
   identity: string,
-  claimedAt: string,
+  /** The claim being given up: when it was taken, and whether a person directed it. */
+  claim: { claimedAt: string; directed?: true },
   reason: HandoffReason,
   result?: ExecutionResult,
   now: number = Date.now(),
 ): Promise<HandoffOutcome> {
-  const { done, remaining } = stepsFrom(claimedAt, result, now)
+  const { done, remaining } = stepsFrom(claim.claimedAt, result, now)
   return handOff(
     tracker,
     candidate,
@@ -400,6 +421,7 @@ export async function handOffFrom(
       remaining,
       suggested: suggest(role, candidate, identity),
       ...(result?.artifact ? { artifact: result.artifact } : {}),
+      ...(claim.directed === true ? { directed: true as const } : {}),
     },
     now,
   )

@@ -47,6 +47,7 @@ const issue = (n: number): Candidate =>
     state: 'open',
     labels: [],
     assignees: [],
+    holders: [],
     paths: [],
     createdAt: '2026-09-13T00:00:00Z',
     updatedAt: '2026-09-13T00:00:00Z',
@@ -59,6 +60,12 @@ function deps(found: Candidate[], opts: { searchThrows?: boolean; verdict?: Clai
   const tracker: Tracker = {
     name: 'github',
     nativeHolderField: true,
+    holderField: { holds: 'list', distinctFromAssignee: true },
+    holder: 'igor:triage',
+    holderSetBy: async () => undefined,
+    directed: async () => [],
+    findLinking: async () => undefined,
+    createIssue: async () => 'https://github.com/o/r/issues/100',
     identity: async () => 'igor-bot',
     search: async () => {
       searches += 1
@@ -603,5 +610,56 @@ describe('a surface credential refused while serving', () => {
     })
     expect(s.worked).toBe(1)
     expect(events.filter((e) => e.kind === 'credential-refused')).toHaveLength(1)
+  })
+})
+
+describe('items a person hands to this Igor by label', () => {
+  it('claims a handed-over item without triage, without writing the label, and without the settle interval', async () => {
+    const handed = { ...issue(5), holders: ['igor:triage'], assignees: ['adam'] } as Candidate
+    const { d } = deps([])
+    const claimed: string[] = []
+    const reported: string[] = []
+    let triaged = 0
+    Object.assign(d.tracker, {
+      directed: async () => [handed],
+      holderSetBy: async () => ({ self: false, by: 'adam', at: '2026-09-13T00:00:00Z' }),
+      claim: async (c: Candidate) => {
+        claimed.push(c.id)
+        return true
+      },
+      report: async (_c: Candidate, m: string) => {
+        reported.push(m)
+      },
+    })
+    const s = await serve(d, role({ settleSeconds: 3600 }), 'igor-bot', {
+      ...base,
+      maxCycles: 1,
+      triage: async (cs) => {
+        triaged += cs.length
+        return approveAll(cs)
+      },
+      claim: { wait: async () => { throw new Error('waited the settle interval') } },
+    })
+    expect(s.worked).toBe(1)
+    expect(claimed).toEqual([])
+    expect(triaged).toBe(0)
+    expect(reported[0]).toContain('picked this up')
+  })
+
+  it("posts one notice, and claims nothing, where another Igor's label is there too", async () => {
+    const both = { ...issue(6), holders: ['igor:triage', 'igor:backend'] } as Candidate
+    const { d } = deps([])
+    const reported: string[] = []
+    Object.assign(d.tracker, {
+      directed: async () => [both],
+      holderSetBy: async () => ({ self: false, by: 'adam', at: '2026-09-13T00:00:00Z' }),
+      report: async (_c: Candidate, m: string) => {
+        reported.push(m)
+      },
+    })
+    const s = await serve(d, role(), 'igor-bot', { ...base, maxCycles: 1 })
+    expect(s.worked).toBe(0)
+    expect(reported).toHaveLength(1)
+    expect(reported[0]).toContain('`igor:backend` holds it')
   })
 })

@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { stillAssigned } from '../src/claiming.js'
+import { stillHeld } from '../src/claiming.js'
 import type {
   Artifact,
   ArtifactRequest,
@@ -26,7 +26,7 @@ import { budgetGate } from '../src/budget.js'
 import { tempDir } from './tmp.js'
 
 const candidate = (over: Partial<Candidate> = {}): Candidate =>
-  ({ id: 'github:o/r#7', tracker: 'github', repo: 'o/r', native: '7', title: 'A bug', body: '', author: 'reporter', assignees: [], labels: [], paths: [], state: 'open', ...over }) as unknown as Candidate
+  ({ id: 'github:o/r#7', tracker: 'github', repo: 'o/r', native: '7', title: 'A bug', body: '', author: 'reporter', assignees: [], holders: [], labels: [], paths: [], state: 'open', ...over }) as unknown as Candidate
 
 const role = (over: Partial<Role> = {}): Role =>
   ({ name: 'triage', reviewers: ['alice'], allow: ['comment', 'draft-pr', 'unassign'], commands: [], completion: 'unassign', instructions: [], settleSeconds: 0, cooldownMinutes: 60, ...over }) as Role
@@ -64,6 +64,12 @@ function deps(opts: {
   const tracker: Tracker = {
     name: 'fake',
     nativeHolderField: true,
+    holderField: { holds: 'list', distinctFromAssignee: true },
+    holder: 'igor:triage',
+    holderSetBy: async () => undefined,
+    directed: async () => [],
+    findLinking: async () => undefined,
+    createIssue: async () => 'https://github.com/o/r/issues/100',
     identity: async () => 'igor-bot',
     search: async () => [],
     claim: async () => opts.claimSticks ?? true,
@@ -396,7 +402,7 @@ describe('a claim held through a failure that is not the item\'s', () => {
     const handoff = posts.find((m) => m.includes('https://example.test/9'))
     expect(handoff).toBeDefined()
     expect(handoff).not.toContain('the work never started')
-    expect(posts.at(-1)).toBe(stillAssigned())
+    expect(posts.at(-1)).toBe(stillHeld(role()))
     expect(r.execution?.artifact?.url).toBe('https://example.test/9')
     expect(r.costUsd).toBe(0.02)
   })
@@ -547,8 +553,8 @@ describe('a stop gets a receipt, not a handoff', () => {
     const r = await runItem(d, candidate(), role(), 'igor-bot', noWait)
 
     expect(r.outcome).toBe('stopped')
-    expect(posts.findIndex((m) => m.includes('released this'))).toBeLessThan(posts.indexOf(stillAssigned()))
-    expect(posts.at(-1)).toBe(stillAssigned())
+    expect(posts.findIndex((m) => m.includes('released this'))).toBeLessThan(posts.indexOf(stillHeld(role())))
+    expect(posts.at(-1)).toBe(stillHeld(role()))
   })
 
   it('leaves the receipt uncorrected where the release did clear the holder', async () => {
@@ -556,7 +562,7 @@ describe('a stop gets a receipt, not a handoff', () => {
     const { d, posts } = deps({ verdicts: [{ status: 'stopped', by: 'bob' }] })
     await runItem(d, candidate(), role(), 'igor-bot', noWait)
 
-    expect(posts).not.toContain(stillAssigned())
+    expect(posts).not.toContain(stillHeld(role()))
     expect(posts.at(-1)).toMatch(/stopped at bob's request/)
   })
 
@@ -573,7 +579,7 @@ describe('a stop gets a receipt, not a handoff', () => {
 
     expect(r.outcome).toBe('stopped')
     expect(posts.at(-2)).toMatch(/stopped at bob's request/)
-    expect(posts.at(-1)).toBe(stillAssigned())
+    expect(posts.at(-1)).toBe(stillHeld(role()))
   })
 
   it('corrects the hand-over note where the stand-down did not clear the holder', async () => {
@@ -589,7 +595,7 @@ describe('a stop gets a receipt, not a handoff', () => {
 
     expect(r.outcome).toBe('lost')
     expect(r.spoke).toBe(true)
-    expect(posts.at(-1)).toBe(stillAssigned())
+    expect(posts.at(-1)).toBe(stillHeld(role()))
   })
 
   it('stays silent on a lost claim it did release, as before', async () => {
@@ -602,7 +608,7 @@ describe('a stop gets a receipt, not a handoff', () => {
     const r = await runItem(d, candidate(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
 
     expect(r.outcome).toBe('lost')
-    expect(posts.some((m) => m === stillAssigned())).toBe(false)
+    expect(posts.some((m) => m === stillHeld(role()))).toBe(false)
   })
 
   it('on a stop during a run that changed nothing', async () => {
@@ -774,6 +780,9 @@ describe('items handed back earlier', () => {
         if (throws) throw new Error('tracker unreachable')
         return spoken[c.id] ?? []
       },
+      holder: 'igor:triage',
+      holderField: { holds: 'list', distinctFromAssignee: true },
+      directed: async () => [],
     } as unknown as Tracker
     return { t, asked: () => asked }
   }
@@ -840,6 +849,9 @@ describe('items somebody stopped', () => {
         if (throws) throw new Error('tracker unreachable')
         return (spoken[c.id] ?? []).filter((m) => Date.parse(m.at) >= Date.parse(since))
       },
+      holder: 'igor:triage',
+      holderField: { holds: 'list', distinctFromAssignee: true },
+      directed: async () => [],
     } as unknown as Tracker
     return { t, asked: () => asked }
   }
@@ -1015,6 +1027,9 @@ describe('the cost of checking deferrals', () => {
         asked += 1
         return []
       },
+      holder: 'igor:triage',
+      holderField: { holds: 'list', distinctFromAssignee: true },
+      directed: async () => [],
     } as unknown as Tracker
     let state = NO_DEFERRALS
     for (const c of items) state = defer(state, c, 'nothing to do', NOW2)

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { stillAssigned } from '../src/claiming.js'
+import { stillHeld } from '../src/claiming.js'
 import type { Candidate, Tracker } from '../src/adapter.js'
 import type { ExecutionResult } from '../src/execute.js'
 import type { Role } from '../src/role.js'
@@ -10,7 +10,7 @@ const NOW = Date.parse('2026-09-13T12:00:00Z')
 const CLAIMED = new Date(NOW - 12 * 60_000).toISOString()
 
 const candidate = (over: Partial<Candidate> = {}): Candidate =>
-  ({ id: 'github:o/r#7', repo: 'o/r', native: '7', title: 'A bug', author: 'reporter', assignees: [], labels: [], paths: [], state: 'open', ...over }) as unknown as Candidate
+  ({ id: 'github:o/r#7', repo: 'o/r', native: '7', title: 'A bug', author: 'reporter', assignees: [], holders: [], labels: [], paths: [], state: 'open', ...over }) as unknown as Candidate
 
 const role = (over: Partial<Role> = {}): Role =>
   ({ name: 'triage', reviewers: ['alice'], allow: ['comment', 'draft-pr', 'unassign'], completion: 'unassign', instructions: [], ...over }) as unknown as Role
@@ -50,6 +50,12 @@ function tracker(
   const t: Tracker = {
     name: 'fake',
     nativeHolderField: true,
+    holderField: { holds: 'list', distinctFromAssignee: true },
+    holder: 'igor:triage',
+    holderSetBy: async () => undefined,
+    directed: async () => [],
+    findLinking: async () => undefined,
+    createIssue: async () => 'https://github.com/o/r/issues/100',
     identity: async () => 'igor-bot',
     search: async () => [],
     claim: async () => true,
@@ -357,14 +363,14 @@ describe('posting it', () => {
       report: async () => { order.push('report') },
       release: async () => { order.push('release'); return true },
     }
-    await handOffFrom(spy, candidate(), role(), 'igor-bot', CLAIMED, { kind: 'budget' }, result(), NOW)
+    await handOffFrom(spy, candidate(), role(), 'igor-bot', { claimedAt: CLAIMED }, { kind: 'budget' }, result(), NOW)
     expect(order).toEqual(['report', 'release'])
   })
 
   it('releases even when posting fails', async () => {
     // Holding a claim it has abandoned is worse than releasing without explanation.
     const { t, log } = tracker({ reportThrows: true })
-    const out = await handOffFrom(t, candidate(), role(), 'igor-bot', CLAIMED, { kind: 'budget' }, result(), NOW)
+    const out = await handOffFrom(t, candidate(), role(), 'igor-bot', { claimedAt: CLAIMED }, { kind: 'budget' }, result(), NOW)
     expect(out.posted).toBe(false)
     expect(out.error).toContain('surface unreachable')
     expect(log.released).toEqual(['igor-bot'])
@@ -372,7 +378,7 @@ describe('posting it', () => {
 
   it('reports honestly when it could not release either', async () => {
     const { t } = tracker({ releaseThrows: true })
-    const out = await handOffFrom(t, candidate(), role(), 'igor-bot', CLAIMED, { kind: 'budget' }, result(), NOW)
+    const out = await handOffFrom(t, candidate(), role(), 'igor-bot', { claimedAt: CLAIMED }, { kind: 'budget' }, result(), NOW)
     expect(out.posted).toBe(true)
     expect(out.released).toBe(false)
   })
@@ -382,18 +388,18 @@ describe('posting it', () => {
     // attempted — by design. Where the release then does not take, the flags told the caller
     // and the item was left carrying the false sentence.
     const { t, log } = tracker({ releaseThrows: true })
-    const out = await handOffFrom(t, candidate(), role(), 'igor-bot', CLAIMED, { kind: 'budget' }, result(), NOW)
+    const out = await handOffFrom(t, candidate(), role(), 'igor-bot', { claimedAt: CLAIMED }, { kind: 'budget' }, result(), NOW)
 
     expect(out.released).toBe(false)
-    expect(log.reported.at(-1)).toBe(stillAssigned())
+    expect(log.reported.at(-1)).toBe(stillHeld(role()))
   })
 
   it('reads a surface that answers "still assigned" the same as one that does not answer', async () => {
     const { t, log } = tracker({ releaseLeavesHolder: true })
-    const out = await handOffFrom(t, candidate(), role(), 'igor-bot', CLAIMED, { kind: 'budget' }, result(), NOW)
+    const out = await handOffFrom(t, candidate(), role(), 'igor-bot', { claimedAt: CLAIMED }, { kind: 'budget' }, result(), NOW)
 
     expect(out.released).toBe(false)
-    expect(log.reported.at(-1)).toBe(stillAssigned())
+    expect(log.reported.at(-1)).toBe(stillHeld(role()))
   })
 
   it('corrects a handoff the surface took and the client never saw acknowledged', async () => {
@@ -402,11 +408,11 @@ describe('posting it', () => {
     // with `announced`. A surface can accept the write and throw on the way home, and that
     // leaves the false sentence where somebody reads it with nothing to answer it.
     const { t, log } = tracker({ reportPostsThenThrows: true, releaseLeavesHolder: true })
-    const out = await handOffFrom(t, candidate(), role(), 'igor-bot', CLAIMED, { kind: 'budget' }, result(), NOW)
+    const out = await handOffFrom(t, candidate(), role(), 'igor-bot', { claimedAt: CLAIMED }, { kind: 'budget' }, result(), NOW)
 
     expect(out.posted).toBe(false)
     expect(out.released).toBe(false)
-    expect(log.reported.at(-1)).toBe(stillAssigned())
+    expect(log.reported.at(-1)).toBe(stillHeld(role()))
   })
 
   it('still says the item is held where the handoff itself never landed', async () => {
@@ -414,16 +420,16 @@ describe('posting it', () => {
     // call, and the item is genuinely still assigned. The sentence stands alone the same way
     // `complete()`'s does: a claim message is above it, and what it says is true.
     const { t, log } = tracker({ reportFailsOnce: true, releaseLeavesHolder: true })
-    const out = await handOffFrom(t, candidate(), role(), 'igor-bot', CLAIMED, { kind: 'budget' }, result(), NOW)
+    const out = await handOffFrom(t, candidate(), role(), 'igor-bot', { claimedAt: CLAIMED }, { kind: 'budget' }, result(), NOW)
 
     expect(out.posted).toBe(false)
-    expect(log.reported).toEqual([stillAssigned()])
+    expect(log.reported).toEqual([stillHeld(role())])
   })
 
   it('says nothing extra where the release did take', async () => {
     // The pole: every handoff would otherwise gain a second comment.
     const { t, log } = tracker()
-    const out = await handOffFrom(t, candidate(), role(), 'igor-bot', CLAIMED, { kind: 'budget' }, result(), NOW)
+    const out = await handOffFrom(t, candidate(), role(), 'igor-bot', { claimedAt: CLAIMED }, { kind: 'budget' }, result(), NOW)
 
     expect(out.released).toBe(true)
     expect(log.reported).toHaveLength(1)
@@ -433,7 +439,7 @@ describe('posting it', () => {
     // The case the whole design is for: nothing ran, so nothing can be asked to explain it.
     const { t, log } = tracker()
     const out = await handOffFrom(
-      t, candidate(), role(), 'igor-bot', CLAIMED,
+      t, candidate(), role(), 'igor-bot', { claimedAt: CLAIMED },
       { kind: 'failure', detail: 'claude: command not found' }, undefined, NOW,
     )
     expect(out.posted).toBe(true)
@@ -484,5 +490,58 @@ describe('the same sentence where nothing was claimed', () => {
 
   it('says the hour is unknown rather than inventing one', () => {
     expect(noCapacity({ blocked: 'spent' }, NOW)).toMatch(/not known/)
+  })
+})
+
+describe('a directed handoff says how to hand the item over again', () => {
+  // The release after a handoff removes the label a person added, which was all that brought a
+  // directed item to the Igor, so no tail may promise that it comes back by itself.
+  const RELABEL = 'To have it try again, add the `igor:triage` label again.'
+  const compose = (reason: HandoffReason, directed: boolean) =>
+    composeHandoff(role(), candidate(), {
+      reason, done: [], remaining: [], suggested: [], ...(directed ? { directed: true as const } : {}),
+    }, NOW)
+
+  it('after the budget clause', () => {
+    const text = compose({ kind: 'budget', seat: 'igor-1' }, true)
+    expect(text).toContain('igor-1')
+    expect(text).toContain(`is used up, and when it returns is not known. ${RELABEL}`)
+  })
+
+  it('after a nothing-to-do explanation', () => {
+    const text = compose({ kind: 'nothing-to-do', detail: 'The bug is already fixed on main.' }, true)
+    expect(text).toContain(`The bug is already fixed on main. ${RELABEL}`)
+  })
+
+  it('in place of the promise a cure makes, still naming the cure', () => {
+    const text = compose({ kind: 'failure', detail: 'seat token unset', cures: ['seat:s:token'] }, true)
+    expect(text).toContain('`seat:s:token` is what would change it')
+    expect(text).toContain(RELABEL)
+    expect(text).not.toMatch(/comes back to this/)
+  })
+
+  it('in place of a retry and of "will not retry"', () => {
+    expect(compose({ kind: 'failure', detail: 'clone failed', next: 'retry' }, true)).toContain(RELABEL)
+    const dear = compose({ kind: 'failure', detail: 'worker exited 1' }, true)
+    expect(dear).toContain(RELABEL)
+    expect(dear).not.toMatch(/will not retry/i)
+  })
+
+  it('after saying what it published stands, without promising a catch-up', () => {
+    const text = compose({ kind: 'failure', detail: 'release failed', next: 'published' }, true)
+    expect(text).toContain(`What it published stands. ${RELABEL}`)
+    expect(text).not.toMatch(/caught up/)
+  })
+
+  it('and an undirected handoff never does', () => {
+    const reasons: HandoffReason[] = [
+      { kind: 'budget', seat: 'igor-1' },
+      { kind: 'nothing-to-do', detail: 'Already fixed.' },
+      { kind: 'failure', detail: 'x', cures: ['seat:s:token'] },
+      { kind: 'failure', detail: 'x', next: 'retry' },
+      { kind: 'failure', detail: 'x', next: 'published' },
+      { kind: 'failure', detail: 'x' },
+    ]
+    for (const reason of reasons) expect(compose(reason, false)).not.toContain('label again')
   })
 })

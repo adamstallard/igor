@@ -38,7 +38,7 @@ const candidate = (n: number, minutes: number): Candidate =>
   ({
     id: `github:o/r#${n}`, tracker: 'github', repo: 'o/r', native: String(n),
     url: '', title: 'A bug', body: '', author: 'reporter', state: 'open',
-    labels: [], assignees: [], paths: [], createdAt: ago(minutes), updatedAt: ago(minutes),
+    labels: [], assignees: [], holders: [], paths: [], createdAt: ago(minutes), updatedAt: ago(minutes),
     ageDays: 0, idleDays: 0,
   }) as Candidate
 
@@ -53,6 +53,9 @@ const role = (): Role =>
 function deps(items: Candidate[], unreadable: (c: Candidate) => boolean) {
   const tracker = {
     name: 'github',
+    holder: 'igor:triage',
+    holderField: { holds: 'list', distinctFromAssignee: true },
+    directed: async () => [],
     search: async () => items,
     commentsSince: async (c: Candidate) => {
       if (unreadable(c)) throw new Error('API rate limit exceeded')
@@ -134,6 +137,9 @@ describe('one comment fetch per candidate', () => {
     const reads: { id: string; since: string }[] = []
     const tracker = {
       name: 'github',
+      holder: 'igor:triage',
+      holderField: { holds: 'list', distinctFromAssignee: true },
+      directed: async () => [],
       search: async () => items,
       commentsSince: async (c: Candidate, since: string) => {
         reads.push({ id: c.id, since })
@@ -265,6 +271,9 @@ describe('an item nobody examined holds the mark below it', () => {
         (spoken[c.id] ?? []).filter(
           (m) => Number.isNaN(Date.parse(m.at)) || Date.parse(m.at) >= Date.parse(since),
         ),
+      holder: 'igor:triage',
+      holderField: { holds: 'list', distinctFromAssignee: true },
+      directed: async () => [],
     } as unknown as Tracker
     return { tracker, codeHost: {}, trees: {}, destination: 'o/state' } as never
   }
@@ -387,6 +396,9 @@ describe('a cycle with no seat to pay for triage', () => {
       report: async () => {
         calls.posted += 1
       },
+      holder: 'igor:triage',
+      holderField: { holds: 'list', distinctFromAssignee: true },
+      directed: async () => [],
     } as unknown as Tracker
     const counted: typeof triageBatch = async (cs, system, model) => {
       calls.triaged += 1
@@ -759,6 +771,9 @@ describe('a tie the cap falls on in another source', () => {
       name: 'github',
       search: async (s: Source) => bySource[s.repo] ?? [],
       commentsSince: async () => [],
+      holder: 'igor:triage',
+      holderField: { holds: 'list', distinctFromAssignee: true },
+      directed: async () => [],
     } as unknown as Tracker
     const d = { tracker, codeHost: {}, trees: {}, destination: 'o/state' } as never
     const asked: string[] = []
@@ -926,6 +941,9 @@ describe('an artifact of the Igor\'s own that stopped merging', () => {
       name: 'github',
       search: async () => [item],
       commentsSince: async () => [{ author: 'alice', at: ago(5), body: 'stop' }],
+      holder: 'igor:triage',
+      holderField: { holds: 'list', distinctFromAssignee: true },
+      directed: async () => [],
     } as unknown as Tracker
 
     const report = await planCycle(
@@ -954,6 +972,9 @@ describe('an artifact of the Igor\'s own that stopped merging', () => {
       name: 'github',
       search: async () => [item],
       commentsSince: async () => [{ author: 'alice', at: ago(1), body: 'take the base side here' }],
+      holder: 'igor:triage',
+      holderField: { holds: 'list', distinctFromAssignee: true },
+      directed: async () => [],
     } as unknown as Tracker
     const answered = await planCycle(
       { tracker, codeHost: {}, trees: {}, destination: 'o/state' } as never,
@@ -1000,6 +1021,9 @@ describe('a catch-up must not move the watermark', () => {
       name: 'github',
       search: async () => [old],
       commentsSince: async () => [{ author: 'alice', at: ago(5), body: 'stop' }],
+      holder: 'igor:triage',
+      holderField: { holds: 'list', distinctFromAssignee: true },
+      directed: async () => [],
     } as unknown as Tracker
     const report = await planCycle(
       { tracker, codeHost: {}, trees: {}, destination: 'o/state' } as never,

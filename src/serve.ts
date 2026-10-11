@@ -5,6 +5,7 @@ import type { Gate } from './budget.js'
 import { windsDownOnSignal } from './execute.js'
 import { noteHandoff, shouldDefer } from './deferred.js'
 import type { Role } from './role.js'
+import { waitingNotice } from './claiming.js'
 
 /**
  * The loop. One cycle, sleep, repeat.
@@ -169,7 +170,14 @@ export async function serve(
         if (abandon(run)) break
       }
 
-      for (const { candidate } of report.toClaim) {
+      // A person handed these to this Igor while another Igor holds them. One notice each, which
+      // the cycle stops finding once it is posted; nothing is claimed.
+      for (const { candidate, holders } of report.waiting) {
+        if (abandoned || winding) break
+        await deps.tracker.report(candidate, waitingNotice(role, holders ?? [])).catch(() => undefined)
+      }
+
+      for (const { candidate, directed } of report.toClaim) {
         // The outage the catch-up loop met answers every claim here the same way, and claiming
         // is the louder of the two — a claim comment and a handoff on each.
         if (abandoned) break
@@ -187,7 +195,12 @@ export async function serve(
         }
         emit({ kind: 'working', item: candidate, ...(gate.seat === undefined ? {} : { seat: gate.seat }) })
         const lore = await options.loreFor(candidate)
-        const run = await runItem(deps, candidate, role, identity, { ...options, budget: gate, lore })
+        const run = await runItem(deps, candidate, role, identity, {
+          ...options,
+          budget: gate,
+          lore,
+          ...(directed === true ? { claim: { ...options.claim, directed: true } } : {}),
+        })
         summary.worked += 1
         // A run whose cost never arrived adds nothing here, so this total is a floor. The
         // ledger records the absence rather than a zero.

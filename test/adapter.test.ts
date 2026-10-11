@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { daysSince, extractPaths } from '../src/adapter.js'
 import {
-  commentsFrom, GitHubCodeHost, GitHubTracker, loginOf, normalizeIssue, refuseWorkflows, verdictFrom,
-  type RawComment, type RawIssue,
+  commentsFrom, GitHubCodeHost, GitHubTracker, labelVerdictFrom, latestLabelEvent, loginOf, normalizeIssue,
+  refuseWorkflows, type RawComment, type RawEvent, type RawIssue,
 } from '../src/github-adapter.js'
 
 const NOW = Date.parse('2026-09-13T00:00:00Z')
@@ -167,50 +167,85 @@ const comment = (over: Partial<RawComment> = {}): RawComment => ({
   ...over,
 })
 
-describe('verifying a claim', () => {
-  it('holds when the Igor is the only assignee', () => {
-    expect(verdictFrom('igor-bot', ['igor-bot'], [])).toEqual({ status: 'held' })
+const SELF = { login: 'acme-reviewer[bot]', accountId: 99, holder: 'igor:reviewer' }
+let nextId = 1
+const event = (kind: 'labeled' | 'unlabeled', label: string, actor: { login: string; id: number; type: string }, id = nextId++): RawEvent => ({
+  id, event: kind, actor, label: { name: label }, created_at: '2026-10-04T00:00:00Z',
+})
+const ME = { login: 'acme-reviewer[bot]', id: 99, type: 'Bot' }
+const ADAM = { login: 'adamstallard', id: 205792, type: 'User' }
+const OTHER_IGOR = { login: 'acme-backend[bot]', id: 77, type: 'Bot' }
+
+describe('verifying a label claim', () => {
+  it('holds while the Igor carries its label', () => {
+    expect(labelVerdictFrom(SELF, ['bug', 'igor:reviewer'], undefined, [])).toEqual({ status: 'held' })
   })
 
-  it('stands down when someone assigns themselves alongside the Igor', () => {
-    // People add themselves to an assignee list rather than replacing what is there, so a
-    // claim is lost while the Igor's own name is still on the item.
-    expect(verdictFrom('igor-bot', ['igor-bot', 'alice'], [])).toEqual({ status: 'lost', by: 'alice' })
+  it("keeps the claim when a person added another Igor's label, even in the settle interval", () => {
+    const events = [event('labeled', 'igor:reviewer', ME), event('labeled', 'igor:backend', ADAM)]
+    expect(labelVerdictFrom(SELF, ['igor:reviewer', 'igor:backend'], events, [])).toEqual({ status: 'held' })
   })
 
-  it('names the other party rather than the Igor, whatever the order', () => {
-    expect(verdictFrom('igor-bot', ['alice', 'igor-bot'], []).by).toBe('alice')
-    expect(verdictFrom('igor-bot', ['igor-bot', 'alice', 'bob'], []).by).toBe('alice')
+  it('loses the claim to another Igor that added its own label', () => {
+    const events = [event('labeled', 'igor:reviewer', ME), event('labeled', 'igor:backend', OTHER_IGOR)]
+    expect(labelVerdictFrom(SELF, ['igor:reviewer', 'igor:backend'], events, [])).toEqual({
+      status: 'lost', by: 'acme-backend[bot]',
+    })
   })
 
-  it('stands down when the Igor was replaced outright', () => {
-    expect(verdictFrom('igor-bot', ['alice'], [])).toEqual({ status: 'lost', by: 'alice' })
+  it('reads a person removing the label as a stop that names them', () => {
+    const events = [event('labeled', 'igor:reviewer', ME), event('unlabeled', 'igor:reviewer', ADAM)]
+    expect(labelVerdictFrom(SELF, ['bug'], events, [])).toEqual({
+      status: 'stopped', by: 'adamstallard', at: '2026-10-04T00:00:00Z', reason: 'removed the igor:reviewer label', fromHolder: true,
+    })
   })
 
-  it('stands down with nobody to name when the Igor was simply unassigned', () => {
-    expect(verdictFrom('igor-bot', [], [])).toEqual({ status: 'lost' })
+  it("reads its own removal as its release, matched by the bot's id", () => {
+    const events = [event('unlabeled', 'igor:reviewer', ADAM, 10), event('labeled', 'igor:reviewer', ADAM, 11), event('unlabeled', 'igor:reviewer', ME, 12)]
+    expect(labelVerdictFrom(SELF, [], events, [])).toEqual({ status: 'lost' })
   })
 
-  it('reports a stop rather than the co-assignee, since a stop owes a receipt', () => {
-    const v = verdictFrom('igor-bot', ['igor-bot', 'alice'], [comment({ body: 'stop, I have got this' })])
+  it('orders events by id, never by time, so the latest removal decides', () => {
+    // Two events in one second: only the ids say which came last (measured 2026-10-04).
+    const events = [event('unlabeled', 'igor:reviewer', ME, 21), event('unlabeled', 'igor:reviewer', ADAM, 20)]
+    expect(labelVerdictFrom(SELF, [], events, []).status).toBe('lost')
+    const reversed = [event('unlabeled', 'igor:reviewer', ME, 20), event('unlabeled', 'igor:reviewer', ADAM, 21)]
+    expect(labelVerdictFrom(SELF, [], reversed, []).status).toBe('stopped')
+  })
+
+  it('does not take a person who shares the bot id number for the bot', () => {
+    const events = [event('unlabeled', 'igor:reviewer', { login: 'someone', id: 99, type: 'User' })]
+    expect(labelVerdictFrom(SELF, [], events, []).status).toBe('stopped')
+  })
+
+  it('reports a stop comment ahead of everything, since a stop owes a receipt', () => {
+    const events = [event('labeled', 'igor:backend', OTHER_IGOR)]
+    const v = labelVerdictFrom(SELF, ['igor:reviewer', 'igor:backend'], events, [comment({ body: 'stop, I have got this' })])
     expect(v.status).toBe('stopped')
     expect(v.by).toBe('alice')
     expect(v.reason).toBe('stop, I have got this')
-    expect(v.at).toBe('2026-09-12T00:00:00Z')
   })
 
-  it('ignores a comment that is not a stop', () => {
-    expect(verdictFrom('igor-bot', ['igor-bot'], [comment()])).toEqual({ status: 'held' })
-  })
-
-  it('survives a comment with no body and no author', () => {
-    const v = verdictFrom('igor-bot', ['igor-bot'], [comment({ body: null, user: null })])
-    expect(v).toEqual({ status: 'held' })
+  it('ignores a comment that is not a stop, and one with no body or author', () => {
+    expect(labelVerdictFrom(SELF, ['igor:reviewer'], undefined, [comment(), comment({ body: null, user: null })])).toEqual({ status: 'held' })
   })
 
   it('truncates a very long stop, since the receipt quotes it', () => {
-    const v = verdictFrom('igor-bot', ['igor-bot'], [comment({ body: `stop ${'x'.repeat(1000)}` })])
+    const v = labelVerdictFrom(SELF, ['igor:reviewer'], undefined, [comment({ body: `stop ${'x'.repeat(1000)}` })])
     expect(v.reason).toHaveLength(500)
+  })
+
+  it('finds the latest event of a kind for one label', () => {
+    const events = [event('labeled', 'igor:reviewer', ME, 5), event('labeled', 'igor:other', ADAM, 9), event('labeled', 'igor:reviewer', ADAM, 7)]
+    expect(latestLabelEvent(events, 'labeled', 'igor:reviewer')?.id).toBe(7)
+    expect(latestLabelEvent(events, 'unlabeled', 'igor:reviewer')).toBeUndefined()
+  })
+})
+
+describe('igor labels on a discovered issue', () => {
+  it('reads the holder field off the labels', () => {
+    const c = normalizeIssue('o/r', issue({ labels: { nodes: [{ name: 'bug' }, { name: 'igor:reviewer' }, { name: 'igor:backend' }] } }), NOW)
+    expect(c.holders).toEqual(['igor:reviewer', 'igor:backend'])
   })
 })
 
@@ -237,6 +272,9 @@ describe('reading what was said', () => {
 describe('tracker contract', () => {
   it('declares a native holder field, so a claim is visible where people look', () => {
     expect(new GitHubTracker().nativeHolderField).toBe(true)
+    // A list of labels, separate from the assignee, which stays a person's.
+    expect(new GitHubTracker({ role: 'reviewer' }).holderField).toEqual({ holds: 'list', distinctFromAssignee: true })
+    expect(new GitHubTracker({ role: 'reviewer' }).holder).toBe('igor:reviewer')
   })
 
   it('supplies its own linkage convention rather than the loop hardcoding one', () => {

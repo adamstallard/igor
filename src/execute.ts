@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process'
-import { stillAssigned } from './claiming.js'
+import { stillHeld } from './claiming.js'
 import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -2041,7 +2041,7 @@ export async function complete(
       // item stays assigned to an Igor that has finished with it while the run reports success,
       // so the item gets a comment saying it is still assigned.
       const clear = await tracker.release(candidate, identity)
-      if (!clear) await tracker.report(candidate, stillAssigned()).catch(() => undefined)
+      if (!clear) await tracker.report(candidate, stillHeld(role)).catch(() => undefined)
       return undefined
     }
     case 'assign':

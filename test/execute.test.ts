@@ -14,7 +14,7 @@ import type {
   ResolutionRequest,
   Tracker,
 } from '../src/adapter.js'
-import { stillAssigned } from '../src/claiming.js'
+import { stillHeld } from '../src/claiming.js'
 import type { Role } from '../src/role.js'
 import {
   ABSOLUTE_CEILING_MS, branchFor, claudeWorker, complete, conflictPrompt, DENIED_COMMAND_LIMIT, denialsFrom, describeTool, execute,
@@ -77,6 +77,7 @@ const candidate = (over: Partial<Candidate> = {}): Candidate =>
     body: 'Uses toISOString().',
     labels: ['bug'],
     assignees: [],
+    holders: [],
     paths: [],
     state: 'open',
     ...over,
@@ -163,6 +164,12 @@ function fakeTracker(opts: { releaseLeavesHolder?: boolean } = {}) {
   const t: Tracker = {
     name: 'fake',
     nativeHolderField: true,
+    holderField: { holds: 'list', distinctFromAssignee: true },
+    holder: 'igor:triage',
+    holderSetBy: async () => undefined,
+    directed: async () => [],
+    findLinking: async () => undefined,
+    createIssue: async () => 'https://github.com/o/r/issues/100',
     identity: async () => 'igor-bot',
     search: async () => [],
     claim: async () => true,
@@ -299,7 +306,7 @@ describe('the action space is enforced at the loop', () => {
     // the item held by an Igor that has finished with it — with nobody told.
     const { t, reported } = fakeTracker({ releaseLeavesHolder: true })
     expect(await complete(t, candidate(), role(), 'igor-bot')).toBeUndefined()
-    expect(reported).toEqual([stillAssigned()])
+    expect(reported).toEqual([stillHeld(role())])
   })
 })
 

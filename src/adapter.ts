@@ -52,6 +52,11 @@ export interface Candidate {
   state: 'open' | 'closed'
   labels: string[]
   assignees: string[]
+  /**
+   * What the holder field shows, one entry per holder, spelled as `Tracker.holder` spells this
+   * Igor: on GitHub, the item's `igor:` labels.
+   */
+  holders: string[]
   /** Paths the item names. Issues have no files, so these are read out of the text. */
   paths: string[]
   createdAt: string
@@ -64,9 +69,9 @@ export interface Candidate {
 export type ClaimStatus = 'held' | 'lost' | 'stopped'
 
 /**
- * `stopped` outranks `lost`. An Igor that was both unassigned and stopped must report the
- * stop, because a stop carries a receipt obligation that losing a race does not — so
- * precedence belongs in the contract rather than in whichever call site checks first.
+ * `stopped` outranks `lost`. An Igor that was both removed from the holder field and stopped
+ * must report the stop, because a stop carries a receipt obligation that losing a race does
+ * not — so precedence belongs in the contract rather than in whichever call site checks first.
  */
 export interface ClaimVerdict {
   status: ClaimStatus
@@ -75,6 +80,38 @@ export interface ClaimVerdict {
   at?: string
   /** Verbatim text of the stop, for the receipt. */
   reason?: string
+  /**
+   * Set on a stop made by removing this Igor from the holder field rather than by a comment.
+   * Nothing a person wrote marks such a stop, so the receipt carries the mark the cooldown reads.
+   */
+  fromHolder?: true
+}
+
+/**
+ * How a tracker's holder field behaves. The loop reads this rather than the field's name, so it
+ * resolves claims and picks candidates the same way on every tracker.
+ */
+export interface HolderField {
+  /**
+   * `single`: a second write replaces the first, so the later writer holds the item, and a
+   * losing Igor must not clear the field, which by then names the winner. `list`: every write is
+   * kept, so any other holder present after the settle interval means the claim is lost.
+   */
+  holds: 'single' | 'list'
+  /**
+   * Whether the field is separate from the assignee. Where it is, the assignee is the person
+   * accountable, and an item assigned to a person is claimed only where the holder field names
+   * this Igor.
+   */
+  distinctFromAssignee: boolean
+}
+
+/** Who last put this Igor in an item's holder field. */
+export interface HolderSetting {
+  /** Whether it was this Igor itself, rather than a person or another account. */
+  self: boolean
+  by: string
+  at: string
 }
 
 export interface Source {
@@ -93,21 +130,37 @@ export interface Comment {
 export interface Tracker {
   readonly name: string
   /**
-   * Whether the surface has a field naming who holds an item. Determines how a claim is
-   * *expressed*, never how it is resolved — resolution is ordering plus a settle interval
-   * everywhere.
+   * Whether the surface has a field naming who holds an item. Every claiming tracker has one, so
+   * a claim is always the holder field plus the claim message.
    *
-   * Which field it is stays inside the adapter. GitHub's is the assignee; Linear's is
-   * `delegate`, since an app identity there may hold the latter and not the former.
+   * Which field it is stays inside the adapter. GitHub's is the Igor's `igor:<role>` label,
+   * because an App's bot cannot be an assignee; Linear's is `delegate`, since an app identity
+   * there may hold the latter and not the former.
    */
   readonly nativeHolderField: boolean
+  readonly holderField: HolderField
+  /** What the holder field shows when this Igor holds an item: `igor:<role>` on GitHub. */
+  readonly holder: string
+
+  /**
+   * Who last put this Igor in the item's holder field, or `undefined` where it is not there.
+   * Tells a person handing the item over from the Igor's own claim, which matters because an
+   * Igor that set the field and failed before its claim message also finds itself there.
+   */
+  holderSetBy(candidate: Candidate): Promise<HolderSetting | undefined>
+
+  /** Open items in `repo` whose holder field names this Igor, wherever the role's query looks. */
+  directed(repo: string): Promise<Candidate[]>
 
   /** Who this Igor is on this surface, for claiming and for reading its own claim back. */
   identity(): Promise<string>
 
   search(source: Source): Promise<Candidate[]>
 
-  /** Expresses a claim. Returns what the surface actually recorded, which may not be what was asked. */
+  /**
+   * Expresses a claim by setting the holder field. Returns what the surface recorded, read back,
+   * which may not be what was asked.
+   */
   claim(candidate: Candidate, as: string): Promise<boolean>
 
   /**
@@ -135,8 +188,17 @@ export interface Tracker {
    */
   report(candidate: Candidate, message: string): Promise<string | undefined>
 
-  /** Gives the claim up, and answers whether the holder field is clear afterwards. */
+  /**
+   * Gives the claim up, removing only what names this Igor, and answers whether the holder field
+   * is clear of it afterwards, read back.
+   */
   release(candidate: Candidate, as: string): Promise<boolean>
+
+  /** An open item in `repo` whose description links `url`, as its link, or `undefined`. */
+  findLinking(repo: string, url: string): Promise<string | undefined>
+
+  /** Opens an item in `repo`, and answers its link. */
+  createIssue(repo: string, title: string, body: string): Promise<string>
 
   /** How an artifact refers back to an item on this tracker — `Closes #12`, a branch name, … */
   linkage(candidate: Candidate): string

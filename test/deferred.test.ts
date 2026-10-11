@@ -26,6 +26,7 @@ function candidate(over: Partial<Candidate> = {}): Candidate {
     state: 'open',
     labels: ['bug'],
     assignees: [],
+    holders: [],
     paths: [],
     createdAt: '2026-09-01T00:00:00Z',
     updatedAt: '2026-09-14T11:00:00Z',
