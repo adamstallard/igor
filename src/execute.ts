@@ -1819,9 +1819,9 @@ export async function execute(
     const files = written.map((c) => ({
       path: c.path,
       content: c.content,
-      // Sent only on a resolution, because only `resolve` reads it: `produce` writes every file
-      // as mode `100644`.
-      ...(artifact !== undefined && c.executable === true ? { executable: true } : {}),
+      // Sent on both paths: each lays these files over a tree that may already hold them, and
+      // a file sent without it loses the executable bit it has there.
+      ...(c.executable === true ? { executable: true } : {}),
     }))
 
     // The resolution goes on the branch that exists, with both sides as parents. A one-parent

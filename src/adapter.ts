@@ -154,7 +154,7 @@ export interface ArtifactRequest {
   baseSha?: string
   title: string
   body: string
-  files: { path: string; content: string }[]
+  files: { path: string; content: string; executable?: boolean }[]
   /**
    * Paths the work removed. Left out, the artifact looks complete to a reviewer and is not —
    * a refactor still carrying the module it removes, a rename with the file in two places.
