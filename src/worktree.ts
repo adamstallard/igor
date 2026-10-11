@@ -89,12 +89,19 @@ export interface BaseChange {
   head?: string
 }
 
-/** What a merge left behind, and the two commits a resolution of it has to be parented on. */
+/**
+ * What `merge()` leaves for a resolution: the paths still in conflict, the two commits the
+ * resolution is parented on, and what the base changed.
+ */
 export interface MergeState {
-  /** Paths left with conflict markers in them. Empty where the merge was clean. */
+  /**
+   * Paths git left unmerged, including delete/modify conflicts, which have no markers. Empty
+   * where the merge was clean.
+   */
   conflicts: string[]
-  /** The tree's head before the merge. */
+  /** The clone's HEAD, which `merge --no-commit` leaves unchanged: a resolution's first parent. */
   head: string
+  /** The commit merged in, fetched from `ref`: a resolution's second parent. */
   broughtIn: string
   /**
    * What the base changed since the merge base. A resolution is checked against it for reverts
@@ -173,11 +180,11 @@ export interface TreeProvider {
 }
 
 /**
- * Beside the clone, never within it, so nothing the repository can name reaches it.
+ * The end of the outbox's directory name. The outbox sits beside the clone, never inside it, so
+ * no path in the repository can reach it.
  *
- * Exported because the startup sweep has to recognise one: a crash runs no `release()`, and a
- * name rule that knows only the clone strands the outbox — the half holding a run's
- * declaration — where nothing will ever reclaim it.
+ * Exported for the startup sweep. A crash runs no `release()`, and a sweep that matched only the
+ * clone's name would leave the outbox, which holds the run's declarations, behind for good.
  */
 export const OUTBOX_SUFFIX = '-outbox'
 
@@ -294,10 +301,9 @@ export function statusRecords(status: Buffer): StatusRecord[] {
   const records: StatusRecord[] = []
   for (let i = 0; i < entries.length; i += 1) {
     const flags = entries[i]!.subarray(0, 2).toString('latin1')
-    // One record per entry, and no record carries a second. A rename or a copy would arrive as
-    // two — the new path, then the original alone — and reading that second one as a status
-    // line takes a path out of the middle of a filename. `changes()` reads with `--no-renames`
-    // so porcelain emits neither, and a rename arrives as an ordinary removal and addition.
+    // Each entry is one record. **This relies on `changes()` passing `--no-renames`:** with
+    // rename detection, a rename or copy takes two entries, the new path and then the original
+    // on its own, and reading the second as a status line cuts a path out of a filename.
     const path = entries[i]!.subarray(3)
     records.push({ flags, path })
   }
@@ -384,7 +390,10 @@ export function quoteName(name: Buffer): string {
 export const showName = (file: Pick<ChangedFile, 'path' | 'rawName'>): string =>
   file.rawName === undefined ? file.path.replaceAll('\\', '\\\\') : quoteName(file.rawName)
 
-/** Exported so the change-collection rules can be tested against a real repository. */
+/**
+ * A `WorkingTree` over a local clone. Exported so `changes()` can be tested against a real
+ * repository.
+ */
 export class ClonedTree implements WorkingTree {
   private released = false
   /** Beside the clone rather than inside it, so no path in the repository can name it. */
@@ -399,21 +408,20 @@ export class ClonedTree implements WorkingTree {
   }
 
   async changes(): Promise<ChangedFile[]> {
-    // Read from the tree, never from what the worker said it did. A worker that reports a
-    // change it did not make, or omits one it did, cannot mislead the artifact this way.
+    // Read from the tree, never from the worker's own account: a worker that reports a change it
+    // did not make, or leaves out one it did, cannot mislead the artifact.
     //
-    // `-uall`, because porcelain otherwise collapses an untracked directory to one entry —
-    // `?? openspec/` rather than the files under it. Reading that path throws EISDIR, the
-    // catch below skips it, and every file a worker created in a new directory is lost from
-    // the artifact without a word. Spec deltas are always new files in new directories.
+    // `-uall`, so an untracked directory is listed file by file. Without it porcelain reports
+    // `?? openspec/` as one entry, reading that throws EISDIR, the catch below skips it, and
+    // every file the worker created in a new directory is silently lost. Spec deltas are new
+    // files in new directories.
     //
-    // `--no-renames`, because detection folds two changed paths into one record and a fold
-    // **loses** a path from the input rather than misreading one that is present. Where a
-    // conflicted merge leaves one path unmerged and the worker deletes another that resembles
-    // it, the pair is reported as a rename of the unmerged path and the deletion is absent from
-    // the output entirely — nothing downstream can recover what was never read. Off, the same
-    // two paths arrive as a removal and an addition, which is the shape the artifact wants
-    // anyway: the tree API removes a path or adds one and has no notion of a move.
+    // `--no-renames`, because rename detection folds two paths into one record and can lose
+    // one: where a merge leaves a path unmerged and the worker deletes a similar one, the pair
+    // is reported as a rename of the unmerged path, and the deletion never appears. Nothing
+    // downstream can recover a path that was never read. Without detection the two arrive as a
+    // removal and an addition, which is what the tree API takes anyway: it removes or adds a
+    // path and has no notion of a move.
     const status = await runBytes('git', [
       '-C',
       this.path,
@@ -427,23 +435,21 @@ export class ClonedTree implements WorkingTree {
 
     const records = statusRecords(status)
 
-    // **Every removal is checked against the tree it will be laid over, before it is one.** Both
-    // publishing paths lay their tree over the commit this clone holds — `commitOnBranch` over
-    // `parents[0]`, which is the HEAD `merge()` read before merging, and `produce` over
-    // `head()` — and `merge --no-commit` leaves HEAD where it was, conflict or no conflict. So
-    // HEAD is `base_tree`, and the tree API refuses a removal of a path `base_tree` does not
-    // hold with `422 GitRPC::BadObjectState`, refusing the *whole* request: nothing publishes,
-    // not even the changes that were correct.
+    // **Every removal is checked against HEAD before it is reported.** Both publishing paths lay
+    // their tree over the commit this clone holds: `commitOnBranch` over `parents[0]`, the HEAD
+    // `merge()` read before merging, and `produce` over `head()`; `merge --no-commit` leaves HEAD
+    // where it was either way. The tree API refuses a removal of a path that base tree does not
+    // hold, with `422 GitRPC::BadObjectState`, and refuses the whole request with it, so nothing
+    // publishes, not even the correct changes.
     //
-    // Asked of HEAD rather than of the status flags, because no flag answers it. An index column
-    // of `A` says the path is the run's own invention, but an intent-to-add path deleted before
-    // it was committed prints a column of *space*, indistinguishable from a tracked file's
-    // unstaged deletion; and the unmerged codes whose "ours" side HEAD never had — `DD`, `DU`,
-    // `AA`, `AU`, `UA` — are told from `UD` and `UU`, which it did, only by the tree.
+    // Only HEAD can answer this; no status flag does. An index column of `A` marks a path the
+    // run created, but an intent-to-add path deleted before it was committed shows a space, like
+    // a tracked file's unstaged deletion; and the unmerged codes whose "ours" side HEAD never had
+    // (`DD`, `DU`, `AA`, `AU`, `UA`) can be told from `UD` and `UU`, which it had, only by HEAD.
     //
-    // A name that is not text is checked by nobody and kept: `spawn` cannot carry those bytes in
-    // `argv`, and dropping the removal would turn a refusal that names the file into an omission.
-    // Such a run never publishes — execution stops on any `rawName` before it builds a tree.
+    // A name that is not valid UTF-8 is not checked, and its removal is kept: `spawn` cannot pass
+    // those bytes in `argv`, and dropping the removal would turn a refusal that names the file
+    // into a silent omission. Such a run never publishes: execution stops on any `rawName` first.
     const checkable = records.flatMap(({ flags, path }) =>
       path.length > 0 && (GONE.test(flags) || UNMERGED.test(flags)) && named(path).rawName === undefined
         ? [path]
@@ -472,15 +478,15 @@ export class ClonedTree implements WorkingTree {
         content = await readFile(inside(this.path, path), 'utf8')
         executable = ((await stat(inside(this.path, path))).mode & 0o111) !== 0
       } catch {
-        // A path still unmerged and no longer on disk is a deletion the worker made. A
-        // delete/modify conflict carries no markers, so removing the file is the only way a
-        // worker that was told not to run git can say "honour the deletion" — and read as an
-        // unreadable file it says nothing at all, so the resolution keeps the artifact's copy
-        // and the base's deletion comes back the moment the artifact merges.
+        // A path still unmerged and gone from disk is a deletion the worker made. A delete/modify
+        // conflict has no markers, so deleting the file is the only way a worker told not to run
+        // git can say "keep the deletion". Skipped as unreadable, it would say nothing: the
+        // resolution would keep the artifact's copy, and the file the base deleted would come
+        // back when the artifact merges.
         //
         // `DU` is why this needs the HEAD check too: the artifact branch deleted the path, so
-        // HEAD never held it, and the base's copy in the tree is exactly what `conflictPrompt`
-        // invites the worker to remove.
+        // HEAD never held it, and the base's copy in the tree is what `conflictPrompt` invites
+        // the worker to remove.
         if (UNMERGED.test(flags)) {
           if (!removable(name, path)) continue
           out.push({ ...name, content: '', kind: 'deleted' })
@@ -547,24 +553,24 @@ export class ClonedTree implements WorkingTree {
   }
 
   /**
-   * What `broughtIn` changed since it and `head` last agreed, and what `head` holds for each of
-   * those paths — the three blobs a revert is read off.
+   * For each path the base branch (`broughtIn`) changed since the merge base, the three blobs
+   * `undone()` compares: the merge base's (`before`), the base's (`after`) and head's (`head`).
    *
-   * Two `--raw` diffs off the merge base rather than a lookup per path: `--raw` names both
-   * blobs of every changed path in one pass, and head's side of a path the base changed is
-   * either in head's own diff or unchanged since the merge base, which is `before`. That also
-   * keeps names as the bytes git wrote — a lookup would have to pass each one back through
-   * `argv`, where a name that is not text cannot go.
+   * Computed from two `git diff --raw` runs off the merge base, one to `broughtIn` and one to
+   * `head`, rather than one lookup per path. `--raw` gives both blob names of every changed path
+   * in one pass. Head's blob for a path is in head's own diff if head changed it, and otherwise
+   * is still the merge base's, `before`. The diffs also keep each name as the bytes git wrote; a
+   * lookup per path would pass each name back through `argv`, where a name that is not valid
+   * text cannot go.
    */
   private async baseChanges(head: string, broughtIn: string): Promise<BaseChange[]> {
     const mergeBase = (await run('git', ['-C', this.path, 'merge-base', head, broughtIn])).trim()
     type Sides = { before: string | undefined; after: string | undefined; name: Buffer }
     const diff = async (to: string): Promise<Map<string, Sides>> => {
-      // `--no-abbrev` because `--raw` shortens both names by default, and a prefix of a blob
-      // name answers a different question from the name — `--abbrev=40` is not the same thing,
-      // since it truncates a sha256 repository's names to a length `sameBlob` reads as sha1.
-      // `--no-renames` for the reason `changes()` gives: a fold loses a path rather than
-      // misreading one.
+      // `--no-abbrev`, because `--raw` shortens blob names by default and a prefix is not the
+      // name. `--abbrev=40` will not do: it cuts a sha256 repository's names to forty
+      // characters, which `sameBlob` reads as sha1. `--no-renames` for the reason `changes()`
+      // gives: rename detection can lose a path.
       const raw = await runBytes('git', [
         '-C',
         this.path,
@@ -603,7 +609,10 @@ export class ClonedTree implements WorkingTree {
     })
   }
 
-  /** Idempotent, because release runs from a finally that may also run on an already-failed path. */
+  /**
+   * Removes the outbox and the clone. A second call does nothing, even after a first that
+   * failed; `withTree` calls it once, from a `finally`.
+   */
   async release(): Promise<void> {
     if (this.released) return
     this.released = true
