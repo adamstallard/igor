@@ -1392,3 +1392,56 @@ describe('a window that is not a number of days', () => {
     expect(conversation).toEqual([])
   })
 })
+
+describe('the window is measured from the instant of the last activity', () => {
+  const path = `${ENTRIES_DIR}/use-query-hook.md`
+
+  function proposal(updatedAt: string): void {
+    pulls.push({
+      number: 5,
+      state: 'open',
+      merged_at: null,
+      updated_at: updatedAt,
+      html_url: 'https://github.com/org/lore/pull/5',
+      assignees: [{ login: 'sarah' }],
+      merged_by: null,
+    })
+    commits.set(5, ['sha5'])
+    filesAt.set('sha5', touched(path))
+    landed.set(5, touched(path))
+  }
+
+  it('leaves alone a proposal touched late on a day, a minute short of the window', async () => {
+    const dir = store()
+    proposal('2026-01-29T23:59:00Z')
+
+    clock = '2026-02-05T23:58:00Z'
+    const result = await reconcile(config(dir), { now: new Date(clock) })
+
+    expect(result.stale).toEqual([])
+    expect(conversation).toEqual([])
+  })
+
+  it('leaves alone a proposal touched a minute ago under a window of hours', async () => {
+    const dir = store()
+    proposal('2026-02-01T08:59:00Z')
+
+    clock = '2026-02-01T09:00:00Z'
+    const result = await reconcile(config(dir), { now: new Date(clock), staleAfterDays: 0.25 })
+
+    expect(result.stale).toEqual([])
+    expect(conversation).toEqual([])
+  })
+
+  it('nudges under a window of hours once those hours have passed, and once only', async () => {
+    const dir = store()
+    proposal('2026-02-01T03:00:00Z')
+
+    for (const at of ['2026-02-01T09:01:00Z', '2026-02-01T09:30:00Z', '2026-02-01T16:00:00Z']) {
+      clock = at
+      const result = await reconcile(config(dir), { now: new Date(clock), staleAfterDays: 0.25 })
+      expect(result.stale).toEqual([expect.objectContaining({ pr: 5, lastActivity: '2026-02-01' })])
+    }
+    expect(conversation).toHaveLength(1)
+  })
+})

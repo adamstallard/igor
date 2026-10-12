@@ -48,23 +48,31 @@ function plain(names: readonly string[]): string {
   return names.map((n) => n.replaceAll('@', '')).join(', ')
 }
 
+/** How long ago, in the words the comment uses: whole days, or less than one. */
+function ago(since: string, now: Date): string {
+  const days = Math.floor((now.getTime() - Date.parse(since)) / 86_400_000)
+  if (days === 0) return 'less than a day'
+  return days === 1 ? '1 day' : `${days} days`
+}
+
 /**
- * The comment posted on a proposal quiet past the window.
+ * The comment posted on a proposal quiet past the window. `lastActivity` is the instant the
+ * proposal went quiet; the comment and its marker state the day.
  *
- * It names all three endings and marks the one that cannot be undone, because it is read by
+ * It names all three endings and marks the one that is remembered, because it is read by
  * somebody who stopped reading this pull request weeks ago, and the nearest gesture is the one
  * that gets made.
  */
 export function nudgeBody(
-  quietSince: string,
+  lastActivity: string,
   now: Date,
   assignees: readonly string[],
   reviewers: readonly string[],
 ): string {
-  const days = Math.floor((now.getTime() - Date.parse(quietSince)) / 86_400_000)
+  const day = lastActivity.slice(0, 10)
   return [
-    `<!-- igor:quiet-proposal quiet-since=${quietSince} -->`,
-    `This lore proposal has had no activity since ${quietSince}, ${days} days before this comment.`,
+    `<!-- igor:quiet-proposal quiet-since=${day} -->`,
+    `This lore proposal has had no activity since ${day}, ${ago(lastActivity, now)} before this comment.`,
     ``,
     assignees.length === 0
       ? `Nobody is assigned to review it.`
@@ -76,12 +84,12 @@ export function nudgeBody(
     `It ends one of three ways, and they are not interchangeable:`,
     ``,
     `- **Merge** to approve every candidate still in it.`,
-    `- **Delete a candidate's file, then merge**, to reject that candidate. Rejection is ` +
-      `permanent: the candidate is never proposed again.`,
+    `- **Delete a candidate's file, then merge**, to reject that candidate.`,
     `- **Close without merging** to defer. Nothing is rejected, and every candidate may be ` +
       `proposed again.`,
     ``,
-    `Of the three, only rejecting cannot be undone.`,
+    `Rejecting is the one that is remembered: a rejected candidate is not proposed again unless ` +
+      `its record in \`rejected/\` is deleted.`,
     ``,
   ].join('\n')
 }

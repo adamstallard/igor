@@ -5,7 +5,9 @@
 Where reconciliation finds an open proposal that has gone quiet past the window, it SHALL post a
 comment on that pull request saying so. The comment SHALL be posted on every invocation path —
 the destination's merge-triggered job and a person's own — because which of them ran is not
-something the assignees can see and not something the proposal's fate should depend on.
+something the assignees can see and not something the proposal's fate should depend on. The
+window is measured from the instant of the proposal's last activity, not from the start of that
+day.
 
 A comment is the whole of the surface. Reconciliation MUST NOT open an issue, a discussion or
 any other item of its own to carry the report, and the destination's merge-triggered template
@@ -108,13 +110,14 @@ proposal that is answered and then abandoned again is told again.
 
 The comment SHALL state all three ways the proposal can end and SHALL distinguish them: merging
 approves every candidate still present; deleting a candidate's file and then merging rejects
-those candidates permanently, and a rejected candidate is never proposed again; closing without
-merging defers, rejecting nothing and leaving every candidate eligible to be proposed again.
+those candidates; closing without merging defers, rejecting nothing and leaving every candidate
+eligible to be proposed again.
 
-It SHALL say which of the three cannot be undone, and MUST NOT present them as interchangeable
-ways of clearing the pull request. A nudge arrives precisely when somebody has stopped paying
-attention to this proposal, which is when the nearest gesture is the one that gets made, and one
-of the three is irreversible.
+It SHALL say that rejecting is the one that is remembered: a rejected candidate is not proposed
+again unless its record in `rejected/` is deleted. It MUST NOT present the three as
+interchangeable ways of clearing the pull request. A nudge arrives precisely when somebody has
+stopped paying attention to this proposal, which is when the nearest gesture is the one that
+gets made, and only one of the three outlives the pull request.
 
 It SHALL say when the proposal went quiet and how long ago that was, so the comment is readable
 on its own by somebody who did not see the run that posted it. It SHALL name the store-level
@@ -126,11 +129,11 @@ on its own by somebody who did not see the run that posted it. It SHALL name the
 - **THEN** it states that merging approves, that deleting a candidate's file and then merging
   rejects it, and that closing without merging defers
 
-#### Scenario: The irreversible one is marked as irreversible
+#### Scenario: Rejecting is marked as remembered
 
 - **WHEN** the nudge describes deleting a candidate's file and merging
-- **THEN** it states that the rejection is permanent and that the candidate is never proposed
-  again
+- **THEN** it states that the rejection is remembered, so the candidate is not proposed again
+- **AND** that deleting its record in `rejected/` is what undoes that
 
 #### Scenario: Deferring is stated as reversible
 

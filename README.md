@@ -144,7 +144,7 @@ The state branch lives here too, so it has to be a repository the Igor can push 
 
    **A proposal with no activity for a week gets one comment on its own pull request**, which
    notifies its assignees. The comment says how long it has been quiet, names the store
-   reviewers, and spells out the three ways to end it, rejection being the permanent one.
+   reviewers, and spells out the three ways to end it, rejection being the one remembered.
    It is posted once per quiet spell: a reply followed by another quiet week earns a second,
    and silence earns nothing more. Whichever run posts it, the job's or your own, the next
    recognizes it. The workflow needs `pull-requests: write` to comment, and a run that cannot

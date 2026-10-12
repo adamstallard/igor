@@ -67,7 +67,8 @@ Alternatives, rejected:
 ## The nudge is activity, and that is the trap
 
 Posting a comment moves the pull request's `updated_at`. That is the field staleness is measured
-from (`daysBetween(pr.updatedAt, now) < staleAfterDays`), so the consequences are immediate:
+from (`daysBetween(pr.updatedAtInstant, now) < staleAfterDays`), so the consequences are
+immediate:
 
 1. The run after a nudge sees a pull request that was "active today" and drops it from the report
    altogether — a proposal quiet for sixty days reads as fresh.
@@ -132,14 +133,14 @@ another file for no gain.
 ## What the comment says, and why that is a requirement
 
 The three endings are not interchangeable and the difference is not recoverable from the
-gesture: merging approves, deleting a candidate's file and then merging rejects it permanently
-and it is never proposed again, and closing without merging defers and leaves the candidates
-eligible. `lore-review` already requires the pull request *body* to say this. The nudge repeats
+gesture: merging approves, deleting a candidate's file and then merging rejects it and it is
+not proposed again unless its record in `rejected/` is deleted, and closing without merging
+defers and leaves the candidates eligible. `lore-review` already requires the pull request *body* to say this. The nudge repeats
 it because the nudge is read by somebody who stopped reading this pull request weeks ago, and
 because the moment somebody is being asked to clear a stale thing is the moment the nearest
 gesture wins. "Please decide" plus a Close button is how a candidate gets deferred that should
-have been rejected, or — far worse, being irreversible — rejected when it should have been
-deferred.
+have been rejected, or — far worse, since the rejection is remembered — rejected when it should
+have been deferred.
 
 That is why it is written as a requirement with scenarios rather than left to whoever writes the
 string: the string is the whole of the feature, and there is nothing else in the change for a
@@ -166,11 +167,24 @@ active proposals costs nothing and only quiet ones pay. That holds for posting, 
 reporting. A nudge moves `updated_at`, so for a window after it the proposal passes the window
 test as active and never reaches the per-pull-request read. Yet the requirement says the run
 still reports it as quiet. Reading each open pull request's comments would cost one request per
-open pull request on every run, so the implementation asks once instead: the destination's
-comments from the start of the window, `GET /repos/{repo}/issues/comments?since=…`, paginated,
-and only when some open pull request is inside the window. A destination with no open pull
-requests pays nothing. Any other destination pays one read per run, plus a page for every
-hundred comments in the window.
+open pull request on every run, so the implementation asks once instead:
+`GET /repos/{repo}/issues/comments?since=…`, paginated, and only when some open pull request is
+inside the window. `since` is the earliest last activity among those pull requests. A nudge that
+is a pull request's last activity was posted at that pull request's `updatedAtInstant`, so none
+is earlier, and the floor is always a date GitHub gave, whatever the window. A destination with
+no open pull request inside the window pays nothing. Any other pays one read per run, plus a
+page for every hundred comments since that floor.
+
+The floor often equals the nudge's own timestamp exactly, so the read depends on `since` being
+inclusive. It is, measured: on `adamstallard/igor`, `issues/comments?since=2026-09-21T10:19:47Z`
+returns comment 5758914255, whose `updated_at` is that instant.
+
+**The window is measured from the instant, not the day.** Counted from midnight of the
+last-activity day, as the stale report was before this change, a proposal touched at 23:59 was
+nudged a day early, and under a window of hours one touched a minute ago was nudged at once.
+Now that a public comment depends on the window, Adam chose the instant
+([#81](https://github.com/adamstallard/igor/pull/81), 2026-10-11). The stale report uses the
+same window, so it changed too. It still states the day the proposal went quiet.
 
 **`updated_at` equals the comment's `created_at`, measured.** The idempotence rule depends on it:
 were `updated_at` a second later, the nudge alone would satisfy "strictly later" and the
@@ -190,6 +204,11 @@ gains a fallback that still reports a nudged proposal.
 **A failed read of one proposal's comments leaves it out of the stale lines** and names it, with
 its URL, as unnudged. Its quiet date is unknowable without the comments: where it was nudged,
 the pull request's own date is the nudge's.
+
+**Two overlapping runs can both post a nudge.** Each reads the comments, finds none, and
+posts. The workflow's concurrency group orders the job's own runs only, and a person's local
+run is not in it. Preventing this would need a lock, which is state reconciliation deliberately
+keeps out. Adam accepted the gap (#81, 2026-10-11): the worst case is a duplicate comment.
 
 **The marker is anchored to the start of the body.** A reply quoting the raw text of a nudge
 would otherwise read as a newer nudge, and the reply would earn no second one.

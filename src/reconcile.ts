@@ -228,25 +228,18 @@ function cannotPost(error: unknown): string {
 }
 
 /**
- * The nudges posted within the window, by pull request. One read for the whole destination,
- * asked only where an open pull request is inside the window: a nudge is activity, so a
- * proposal nudged recently looks active, and only its comments can say the activity was ours.
+ * The comments posted since `since`, by pull request. One read for the whole destination: a
+ * nudge is activity, so a proposal nudged recently looks active, and only its comments can say
+ * the activity was ours.
  *
- * The floor is the start of the day the window opens on, because `updatedAt` is a day and a
- * nudge at or after a pull request's last activity is never earlier than that day. It stops at
- * the Unix epoch, which no comment precedes: a window longer than that is otherwise a date
- * `toISOString` refuses, or a negative year GitHub does.
+ * The caller passes the earliest last activity among the open pull requests inside the window.
+ * A nudge that is a pull request's last activity was posted at that pull request's
+ * `updatedAtInstant` exactly, so none is earlier than that floor, and the floor is always a date
+ * GitHub gave us.
  */
-async function recentNudges(
-  repo: string,
-  now: Date,
-  staleAfterDays: number,
-): Promise<Map<number, IssueComment[]>> {
-  const opens = new Date(Math.max(0, now.getTime() - staleAfterDays * 86_400_000))
-    .toISOString()
-    .slice(0, 10)
+async function recentComments(repo: string, since: string): Promise<Map<number, IssueComment[]>> {
   const byPr = new Map<number, IssueComment[]>()
-  for (const c of await commentsSince(repo, `${opens}T00:00:00Z`)) {
+  for (const c of await commentsSince(repo, since)) {
     byPr.set(c.number, [...(byPr.get(c.number) ?? []), c])
   }
   return byPr
@@ -359,16 +352,23 @@ export async function reconcile(
   /** Pull requests this run left something to do on, whichever half they came from. */
   const unfinished: number[] = []
 
-  const inWindow = (pr: PrState): boolean => daysBetween(pr.updatedAt, now) < staleAfterDays
+  // From the instant, never the day: counted from midnight, a proposal touched at 23:59 would
+  // be nudged a day early, and under a window of hours one touched a minute ago would be.
+  const inWindow = (pr: PrState): boolean =>
+    daysBetween(pr.updatedAtInstant, now) < staleAfterDays
   let recent = new Map<number, IssueComment[]>()
-  if (prs.some((p) => p.state === 'open' && inWindow(p))) {
+  const active = prs.filter((p) => p.state === 'open' && inWindow(p))
+  if (active.length > 0) {
+    const since = active
+      .map((p) => p.updatedAtInstant)
+      .reduce((a, b) => (Date.parse(a) <= Date.parse(b) ? a : b))
     try {
-      recent = await recentNudges(repo, now, staleAfterDays)
+      recent = await recentComments(repo, since)
     } catch (error) {
       result.unnudged.push({
         reason:
-          `the nudges posted in the last ${staleAfterDays} days could not be read, so a ` +
-          `proposal nudged in that time is missing from the stale lines: ${message(error)}`,
+          `the comments posted since ${since} could not be read, so a proposal nudged since ` +
+          `then is missing from the stale lines: ${message(error)}`,
       })
     }
   }
@@ -394,8 +394,8 @@ export async function reconcile(
         nudge = newestNudge(await comments(repo, pr.number))
       } catch (error) {
         // Posting without knowing is how a proposal collects one nudge per run. No stale line
-        // either: where it was nudged, `updatedAt` is the nudge's day, and only the nudge holds
-        // the day it went quiet.
+        // either: where it was nudged, the pull request's last activity is the nudge, and only
+        // the nudge holds the day it went quiet.
         result.unnudged.push({
           pr: pr.number,
           reason:
@@ -411,7 +411,11 @@ export async function reconcile(
       }
       stale(pr, pr.updatedAt)
       try {
-        await comment(repo, pr.number, nudgeBody(pr.updatedAt, now, pr.assignees, config.reviewers))
+        await comment(
+          repo,
+          pr.number,
+          nudgeBody(pr.updatedAtInstant, now, pr.assignees, config.reviewers),
+        )
         result.nudged.push({ pr: pr.number, assignees: pr.assignees })
       } catch (error) {
         // Recorded nowhere as delivered, so the next run tries again once the cause is cured.

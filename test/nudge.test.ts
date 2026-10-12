@@ -4,7 +4,7 @@ import { newestNudge, nudgeBody } from '../src/nudge.js'
 const NOW = new Date('2026-04-20T12:00:00Z')
 
 function body(assignees = ['sarah', 'adam'], reviewers = ['abram']): string {
-  return nudgeBody('2026-03-20', NOW, assignees, reviewers)
+  return nudgeBody('2026-03-20T09:30:00Z', NOW, assignees, reviewers)
 }
 
 describe('the nudge distinguishes approving, rejecting and deferring', () => {
@@ -15,10 +15,11 @@ describe('the nudge distinguishes approving, rejecting and deferring', () => {
     expect(text).toMatch(/\*\*Close without merging\*\* to defer/)
   })
 
-  it('marks rejection as permanent and the only ending that cannot be undone', () => {
-    const text = body()
-    expect(text).toContain('Rejection is permanent: the candidate is never proposed again.')
-    expect(text).toContain('Of the three, only rejecting cannot be undone.')
+  it('marks rejecting as the ending that is remembered, and says how to undo it', () => {
+    expect(body()).toContain(
+      'Rejecting is the one that is remembered: a rejected candidate is not proposed again ' +
+        'unless its record in `rejected/` is deleted.',
+    )
   })
 
   it('states deferring as reversible', () => {
@@ -29,6 +30,12 @@ describe('the nudge distinguishes approving, rejecting and deferring', () => {
 describe('the nudge stands on its own', () => {
   it('says when the proposal went quiet and how long ago that was', () => {
     expect(body()).toContain('no activity since 2026-03-20, 31 days before this comment')
+  })
+
+  it('counts from the instant, and says so plainly under a day', () => {
+    const at = (lastActivity: string) => nudgeBody(lastActivity, NOW, [], [])
+    expect(at('2026-04-19T11:00:00Z')).toContain('since 2026-04-19, 1 day before')
+    expect(at('2026-04-19T13:00:00Z')).toContain('since 2026-04-19, less than a day before')
   })
 
   it('names the assignees and the store reviewers', () => {

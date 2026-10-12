@@ -236,8 +236,9 @@ Two things make that hold.
   marker, since the pull request's own date is now the nudge's.
 
 A recently nudged proposal therefore looks active by its date. One read of the destination's
-comments from the start of the window, asked only when an open pull request is inside it,
-finds such proposals. A nudge that cannot be posted fails the run once the promotions and
+comments since the earliest last activity among the open pull requests inside the window finds
+such proposals; it is skipped when none is inside. The window is measured from that instant,
+never from the start of its day. A nudge that cannot be posted fails the run once the promotions and
 rejections are written: a green log is the surface this replaces.
 
 A second promoter was retired rather than kept beside it. A merge-triggered job diffing the

@@ -43,12 +43,13 @@ proposal then went quiet again. A proposal nobody ever answers is nudged once an
 it remains in the stdout report and remains an open pull request, which are the standing records
 of it.
 
-**The nudge names all three endings and marks the irreversible one.** Merging approves
+**The nudge names all three endings and marks the one that is remembered.** Merging approves
 everything still present; deleting a candidate's file and then merging **rejects those
-candidates permanently and they are never proposed again**; closing without merging defers, and
-those candidates stay eligible. A nudge that asks only for "a decision" arrives exactly when
-somebody has stopped paying attention, which is when the nearest gesture is the one that gets
-made — and one of the three cannot be undone. `lore-review` already requires the pull request
+candidates, and they are not proposed again unless their records in `rejected/` are deleted**;
+closing without merging defers, and those candidates stay eligible. A nudge that asks only for
+"a decision" arrives exactly when somebody has stopped paying attention, which is when the
+nearest gesture is the one that gets made — and only one of the three outlives the pull
+request. `lore-review` already requires the pull request
 body to state that contract; the nudge repeats it because it is read months later by somebody
 who did not read the body.
 
@@ -75,7 +76,7 @@ Explicitly out of scope:
 ### Modified Capabilities
 
 - `lore-review`: a quiet proposal is told so on its own pull request, at most once per quiet
-  spell, in a comment that distinguishes approving, rejecting permanently and deferring — and a
+  spell, in a comment that distinguishes approving, rejecting and deferring — and a
   nudge that cannot be posted fails the run rather than the log.
 
 ## Impact
