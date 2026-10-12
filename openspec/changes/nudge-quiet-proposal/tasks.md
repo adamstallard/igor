@@ -42,7 +42,8 @@
 
 - [x] 5.1 `templates/reconcile-on-merge.yml` takes `pull-requests: write` in place of
       `pull-requests: read`, with the comment saying why it is not `issues: write`
-- [ ] 5.2 Confirm on a real destination that `pull-requests: write` is sufficient to comment on
+- [x] 5.2 Confirm on a real destination that `pull-requests: write` is sufficient to comment on
       a pull request through the issues-comments endpoint — the one claim in `design.md` that is
-      documentation rather than measurement
+      documentation rather than measurement (measured on `adamstallard/igor-throwaway-lore`;
+      results in `design.md`, "Measured on a real destination")
 - [x] 5.3 `docs/` says what a destination sees on a proposal that goes quiet

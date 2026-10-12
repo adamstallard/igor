@@ -152,9 +152,38 @@ test to hold on to.
 Commenting on a pull request is `POST /repos/{owner}/{repo}/issues/{number}/comments` — the
 issues endpoint, addressed by the pull request's number — and for a pull request it is governed
 by the `pull-requests` scope, so the template needs `pull-requests: write` and specifically
-**not** `issues: write`. That is documentation, not measurement, and task 5.2 is to confirm it
-on a real destination. The requirement that a failed nudge names the missing permission and
-fails the run exists so that getting it wrong is loud.
+**not** `issues: write`. Measured on a private destination (below): those two scopes are enough
+both to post the nudge and to read the destination's recent comments. The requirement that a
+failed nudge names the missing permission and fails the run exists so that getting it wrong is
+loud.
+
+### Measured on a real destination
+
+On 2026-10-12, the template ran in `adamstallard/igor-throwaway-lore`, a **private** repository
+kept for tests, with three changes for the check only: igor checked out at `quiet-comment`,
+`--stale-after 0.01` (about 14 minutes), and a `workflow_dispatch` trigger. The token had the
+template's scopes and nothing more, `contents: write` and `pull-requests: write`, over a
+repository default of read-only. Proposal pull request #1 was opened at 00:15:14Z and left
+alone.
+
+- **Run 1** (a push at 00:30, past the window) succeeded and posted the nudge as
+  `github-actions[bot]`. So `pull-requests: write` is enough to comment through the issues
+  endpoint, without `issues: write`.
+- **The pull request's `updated_at` equals the comment's `created_at`**, 00:30:44Z, from both
+  the pulls and the issues endpoints. That is the equality the idempotence rule depends on,
+  now measured on a pull request and not only on issues.
+- **Run 2** (by hand at 00:31, inside the window) succeeded, posted nothing, and still reported
+  #1 as quiet since 2026-10-12. Inside the window only the destination-wide
+  `issues/comments?since=` read can find the nudge, and its floor was the nudge's own instant.
+  So that read works under the template's scopes on a private repository, and is inclusive at
+  the floor.
+- **Run 3** (by hand at 00:46, past the window after the nudge) succeeded and posted no second
+  nudge.
+
+Afterwards the workflow was removed and #1 was closed without merging. The state branch was
+never written, since no pull request was closed while the workflow was installed. The
+repository's tree is as it was before the check. What remains is the record: three commits on
+`main`, the closed pull request with its one nudge, and the three runs.
 
 The template's commit step runs `if: ${{ !cancelled() }}`. Without it, the reconcile step
 failing on a nudge skips the commit, and the promotions and rejections written before the
@@ -191,9 +220,8 @@ were `updated_at` a second later, the nudge alone would satisfy "strictly later"
 proposal would be nudged once a window forever. On `adamstallard/igor`, issues #100 and #62,
 whose last activity is a comment and nothing else, carry `updated_at` equal to that comment's
 `created_at` to the second. Every case one second apart (#107, #133, #158 among them) is a
-comment followed by a close, and the close is the later activity. No pull request on that
-repository has a comment as its last activity, so the equality is measured on issues, whose
-endpoint is the same one a pull request's comment is posted through.
+comment followed by a close, and the close is the later activity. On a pull request the same
+equality held for a real nudge; see "Measured on a real destination" under Permissions.
 
 **A failed read of the recent comments fails the run, even where no nudge was owed.** Exiting
 zero instead was considered and rejected: a recently nudged proposal would then drop out of the
