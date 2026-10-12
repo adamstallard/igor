@@ -1,19 +1,19 @@
 import { gh, GhError, ghGraphql, ghPaginated } from './gh.js'
 import type { BotAccount } from './app.js'
-import { bareName, isGoAhead, isStop, namesToResolve, type Accounts } from './signals.js'
+import { type Accounts, bareName, isGoAhead, isStop, namesToResolve } from './signals.js'
 import {
   AdapterError,
-  daysSince,
-  extractPaths,
   type Artifact,
   type ArtifactRequest,
   type Candidate,
-  type ClaimVerdict,
-  type Comment,
-  type HolderSetting,
   type CatchUp,
   type CatchUpRequest,
+  type ClaimVerdict,
   type CodeHost,
+  type Comment,
+  daysSince,
+  extractPaths,
+  type HolderSetting,
   type InFlight,
   type Mergeability,
   type ResolutionRequest,
@@ -330,8 +330,6 @@ export function labelVerdictFrom(
 ): ClaimVerdict {
   const stop = stopFrom(self.login, comments, since, accounts, liftable)
   if (stop !== undefined && 'stop' in stop) return stop.stop
-  const held: ClaimVerdict =
-    stop?.liftedAt === undefined ? { status: 'held' } : { status: 'held', liftedAt: stop.liftedAt }
 
   if (!labels.includes(self.holder)) {
     const removed = events === undefined ? undefined : latestLabelEvent(events, 'unlabeled', self.holder)
@@ -352,7 +350,8 @@ export function labelVerdictFrom(
       return { status: 'lost', by: added.actor.login }
     }
   }
-  return held
+
+  return stop?.liftedAt === undefined ? { status: 'held' } : { status: 'held', liftedAt: stop!.liftedAt }
 }
 
 const isSelf = (actor: { id: number; type?: string }, self: Pick<ClaimSelf, 'accountId'>): boolean =>
