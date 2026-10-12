@@ -5,7 +5,7 @@
       in `design.md` whether the skill runs, and which directory Claude Code reports to the
       model: the link under `<dir>/skills/` or the clone it resolves to. **If the skill does not
       run, stop: the choice of flag goes back to Adam.** If the reported directory is the
-      clone, #153's grants and the paragraph in 4.1 name the clone's path instead. Done
+      clone, #153's grants name the clone's path instead. Done
       2026-10-11 with a seat's setup-token: in normal mode the model invokes `igor:<name>`
       through the Skill tool and the skill runs, with the plugin's base directory. Under
       `--bare` the token runs as an API key, not as a seat, so Igor never passes `--bare`. See
@@ -62,27 +62,16 @@ Runs in `wire` (`src/wiring.ts`), before the first model call, only when `skills
       environment holds no `CLAUDE_CODE_OAUTH_TOKEN` and no `ANTHROPIC_API_KEY` even when the
       process has them, and its `HOME` is not the service user's
 
-## 4. The worker's system prompt
+## 4. The pinned shared-skills commit
 
-- [ ] 4.1 When `skills_dir` is set, append this paragraph to the worker's system prompt. It may
-      be reworded, but it must name the directory and tell the worker to use it in place of
-      both home-directory paths:
-
-      ```
-      Your skills are installed under <skills_dir>/skills. Where a skill's instructions name a path under ~/.claude/skills or ~/.agents/skills, use the same path under <skills_dir>/skills instead. The copies in the home directory are not the ones you are meant to run.
-      ```
-- [ ] 4.2 Test: the system prompt carries the paragraph with the configured directory, and
-      none of it when `skills_dir` is absent
-- [ ] 4.3 When the pinned shared-skills commit includes the change that makes a skill find its
-      scripts from the directory it was loaded from: if that is before 4.1 is built, skip 4.1
-      and 4.2 and remove *The worker is told where its skills are* from the spec delta;
-      otherwise, file an issue to remove the paragraph and the requirement when the pin moves
-      past it, and tick this task with its number
+- [ ] 4.1 The pinned shared-skills commit is at or after `075a73a` (shared-skills #19), where
+      every skill finds its scripts from its base directory. `docs/deployment.md` (5.1) says so
 
 ## 5. Docs
 
 - [ ] 5.1 `docs/deployment.md`, a section on skills:
-      - clone shared-skills to `/opt/igor/shared-skills` and check out a commit, owned by root;
+      - clone shared-skills to `/opt/igor/shared-skills` and check out a commit at or after
+        `075a73a`, owned by root;
       - write `/opt/igor/skills/.claude-plugin/plugin.json` as
         `{"name": "igor", "version": "0.0.0", "description": "Igor's pinned skills"}`;
       - install with

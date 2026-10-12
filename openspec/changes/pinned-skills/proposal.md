@@ -26,9 +26,8 @@ Igor never passes `--bare`: under it, a seat's token runs as an API key, not as 
 - **Before its first model call, Igor confirms each installed skill loads.** It reads the skill
   list from the `system/init` event of a `claude -p` call with no token and an empty `HOME`.
   That call fails to authenticate, at no cost, after printing the event.
-- **The worker is told where its skills are**, as a fallback until the shared skills find their
-  scripts from the directory they were loaded from. Their instructions name home-directory
-  paths today.
+- **The pinned shared-skills commit is at or after `075a73a`** (shared-skills #19), where every
+  skill finds its scripts from its base directory, `<skills_dir>/skills/<name>` (measured).
 
 ## Capabilities
 

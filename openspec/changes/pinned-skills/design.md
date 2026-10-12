@@ -98,7 +98,8 @@ manager's links under `skills/`.
 - **The skills' own instructions point at the home directory.** Prose's `SKILL.md` defines its
   scripts directory as `~/.agents/skills/prose/scripts` or `~/.claude/skills/prose/scripts`.
   Bug-hunter's names `~/.agents/skills/bug-hunter/scripts/caller-result.sh`, then the
-  `~/.claude` one. On an Igor server those paths are missing or hold an unpinned copy.
+  `~/.claude` one. On an Igor server those paths are missing or hold an unpinned copy. That
+  was at `6d0ae49`; shared-skills #19 (merged as `075a73a`) fixes it, so the pin starts there.
 
 ### Rejected: `--add-dir`
 
@@ -182,12 +183,13 @@ under `--plugin-dir`. It does not. The repository's `prose` loads as `prose`, be
 #153 grants its scripts by path under `<skills_dir>/skills`, so the repository's copy cannot run
 its own scripts either. The same holds for a copy in the home directory.
 
-### The worker is told the pinned paths, until the skills find their own
+### The pinned shared-skills commit is at or after `075a73a`
 
-The worker's system prompt names `<skills_dir>/skills` and tells it to use that in place of a
-home-directory path from a skill's instructions (task 4.1). A shared-skills change, in progress,
-makes each skill find its scripts from the directory it was loaded from. Once the pinned commit
-includes it, the paragraph and its requirement are removed (task 4.3).
+From shared-skills #19, merged as `075a73a` on 2026-10-11, every skill finds its scripts from
+its base directory instead of a home-directory path. Task 0.1 measured that a plugin skill's
+base directory is its path inside the plugin, `<skills_dir>/skills/<name>`. So at or after that
+commit a skill runs the pinned scripts, under the path #153's grants name, and the worker needs
+no instruction about where its skills are (task 4.1).
 
 ## How it composes
 
