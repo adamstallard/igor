@@ -59,9 +59,9 @@ function addressed(text: string, identity: string, verb: RegExp): boolean {
 }
 
 /**
- * Which mentioned names are Igors, as the tracker resolved them, keyed by the name as `bareName`
- * spells it. A name missing here could not be resolved; a comment that mentions nobody has an
- * empty record.
+ * Which mentioned names count as Igors, as the tracker resolved them, keyed by the name as
+ * `bareName` spells it. A name missing here could not be resolved; a comment that mentions nobody
+ * has an empty record.
  */
 export type Accounts = Readonly<Record<string, 'igor' | 'other'>>
 

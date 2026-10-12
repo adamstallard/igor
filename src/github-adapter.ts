@@ -382,7 +382,7 @@ export class GitHubTracker implements Tracker {
   readonly nativeHolderField = true
   readonly holderField = { holds: 'list', distinctFromAssignee: true } as const
   readonly holder: string
-  /** Whether each name mentioned after a stop or a go-ahead is an Igor, as `accountsIn` found. */
+  /** Whether each name mentioned after a stop or a go-ahead counts as an Igor; see `accountsIn`. */
   private readonly kinds = new Map<string, 'igor' | 'other'>()
 
   /**
@@ -508,11 +508,12 @@ export class GitHubTracker implements Tracker {
   }
 
   /**
-   * Which names that `bodies` mention after a stop or a go-ahead are Igors. An Igor is a GitHub
-   * App, so a name is one where GitHub has a bot account `<name>[bot]`, the same read the Igor
-   * makes of its own account at startup. A 404 says the name is no Igor; any other failure leaves
-   * it unresolved. Answers are kept for the life of the process, since an account does not change
-   * kind.
+   * Which names that `bodies` mention after a stop or a go-ahead count as Igors. A name counts
+   * where GitHub has a bot account `<name>[bot]`, the same read the Igor makes of its own account
+   * at startup. Every GitHub App has one, not only this organization's Igors, so any App's bot
+   * counts. A person who shares a name with some App counts too, and a stop naming only that
+   * person stops no Igor. A 404 says the name is no Igor; any other failure leaves it unresolved.
+   * Answers are kept for the life of the process, since an account does not change kind.
    */
   async accountsIn(bodies: readonly string[]): Promise<Accounts> {
     const names = [...new Set(bodies.flatMap(namesToResolve))]
