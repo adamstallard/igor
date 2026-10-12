@@ -134,8 +134,9 @@ export interface Comment {
   at: string
   body: string
   /**
-   * Which names this comment mentions are Igors, where it opens with a stop or a go-ahead and the
-   * surface could tell. Empty where it mentions nobody, or where the surface cannot tell.
+   * The kind of each name this comment's opening stop or go-ahead mentions: `igor` or `other`, as
+   * the surface resolved it. A name it could not resolve is missing, and so is every name in a
+   * comment that does not open with a stop or a go-ahead, which leaves the record empty.
    */
   accounts: Accounts
 }
