@@ -40,8 +40,8 @@ labelled and handed work. What remains against it:
 - **Its permissions change without it changing.** It would take the union of both bases'
   `allow`, `commands` and lane. Letting `frontend` close issues would let `fullstack` close
   them too, though no one edited or reviewed `fullstack.yaml`.
-- **Two bases conflict on override fields.** If one says `completion: close` and the other
-  `unassign`, a tie-break rule is needed for every such field, which is how inheritance becomes
+- **Two bases conflict on override fields.** If one says `poll_minutes: 2` and the other
+  `30`, a tie-break rule is needed for every such field, which is how inheritance becomes
   something nobody can reason about (`docs/architecture.md` §6.0).
 - **Both bases' instructions apply to every item**, frontend conventions on backend work
   included. Area guidance mostly belongs in lore, which fires by path, so this matters least.
@@ -65,6 +65,21 @@ file sets that nobody reads is already refused as not a role key, and Igor has n
 Adam, so nobody would reach for these three. A table whose only effect was to reword one error is
 not kept. The rules stand as they were: the filename is the name, the claim message is not a role's
 to replace, and a role cannot name an App.
+
+## A finished run releases its claim; a role does not choose
+
+**Decided by Adam, 2026-10-11: the `completion` key is gone.** Under label claiming a finished run
+always releases its claim, which is what the default `unassign` did. `close` and `assign` existed
+only to be refused as not built, and `completion` had to appear in `allow` only so that naming it
+could not bypass `allow`. With nothing left to choose, a role file that sets `completion` is
+refused as any key that is not a role key is. The release is specified in `work-claiming`'s
+*A claim that cannot be kept is given back, out loud*, and the role-config requirement that a
+completion action be permitted by `allow` and task-execution's *Completion behaviour follows
+configured policy* are removed.
+
+**Decided by Adam, 2026-10-11: the role-config spec does not single out `claim`.** Nobody will
+try to set it, and the strict key check refuses it as it refuses any key no role reads. That the
+claim message carries the stop instruction stays where it is behaviour, in `work-claiming`.
 
 ## On GitHub, an Igor is a GitHub App
 

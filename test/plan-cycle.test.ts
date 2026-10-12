@@ -45,7 +45,7 @@ const candidate = (n: number, minutes: number): Candidate =>
 const role = (): Role =>
   ({
     name: 'triage', sources: [{ tracker: 'github', repo: 'o/r', query: 'is:issue' } as Source],
-    lane: {}, instructions: [], reviewers: [], allow: ['comment'], completion: 'unassign',
+    lane: {}, instructions: [], reviewers: [], allow: ['comment'],
     settleSeconds: 0, cooldownMinutes: 60, pollMinutes: 10,
   }) as unknown as Role
 

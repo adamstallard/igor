@@ -180,16 +180,17 @@ export async function runItem(
   }
 
   // **Everything from here runs with the claim held**, so this handler guards all of it.
-  // Without it, a throw from provisioning a tree, from a checkpoint or from the completion
-  // action would leave the item claimed and announced, with only a cycle-level error logged.
+  // Without it, a throw from provisioning a tree, from a checkpoint or from the release that ends
+  // a finished run would leave the item claimed and announced, with only a cycle-level error
+  // logged.
   //
   // The claim is given back as any other failure gives it back, by a handoff, which posts and
   // then releases. Whether the run is then reported as refused or handed off depends on what a
   // retry would cost: see the handler.
   //
   // **What the run reached is carried out with it.** A throw here does not always come before
-  // the work. The completion action is an unassign, so the last call of a successful run is a
-  // release, and a tracker that fails it lands here with a draft already open. A handoff
+  // the work. The last call of a successful run is the release of its claim, and a tracker that
+  // fails it lands here with a draft already open. A handoff
   // composed without what the run reached would say "the work never started" beside that
   // draft, and link it nowhere.
   //
@@ -404,12 +405,7 @@ async function runClaimedItem(
   switch (execution.outcome) {
     case 'produced': {
       step('completing')
-      const refusal = await complete(tracker, candidate, role, identity)
-      if (refusal) {
-        await tracker
-          .report(candidate, `**${role.name}** finished but could not ${refusal.action}: ${refusal.why}`)
-          .catch(() => undefined)
-      }
+      await complete(tracker, candidate, role, identity)
       return {
         outcome: 'produced',
         candidate,

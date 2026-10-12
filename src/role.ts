@@ -24,9 +24,6 @@ export const ACTIONS = [
 ] as const
 export type Action = (typeof ACTIONS)[number]
 
-export const COMPLETIONS = ['unassign', 'close', 'assign'] as const
-export type Completion = (typeof COMPLETIONS)[number]
-
 /** Starting points to tune against observation, not derived values. */
 export const DEFAULTS = {
   settleSeconds: 10,
@@ -65,7 +62,6 @@ export interface Role {
   sources: Source[]
   lane: Lane
   instructions: string[]
-  completion: Completion
   allow: Action[]
   /** Commands the worker may run, as `--allowed-tools` patterns without the `Bash(…)`. */
   commands: string[]
@@ -90,9 +86,9 @@ const refuseUnknownKeys = keyCheck(RoleError)
 
 /**
  * Every key a role file may name, and every key its nested mappings may. Anything else is
- * refused by name — see `keyCheck`. Three keys stay out on purpose: `name`, because the filename
- * is the name; `claim`, because the claim message is not a role's to replace; and `github_app`,
- * because an Igor's App is its role's name and its credentials come from its environment.
+ * refused by name — see `keyCheck`. Two keys stay out on purpose: `name`, because the filename is
+ * the name, and `github_app`, because an Igor's App is its role's name and its credentials come
+ * from its environment.
  */
 const ROLE_KEYS = [
   'extends',
@@ -100,7 +96,6 @@ const ROLE_KEYS = [
   'sources',
   'lane',
   'instructions',
-  'completion',
   'allow',
   'commands',
   'budget_share',
@@ -162,7 +157,7 @@ export function listRoles(dir: string): string[] {
  * **Two bases are refused.** A role with two would take whatever both allow, so a change to
  * either base would change what it may do without its own file changing, and nobody reviewing
  * that change would see the role it widened. The two would also conflict on every field where
- * the last level wins, such as `completion`.
+ * the last level wins, such as `poll_minutes`.
  */
 function parentOf(dir: string, name: string): string | undefined {
   const raw = readRoleFile(dir, name)
@@ -413,7 +408,7 @@ function capabilitiesOf(dir: string, name: string, seen: string[] = []): Capabil
  * Merges a lineage into one effective role, recording which level each value came from.
  *
  * Three semantics, because "a role may narrow but never loosen" only makes sense for
- * permissions — a different completion action is not more or less permissive, just different.
+ * permissions — a different poll interval is not more or less permissive, just different.
  */
 export function resolveRole(dir: string, name: string): ResolvedRole {
   const levels = lineage(dir, name)
@@ -430,7 +425,6 @@ export function resolveRole(dir: string, name: string): ResolvedRole {
 
   const instructions: string[] = []
   let sources: Source[] = []
-  let completion: Completion | undefined
   let seat: string | undefined
   let reviewers: string[] = []
   let settleSeconds: number = DEFAULTS.settleSeconds
@@ -452,15 +446,6 @@ export function resolveRole(dir: string, name: string): ResolvedRole {
     if (levelSources.length > 0) {
       sources = levelSources
       from['sources'] = level
-    }
-
-    if (raw['completion'] !== undefined) {
-      const value = raw['completion']
-      if (typeof value !== 'string' || !(COMPLETIONS as readonly string[]).includes(value)) {
-        throw new RoleError(`${level}.completion must be one of ${COMPLETIONS.join(', ')}`)
-      }
-      completion = value as Completion
-      from['completion'] = level
     }
 
     for (const [key, assign] of [
@@ -494,15 +479,6 @@ export function resolveRole(dir: string, name: string): ResolvedRole {
   }
 
   const effectiveAllow = allow ?? []
-  const effectiveCompletion = completion ?? 'unassign'
-
-  // A role forbidden from closing could otherwise close by naming it as its completion.
-  if (!effectiveAllow.includes(effectiveCompletion)) {
-    throw new RoleError(
-      `role "${name}" completes with "${effectiveCompletion}" but that action is not in its ` +
-        `effective allow (${effectiveAllow.join(', ') || 'empty'}). Completion must be permitted.`,
-    )
-  }
 
   return {
     role: {
@@ -512,7 +488,6 @@ export function resolveRole(dir: string, name: string): ResolvedRole {
       sources,
       lane,
       instructions,
-      completion: effectiveCompletion,
       allow: effectiveAllow,
       commands: caps.commands ?? [],
       ...(budgetShare === undefined ? {} : { budgetShare }),
@@ -641,7 +616,6 @@ export function explainRole({ role, from }: ResolvedRole, env: NodeJS.ProcessEnv
     `github app:    ${role.name}  [the role's name]`,
     `credentials:   ${problem === undefined ? 'in the environment' : problem}`,
     `seat:          ${role.seat ?? '(none)'}${at('seat')}`,
-    `completion:    ${role.completion}${at('completion')}`,
     `allow:         ${role.allow.join(', ') || '(none)'}${at('allow')}`,
     `commands:      ${role.commands.join(', ') || '(none)'}${at('commands')}`,
     `budget_share:  ${role.budgetShare ?? '(unset)'}${at('budget_share')}`,

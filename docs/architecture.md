@@ -878,10 +878,8 @@ lane:                                   # APPEND — AND-ed with everything inhe
 instructions: |                         # APPEND — org's plus this role's
   Prefer the shared query hook over fetch in useEffect.
 
-completion: unassign                    # OVERRIDE — unassign | close | assign
+allow: [draft-pr, comment]              # MONOTONIC — subset of inherited
 
-allow: [draft-pr, comment, unassign]    # MONOTONIC — subset of inherited, and must cover
-                                        # the completion above
 commands:                               # MONOTONIC — subset of inherited
   - "npm test:*"                        # what the worker may run, so it can check itself
   - "npx tsc --noEmit"
@@ -930,8 +928,8 @@ runtime mode, which is where it belonged.
 
 ### 5.0.4 Work already in flight — **built**
 
-An Igor unassigns itself on completion, so the item is open work again and is rediscovered
-next cycle. Without a check it would claim it again and redo work sitting in review.
+A finished run releases its claim, so the item is open work again and is rediscovered next
+cycle. Without a check it would claim it again and redo work sitting in review.
 
 **The rule is universal, the detection is per-adapter.** "Do not duplicate work already in
 flight" is never an org preference, so it is tool behaviour rather than config. But *how* you
@@ -1164,12 +1162,11 @@ rather than invisible.
 
 ### 6.0 Policy is org config, not tool behaviour — **built**
 
-Three times this design encoded one org's convention as though it were universal: a canonical
-label, tracker query syntax, and what an Igor does when work is finished. The rule that
-prevents a fourth:
+Twice this design encoded one org's convention as though it were universal: a canonical label,
+and tracker query syntax. The rule that prevents a third:
 
-- **Deterministic and decides behaviour** → config. Completion actions, permitted artifacts,
-  who gets assigned next.
+- **Deterministic and decides behaviour** → config. Permitted artifacts, who gets assigned
+  next.
 - **Needs judgment, applies conditionally** → lore. "This area is sensitive, hand it to a
   person."
 - **Neither** belongs hardcoded in the tool.
@@ -1184,14 +1181,14 @@ shared by all frontend roles is possible later without a second artifact type. W
 role repeats "never touch `label:Human`" and "link the issue in the pull request body", someone
 updates one and forgets three, and conventions drift: the fleet problem applied to config.
 
-**"A role may narrow, never loosen" is too broad as stated** — completion behaviour is not more
-or less permissive than another choice, just different. Merge semantics are per field kind:
+**"A role may narrow, never loosen" is too broad as stated** — a poll interval is not more or
+less permissive than another, just different. Merge semantics are per field kind:
 
 - **Monotonic** — a role may only restrict. Permitted artifact types, repos and surfaces in
   reach, whether it may close or reassign, budget ceiling. The org sets a maximum; a role
   lowers it and can never raise it. This is where differential trust lives and where loosening
   would be self-escalation.
-- **Override** — last level wins. Completion action, poll interval. Not
+- **Override** — last level wins. Seat, poll interval, settle interval, cooldown. Not
   permission-shaped, so there is no direction in which to be strict.
 - **Append** — levels accumulate. Standing instructions, and lane predicates conjoined with
   AND. This is the neat one: an org-wide exclusion is structurally impossible for a role to
@@ -1207,8 +1204,8 @@ worth pinning before anything depends on them.
 - **Stop is unconditional and open to anyone** (§5.3).
 - **Ingested content is data, never instruction** (§5.4).
 
-Everything else — completion behaviour, whether an Igor may close, even whether it is confined
-to reversible artifacts — is policy with a safe default. Reversible-only in particular was
+Everything else — whether an Igor may close, even whether it is confined to reversible
+artifacts — is policy with a safe default. Reversible-only in particular was
 being treated as inviolable when it is really a strong default an org may raise for a role it
 has come to trust.
 

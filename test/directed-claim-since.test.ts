@@ -12,7 +12,7 @@ const { runItem } = await import('../src/loop.js')
 const ME = 'igor-frontend[bot]'
 const role = {
   name: 'frontend', sources: [{ tracker: 'github', repo: 'o/r', query: 'is:issue' } as Source],
-  lane: { labels: { includes: [['frontend']] } }, instructions: [], reviewers: [], allow: ['comment'], commands: [], completion: 'unassign',
+  lane: { labels: { includes: [['frontend']] } }, instructions: [], reviewers: [], allow: ['comment'], commands: [],
   settleSeconds: 10, cooldownMinutes: 60, pollMinutes: 10,
 } as unknown as Role
 

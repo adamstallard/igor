@@ -88,7 +88,6 @@ const role = (over: Partial<Role> = {}): Role =>
     name: 'triage',
     allow: ['comment', 'draft-pr', 'unassign'],
     commands: [],
-    completion: 'unassign',
     instructions: ['Prefer small diffs.'],
     reviewers: [],
     settleSeconds: 10,
@@ -280,32 +279,25 @@ describe('the action space is enforced at the loop', () => {
     expect(workerSystemPrompt(role(), ['draft-pr'])).toMatch(/run no commands/)
   })
 
-  it('refuses a completion the role does not permit', async () => {
-    const { t, released } = fakeTracker()
-    const r = await complete(t, candidate(), role({ completion: 'close', allow: ['comment'] }), 'igor-bot')
-    expect(r?.action).toBe('close')
-    expect(released).toEqual([])
-  })
-
-  it('refuses loudly rather than silently falling back to the default', async () => {
-    const { t } = fakeTracker()
-    const r = await complete(t, candidate(), role({ completion: 'close', allow: ['comment', 'close'] }), 'igor-bot')
-    expect(r?.why).toMatch(/not implemented/)
-  })
-
-  it('releases the claim on the default completion', async () => {
+  it('releases the claim a finished run holds', async () => {
     const { t, released, reported } = fakeTracker()
-    expect(await complete(t, candidate(), role(), 'igor-bot')).toBeUndefined()
+    await complete(t, candidate(), role(), 'igor-bot')
     expect(released).toEqual(['igor-bot'])
     expect(reported).toEqual([])
   })
 
-  it('says so on the item where the completion did not clear the holder', async () => {
-    // The completion action is the last call of a run that published. A surface answering
-    // "still assigned" there leaves the run reported as produced, the pull request open, and
-    // the item held by an Igor that has finished with it — with nobody told.
+  it('releases it whatever the role allows', async () => {
+    const { t, released } = fakeTracker()
+    await complete(t, candidate(), role({ allow: ['comment'] }), 'igor-bot')
+    expect(released).toEqual(['igor-bot'])
+  })
+
+  it('says so on the item where the release did not clear the holder', async () => {
+    // The release is the last call of a run that published. A surface answering "still held"
+    // there leaves the run reported as produced, the pull request open, and the item held by an
+    // Igor that has finished with it — with nobody told.
     const { t, reported } = fakeTracker({ releaseLeavesHolder: true })
-    expect(await complete(t, candidate(), role(), 'igor-bot')).toBeUndefined()
+    await complete(t, candidate(), role(), 'igor-bot')
     expect(reported).toEqual([stillHeld(role())])
   })
 })

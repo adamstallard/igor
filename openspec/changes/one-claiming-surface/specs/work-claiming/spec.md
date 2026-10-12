@@ -300,6 +300,10 @@ Where a run holds a claim and cannot go on — the claim could not be finished, 
 failed — the Igor SHALL release the claim and say so on the item. It SHALL NOT end such a run
 holding the claim in silence.
 
+A run that finishes SHALL release its claim too, leaving its artifact in place and the item open,
+so the item is rediscovered and the work in flight keeps it from being claimed again. No role
+setting changes this.
+
 **Giving the claim back never takes back a person's hand-over.** Where a person put the Igor in
 the holder field, as by adding its `igor:<role>` label, and the run is the Igor bringing its own
 artifact up to date rather than answering that hand-over, releasing the claim SHALL leave that
@@ -320,8 +324,8 @@ items. Nothing about the item produced the outcome, so every remaining item woul
 one — and doing so speaks on each of them, at a volume that is itself a cause of the failure.
 
 Two, not one, because the run cannot tell the two causes apart: `produce` fails inside the worker
-call for a branch the item already owns, while a tracker that does not answer the completion
-unassign fails outside it, so neither the error nor how far the run got separates them. How many items they
+call for a branch the item already owns, while a tracker that does not answer the release that
+ends a finished run fails outside it, so neither the error nor how far the run got separates them. How many items they
 affect does — an outage fails every item and a bad item fails one — so the count is the
 distinction. A cycle that met one and then ran an item cleanly did not fail, and SHALL NOT be
 recorded as failed.
@@ -330,6 +334,12 @@ recorded as failed.
 something, the answer SHALL carry what was recorded, not merely that no error was raised. A raised
 error cannot separate *this did not happen* from *this happened and the answer was lost*, and a
 caller that must tell them apart cannot do it from a thrown error alone.
+
+#### Scenario: A finished run releases its claim
+
+- **WHEN** a run publishes its work and finishes
+- **THEN** the Igor releases its claim and leaves the artifact in place
+- **AND** it does not close the item
 
 #### Scenario: A claim that could not be announced is given back
 

@@ -19,7 +19,6 @@ function store(roles: Record<string, string>): string {
 const ORG = `
 allow: [comment, draft-pr, unassign]
 budget_share: 0.8
-completion: unassign
 lane:
   labels:
     excludes: [Human]
@@ -105,10 +104,10 @@ describe('monotonic — permissions may only be restricted', () => {
 describe('override — the most specific level wins', () => {
   it('replaces a setting rather than merging it', () => {
     const dir = store({
-      org: 'allow: [comment, unassign, close]\ncompletion: unassign\n',
-      closer: 'completion: close\n',
+      org: 'allow: [comment]\npoll_minutes: 10\n',
+      quick: 'poll_minutes: 2\n',
     })
-    expect(resolveRole(dir, 'closer').role.completion).toBe('close')
+    expect(resolveRole(dir, 'quick').role.pollMinutes).toBe(2)
   })
 
   it('replaces sources wholesale', () => {
@@ -182,7 +181,7 @@ describe('append — levels accumulate', () => {
 
 describe('one base per role', () => {
   const TWO = {
-    org: 'allow: [comment, draft-pr, unassign]\ncompletion: unassign\nlane:\n  labels:\n    excludes: [Human]\n',
+    org: 'allow: [comment, draft-pr, unassign]\nlane:\n  labels:\n    excludes: [Human]\n',
     engineering: 'allow: [comment, draft-pr, unassign]\ncommands: ["npm test:*", "npm run lint"]\n',
     backend: 'extends: engineering\nlane:\n  paths:\n    under: ["server/**"]\n',
     frontend: 'extends: engineering\nlane:\n  paths:\n    under: ["web/**"]\n',
@@ -230,16 +229,15 @@ describe('one base per role', () => {
   })
 })
 
-describe('completion must be permitted', () => {
-  it('rejects completing with an action outside allow', () => {
+describe('a finished run releases its claim, whatever the role says', () => {
+  it('refuses a completion setting as a key that is not a role key', () => {
     const dir = store({ org: 'allow: [comment]\ncompletion: close\n' })
-    // Otherwise a role forbidden from closing could close by naming it as its completion.
-    expect(() => resolveRole(dir, 'org')).toThrow(/Completion must be permitted/)
+    expect(() => resolveRole(dir, 'org')).toThrow(/names "completion", which is not a role key/)
   })
 
-  it('requires unassign to be permitted even when defaulted', () => {
+  it('loads a role whose allow omits unassign', () => {
     const dir = store({ org: 'allow: [comment]\n' })
-    expect(() => resolveRole(dir, 'org')).toThrow(/completes with "unassign"/)
+    expect(resolveRole(dir, 'org').role.allow).toEqual(['comment'])
   })
 })
 
@@ -310,21 +308,6 @@ describe('a seat a role names must be declared', () => {
   })
 })
 
-describe('claim wording is not a role setting', () => {
-  it('refuses a role that sets one, rather than loading without it', () => {
-    // The message it would replace is the only place anyone is told that stopping is possible
-    // and needs no permission, so it is not an org's to rewrite. Dropping the key in silence
-    // leaves whoever wrote it believing the fleet says what they told it to.
-    const dir = store({ org: ORG, fe: 'sources: []\nseat: igor-1\nclaim: "Taking this"\n' })
-    expect(() => loadRole(config(dir), 'fe')).toThrow(/names "claim", which is not a role key/)
-  })
-
-  it('refuses it on the org base too, where it would reach every role', () => {
-    const dir = store({ org: `${ORG}claim: "Taking this"\n`, fe: 'sources: []\nseat: igor-1\n' })
-    expect(() => loadRole(config(dir), 'fe')).toThrow(/names "claim", which is not a role key/)
-  })
-})
-
 describe('a role file refuses a key nobody reads', () => {
   it('names the offending key and the ones it accepts', () => {
     const dir = store({ org: ORG, fe: 'sources: []\nseat: igor-1\nreviewer: [sarah]\n' })
@@ -376,7 +359,6 @@ describe('a role file refuses a key nobody reads', () => {
         '  age:',
         '    max_days: 30',
         'instructions: Link the issue.',
-        'completion: unassign',
         'allow: [comment, unassign]',
         'commands: []',
         'budget_share: 0.4',
@@ -392,12 +374,12 @@ describe('a role file refuses a key nobody reads', () => {
 })
 
 describe('explain', () => {
-  const dir = store({ org: ORG, fe: 'completion: unassign\nlane:\n  labels:\n    includes: [ai]\n' })
+  const dir = store({ org: ORG, fe: 'poll_minutes: 2\nlane:\n  labels:\n    includes: [ai]\n' })
   const text = explainRole(resolveRole(dir, 'fe'))
 
   it('names the level each value came from', () => {
     expect(text).toMatch(/allow:.*\[org\]/)
-    expect(text).toMatch(/completion:.*\[fe\]/)
+    expect(text).toMatch(/poll:.*\[fe\]/)
   })
 
   it('marks unset values as defaults rather than inventing a source', () => {
