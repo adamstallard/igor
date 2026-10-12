@@ -206,8 +206,8 @@ Grouping by author rather than by entry is deliberate. Six entries produced two 
 in the first real run, not six, and each person gets one conversation.
 
 The body carries the contract, using affordances the reviewer already knows: **delete a file**
-to reject permanently, **edit** one to amend it, **merge** to accept the rest, **close without
-merging** to defer. Rejection has to be the deliberate act of deleting something; closing a tab
+to reject it, which is remembered until its record in `rejected/` is deleted, **edit** one to
+amend it, **merge** to accept the rest, **close without merging** to defer. Rejection has to be the deliberate act of deleting something; closing a tab
 is passive and must not destroy a candidate.
 
 **Merging is approval.** GitHub will not let anyone approve their own pull request, so tying

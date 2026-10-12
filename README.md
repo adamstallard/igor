@@ -312,7 +312,7 @@ In a proposal pull request: **delete** a file to reject it, **edit** one to amen
 to accept the rest, **close without merging** to defer. Merging is what counts as approval
 here, so a single maintainer is never stuck reviewing their own proposal.
 
-A deletion is permanent: the next `reconcile` writes `rejected/<id>.md` into the store, keeping
+A deletion is remembered: the next `reconcile` writes `rejected/<id>.md` into the store, keeping
 the candidate's claim and provenance so a later reader can see what was turned down, and
 nothing proposes that id again while the record stands. **Delete that file to un-reject** — a
 rejection is undone the same way it was made, by removing a file in a pull request.

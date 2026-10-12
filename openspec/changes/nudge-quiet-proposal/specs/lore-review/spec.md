@@ -181,3 +181,25 @@ request needs, and SHALL NOT grant permission to open items.
 - **WHEN** the template's permissions are read
 - **THEN** they allow commenting on a pull request
 - **AND** grant nothing that would let the job open an issue
+
+## MODIFIED Requirements
+
+### Requirement: The pull request body states the review contract
+
+Each pull request body SHALL explain how to review: deleting a file rejects that entry, and the
+rejection is remembered, so the entry is not proposed again unless its record in `rejected/` is
+deleted; editing a file amends it; merging accepts everything still present; and closing without
+merging defers without rejecting anything. It SHALL also carry each candidate's claim,
+conditions, and every provenance link, so the derivation can be checked without leaving the
+page.
+
+#### Scenario: Contract is present
+
+- **WHEN** a pull request is opened
+- **THEN** its body states that deletion rejects and is remembered until the record in
+  `rejected/` is deleted, editing amends, merging accepts, and closing without merging defers
+
+#### Scenario: Derivation is checkable in place
+
+- **WHEN** a candidate was derived from six comments
+- **THEN** its section lists all six links with their authors and dates
