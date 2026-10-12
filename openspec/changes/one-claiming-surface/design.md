@@ -486,6 +486,11 @@ reads (`Comment.accounts`), so `isStop` and `isGoAhead` stay pure. An unresolved
 name for a stop and as an Igor for a go-ahead, the safe side of each. Any App's bot counts as an
 Igor, so "stop @dependabot" stops no Igor, which is what it asks for.
 
+**Decided by Adam, 2026-10-12: every reader passes the record.** `isStop`, `isGoAhead` and the
+claim's re-read take it as a required argument, and every comment the tracker reads carries one,
+empty where the comment mentions nobody. A reader that forgot to resolve names would otherwise
+read every name as an Igor's, and "Stop — @alice is taking over" would stop nobody.
+
 **A stop is the comment as created, not as last edited.** GitHub's `since` on an issue's comments
 filters on when each was last updated, so a stop said before a hand-over and edited later comes
 back. Verification, the catch-up's give-back and the search for handed-over items each count a

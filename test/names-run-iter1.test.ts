@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { isGoAhead, isStop, namesToResolve, type Accounts } from '../src/signals.js'
+import { IGORS } from './igors.js'
 
 const FRONTEND = 'igor-frontend[bot]'
 
@@ -16,7 +17,7 @@ describe('iteration 1 finder', () => {
   })
 
   it('a go-ahead naming an Igor in underscore emphasis reads as bare and lifts every Igor', () => {
-    expect(isGoAhead('go ahead _@igor-backend_', FRONTEND)).toBe(false)
+    expect(isGoAhead('go ahead _@igor-backend_', FRONTEND, IGORS)).toBe(false)
   })
 
   it('a go-ahead whose run-on list drops its only Igor and keeps a person lifts the stop for the Igor told to keep waiting', () => {
@@ -38,11 +39,11 @@ describe('iteration 1 finder', () => {
 
   it('reading a mention followed by a long run of underscores stays linear', () => {
     const started = performance.now()
-    isStop('@igor-frontend @a' + '_'.repeat(32000) + '!', FRONTEND)
+    isStop('@igor-frontend @a' + '_'.repeat(32000) + '!', FRONTEND, IGORS)
     expect(performance.now() - started).toBeLessThan(100)
   })
 
   it('a stop addressed to an Igor in underscore emphasis stops it', () => {
-    expect(isStop('_@igor-frontend_ stop', FRONTEND)).toBe(true)
+    expect(isStop('_@igor-frontend_ stop', FRONTEND, IGORS)).toBe(true)
   })
 })

@@ -508,7 +508,7 @@ describe('a claim held through a failure that is not the item\'s', () => {
     let ran = 0
     const { d } = deps({
       caughtUp: [{ outcome: 'conflict' }, { outcome: 'already-current' }],
-      merge: { conflicts: [], head: 'headsha', broughtIn: 'basesha' },
+      merge: { conflicts: [], head: 'headsha', broughtIn: 'basesha', baseChanges: [] },
       changes: [{ path: 'src/a.ts', content: 'merged\n', kind: 'modified' }],
       releaseThrows: true,
     })
@@ -1066,7 +1066,7 @@ describe('one read, several windows', () => {
     const t: CommentSource = {
       commentsSince: async (_c, since) => {
         asked.push(since)
-        return spoken.filter((m) => Date.parse(m.at) >= Date.parse(since))
+        return spoken.filter((m) => Date.parse(m.at) >= Date.parse(since)).map((m) => ({ ...m, accounts: {} }))
       },
     }
     return { t, asked }

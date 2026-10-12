@@ -4,6 +4,7 @@ import type { Role } from '../src/role.js'
 import { dropStopped } from '../src/loop.js'
 import { stopReceipt } from '../src/claiming.js'
 import { labelVerdictFrom } from '../src/github-adapter.js'
+import { IGORS } from './igors.js'
 
 const ME = 'igor-frontend[bot]'
 const role = { name: 'frontend' } as Role
@@ -20,11 +21,12 @@ describe('a stop made by removing the label', () => {
        { id: 2, event: 'unlabeled', actor: { login: 'alice', id: 9, type: 'User' }, label: { name: 'igor:frontend' }, created_at: '2026-10-10T11:58:00Z' }],
       [],
       '1970-01-01T00:00:00Z',
+      IGORS,
     )
     // What is then on the item: the claim message and the Igor's own stop receipt.
     const spoken: Comment[] = [
-      { author: ME, at: '2026-10-10T11:50:00Z', body: '**frontend** picked this up and is working on it.\n\nReply **stop** to hand it back' },
-      { author: ME, at: '2026-10-10T11:59:00Z', body: stopReceipt(role, verdict) },
+      { author: ME, at: '2026-10-10T11:50:00Z', body: '**frontend** picked this up and is working on it.\n\nReply **stop** to hand it back', accounts: {} },
+      { author: ME, at: '2026-10-10T11:59:00Z', body: stopReceipt(role, verdict), accounts: {} },
     ]
     const report = { skipped: [] as unknown[], skippedStopped: 0, skippedUnreadable: 0 }
     const kept = await dropStopped({ commentsSince: async () => spoken } as never, [item], 60, ME, report as never, NOW, Infinity,
@@ -40,12 +42,13 @@ describe('a stop made by removing the label', () => {
       undefined,
       [{ body: receipt, user: { login: ME }, created_at: '2026-10-10T11:59:00Z' }],
       '1970-01-01T00:00:00Z',
+      IGORS,
     )
     expect(verdict.status).toBe('held')
   })
 
   it('leaves another author copying the mark without effect', async () => {
-    const spoken: Comment[] = [{ author: 'mallory', at: '2026-10-10T11:59:00Z', body: stopReceipt(role, { status: 'stopped', fromHolder: true }) }]
+    const spoken: Comment[] = [{ author: 'mallory', at: '2026-10-10T11:59:00Z', body: stopReceipt(role, { status: 'stopped', fromHolder: true }), accounts: {} }]
     const report = { skipped: [] as unknown[], skippedStopped: 0, skippedUnreadable: 0 }
     const kept = await dropStopped({ commentsSince: async () => spoken } as never, [item], 60, ME, report as never, NOW)
     expect(kept.map((c) => c.id)).toEqual(['github:o/r#1'])

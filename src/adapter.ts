@@ -135,9 +135,9 @@ export interface Comment {
   body: string
   /**
    * Which names this comment mentions are Igors, where it opens with a stop or a go-ahead and the
-   * surface could tell. Absent, every name counts as an Igor's.
+   * surface could tell. Empty where it mentions nobody, or where the surface cannot tell.
    */
-  accounts?: Accounts
+  accounts: Accounts
 }
 
 export interface Tracker {

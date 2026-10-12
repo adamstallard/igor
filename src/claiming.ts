@@ -424,7 +424,7 @@ export interface EligibilityInput {
    * Everything said on the item after the stop, in creation order. Fetched on demand, because it
    * costs a request per item and most verdicts do not need it.
    */
-  since: () => Promise<{ body: string; at: string; accounts?: Accounts }[]>
+  since: () => Promise<{ body: string; at: string; accounts: Accounts }[]>
   identity: string
   /** How the tracker's holder field shows this Igor; see `heldByOthers`. */
   holding?: Holding

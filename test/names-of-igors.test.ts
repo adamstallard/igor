@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Candidate } from '../src/adapter.js'
 import { isGoAhead, isStop } from '../src/signals.js'
+import { IGORS } from './igors.js'
 
 const gh = vi.hoisted(() => ({ calls: [] as string[], answers: new Map<string, () => unknown>() }))
 vi.mock('../src/gh.js', async (actual) => {
@@ -24,24 +25,24 @@ const FRONTEND = 'igor-frontend[bot]'
 describe('a go-ahead errs toward lifting too little', () => {
   it('counts the mentions later on its opening line where none follows the phrase', () => {
     const body = 'go ahead and pick it back up, @igor-backend'
-    expect(isGoAhead(body, BACKEND)).toBe(true)
-    expect(isGoAhead(body, FRONTEND)).toBe(false)
+    expect(isGoAhead(body, BACKEND, IGORS)).toBe(true)
+    expect(isGoAhead(body, FRONTEND, IGORS)).toBe(false)
   })
 
   it('drops the last name of a list that runs straight on into a word', () => {
     const body = 'go ahead @igor-backend, @igor-frontend keep waiting'
-    expect(isGoAhead(body, BACKEND)).toBe(true)
-    expect(isGoAhead(body, FRONTEND)).toBe(false)
-    expect(isGoAhead('go ahead @igor-frontend keep going', FRONTEND)).toBe(true)
+    expect(isGoAhead(body, BACKEND, IGORS)).toBe(true)
+    expect(isGoAhead(body, FRONTEND, IGORS)).toBe(false)
+    expect(isGoAhead('go ahead @igor-frontend keep going', FRONTEND, IGORS)).toBe(true)
   })
 
   it('leaves the stop reading those shapes as it did', () => {
-    expect(isStop('stop now @igor-backend', FRONTEND)).toBe(true)
-    expect(isStop('stop @igor-backend, @igor-frontend keep going', FRONTEND)).toBe(true)
+    expect(isStop('stop now @igor-backend', FRONTEND, IGORS)).toBe(true)
+    expect(isStop('stop @igor-backend, @igor-frontend keep going', FRONTEND, IGORS)).toBe(true)
   })
 
   it('reads mentions on a later line as no names', () => {
-    expect(isGoAhead('go ahead\n\n@alice can you review what it makes?', FRONTEND)).toBe(true)
+    expect(isGoAhead('go ahead\n\n@alice can you review what it makes?', FRONTEND, IGORS)).toBe(true)
   })
 })
 
@@ -114,7 +115,7 @@ describe('the GitHub tracker tells an Igor from a person', () => {
     ])
     const comments = await tracker().commentsSince(item, '2026-10-11T10:00:00Z')
     expect(comments[0]!.accounts).toEqual({ alice: 'other' })
-    expect(comments[1]!.accounts).toBeUndefined()
+    expect(comments[1]!.accounts).toEqual({})
     expect(isStop(comments[0]!.body, FRONTEND, comments[0]!.accounts)).toBe(true)
   })
 
@@ -130,7 +131,7 @@ describe('the GitHub tracker tells an Igor from a person', () => {
     const self = { login: FRONTEND, accountId: 99, holder: 'igor:frontend' }
     const at = (body: string, time: string) => ({ body, user: { login: 'bob' }, created_at: `2026-10-11T${time}:00Z` })
     const comments = [at('stop', '10:05'), at('carry on, @alice approved it', '10:10')]
-    expect(labelVerdictFrom(self, ['igor:frontend'], [], comments, '2026-10-11T10:00:00Z', true, { alice: 'other' }).status).toBe('held')
-    expect(labelVerdictFrom(self, ['igor:frontend'], [], comments, '2026-10-11T10:00:00Z', true).status).toBe('stopped')
+    expect(labelVerdictFrom(self, ['igor:frontend'], [], comments, '2026-10-11T10:00:00Z', { alice: 'other' }, true).status).toBe('held')
+    expect(labelVerdictFrom(self, ['igor:frontend'], [], comments, '2026-10-11T10:00:00Z', IGORS, true).status).toBe('stopped')
   })
 })

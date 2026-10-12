@@ -26,10 +26,10 @@ describe('a stop during a catch-up', () => {
       createIssue: async () => '', identity: async () => 'igor-bot', search: async () => [],
       claim: async () => { labels.add('igor:triage'); return true },
       // The stop `verifyClaim` reports is bob's comment, on the item from the moment he made it.
-      commentsSince: async () => (pushed ? [{ author: 'bob', at: '2026-10-11T01:00:00Z', body: 'stop' }] : []),
+      commentsSince: async () => (pushed ? [{ author: 'bob', at: '2026-10-11T01:00:00Z', body: 'stop', accounts: {} }] : []),
       verifyClaim: async () => { const v = pushed ? { status: 'stopped', by: 'bob', at: '2026-10-11T01:00:00Z' } : { status: 'held' }; verdicts.push(v.status); return v as any },
-      report: async (_c, m) => { said.push(m); return 'x' },
-      release: async (_c, _a, how) => { labels.delete('igor:triage'); return true }, linkage: () => '',
+      report: async (_c: unknown, m: string) => { said.push(m); return 'x' },
+      release: async () => { labels.delete('igor:triage'); return true }, linkage: () => '',
     } as unknown as Tracker
     let asks = 0
     const codeHost = { name: 'github', produce: async () => ({}),
@@ -48,7 +48,7 @@ describe('a stop during a catch-up', () => {
     // Is the item directed afterwards? stop comment by bob at 01:00 after handover 00:00
     const t = Object.assign(Object.create(tracker), {
       directed: async () => [{ ...item(), inFlight: undefined }],
-      commentsSince: async () => [{ author: 'bob', at: '2026-10-11T01:00:00Z', body: 'stop' }],
+      commentsSince: async () => [{ author: 'bob', at: '2026-10-11T01:00:00Z', body: 'stop', accounts: {} }],
     })
     const r = await findDirected(t, role, 'igor-bot', { holder: 'igor:triage', distinctFromAssignee: true } as any, { failures: [] })
     expect([...labels]).toEqual([])

@@ -7,14 +7,15 @@ import { isGoAhead, isStop } from '../src/signals.js'
 import { CloneProvider } from '../src/worktree.js'
 import { canMint, GitHubApp, InstallationTokens, type Fetch } from '../src/app.js'
 import { tempDir } from './tmp.js'
+import { IGORS } from './igors.js'
 
 describe('an Igor acting as its App', () => {
   afterEach(() => vi.unstubAllEnvs())
 
   it("recognises a stop addressed to its bot, spelled either way", () => {
-    expect(isStop('@igor-reviewer[bot] stop', 'igor-reviewer[bot]')).toBe(true)
-    expect(isStop('@igor-reviewer stop', 'igor-reviewer[bot]')).toBe(true)
-    expect(isGoAhead('@igor-reviewer[bot] go ahead', 'igor-reviewer[bot]')).toBe(true)
+    expect(isStop('@igor-reviewer[bot] stop', 'igor-reviewer[bot]', IGORS)).toBe(true)
+    expect(isStop('@igor-reviewer stop', 'igor-reviewer[bot]', IGORS)).toBe(true)
+    expect(isGoAhead('@igor-reviewer[bot] go ahead', 'igor-reviewer[bot]', IGORS)).toBe(true)
   })
 
   it('clones with the App token even where a config file rewrites github.com to SSH', async () => {
@@ -78,8 +79,8 @@ describe('the tree a clone under the App token hands the worker', () => {
 
 describe('a stop addressed to somebody else', () => {
   it('does not stop an Igor whose name ends another account\'s name', () => {
-    expect(isStop('@code-reviewer stop', 'reviewer[bot]')).toBe(false)
-    expect(isStop('@acme-igor-generalist stop', 'igor-generalist[bot]')).toBe(false)
-    expect(isStop('@reviewer stop', 'reviewer[bot]')).toBe(true)
+    expect(isStop('@code-reviewer stop', 'reviewer[bot]', IGORS)).toBe(false)
+    expect(isStop('@acme-igor-generalist stop', 'igor-generalist[bot]', IGORS)).toBe(false)
+    expect(isStop('@reviewer stop', 'reviewer[bot]', IGORS)).toBe(true)
   })
 })

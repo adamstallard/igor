@@ -60,8 +60,8 @@ function addressed(text: string, identity: string, verb: RegExp): boolean {
 
 /**
  * Which mentioned names are Igors, as the tracker resolved them, keyed by the name as `bareName`
- * spells it. A name missing here could not be resolved. Without a record at all, every name counts
- * as naming an Igor.
+ * spells it. A name missing here could not be resolved; a comment that mentions nobody has an
+ * empty record.
  */
 export type Accounts = Readonly<Record<string, 'igor' | 'other'>>
 
@@ -82,7 +82,7 @@ export type Accounts = Readonly<Record<string, 'igor' | 'other'>>
  * @alice is taking over" stops every Igor. A name `accounts` could not resolve counts as no name
  * too, since stopping too many is the safer error.
  */
-export function isStop(body: string, identity: string, accounts?: Accounts): boolean {
+export function isStop(body: string, identity: string, accounts: Accounts): boolean {
   const text = body.trim()
   if (STOP.test(text)) {
     // A bare stop stops every Igor on the item; one that names Igors right after the word stops
@@ -115,7 +115,7 @@ export function isStop(body: string, identity: string, accounts?: Accounts): boo
  * Igor; a name `accounts` could not resolve still counts. Whether it names an Igor is read before
  * the trim, so a trim that drops the only Igor leaves it for nobody.
  */
-export function isGoAhead(body: string, identity: string, accounts?: Accounts): boolean {
+export function isGoAhead(body: string, identity: string, accounts: Accounts): boolean {
   const text = body.trim()
   if (GO_AHEAD.test(text)) {
     const { list, endsOnWord, later, laterEndsOnWord } = namesAfter(text, GO_AHEAD)
@@ -139,10 +139,10 @@ function meantFor(named: readonly string[], identity: string): boolean {
 function isIgor(
   name: string,
   identity: string,
-  accounts: Accounts | undefined,
+  accounts: Accounts,
   unresolved: 'unresolved-is-igor' | 'unresolved-is-not',
 ): boolean {
-  if (accounts === undefined || sameAccountName(name, identity)) return true
+  if (sameAccountName(name, identity)) return true
   const kind = accounts[bareName(name)]
   return kind === undefined ? unresolved === 'unresolved-is-igor' : kind === 'igor'
 }

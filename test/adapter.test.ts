@@ -4,6 +4,7 @@ import {
   commentsFrom, GitHubCodeHost, GitHubTracker, labelVerdictFrom, latestLabelEvent, loginOf, normalizeIssue,
   refuseWorkflows, type RawComment, type RawEvent, type RawIssue,
 } from '../src/github-adapter.js'
+import { IGORS } from './igors.js'
 
 const NOW = Date.parse('2026-09-13T00:00:00Z')
 
@@ -180,78 +181,78 @@ const OTHER_IGOR = { login: 'acme-backend[bot]', id: 77, type: 'Bot' }
 
 describe('verifying a label claim', () => {
   it('holds while the Igor carries its label', () => {
-    expect(labelVerdictFrom(SELF, ['bug', 'igor:reviewer'], undefined, [], EVER)).toEqual({ status: 'held' })
+    expect(labelVerdictFrom(SELF, ['bug', 'igor:reviewer'], undefined, [], EVER, IGORS)).toEqual({ status: 'held' })
   })
 
   it("keeps the claim when a person added another Igor's label, even in the settle interval", () => {
     const events = [event('labeled', 'igor:reviewer', ME), event('labeled', 'igor:backend', ADAM)]
-    expect(labelVerdictFrom(SELF, ['igor:reviewer', 'igor:backend'], events, [], EVER)).toEqual({ status: 'held' })
+    expect(labelVerdictFrom(SELF, ['igor:reviewer', 'igor:backend'], events, [], EVER, IGORS)).toEqual({ status: 'held' })
   })
 
   it('loses the claim to another Igor that added its own label', () => {
     const events = [event('labeled', 'igor:reviewer', ME), event('labeled', 'igor:backend', OTHER_IGOR)]
-    expect(labelVerdictFrom(SELF, ['igor:reviewer', 'igor:backend'], events, [], EVER)).toEqual({
+    expect(labelVerdictFrom(SELF, ['igor:reviewer', 'igor:backend'], events, [], EVER, IGORS)).toEqual({
       status: 'lost', by: 'acme-backend[bot]',
     })
   })
 
   it('reads a person removing the label as a stop that names them', () => {
     const events = [event('labeled', 'igor:reviewer', ME), event('unlabeled', 'igor:reviewer', ADAM)]
-    expect(labelVerdictFrom(SELF, ['bug'], events, [], EVER)).toEqual({
+    expect(labelVerdictFrom(SELF, ['bug'], events, [], EVER, IGORS)).toEqual({
       status: 'stopped', by: 'adamstallard', at: '2026-10-04T00:00:00Z', reason: 'removed the igor:reviewer label', fromHolder: true,
     })
   })
 
   it("reads its own removal as its release, matched by the bot's id", () => {
     const events = [event('unlabeled', 'igor:reviewer', ADAM, 10), event('labeled', 'igor:reviewer', ADAM, 11), event('unlabeled', 'igor:reviewer', ME, 12)]
-    expect(labelVerdictFrom(SELF, [], events, [], EVER)).toEqual({ status: 'lost' })
+    expect(labelVerdictFrom(SELF, [], events, [], EVER, IGORS)).toEqual({ status: 'lost' })
   })
 
   it('orders events by id, never by time, so the latest removal decides', () => {
     // Two events in one second: only the ids say which came last (measured 2026-10-04).
     const events = [event('unlabeled', 'igor:reviewer', ME, 21), event('unlabeled', 'igor:reviewer', ADAM, 20)]
-    expect(labelVerdictFrom(SELF, [], events, [], EVER).status).toBe('lost')
+    expect(labelVerdictFrom(SELF, [], events, [], EVER, IGORS).status).toBe('lost')
     const reversed = [event('unlabeled', 'igor:reviewer', ME, 20), event('unlabeled', 'igor:reviewer', ADAM, 21)]
-    expect(labelVerdictFrom(SELF, [], reversed, [], EVER).status).toBe('stopped')
+    expect(labelVerdictFrom(SELF, [], reversed, [], EVER, IGORS).status).toBe('stopped')
   })
 
   it('does not take a person who shares the bot id number for the bot', () => {
     const events = [event('unlabeled', 'igor:reviewer', { login: 'someone', id: 99, type: 'User' })]
-    expect(labelVerdictFrom(SELF, [], events, [], EVER).status).toBe('stopped')
+    expect(labelVerdictFrom(SELF, [], events, [], EVER, IGORS).status).toBe('stopped')
   })
 
   it('reports a stop comment ahead of everything, since a stop owes a receipt', () => {
     const events = [event('labeled', 'igor:backend', OTHER_IGOR)]
-    const v = labelVerdictFrom(SELF, ['igor:reviewer', 'igor:backend'], events, [comment({ body: 'stop, I have got this' })], EVER)
+    const v = labelVerdictFrom(SELF, ['igor:reviewer', 'igor:backend'], events, [comment({ body: 'stop, I have got this' })], EVER, IGORS)
     expect(v.status).toBe('stopped')
     expect(v.by).toBe('alice')
     expect(v.reason).toBe('stop, I have got this')
   })
 
   it('ignores a comment that is not a stop, and one with no body or author', () => {
-    expect(labelVerdictFrom(SELF, ['igor:reviewer'], undefined, [comment(), comment({ body: null, user: null })], EVER)).toEqual({ status: 'held' })
+    expect(labelVerdictFrom(SELF, ['igor:reviewer'], undefined, [comment(), comment({ body: null, user: null })], EVER, IGORS)).toEqual({ status: 'held' })
   })
 
   it('truncates a very long stop, since the receipt quotes it', () => {
-    const v = labelVerdictFrom(SELF, ['igor:reviewer'], undefined, [comment({ body: `stop ${'x'.repeat(1000)}` })], EVER)
+    const v = labelVerdictFrom(SELF, ['igor:reviewer'], undefined, [comment({ body: `stop ${'x'.repeat(1000)}` })], EVER, IGORS)
     expect(v.reason).toHaveLength(500)
   })
 
   it('reads a stop created before `since` as no stop, though GitHub returns it because it was edited since', () => {
     const edited = comment({ body: 'stop, waiting on the design (edit: design done)', created_at: '2026-10-09T00:00:00Z' })
-    expect(labelVerdictFrom(SELF, ['igor:reviewer'], undefined, [edited], '2026-10-11T00:00:00Z')).toEqual({ status: 'held' })
+    expect(labelVerdictFrom(SELF, ['igor:reviewer'], undefined, [edited], '2026-10-11T00:00:00Z', IGORS)).toEqual({ status: 'held' })
   })
 
   it('reads a stop created at or after `since` as a stop', () => {
     const at = comment({ body: 'stop', created_at: '2026-10-11T00:00:00Z' })
     const after = comment({ body: 'stop', created_at: '2026-10-11T00:00:01Z' })
-    expect(labelVerdictFrom(SELF, ['igor:reviewer'], undefined, [at], '2026-10-11T00:00:00Z').status).toBe('stopped')
-    expect(labelVerdictFrom(SELF, ['igor:reviewer'], undefined, [after], '2026-10-11T00:00:00Z').status).toBe('stopped')
+    expect(labelVerdictFrom(SELF, ['igor:reviewer'], undefined, [at], '2026-10-11T00:00:00Z', IGORS).status).toBe('stopped')
+    expect(labelVerdictFrom(SELF, ['igor:reviewer'], undefined, [after], '2026-10-11T00:00:00Z', IGORS).status).toBe('stopped')
   })
 
   it('reads a stop whose creation time cannot be parsed as a stop', () => {
     const undated = comment({ body: 'stop', created_at: 'not a time' })
-    expect(labelVerdictFrom(SELF, ['igor:reviewer'], undefined, [undated], '2026-10-11T00:00:00Z').status).toBe('stopped')
+    expect(labelVerdictFrom(SELF, ['igor:reviewer'], undefined, [undated], '2026-10-11T00:00:00Z', IGORS).status).toBe('stopped')
   })
 
   it('finds the latest event of a kind for one label', () => {
@@ -270,21 +271,27 @@ describe('igor labels on a discovered issue', () => {
 
 describe('reading what was said', () => {
   it('normalizes author, time and body', () => {
-    expect(commentsFrom([comment()])).toEqual([
-      { author: 'alice', at: '2026-09-12T00:00:00Z', body: 'looks good' },
+    expect(commentsFrom([comment()], {})).toStrictEqual([
+      { author: 'alice', at: '2026-09-12T00:00:00Z', body: 'looks good', accounts: {} },
     ])
   })
 
   it('names a deleted author as nobody rather than undefined', () => {
     // A caller asking "did anyone but me speak" should never have to consider undefined.
-    expect(commentsFrom([comment({ user: null, body: null })])).toEqual([
-      { author: '', at: '2026-09-12T00:00:00Z', body: '' },
+    expect(commentsFrom([comment({ user: null, body: null })], {})).toStrictEqual([
+      { author: '', at: '2026-09-12T00:00:00Z', body: '', accounts: {} },
     ])
   })
 
   it('reads an item with no comments as nobody having spoken', () => {
-    expect(commentsFrom(null)).toEqual([])
-    expect(commentsFrom([])).toEqual([])
+    expect(commentsFrom(null, {})).toEqual([])
+    expect(commentsFrom([], {})).toEqual([])
+  })
+
+  it('gives each comment the record of only the names it reads, empty where it mentions nobody', () => {
+    const [stop, chat] = commentsFrom([comment({ body: 'stop @igor-backend and @alice' }), comment()], IGORS)
+    expect(stop!.accounts).toEqual({ 'igor-backend': 'igor' })
+    expect(chat!.accounts).toEqual({})
   })
 })
 

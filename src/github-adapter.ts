@@ -265,8 +265,8 @@ function stopFrom(
   as: string,
   comments: readonly RawComment[],
   since: string,
+  accounts: Accounts,
   liftable = false,
-  accounts?: Accounts,
 ): { stop: ClaimVerdict } | { liftedAt?: string } | undefined {
   const floor = Date.parse(since)
   const stops = comments.filter((comment) => {
@@ -324,11 +324,11 @@ export function labelVerdictFrom(
   events: readonly RawEvent[] | undefined,
   comments: readonly RawComment[],
   since: string,
-  liftable = false,
   /** Which mentioned names are Igors; see `Accounts`. */
-  accounts?: Accounts,
+  accounts: Accounts,
+  liftable = false,
 ): ClaimVerdict {
-  const stop = stopFrom(self.login, comments, since, liftable, accounts)
+  const stop = stopFrom(self.login, comments, since, accounts, liftable)
   if (stop !== undefined && 'stop' in stop) return stop.stop
   const held: ClaimVerdict =
     stop?.liftedAt === undefined ? { status: 'held' } : { status: 'held', liftedAt: stop.liftedAt }
@@ -360,10 +360,15 @@ const isSelf = (actor: { id: number; type?: string }, self: Pick<ClaimSelf, 'acc
 
 /**
  * Pure, and total over what the endpoint can return: a deleted author comes back as null, and
- * a caller comparing identities should never have to consider undefined.
+ * a caller comparing identities should never have to consider undefined. Each comment carries the
+ * part of `accounts` for the names it reads.
  */
-export function commentsFrom(raw: readonly RawComment[] | null | undefined): Comment[] {
-  return (raw ?? []).map((c) => ({ author: c.user?.login ?? '', at: c.created_at, body: c.body ?? '' }))
+export function commentsFrom(raw: readonly RawComment[] | null | undefined, accounts: Accounts): Comment[] {
+  return (raw ?? []).map((c) => {
+    const body = c.body ?? ''
+    const own = Object.fromEntries(namesToResolve(body).flatMap((name) => (name in accounts ? [[name, accounts[name]!]] : [])))
+    return { author: c.user?.login ?? '', at: c.created_at, body, accounts: own }
+  })
 }
 
 /**
@@ -500,7 +505,7 @@ export class GitHubTracker implements Tracker {
     const puzzling = !labels.includes(self.holder) || labels.some((l) => isHolderLabel(l) && l !== self.holder)
     const events = puzzling ? await this.events(candidate) : undefined
     const accounts = await this.accountsIn((comments ?? []).map((c) => c.body ?? ''))
-    return labelVerdictFrom(self, labels, events, comments ?? [], since, options.liftable === true, accounts)
+    return labelVerdictFrom(self, labels, events, comments ?? [], since, accounts, options.liftable === true)
   }
 
   /**
@@ -557,14 +562,11 @@ export class GitHubTracker implements Tracker {
   }
 
   async commentsSince(candidate: Candidate, since: string): Promise<Comment[]> {
-    const comments = commentsFrom(
-      await ghPaginated<RawComment>([
-        'api',
-        `repos/${candidate.repo}/issues/${candidate.native}/comments?since=${encodeURIComponent(since)}&per_page=100`,
-      ]),
-    )
-    const accounts = await this.accountsIn(comments.map((c) => c.body))
-    return comments.map((c) => (namesToResolve(c.body).length === 0 ? c : { ...c, accounts }))
+    const raw = await ghPaginated<RawComment>([
+      'api',
+      `repos/${candidate.repo}/issues/${candidate.native}/comments?since=${encodeURIComponent(since)}&per_page=100`,
+    ])
+    return commentsFrom(raw, await this.accountsIn((raw ?? []).map((c) => c.body ?? '')))
   }
 
   async report(candidate: Candidate, message: string): Promise<string | undefined> {

@@ -40,19 +40,19 @@ describe('items a person handed to this Igor', () => {
   })
 
   it('answers a hand-over once: its claim since is the answer', async () => {
-    const said = [{ author: ME, at: '2026-10-10T10:01:00Z', body: claimMessage(role, ME) }]
+    const said = [{ author: ME, at: '2026-10-10T10:01:00Z', body: claimMessage(role, ME), accounts: {} }]
     const r = await findDirected(tracker([item(1)], () => person, () => said), role, ME, holding, { failures: [] })
     expect(r.directed).toEqual([])
   })
 
   it('is not answered by its own waiting notice, so removing the other label hands it over', async () => {
-    const said = [{ author: ME, at: '2026-10-10T10:01:00Z', body: waitingNotice(role, ['igor:backend']) }]
+    const said = [{ author: ME, at: '2026-10-10T10:01:00Z', body: waitingNotice(role, ['igor:backend']), accounts: {} }]
     const r = await findDirected(tracker([item(1)], () => person, () => said), role, ME, holding, { failures: [] })
     expect(r.directed).toHaveLength(1)
   })
 
   it('holds a hand-over somebody stopped after it', async () => {
-    const said = [{ author: 'adam', at: '2026-10-10T10:01:00Z', body: 'stop' }]
+    const said = [{ author: 'adam', at: '2026-10-10T10:01:00Z', body: 'stop', accounts: {} }]
     const r = await findDirected(tracker([item(1)], () => person, () => said), role, ME, holding, { failures: [] })
     expect(r.directed).toEqual([])
   })
@@ -62,7 +62,7 @@ describe('items a person handed to this Igor', () => {
     const first = await findDirected(tracker([both], () => person), role, ME, holding, { failures: [] })
     expect(first.directed).toEqual([])
     expect(first.waiting.map((w) => w.holders)).toEqual([['igor:backend']])
-    const said = [{ author: ME, at: '2026-10-10T10:01:00Z', body: waitingNotice(role, ['igor:backend']) }]
+    const said = [{ author: ME, at: '2026-10-10T10:01:00Z', body: waitingNotice(role, ['igor:backend']), accounts: {} }]
     const again = await findDirected(tracker([both], () => person, () => said), role, ME, holding, { failures: [] })
     expect(again.waiting).toEqual([])
   })
@@ -90,14 +90,14 @@ describe('an item handed over while work is in flight', () => {
   })
 
   it('is told once while that pull request stays open', async () => {
-    const said = [{ author: ME, at: '2026-10-10T10:01:00Z', body: inFlightNotice(role, '#5', 'https://github.com/o/r/pull/5') }]
+    const said = [{ author: ME, at: '2026-10-10T10:01:00Z', body: inFlightNotice(role, '#5', 'https://github.com/o/r/pull/5'), accounts: {} }]
     const r = await findDirected(tracker([inFlight], () => person, () => said), role, ME, holding, { failures: [] })
     expect(r.waiting).toEqual([])
     expect(r.directed).toEqual([])
   })
 
   it('is claimed once the pull request closes, the notice not counting as an answer', async () => {
-    const said = [{ author: ME, at: '2026-10-10T10:01:00Z', body: inFlightNotice(role, '#5', 'https://github.com/o/r/pull/5') }]
+    const said = [{ author: ME, at: '2026-10-10T10:01:00Z', body: inFlightNotice(role, '#5', 'https://github.com/o/r/pull/5'), accounts: {} }]
     const r = await findDirected(tracker([item(1)], () => person, () => said), role, ME, holding, { failures: [] })
     expect(r.directed.map((d) => d.candidate.native)).toEqual(['1'])
   })
@@ -112,14 +112,14 @@ describe('an item handed over while work is in flight', () => {
 
 describe('the claim a catch-up makes', () => {
   it('does not answer a hand-over, which still directs the Igor once its pull request closes', async () => {
-    const said = [{ author: ME, at: '2026-10-10T10:01:00Z', body: claimMessage(role, ME, true) }]
+    const said = [{ author: ME, at: '2026-10-10T10:01:00Z', body: claimMessage(role, ME, true), accounts: {} }]
     const r = await findDirected(tracker([item(1)], () => person, () => said), role, ME, holding, { failures: [] })
     expect(r.directed.map((d) => d.candidate.native)).toEqual(['1'])
   })
 })
 
 describe('a stop on a handed-over item while nothing runs', () => {
-  const stopBy = (at: string) => ({ author: 'bob', at, body: 'stop' })
+  const stopBy = (at: string) => ({ author: 'bob', at, body: 'stop', accounts: {} })
 
   it('is owed the label off and a receipt', async () => {
     const r = await findDirected(tracker([item(1)], () => person, () => [stopBy('2026-10-10T10:05:00Z')]), role, ME, holding, { failures: [] })
@@ -128,7 +128,7 @@ describe('a stop on a handed-over item while nothing runs', () => {
   })
 
   it('is not answered twice: a receipt after the stop means a run met it', async () => {
-    const said = [stopBy('2026-10-10T10:05:00Z'), { author: ME, at: '2026-10-10T10:06:00Z', body: stopReceipt(role, { status: 'stopped', by: 'bob' }) }]
+    const said = [stopBy('2026-10-10T10:05:00Z'), { author: ME, at: '2026-10-10T10:06:00Z', body: stopReceipt(role, { status: 'stopped', by: 'bob' }), accounts: {} }]
     const r = await findDirected(tracker([item(1)], () => person, () => said), role, ME, holding, { failures: [] })
     expect(r.stopped).toEqual([])
     expect(r.directed).toEqual([])
@@ -137,8 +137,8 @@ describe('a stop on a handed-over item while nothing runs', () => {
   it('keeps the hand-over cancelled after the stop is lifted', async () => {
     const said = [
       stopBy('2026-10-10T10:05:00Z'),
-      { author: ME, at: '2026-10-10T10:06:00Z', body: stopReceipt(role, { status: 'stopped', by: 'bob' }) },
-      { author: 'bob', at: '2026-10-10T10:30:00Z', body: 'go ahead' },
+      { author: ME, at: '2026-10-10T10:06:00Z', body: stopReceipt(role, { status: 'stopped', by: 'bob' }), accounts: {} },
+      { author: 'bob', at: '2026-10-10T10:30:00Z', body: 'go ahead', accounts: {} },
     ]
     const r = await findDirected(tracker([item(1)], () => person, () => said), role, ME, holding, { failures: [] })
     expect(r.directed).toEqual([])

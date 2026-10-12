@@ -19,6 +19,7 @@ import type { TreeProvider, WorkingTree } from '../src/worktree.js'
 import { serve, untilSignalled, type ServeEvent } from '../src/serve.js'
 import { labelVerdictFrom } from '../src/github-adapter.js'
 import { tempDir } from './tmp.js'
+import { IGORS } from './igors.js'
 
 const role = (over: Partial<Role> = {}): Role =>
   ({
@@ -782,7 +783,7 @@ describe('a stop said while the cycle works another item', () => {
     Object.assign(d.tracker, {
       verifyClaim: async (c: Candidate, as: string, since: string) =>
         labelVerdictFrom({ login: as, accountId: 1, holder: 'igor:triage' }, ['igor:triage'], undefined,
-          (comments[c.id] ?? []).filter((m) => Date.parse(m.updated_at) >= Date.parse(since)), since),
+          (comments[c.id] ?? []).filter((m) => Date.parse(m.updated_at) >= Date.parse(since)), since, IGORS),
       report: async (c: Candidate, m: string) => { say(c.id, 'igor-bot', m) },
     })
     const { events, onEvent } = collect()
