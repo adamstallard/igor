@@ -16,9 +16,6 @@ export const ACTIONS = [
   'draft-pr',
   'pr',
   'label',
-  'assign',
-  'unassign',
-  'close',
   'merge',
   'send',
 ] as const

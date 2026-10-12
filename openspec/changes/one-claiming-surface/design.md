@@ -77,6 +77,11 @@ refused as any key that is not a role key is. The release is specified in `work-
 completion action be permitted by `allow` and task-execution's *Completion behaviour follows
 configured policy* are removed.
 
+**Decided by Adam, 2026-10-11: `allow` names only actions something checks.** `unassign`,
+`close` and `assign` stood for completion actions and gate nothing now, so they are out of the
+vocabulary, and a role that lists one is refused at load with the same message as any unknown
+action.
+
 **Decided by Adam, 2026-10-11: the role-config spec does not single out `claim`.** Nobody will
 try to set it, and the strict key check refuses it as it refuses any key no role reads. That the
 claim message carries the stop instruction stays where it is behaviour, in `work-claiming`.

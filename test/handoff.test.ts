@@ -13,7 +13,7 @@ const candidate = (over: Partial<Candidate> = {}): Candidate =>
   ({ id: 'github:o/r#7', repo: 'o/r', native: '7', title: 'A bug', author: 'reporter', assignees: [], holders: [], labels: [], paths: [], state: 'open', ...over }) as unknown as Candidate
 
 const role = (over: Partial<Role> = {}): Role =>
-  ({ name: 'triage', reviewers: ['alice'], allow: ['comment', 'draft-pr', 'unassign'], instructions: [], ...over }) as unknown as Role
+  ({ name: 'triage', reviewers: ['alice'], allow: ['comment', 'draft-pr'], instructions: [], ...over }) as unknown as Role
 
 /**
  * An override of `undefined` means the field is absent, which is the distinction

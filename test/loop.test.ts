@@ -29,7 +29,7 @@ const candidate = (over: Partial<Candidate> = {}): Candidate =>
   ({ id: 'github:o/r#7', tracker: 'github', repo: 'o/r', native: '7', title: 'A bug', body: '', author: 'reporter', assignees: [], holders: [], labels: [], paths: [], state: 'open', ...over }) as unknown as Candidate
 
 const role = (over: Partial<Role> = {}): Role =>
-  ({ name: 'triage', reviewers: ['alice'], allow: ['comment', 'draft-pr', 'unassign'], commands: [], instructions: [], settleSeconds: 0, cooldownMinutes: 60, ...over }) as Role
+  ({ name: 'triage', reviewers: ['alice'], allow: ['comment', 'draft-pr'], commands: [], instructions: [], settleSeconds: 0, cooldownMinutes: 60, ...over }) as Role
 
 function deps(opts: {
   caughtUp?: CatchUp[]
@@ -299,7 +299,7 @@ describe('an Igor never goes silent on something it claimed', () => {
     // behind the other: the handoff names a cure, somebody makes it, and the next run stops
     // on the one nothing told them about.
     const { d, posts } = deps({ changes: [{ path: 'a.ts', kind: 'modified', content: 'x' }] })
-    const r = await runItem(d, candidate(), role({ allow: ['comment', 'unassign'] }), 'igor-bot', {
+    const r = await runItem(d, candidate(), role({ allow: ['comment'] }), 'igor-bot', {
       ...noWait,
       worker: async () => ({
         result: 'Fixed it.',

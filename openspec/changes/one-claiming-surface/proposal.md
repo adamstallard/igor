@@ -115,7 +115,8 @@ None.
 ### Modified Capabilities
 
 - `role-config`: three modified requirements (`extends` names at most one base; the keys a role
-  file supports, without `completion`; the override examples), one removed (a completion action
+  file supports, without `completion`; the `allow` vocabulary and the override examples), one
+  removed (a completion action
   must be permitted by `allow`) and one added (an Igor holds exactly one role).
 - `work-claiming`: five modified requirements (how a claim is expressed and resolved; settle
   and stand-down; who a stop is for; what follows a stop, and who a go-ahead is for; giving

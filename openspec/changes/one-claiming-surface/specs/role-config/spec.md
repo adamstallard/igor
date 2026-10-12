@@ -74,9 +74,9 @@ there is one the worker can widen for itself.
 Inheritance SHALL apply three merge semantics, selected per field:
 
 The `allow` vocabulary is a **closed set**, so a typo fails validation rather than silently
-granting nothing: `comment`, `review-comment`, `draft-pr`, `pr`, `label`, `assign`, `unassign`,
-`close`, `merge`, `send`. The safe default an org base should ship with is `[draft-pr, comment]` —
-everything reversible, nothing final.
+granting nothing: `comment`, `review-comment`, `draft-pr`, `pr`, `label`, `merge`, `send`. A role
+that lists any other word is refused at load, naming the valid actions. The safe default an org
+base should ship with is `[draft-pr, comment]` — everything reversible, nothing final.
 
 - **Monotonic** for permission-shaped fields (`allow`, `commands`, `budget_share`,
   repositories and surfaces in reach): a role MAY restrict what it inherits and MUST NOT
@@ -100,6 +100,11 @@ everything reversible, nothing final.
 - **WHEN** the org base permits the command `npm test` and a role also declares `npm install`
 - **THEN** validation fails, for the reason widening `allow` fails: a role that can grant
   itself a command can grant itself every command
+
+#### Scenario: An action outside the vocabulary is refused
+
+- **WHEN** a role's `allow` lists `unassign`
+- **THEN** the role is refused at load, naming the valid actions
 
 #### Scenario: Setting overridden
 

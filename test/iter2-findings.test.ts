@@ -109,7 +109,7 @@ describe('iteration 2 findings', () => {
         baseChanges: [{ path: 'src/a.ts', before: blobSha('base\n'), after: blobSha('theirs\n'), head: blobSha('ours\n') }] }),
       release: async () => {},
     }) } as any
-    const role = { name: 'triage', reviewers: [], allow: ['comment', 'draft-pr', 'unassign'], commands: [],
+    const role = { name: 'triage', reviewers: [], allow: ['comment', 'draft-pr'], commands: [],
       instructions: [], settleSeconds: 0, cooldownMinutes: 60, pollMinutes: 10, lane: {},
       sources: [{ tracker: 'github', repo: 'o/r', query: 'is:issue is:open' }] } as unknown as Role
     const item = { id: 'github:o/r#7', tracker: 'github', repo: 'o/r', native: '7', title: 'x', body: '',

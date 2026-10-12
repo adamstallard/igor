@@ -1185,7 +1185,7 @@ updates one and forgets three, and conventions drift: the fleet problem applied 
 less permissive than another, just different. Merge semantics are per field kind:
 
 - **Monotonic** — a role may only restrict. Permitted artifact types, repos and surfaces in
-  reach, whether it may close or reassign, budget ceiling. The org sets a maximum; a role
+  reach, commands, budget ceiling. The org sets a maximum; a role
   lowers it and can never raise it. This is where differential trust lives and where loosening
   would be self-escalation.
 - **Override** — last level wins. Seat, poll interval, settle interval, cooldown. Not
@@ -1204,8 +1204,8 @@ worth pinning before anything depends on them.
 - **Stop is unconditional and open to anyone** (§5.3).
 - **Ingested content is data, never instruction** (§5.4).
 
-Everything else — whether an Igor may close, even whether it is confined to reversible
-artifacts — is policy with a safe default. Reversible-only in particular was
+Everything else — which artifacts an Igor may open, even whether it is confined to reversible
+ones — is policy with a safe default. Reversible-only in particular was
 being treated as inviolable when it is really a strong default an org may raise for a role it
 has come to trust.
 

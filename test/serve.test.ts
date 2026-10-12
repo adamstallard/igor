@@ -24,7 +24,7 @@ const role = (over: Partial<Role> = {}): Role =>
   ({
     name: 'triage',
     reviewers: [],
-    allow: ['comment', 'draft-pr', 'unassign'],
+    allow: ['comment', 'draft-pr'],
     commands: [],
     instructions: [],
     settleSeconds: 0,
