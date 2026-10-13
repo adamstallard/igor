@@ -11,7 +11,15 @@ identity. Everything here follows from refusing to conflate the two.
 Every claim already posts a message after setting the holder field, naming the Igor and saying
 how to stop it. Processes of one role set the same label, so the message is the only part of a
 claim that can say which process took it. It gains the process's rank as a machine-readable
-trailer: a last line `Igor-Rank: 2`, in the form of a git trailer.
+trailer: a last line `Igor-Rank: 2`, in the form of a git trailer (Adam, 2026-10-13).
+
+**Which claim messages count** (Adam, 2026-10-13). Among processes of one role, the earliest
+claim message holds the item. Messages from before the item's latest release don't count: the
+latest time the role's label was removed from the item, which the item's events record. Neither
+do messages of ranks whose claims may be adopted: ranks no longer in the roster, and ranks that
+have missed three heartbeats (*Retirement is recorded, not detected*, below). Without
+that, a process taking over a dead rank's claim would always lose to the dead rank's older
+message.
 
 The alternative was a lease keyed by item on the state branch: cheaper to read and unambiguous
 to parse. It was rejected because the state branch is a cache — losing it must cost
@@ -44,15 +52,24 @@ template instances, StatefulSet ordinals. A parent process that spawned Igors an
 would be a coordinator — a single point of failure that itself needs supervising, and the thing
 this design refuses everywhere else.
 
-**Under systemd the rank is in the instance name** (Adam, 2026-10-13). The unit runs as
+**Under systemd the rank is in the instance name** (Adam, 2026-10-13). One template unit runs as
 `igor@<role>.<rank>`, such as `igor@generalist.2`, and passes the instance to
 `igor serve <role>.<rank>`, which splits it. `igor serve <role>`, with no rank, is rank 1, so an
 existing `igor@generalist` unit keeps working as rank 1. The rank is an argument rather than an
 environment variable because systemd cannot set a variable from part of an instance name.
 
-The unit reads `/etc/igor/<role>.env` for the App's credentials, one file for every rank of the
-role. systemd has no specifier for the part of an instance name before a dot, so `%i.env` would
-name `generalist.2.env`; how the unit names the role's file is an open question below.
+**A shell wrapper loads the role's credentials** (Adam, 2026-10-13). Every rank of a role reads
+one file, `/etc/igor/<role>.env`. systemd has no specifier for the part of an instance name
+before a dot, so `EnvironmentFile=/etc/igor/%i.env` would name `generalist.2.env`. Instead,
+`ExecStart` runs `/bin/sh -c`: the script takes the role from the instance name, loads the role's
+file into its environment, and `exec`s `igor serve` with the instance. Task 1.3 gives the exact
+lines. Only the instance name is passed as an argument, so no credential appears in a process's
+argument list, where any user on the host can read it.
+
+The script loads the file with the shell's dot command, `. "/etc/igor/<role>.env"`, not with
+systemd's `EnvironmentFile=`, so the file must be valid shell: `KEY=value` lines, with a value
+holding spaces or newlines in quotes. If the file is missing, the dot command fails and the unit
+does not start.
 
 Note the layering: the `claude -p` worker is not an Igor. It is one short-lived subprocess per
 item with no identity, no claim, and no rank. The Igor is the long-running process that polls.
@@ -111,14 +128,28 @@ next cycle, and the human action is the edit already being made.
 Counting instances at runtime would be a registry. Being told what exists is configuration.
 
 An abandonment bound backs up the restart and the roster, for the one case neither covers: a
-rank left in the roster that no longer runs. **A rank is gone when it has recorded no cycle for
-three of its role's poll intervals**, 30 minutes at the default 10-minute poll (Adam,
-2026-10-13). The bound is that fixed multiple of the poll interval; it has no setting of its own.
-Any process of the role may take a gone rank's claims. So every cycle has to be recorded with its
-role and rank on the state branch, including a cycle that found nothing; where, and how a
-process working one long item keeps recording, is open question 3.
+rank left in the roster that no longer runs.
 
-The bound governs how long an *unattended claim* may sit, not how long *work* may run.
+**Each rank writes a heartbeat** (Adam, 2026-10-13). Every process overwrites its own small file
+on the state branch, `heartbeats/<role>.<rank>.json`, holding the time it wrote it, once every
+poll interval. It keeps doing so while a worker runs, from a timer beside the run rather than
+from the cycle. **A rank is gone when it has missed three heartbeats**: its file is older than
+three of its role's poll intervals, 30 minutes at the default 10-minute poll. The bound is that
+fixed multiple of the poll interval; it has no setting of its own. Any process of the role may
+take a gone rank's claims.
+
+A heartbeat rather than a record written once per cycle, such as a line in `decisions.ndjson`,
+because a process works its items inside the cycle: a per-cycle record goes quiet for as long as
+a run lasts, and a run longer than the bound would make a working rank look gone. The heartbeat
+keeps a working rank counted, which is what makes the `work-claiming` scenario *The bound does
+not shorten a run* true.
+
+One file per rank means a write replaces only that rank's own heartbeat. It does not avoid write
+conflicts: a write to any path on the state branch is rejected while another write moves the
+branch (see *State becomes append-only*). A rejected heartbeat is retried like any other write,
+and a retry cannot overwrite a sibling's file.
+
+The bound governs how long an *unattended claim* may sit, never how long *work* may run.
 
 ### State becomes append-only
 
@@ -142,7 +173,10 @@ meet the same requirement differently.
 
 Decided by Adam, 2026-10-13. Each line of the `discovery.json` log names its source, its rank and
 its mark. The replay takes each rank's latest mark for a source, and uses the lowest of those
-from ranks that still count. A rank past the abandonment bound stops counting.
+from ranks that still count. A rank past the abandonment bound stops counting. When no rank
+counts, such as after every process of a role has been down past the bound, the replay uses the
+lowest of every rank's latest mark rather than starting cold: a cold start would triage every
+issue of the last 7 days (`COLD_START_DAYS`) again.
 
 The two errors cost different things. A mark too low makes a process triage some items again. A
 mark too high skips items a sibling has not yet taken, and nothing brings those items back until
@@ -160,40 +194,39 @@ the log protects other roles' marks as #101's re-read does.
 
 A working tree's name carries its role and rank. At startup a process removes the trees of its
 own role and rank, which its dead predecessor left, and those of ranks the roster no longer
-declares. It never removes another declared rank's, so it needs no age, and nothing in this
-change depends on the absolute ceiling any more; PR #101 does (open question 5). Adam decided on 2026-10-13 to remove `ABSOLUTE_CEILING_MS`
-entirely, including the worker's 6-hour kill.
+declares. It never removes another declared rank's, so it needs no age (Adam, 2026-10-13). It
+leaves a gone rank's trees too: a sibling may take a gone rank's claims, but deleting a tree
+that is still in use corrupts a run, and leaving one costs only disk.
 
-What still bounds a worker: the silence windows kill one whose stream goes quiet. Nothing kills a
-worker that keeps emitting events and never finishes. Nor does the abandonment bound stop such a
-worker: it lets another process take the claim, and the original worker keeps running. That is an open question
-below, not a decision.
+Adam decided on 2026-10-13 to remove `ABSOLUTE_CEILING_MS` entirely, including the worker's
+6-hour kill.
+
+**What bounds a worker once the ceiling is gone** (Adam, 2026-10-13). The silence windows kill a
+worker whose stream goes quiet. A worker that keeps emitting events and never finishes is not
+killed by any limit; that is accepted. Two things contain it instead. A person can stop it: a stop
+is honoured mid-run at the next checkpoint (`surface-adapter`, scenario *Stop is detected during
+long execution*). And the seat's reserve line, from `budget-pacing` (#143), stops new items once
+the seat's spend crosses it, so a runaway worker cannot draw others after it. `budget-pacing` is
+not built; until it is, the stop alone contains such a worker, and this change does not wait for
+it.
+
+**A probe lapses on heartbeats** (Adam, 2026-10-13). PR #101, which builds `condition-backoff`
+and is not merged, lets one item through after a recurring fault stops a role or seat, to test
+whether the fault has cleared: a probe. It lapses a probe that never ends after `SWEEP_AFTER_MS`,
+the ceiling plus an hour. Under this change a probe records its rank, and lapses when that rank
+misses three heartbeats, as any work of a gone rank does. Whichever of #101 and this change's
+build lands second makes that edit (task 4.9).
 
 ## Open questions
 
-1. **How does the unit read `/etc/igor/<role>.env` from the instance `<role>.<rank>`?** systemd
-   cannot take the part before the dot. Options: start through `/bin/sh -c`, which sources the
-   role's file and then runs `igor serve`; a per-rank file, `/etc/igor/<role>.<rank>.env`,
-   linked to the role's; or name units `igor-<role>@<rank>`, where `%j` is the role, which drops
-   `igor@<role>.<rank>`.
-2. **What stops a worker that never finishes?** With the ceiling gone, only the silence windows
-   bound a worker, and a worker that emits events at intervals satisfies them forever.
-3. **How is a cycle recorded, and does a long run make its rank look gone?** `decisions.ndjson`
-   skips cycles that decided nothing, so as it stands it cannot be the record; a record of its
-   own costs a commit to the state branch per rank per poll. And a process works its items inside
-   the cycle, so it records no cycle while a worker runs. A run longer than 30 minutes would then
-   make its rank gone, a sibling would take its claim, and the original worker would go on and
-   could publish too. That breaks the `work-claiming` scenario *The bound does not shorten a run*,
-   which stands as written until this is answered. Either a working process records that it is
-   alive while its worker runs, or the bound applies to runs.
-4. **What mark applies when no rank counts?** After every process of a role has been down past
-   the bound, no rank's mark counts, and discovery would start cold, looking back the 7 days
-   (`COLD_START_DAYS`) it gives a source with no mark. The alternative is the lowest latest mark of
-   any rank.
-5. **What does PR #101's probe lapse on?** After a fault stops a role or seat, `condition-backoff`
-   lets one item through to test whether it has cleared: a probe. A probe that never ends lapses
-   after `SWEEP_AFTER_MS`, the ceiling plus an hour, which removing the ceiling removes. It needs
-   an answer before task 4.6 is built.
+1. **Does a lost state branch make every rank look gone?** The heartbeats live on the state
+   branch, which `work-discovery` treats as a cache whose loss costs re-examination, never
+   correctness. If the branch is lost or reset, every heartbeat goes with it, and each rank looks
+   gone until it next writes one: up to one poll interval. A sibling reading in that window may
+   adopt a live rank's claim, and two workers then run one item. The rank-in-the-claim decision
+   above rejected a lease on the state branch for the same reason. Options: a rank with no
+   heartbeat file at all counts as alive rather than gone, so only a stale file means gone; or
+   accept the window.
 
 ## Roads not taken
 
@@ -203,10 +236,9 @@ retractions. Ranking removes them.
 **Per-process state files.** Measured false: the conflict is on the ref.
 
 **A heartbeat on the claim.** The working process periodically edits its own claim comment, so
-its `updated_at` means "alive as of a minute ago". It is the only mechanism that makes runs
-unbounded *and* recovery immediate, and it is ten lines. Held in reserve rather than built,
-because identity already covers restart and the roster covers retirement, and a heartbeat that
-is not needed is a schedule of writes on somebody's issue.
+its `updated_at` means "alive as of a minute ago". Rejected in favour of the per-rank heartbeat
+on the state branch: an edit every poll interval is a schedule of writes on somebody's issue, and one
+file per rank covers every claim the rank holds.
 
 **Partitioning work between processes.** Removes the race rather than resolving it, and needs a
 coordinator.

@@ -50,17 +50,20 @@ not a claim nobody is behind.
 
 **The worker's absolute ceiling goes.** `ABSOLUTE_CEILING_MS` killed a worker after 6 hours, and
 set the age past which the startup sweep deleted a working tree. The sweep now goes by rank, and
-Adam decided on 2026-10-13 to remove the ceiling entirely. What then stops a worker that never
-finishes is an open question in the design.
+Adam decided on 2026-10-13 to remove the ceiling entirely. A worker that keeps emitting events
+and never finishes is then killed by no limit, which is accepted: a person's stop is honoured at
+the next checkpoint. Once `budget-pacing` (#143) is built, the seat's reserve line, a spend
+threshold per seat, also stops new items; this change does not wait for it.
 
 **Retiring a rank is recorded, not detected.** A crash is not retirement: the supervisor restarts
 the process and it recovers its own claim. Removing a process is a decision, and the roster — the
 ranks that exist, declared like seats — is where it is recorded, so scaling down releases the
 orphan on the next cycle. An abandonment bound backs it up for the one case the roster cannot
-cover, a rank left declared that no longer runs: a rank that has recorded no cycle for three of
-its role's poll intervals, 30 minutes at the default poll, is gone, and any process may take its
-claims. The bound governs how long an unattended claim may sit, never how long work may run;
-whether a long run makes its rank look gone is open question 3 in the design.
+cover, a rank left declared that no longer runs. Each process writes a heartbeat to its own file
+on the state branch every poll interval, including while a worker runs. A rank that misses three
+heartbeats, 30 minutes at the default poll, is gone, and any process may take its claims. The
+bound governs how long an unattended claim may sit, never how long work may run: a working
+process keeps writing heartbeats.
 
 **Discovery may hand the same candidate to several processes**, and that is allowed to happen.
 Watermarks are a cache, so the cost is duplicated triage rather than duplicated work; the claim
@@ -69,8 +72,10 @@ design has done without everywhere else.
 
 **Processes saving one source keep the lower watermark.** Each rank's latest mark for a source
 counts, and discovery uses the lowest of them, until a rank passes the abandonment bound and stops
-counting. A mark too low costs repeated triage; a mark too high skips items a sibling has not
-taken, until the issue is updated again, such as by a new comment.
+counting. A mark is an issue update time, and discovery triages only issues updated after it.
+A mark too low costs repeated triage; a mark too high skips issues a sibling has not taken,
+until the issue is updated again, such as by a new comment. When every rank is gone,
+discovery uses the lowest of every rank's latest mark rather than starting cold.
 
 **Each process has a rank, and rank decides both where it starts and when it may act.**
 
@@ -148,8 +153,8 @@ Explicitly out of scope:
 
 - `work-claiming`: A claim is held by the process that took it, not by the role's identity.
   Verification distinguishes a sibling process from the Igor itself, candidates are attempted
-  in an order that differs between processes, and a rank that records no cycle for three poll
-  intervals releases its claims.
+  in an order that differs between processes, and a rank that misses three heartbeats releases
+  its claims.
 - `work-discovery`: A conflicted state write is retried rather than failing the cycle, and
   processes saving one source keep the lower watermark.
 - `task-execution`: The worker's absolute ceiling is removed, and the startup sweep removes

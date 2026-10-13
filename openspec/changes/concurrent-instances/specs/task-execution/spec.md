@@ -5,8 +5,10 @@
 **Reason**: Adam decided on 2026-10-13 to remove the absolute ceiling (`ABSOLUTE_CEILING_MS`, 6
 hours), including the worker's kill at it. Its other use, the tree sweep's threshold, is
 replaced by rank in *The startup sweep removes trees by rank, never by age*. The silence windows
-still kill a worker that goes quiet. Nothing kills a worker that keeps emitting events and never
-finishes; the change's design records that as an open question.
+still kill a worker that goes quiet. A worker that keeps emitting events and never finishes is
+killed by no limit, which Adam accepted: a stop is honoured at the next checkpoint. Once the
+`budget-pacing` change is built, the seat's reserve line, a spend threshold per seat, also stops
+new items. The change's design says more.
 
 **Migration**: None. No setting named the ceiling.
 

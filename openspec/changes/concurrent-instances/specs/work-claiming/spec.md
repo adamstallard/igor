@@ -147,18 +147,20 @@ because the context that knew what it was doing died with the process.
 ### Requirement: A retired rank does not hold its items forever
 
 A claim held by a rank the configuration no longer declares SHALL be adoptable by any process
-of the role. So SHALL a claim held by a rank past the abandonment bound: a rank that has
-recorded no cycle for three of its role's poll intervals, which is 30 minutes at the default
-10-minute poll. Every cycle a process runs SHALL therefore be recorded on the state branch with
-its role and rank, including a cycle that found nothing to do.
+of the role. So SHALL a claim held by a rank past the abandonment bound: a rank that has missed
+three heartbeats.
+
+Every process SHALL write a heartbeat once every poll interval, including while a worker runs:
+it overwrites a file of its own on the state branch, named by its role and rank, with the time
+of writing. A rank has missed three heartbeats when its file is older than three of its role's
+poll intervals, which is 30 minutes at the default 10-minute poll.
 
 Retiring a process is a decision rather than an event, so the roster records it and nothing has
 to detect it. The bound covers only the case the roster cannot: a rank left declared that no
 longer runs.
 
-The bound governs how long an unattended claim may sit, never how long work may run. How a
-process working one long item keeps its rank counted, and where cycles are recorded, are open
-questions in the change's design.
+The bound governs how long an unattended claim may sit, never how long work may run. A process
+working an item keeps writing heartbeats, so its rank stays counted however long the run takes.
 
 #### Scenario: Scaling down releases the orphan
 
@@ -167,7 +169,7 @@ questions in the change's design.
 
 #### Scenario: A declared rank that stopped running
 
-- **WHEN** a claim's rank is still declared and has recorded no cycle for three poll intervals
+- **WHEN** a claim's rank is still declared and has missed three heartbeats
 - **THEN** another process may take the item
 
 #### Scenario: An adopted claim holds the item
@@ -177,5 +179,13 @@ questions in the change's design.
 
 #### Scenario: The bound does not shorten a run
 
-- **WHEN** a process is working an item it holds
-- **THEN** no bound on unattended claims applies to it
+- **WHEN** a process is working an item it holds for longer than three poll intervals
+- **THEN** it keeps writing heartbeats, its rank is not gone, and no other process may take the
+  item
+
+#### Scenario: A heartbeat replaces only its own rank's
+
+- **WHEN** two ranks of one role write heartbeats at the same time, and the state branch rejects
+  one because the other moved the branch first
+- **THEN** the rejected one is retried, it overwrites only its own file, and both heartbeats are
+  present afterwards

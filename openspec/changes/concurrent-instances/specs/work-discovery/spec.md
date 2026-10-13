@@ -62,19 +62,27 @@ wins, even though it repeats some triage.
 
 A process that has stopped running would hold the mark down forever, re-triaging everything
 after it every cycle. The abandonment bound is already how long a silent rank's claims are kept,
-so it is also how long its mark is. Which mark applies when no rank counts, such as after every
-process of a role has been down past the bound, is an open question in the change's design.
+so it is also how long its mark is.
+
+When no rank counts, such as after every process of a role has been down past the bound,
+discovery SHALL use the lowest of every rank's latest mark. Starting cold instead would triage
+again every item updated within the lookback a source with no mark gets, 7 days.
 
 #### Scenario: A lagging rank holds the mark down
 
-- **WHEN** rank 1 has saved a mark later than rank 2's for the same source, and both have
-  recorded a cycle within the bound
+- **WHEN** rank 1 has saved a mark later than rank 2's for the same source, and neither has
+  missed three heartbeats
 - **THEN** discovery uses rank 2's mark
 
 #### Scenario: A gone rank stops holding it
 
-- **WHEN** rank 2 has recorded no cycle for three poll intervals
+- **WHEN** rank 2 has missed three heartbeats
 - **THEN** its mark no longer counts, and discovery uses the lowest mark among the ranks that do
+
+#### Scenario: Every rank gone
+
+- **WHEN** every rank that saved a mark for a source has missed three heartbeats
+- **THEN** discovery uses the lowest of those ranks' latest marks, not a cold start
 
 #### Scenario: A rank's own later save replaces its earlier one
 
