@@ -32,13 +32,15 @@ format is the one thing in this change that is expensive to get wrong.
 
 ## Decisions
 
-**Store format: one markdown file per entry, in git, under a configurable path.**
+**Store format: one markdown file per entry, in git, at the root of the team's lore repository.**
 Git gives diffability — which is how drift is detected later — plus a review workflow that
 already exists, greppability, and survival across model and vendor changes. A database
 would retrieve faster and review worse; retrieval speed is irrelevant at a store size
-deliberately capped in the hundreds. Lore lives at a configured path (default `lore/`) in
-the repo being operated on, not inside Igor itself, because lore is the operating team's
-data while Igor is the tool acting on it.
+deliberately capped in the hundreds. The lore repository is a repository the team owns for its
+lore and its Igor configuration. It is not Igor's codebase, because lore is the team's data and
+Igor is only the tool acting on it. It is not one of the repositories being mined either, for the
+reasons under Settled Questions. Every entry lives there, whether a person wrote it or mining
+drafted it.
 
 The filename is the entry id. Frontmatter:
 
@@ -359,15 +361,23 @@ rather than a prediction of what the implementation will achieve.
 ## Open Questions
 
 - Which embedding model for clustering, and does it run locally or through an API? Affects
-  whether repository content leaves the environment. Deferred until mining resumes.
+  whether repository content leaves the environment. Deferred until mining resumes. Mining
+  means building lore entries from a team's review history. It is paused while Igor's own work
+  loop is built out, and only 3 of this change's 33 tasks are done, none of which needs an
+  embedding model.
 
 ## Settled Questions
 
-- **Decided (Adam, 2026-10-11): mined lore goes to the team's own lore repository, not to a
-  path inside the repository being mined.** A store inside another repository takes that
-  repository's access, visibility and lifecycle. So Igor refuses, when it loads its
-  configuration, a store that is not at the root of its own repository (`docs/architecture.md`
-  §6.7). For Igor's own codebase the lore repository is `igor-lore`.
+- **Decided (Adam, 2026-10-11; confirmed 2026-10-13): mined lore goes to the team's own lore
+  repository, not to a path inside the repository being mined.** A store inside a code
+  repository would get the code's access, visibility and lifecycle instead of settings chosen
+  for lore: anyone who may push code could propose an entry, a public code repository would
+  publish the lore, and archiving the code would archive the lore.
+  Igor enforces part of this. When it loads its configuration, it refuses a lore store in a
+  subdirectory, the usual way lore ends up inside a code repository (`docs/architecture.md`
+  §6.7). It cannot tell a lore repository from a code repository, so a store at the root of a
+  code repository passes that check; keeping the two apart is still required of the team.
+  The team that works on Igor keeps its lore in `igor-lore`, which exists today.
 
 ## Sources, ranked by evidence rather than by volume
 
