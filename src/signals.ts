@@ -47,12 +47,33 @@ const STOP = verb('stop')
 const GO_AHEAD = verb('go ahead|go on|resume|carry on|continue|proceed|unblocked|all yours')
 
 function addressed(text: string, identity: string, verb: RegExp): boolean {
+  const mention = mentionOf(identity)
+  if (mention === undefined) return false
+  // Every mention of the name is tried, so one in passing earlier in the comment does not hide a
+  // later "@name stop". A mention on a quoted line (`> `) is someone else's words being quoted,
+  // so it never addresses this Igor.
+  for (const found of text.matchAll(mention)) {
+    const lineStart = text.lastIndexOf('\n', found.index) + 1
+    if (QUOTED_LINE.test(text.slice(lineStart, found.index))) continue
+    if (verb.test(text.slice(found.index + found[0].length).trim())) return true
+  }
+  return false
+}
+
+/** Whether a line is quoted, tested on the line from its start up to a mention on it. */
+const QUOTED_LINE = /^\s*>/
+
+/**
+ * A mention of `identity` and any further mentions up to where the verb would start, or
+ * `undefined` for an identity whose `bareName` is empty, such as `@` or `[bot]`.
+ */
+function mentionOf(identity: string): RegExp | undefined {
   // A GitHub App's bot is `<slug>[bot]` to REST and `<slug>` to GraphQL and to a person
   // typing a mention, so the name matches with or without the suffix. The lookbehind refuses a
   // name that ends another one (`@code-reviewer`, `bob@reviewer`, `@org/reviewer`); the
   // lookahead ends the name where `\b` cannot, after the `]`.
   const named = escapeRegExp(bareName(identity))
-  if (named === '') return false
+  if (named === '') return undefined
   // Further mentions may sit between the name and the verb, joined by spaces, commas, `and`, `or`,
   // `and/or`, `&`, `/` or `+`, so `@a @b stop`, `@a and @b stop`, `@a or @b stop` and `@a/@b stop`
   // are addressed to each. Any mention may sit in markup or brackets (`` `@a` ``, `**@a**`,
@@ -64,18 +85,10 @@ function addressed(text: string, identity: string, verb: RegExp): boolean {
   // In `others` a name never ends on `_`, so trailing underscores are always emphasis and the
   // match stays linear rather than trying every split of a run of them between name and markup.
   const others = `(?:(?:${SPACE}*[,:&+/–—-][\\s,:&+/–—-]*|${SPACE}+)(?:(?:and|or)(?:/(?:and|or))?\\s+)?${OPENERS}@[\\w.-]*[A-Za-z0-9.-]${BOT}${CLOSERS})*`
-  const mention = new RegExp(
+  return new RegExp(
     `(?:(?<![${NAME_CHARS}])@?|(?<=/)@|(?<=(?:^|[^${NAME_CHARS}])_+)@)${named}${BOT}(?!_*[A-Za-z0-9])${CLOSERS}${others}[\\s,:–—-]+`,
     'gi',
   )
-  // Every mention of the name is tried, so one in passing earlier in the comment does not hide a
-  // later "@name stop". A mention on a quoted line (`> `) is somebody else's words, not this one.
-  for (const found of text.matchAll(mention)) {
-    const lineStart = text.lastIndexOf('\n', found.index) + 1
-    if (/^\s*>/.test(text.slice(lineStart, found.index))) continue
-    if (verb.test(text.slice(found.index + found[0].length).trim())) return true
-  }
-  return false
 }
 
 /**
@@ -194,26 +207,21 @@ function namesAfter(
   text: string,
   verb: RegExp,
 ): { list: string[]; endsOnWord: boolean; later: string[]; laterEndsOnWord: boolean } {
-  const mention = new RegExp(`${OPENERS}@(${LOGIN}${BOT})${POSSESSIVE}${CLOSERS}${POSSESSIVE}`, 'iy')
-  const separator = new RegExp(
-    String.raw`${SPACE}*(?:,${SPACE}*(?:\n${SPACE}*)?)?(?:(?:&|\+|\/|\band\b|\bor\b)(?:\/(?:and|or)\b)?${SPACE}*(?:\n${SPACE}*)?)?`,
-    'iy',
-  )
   const rest = text.slice(verb.exec(text)?.[0].length ?? 0)
   const list: string[] = []
-  let at = new RegExp(String.raw`^${SPACE}*(?:[:,—–-]+${SPACE}*(?:\n${SPACE}*)?)?`).exec(rest)![0].length
+  let at = LIST_START.exec(rest)![0].length
   let end = at
   for (;;) {
-    mention.lastIndex = at
-    const found = mention.exec(rest)
+    LIST_MENTION.lastIndex = at
+    const found = LIST_MENTION.exec(rest)
     if (found === null) break
     list.push(found[1]!)
-    end = mention.lastIndex
-    separator.lastIndex = end
-    separator.exec(rest)
-    at = separator.lastIndex
+    end = LIST_MENTION.lastIndex
+    LIST_SEPARATOR.lastIndex = end
+    LIST_SEPARATOR.exec(rest)
+    at = LIST_SEPARATOR.lastIndex
   }
-  const endsOnWord = list.length > 0 && new RegExp(`^${INTO_WORD}`).test(rest.slice(end))
+  const endsOnWord = list.length > 0 && ENDS_ON_WORD.test(rest.slice(end))
   const crossed = rest.slice(list.length > 0 ? end : 0, at).includes('\n')
   const line = crossed ? '' : rest.slice(at).split('\n', 1)[0]!
   const mentions = [...line.matchAll(MENTION)]
@@ -223,6 +231,28 @@ function namesAfter(
     last !== undefined && RUNS_ON.test(line.slice(last.index + last[0].length))
   return { list, endsOnWord, later, laterEndsOnWord }
 }
+
+/**
+ * What may come between the verb and the first name: spaces, then optionally a colon, comma or
+ * dash followed by spaces and at most one line break. It may match nothing.
+ */
+const LIST_START = new RegExp(String.raw`^${SPACE}*(?:[:,—–-]+${SPACE}*(?:\n${SPACE}*)?)?`)
+
+/**
+ * One name in the list after the verb. It is sticky, like `LIST_SEPARATOR`, and one instance of
+ * each serves every call: that is safe only because `namesAfter` sets `lastIndex` before each
+ * `exec`.
+ */
+const LIST_MENTION = new RegExp(`${OPENERS}@(${LOGIN}${BOT})${POSSESSIVE}${CLOSERS}${POSSESSIVE}`, 'iy')
+
+/** What joins two names in that list. */
+const LIST_SEPARATOR = new RegExp(
+  String.raw`${SPACE}*(?:,${SPACE}*(?:\n${SPACE}*)?)?(?:(?:&|\+|\/|\band\b|\bor\b)(?:\/(?:and|or)\b)?${SPACE}*(?:\n${SPACE}*)?)?`,
+  'iy',
+)
+
+/** What follows the list when it runs straight on into a word. */
+const ENDS_ON_WORD = new RegExp(`^${INTO_WORD}`)
 
 /** What follows a mention that runs straight on into a word, past a possessive or closing markup. */
 const RUNS_ON = new RegExp(`^${POSSESSIVE}${CLOSERS}${POSSESSIVE}${INTO_WORD}`)
@@ -248,7 +278,34 @@ export function namesToResolve(body: string): string[] {
 
 /** A login as an account record keys it: lower case, without `@` or the `[bot]` a bot carries. */
 export function bareName(name: string): string {
-  return name.replace(/^@/, '').replace(/\[bot\]$/i, '').toLowerCase()
+  return name.replace(LEADING_AT, '').replace(TRAILING_BOT, '').toLowerCase()
+}
+
+const LEADING_AT = /^@/
+const TRAILING_BOT = /\[bot\]$/i
+
+/**
+ * Every pattern this module matches with, by name, with the mention of `identity` built as
+ * `isStop` and `isGoAhead` build it (none when its `bareName` is empty). A test checks that each
+ * runs in linear time, and fails on a pattern the module runs that is missing here, provided its
+ * sample comments reach that pattern.
+ */
+export function grammarPatterns(identity: string): Record<string, RegExp> {
+  const mention = mentionOf(identity)
+  return {
+    STOP,
+    GO_AHEAD,
+    ...(mention === undefined ? {} : { mentionOf: mention }),
+    QUOTED_LINE,
+    LIST_START,
+    LIST_MENTION,
+    LIST_SEPARATOR,
+    ENDS_ON_WORD,
+    RUNS_ON,
+    MENTION,
+    LEADING_AT,
+    TRAILING_BOT,
+  }
 }
 
 /** Whether a mentioned name is this identity, spelled with or without the `[bot]` a bot carries. */
