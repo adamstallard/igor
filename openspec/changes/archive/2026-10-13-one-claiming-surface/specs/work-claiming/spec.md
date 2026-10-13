@@ -70,7 +70,7 @@ the claim saw lifted. For a handed-over item the stop stands.
 - **WHEN** a re-read after the settle interval shows the Igor still holding the claim
 - **THEN** work proceeds
 
-#### Scenario: Claim lost to another party
+#### Scenario: Claim lost to an earlier writer
 
 - **WHEN** a re-read shows another party holds the item
 - **THEN** the Igor stands down and performs no work

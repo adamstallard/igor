@@ -1,6 +1,27 @@
 ## MODIFIED Requirements
 
-### Requirement: Adapters declare how a claim is expressed
+### Requirement: A GitHub adapter ships with this change
+
+A GitHub adapter SHALL implement both the tracker and code-host roles: searching issues,
+claiming, verifying a claim, reporting status, producing a draft pull request, and linking it to
+the item. An Igor on GitHub is a GitHub App, so the adapter SHALL claim by the Igor's
+`igor:<role>` label and SHALL NOT claim by assignment. Machine-user identities are not
+supported.
+
+#### Scenario: GitHub adapter satisfies the interface
+
+- **WHEN** the GitHub adapter is used as the only configured surface
+- **THEN** discovery, claiming, verification, reporting, artifact production and linkage all
+  succeed through it
+
+#### Scenario: Claim is a label
+
+- **WHEN** the GitHub adapter claims for an Igor
+- **THEN** it adds the Igor's `igor:<role>` label and does not attempt assignment
+
+## ADDED Requirements
+
+### Requirement: An adapter declares how a claim is expressed
 
 A tracker adapter SHALL declare its native **holder field**, a field naming who has the item.
 This declaration determines how a claim is *expressed*, not how it is resolved.
@@ -43,21 +64,13 @@ name.
 - **THEN** the loop does not claim an item assigned to a person unless the holder field names
   this Igor
 
-### Requirement: A GitHub adapter ships with this change
+## REMOVED Requirements
 
-A GitHub adapter SHALL implement both the tracker and code-host roles: searching issues,
-claiming, verifying a claim, reporting status, producing a draft pull request, and linking it to
-the item. An Igor on GitHub is a GitHub App, so the adapter SHALL claim by the Igor's
-`igor:<role>` label and SHALL NOT claim by assignment. Machine-user identities are not
-supported.
+### Requirement: Adapters declare how a claim is expressed
 
-#### Scenario: GitHub adapter satisfies the interface
+**Reason**: Its scenario *Message-only surface declared* no longer holds: an organization's Igors
+claim on one tracker, through its holder field, and no surface expresses a claim as a post alone.
+OpenSpec will not archive a `MODIFIED` block that drops a scenario.
 
-- **WHEN** the GitHub adapter is used as the only configured surface
-- **THEN** discovery, claiming, verification, reporting, artifact production and linkage all
-  succeed through it
-
-#### Scenario: Claim is a label
-
-- **WHEN** the GitHub adapter claims for an Igor
-- **THEN** it adds the Igor's `igor:<role>` label and does not attempt assignment
+**Migration**: Replaced by *An adapter declares how a claim is expressed*, added by this change,
+which keeps every other rule and scenario.
