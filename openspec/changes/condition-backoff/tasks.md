@@ -44,8 +44,12 @@
       B, is chosen on the next cycle with no probe taken
 - [x] 3.6 Settle the discovery watermark after the items are worked, keeping it earlier than any
       item a cycle chose to claim and never took: because a condition opened, the budget ran out,
-      or its claim never landed on the tracker. The `work-discovery` delta says so. Test: the
-      untaken item is triaged again next cycle
+      or the tracker gave no answer to its claim. An item whose claim the tracker answered and
+      refused is passed (Adam, 2026-10-13): every retry would meet the same refusal until the item
+      or a permission changed, and holding the mark would triage every later item again each
+      cycle. The `work-discovery` delta says so. Tests: an item left untaken by a budget, a
+      condition or an unanswered claim is triaged again next cycle; one whose claim the tracker
+      refused is not
 
 ## 4. Clearing
 

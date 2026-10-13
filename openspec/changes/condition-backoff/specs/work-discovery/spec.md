@@ -17,10 +17,18 @@ which is the efficiency this requirement already declines to treat as governing.
 costs is the items themselves: marked seen, never rediscovered, never worked.
 
 A cycle has not acted on an item triage chose to work until it takes that item. Where a cycle does
-not take one, because its budget ran out, a condition stopped its scope part-way through, or its
-claim never landed on the tracker, the watermark SHALL NOT advance past that item. Passed by the
+not take one, because its budget ran out, a condition (a fault in the Igor's own configuration that
+recurs on every item) stopped it part-way through, or the tracker gave no answer to its claim, the watermark SHALL NOT advance past that item. Passed by the
 mark, the item would be marked seen and never worked, with no decision against it to justify the
 loss.
+
+Where the tracker answered the claim and refused it, the watermark SHALL advance past the item as
+past one taken. Such a refusal is about the item or about what the Igor may do, such as a GitHub
+App without permission to add the claim label, and a retry would be refused the same way until the
+item or that permission changed. The watermark is one timestamp per source, so holding it below
+the item would also triage every item updated after it again, each cycle, while the refusal
+lasted. This accepts that the item, once passed, is reconsidered only after somebody edits or
+comments on it.
 
 #### Scenario: Seen items not re-triaged
 
@@ -44,8 +52,14 @@ loss.
   out or a condition stopped its scope
 - **THEN** the next cycle reconsiders the second
 
-#### Scenario: An item whose claim never landed is seen again
+#### Scenario: An item whose claim got no answer is seen again
 
-- **WHEN** a cycle decides to work an item and the tracker fails its claim before recording it,
-  so nothing is posted on the item
+- **WHEN** a cycle decides to work an item and its claim fails because the tracker gave no answer,
+  such as a server error or a request that never arrived, so nothing is posted on the item
 - **THEN** the next cycle reconsiders that item
+
+#### Scenario: An item whose claim the tracker refused is passed
+
+- **WHEN** a cycle decides to work an item and the tracker answers its claim with a refusal: it
+  rejects the request, or accepts it and the claim is not on the item when read back
+- **THEN** the watermark advances past that item as past one the cycle took

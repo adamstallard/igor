@@ -27,6 +27,15 @@ export interface ClaimResult {
    */
   surfaceFailed?: true
   /**
+   * Set on a refusal where the tracker gave no answer: the call failed with no HTTP status, a
+   * 5xx, a 408, a 429 or a 403 rate limit. A later cycle may succeed, so `serve` and `igor run`
+   * keep the discovery watermark below the item (`passesMark`). Unset where the tracker answered
+   * and refused, with another 4xx or by `claim()` reading back false (that branch returns before
+   * the catch that sets this), and then the watermark moves past the item. `surfaceFailed` is a
+   * separate question: whether the cycle should stop, which any throw here may mean.
+   */
+  unanswered?: true
+  /**
    * Set where standing down left the holder field set. The caller owes the correction on a
    * `stopped` claim, because the sentence it corrects is the caller's stop receipt and a
    * correction written before it stands above the claim it answers. A `lost` claim gets no
@@ -213,6 +222,23 @@ const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms
 
 const why = (error: unknown): string => (error instanceof Error ? error.message : String(error))
 
+/**
+ * Whether a failed tracker call got no answer, as opposed to a refusal. Read from the HTTP status
+ * an adapter's error carries (`GhError.status` on GitHub). No answer is no status at all, a
+ * 5xx, a 408, a 429, or a 403 whose message says it is a rate limit. Every other status is an
+ * answer: the tracker refusing this request.
+ *
+ * GitHub answers its primary and secondary rate limits with a 403 as often as a 429, so the
+ * status alone cannot tell a limit from a permission refusal. Read as a refusal, a limit would let
+ * the discovery watermark move past an item a later cycle could have claimed.
+ */
+function unanswered(error: unknown): boolean {
+  const status = (error as { status?: unknown } | undefined)?.status
+  if (typeof status !== 'number') return true
+  if (status === 403) return /rate limit/i.test(why(error))
+  return status >= 500 || status === 408 || status === 429
+}
+
 export interface ClaimOptions {
   /** Injected so tests do not wait, and so a dry run can pass a zero. */
   wait?: (ms: number) => Promise<void>
@@ -367,6 +393,7 @@ export async function takeClaim(
       candidate,
       claimedAt,
       surfaceFailed: true,
+      ...(unanswered(error) ? { unanswered: true as const } : {}),
       spoke: announced,
       reason:
         releaseRefused === undefined

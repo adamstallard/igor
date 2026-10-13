@@ -177,9 +177,20 @@ after the one that opened a condition is not taken.
   item updated after an untaken one is above the mark too, so it is triaged again next cycle.
 
   Three details of how the mark is settled:
-  - An item counts as taken only where its run left a trace on the tracker (`leftATrace`). A
-    claim that failed before the tracker recorded it posts nothing and leaves the item's
-    `updatedAt` unchanged, so a mark moved past it would drop it for good.
+  - Of the items whose claim was attempted, the mark moves past each one unless its claim failed
+    because the tracker gave no answer. `passesMark` decides this per run. No answer means no HTTP
+    status, a 5xx, a 408, a 429, or a 403 whose message says it is a rate limit; a 403 needs its
+    message read because GitHub answers both its primary and secondary rate limits with a 403 as
+    often as a 429. Such a failure posts nothing and leaves the item's `updatedAt` unchanged, so a
+    mark moved past it would drop it for good. Items never attempted, because the budget ran out
+    or a condition opened, hold the mark as before.
+
+    A claim the tracker answered and refused is passed as if taken (Adam, 2026-10-13). On GitHub a
+    claim is the role's `igor:<role>` label, and the tracker refuses it either with another 4xx, or
+    by accepting the call while the label, read back afterwards, is not on the item. Each retry would meet the same refusal until someone changes a permission or
+    the Igor's configuration, and holding the mark below the item would triage every item updated
+    after it again each cycle, at a model call apiece. Adam accepted the cost: the passed item is
+    seen again only once somebody edits or comments on it.
   - `settle` re-reads `discovery.json` before writing. The file holds the mark of every source of
     every role, and a cycle settled hours after it loaded the file would otherwise put back other
     roles' older marks. Two Igors on the same source can still overwrite each other's mark, as

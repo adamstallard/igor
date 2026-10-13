@@ -1,6 +1,6 @@
 import type { Candidate } from './adapter.js'
 import type { CycleDeps, CycleOptions, CycleReport, ItemRun } from './loop.js'
-import { catchUpItem, honourIdleStop, leftATrace, planCycle, runItem } from './loop.js'
+import { catchUpItem, honourIdleStop, passesMark, planCycle, runItem } from './loop.js'
 import type { Gate } from './budget.js'
 import { windsDownOnSignal } from './execute.js'
 import { noteHandoff, shouldDefer } from './deferred.js'
@@ -149,7 +149,8 @@ export async function serve(
       //
       // `planCycle` leaves the discovery watermark unsaved; `report.settle` at the end of this
       // block saves it once the items are worked, kept earlier than any item the cycle chose to
-      // claim and never took, including one whose claim never landed.
+      // claim and never took: not attempted at all, or attempted with no answer from the tracker.
+      // An item whose claim the tracker answered and refused counts as taken (`passesMark`).
       const report = await planCycle(deps, role, { ...options, identity, markAfterWork: true })
       const taken = new Set<string>()
       summary.costUsd += report.triageCostUsd
@@ -238,7 +239,7 @@ export async function serve(
               : { ...options.claim, since: report.readAt },
         })
         summary.worked += 1
-        if (leftATrace(run)) taken.add(candidate.id)
+        if (passesMark(run)) taken.add(candidate.id)
         // A probe that produced no outcome observed nothing, so the condition stays open and the
         // next item may probe instead.
         if (probes.length > 0 && run.execution === undefined) await options.probe?.(probes, 'void', candidate.id)

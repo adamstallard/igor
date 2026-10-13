@@ -22,7 +22,7 @@ import { actAs, GhError } from './gh.js'
 import { AppError, canMint, canWriteWorkflows, startApp, type AppSession } from './app.js'
 import { claimRequested, contradictoryRunFlags } from './flags.js'
 import { explainRole, loadRole, rolesFrom, RoleError, type Role } from './role.js'
-import { catchUpItem, honourIdleStop, leftATrace, planCycle, runItem, UNTRIAGED_NO_SEAT, type CycleReport } from './loop.js'
+import { catchUpItem, honourIdleStop, passesMark, planCycle, runItem, UNTRIAGED_NO_SEAT, type CycleReport } from './loop.js'
 import { waitingNotice } from './claiming.js'
 import { renderProgress } from './execute.js'
 import { serve, untilSignalled } from './serve.js'
@@ -549,7 +549,8 @@ program
       stopped,
       // The discovery watermark is saved by `settle()` at the end of this command, once it is known
       // which items were taken. An item this cycle chose to claim and did not take, because of
-      // the cap, the budget, a condition or a claim that never landed, must stay above the mark.
+      // `--max-items`, the budget, a condition or a tracker that did not answer its claim, keeps
+      // the mark below it.
       markAfterWork: true,
     })
     process.stdout.write(`${renderCycle(report, opts.plan === true)}\n`)
@@ -607,7 +608,7 @@ program
     for (const c of report.toClaim.slice(0, cap)) {
       const run = await work(c.candidate, c.directed === true, c.handedOverAt ?? report.readAt)
       if (run === undefined) break
-      if (leftATrace(run)) taken.add(c.candidate.id)
+      if (passesMark(run)) taken.add(c.candidate.id)
       // A closed budget stops the cycle rather than being rediscovered per item. Read off the
       // handoff kind rather than the prose, which is written for whoever reads the item.
       if (run.outcome === 'handed-off' && run.handoff === 'budget') {

@@ -142,3 +142,74 @@ describe('the mark a long cycle settles', () => {
     expect(asks[1]).toEqual(['1'])
   })
 })
+
+describe('a claim the tracker refuses outright', () => {
+  const open: Gate = { exhausted: () => false, seat: 'igor-1', reason: 'room' }
+  const proceed = async (cs: readonly Candidate[]) => ({
+    results: cs.map((candidate) => ({
+      candidate, verdict: { outcome: 'proceed' as const, stage: 'model' as const, reason: 'in lane' },
+    })),
+    costUsd: 0, costUnreported: 0, failures: [],
+  })
+
+  /**
+   * One serve cycle whose tracker claims through `claim`, which the tests use to refuse only #1,
+   * then a bare `planCycle` that claims nothing. Returns the items each triage call was asked about, so a second entry
+   * means the second cycle found something fresh to triage again.
+   */
+  async function afterRefusal(claim: (c: Candidate) => Promise<boolean>): Promise<string[][]> {
+    stored.clear()
+    const found = [issue(1, 30), issue(2, 20)]
+    const asks: string[][] = []
+    const triage = async (cs: readonly Candidate[]) => {
+      asks.push(cs.map((c) => c.native))
+      return proceed(cs)
+    }
+    await serve(deps(found, claim), role, 'igor-bot', {
+      maxCycles: 1, sleep: async () => {}, loreFor: () => '', triage, triageModel: 'unused',
+      gate: async () => open,
+      worker: async () => ({ result: 'no change needed', total_cost_usd: 0 }),
+    })
+    await planCycle(deps(found), role, { identity: 'igor-bot', triage, budget: open })
+    return asks
+  }
+
+  it('lets the mark pass an item whose claim the tracker answered and did not record', async () => {
+    // The mark moved past #1, which a retry would only see refused again, so the second cycle
+    // finds nothing fresh and makes no triage call.
+    const asks = await afterRefusal(async (c) => c.native !== '1')
+    expect(asks).toEqual([['1', '2']])
+  })
+
+  it('lets the mark pass an item whose claim the tracker refused with a 4xx', async () => {
+    const { GhError } = await import('../src/gh.js')
+    const asks = await afterRefusal(async (c) => {
+      if (c.native === '1') throw new GhError('gh api failed: Resource not accessible by integration (HTTP 403)', 403)
+      return true
+    })
+    expect(asks).toEqual([['1', '2']])
+  })
+
+  it('holds the mark below an item whose claim met a rate limit GitHub answers with a 403', async () => {
+    const { GhError } = await import('../src/gh.js')
+    const asks = await afterRefusal(async (c) => {
+      if (c.native === '1') {
+        throw new GhError(
+          'gh api failed: You have exceeded a secondary rate limit. Please wait a few minutes before you try again. (HTTP 403)',
+          403,
+        )
+      }
+      return true
+    })
+    expect(asks).toEqual([['1', '2'], ['1']])
+  })
+
+  it('holds the mark below an item whose claim met a 5xx, which a later cycle can retry', async () => {
+    const { GhError } = await import('../src/gh.js')
+    const asks = await afterRefusal(async (c) => {
+      if (c.native === '1') throw new GhError('gh api failed: Server Error (HTTP 502)', 502)
+      return true
+    })
+    expect(asks).toEqual([['1', '2'], ['1']])
+  })
+})

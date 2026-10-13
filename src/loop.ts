@@ -111,16 +111,26 @@ export interface ItemRun {
    * item per poll, indefinitely, which is enough volume to trip the rate limit that caused it.
    */
   surfaceFailed?: true
+  /** Set where the claim was refused because the tracker gave no answer; see `ClaimResult`. */
+  unanswered?: true
 }
 
 /**
- * Whether a run left a visible trace on the item: anything but a refusal, or a refusal that
- * posted a comment. Either moves the item's `updatedAt`, so the next cycle sees it whatever the
- * watermark says. A refusal with nothing posted, such as a claim the tracker never recorded,
- * leaves the item untouched, so the watermark must not move past it as though it were taken.
+ * Whether the discovery watermark may move past the item this run was for.
+ *
+ * The watermark is one timestamp per source, and discovery reconsiders only items updated after
+ * it. It may move past this item unless the run was refused with nothing posted and the tracker
+ * gave no answer (`unanswered`). Any other run either moved the item's `updatedAt`, so the next
+ * cycle sees it anyway, or met a refusal the tracker answered, with a 4xx or by not recording the
+ * claim. Every retry of that would meet the same refusal until the item or a permission changed,
+ * and holding the mark below the item would triage every item updated after it again each cycle.
+ *
+ * A run `stoppedBy` refuses for a condition would pass too, so neither caller hands `runItem` a
+ * gate carrying a condition: `serve` stops on `gate.exhausted()` and `igor run` on
+ * `gate.condition` first, and the items left keep the mark below them as untaken.
  */
-export const leftATrace = (run: Pick<ItemRun, 'outcome' | 'spoke'>): boolean =>
-  run.outcome !== 'refused' || run.spoke
+export const passesMark = (run: Pick<ItemRun, 'outcome' | 'spoke' | 'unanswered'>): boolean =>
+  run.outcome !== 'refused' || run.spoke || run.unanswered !== true
 
 export type Step = 'claiming' | 'settling' | 'working' | 'publishing' | 'completing'
 
@@ -203,6 +213,7 @@ export async function runItem(
       spoke: claim.spoke ?? false,
       cures: [],
       ...(claim.surfaceFailed === true ? { surfaceFailed: true as const } : {}),
+      ...(claim.unanswered === true ? { unanswered: true as const } : {}),
     }
   }
 
