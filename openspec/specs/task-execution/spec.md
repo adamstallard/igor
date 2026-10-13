@@ -375,6 +375,11 @@ present. Where the chosen seat names a token source that cannot be read — an u
 unreadable or empty file, a command that fails, prints nothing, or never returns — execution
 SHALL fail naming it rather than spawning a worker that authenticates as something else.
 
+For an Igor acting as a GitHub App, the surface credential is anything that yields an App
+token: the token itself, the `GITHUB_APP_*` variables, and a git credential helper or
+`GIT_CONFIG_*` entry that mints one. None of them SHALL reach the worker, and the working tree
+SHALL hold none of them.
+
 The worker needs none of them. It edits files in a disposable tree; claiming, commenting,
 branching and publishing all happen in the loop afterwards, with the loop's own credentials. An
 inherited environment is therefore a set of credentials nothing in the worker has a use for,
@@ -388,6 +393,13 @@ something else entirely when it is missing.
 
 - **WHEN** a worker is spawned while the Igor holds a code-host token
 - **THEN** that token is not in the worker's environment
+
+#### Scenario: Nothing that yields an App token reaches the worker
+
+- **WHEN** a worker is spawned for an Igor acting as a GitHub App
+- **THEN** its environment holds no App token, no `GITHUB_APP_*` variable and no `GIT_CONFIG_*`
+  entry
+- **AND** its working tree's git config names no credential helper
 
 #### Scenario: Only the chosen seat's token is present
 
