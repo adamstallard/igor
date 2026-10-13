@@ -2,10 +2,26 @@
 
 ### Requirement: Assignment expresses a claim; ordering resolves it
 
-Where a tracker offers a native assignment field, a claim SHALL set it, because that is the
-signal humans read. Where a surface offers only messages, a claim SHALL be a post. In both
-cases resolution SHALL rely on the storage order of writes, not on any conditional-write
-primitive.
+Every claiming tracker offers a native holder field, such as GitHub's `igor:<role>` label and
+Linear's delegate. A claim SHALL set the holder field, because that is the signal humans
+read, and SHALL post the claim message. Resolution SHALL rely on the storage order of writes,
+not on any conditional-write primitive.
+
+The holder field SHALL be written before the claim message. The field is what resolution reads
+and what people see; the message names the Igor and carries the stop instruction. Written in
+the other order, an Igor that fails between the two writes leaves a message claiming an item
+whose field shows nobody, which is a claim people miss. Written field first, a failure leaves
+the visible claim, and the message follows on the next cycle.
+
+Where the holder field holds a single value, the later of two writes holds the item: each Igor
+re-reads the field, and the one it no longer names has lost. Where the field holds a list, such
+as GitHub's `igor:` labels, any other holder present after the settle interval
+means the claim is lost, because a list keeps every write rather than replacing one.
+
+Processes of one role write the same value to the holder field, so the field cannot tell them
+apart. Among them, the claim message earliest in storage order holds the item, counting only
+messages posted since the item's latest release and leaving out those of ranks whose claims may
+be adopted (see *A retired rank does not hold its items forever*).
 
 Storage order means the surface's own sequence key. A timestamp is not one: surfaces report
 times to the second, and processes sharing a poll interval act inside the same second, so a
@@ -13,40 +29,60 @@ clock is ambiguous exactly where the tiebreak is needed.
 
 #### Scenario: Claim visible in the native field
 
-- **WHEN** an Igor claims an item on a tracker with assignment
-- **THEN** the assignee field shows the Igor
+- **WHEN** an Igor claims an item on a tracker with a holder field
+- **THEN** the holder field shows the Igor
 - **AND** a human reading the tracker sees the claim without knowing any convention
+
+#### Scenario: Holder field written before the claim message
+
+- **WHEN** an Igor claims an item on a tracker with a holder field
+- **THEN** it sets the holder field first and posts the claim message second
+
+#### Scenario: Later write holds a single-valued field
+
+- **WHEN** two Igors set a single-valued holder field on the same item within one settle interval
+- **THEN** the Igor whose write the field still shows holds the item
+- **AND** the other Igor has lost the claim
+
+#### Scenario: Another holder in a list
+
+- **WHEN** a re-read after the settle interval finds another holder in a list-valued holder field
+- **THEN** the Igor has lost the claim
 
 #### Scenario: No dependence on conditional writes
 
-- **WHEN** a claim is taken on any surface
+- **WHEN** a claim is taken on any tracker
 - **THEN** correctness does not depend on a compare-and-set guarantee from that surface's API
 
 #### Scenario: Claims written in the same second still order
 
-- **WHEN** two processes claim one item and the surface reports both at the same timestamp
+- **WHEN** two processes of one role claim one item and the surface reports both claim messages
+  at the same timestamp
 - **THEN** the surface's sequence key decides, and exactly one claim stands
 
 ## ADDED Requirements
 
 ### Requirement: A claim names the process that took it
 
-Where several processes run behind one account, a claim SHALL carry the rank of the process
-that took it, and verification SHALL treat a claim carrying another rank as belonging to
-another process.
+Where several processes run one role, a claim message SHALL carry the rank of the process that
+posted it, and verification SHALL treat a claim carrying another rank as belonging to another
+process.
 
-Without it two processes sharing an account both read the account among the holders, both
-answer "held by me", and both work the item — producing two pull requests for one issue, which
-is the most visible misfire available and lands in front of the people the claim was meant to
-reassure.
+All processes of a role act as the role's identity, such as its GitHub App, and set the same
+holder value, such as its `igor:<role>` label. Without the rank, each reads the claim as its
+own, and both work the item. That produces two pull requests for one issue, the most visible
+misfire available, in front of the people the claim was meant to reassure.
 
-The rank is supplied to the process when it is started, not discovered: a supervisor is the
-only thing that knows how many processes there are, and a process that counted its own siblings
-would be a registry.
+The rank is supplied to the process when it is started, not discovered: the supervisor starts
+the processes, and a process that counted its own siblings would be a registry. The roster in
+`igor.config.yaml` lists the ranks each role may run, and a process whose rank it lacks refuses
+to start, so the supervisor's processes and the roster cannot silently disagree. Under systemd the rank is part of the unit's instance name,
+`<role>.<rank>`, and a process started with a role and no rank is rank 1.
 
 #### Scenario: A sibling's claim is not the Igor's own
 
-- **WHEN** a process verifies a claim on an item held by its account and carrying another rank
+- **WHEN** a process verifies a claim whose holder field names its role and whose earliest claim
+  message carries another rank
 - **THEN** the claim is another process's and this one stands down
 
 #### Scenario: The rank is readable on the item
@@ -59,6 +95,11 @@ would be a registry.
 
 - **WHEN** a process starts with a rank the configuration does not declare
 - **THEN** it refuses to start
+
+#### Scenario: No rank given
+
+- **WHEN** a process is started with a role and no rank
+- **THEN** it runs as rank 1
 
 ### Requirement: Contention is resolved before a claim, not after it
 
@@ -105,15 +146,19 @@ because the context that knew what it was doing died with the process.
 
 ### Requirement: A retired rank does not hold its items forever
 
-A claim held by a rank the configuration no longer declares SHALL be adoptable by any process,
-as SHALL a claim left unattended beyond a bound.
+A claim held by a rank the configuration no longer declares SHALL be adoptable by any process
+of the role. So SHALL a claim held by a rank past the abandonment bound: a rank that has
+recorded no cycle for three of its role's poll intervals, which is 30 minutes at the default
+10-minute poll. Every cycle a process runs SHALL therefore be recorded on the state branch with
+its role and rank, including a cycle that found nothing to do.
 
 Retiring a process is a decision rather than an event, so the roster records it and nothing has
 to detect it. The bound covers only the case the roster cannot: a rank left declared that no
 longer runs.
 
-The bound governs how long an unattended claim may sit, never how long work may run. By the
-time it applies the work has finished or the process is gone, so nothing is cut short by it.
+The bound governs how long an unattended claim may sit, never how long work may run. How a
+process working one long item keeps its rank counted, and where cycles are recorded, are open
+questions in the change's design.
 
 #### Scenario: Scaling down releases the orphan
 
@@ -122,8 +167,13 @@ time it applies the work has finished or the process is gone, so nothing is cut 
 
 #### Scenario: A declared rank that stopped running
 
-- **WHEN** a claim is unattended past the bound and its rank is still declared
+- **WHEN** a claim's rank is still declared and has recorded no cycle for three poll intervals
 - **THEN** another process may take the item
+
+#### Scenario: An adopted claim holds the item
+
+- **WHEN** a process claims an item whose earlier claim message carries a rank that may be adopted
+- **THEN** that earlier message does not count, and the new claim holds the item
 
 #### Scenario: The bound does not shorten a run
 
