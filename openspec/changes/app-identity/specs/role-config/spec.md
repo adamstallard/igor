@@ -4,8 +4,7 @@
 
 An Igor running a role SHALL act on GitHub as the github-app identity of the same name: the Igor
 for `roles/reviewer.yaml` acts as the identity `reviewer`. No role file, base or configuration
-key SHALL name an App identity, an App ID, a private key or a key path, and a role file that
-sets `github_app` SHALL be refused with that reason.
+key SHALL name an App identity, an App ID, a private key or a key path.
 
 The identity's credentials SHALL be read only from the Igor's environment, and only when
 `GITHUB_APP_IDENTITY` names this identity: `GITHUB_APP_ID`, with exactly one of
@@ -31,12 +30,6 @@ that identity's credentials, naming any variable that is missing.
 
 - **WHEN** `igor serve reviewer` starts
 - **THEN** it acts as the github-app identity `reviewer`
-
-#### Scenario: A role file cannot name an App
-
-- **WHEN** a role file, or a base it extends, sets `github_app`
-- **THEN** the role is refused, and the refusal says that an Igor's App is its role's name and
-  its credentials are in its environment
 
 #### Scenario: Credentials come only from the environment
 

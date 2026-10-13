@@ -137,7 +137,7 @@ export async function runItem(
   identity: string,
   options: RunOptions = {},
 ): Promise<ItemRun> {
-  const { tracker, codeHost, trees } = deps
+  const { tracker } = deps
 
   const step = options.onStep ?? (() => {})
   step('claiming')
@@ -180,16 +180,17 @@ export async function runItem(
   }
 
   // **Everything from here runs with the claim held**, so this handler guards all of it.
-  // Without it, a throw from provisioning a tree, from a checkpoint or from the completion
-  // action would leave the item claimed and announced, with only a cycle-level error logged.
+  // Without it, a throw from provisioning a tree, from a checkpoint or from the release that ends
+  // a finished run would leave the item claimed and announced, with only a cycle-level error
+  // logged.
   //
   // The claim is given back as any other failure gives it back, by a handoff, which posts and
   // then releases. Whether the run is then reported as refused or handed off depends on what a
   // retry would cost: see the handler.
   //
   // **What the run reached is carried out with it.** A throw here does not always come before
-  // the work. The completion action is an unassign, so the last call of a successful run is a
-  // release, and a tracker that fails it lands here with a draft already open. A handoff
+  // the work. The last call of a successful run is the release of its claim, and a tracker that
+  // fails it lands here with a draft already open. A handoff
   // composed without what the run reached would say "the work never started" beside that
   // draft, and link it nowhere.
   //
@@ -404,12 +405,7 @@ async function runClaimedItem(
   switch (execution.outcome) {
     case 'produced': {
       step('completing')
-      const refusal = await complete(tracker, candidate, role, identity)
-      if (refusal) {
-        await tracker
-          .report(candidate, `**${role.name}** finished but could not ${refusal.action}: ${refusal.why}`)
-          .catch(() => undefined)
-      }
+      await complete(tracker, candidate, role, identity)
       return {
         outcome: 'produced',
         candidate,
@@ -633,9 +629,9 @@ export async function catchUpItem(
  * A stop of this run is one created at or after the hand-over, `floor`, the run's start less the
  * settle interval, and, where the claim's check found a stop a go-ahead lifted, that go-ahead. A
  * stop said before any of them belongs to something else, such as one a go-ahead or the cooldown
- * already lifted, and a catch-up that ends any other way keeps the label. Creation time decides, never the read's `since`, which a surface may apply to when a
- * comment was last edited. A comment with no readable time counts. Where the comments cannot be
- * read, the label is kept.
+ * already lifted, and a catch-up that ends any other way keeps the label. Creation time decides,
+ * never the read's `since`, which a surface may apply to when a comment was last edited. A comment
+ * with no readable time counts. Where the comments cannot be read, the label is kept.
  *
  * Where who set it cannot be read, the cycle's candidate decides. A candidate without the label
  * means the claim put it there, so it is released as any claim is, and a release that does not
@@ -669,7 +665,7 @@ function keepingLabel(tracker: Tracker, floor: string): Tracker {
         floor,
       )
       const stopped = await tracker.commentsSince(candidate, from).then(
-        (spoken) => notBefore(spoken, from).some((c) => isStop(c.body, as)),
+        (spoken) => notBefore(spoken, from).some((c) => isStop(c.body, as, c.accounts)),
         () => false,
       )
       return stopped ? tracker.release(candidate, as) : true
@@ -1276,7 +1272,7 @@ function latestStop(spoken: readonly Comment[], identity: string): Comment | und
   let latest: Comment | undefined
   for (const comment of spoken) {
     const receipt = comment.author === identity && comment.body.includes(STOPPED_MARKER)
-    if (!receipt && !isStop(comment.body, identity)) continue
+    if (!receipt && !isStop(comment.body, identity, comment.accounts)) continue
     latest = comment
   }
   return latest
@@ -1364,7 +1360,7 @@ export async function dropStopped(
             // One comment can match both: "stop @igor — continue once I've looked" is a stop
             // by `^stop` and a go-ahead by what follows the address. A stop outranks, here as
             // in `verdictFrom`, so it can never be the permission to undo itself.
-            !isStop(c.body, identity),
+            !isStop(c.body, identity, c.accounts),
         ),
     })
     if (verdict.eligible) {

@@ -40,8 +40,8 @@ labelled and handed work. What remains against it:
 - **Its permissions change without it changing.** It would take the union of both bases'
   `allow`, `commands` and lane. Letting `frontend` close issues would let `fullstack` close
   them too, though no one edited or reviewed `fullstack.yaml`.
-- **Two bases conflict on override fields.** If one says `completion: close` and the other
-  `unassign`, a tie-break rule is needed for every such field, which is how inheritance becomes
+- **Two bases conflict on override fields.** If one says `poll_minutes: 2` and the other
+  `30`, a tie-break rule is needed for every such field, which is how inheritance becomes
   something nobody can reason about (`docs/architecture.md` §6.0).
 - **Both bases' instructions apply to every item**, frontend conventions on backend work
   included. Area guidance mostly belongs in lore, which fires by path, so this matters least.
@@ -56,6 +56,35 @@ roles/fullstack.yaml     extends engineering, with a lane over both areas and it
 
 It repeats a couple of lane paths and the commands it needs. In exchange, its own file and its
 ancestors say everything it may do, and nothing in a sibling role can widen it.
+
+## A key no role reads is refused the same way, whichever it is
+
+**Decided by Adam, 2026-10-11: no role key gets a refusal of its own.** `name`, `claim` and
+`github_app` each had a reason of their own, which said why a role may not set it. Every key a role
+file sets that nobody reads is already refused as not a role key, and Igor has no users besides
+Adam, so nobody would reach for these three. A table whose only effect was to reword one error is
+not kept. The rules stand as they were: the filename is the name, the claim message is not a role's
+to replace, and a role cannot name an App.
+
+## A finished run releases its claim; a role does not choose
+
+**Decided by Adam, 2026-10-11: the `completion` key is gone.** Under label claiming a finished run
+always releases its claim, which is what the default `unassign` did. `close` and `assign` existed
+only to be refused as not built, and `completion` had to appear in `allow` only so that naming it
+could not bypass `allow`. With nothing left to choose, a role file that sets `completion` is
+refused as any key that is not a role key is. The release is specified in `work-claiming`'s
+*A claim that cannot be kept is given back, out loud*, and the role-config requirement that a
+completion action be permitted by `allow` and task-execution's *Completion behaviour follows
+configured policy* are removed.
+
+**Decided by Adam, 2026-10-11: `allow` names only actions something checks.** `unassign`,
+`close` and `assign` stood for completion actions and gate nothing now, so they are out of the
+vocabulary, and a role that lists one is refused at load with the same message as any unknown
+action.
+
+**Decided by Adam, 2026-10-11: the role-config spec does not single out `claim`.** Nobody will
+try to set it, and the strict key check refuses it as it refuses any key no role reads. That the
+claim message carries the stop instruction stays where it is behaviour, in `work-claiming`.
 
 ## On GitHub, an Igor is a GitHub App
 
@@ -433,19 +462,40 @@ for the backend Igor, mirroring the stop. Both read their names with one parser,
 go-ahead written the same way are meant for the same Igors. Every reader of a go-ahead follows:
 the cycle's cooldown gate, a claim's re-read, and through it a catch-up's give-back.
 
-**Open for Adam: where one parser over-reads, it over-lifts a go-ahead.** The parser reads names
-only straight after the verb and lets a list run on into the next clause. For a stop that errs
-toward stopping, the safe side. For a go-ahead it errs toward lifting: "go ahead and pick it back
-up, @igor-backend" names nobody straight after the phrase, so it reads as bare and lifts the
-frontend Igor's stop too, and "go ahead @igor-backend, @igor-frontend keep waiting" lifts it for
-the frontend Igor. Making the go-ahead err the other way means the two verbs no longer read every
-comment alike, which the one-parser decision rules out.
+**Decided by Adam, 2026-10-11: where the names are unclear, a go-ahead errs toward lifting too
+little.** One parser reads both verbs, and it reads names only straight after the verb and lets
+a list run on into the next clause. For a stop that errs toward stopping, the safe side; for a
+go-ahead it would err toward lifting. So a go-ahead with no Igor's name straight after the phrase
+counts the mentions later on its opening line ("go ahead and pick it back up, @igor-backend" is for the
+backend Igor), and a list that runs straight on into a word loses its last name ("go ahead
+@igor-backend, @igor-frontend keep waiting" is for the backend Igor). Whether a go-ahead names an Igor is read before the trim, so "go ahead @alice,
+@igor-frontend keep waiting" lifts the stop for no Igor rather than reading as bare. A stop reads
+these comments as before. The parser stays shared; the two verbs differ only in what they make of what it read.
 
-**Open for Adam: a stop that names only a person.** "Stop — @alice is taking over" names an
-account, so it is not a bare stop, and it names no Igor, so it stops none: a stop said in plain
-words is missed because it mentions who takes over. "carry on, @alice approved it" likewise lifts
-a stop for no Igor. Reading names that match no Igor as no names would stop every Igor here, and
-is a decision about the rule Adam set, not a fix to how it is read.
+**Decided by Adam, 2026-10-13: a go-ahead does not read later mentions across a line break.**
+Where its opening punctuation or its list's last separator crossed a line break, as in "go ahead:"
+then "thanks @igor-backend" on the next line, the go-ahead is bare and lifts every Igor's stop. It
+is the one place a go-ahead does not err toward lifting fewer stops, kept because "go ahead:" on
+its own line is usually meant for everyone and the mention below it belongs to another sentence.
+
+**Decided by Adam, 2026-10-11: a name that is no Igor's counts as no name.** "Stop — @alice is
+taking over" stops every Igor on the item, and "carry on, @alice approved it" lifts every stop.
+The name reading needs to know which names are Igors, and a role does not say: a role file may not
+name an App (`github_app` is refused, so one role cannot point at another's credentials), and an
+App's name is free (*Giving an Igor its GitHub App*). Every Igor is a GitHub App, though, and an
+App's bot account is `<slug>[bot]`, which the Igor already reads for itself at startup. **Decided
+by Adam, 2026-10-11: an Igor is recognised by that bot account.** So the
+GitHub tracker asks `GET /users/<name>[bot]` for each name the parser reads after an opening stop
+or go-ahead: a `Bot` is an Igor, a 404 is not, and anything else leaves the name
+unresolved. It keeps each answer for the life of the process and returns them on the comments it
+reads (`Comment.accounts`), so `isStop` and `isGoAhead` stay pure. An unresolved name counts as no
+name for a stop and as an Igor for a go-ahead, the safe side of each. Any App's bot counts as an
+Igor, so "stop @dependabot" stops no Igor, which is what it asks for.
+
+**Decided by Adam, 2026-10-12: every reader passes the record.** `isStop`, `isGoAhead` and the
+claim's re-read take it as a required argument, and every comment the tracker reads carries one,
+empty where the comment mentions nobody. A reader that forgot to resolve names would otherwise
+read every name as an Igor's, and "Stop — @alice is taking over" would stop nobody.
 
 **A stop is the comment as created, not as last edited.** GitHub's `since` on an issue's comments
 filters on when each was last updated, so a stop said before a hand-over and edited later comes

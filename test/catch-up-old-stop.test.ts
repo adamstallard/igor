@@ -3,7 +3,7 @@ import type { Candidate, CodeHost, Tracker } from '../src/adapter.js'
 import type { Role } from '../src/role.js'
 import { catchUpItem, findDirected } from '../src/loop.js'
 
-const role = { name: 'triage', reviewers: [], allow: ['comment', 'draft-pr', 'unassign'], commands: [], completion: 'unassign',
+const role = { name: 'triage', reviewers: [], allow: ['comment', 'draft-pr'], commands: [],
   instructions: [], settleSeconds: 0, cooldownMinutes: 60, pollMinutes: 10, lane: {},
   sources: [{ tracker: 'github', repo: 'o/r', query: 'is:issue is:open' }] } as unknown as Role
 const item = (): Candidate => ({ id: 'github:o/r#7', tracker: 'github', repo: 'o/r', native: '7', title: 'x', body: '',
@@ -22,9 +22,9 @@ function world(raw: { author: string; created: string; updated: string; body: st
     createIssue: async () => '', identity: async () => 'igor-bot', search: async () => [],
     claim: async () => { labels.add('igor:triage'); return true },
     commentsSince: async (_c: Candidate, since: string) => raw.filter((c) => Date.parse(c.updated) >= Date.parse(since))
-      .map((c) => ({ author: c.author, at: c.created, body: c.body })),
+      .map((c) => ({ author: c.author, at: c.created, body: c.body, accounts: {} })),
     verifyClaim: async () => ({ status: 'held' }),
-    report: async (_c, m) => { said.push(m); return 'x' },
+    report: async (_c: unknown, m: string) => { said.push(m); return 'x' },
     release: async () => { labels.delete('igor:triage'); return true }, linkage: () => '',
   } as unknown as Tracker
   const codeHost = { name: 'github', produce: async () => ({}), catchUp: async () => ({ outcome: 'conflict' }), resolve: async () => '' } as unknown as CodeHost

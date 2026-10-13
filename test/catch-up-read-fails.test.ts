@@ -3,7 +3,7 @@ import type { Candidate, CodeHost, Tracker } from '../src/adapter.js'
 import type { Role } from '../src/role.js'
 import { catchUpItem } from '../src/loop.js'
 
-const role = { name: 'triage', reviewers: [], allow: ['comment', 'draft-pr', 'unassign'], commands: [], completion: 'unassign',
+const role = { name: 'triage', reviewers: [], allow: ['comment', 'draft-pr'], commands: [],
   instructions: [], settleSeconds: 0, cooldownMinutes: 60, pollMinutes: 10, lane: {},
   sources: [{ tracker: 'github', repo: 'o/r', query: 'is:issue is:open' }] } as unknown as Role
 const item = (holders: string[] = []): Candidate => ({ id: 'github:o/r#7', tracker: 'github', repo: 'o/r', native: '7', title: 'x', body: '',

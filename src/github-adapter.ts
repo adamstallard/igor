@@ -1,19 +1,19 @@
 import { gh, GhError, ghGraphql, ghPaginated } from './gh.js'
 import type { BotAccount } from './app.js'
-import { isGoAhead, isStop } from './signals.js'
+import { type Accounts, bareName, isGoAhead, isStop, namesToResolve } from './signals.js'
 import {
   AdapterError,
-  daysSince,
-  extractPaths,
   type Artifact,
   type ArtifactRequest,
   type Candidate,
-  type ClaimVerdict,
-  type Comment,
-  type HolderSetting,
   type CatchUp,
   type CatchUpRequest,
+  type ClaimVerdict,
   type CodeHost,
+  type Comment,
+  daysSince,
+  extractPaths,
+  type HolderSetting,
   type InFlight,
   type Mergeability,
   type ResolutionRequest,
@@ -265,13 +265,14 @@ function stopFrom(
   as: string,
   comments: readonly RawComment[],
   since: string,
+  accounts: Accounts,
   liftable = false,
 ): { stop: ClaimVerdict } | { liftedAt?: string } | undefined {
   const floor = Date.parse(since)
   const stops = comments.filter((comment) => {
     const at = Date.parse(comment.created_at)
     if (!Number.isNaN(floor) && !Number.isNaN(at) && at < floor) return false
-    return isStop(comment.body ?? '', as)
+    return isStop(comment.body ?? '', as, accounts)
   })
   if (stops.length === 0) return undefined
   const verdict = (comment: RawComment): { stop: ClaimVerdict } => ({
@@ -287,7 +288,7 @@ function stopFrom(
   const latest = stops[stops.length - 1]!
   const lifting = comments.slice(comments.indexOf(latest) + 1).find((c) => {
     const body = c.body ?? ''
-    return c.user?.login !== as && !isStop(body, as) && isGoAhead(body, as)
+    return c.user?.login !== as && !isStop(body, as, accounts) && isGoAhead(body, as, accounts)
   })
   if (lifting === undefined) return verdict(latest)
   return Number.isNaN(Date.parse(lifting.created_at)) ? {} : { liftedAt: lifting.created_at }
@@ -323,12 +324,12 @@ export function labelVerdictFrom(
   events: readonly RawEvent[] | undefined,
   comments: readonly RawComment[],
   since: string,
+  /** Which mentioned names are Igors; see `Accounts`. */
+  accounts: Accounts,
   liftable = false,
 ): ClaimVerdict {
-  const stop = stopFrom(self.login, comments, since, liftable)
+  const stop = stopFrom(self.login, comments, since, accounts, liftable)
   if (stop !== undefined && 'stop' in stop) return stop.stop
-  const held: ClaimVerdict =
-    stop?.liftedAt === undefined ? { status: 'held' } : { status: 'held', liftedAt: stop.liftedAt }
 
   if (!labels.includes(self.holder)) {
     const removed = events === undefined ? undefined : latestLabelEvent(events, 'unlabeled', self.holder)
@@ -349,7 +350,8 @@ export function labelVerdictFrom(
       return { status: 'lost', by: added.actor.login }
     }
   }
-  return held
+
+  return stop?.liftedAt === undefined ? { status: 'held' } : { status: 'held', liftedAt: stop!.liftedAt }
 }
 
 const isSelf = (actor: { id: number; type?: string }, self: Pick<ClaimSelf, 'accountId'>): boolean =>
@@ -357,10 +359,15 @@ const isSelf = (actor: { id: number; type?: string }, self: Pick<ClaimSelf, 'acc
 
 /**
  * Pure, and total over what the endpoint can return: a deleted author comes back as null, and
- * a caller comparing identities should never have to consider undefined.
+ * a caller comparing identities should never have to consider undefined. Each comment carries the
+ * part of `accounts` for the names it reads.
  */
-export function commentsFrom(raw: readonly RawComment[] | null | undefined): Comment[] {
-  return (raw ?? []).map((c) => ({ author: c.user?.login ?? '', at: c.created_at, body: c.body ?? '' }))
+export function commentsFrom(raw: readonly RawComment[] | null | undefined, accounts: Accounts): Comment[] {
+  return (raw ?? []).map((c) => {
+    const body = c.body ?? ''
+    const own = Object.fromEntries(namesToResolve(body).flatMap((name) => (name in accounts ? [[name, accounts[name]!]] : [])))
+    return { author: c.user?.login ?? '', at: c.created_at, body, accounts: own }
+  })
 }
 
 /**
@@ -375,6 +382,8 @@ export class GitHubTracker implements Tracker {
   readonly nativeHolderField = true
   readonly holderField = { holds: 'list', distinctFromAssignee: true } as const
   readonly holder: string
+  /** Whether each name mentioned after a stop or a go-ahead counts as an Igor; see `accountsIn`. */
+  private readonly kinds = new Map<string, 'igor' | 'other'>()
 
   /**
    * `account` is the Igor's App's bot, which the startup check read. `GET /user` is never asked:
@@ -494,7 +503,41 @@ export class GitHubTracker implements Tracker {
     ])
     const puzzling = !labels.includes(self.holder) || labels.some((l) => isHolderLabel(l) && l !== self.holder)
     const events = puzzling ? await this.events(candidate) : undefined
-    return labelVerdictFrom(self, labels, events, comments ?? [], since, options.liftable === true)
+    const accounts = await this.accountsIn((comments ?? []).map((c) => c.body ?? ''))
+    return labelVerdictFrom(self, labels, events, comments ?? [], since, accounts, options.liftable === true)
+  }
+
+  /**
+   * Which names that `bodies` mention after a stop or a go-ahead count as Igors. A name counts
+   * where GitHub has a bot account `<name>[bot]`, the same read the Igor makes of its own account
+   * at startup. Every GitHub App has one, not only this organization's Igors, so any App's bot
+   * counts. A person who shares a name with some App counts too, and a stop naming only that
+   * person stops no Igor. A 404 says the name is no Igor; any other failure leaves it unresolved.
+   * Answers are kept for the life of the process, since an account does not change kind.
+   */
+  async accountsIn(bodies: readonly string[]): Promise<Accounts> {
+    const names = [...new Set(bodies.flatMap(namesToResolve))]
+    const own = this.self.account === undefined ? undefined : bareName(this.self.account.login)
+    const found: Record<string, 'igor' | 'other'> = {}
+    for (const name of names) {
+      if (name === own) {
+        found[name] = 'igor'
+        continue
+      }
+      let kind = this.kinds.get(name)
+      if (kind === undefined) {
+        try {
+          const user = await gh<{ type?: string }>(['api', `users/${encodeURIComponent(`${name}[bot]`)}`])
+          kind = user?.type === 'Bot' ? 'igor' : 'other'
+        } catch (error) {
+          if (!(error instanceof GhError) || error.status !== 404) continue
+          kind = 'other'
+        }
+        this.kinds.set(name, kind)
+      }
+      found[name] = kind
+    }
+    return found
   }
 
   /**
@@ -519,12 +562,11 @@ export class GitHubTracker implements Tracker {
   }
 
   async commentsSince(candidate: Candidate, since: string): Promise<Comment[]> {
-    return commentsFrom(
-      await ghPaginated<RawComment>([
-        'api',
-        `repos/${candidate.repo}/issues/${candidate.native}/comments?since=${encodeURIComponent(since)}&per_page=100`,
-      ]),
-    )
+    const raw = await ghPaginated<RawComment>([
+      'api',
+      `repos/${candidate.repo}/issues/${candidate.native}/comments?since=${encodeURIComponent(since)}&per_page=100`,
+    ])
+    return commentsFrom(raw, await this.accountsIn((raw ?? []).map((c) => c.body ?? '')))
   }
 
   async report(candidate: Candidate, message: string): Promise<string | undefined> {

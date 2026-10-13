@@ -86,9 +86,8 @@ const candidate = (over: Partial<Candidate> = {}): Candidate =>
 const role = (over: Partial<Role> = {}): Role =>
   ({
     name: 'triage',
-    allow: ['comment', 'draft-pr', 'unassign'],
+    allow: ['comment', 'draft-pr'],
     commands: [],
-    completion: 'unassign',
     instructions: ['Prefer small diffs.'],
     reviewers: [],
     settleSeconds: 10,
@@ -280,32 +279,25 @@ describe('the action space is enforced at the loop', () => {
     expect(workerSystemPrompt(role(), ['draft-pr'])).toMatch(/run no commands/)
   })
 
-  it('refuses a completion the role does not permit', async () => {
-    const { t, released } = fakeTracker()
-    const r = await complete(t, candidate(), role({ completion: 'close', allow: ['comment'] }), 'igor-bot')
-    expect(r?.action).toBe('close')
-    expect(released).toEqual([])
-  })
-
-  it('refuses loudly rather than silently falling back to the default', async () => {
-    const { t } = fakeTracker()
-    const r = await complete(t, candidate(), role({ completion: 'close', allow: ['comment', 'close'] }), 'igor-bot')
-    expect(r?.why).toMatch(/not implemented/)
-  })
-
-  it('releases the claim on the default completion', async () => {
+  it('releases the claim a finished run holds', async () => {
     const { t, released, reported } = fakeTracker()
-    expect(await complete(t, candidate(), role(), 'igor-bot')).toBeUndefined()
+    await complete(t, candidate(), role(), 'igor-bot')
     expect(released).toEqual(['igor-bot'])
     expect(reported).toEqual([])
   })
 
-  it('says so on the item where the completion did not clear the holder', async () => {
-    // The completion action is the last call of a run that published. A surface answering
-    // "still assigned" there leaves the run reported as produced, the pull request open, and
-    // the item held by an Igor that has finished with it — with nobody told.
+  it('releases it whatever the role allows', async () => {
+    const { t, released } = fakeTracker()
+    await complete(t, candidate(), role({ allow: ['comment'] }), 'igor-bot')
+    expect(released).toEqual(['igor-bot'])
+  })
+
+  it('says so on the item where the release did not clear the holder', async () => {
+    // The release is the last call of a run that published. A surface answering "still held"
+    // there leaves the run reported as produced, the pull request open, and the item held by an
+    // Igor that has finished with it — with nobody told.
     const { t, reported } = fakeTracker({ releaseLeavesHolder: true })
-    expect(await complete(t, candidate(), role(), 'igor-bot')).toBeUndefined()
+    await complete(t, candidate(), role(), 'igor-bot')
     expect(reported).toEqual([stillHeld(role())])
   })
 })
@@ -736,12 +728,12 @@ describe('a run killed mid-flight is not recorded as free', () => {
 describe('which pull request is preferred is stated rather than inferred', () => {
   it('prefers a draft where a role permits both', async () => {
     // Only reversible artifacts are produced: a draft is an offer, unmergeable by accident.
-    const { seen } = await run({ allow: ['pr', 'draft-pr', 'unassign'] })
+    const { seen } = await run({ allow: ['pr', 'draft-pr'] })
     expect(seen[0]?.draft).toBe(true)
   })
 
   it('opens a ready pull request where that is all the role permits', async () => {
-    const { seen } = await run({ allow: ['pr', 'unassign'] })
+    const { seen } = await run({ allow: ['pr'] })
     expect(seen[0]?.draft).toBe(false)
   })
 
@@ -2163,7 +2155,7 @@ describe('the configurations one run can prove wrong', () => {
   it('names the role’s allow list where the action space is the dead end', async () => {
     // A fact about the role: the work is done and nothing about this item stopped it being
     // published, so the next item meets the same wall.
-    const { result } = await run({ allow: ['comment', 'unassign'] })
+    const { result } = await run({ allow: ['comment'] })
     expect(result.outcome).toBe('refused')
     expect(result.cures).toEqual(['role:triage:allow'])
   })
@@ -2172,7 +2164,7 @@ describe('the configurations one run can prove wrong', () => {
     // The reason the field is a list. Taking either alone leaves the other uncorrected, and
     // the run after the fix stops on a wall nothing in the record named.
     const { item, result } = await run(
-      { allow: ['comment', 'unassign'] },
+      { allow: ['comment'] },
       {
         worker: async () => ({
           result: 'Fixed it.',
@@ -2184,7 +2176,7 @@ describe('the configurations one run can prove wrong', () => {
     expect(result.cures).toEqual(['role:triage:commands', 'role:triage:allow'])
 
     // And both reach the record, which is what a condition would later be counted from.
-    await recordExecution('acme/lore', item, role({ allow: ['comment', 'unassign'] }), result)
+    await recordExecution('acme/lore', item, role({ allow: ['comment'] }), result)
     expect(ledger.records[0]?.['cures']).toEqual(['role:triage:commands', 'role:triage:allow'])
   })
 

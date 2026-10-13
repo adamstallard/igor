@@ -3,6 +3,7 @@ import type { Candidate, ClaimVerdict, Tracker } from '../src/adapter.js'
 import type { Role } from '../src/role.js'
 import { checkpoint, claimMessage, claimStuck, claimWithdrawn, handingBack, stillHeld, stoodDownStuck, eligibleAfterStop, stopReceipt, takeClaim, waitingMarker, waitingNotice } from '../src/claiming.js'
 import { isGoAhead, isStop } from '../src/signals.js'
+import { IGORS } from './igors.js'
 
 const NOW = Date.parse('2026-09-13T12:00:00Z')
 
@@ -25,7 +26,7 @@ const role = (over: Partial<Role> = {}): Role =>
     name: 'triage',
     settleSeconds: 10,
     cooldownMinutes: 60,
-    allow: ['comment', 'unassign'],
+    allow: ['comment'],
     ...over,
   }) as Role
 
@@ -416,26 +417,32 @@ describe('stop is unconditional', () => {
   it('is honoured from someone who has never touched the repository', () => {
     // No permission check exists to fail: recognition is textual and takes no identity of the
     // speaker into account beyond who is being addressed.
-    expect(isStop('stop', 'igor-bot')).toBe(true)
-    expect(isStop('@igor-bot stop', 'igor-bot')).toBe(true)
+    expect(isStop('stop', 'igor-bot', IGORS)).toBe(true)
+    expect(isStop('@igor-bot stop', 'igor-bot', IGORS)).toBe(true)
   })
 
   it('takes no configuration, so nothing can disable it', () => {
     // The signature is the guarantee: there is no options parameter to pass a policy through.
-    expect(isStop.length).toBe(2)
+    // The one input beyond the text and the Igor says which names are Igors, and that can only
+    // widen a stop: a name that is no Igor counts as no name, which stops every Igor.
+    expect(isStop.length).toBe(3)
+    for (const accounts of [{}, { 'igor-other': 'igor' as const }, { 'igor-other': 'other' as const }]) {
+      expect(isStop('stop', 'igor-bot', accounts)).toBe(true)
+      expect(isStop('stop @igor-bot', 'igor-bot', accounts)).toBe(true)
+    }
   })
 
   it('still does not fire on two people talking to each other', () => {
-    expect(isStop('@alice stop doing that', 'igor-bot')).toBe(false)
-    expect(isStop('this will stop working soon', 'igor-bot')).toBe(false)
+    expect(isStop('@alice stop doing that', 'igor-bot', IGORS)).toBe(false)
+    expect(isStop('this will stop working soon', 'igor-bot', IGORS)).toBe(false)
   })
 
   it('does not read a hyphenated word as the verb', () => {
     // A word boundary matches before a hyphen, so `stop-gap` read as a stop. Harmless while
     // this only fired inside a claim; it now gates items nobody has claimed.
-    expect(isStop('Stop-gap until the real fix lands', 'igor-bot')).toBe(false)
-    expect(isStop('@igor-bot stop-gap measures are fine', 'igor-bot')).toBe(false)
-    expect(isStop('stop. I will take it from here', 'igor-bot')).toBe(true)
+    expect(isStop('Stop-gap until the real fix lands', 'igor-bot', IGORS)).toBe(false)
+    expect(isStop('@igor-bot stop-gap measures are fine', 'igor-bot', IGORS)).toBe(false)
+    expect(isStop('stop. I will take it from here', 'igor-bot', IGORS)).toBe(true)
   })
 })
 
@@ -443,22 +450,22 @@ describe('a stop that names an Igor', () => {
   // Decided by Adam, 2026-10-11: a bare stop stops every Igor on the item; one that names Igors
   // stops only those.
   it('stops only the Igors it names', () => {
-    expect(isStop('stop @igor-backend, frontend will take this', 'igor-frontend[bot]')).toBe(false)
-    expect(isStop('stop @igor-backend, frontend will take this', 'igor-backend[bot]')).toBe(true)
-    expect(isStop('stop @igor-backend and @igor-frontend', 'igor-frontend[bot]')).toBe(true)
-    expect(isStop('stop @igor-frontend[bot]', 'igor-frontend[bot]')).toBe(true)
+    expect(isStop('stop @igor-backend, frontend will take this', 'igor-frontend[bot]', IGORS)).toBe(false)
+    expect(isStop('stop @igor-backend, frontend will take this', 'igor-backend[bot]', IGORS)).toBe(true)
+    expect(isStop('stop @igor-backend and @igor-frontend', 'igor-frontend[bot]', IGORS)).toBe(true)
+    expect(isStop('stop @igor-frontend[bot]', 'igor-frontend[bot]', IGORS)).toBe(true)
   })
 
   it('still stops everyone where it names nobody', () => {
-    expect(isStop('stop', 'igor-frontend[bot]')).toBe(true)
-    expect(isStop('stop, I have got this', 'igor-frontend[bot]')).toBe(true)
-    expect(isStop('stop. I will take it from here', 'igor-frontend[bot]')).toBe(true)
+    expect(isStop('stop', 'igor-frontend[bot]', IGORS)).toBe(true)
+    expect(isStop('stop, I have got this', 'igor-frontend[bot]', IGORS)).toBe(true)
+    expect(isStop('stop. I will take it from here', 'igor-frontend[bot]', IGORS)).toBe(true)
   })
 
   it('keeps the addressed form and its boundaries', () => {
-    expect(isStop('@igor-frontend stop', 'igor-frontend[bot]')).toBe(true)
-    expect(isStop('@code-reviewer stop', 'reviewer[bot]')).toBe(false)
-    expect(isStop('stop @code-reviewer', 'reviewer[bot]')).toBe(false)
+    expect(isStop('@igor-frontend stop', 'igor-frontend[bot]', IGORS)).toBe(true)
+    expect(isStop('@code-reviewer stop', 'reviewer[bot]', IGORS)).toBe(false)
+    expect(isStop('stop @code-reviewer', 'reviewer[bot]', IGORS)).toBe(false)
   })
 })
 
@@ -475,7 +482,7 @@ describe('the stop receipt', () => {
 })
 
 describe('what may follow a stop', () => {
-  const said = (...bodies: string[]) => async () => bodies.map((body) => ({ body, at: '' }))
+  const said = (...bodies: string[]) => async () => bodies.map((body) => ({ body, at: '', accounts: IGORS }))
   const base = {
     candidate: candidate(),
     stoppedAt: new Date(NOW - 30 * 60000).toISOString(),
@@ -560,13 +567,13 @@ describe('what may follow a stop', () => {
 describe('go-ahead recognition', () => {
   it('accepts the ordinary ways of saying it', () => {
     for (const s of ['go ahead', 'resume', 'carry on', 'continue', 'all yours', '@igor-bot go ahead']) {
-      expect(isGoAhead(s, 'igor-bot')).toBe(true)
+      expect(isGoAhead(s, 'igor-bot', IGORS)).toBe(true)
     }
   })
 
   it('does not fire on a remark about the work itself', () => {
-    expect(isGoAhead('we should go ahead with the redesign', 'igor-bot')).toBe(false)
-    expect(isGoAhead('I will continue this tomorrow', 'igor-bot')).toBe(false)
+    expect(isGoAhead('we should go ahead with the redesign', 'igor-bot', IGORS)).toBe(false)
+    expect(isGoAhead('I will continue this tomorrow', 'igor-bot', IGORS)).toBe(false)
   })
 })
 

@@ -17,9 +17,8 @@ function store(roles: Record<string, string>): string {
 }
 
 const ORG = `
-allow: [comment, draft-pr, unassign]
+allow: [comment, draft-pr]
 budget_share: 0.8
-completion: unassign
 lane:
   labels:
     excludes: [Human]
@@ -40,24 +39,24 @@ describe('lineage', () => {
   })
 
   it('rejects a cycle rather than recursing forever', () => {
-    const dir = store({ a: 'extends: [b]\nallow: [unassign]\n', b: 'extends: [a]\nallow: [unassign]\n' })
+    const dir = store({ a: 'extends: [b]\nallow: [comment]\n', b: 'extends: [a]\nallow: [comment]\n' })
     expect(() => resolveRole(dir, 'a')).toThrow(/cycles/)
   })
 
   it('rejects a role that names itself, since the filename is the name', () => {
     const dir = store({ org: ORG, frontend: 'name: frontend\n' })
-    expect(() => resolveRole(dir, 'frontend')).toThrow(/filename is the name/)
+    expect(() => resolveRole(dir, 'frontend')).toThrow(/names "name", which is not a role key/)
   })
 })
 
 describe('monotonic — permissions may only be restricted', () => {
   it('lets a role drop an inherited permission', () => {
-    const dir = store({ org: ORG, docs: 'allow: [comment, unassign]\n' })
-    expect(resolveRole(dir, 'docs').role.allow).toEqual(['comment', 'unassign'])
+    const dir = store({ org: ORG, docs: 'allow: [comment]\n' })
+    expect(resolveRole(dir, 'docs').role.allow).toEqual(['comment'])
   })
 
   it('rejects a role adding a permission it does not inherit', () => {
-    const dir = store({ org: ORG, rogue: 'allow: [comment, unassign, merge]\n' })
+    const dir = store({ org: ORG, rogue: 'allow: [comment, merge]\n' })
     expect(() => resolveRole(dir, 'rogue')).toThrow(/widens allow with merge/)
   })
 
@@ -87,17 +86,17 @@ describe('monotonic — permissions may only be restricted', () => {
   })
 
   it('rejects raising the budget share', () => {
-    const dir = store({ org: ORG, greedy: 'allow: [unassign]\nbudget_share: 0.9\n' })
+    const dir = store({ org: ORG, greedy: 'allow: [comment]\nbudget_share: 0.9\n' })
     expect(() => resolveRole(dir, 'greedy')).toThrow(/raises budget_share/)
   })
 
   it('allows lowering the budget share', () => {
-    const dir = store({ org: ORG, modest: 'allow: [unassign]\nbudget_share: 0.2\n' })
+    const dir = store({ org: ORG, modest: 'allow: [comment]\nbudget_share: 0.2\n' })
     expect(resolveRole(dir, 'modest').role.budgetShare).toBe(0.2)
   })
 
   it('rejects an action outside the closed vocabulary', () => {
-    const dir = store({ org: 'allow: [comment, unassign, deploy]\n' })
+    const dir = store({ org: 'allow: [comment, deploy]\n' })
     expect(() => resolveRole(dir, 'org')).toThrow(/unrecognized action: deploy/)
   })
 })
@@ -105,10 +104,10 @@ describe('monotonic — permissions may only be restricted', () => {
 describe('override — the most specific level wins', () => {
   it('replaces a setting rather than merging it', () => {
     const dir = store({
-      org: 'allow: [comment, unassign, close]\ncompletion: unassign\n',
-      closer: 'completion: close\n',
+      org: 'allow: [comment]\npoll_minutes: 10\n',
+      quick: 'poll_minutes: 2\n',
     })
-    expect(resolveRole(dir, 'closer').role.completion).toBe('close')
+    expect(resolveRole(dir, 'quick').role.pollMinutes).toBe(2)
   })
 
   it('replaces sources wholesale', () => {
@@ -144,7 +143,7 @@ describe('append — levels accumulate', () => {
     // Flattening would let a role widen its own lane by narrowing it: org requiring `ai` and a
     // role requiring `frontend`, read as one "any of" list, matches an item labelled only `ai`.
     const dir = store({
-      org: 'allow: [unassign]\nlane:\n  labels:\n    includes: [ai, bot]\n',
+      org: 'allow: [comment]\nlane:\n  labels:\n    includes: [ai, bot]\n',
       fe: 'lane:\n  labels:\n    includes: [frontend]\n',
     })
     expect(resolveRole(dir, 'fe').role.lane.labels!.includes).toEqual([['ai', 'bot'], ['frontend']])
@@ -152,7 +151,7 @@ describe('append — levels accumulate', () => {
 
   it('conjoins path groups the same way', () => {
     const dir = store({
-      org: 'allow: [unassign]\nlane:\n  paths:\n    under: ["src/**"]\n',
+      org: 'allow: [comment]\nlane:\n  paths:\n    under: ["src/**"]\n',
       fe: 'lane:\n  paths:\n    under: ["**/*.tsx"]\n',
     })
     expect(resolveRole(dir, 'fe').role.lane.paths!.under).toEqual([['src/**'], ['**/*.tsx']])
@@ -165,7 +164,7 @@ describe('append — levels accumulate', () => {
 
   it('takes the stricter age limit when both levels set one', () => {
     const dir = store({
-      org: 'allow: [unassign]\nlane:\n  age:\n    max_days: 90\n',
+      org: 'allow: [comment]\nlane:\n  age:\n    max_days: 90\n',
       fe: 'lane:\n  age:\n    max_days: 30\n',
     })
     expect(resolveRole(dir, 'fe').role.lane.age!.maxDays).toBe(30)
@@ -182,8 +181,8 @@ describe('append — levels accumulate', () => {
 
 describe('one base per role', () => {
   const TWO = {
-    org: 'allow: [comment, draft-pr, unassign]\ncompletion: unassign\nlane:\n  labels:\n    excludes: [Human]\n',
-    engineering: 'allow: [comment, draft-pr, unassign]\ncommands: ["npm test:*", "npm run lint"]\n',
+    org: 'allow: [comment, draft-pr]\nlane:\n  labels:\n    excludes: [Human]\n',
+    engineering: 'allow: [comment, draft-pr]\ncommands: ["npm test:*", "npm run lint"]\n',
     backend: 'extends: engineering\nlane:\n  paths:\n    under: ["server/**"]\n',
     frontend: 'extends: engineering\nlane:\n  paths:\n    under: ["web/**"]\n',
   }
@@ -212,10 +211,10 @@ describe('one base per role', () => {
   it('is not widened when a sibling base changes', () => {
     const dir = store({
       ...TWO,
-      frontend: 'extends: engineering\nallow: [comment, unassign]\n',
-      fullstack: 'extends: engineering\nallow: [comment, draft-pr, unassign]\n',
+      frontend: 'extends: engineering\nallow: [comment]\n',
+      fullstack: 'extends: engineering\nallow: [comment, draft-pr]\n',
     })
-    expect(resolveRole(dir, 'fullstack').role.allow).toEqual(['comment', 'draft-pr', 'unassign'])
+    expect(resolveRole(dir, 'fullstack').role.allow).toEqual(['comment', 'draft-pr'])
   })
 
   it('inherits commands it does not list, and replaces them with a subset where it does', () => {
@@ -230,16 +229,19 @@ describe('one base per role', () => {
   })
 })
 
-describe('completion must be permitted', () => {
-  it('rejects completing with an action outside allow', () => {
+describe('a finished run releases its claim, whatever the role says', () => {
+  it('refuses a completion setting as a key that is not a role key', () => {
     const dir = store({ org: 'allow: [comment]\ncompletion: close\n' })
-    // Otherwise a role forbidden from closing could close by naming it as its completion.
-    expect(() => resolveRole(dir, 'org')).toThrow(/Completion must be permitted/)
+    expect(() => resolveRole(dir, 'org')).toThrow(/names "completion", which is not a role key/)
   })
 
-  it('requires unassign to be permitted even when defaulted', () => {
-    const dir = store({ org: 'allow: [comment]\n' })
-    expect(() => resolveRole(dir, 'org')).toThrow(/completes with "unassign"/)
+  it('refuses an action nothing checks, naming the valid ones', () => {
+    for (const action of ['unassign', 'close', 'assign']) {
+      const dir = store({ org: `allow: [comment, ${action}]\n` })
+      expect(() => resolveRole(dir, 'org')).toThrow(
+        new RegExp(`unrecognized action: ${action}\\. Known actions: comment, review-comment, draft-pr, pr, label, merge, send`),
+      )
+    }
   })
 })
 
@@ -310,21 +312,6 @@ describe('a seat a role names must be declared', () => {
   })
 })
 
-describe('claim wording is not a role setting', () => {
-  it('refuses a role that sets one, rather than loading without it', () => {
-    // The message it would replace is the only place anyone is told that stopping is possible
-    // and needs no permission, so it is not an org's to rewrite. Dropping the key in silence
-    // leaves whoever wrote it believing the fleet says what they told it to.
-    const dir = store({ org: ORG, fe: 'sources: []\nseat: igor-1\nclaim: "Taking this"\n' })
-    expect(() => loadRole(config(dir), 'fe')).toThrow(/claim.*stop instruction/s)
-  })
-
-  it('refuses it on the org base too, where it would reach every role', () => {
-    const dir = store({ org: `${ORG}claim: "Taking this"\n`, fe: 'sources: []\nseat: igor-1\n' })
-    expect(() => loadRole(config(dir), 'fe')).toThrow(/claim/)
-  })
-})
-
 describe('a role file refuses a key nobody reads', () => {
   it('names the offending key and the ones it accepts', () => {
     const dir = store({ org: ORG, fe: 'sources: []\nseat: igor-1\nreviewer: [sarah]\n' })
@@ -376,8 +363,7 @@ describe('a role file refuses a key nobody reads', () => {
         '  age:',
         '    max_days: 30',
         'instructions: Link the issue.',
-        'completion: unassign',
-        'allow: [comment, unassign]',
+        'allow: [comment]',
         'commands: []',
         'budget_share: 0.4',
         'reviewers: [sarah]',
@@ -392,12 +378,12 @@ describe('a role file refuses a key nobody reads', () => {
 })
 
 describe('explain', () => {
-  const dir = store({ org: ORG, fe: 'completion: unassign\nlane:\n  labels:\n    includes: [ai]\n' })
+  const dir = store({ org: ORG, fe: 'poll_minutes: 2\nlane:\n  labels:\n    includes: [ai]\n' })
   const text = explainRole(resolveRole(dir, 'fe'))
 
   it('names the level each value came from', () => {
     expect(text).toMatch(/allow:.*\[org\]/)
-    expect(text).toMatch(/completion:.*\[fe\]/)
+    expect(text).toMatch(/poll:.*\[fe\]/)
   })
 
   it('marks unset values as defaults rather than inventing a source', () => {
@@ -410,7 +396,7 @@ describe('explain', () => {
 
   it('renders conjoined groups as "and", so a reader sees each level adds a constraint', () => {
     const two = store({
-      org: 'allow: [unassign]\nlane:\n  labels:\n    includes: [ai, bot]\n',
+      org: 'allow: [comment]\nlane:\n  labels:\n    includes: [ai, bot]\n',
       fe: 'lane:\n  labels:\n    includes: [frontend]\n',
     })
     expect(explainRole(resolveRole(two, 'fe'))).toContain('ai or bot  and  frontend')
@@ -429,20 +415,18 @@ describe('listing', () => {
 })
 
 describe('the GitHub App a role acts as', () => {
-  it('refuses a role file naming an App, saying where the App comes from', () => {
-    const dir = store({ org: 'allow: [comment, unassign]\n', reviewer: 'github_app: maintainer\n' })
-    expect(() => resolveRole(dir, 'reviewer')).toThrow(
-      /sets "github_app" — an Igor acts as the GitHub App named after its role, and its credentials come from its environment/,
-    )
+  it('refuses a role file naming an App, as a key that is not a role key', () => {
+    const dir = store({ org: 'allow: [comment]\n', reviewer: 'github_app: maintainer\n' })
+    expect(() => resolveRole(dir, 'reviewer')).toThrow(/names "github_app", which is not a role key/)
   })
 
   it('refuses a base naming an App, so no role inherits another Igor\'s App', () => {
-    const dir = store({ org: 'allow: [comment, unassign]\ngithub_app: shared\n', reviewer: '' })
-    expect(() => resolveRole(dir, 'reviewer')).toThrow(/sets "github_app"/)
+    const dir = store({ org: 'allow: [comment]\ngithub_app: shared\n', reviewer: '' })
+    expect(() => resolveRole(dir, 'reviewer')).toThrow(/names "github_app", which is not a role key/)
   })
 
   it('explains the identity and whether the environment holds its credentials, without reading a key', () => {
-    const dir = store({ org: 'allow: [comment, unassign]\n', reviewer: '' })
+    const dir = store({ org: 'allow: [comment]\n', reviewer: '' })
     const resolved = resolveRole(dir, 'reviewer')
     const missing = explainRole(resolved, { GITHUB_APP_IDENTITY: 'reviewer', GITHUB_APP_PRIVATE_KEY_FILE: '/nonexistent.pem' })
     expect(missing).toContain('github app:    reviewer')

@@ -1,5 +1,5 @@
 import type { Candidate, ClaimVerdict, Tracker } from './adapter.js'
-import { isGoAhead } from './signals.js'
+import { isGoAhead, type Accounts } from './signals.js'
 import { heldByOthers, type Holding } from './predicate.js'
 import type { Role } from './role.js'
 
@@ -424,7 +424,7 @@ export interface EligibilityInput {
    * Everything said on the item after the stop, in creation order. Fetched on demand, because it
    * costs a request per item and most verdicts do not need it.
    */
-  since: () => Promise<{ body: string; at: string }[]>
+  since: () => Promise<{ body: string; at: string; accounts: Accounts }[]>
   identity: string
   /** How the tracker's holder field shows this Igor; see `heldByOthers`. */
   holding?: Holding
@@ -462,7 +462,7 @@ export async function eligibleAfterStop(input: EligibilityInput): Promise<Eligib
     return { eligible: true, reason: 'cooldown elapsed and nobody took it' }
   }
 
-  const goAhead = (await input.since()).find((m) => isGoAhead(m.body, input.identity))
+  const goAhead = (await input.since()).find((m) => isGoAhead(m.body, input.identity, m.accounts))
   if (goAhead) {
     return { eligible: true, reason: 'someone said to carry on' }
   }

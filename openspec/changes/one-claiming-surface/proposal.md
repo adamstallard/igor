@@ -114,8 +114,10 @@ None.
 
 ### Modified Capabilities
 
-- `role-config`: one modified requirement (`extends` names at most one base) and one added (an
-  Igor holds exactly one role).
+- `role-config`: three modified requirements (`extends` names at most one base; the keys a role
+  file supports, without `completion`; the `allow` vocabulary and the override examples), one
+  removed (a completion action
+  must be permitted by `allow`) and one added (an Igor holds exactly one role).
 - `work-claiming`: five modified requirements (how a claim is expressed and resolved; settle
   and stand-down; who a stop is for; what follows a stop, and who a go-ahead is for; giving
   back a claim that cannot be kept) and seven added
@@ -124,7 +126,9 @@ None.
   by removing the holding Igor's label first, issues created from chat).
 - `surface-adapter`: two modified requirements (the holder-field declaration; the GitHub
   adapter claims by label).
-- `task-execution`: one added requirement (a person approves every Igor pull request).
+- `task-execution`: one modified requirement (losing a claim does not finish the item), one
+  removed (completion behaviour follows configured policy) and one added (a person approves
+  every Igor pull request).
 
 ## Impact
 

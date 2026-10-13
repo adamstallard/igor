@@ -4,7 +4,7 @@ import type { Role } from '../src/role.js'
 import { catchUpItem, findDirected } from '../src/loop.js'
 import { tempDir } from './tmp.js'
 
-const role = { name: 'triage', reviewers: [], allow: ['comment', 'draft-pr', 'unassign'], commands: [], completion: 'unassign',
+const role = { name: 'triage', reviewers: [], allow: ['comment', 'draft-pr'], commands: [],
   instructions: [], settleSeconds: 0, cooldownMinutes: 60, pollMinutes: 10, lane: {},
   sources: [{ tracker: 'github', repo: 'o/r', query: 'is:issue is:open' }] } as unknown as Role
 const item = (holders: string[]): Candidate => ({ id: 'github:o/r#7', tracker: 'github', repo: 'o/r', native: '7', title: 'x', body: '',
@@ -27,7 +27,7 @@ function world(live: string[], setBy: () => any, verdict: any = { status: 'held'
       labels.add('igor:triage'); return true
     },
     commentsSince: async () => [], verifyClaim: async () => verdict,
-    report: async (_c, m) => { said.push(m); return 'x' },
+    report: async (_c: unknown, m: string) => { said.push(m); return 'x' },
     release: async () => { labels.delete('igor:triage'); return true }, linkage: () => '',
   } as unknown as Tracker
   const codeHost = { name: 'github', produce: async () => ({}), catchUp: async () => ({ outcome: 'conflict' }), resolve: async () => '' } as unknown as CodeHost
@@ -57,7 +57,7 @@ describe('a catch-up on an item a person handed over', () => {
     expect(w.said.some((m) => m.startsWith('This still carries'))).toBe(false)
 
     // Adam hands it over again after the pull request closed.
-    const closed = { ...item(['igor:triage']), inFlight: undefined } as Candidate
+    const closed = { ...item(['igor:triage']), inFlight: undefined } as unknown as Candidate
     const t = Object.assign(Object.create(w.deps.tracker), {
       directed: async () => [closed],
       holderSetBy: async () => ({ self: false, by: 'adam', at: '2026-10-10T03:00:00Z' }),

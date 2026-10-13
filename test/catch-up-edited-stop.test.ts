@@ -3,8 +3,9 @@ import type { Candidate, CodeHost, Tracker } from '../src/adapter.js'
 import type { Role } from '../src/role.js'
 import { catchUpItem } from '../src/loop.js'
 import { labelVerdictFrom } from '../src/github-adapter.js'
+import { IGORS } from './igors.js'
 
-const role = { name: 'triage', reviewers: [], allow: ['comment', 'draft-pr', 'unassign'], commands: [], completion: 'unassign',
+const role = { name: 'triage', reviewers: [], allow: ['comment', 'draft-pr'], commands: [],
   instructions: [], settleSeconds: 0, cooldownMinutes: 60, pollMinutes: 10, lane: {},
   sources: [{ tracker: 'github', repo: 'o/r', query: 'is:issue is:open' }] } as unknown as Role
 const item = (): Candidate => ({ id: 'github:o/r#7', tracker: 'github', repo: 'o/r', native: '7', title: 'x', body: '',
@@ -28,6 +29,7 @@ it('keeps the person\'s label when a stop said before the hand-over is edited du
       { login: 'igor-bot', accountId: 1, holder: 'igor:triage' }, [...labels], undefined,
       raw.filter((c) => Date.parse(c.updated) >= Date.parse(since)).map((c) => ({ body: c.body, user: { login: c.author }, created_at: c.created })),
       since,
+      IGORS,
     ),
     report: async (_c: Candidate, m: string) => { said.push(m); return 'x' },
     release: async () => { labels.delete('igor:triage'); return true }, linkage: () => '',

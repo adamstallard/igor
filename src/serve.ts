@@ -98,8 +98,9 @@ export async function serve(
     //
     // **The second one in a row ends the cycle, not the first.** A run cannot tell whether a
     // failure is the surface's or the item's: `codeHost.produce` fails inside `execute` for a
-    // branch the item already owns, while a tracker that does not answer the completion
-    // unassign fails outside it, so neither the error nor what the run reached separates them.
+    // branch the item already owns, while a tracker that does not answer the release that ends
+    // a finished run fails outside it, so neither the error nor what the run reached separates
+    // them.
     // How many items fail does: an outage fails every item, and a bad item fails one. A table
     // of error shapes is rejected, because the first error it doesn't list falls through.
     //

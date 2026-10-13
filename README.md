@@ -313,8 +313,8 @@ rejection is undone the same way it was made, by removing a file in a pull reque
 ## Roles
 
 A role is a YAML file under `roles/` in your lore repository, and the filename is its name.
-It declares `extends`, `seat`, `sources`, `lane`, `instructions`, `completion`, `allow`,
-`commands`, `budget_share` and `reviewers`. Roles compose, and a role may narrow what it
+It declares `extends`, `seat`, `sources`, `lane`, `instructions`, `allow`, `commands`,
+`budget_share` and `reviewers`. Roles compose, and a role may narrow what it
 inherits but never widen it — `igor role explain <name>` prints the effective merge with the
 level each value came from.
 
@@ -325,8 +325,7 @@ inherits: a command named on a role and nowhere above it is refused rather than 
 
 ```yaml igor:role
 # roles/org.yaml
-allow: [draft-pr, comment, unassign]
-completion: unassign
+allow: [draft-pr, comment]
 commands:
   - "git rm:*"                        # the only way to remove or rename a tracked file
   - "git mv:*"                        # stages both sides, so the change reads as a rename
@@ -351,7 +350,7 @@ sources:
   - tracker: github
     repo: org/web
     query: "is:issue is:open label:ai"
-allow: [draft-pr, comment, unassign]
+allow: [draft-pr, comment]
 commands:
   - "npm test:*"
   - "npx tsc --noEmit"
@@ -360,7 +359,7 @@ reviewers: [sarah]
 
 **A role extends at most one base**, and a role naming two is refused. With two, its
 permissions would change whenever either base changed, without its own file changing, and the
-bases would conflict on fields where the last level wins, such as `completion`. A role spanning
+bases would conflict on fields where the last level wins, such as `poll_minutes`. A role spanning
 several areas gets its own lane and its own `allow` and `commands`, and shares what roles have
 in common through a base they all extend:
 

@@ -19,14 +19,21 @@ import type { TreeProvider, WorkingTree } from '../src/worktree.js'
 import { serve, untilSignalled, type ServeEvent } from '../src/serve.js'
 import { labelVerdictFrom } from '../src/github-adapter.js'
 import { tempDir } from './tmp.js'
+import { IGORS } from './igors.js'
+
+/**
+ * Fixture times, counted back from when the suite runs. Discovery reads `updatedAt` against the
+ * real clock (`sinceDays` below), so a fixed date would age out of the window.
+ */
+const STARTED = Date.now()
+const ago = (minutes: number): string => new Date(STARTED - minutes * 60_000).toISOString()
 
 const role = (over: Partial<Role> = {}): Role =>
   ({
     name: 'triage',
     reviewers: [],
-    allow: ['comment', 'draft-pr', 'unassign'],
+    allow: ['comment', 'draft-pr'],
     commands: [],
-    completion: 'unassign',
     instructions: [],
     settleSeconds: 0,
     cooldownMinutes: 60,
@@ -50,8 +57,8 @@ const issue = (n: number): Candidate =>
     assignees: [],
     holders: [],
     paths: [],
-    createdAt: '2026-09-13T00:00:00Z',
-    updatedAt: '2026-09-13T00:00:00Z',
+    createdAt: ago(120),
+    updatedAt: ago(120),
     ageDays: 0,
     idleDays: 0,
   }) as unknown as Candidate
@@ -623,7 +630,7 @@ describe('items a person hands to this Igor by label', () => {
     let triaged = 0
     Object.assign(d.tracker, {
       directed: async () => [handed],
-      holderSetBy: async () => ({ self: false, by: 'adam', at: '2026-09-13T00:00:00Z' }),
+      holderSetBy: async () => ({ self: false, by: 'adam', at: ago(120) }),
       claim: async (c: Candidate) => {
         claimed.push(c.id)
         return true
@@ -653,7 +660,7 @@ describe('items a person hands to this Igor by label', () => {
     const reported: string[] = []
     Object.assign(d.tracker, {
       directed: async () => [both],
-      holderSetBy: async () => ({ self: false, by: 'adam', at: '2026-09-13T00:00:00Z' }),
+      holderSetBy: async () => ({ self: false, by: 'adam', at: ago(120) }),
       report: async (_c: Candidate, m: string) => {
         reported.push(m)
       },
@@ -675,7 +682,7 @@ describe('an item handed over while a pull request is open for it', () => {
     const reported: string[] = []
     Object.assign(d.tracker, {
       directed: async () => [handed],
-      holderSetBy: async () => ({ self: false, by: 'adam', at: '2026-09-13T00:00:00Z' }),
+      holderSetBy: async () => ({ self: false, by: 'adam', at: ago(120) }),
       report: async (_c: Candidate, m: string) => {
         reported.push(m)
       },
@@ -694,7 +701,7 @@ describe('an item handed over whose own artifact the cycle is catching up', () =
     const reported: string[] = []
     Object.assign(d.tracker, {
       directed: async () => [item],
-      holderSetBy: async () => ({ self: false, by: 'adam', at: '2026-09-13T00:00:00Z' }),
+      holderSetBy: async () => ({ self: false, by: 'adam', at: ago(120) }),
       report: async (_c: Candidate, m: string) => {
         reported.push(m)
       },
@@ -736,7 +743,7 @@ describe('a handed-over item whose own pull request the cycle catches up', () =>
     Object.assign(d.tracker, {
       search: async () => { cycle += 1; return [cur()] },
       directed: async () => [cur()],
-      holderSetBy: async () => ({ self: false, by: 'adam', at: '2026-09-13T00:00:00Z' }),
+      holderSetBy: async () => ({ self: false, by: 'adam', at: ago(120) }),
       commentsSince: async () => said,
       report: async (_c: Candidate, m: string) => { reported.push(`cycle${cycle}: ${m.slice(0, 120)}`); said.push({ author: 'igor-bot', at: new Date().toISOString(), body: m }) },
       release: async () => { released.push(`cycle${cycle}`); return true },
@@ -756,8 +763,8 @@ describe('a handed-over item stopped while nothing ran', () => {
     const released: boolean[] = []
     Object.assign(d.tracker, {
       directed: async () => [handed],
-      holderSetBy: async () => ({ self: false, by: 'adam', at: '2026-09-13T00:00:00Z' }),
-      commentsSince: async () => [{ author: 'bob', at: '2026-09-13T01:00:00Z', body: 'stop' }],
+      holderSetBy: async () => ({ self: false, by: 'adam', at: ago(120) }),
+      commentsSince: async () => [{ author: 'bob', at: ago(60), body: 'stop' }],
       release: async (_c: Candidate, _as: string, how?: { stop?: boolean }) => { released.push(how?.stop === true); return true },
       report: async (_c: Candidate, m: string) => { reported.push(m) },
     })
@@ -783,7 +790,7 @@ describe('a stop said while the cycle works another item', () => {
     Object.assign(d.tracker, {
       verifyClaim: async (c: Candidate, as: string, since: string) =>
         labelVerdictFrom({ login: as, accountId: 1, holder: 'igor:triage' }, ['igor:triage'], undefined,
-          (comments[c.id] ?? []).filter((m) => Date.parse(m.updated_at) >= Date.parse(since)), since),
+          (comments[c.id] ?? []).filter((m) => Date.parse(m.updated_at) >= Date.parse(since)), since, IGORS),
       report: async (c: Candidate, m: string) => { say(c.id, 'igor-bot', m) },
     })
     const { events, onEvent } = collect()

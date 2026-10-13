@@ -7,6 +7,8 @@
  * though only GitHub ships now.
  */
 
+import type { Accounts } from './signals.js'
+
 /**
  * Whether an artifact still merges into its base.
  *
@@ -131,6 +133,12 @@ export interface Comment {
   author: string
   at: string
   body: string
+  /**
+   * The kind of each name this comment's opening stop or go-ahead mentions: `igor` or `other`, as
+   * the surface resolved it. A name it could not resolve is missing, and so is every name in a
+   * comment that does not open with a stop or a go-ahead, which leaves the record empty.
+   */
+  accounts: Accounts
 }
 
 export interface Tracker {

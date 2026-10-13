@@ -29,7 +29,7 @@ const candidate = (over: Partial<Candidate> = {}): Candidate =>
   ({ id: 'github:o/r#7', tracker: 'github', repo: 'o/r', native: '7', title: 'A bug', body: '', author: 'reporter', assignees: [], holders: [], labels: [], paths: [], state: 'open', ...over }) as unknown as Candidate
 
 const role = (over: Partial<Role> = {}): Role =>
-  ({ name: 'triage', reviewers: ['alice'], allow: ['comment', 'draft-pr', 'unassign'], commands: [], completion: 'unassign', instructions: [], settleSeconds: 0, cooldownMinutes: 60, ...over }) as Role
+  ({ name: 'triage', reviewers: ['alice'], allow: ['comment', 'draft-pr'], commands: [], instructions: [], settleSeconds: 0, cooldownMinutes: 60, ...over }) as Role
 
 function deps(opts: {
   caughtUp?: CatchUp[]
@@ -46,8 +46,8 @@ function deps(opts: {
   /** A publish that fails after the worker ran — a branch left by a closed pull request. */
   produceThrows?: boolean
   /**
-   * A tracker that will not give the claim up. The completion action is an unassign, so this
-   * is what a 503 on the last call of a run that already published looks like.
+   * A tracker that will not give the claim up. A finished run ends by releasing its claim, so
+   * this is what a 503 on the last call of a run that already published looks like.
    */
   releaseThrows?: boolean
   /**
@@ -299,7 +299,7 @@ describe('an Igor never goes silent on something it claimed', () => {
     // behind the other: the handoff names a cure, somebody makes it, and the next run stops
     // on the one nothing told them about.
     const { d, posts } = deps({ changes: [{ path: 'a.ts', kind: 'modified', content: 'x' }] })
-    const r = await runItem(d, candidate(), role({ allow: ['comment', 'unassign'] }), 'igor-bot', {
+    const r = await runItem(d, candidate(), role({ allow: ['comment'] }), 'igor-bot', {
       ...noWait,
       worker: async () => ({
         result: 'Fixed it.',
@@ -386,8 +386,7 @@ describe('a claim held through a failure that is not the item\'s', () => {
   })
 
   it('keeps what the run produced when the failure comes after the work', async () => {
-    // The completion action is an unassign, so the last call of a successful run is a release
-    // — and a 503 there reaches the handler with a draft already open. A handoff composed
+    // The last call of a successful run is the release of its claim — and a 503 there reaches the handler with a draft already open. A handoff composed
     // without the result says "the work never started" beside a live pull request, links it
     // nowhere, and reports the run as costing nothing.
     const { d, posts, produced } = deps({
@@ -509,7 +508,7 @@ describe('a claim held through a failure that is not the item\'s', () => {
     let ran = 0
     const { d } = deps({
       caughtUp: [{ outcome: 'conflict' }, { outcome: 'already-current' }],
-      merge: { conflicts: [], head: 'headsha', broughtIn: 'basesha' },
+      merge: { conflicts: [], head: 'headsha', broughtIn: 'basesha', baseChanges: [] },
       changes: [{ path: 'src/a.ts', content: 'merged\n', kind: 'modified' }],
       releaseThrows: true,
     })
@@ -998,7 +997,7 @@ describe('standing down after the settle window', () => {
     // Unassigning or moving an item somebody else took would undo their claim.
     const { d, released } = then({ status: 'lost', by: 'alice' })
     await runItem(d, candidate(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
-    // Exactly one release, the stand-down — not a second from the completion policy.
+    // Exactly one release, the stand-down — not a second from the end of a finished run.
     expect(released).toEqual(['igor-bot'])
   })
 
@@ -1067,7 +1066,7 @@ describe('one read, several windows', () => {
     const t: CommentSource = {
       commentsSince: async (_c, since) => {
         asked.push(since)
-        return spoken.filter((m) => Date.parse(m.at) >= Date.parse(since))
+        return spoken.filter((m) => Date.parse(m.at) >= Date.parse(since)).map((m) => ({ ...m, accounts: {} }))
       },
     }
     return { t, asked }
