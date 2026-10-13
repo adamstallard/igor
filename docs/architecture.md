@@ -272,13 +272,14 @@ here, it broke us in March" — which nobody searches for because nobody knows t
 entire justification for unbidden firing, and it is why better search cannot replace the
 channel.
 
-**Decided: the worker may search surfaces mid-task, read-only and capped.** Not built.
-Reading the repository is already available. Searching Linear or Slack for the discussion behind
-an ambiguous item is allowed too: read-only, capped in call count, with everything returned marked
-untrusted exactly as ingested content already is (§5.4). A human would read the original
-discussion before touching something ambiguous, and forbidding it buys no safety — the content is
-equally untrusted whether it arrives by firing or by fetching. The cap guards against
-rabbit-holing, not against attack.
+**Decided: the worker may also search the trackers and chat tools Igor works on, read-only and
+capped.** Not built; issue #180 tracks it. This widens the Ambient channel above from the
+codebase to the discussion behind an ambiguous item, on GitHub, Linear or Slack, as a person
+would read it before touching the code. Search is read-only and capped in call count; the size
+of the cap is open. Everything a search returns is marked untrusted, as the claimed item already
+is (§5.4). Forbidding search buys no safety: the worker already reads untrusted text in the item
+it claimed, and text it fetches is just as untrusted. The cap stops a worker spending its run on
+searching; it is not a defence against attack.
 
 ### 3.3 Firing — **built** (injection; relevance filtering still ahead)
 
@@ -1981,9 +1982,11 @@ Agreed in principle, not scoped, roughly in dependency order:
 
 ### 9.1 `src/cli.ts` is wiring, and its wiring is untested — **decided**
 
-Nothing in the test suite drives `src/cli.ts`, and that is accepted (#95). The module
-top-level-awaits `program.parseAsync()`, so importing it runs the CLI and no test can load it. A
-subprocess harness would catch wiring and nothing else, at the cost of slow tests and a kind of
+Nothing in the test suite drives `src/cli.ts`, and that is accepted (#95). The module calls
+`program.parseAsync()` at its top level, so importing it runs whatever command the process's own
+arguments name, and a configuration error there calls `process.exit(1)`. A module is loaded once
+per process, so a test that imports it runs at most one command, and can exit the test process.
+A subprocess harness would catch wiring and nothing else, at the cost of slow tests and a kind of
 fixture the repository has none of.
 
 **The rule that keeps the untested part small:** each action in `cli.ts` is a few lines that

@@ -360,8 +360,14 @@ rather than a prediction of what the implementation will achieve.
 
 - Which embedding model for clustering, and does it run locally or through an API? Affects
   whether repository content leaves the environment. Deferred until mining resumes.
-- **Decided (Adam, 2026-10-11): lore lives in its own repository, `igor-lore`,** not a path
-  inside the operating team's repository.
+
+## Settled Questions
+
+- **Decided (Adam, 2026-10-11): mined lore goes to the team's own lore repository, not to a
+  path inside the repository being mined.** A store inside another repository takes that
+  repository's access, visibility and lifecycle. So Igor refuses, when it loads its
+  configuration, a store that is not at the root of its own repository (`docs/architecture.md`
+  §6.7). For Igor's own codebase the lore repository is `igor-lore`.
 
 ## Sources, ranked by evidence rather than by volume
 
