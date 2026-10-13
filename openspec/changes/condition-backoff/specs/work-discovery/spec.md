@@ -18,9 +18,9 @@ costs is the items themselves: marked seen, never rediscovered, never worked.
 
 A cycle has not acted on an item triage chose to work until it takes that item. Where a cycle does
 not take one, because its budget ran out, a condition (a fault in the Igor's own configuration that
-recurs on every item) stopped it part-way through, or the tracker gave no answer to its claim, the watermark SHALL NOT advance past that item. Passed by the
-mark, the item would be marked seen and never worked, with no decision against it to justify the
-loss.
+recurs on every item) stopped it part-way through, or the tracker gave no answer to its claim, the 
+watermark SHALL NOT advance past that item. Passed by the mark, the item would be marked seen and 
+never worked, with no decision against it to justify the loss.
 
 Where the tracker answered the claim and refused it, the watermark SHALL advance past the item as
 past one taken. Such a refusal is about the item or about what the Igor may do, such as a GitHub
