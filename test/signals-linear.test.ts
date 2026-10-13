@@ -122,17 +122,28 @@ describe('every pattern signals.ts matches with runs in linear time', () => {
     })
   }
 
-  // recheck checks one pattern at a time, so it cannot see `addressed()` looking back for the
-  // start of the line at each place it finds the name. With no line break before it, that
-  // look-back runs to the start of the comment each time, so a comment naming the Igor many times
-  // costs time quadratic in its length: about 60 ms for each of `isStop` and `isGoAhead` at
-  // GitHub's 65,536-character limit. The two take about 120 ms against a bound of a second, which
-  // leaves room for a loaded machine and still fails if the cost per name grows about eightfold.
-  it('a comment naming the Igor many times on one line, at the length limit, reads in under a second', () => {
-    const body = `${bareName(IDENTITY)} `.repeat(65_536).slice(0, 65_536)
-    const started = performance.now()
-    isStop(body, IDENTITY, {})
-    isGoAhead(body, IDENTITY, {})
-    expect(performance.now() - started).toBeLessThan(1000)
-  })
+  // recheck checks one pattern at a time, so it cannot see the loop in `addressed()` that decides,
+  // for each place it finds the name, whether that place is on a quoted line. Each body below is
+  // four times GitHub's 65,536-character limit and names the Igor thousands of times, in the three
+  // shapes a loop that rereads the line at every name is slow on: all on one line (about 29,000
+  // names), after a long indent that the quote test would rescan (about 14,500), and on a quoted
+  // line, where every name is skipped (about 29,000). That loop takes 2 to 4 seconds on each.
+  // Reading each line once, `isStop` and `isGoAhead` together take a few milliseconds, so the
+  // 250 ms bound fails the slow loop with room to spare, and gives a loaded machine about fifty
+  // times what the calls need.
+  const LONG = 4 * 65_536
+  const names = `${bareName(IDENTITY)} `.repeat(LONG)
+  for (const [shape, body] of [
+    ['on one line', names],
+    ['after a long indent', `.\n${' '.repeat(LONG / 2)}${names}`],
+    ['on a quoted line', `> ${names}`],
+  ] as const) {
+    it(`a comment naming the Igor many times ${shape} reads in linear time`, () => {
+      const text = body.slice(0, LONG)
+      const started = performance.now()
+      isStop(text, IDENTITY, {})
+      isGoAhead(text, IDENTITY, {})
+      expect(performance.now() - started).toBeLessThan(250)
+    })
+  }
 }, 300_000)

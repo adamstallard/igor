@@ -51,17 +51,37 @@ function addressed(text: string, identity: string, verb: RegExp): boolean {
   if (mention === undefined) return false
   // Every mention of the name is tried, so one in passing earlier in the comment does not hide a
   // later "@name stop". A mention on a quoted line (`> `) is someone else's words being quoted,
-  // so it never addresses this Igor.
+  // so it never addresses this Igor. A line is quoted when its first character other than
+  // whitespace is `>`, before the mention. A line after a quoted one, with no `>` of its own, is
+  // not quoted, though Markdown's lazy continuation would quote it, so a stop typed under a quote
+  // still counts.
+  //
+  // Each line is read once, as the mentions move forward through the text. Looking back for the
+  // start of the line at every mention instead costs time quadratic in the length of a comment
+  // that names the Igor many times on one line.
+  let lineEnd = -1
+  let quoteAt = Infinity
   for (const found of text.matchAll(mention)) {
-    const lineStart = text.lastIndexOf('\n', found.index) + 1
-    if (QUOTED_LINE.test(text.slice(lineStart, found.index))) continue
+    while (lineEnd <= found.index && lineEnd !== text.length) {
+      const lineStart = lineEnd + 1
+      lineEnd = text.indexOf('\n', lineStart)
+      if (lineEnd === -1) lineEnd = text.length
+      QUOTE_MARK.lastIndex = lineStart
+      quoteAt = QUOTE_MARK.test(text) ? QUOTE_MARK.lastIndex - 1 : Infinity
+    }
+    if (quoteAt < found.index) continue
     if (verb.test(text.slice(found.index + found[0].length).trim())) return true
   }
   return false
 }
 
-/** Whether a line is quoted, tested on the line from its start up to a mention on it. */
-const QUOTED_LINE = /^\s*>/
+/**
+ * The `>` that quotes a line, found from the line's start past any whitespace but a line break.
+ * Sticky, so it matches only at the line start `addressed()` puts in `lastIndex`; without the
+ * flag it would find a `>` anywhere later in the text. One instance serves every call, which is
+ * safe only because `lastIndex` is set before each `test`.
+ */
+const QUOTE_MARK = new RegExp(`${SPACE}*>`, 'y')
 
 /**
  * A mention of `identity` and any further mentions up to where the verb would start, or
@@ -296,7 +316,7 @@ export function grammarPatterns(identity: string): Record<string, RegExp> {
     STOP,
     GO_AHEAD,
     ...(mention === undefined ? {} : { mentionOf: mention }),
-    QUOTED_LINE,
+    QUOTE_MARK,
     LIST_START,
     LIST_MENTION,
     LIST_SEPARATOR,
