@@ -7,13 +7,14 @@
    body. Also rejected: a GitHub check run, which needs `checks: write` on every Igor's App and
    shows only pass or fail.
 2. **A row whose check did not run says `not checked`, and that makes the label `review: read`.**
-   This holds whether the check was never built or was not configured.
+   This holds whether the check was never built, was not configured, or does not cover this
+   push, as `scope-check` does not cover a push onto an existing pull request.
    *Rejected:* leaving the row out. Without the row, a reviewer cannot tell a check that passed
    from one that never ran.
 3. **The rule for the label:** `review: skim` only when all four hold:
-   - the loop re-ran the role's commands and every one passed;
+   - every one of the role's `checks` (`loop-verifies-commands`) passed when the loop ran it;
    - the scope check ran and found no changed path outside the issue's scope;
-   - the run changed at most 5 paths, and did not declare that it undoes a change the base
+   - the run published at most 5 paths, and did not declare that it undoes a change the base
      branch made (a catch-up resolution must declare such an undo, under *A base change is
      undone only where the resolution says so*);
    - the sandbox denied nothing.
@@ -35,10 +36,24 @@
    only.
    *Rejected:* having the model step write the table. The model would then restate the facts it
    is being checked against.
+6. **The loop sets the label without `label` in the role's `allow`**, as it sets its
+   `igor:<role>` claim label. `allow` governs what the worker's output may become; the label is the loop's own.
+   *Rejected:* requiring `label` in `allow`. The default org base, `[draft-pr, comment]`, would
+   then label nothing.
 
-**Still open:** #153's scenario *A signed description is published* says the pull request is
-created with "exactly that description". Whichever of the two changes lands second rewords that
-scenario to add "followed by the evidence table".
+**Still open:**
+
+- **#153 (`signed-publishing`).** For a role that lists `prose`, #153 replaces the worker's
+  summary with a description the prose pass writes and signs, and its scenario *A signed
+  description is published* says the pull request is created with "exactly that description".
+  Whichever of the two changes lands second rewords item 2 of *A pull request body holds a
+  capped summary, then the loop's evidence* to name the signed description, and adds "followed
+  by the evidence table" to that scenario.
+- **#150 (two-gate workflow).** Under it, every Igor pull request would be `review: read`.
+  `scope-check` flags gate one, whose change directory the issue cannot name before it exists.
+  It also checks nothing pushed onto an existing pull request, and gate two pushes onto gate
+  one's pull request. Settling this
+  belongs to `scope-check` or #150, not this change.
 
 ## Why
 
@@ -59,15 +74,18 @@ request. No requirement governs the body: the 700-character limit exists only in
 - The execution record keeps the turn count on every run. It is kept today only when the
   provider reported no cost (`src/execute.ts:1496-1498`).
 - Igor sets one label on the pull request, `review: skim` or `review: read`.
-- A later push by a run replaces both the table and the label.
+- A later run that publishes onto the pull request replaces both the table and the label. A
+  merge the code host makes without a worker changes neither.
 
 ## Dependencies
 
 Three rows come from records that other changes, drafted alongside this one, add:
 
-- **`loop-verifies-commands`**: the loop's re-run of `role.commands` (the Tests row).
-- **`keep-action-log`**: each command the worker ran, with its exit code (the Commands row).
-- **`scope-check`**: the changed paths outside the issue's scope (the Files row).
+- **`loop-verifies-commands`**: the loop's run of the role's `checks` (the Tests row).
+- **`keep-action-log`**: each command the worker ran, with its exit code where the stream
+  states one (the Commands row), and the redaction every command, path and output line in the table gets.
+- **`scope-check`**: the changed paths outside the issue's scope (the Files row). It checks
+  only a new pull request, so a push onto an existing one is labelled `review: read`.
 
 This change can ship before any of them. Until a row's source change ships, that row says
 `not checked` or `not recorded`, and the label is `review: read`.
