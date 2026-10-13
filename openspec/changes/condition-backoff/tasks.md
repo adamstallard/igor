@@ -90,6 +90,11 @@
 
 - [x] 7.1 When merging, reword `docs/architecture.md` §6.3.4's "or by the condition record if
       #101 lands" as present
-- [ ] 7.2 When merging, if `main` still says "until a reply or an edit answers it"
+- [x] 7.2 When merging, if `main` still says "until a reply or an edit answers it"
       (`docs/architecture.md` §5.0.2), reword it to say only someone with write access lifts a
-      deferral. #141 carries the same task; whichever merges first does it
+      deferral. #141 carries the same task; whichever merges first does it.
+      **Done here by moving it** (Adam, 2026-10-13); nothing of it remains open in this change.
+      `main` still lets a reply from anyone but the Igor lift a deferral, so the new wording would
+      be false until #141's implementation makes only a writer's reply lift one. The rewording
+      ships with that implementation, as task 6.1 of `defer-a-closed-pull-request` (PR #141,
+      branch `closed-pr-defers`)

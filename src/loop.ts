@@ -260,12 +260,19 @@ export async function runItem(
     // **What a retry would cost decides what happens next, not whose fault the throw was**,
     // which nothing here can tell. A retry is *dear* where it would spend the whole worker again
     // to reach the same failure: the worker ran and nothing was published. Then the item is
-    // handed off and waits in the deferral record until someone with write access answers.
-    // Otherwise the item is refused and tried again next cycle. Before the worker ran a retry
-    // is cheap, and once something is published the in-flight rule keeps the item off the claim
-    // path anyway, so deferring it would only stop that artifact being caught up. A run
-    // `execute` reports as refused is never dear: a stop or a loss is handled above, and the
-    // only other refusal is the action space, which carries a cure.
+    // handed off and waits in the deferral record until someone other than the Igor replies to
+    // it or the item is edited.
+    //
+    // Otherwise the item is refused and tried again next cycle. A retry is cheap in two cases:
+    // - Before the worker ran, nothing has been spent.
+    // - Once something is published, the in-flight rule keeps the item off the claim path anyway.
+    //   Deferring it then would only stop a later cycle bringing that pull request up to date with
+    //   its base (a catch-up).
+    //
+    // A run `execute` reported as refused reaches this handler only when something after it threw,
+    // such as the release. It is never dear: a stop or a loss is handled above, and the only other
+    // refusal is the role's action space. That refusal carries a cure key, so the handoff names
+    // the setting to change and the item is not deferred.
     //
     // Decided before the handoff is composed, because the handoff says which way it went.
     const spent = reached.output !== undefined

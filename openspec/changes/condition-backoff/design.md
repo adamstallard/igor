@@ -170,3 +170,17 @@ after the one that opened a condition is not taken.
 - **An item triaged to proceed and then not taken, because a condition opened mid-cycle, has
   already passed the watermark.** An exhausted budget mid-cycle does the same. Holding the mark
   below it is the next change on this branch.
+
+### Open questions
+
+- **A seat whose usage reading keeps failing cannot be probed** (Adam, 2026-10-13: written down,
+  not fixed). Once its credential condition's cooldown passes, the condition is due a probe, but
+  the gate passes the seat over for its failed reading before any probe, so no item ever tests
+  the credential. The condition then clears only when the operator configures a different
+  credential and Igor reads it.
+
+  It costs little: the seat would be passed over for its reading anyway, so no item is held
+  back. What stays wrong is the record, which keeps the condition open after the provider may
+  have accepted the credential again. Whether that is worth fixing depends on how often a refused
+  credential makes the reading fail at all, which nobody has measured; the one measurement taken
+  had `/usage` exit zero for a revoked token, which suggests it is rare.
