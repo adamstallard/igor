@@ -9,9 +9,10 @@
    takes, not where any one item's change belongs. Rejected: counting them. A role whose lane is
    `src/api/**` would then never be flagged for editing `src/api/auth.ts` on an issue about
    `src/api/users.ts`, which is a common way for a change to land in the wrong file.
-3. **A test beside a named file counts as named.** A changed path whose file name has the same
-   stem as a named file's, the part before the first `.`, is in scope: `test/execute.test.ts` for
-   `src/execute.ts`.
+3. **A file with the same stem as a named file counts as named, wherever it is.** The stem is the
+   part of the file name before the first `.`: `test/execute.test.ts` is in scope for
+   `src/execute.ts`. The named file must be named as a file; one in scope only because a named directory holds it
+   does not count.
    Rejected: flagging tests. Nearly every pull request adds one, and a flag that is almost always
    raised teaches a reviewer to ignore it.
 4. **An item that names nothing is not checked**, and the pull request says so. Rejected: flagging
@@ -26,10 +27,19 @@
    an existing pull request, so it carries the base's changes, which no item names. Rejected: checking resolutions too, which would flag every
    path the base brought in.
 7. **A capability or change points only at what its own files say.** Naming `task-execution`
-   puts `openspec/specs/task-execution/` in scope, plus any path its files name. No spec here names
+   puts `openspec/specs/task-execution/` in scope, plus any file, directory or glob its files name.
+   A capability those files mention adds nothing more, and `openspec/changes/archive/` is no
+   change. The files are read before the worker runs, so a worker cannot widen its own scope by
+   editing them. No spec here names
    a source file today, so a source edit on an issue that names only a capability is flagged.
    Rejected: a table mapping each capability to source paths. Nothing would keep it current, and a
    stale table hides exactly the paths it forgot.
+
+**Still open:** under `follow-the-two-gate-workflow` (PR #150), gate one's spec is a new change
+directory no issue names, so every gate-one pull request would list all its paths as outside.
+Gate two pushes onto that pull request, so its code is never checked. One answer: on a two-gate
+role, gate one counts its own change directory as named, and gate two is checked against the
+approved change's files. This change does not decide it.
 
 ## Why
 
@@ -65,9 +75,12 @@ None.
 - **Which paths an artifact carries** is governed by open changes `carry-only-what-happened`
   (PR #125) and `carry-what-a-tree-holds` (PR #137). This check compares whatever paths the artifact
   carries; with those two changes, those are exactly the paths the worker changed.
-- **Where the line appears** overlaps `review-evidence`, drafted in parallel, which adds an
-  evidence block below the worker's summary. Where that block exists, this line is its scope entry;
-  the line's wording is this change's.
+- **Where the result appears** overlaps `review-evidence` (PR #190), drafted in parallel. Its
+  evidence table has a Files changed row with its own verbatim wording. Where the table exists,
+  this result fills that row's scope part, and this change's line is not written.
+- **`signed-publishing`** (PR #153) has a model step write and sign the description. The line is
+  assembled by the code from the run's record, so it is not signed: it follows the signed
+  description's footer, which #153's exemption for code-assembled text allows.
 - **Review labels.** A triage label (`review: skim` or `review: read`) built from this result and
   others is not part of this change.
 

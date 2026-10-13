@@ -4,8 +4,7 @@
 
 Before opening a new pull request, execution SHALL compare every path the artifact carries,
 written or removed, with the paths its item names, and SHALL state the result in the pull request
-body and in the run's record. The result is a flag for the reviewer, read by fixed rules from text;
-it is a heuristic, and it SHALL NOT be taken from a model.
+body and in the run's record. The comparison follows these rules alone, with no model call.
 
 A path is **named** when any of these holds:
 
@@ -14,11 +13,11 @@ A path is **named** when any of these holds:
   under. A directory or glob whose first segment is not literal, such as `**/*.ts` or `/`, names
   nothing;
 - the item's title or body contains, as a whole word, the directory name of an OpenSpec capability
-  or change under `openspec/specs/` or `openspec/changes/` in the working tree as it was before the
-  worker ran, and the path is in that directory or named, by these same rules, by a file in it. Read before the worker runs, so that a
-  worker cannot widen its own scope by editing those files;
-- its file name has the same stem, the part before the first `.`, as a file named by one of the
-  rules above.
+  under `openspec/specs/` or of an open change under `openspec/changes/` (not `archive`), in the
+  working tree as it was before the worker ran, and the path is in that directory or is named, by
+  the first two rules, by a file in it;
+- its file name has the same non-empty stem, the part before the first `.`, as a file that the
+  item, or a file read under the third rule, names as a file.
 
 The item's comments, and the role's `lane.paths.under`, name nothing.
 
@@ -30,7 +29,7 @@ summary's length limit. It is one of three:
 - **not checked**: the item names nothing, so no path is compared.
 
 The result SHALL NOT stop publishing, make the pull request a draft, or change who is asked to
-review it. A resolution published onto an existing pull request is not checked.
+review it. Nothing published onto an existing pull request, such as a resolution, is checked.
 
 #### Scenario: A change inside what the item names
 
@@ -60,6 +59,11 @@ review it. A resolution published onto an existing pull request is not checked.
 
 - **WHEN** an issue's body contains `**/*`
 - **THEN** that glob names no path
+
+#### Scenario: A resolution is not checked
+
+- **WHEN** a run publishes a resolution onto an existing pull request
+- **THEN** the pull request gains no scope line, and the run's record has no scope result
 
 #### Scenario: The run's record carries the result
 
