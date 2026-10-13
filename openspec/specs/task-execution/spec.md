@@ -105,27 +105,6 @@ be written to the state branch, never to the destination's default branch.
 - **WHEN** the worker reports its cost for an invocation
 - **THEN** that figure is recorded and accumulated against the seat
 
-### Requirement: Completion behaviour follows configured policy
-
-On believing work complete, an Igor SHALL take the completion action its effective
-configuration specifies. The default SHALL be to release the claim and leave the artifact.
-
-#### Scenario: Default completion releases the claim
-
-- **WHEN** a role specifies no completion action
-- **THEN** the Igor unassigns itself and leaves the artifact in place
-- **AND** it does not close the item
-
-#### Scenario: Configured completion honoured
-
-- **WHEN** a role configures a completion action other than the default
-- **THEN** that action is taken instead
-
-#### Scenario: Completion is not hardcoded
-
-- **WHEN** an organization requires a completion workflow differing from the default
-- **THEN** it is expressible in configuration without modifying the tool
-
 ### Requirement: Work finished before a claim is lost is offered, not discarded
 
 Where a claim is found to be gone between the worker finishing and publication, execution SHALL
@@ -165,8 +144,8 @@ why nothing is requested of the new holder.
 #### Scenario: Losing a claim does not complete the item
 
 - **WHEN** work is published after a claim was lost
-- **THEN** the configured completion behaviour is not performed, because the item is not the
-  Igor's to complete
+- **THEN** the Igor releases only its own claim and does nothing else to the item, because the
+  item is not the Igor's to finish
 
 ### Requirement: A worker is bounded by silence on its stream
 
@@ -375,6 +354,11 @@ present. Where the chosen seat names a token source that cannot be read — an u
 unreadable or empty file, a command that fails, prints nothing, or never returns — execution
 SHALL fail naming it rather than spawning a worker that authenticates as something else.
 
+For an Igor acting as a GitHub App, the surface credential is anything that yields an App
+token: the token itself, the `GITHUB_APP_*` variables, and a git credential helper or
+`GIT_CONFIG_*` entry that mints one. None of them SHALL reach the worker, and the working tree
+SHALL hold none of them.
+
 The worker needs none of them. It edits files in a disposable tree; claiming, commenting,
 branching and publishing all happen in the loop afterwards, with the loop's own credentials. An
 inherited environment is therefore a set of credentials nothing in the worker has a use for,
@@ -388,6 +372,13 @@ something else entirely when it is missing.
 
 - **WHEN** a worker is spawned while the Igor holds a code-host token
 - **THEN** that token is not in the worker's environment
+
+#### Scenario: Nothing that yields an App token reaches the worker
+
+- **WHEN** a worker is spawned for an Igor acting as a GitHub App
+- **THEN** its environment holds no App token, no `GITHUB_APP_*` variable and no `GIT_CONFIG_*`
+  entry
+- **AND** its working tree's git config names no credential helper
 
 #### Scenario: Only the chosen seat's token is present
 
@@ -777,4 +768,20 @@ once used is ordinary content, carried into the artifact like any other.
 
 - **WHEN** an artifact is produced rather than resolved
 - **THEN** no such comparison is made, because its commit names no base as a parent
+
+### Requirement: A person approves every Igor pull request
+
+A pull request an Igor opened SHALL be reviewed and approved by a person before it merges. An
+Igor SHALL NOT merge a pull request it opened, and an approval from any Igor SHALL NOT count as
+that person's approval, whatever the code host's branch protection accepts.
+
+#### Scenario: Igor does not merge its own pull request
+
+- **WHEN** an Igor's own pull request is approved and mergeable
+- **THEN** the Igor does not merge it
+
+#### Scenario: Another Igor's approval is not enough
+
+- **WHEN** an Igor's pull request carries an approving review from another Igor and none from a person
+- **THEN** no Igor merges it
 

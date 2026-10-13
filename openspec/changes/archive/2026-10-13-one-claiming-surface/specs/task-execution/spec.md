@@ -36,7 +36,7 @@ why nothing is requested of the new holder.
 - **WHEN** a claim is lost and the role's allow list permits no pull request
 - **THEN** nothing is published, and the refusal is recorded as it would be otherwise
 
-#### Scenario: Losing a claim does not finish the item
+#### Scenario: Losing a claim does not complete the item
 
 - **WHEN** work is published after a claim was lost
 - **THEN** the Igor releases only its own claim and does nothing else to the item, because the
