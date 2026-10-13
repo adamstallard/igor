@@ -1,10 +1,14 @@
-# One container per Igor. `docker compose up -d` after filling in .env.
+# One container per Igor. Put .env, maintenance.pem and the lore checkout in deploy/, then
+# `docker compose -f deploy/docker-compose.yml up -d`. docs/deployment.md has the steps.
 #
-# The image needs git, the gh CLI, node, and the claude CLI. Igor shells out to all four.
+# The image is the Dockerfile's runtime target, at the repository root: igor on PATH, node, and
+# the git, gh and claude CLIs that Igor shells out to, at pinned versions.
 
 services:
   maintenance:
-    build: .
+    build:
+      context: ..
+      target: runtime
     command: ["igor", "serve", "maintenance"]
     working_dir: /srv/lore
     volumes:
@@ -31,7 +35,8 @@ volumes:
   igor-trees:
 
 secrets:
-  # The App's private key, mounted read-only at /run/secrets/maintenance.pem. Keep the file on
-  # the host 0600.
+  # The App's private key, mounted read-only at /run/secrets/maintenance.pem. Outside swarm the
+  # file keeps its host owner and mode, and Igor runs as uid 1000: on the host, make it owned
+  # by uid 1000 and 0600, or Igor cannot read it.
   maintenance-key:
     file: ./maintenance.pem

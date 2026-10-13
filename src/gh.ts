@@ -96,6 +96,10 @@ export async function ghRaw(args: readonly string[], input?: string): Promise<st
           ),
         )
     })
+    // A gh that exits without reading its input closes the pipe, and the write then fails with
+    // EPIPE. That is not the call's outcome, which the exit code on 'close' reports; unhandled,
+    // it is an uncaught exception that ends the process.
+    child.stdin.on('error', () => {})
     child.stdin.end(input ?? '')
   })
 }

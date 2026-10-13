@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      # Builds the Dockerfile's development target, which the devcontainer also uses. CI then
+      # tests against the pinned node, git, gh and claude, not whatever the runner has.
+      - name: Build the development image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: development
+          tags: igor-dev
+          load: true
+          cache-from: type=gha,scope=development
+          cache-to: type=gha,mode=max,scope=development
+
+      - name: Cache npm downloads
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-${{ hashFiles('package-lock.json') }}
+
+      # The container runs as the runner's uid, not the image's node user, so npm ci can write
+      # node_modules into the checkout and the npm cache directory, which the runner owns.
+      # That uid has no home directory in the image, so HOME=/tmp gives git config --global
+      # somewhere to write. The tests create repositories and merge in them, which git
+      # refuses without a committer identity.
+      - name: Typecheck and test
+        run: |
+          mkdir -p ~/.npm
+          docker run --rm \
+            --user "$(id -u):$(id -g)" \
+            -e HOME=/tmp \
+            -e npm_config_cache=/npm-cache \
+            -v "$GITHUB_WORKSPACE":/workspace \
+            -v "$HOME/.npm":/npm-cache \
+            igor-dev sh -euc '
+              git config --global user.name ci
+              git config --global user.email ci@example.invalid
+              npm ci --no-audit --no-fund
+              npm run typecheck
+              npm test
+            '
