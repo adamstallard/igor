@@ -137,7 +137,7 @@ export async function runItem(
   identity: string,
   options: RunOptions = {},
 ): Promise<ItemRun> {
-  const { tracker, codeHost, trees } = deps
+  const { tracker } = deps
 
   const step = options.onStep ?? (() => {})
   step('claiming')
@@ -629,9 +629,9 @@ export async function catchUpItem(
  * A stop of this run is one created at or after the hand-over, `floor`, the run's start less the
  * settle interval, and, where the claim's check found a stop a go-ahead lifted, that go-ahead. A
  * stop said before any of them belongs to something else, such as one a go-ahead or the cooldown
- * already lifted, and a catch-up that ends any other way keeps the label. Creation time decides, never the read's `since`, which a surface may apply to when a
- * comment was last edited. A comment with no readable time counts. Where the comments cannot be
- * read, the label is kept.
+ * already lifted, and a catch-up that ends any other way keeps the label. Creation time decides,
+ * never the read's `since`, which a surface may apply to when a comment was last edited. A comment
+ * with no readable time counts. Where the comments cannot be read, the label is kept.
  *
  * Where who set it cannot be read, the cycle's candidate decides. A candidate without the label
  * means the claim put it there, so it is released as any claim is, and a release that does not
