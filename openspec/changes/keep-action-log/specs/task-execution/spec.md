@@ -5,18 +5,20 @@
 Every run that started the worker SHALL write an action log to the state branch at
 `transcripts/<tracker>/<repo>/<native>.actions.json`, whatever the run's outcome, a killed
 worker included. The run's `executions.ndjson` row SHALL name that path. A run whose worker made
-no tool call SHALL write none.
+no tool call SHALL write no log, and its row SHALL name none.
 
 The log SHALL list the tool calls in the order they were made, the subagents' calls included and
 marked with the call that started them. Each entry SHALL hold:
 
 - the tool's name;
-- its input: the command for a shell call, the path for a file tool, the pattern for a search,
-  and for any other tool its input as given;
+- its input: the command for a shell call (`Bash`), the path for a file tool (`Read`, `Write`,
+  `Edit`, `NotebookEdit`), the pattern for a search (`Grep`, `Glob`), and for any other tool its
+  input as given;
 - whether the result was an error, and the exit code where the stream states one;
 - for a shell call or an error result, the last 2,000 characters of the output.
 
-The log SHALL NOT hold any file's contents, whether read, written or edited.
+The log SHALL NOT hold what a file tool read or wrote, nor the text of an edit. A shell call's
+output is kept as output, whatever the command printed.
 
 A failure to write the log SHALL be reported and SHALL NOT stop the run's later writes to the
 state branch.
@@ -33,19 +35,33 @@ state branch.
 - **THEN** the log holds both calls with the file's path
 - **AND** neither the file's contents nor the edit's text
 
+#### Scenario: A failed log write does not stop the later writes
+
+- **WHEN** writing the action log fails
+- **THEN** the failure is reported
+- **AND** the run's capacity observation is still written
+
 ### Requirement: The action log carries no credential the Igor knows
 
-Before the log is written, every kept string SHALL have each of these replaced by
-`[redacted]`:
+Each string SHALL be redacted as the call is collected, before anything reads or writes it.
+Redaction replaces each of these with `[redacted]`:
 
+- the token of every seat the Igor has read, whatever its source;
 - the value of every variable in the worker's environment, and in the Igor's own, whose name
-  contains `TOKEN`, `KEY`, `SECRET`, `PASSWORD` or `CREDENTIAL`, matched exactly;
-- a private key block, and a string in the shape of a GitHub, Anthropic, AWS or Slack token.
+  contains `TOKEN`, `KEY`, `SECRET`, `PASSWORD` or `CREDENTIAL`, matched exactly, where the value
+  is at least 8 characters long;
+- a private key block, an `age` encryption secret key (`AGE-SECRET-KEY-1…`), and a string in the shape of a GitHub, Anthropic, AWS
+  or Slack token.
 
 #### Scenario: The seat token is redacted
 
 - **WHEN** the worker runs `env` in a store that keeps output
 - **THEN** the logged output holds `[redacted]` where the seat token was
+
+#### Scenario: A seat token read from a file is redacted
+
+- **WHEN** a seat's token comes from its `token_file`, and a command the worker runs prints it
+- **THEN** the logged output holds `[redacted]` where the token was
 
 ### Requirement: What the action log keeps follows who can read the store
 
@@ -53,13 +69,14 @@ At write time, the Igor SHALL ask GitHub whether the store and the worked reposi
 private. It SHALL NOT rely on the `publicStore` config key for this. A repository whose
 visibility cannot be read SHALL be treated as public.
 
-- A private store SHALL keep every entry whole, as "The worker's tool calls are recorded beside
-  its transcript" describes.
-- A public store SHALL keep no output text. Where the worked repository is public, it SHALL keep
-  every entry without its output. Where the worked repository is private, it SHALL keep only each entry's
-  tool name, error status and exit code.
+The log SHALL be cut to one of three tiers, and SHALL record which one applied:
 
-The log SHALL record which of these three applied.
+- `whole`, for a private store: every entry as "The worker's tool calls are recorded beside its
+  transcript" describes;
+- `no-output`, for a public store and a public worked repository: every entry without its
+  output;
+- `tools-only`, for a public store and a private worked repository: each entry's tool name,
+  error status and exit code.
 
 #### Scenario: A private repository's commands stay out of a public store
 
