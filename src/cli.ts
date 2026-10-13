@@ -22,7 +22,7 @@ import { actAs, GhError } from './gh.js'
 import { AppError, canMint, canWriteWorkflows, startApp, type AppSession } from './app.js'
 import { claimRequested, contradictoryRunFlags } from './flags.js'
 import { explainRole, loadRole, rolesFrom, RoleError, type Role } from './role.js'
-import { catchUpItem, honourIdleStop, planCycle, runItem, UNTRIAGED_NO_SEAT, type CycleReport } from './loop.js'
+import { catchUpItem, honourIdleStop, leftATrace, planCycle, runItem, UNTRIAGED_NO_SEAT, type CycleReport } from './loop.js'
 import { waitingNotice } from './claiming.js'
 import { renderProgress } from './execute.js'
 import { serve, untilSignalled } from './serve.js'
@@ -547,6 +547,10 @@ program
       // read lazily, so a cycle with nothing to triage never pays for a seat's usage reading.
       gate: gateFor,
       stopped,
+      // The discovery watermark is saved by `settle()` at the end of this command, once it is known
+      // which items were taken. An item this cycle chose to claim and did not take, because of
+      // the cap, the budget, a condition or a claim that never landed, must stay above the mark.
+      markAfterWork: true,
     })
     process.stdout.write(`${renderCycle(report, opts.plan === true)}\n`)
 
@@ -585,7 +589,17 @@ program
     for (const c of report.waiting) {
       await tracker.report(c.candidate, c.notice ?? waitingNotice(role, c.holders ?? [])).catch(() => undefined)
     }
+    const taken = new Set<string>()
+    const settle = () =>
+      report.settle?.(
+        report.toClaim
+          // A directed item is found by its label each cycle, whatever the watermark says, so it
+          // never needs the mark held back for it.
+          .filter((c) => c.directed !== true && !taken.has(c.candidate.id))
+          .map((c) => c.candidate.id),
+      )
     if (report.toClaim.length === 0) {
+      await settle()
       process.stdout.write('\nnothing to claim\n')
       return
     }
@@ -593,6 +607,7 @@ program
     for (const c of report.toClaim.slice(0, cap)) {
       const run = await work(c.candidate, c.directed === true, c.handedOverAt ?? report.readAt)
       if (run === undefined) break
+      if (leftATrace(run)) taken.add(c.candidate.id)
       // A closed budget stops the cycle rather than being rediscovered per item. Read off the
       // handoff kind rather than the prose, which is written for whoever reads the item.
       if (run.outcome === 'handed-off' && run.handoff === 'budget') {
@@ -600,6 +615,7 @@ program
         break
       }
     }
+    await settle()
   })
 
 program

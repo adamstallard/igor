@@ -142,6 +142,8 @@ Explicitly out of scope:
 
 - `work-triage`: an item handed back is not suppressed where the cause was a fact about the
   Igor rather than about the item — the rule the budget exemption was one instance of.
+- `work-discovery`: the watermark does not pass an item a cycle chose to work and never took,
+  which a condition opening part-way through a cycle makes common.
 
 ## Impact
 

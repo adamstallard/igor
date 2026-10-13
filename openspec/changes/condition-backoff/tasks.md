@@ -42,6 +42,10 @@
       so a credential condition still sees a replaced credential while its scope is stopped and
       clears at once rather than after the cooldown. Test: a seat stopped on token A, given token
       B, is chosen on the next cycle with no probe taken
+- [x] 3.6 Settle the discovery watermark after the items are worked, keeping it earlier than any
+      item a cycle chose to claim and never took: because a condition opened, the budget ran out,
+      or its claim never landed on the tracker. The `work-discovery` delta says so. Test: the
+      untaken item is triaged again next cycle
 
 ## 4. Clearing
 

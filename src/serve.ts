@@ -1,6 +1,6 @@
 import type { Candidate } from './adapter.js'
 import type { CycleDeps, CycleOptions, CycleReport, ItemRun } from './loop.js'
-import { catchUpItem, honourIdleStop, planCycle, runItem } from './loop.js'
+import { catchUpItem, honourIdleStop, leftATrace, planCycle, runItem } from './loop.js'
 import type { Gate } from './budget.js'
 import { windsDownOnSignal } from './execute.js'
 import { noteHandoff, shouldDefer } from './deferred.js'
@@ -146,7 +146,12 @@ export async function serve(
       //
       // `options.gate` reaches `planCycle` through the spread. `planCycle` calls it only where
       // there is something to triage, so triage spends the seat a worker would have chosen.
-      const report = await planCycle(deps, role, { ...options, identity })
+      //
+      // `planCycle` leaves the discovery watermark unsaved; `report.settle` at the end of this
+      // block saves it once the items are worked, kept earlier than any item the cycle chose to
+      // claim and never took, including one whose claim never landed.
+      const report = await planCycle(deps, role, { ...options, identity, markAfterWork: true })
+      const taken = new Set<string>()
       summary.costUsd += report.triageCostUsd
       emit({ kind: 'planned', cycle, report })
 
@@ -233,6 +238,7 @@ export async function serve(
               : { ...options.claim, since: report.readAt },
         })
         summary.worked += 1
+        if (leftATrace(run)) taken.add(candidate.id)
         // A probe that produced no outcome observed nothing, so the condition stays open and the
         // next item may probe instead.
         if (probes.length > 0 && run.execution === undefined) await options.probe?.(probes, 'void', candidate.id)
@@ -245,6 +251,10 @@ export async function serve(
         emit({ kind: 'worked', item: candidate, run, ...(gate.seat === undefined ? {} : { seat: gate.seat }) })
         if (abandon(run)) break
       }
+      // A directed item is found by its label each cycle, whatever the watermark says, so it never
+      // needs the mark held back for it.
+      const untaken = report.toClaim.filter((c) => c.directed !== true && !taken.has(c.candidate.id))
+      await report.settle?.(untaken.map((c) => c.candidate.id))
     } catch (error) {
       // A cycle is allowed to fail, and the next one retries.
       //

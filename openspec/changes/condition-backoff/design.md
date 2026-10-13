@@ -167,9 +167,27 @@ after the one that opened a condition is not taken.
 - **#65's two messages said a different credential is the only clear.** The condition's lines in
   `igor budget` and `--credentials` say both: a different credential at once, or a probe on the
   same one that is not refused.
-- **An item triaged to proceed and then not taken, because a condition opened mid-cycle, has
-  already passed the watermark.** An exhausted budget mid-cycle does the same. Holding the mark
-  below it is the next change on this branch.
+- **An item triaged to proceed could be passed by the watermark without being taken.** The
+  watermark is a timestamp per source: discovery reconsiders only items updated after it.
+  `planCycle` used to move it past every item it gave a verdict, before `serve` worked any item, so
+  an item left untaken when a condition opened mid-cycle, or when the budget ran out, was never
+  seen again. Now the caller settles the mark after the items are worked (`markAfterWork`, then
+  `settle(untaken)`), and keeps it earlier than each chosen item it did not take. That changes
+  `work-discovery`'s watermark requirement, so this change carries a delta for it. The cost: every
+  item updated after an untaken one is above the mark too, so it is triaged again next cycle.
+
+  Three details of how the mark is settled:
+  - An item counts as taken only where its run left a trace on the tracker (`leftATrace`). A
+    claim that failed before the tracker recorded it posts nothing and leaves the item's
+    `updatedAt` unchanged, so a mark moved past it would drop it for good.
+  - `settle` re-reads `discovery.json` before writing. The file holds the mark of every source of
+    every role, and a cycle settled hours after it loaded the file would otherwise put back other
+    roles' older marks. Two Igors on the same source can still overwrite each other's mark, as
+    they could before.
+  - A cycle that throws before `settle`, such as one whose lore cannot be read, saves no mark, so
+    the items it skipped are triaged again next cycle. Settling in a `finally` was considered and
+    left out: the in-force `work-discovery` requirement advances the mark only for a cycle that
+    acted, and accepts paying for the same triage call again as the price of not dropping items.
 
 ### Open questions
 

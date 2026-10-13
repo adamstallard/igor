@@ -113,6 +113,15 @@ export interface ItemRun {
   surfaceFailed?: true
 }
 
+/**
+ * Whether a run left a visible trace on the item: anything but a refusal, or a refusal that
+ * posted a comment. Either moves the item's `updatedAt`, so the next cycle sees it whatever the
+ * watermark says. A refusal with nothing posted, such as a claim the tracker never recorded,
+ * leaves the item untouched, so the watermark must not move past it as though it were taken.
+ */
+export const leftATrace = (run: Pick<ItemRun, 'outcome' | 'spoke'>): boolean =>
+  run.outcome !== 'refused' || run.spoke
+
 export type Step = 'claiming' | 'settling' | 'working' | 'publishing' | 'completing'
 
 export interface RunOptions extends ExecuteOptions {
@@ -784,6 +793,13 @@ export interface CycleReport {
    */
   condition?: Condition
   /**
+   * Saves the discovery watermark, kept earlier than the `updatedAt` of each `toClaim` item whose
+   * id is passed in `untaken`. Set only where `markAfterWork` asked for it and the cycle was not a
+   * preview. Until it is called the mark is where the cycle found it: a cycle that fails before
+   * calling it drops no item, though it pays again next cycle for the triage calls it made.
+   */
+  settle?: (untaken: readonly string[]) => Promise<void>
+  /**
    * Everything dropped before a model call, with the reason, so a lane can be tuned. `held`
    * marks the ones only the clock will bring back, which the watermark has to wait for.
    */
@@ -842,6 +858,11 @@ export interface CycleOptions extends RunOptions {
    * is what a preview that does not know who would run should assume.
    */
   identity?: string
+  /**
+   * Leave the discovery watermark unsaved and hand back `settle` instead, for a caller that works
+   * the items it is told to claim and may stop before taking them all.
+   */
+  markAfterWork?: boolean
   /**
    * The condition that keeps this role from taking any item, asked once before triage. A stopped
    * role spends no model call and claims nothing. The items it would have asked about are left
@@ -1138,27 +1159,36 @@ export async function planCycle(
   // decided nothing, and a mark or a record saying otherwise costs those items the real cycle
   // that would have worked them.
   if (options.preview !== true) {
-    // A look-back reaches deliberately behind the mark, so it must not carry the mark over what
-    // it finds there. Separately: an item dropped before anything examined it holds the mark
-    // back. A cooldown ends with the clock and an outage with the tracker's recovery, so neither
-    // touches the item to lift it above a mark that passed it. Every other skip was a decision,
-    // and the edit or the reply that reverses one lifts the item by itself.
+    // The watermark is a timestamp per source: discovery reconsiders only items whose `updatedAt`
+    // is after it. Saving it decides which items the next cycle sees again.
+    //
+    // A look-back (`sinceDays`) reads deliberately behind the stored mark, so it saves no mark.
+    //
+    // An item dropped before anything examined it holds the mark below its `updatedAt`. A
+    // cooldown ends with the clock and an outage with the tracker's recovery, and neither edits
+    // the item, so nothing else would bring it above a mark that passed it. Every other skip was
+    // a decision, and the edit or reply that would reverse that decision moves the item's
+    // `updatedAt` by itself.
     //
     // An item the model stage never asked about is the same case one stage later, and a worse
     // one: it was never dropped, so nothing in `skipped` holds it, and a mark let past it drops
-    // it from the pool for good.
+    // it from the pool for good. Triage takes items oldest first and stops at its cap, so these
+    // are the newest items read, and the mark is held below one only where it is newer than every
+    // item this source decided. Where one ties a decided item, as tracker timestamps coarse enough
+    // for one bulk edit to stamp a page of items can, it is passed rather than holding the mark
+    // below the decided item too, which would triage that again every cycle the tie lasted.
     //
-    // A mark held below an untriaged candidate still has to clear everything the cycle decided,
-    // and where the two share a timestamp it can do neither. Tracker timestamps are coarse enough
-    // for one bulk edit to tie a page of items, so the tie is conceded rather than pinning the
-    // mark: the item is passed over as it would have been anyway, where holding it would triage
-    // the same items again every cycle for as long as the tie lasted.
+    // `decided` is per source, because each source's mark moves on its own: an item decided in
+    // another source is nothing this source's mark has to clear.
     //
-    // Which is a question per source, because the marks move independently: a verdict in another
-    // source is nothing this one's mark has to clear, and conceding a tie with it drops an item
-    // this mark could have sat cleanly below.
-    if (options.sinceDays === undefined && results.length > 0) {
-      const held = report.skipped.filter((s) => s.held === true).map((s) => s.candidate.id)
+    // An item the model said to proceed with is decided, but the cycle has not acted on it until
+    // a caller takes it. A caller that may stop before taking every one, because the budget ran
+    // out or a condition opened, settles the mark itself (`markAfterWork`) and names the ones it
+    // never took. Those hold the mark as an unexamined item does: passed by it, an item the cycle
+    // chose to work would never be seen again.
+    const saveMark = async (untaken: readonly string[] = []): Promise<void> => {
+      if (options.sinceDays !== undefined || results.length === 0) return
+      const held = [...report.skipped.filter((s) => s.held === true).map((s) => s.candidate.id), ...untaken]
       const marks = results.flatMap((result) => {
         const here = new Set(result.candidates.map((c) => c.id))
         const decided = report.verdicts.reduce(
@@ -1174,8 +1204,14 @@ export async function planCycle(
         ])
         return heldBelow([result], unexamined)
       })
-      await saveDiscoveryState(deps.destination, advance(stored, marks))
+      // Onto the file as it stands now, not as the cycle read it. It holds every role's sources,
+      // and a cycle settled hours after it read the file would otherwise put back the older marks
+      // of every source other roles saved meanwhile.
+      const current = await loadDiscoveryState(deps.destination)
+      await saveDiscoveryState(deps.destination, advance(current, marks))
     }
+    if (options.markAfterWork === true) report.settle = saveMark
+    else await saveMark()
     // Not worth failing a cycle over, but a write that vanishes silently leaves nobody able to
     // say afterwards what this cycle decided — so it is reported like any other cycle failure.
     await recordDecisions(deps.destination, role, report).catch((error: unknown) => {
