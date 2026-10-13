@@ -1,8 +1,11 @@
 import { spawn } from 'node:child_process'
 
 /**
- * One wrapper around the `gh` CLI, so credentials and enterprise hosts are whatever the user
- * already set up.
+ * One wrapper around the `gh` CLI, so every call goes through one place.
+ *
+ * Whom a call acts as depends on the command. `igor run` and `igor serve` name a token source
+ * with `actAs`, and every call then authenticates as the Igor's GitHub App. A person's own
+ * commands name none, so `gh` acts as whatever login that person set up.
  *
  * Always spawn rather than `execFile`: promisified `execFile` silently ignores an `input`
  * option — that belongs to `execFileSync` — so anything reading stdin hangs forever waiting on
@@ -28,9 +31,47 @@ function statusFrom(stderr: string): number | undefined {
   return match?.[1] === undefined ? undefined : Number(match[1])
 }
 
-export function ghRaw(args: readonly string[], input?: string): Promise<string> {
+/** Supplies the token every `gh` call authenticates with, or none for a person's own login. */
+export type TokenSource = () => Promise<string>
+
+let credential: TokenSource | undefined
+
+/**
+ * Makes every later `gh` call act as the holder of `source`'s token, or, given nothing, as the
+ * person's own login again. The token is asked for per call, so a source that renews it is
+ * always asked for a current one.
+ */
+export function actAs(source: TokenSource | undefined): void {
+  credential = source
+}
+
+/**
+ * Tokens `gh` would read before its stored login, or in place of `GH_TOKEN`. Removed from a call
+ * that acts as the App, so an ambient token cannot win over the App's for any host.
+ */
+const AMBIENT = ['GH_TOKEN', 'GITHUB_TOKEN', 'GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN'] as const
+
+/** The environment of one `gh` child acting as `token`'s holder: the Igor's own, with only that token. */
+export function ghEnv(base: NodeJS.ProcessEnv, token: string): NodeJS.ProcessEnv {
+  const env = { ...base }
+  for (const name of AMBIENT) delete env[name]
+  env['GH_TOKEN'] = token
+  return env
+}
+
+export async function ghRaw(args: readonly string[], input?: string): Promise<string> {
+  let env: NodeJS.ProcessEnv | undefined
+  if (credential !== undefined) {
+    try {
+      env = ghEnv(process.env, await credential())
+    } catch (error) {
+      // A GhError like any failed call, because callers tell a read that did not happen from a
+      // fault of their own by that class. Never falls through to the ambient login.
+      throw new GhError(`gh ${args.slice(0, 2).join(' ')} was not run: ${(error as Error).message}`)
+    }
+  }
   return new Promise((resolve, reject) => {
-    const child = spawn('gh', args, { stdio: ['pipe', 'pipe', 'pipe'] })
+    const child = spawn('gh', args, { stdio: ['pipe', 'pipe', 'pipe'], ...(env === undefined ? {} : { env }) })
     // A StringDecoder on each pipe, so a multi-byte character split across chunks arrives whole.
     // One search page carries every matching issue's title and body, far past the pipe buffer,
     // and a replacement character is legal inside a JSON string: the payload still parses and

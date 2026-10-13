@@ -6,11 +6,8 @@
 # from — read it after editing this file rather than guessing at what a role now has.
 
 # What an Igor may do to the item it is working. A role may drop any of these and none
-# may add one, and `completion` below has to be among them.
-allow: [draft-pr, comment, unassign]
-
-# What becomes of the item once the work is handed back: unassign, close or assign.
-completion: unassign
+# may add one. A finished run releases its claim whatever this says.
+allow: [draft-pr, comment]
 
 # Igor reads this working directory and publishes what it finds, so nothing below needs
 # to stage or commit. A file the worker writes is read as untracked; `git rm` and
