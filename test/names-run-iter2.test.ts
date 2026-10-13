@@ -39,6 +39,18 @@ describe('where a line break and a person meet the go-ahead', () => {
     expect(isGoAhead('go ahead,\nthanks @igor-backend for waiting', FRONTEND, IGORS)).toBe(true)
   })
 
+  it('reads "go ahead:" on its own line as bare, whatever the next line names (Adam, 2026-10-13)', () => {
+    expect(isGoAhead('go ahead:\nthanks @igor-backend', FRONTEND, IGORS)).toBe(true)
+    expect(isGoAhead('go ahead:\nthanks @igor-backend', BACKEND, IGORS)).toBe(true)
+  })
+
+  it('reads a list that crossed a line break as naming only the list (Adam, 2026-10-13)', () => {
+    const body = 'go ahead @alice,\nthanks @igor-backend'
+    const accounts = resolved(body, { alice: 'other', 'igor-backend': 'igor' })
+    expect(isGoAhead(body, FRONTEND, accounts)).toBe(true)
+    expect(isGoAhead(body, BACKEND, accounts)).toBe(true)
+  })
+
   it('does not read later mentions past a line break the list crossed', () => {
     const body = 'carry on @alice,\nthanks @igor-frontend'
     expect(isGoAhead(body, BACKEND, resolved(body, { alice: 'other', 'igor-frontend': 'igor' }))).toBe(true)
