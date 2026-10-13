@@ -155,6 +155,16 @@ it overwrites a file of its own on the state branch, named by its role and rank,
 of writing. A rank has missed three heartbeats when its file is older than three of its role's
 poll intervals, which is 30 minutes at the default 10-minute poll.
 
+A rank whose heartbeat file is missing SHALL count as last seen when the reading process first
+noticed the file missing, and SHALL be gone only three poll intervals after that. A process
+reads its role's heartbeat files once a cycle, before it weighs claims or replays marks, and
+SHALL keep that time in its own memory. A process that restarts forgets it and starts the clock
+again at its first read of the heartbeat files after the restart, which delays a gone verdict
+and never hastens one.
+
+A live rank rewrites its file within one poll interval, so a state branch that is lost or reset
+costs a short delay before a gone rank's claims can be taken, never two workers on one item.
+
 Retiring a process is a decision rather than an event, so the roster records it and nothing has
 to detect it. The bound covers only the case the roster cannot: a rank left declared that no
 longer runs.
@@ -182,6 +192,24 @@ working an item keeps writing heartbeats, so its rank stays counted however long
 - **WHEN** a process is working an item it holds for longer than three poll intervals
 - **THEN** it keeps writing heartbeats, its rank is not gone, and no other process may take the
   item
+
+#### Scenario: A lost state branch takes no live rank's claim
+
+- **WHEN** the state branch is lost or reset, taking every heartbeat file with it
+- **THEN** each live rank rewrites its file within one poll interval
+- **AND** no process takes a claim held by a live rank
+
+#### Scenario: A crashed rank is still recovered after the branch is lost
+
+- **WHEN** a rank's heartbeat file is missing and the rank has crashed
+- **THEN** a process counts the rank gone three poll intervals after it first noticed the file
+  missing, and may then take the rank's claims
+
+#### Scenario: A restart starts the clock again
+
+- **WHEN** a process restarts while a rank's heartbeat file is missing
+- **THEN** it counts that rank as last seen at its first read of the heartbeat files after the
+  restart, and as gone three poll intervals after that read
 
 #### Scenario: A heartbeat replaces only its own rank's
 

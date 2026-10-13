@@ -61,7 +61,10 @@ ranks that exist, declared like seats — is where it is recorded, so scaling do
 orphan on the next cycle. An abandonment bound backs it up for the one case the roster cannot
 cover, a rank left declared that no longer runs. Each process writes a heartbeat to its own file
 on the state branch every poll interval, including while a worker runs. A rank that misses three
-heartbeats, 30 minutes at the default poll, is gone, and any process may take its claims. The
+heartbeats, 30 minutes at the default poll, is gone, and any process may take its claims. A rank whose heartbeat file is missing counts as last seen when a process first notices the file
+missing. A live rank rewrites its file within one poll, well inside the bound, so a lost state
+branch only delays when a crashed rank's claims can be taken, and never makes a live rank look
+gone. The
 bound governs how long an unattended claim may sit, never how long work may run: a working
 process keeps writing heartbeats.
 

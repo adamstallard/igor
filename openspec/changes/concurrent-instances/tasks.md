@@ -38,13 +38,17 @@
 - [ ] 4.3 A claim carrying an undeclared rank is adoptable
 - [ ] 4.4 Every process overwrites `heartbeats/<role>.<rank>.json` on the state branch every poll
       interval, from a timer that keeps running while a worker runs, and a claim whose rank's
-      heartbeat is older than three poll intervals is adoptable
+      heartbeat is older than three poll intervals is adoptable. A rank whose file is missing
+      counts as last seen when this process first noticed the file missing, a time kept in memory
+      only, and is adoptable three poll intervals after that
 - [ ] 4.5 Working trees are named by role and rank, and the startup sweep removes those of its
       own rank and of undeclared ranks, never by age
 - [ ] 4.6 Remove `ABSOLUTE_CEILING_MS`, the worker's kill at it, and the failure reason that names it
 - [ ] 4.7 `docs/architecture.md` §6.7.2 pins the sweep threshold to that ceiling; restate it to
       describe the sweep by rank
-- [ ] 4.8 Tests for each of 4.1–4.4, and that the bound never shortens a run: a run longer than
+- [ ] 4.8 Tests for each of 4.1–4.4, and for the `work-claiming` scenarios on a lost state branch
+      (no live rank's claim is taken) and a restart while a file is missing (the clock starts
+      again); and that the abandonment bound never shortens a run: a run longer than
       three poll intervals keeps its rank counted
 - [ ] 4.9 A `condition-backoff` probe records its rank, and lapses when that rank misses three
       heartbeats instead of after `SWEEP_AFTER_MS`. PR #101 builds `condition-backoff` and is not

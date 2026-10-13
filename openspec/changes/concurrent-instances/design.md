@@ -144,6 +144,26 @@ a run lasts, and a run longer than the bound would make a working rank look gone
 keeps a working rank counted, which is what makes the `work-claiming` scenario *The bound does
 not shorten a run* true.
 
+**A missing heartbeat starts the clock** (Adam, 2026-10-13). The heartbeats live on the state
+branch, which `work-discovery` treats as a cache whose loss costs re-examination, never
+correctness. So a rank whose file is missing counts as last seen when the reading process first
+noticed it missing, and is gone only three poll intervals after that. A live rank rewrites its
+file within one poll interval, so a lost or reset branch costs a short delay, never two workers
+on one item, and a crashed rank is still recovered once three intervals pass.
+
+Each process reads its role's heartbeat files once a cycle, before it weighs claims or replays
+marks, and keeps the time it first noticed a file missing in its own memory. No other process
+needs that time, and it is stored nowhere else: a process that restarts forgets it and starts
+the clock again at its first read of the heartbeat files after the restart.
+That only postpones a gone verdict, by up to three poll intervals per restart, and never makes a
+live rank look gone. Storing the time on the state branch would put it beside the files whose
+loss it exists to survive.
+
+The two options set aside: counting a missing file as gone at once, which lets a sibling take a
+live rank's claim in the poll interval after the branch is lost; and counting it as alive for
+good, which leaves a rank that crashed while its file was missing holding its claims until it
+restarts or leaves the roster.
+
 One file per rank means a write replaces only that rank's own heartbeat. It does not avoid write
 conflicts: a write to any path on the state branch is rejected while another write moves the
 branch (see *State becomes append-only*). A rejected heartbeat is retried like any other write,
@@ -216,17 +236,6 @@ whether the fault has cleared: a probe. It lapses a probe that never ends after 
 the ceiling plus an hour. Under this change a probe records its rank, and lapses when that rank
 misses three heartbeats, as any work of a gone rank does. Whichever of #101 and this change's
 build lands second makes that edit (task 4.9).
-
-## Open questions
-
-1. **Does a lost state branch make every rank look gone?** The heartbeats live on the state
-   branch, which `work-discovery` treats as a cache whose loss costs re-examination, never
-   correctness. If the branch is lost or reset, every heartbeat goes with it, and each rank looks
-   gone until it next writes one: up to one poll interval. A sibling reading in that window may
-   adopt a live rank's claim, and two workers then run one item. The rank-in-the-claim decision
-   above rejected a lease on the state branch for the same reason. Options: a rank with no
-   heartbeat file at all counts as alive rather than gone, so only a stale file means gone; or
-   accept the window.
 
 ## Roads not taken
 
