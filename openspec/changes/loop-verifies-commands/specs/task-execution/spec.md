@@ -7,10 +7,8 @@ that tree, in the order declared, after the tree's changes are read and before t
 re-read. Every check SHALL run, even after one fails. What a check writes SHALL NOT reach the
 artifact.
 
-A check runs code from the tree, which the worker can edit, so it SHALL run as the worker runs:
-as the same user, in its own process group, and with the environment the worker was given,
-without the seat token. It SHALL NOT run as the Igor's user where a worker user is configured.
-Where none is configured, the check runs as the Igor's own user, as the worker did.
+Each check SHALL run as the worker ran: as the same user, in its own process group, and with
+the environment the worker was given, without the seat token.
 
 #### Scenario: A check runs as the worker user
 
@@ -23,6 +21,11 @@ Where none is configured, the check runs as the Igor's own user, as the worker d
 - **WHEN** a check writes a file into the tree
 - **THEN** the artifact carries the worker's changes and not that file
 
+#### Scenario: A failed check does not stop the rest
+
+- **WHEN** the first of two checks exits non-zero
+- **THEN** the second still runs, and both results are recorded
+
 #### Scenario: A run that changed nothing runs no checks
 
 - **WHEN** the worker leaves the tree unchanged
@@ -32,8 +35,11 @@ Where none is configured, the check runs as the Igor's own user, as the worker d
 
 All of one run's checks together SHALL be bounded by the role's `check_minutes`. At the limit,
 execution SHALL kill the running check's process group, record that check as timed out, and
-record every check not yet started as not run. A stop or a termination during the checks SHALL
-kill them as it kills a worker.
+record every check not yet started as not run.
+
+While checks run, execution SHALL re-read the claim on a timer, once per checkpoint interval.
+During the worker's run the claim is re-read on the worker's events, and a check emits none. A stop found then, or a termination during the checks,
+SHALL kill the running check as it kills a worker.
 
 #### Scenario: A hung test is killed at the limit
 
@@ -44,25 +50,30 @@ kill them as it kills a worker.
 #### Scenario: A stop during the checks publishes nothing
 
 - **WHEN** the item is stopped while a check runs
-- **THEN** the check is killed and nothing is published
+- **THEN** the check is killed at the next checkpoint, not at the end of the checks
+- **AND** nothing is published
 
 ### Requirement: The checks' result is published and recorded
 
 Each execution row SHALL record each check's command line and result: passed, failed, timed
-out or not run, with its exit code and how long it ran.
+out or not run, with its exit code and how long it ran. The row SHALL NOT hold a check's output.
 
-A pull request opened after checks SHALL be a draft where any check did not pass, whatever the
-role's `allow` prefers, and SHALL still request the role's reviewers. Its body SHALL carry one
-line for the checks, after the worker's summary and not counted toward the 700-character limit
-on that summary:
+A pull request opened after checks SHALL be a draft where any check did not pass, even where the
+role's `allow` lists `pr` and not `draft-pr`, and SHALL still request the role's reviewers. Its
+body SHALL carry one line for the checks, after the worker's summary and not counted toward the
+700-character limit on that summary:
 
 - every check passed: the line names them and says Igor ran them;
 - a check did not pass: the line names it and its result, followed by the last lines of its
   output, at most 1,000 characters for each such check;
 - the role declares no checks: the line says Igor ran none, naming the role.
 
-Where checks follow a conflict resolution on an existing pull request and one did not pass,
-execution SHALL return that pull request to draft and comment on it with the same line.
+Before output is published, each credential value the Igor holds SHALL be replaced in it by
+`[redacted]`: every seat token, and the value of each variable in the Igor's environment whose
+name contains `TOKEN`, `KEY`, `SECRET`, `PASSWORD` or `CREDENTIAL`.
+
+Where checks follow a conflict resolution on an existing pull request, execution SHALL comment
+on it with the same line, and where a check did not pass SHALL return it to draft.
 
 #### Scenario: A failing test keeps the pull request a draft
 
@@ -80,31 +91,18 @@ execution SHALL return that pull request to draft and comment on it with the sam
 - **WHEN** every check passes
 - **THEN** the body names each check and says Igor ran it
 
+#### Scenario: A role with no checks says so
+
+- **WHEN** the role declares no checks
+- **THEN** the body says Igor ran none, naming the role
+
+#### Scenario: A credential in a check's output is not published
+
+- **WHEN** a failing check prints a seat token
+- **THEN** the body holds `[redacted]` where the token was
+
 #### Scenario: A resolution that breaks the tests
 
 - **WHEN** a conflict resolution is published to a ready pull request and a check fails
 - **THEN** the pull request is returned to draft
 - **AND** a comment on it names the failed check
-
-## MODIFIED Requirements
-
-### Requirement: The abandoned-tree threshold derives from the worker's longest possible life
-
-The sweep that reclaims working trees left by a dead process SHALL use a threshold above the
-longest a tree can be in use, which is the absolute ceiling, plus the 60-minute maximum of
-`check_minutes`, plus the provisioning and publication either side of the worker. The margin
-SHALL be additive, because what a tree outlives its worker by is checks, a clone and a push
-rather than a share of the run.
-
-Deleting a live sibling's tree corrupts its run; leaving debris another hour costs disk.
-
-#### Scenario: A tree in use by the longest possible worker is not swept
-
-- **WHEN** a worker has run to the absolute ceiling, its checks have run to the maximum limit,
-  and its tree is still held
-- **THEN** the sweep does not remove that tree
-
-#### Scenario: The threshold follows the ceiling
-
-- **WHEN** the absolute ceiling changes
-- **THEN** the sweep threshold changes with it
