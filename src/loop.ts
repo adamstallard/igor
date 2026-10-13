@@ -20,6 +20,7 @@ import { isStop } from './signals.js'
 import { fingerprint, loadDeferrals, stillDeferred, type DeferralState } from './deferred.js'
 import { systemPrompt, triageBatch, TRIAGE_MODEL } from './triage.js'
 import { oneLine } from './text.js'
+import { instant } from './time.js'
 
 /**
  * One claimed item, start to finish.
@@ -662,7 +663,7 @@ function keepingLabel(tracker: Tracker, floor: string): Tracker {
       if (set === null) return candidate.holders.includes(tracker.holder) ? true : tracker.release(candidate, as)
       if (set?.self !== false) return tracker.release(candidate, as)
       const from = [set.at, liftedAt].reduce<string>(
-        (a, b) => (b !== undefined && Date.parse(b) > Date.parse(a) ? b : a),
+        (a, b) => (b !== undefined && instant(b) > instant(a) ? b : a),
         floor,
       )
       const stopped = await tracker.commentsSince(candidate, from).then(
@@ -1254,12 +1255,6 @@ function byAge(a: Candidate, b: Candidate): number {
   return x === y ? 0 : x < y ? -1 : 1
 }
 
-/** Unparseable sorts oldest, which holds a stop rather than lifting it. */
-function instant(iso: string): number {
-  const t = Date.parse(iso)
-  return Number.isNaN(t) ? -Infinity : t
-}
-
 /**
  * The most recent stop, because the cooldown runs from the last one anybody issued: the last in
  * `spoken`, which is in creation order, so two stops in the same second, or one with no readable
@@ -1337,6 +1332,7 @@ export async function dropStopped(
     }
     const stop = latestStop(spoken, identity)
     const handOver = handedOver.get(candidate.id)
+    // An undatable hand-over is the earliest instant, so it holds the stop rather than lifting it.
     if (stop === undefined || (handOver !== undefined && instant(handOver) > instant(stop.at))) {
       kept.push(candidate)
       continue
