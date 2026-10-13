@@ -44,6 +44,12 @@ export interface ServeOptions extends CycleOptions {
    * until it is accepted again.
    */
   credential?: () => Promise<true | string>
+  /**
+   * Appends the row saying the next item is a condition's probe, before it is claimed, so no
+   * other Igor takes one too; and, with `void`, the row saying it ended with no run, so the
+   * next item may probe. Asked only where the gate says the item is a probe.
+   */
+  probe?: (keys: readonly string[], outcome: 'taken' | 'void', item: string) => Promise<void>
 }
 
 export type ServeEvent =
@@ -161,11 +167,14 @@ export async function serve(
           break
         }
         emit({ kind: 'working', item: candidate, ...(gate.seat === undefined ? {} : { seat: gate.seat }) })
+        const probes = gate.probes ?? []
+        if (probes.length > 0) await options.probe?.(probes, 'taken', candidate.id)
         const run = await catchUpItem(deps, candidate, role, identity, {
           ...options,
           budget: gate,
           claim: { ...options.claim, since: report.readAt },
         })
+        if (probes.length > 0 && run.execution === undefined) await options.probe?.(probes, 'void', candidate.id)
         summary.worked += 1
         summary.costUsd += run.costUsd ?? 0
         if (shouldDefer(run.outcome, run.handoff, run.cures)) {
@@ -205,7 +214,13 @@ export async function serve(
           break
         }
         emit({ kind: 'working', item: candidate, ...(gate.seat === undefined ? {} : { seat: gate.seat }) })
+        // Read before the probe row goes in. Reading the lore throws on a malformed entry, and a
+        // throw after the probe row would leave a probe that never runs, holding the role for hours.
         const lore = await options.loreFor(candidate)
+        // A condition whose cooldown has passed lets exactly one item through: this one. The row
+        // goes in before the claim, so the next gate, here or in another Igor, sees a probe running.
+        const probes = gate.probes ?? []
+        if (probes.length > 0) await options.probe?.(probes, 'taken', candidate.id)
         const run = await runItem(deps, candidate, role, identity, {
           ...options,
           budget: gate,
@@ -218,6 +233,9 @@ export async function serve(
               : { ...options.claim, since: report.readAt },
         })
         summary.worked += 1
+        // A probe that produced no outcome observed nothing, so the condition stays open and the
+        // next item may probe instead.
+        if (probes.length > 0 && run.execution === undefined) await options.probe?.(probes, 'void', candidate.id)
         // A run whose cost never arrived adds nothing here, so this total is a floor. The
         // ledger records the absence rather than a zero.
         summary.costUsd += run.costUsd ?? 0

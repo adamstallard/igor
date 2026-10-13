@@ -1,5 +1,6 @@
 import type { Artifact, Candidate, ClaimVerdict, CodeHost, Comment, ReleaseHow, Tracker } from './adapter.js'
 import type { Gate, SeatVerdict } from './budget.js'
+import { cureFor, describeCondition, type Condition } from './conditions.js'
 import {
   checkpoint, CLAIM_MARKER, eligibleAfterStop, inFlightNotice, RECEIPT_MARKER, standDown, stillHeld, stopReceipt, STOPPED_MARKER, takeClaim,
   waitingMarker, waitingNotice,
@@ -127,6 +128,21 @@ export interface RunOptions extends ExecuteOptions {
     resetApproximate?: boolean
     blocked?: SeatVerdict
     passedOver?: readonly { seat: string; verdict: SeatVerdict }[]
+    /** The condition that stops this role, where one does. Nothing is claimed or requested. */
+    condition?: Condition
+  }
+}
+
+/**
+ * Refuses an item outright where a condition stops the role, before any claim or host request.
+ * Checked here as well as by each caller: a claim handed back on a condition posts a handoff
+ * blaming the budget on an item that had nothing to do with it.
+ */
+function stoppedBy(candidate: Candidate, budget: RunOptions['budget']): ItemRun | undefined {
+  if (budget?.condition === undefined) return undefined
+  return {
+    outcome: 'refused', candidate, reason: `stopped: ${describeCondition(budget.condition)}`,
+    costUsd: 0, spoke: false, cures: [],
   }
 }
 
@@ -138,6 +154,8 @@ export async function runItem(
   options: RunOptions = {},
 ): Promise<ItemRun> {
   const { tracker } = deps
+  const stopped = stoppedBy(candidate, options.budget)
+  if (stopped !== undefined) return stopped
 
   const step = options.onStep ?? (() => {})
   step('claiming')
@@ -293,6 +311,9 @@ function standIn(reached: Reached, role: Role, detail: string): ExecutionResult 
     ...(typeof output?.session_id === 'string' && output.session_id !== '' ? { session: output.session_id } : {}),
     ...(denials.length === 0 ? {} : { denials }),
     ...(published === undefined ? {} : { artifact: published.artifact, caughtUp: published.caughtUp }),
+    // With no worker output, as after a clean merge, the run ran no command, so it is marked
+    // `workerless` exactly as `execute` marks such a run: it observed no condition.
+    ...(output === undefined ? { workerless: true as const } : {}),
     reason: detail,
   }
 }
@@ -539,6 +560,8 @@ export async function catchUpItem(
   identity: string,
   options: RunOptions = {},
 ): Promise<ItemRun> {
+  const stopped = stoppedBy(candidate, options.budget)
+  if (stopped !== undefined) return stopped
   const artifact = candidate.inFlight
   if (artifact === undefined) {
     return {
@@ -748,6 +771,12 @@ export interface CycleReport {
     passedOver?: readonly { seat: string; verdict: SeatVerdict }[]
   }
   /**
+   * The condition that stopped this role before triage, where one did. A fourth reason to be
+   * idle, apart from a held pool, from pacing and from an empty queue: the role is stuck on its
+   * own configuration, and the key says what would cure it.
+   */
+  condition?: Condition
+  /**
    * Everything dropped before a model call, with the reason, so a lane can be tuned. `held`
    * marks the ones only the clock will bring back, which the watermark has to wait for.
    */
@@ -807,6 +836,12 @@ export interface CycleOptions extends RunOptions {
    */
   identity?: string
   /**
+   * The condition that keeps this role from taking any item, asked once before triage. A stopped
+   * role spends no model call and claims nothing. The items it would have asked about are left
+   * untriaged, so they hold the discovery watermark and are read again next cycle.
+   */
+  stopped?: () => Promise<Condition | undefined>
+  /**
    * Show what a cycle would decide and persist none of it — no watermark, no cycle record.
    * A preview that moved the mark would leave every candidate it triaged marked seen, and no
    * later cycle would rediscover them.
@@ -826,6 +861,9 @@ const NO_CREDENTIAL = "the chosen seat's credential could not be read"
 
 /** And where the cycle's own cap on model calls was reached before the candidate was. */
 const OVER_LIMIT = "this cycle's triage limit was reached first"
+
+/** Where a condition stopped the role: the key that stopped it is in the cycle's `condition`. */
+export const UNTRIAGED_CONDITION = 'a condition on this role stopped it before triage'
 
 /**
  * Discovery, triage, and the decision — everything up to but not including a claim.
@@ -1019,7 +1057,20 @@ export async function planCycle(
   for (const candidate of survivors) {
     if (!examined.has(candidate.id)) report.untriaged.push({ candidate, reason: OVER_LIMIT })
   }
-  if (considered.length > 0) {
+  // Before triage rather than per item: a role stuck on its own configuration would meet the
+  // same cure on every item, so it asks the model about none and claims none. The items are left
+  // untriaged, which holds the discovery watermark below them, and the directed ones and the
+  // catch-ups are found again next cycle, so dropping them here loses nothing.
+  const condition = await options.stopped?.().catch((error: unknown) => {
+    report.failures.push(`could not read conditions: ${error instanceof Error ? error.message : String(error)}`)
+    return undefined
+  })
+  if (condition !== undefined) {
+    report.condition = condition
+    for (const candidate of considered) report.untriaged.push({ candidate, reason: UNTRIAGED_CONDITION })
+    report.toClaim = []
+    report.toCatchUp = []
+  } else if (considered.length > 0) {
     // Resolved only now — a cycle with nothing to triage never reads a seat's usage for it.
     // The seat a worker would draw from, spending what it allows and nothing wider. Where it
     // names no seat there is no call: the triage model call is a spend like any other.
@@ -1517,10 +1568,13 @@ export async function recordDecisions(
 ): Promise<void> {
   // A cycle whose only decision was a catch-up has no fresh items and no failures, and its
   // one decision would otherwise go unwritten — which is the cycle most worth a record.
+  // A stopped cycle is recorded whatever it found: the record is where an operator tells a role
+  // stuck on its configuration from one with nothing to do.
   if (
     report.fresh === 0 &&
     report.failures.length === 0 &&
     report.toCatchUp.length === 0 &&
+    report.condition === undefined &&
     !report.toClaim.some((c) => c.directed === true)
   ) return
   await write(
@@ -1539,6 +1593,18 @@ export async function recordDecisions(
       triaged: report.triaged,
       ...(report.untriaged.length === 0 ? {} : { untriaged: report.untriaged.length }),
       ...(report.heldPool === undefined ? {} : { heldPool: report.heldPool }),
+      ...(report.condition === undefined
+        ? {}
+        : {
+            condition: {
+              key: report.condition.key,
+              state: report.condition.state,
+              count: report.condition.count,
+              since: report.condition.first,
+              ...(report.condition.probeAt === undefined ? {} : { probeAt: report.condition.probeAt }),
+              cure: cureFor(report.condition.key),
+            },
+          }),
       claimed: report.toClaim.length,
       triageCostUsd: Number(report.triageCostUsd.toFixed(4)),
       ...(report.triageCostUnreported > 0 ? { triageCostUnreported: report.triageCostUnreported } : {}),

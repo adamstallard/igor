@@ -90,3 +90,83 @@ Two facts from #65 that the spec does not carry:
   ([headless docs, *Handle API retries*](https://code.claude.com/docs/en/headless#handle-api-retries)).
   Workers receive it and Igor discards it. It is sent only before a retry, so a refusal that is not
   retried never produces one, and it cannot be the only signal.
+
+## How it is built
+
+**Every condition is rebuilt from `executions.ndjson` each time it is asked about**
+(`src/conditions.ts`). The log holds three kinds of row:
+
+- **A run row** is written for each item an Igor worked, and carries no `kind`. Its `cures` are
+  the keys the run minted, that is, recorded as the cause of its failure.
+- **A probe row** (`kind: 'probe'`) says an Igor is taking the one item a condition's cooldown
+  lets through, and names that item. It is written before the claim, so a second Igor sees it and
+  waits. With `void: true` it says the probe never produced a run row, as when the claim was lost
+  to somebody else, so the next item may probe at once.
+- **A check row** (`kind: 'check'`) records a test of one condition that spent no item, with `met`
+  saying whether the condition held. `serve` writes one when GitHub refuses or accepts its App's
+  credentials again. #143's seat probe, when it is built, writes the same kind.
+
+`loadSpend` returns run rows only, so spend attribution, capacity and `igor budget` count no
+probe or check row.
+
+**How a condition is counted.** Reading back from the newest row, the condition's current
+occurrence is the unbroken sequence of rows that meet its key, all observed against one
+discriminator (for a credential key, the credential's hash). It ends at the first row of the
+condition's scope (the role, seat or Igor the key names) that does not meet the key, or that meets
+it against a different discriminator. A run row is read for every condition on its role and its
+seat; a check row only for its own key; a probe row is a marker and never counted.
+
+**A run that could not have met a condition says nothing about it.** A run that started no worker
+(marked `workerless`, such as a catch-up whose merge came out clean in the clone) ran no command,
+and neither did one the provider refused for its credential. Each counts toward the key it met and
+is not read as evidence for any other. A run meets a key in its `cures` or one its worker's
+denials name. The second matters for a run whose publish threw after the worker was denied a
+command: its row carries the denials but no `cures`, because a handoff carrying a cure key is
+never deferred and this item should be, yet the worker still met the key.
+
+**A probe ends with its own item's run row**, whatever that row shows. If the row met the
+condition, the condition backs off further; if it cleared it, there is no condition; if it did
+neither, as a workerless run does, the next item may probe. A row for any other item ends no
+probe: it was written after the probe row, but its run began earlier. The lore an item is worked
+with is read before the probe row is written, because reading it can throw on a malformed entry,
+and a throw after the row would leave a probe that never runs.
+
+**A probe that never ends lapses** after `SWEEP_AFTER_MS`, the longest a run can hold a working
+tree. Without it, a process killed between its probe row and its run row would hold the scope for
+good. A shorter limit would let a second Igor probe beside a run still going.
+
+**A run that met a usage limit still clears a condition it did not meet.** Exempting it, as a
+credential refusal is exempt, was considered and rejected: a limit can arrive after commands ran,
+and then a run row without the key is real evidence that those commands were allowed. This holds
+only while a limit envelope says nothing of how far the run got.
+
+**The threshold and cooldown are org-wide, in `igor.config.yaml` under `conditions`.** Several
+Igors, and several roles on one seat, meeting one key are one condition, counted once. A setting
+per role would let one role's threshold stop a seat that another role's still counts as open,
+which is two stops again. A role or org base file that tries to grade a condition, by declaring it
+fatal, degraded or ranked, is refused with the reason before the unknown-key check runs, because
+that check would only name the key.
+
+**The credential hash is of the environment a worker gets**: `CLAUDE_CODE_OAUTH_TOKEN=<token>`, or
+the ambient pair (`credentialFingerprint`). `readAllSeats` hashes the environment a worker on that
+seat would get, and `execute` hashes the one it built, so both hash the same string without
+`workerEnv` handing the credential anywhere new.
+
+**`serve` records a run without waiting for it, and the gate waits.** The wiring tracks each run
+row still being written, and the next gate reads the log only once they have landed, so the item
+after the one that opened a condition is not taken.
+
+### What the build contradicted
+
+- **A refused App may be unable to write its own refusal.** The state branch is written with the
+  App's installation token, so the check row that opens `app:<identity>:credential` can fail for
+  the very reason it records. The stop is therefore decided by the mint attempt's own answer, in
+  memory, and the row is written when it can be: while the last installation token is still
+  valid, or on recovery as the row that clears it. Nothing is lost by this, because a restarted
+  process asks GitHub again before its first cycle.
+- **#65's two messages said a different credential is the only clear.** The condition's lines in
+  `igor budget` and `--credentials` say both: a different credential at once, or a probe on the
+  same one that is not refused.
+- **An item triaged to proceed and then not taken, because a condition opened mid-cycle, has
+  already passed the watermark.** An exhausted budget mid-cycle does the same. Holding the mark
+  below it is the next change on this branch.
