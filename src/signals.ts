@@ -6,6 +6,30 @@
  * recognition lives here rather than in whichever adapter needed it first.
  */
 
+import { escapeRegExp } from './text.js'
+
+// Fragments of the mention grammar, each shared by more than one pattern below. The grammar before
+// the verb and the one after it differ on purpose, so only what they share is here: `:` and dashes
+// join names before the verb but end the list after it, a name ends on `.` or `-` before the verb
+// but on a letter or digit after it, and each crosses line breaks by its own rule.
+
+/** What continues a name, a path or a team: one of these before `@` makes it no mention. */
+const NAME_CHARS = '\\w@./-'
+/** A space or tab: whitespace that is not a line break. */
+const SPACE = '[^\\S\\n]'
+/** The `[bot]` a GitHub App's bot carries to REST, optional since GraphQL and people omit it. */
+const BOT = '(?:\\[bot\\])?'
+/** Markup or a bracket that may open around a mention: `` `@a` ``, `**@a**`, `_@a_`, `(@a)`. */
+const OPENERS = `[(\\[*_\`~"']*`
+/** The markup or bracket that closes one. */
+const CLOSERS = `[)\\]*_\`~"']*`
+/** A possessive, with either apostrophe. */
+const POSSESSIVE = `(?:['’]s)?`
+/** A login after the verb, ending on a letter or digit so a sentence's full stop stays out. */
+const LOGIN = '[A-Za-z0-9](?:[\\w.-]*[A-Za-z0-9])?'
+/** Spaces, then a word: a mention that runs straight on into one. */
+const INTO_WORD = `${SPACE}+[A-Za-z]`
+
 /** Deliberate enough not to fire on prose, loose enough that nobody has to learn a syntax. */
 // Not `stop-gap`, which opens a sentence about something else entirely. The word boundary
 // alone matches before a hyphen, and this rule gates unclaimed items as well as firing inside a
@@ -16,7 +40,7 @@
 // asking for anything.
 const verb = (words: string): RegExp =>
   new RegExp(
-    `^(?:[*_]{0,3}(?:${words})(?:\\b(?!-)(?![*_]*\\w)|(?=_+(?:\\W|$)))(?:[.!]?[*_]+)?|\`(?:${words})\`(?=[^\\S\\n]*(?:@|\\n|$)))`,
+    `^(?:[*_]{0,3}(?:${words})(?:\\b(?!-)(?![*_]*\\w)|(?=_+(?:\\W|$)))(?:[.!]?[*_]+)?|\`(?:${words})\`(?=${SPACE}*(?:@|\\n|$)))`,
     'i',
   )
 const STOP = verb('stop')
@@ -27,10 +51,7 @@ function addressed(text: string, identity: string, verb: RegExp): boolean {
   // typing a mention, so the name matches with or without the suffix. The lookbehind refuses a
   // name that ends another one (`@code-reviewer`, `bob@reviewer`, `@org/reviewer`); the
   // lookahead ends the name where `\b` cannot, after the `]`.
-  const named = identity
-    .replace(/^@/, '')
-    .replace(/\[bot\]$/i, '')
-    .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const named = escapeRegExp(bareName(identity))
   if (named === '') return false
   // Further mentions may sit between the name and the verb, joined by spaces, commas, `and`, `or`,
   // `and/or`, `&`, `/` or `+`, so `@a @b stop`, `@a and @b stop`, `@a or @b stop` and `@a/@b stop`
@@ -42,10 +63,9 @@ function addressed(text: string, identity: string, verb: RegExp): boolean {
   // (`@org/b`, `github.com/b`).
   // In `others` a name never ends on `_`, so trailing underscores are always emphasis and the
   // match stays linear rather than trying every split of a run of them between name and markup.
-  const closers = `[)\\]*_\`~"']*`
-  const others = `(?:(?:[^\\S\\n]*[,:&+/–—-][\\s,:&+/–—-]*|[^\\S\\n]+)(?:(?:and|or)(?:/(?:and|or))?\\s+)?[(\\[*_\`~"']*@[\\w.-]*[A-Za-z0-9.-](?:\\[bot\\])?${closers})*`
+  const others = `(?:(?:${SPACE}*[,:&+/–—-][\\s,:&+/–—-]*|${SPACE}+)(?:(?:and|or)(?:/(?:and|or))?\\s+)?${OPENERS}@[\\w.-]*[A-Za-z0-9.-]${BOT}${CLOSERS})*`
   const mention = new RegExp(
-    `(?:(?<![\\w@./-])@?|(?<=/)@|(?<=(?:^|[^\\w@./-])_+)@)${named}(?:\\[bot\\])?(?!_*[A-Za-z0-9])${closers}${others}[\\s,:–—-]+`,
+    `(?:(?<![${NAME_CHARS}])@?|(?<=/)@|(?<=(?:^|[^${NAME_CHARS}])_+)@)${named}${BOT}(?!_*[A-Za-z0-9])${CLOSERS}${others}[\\s,:–—-]+`,
     'gi',
   )
   // Every mention of the name is tried, so one in passing earlier in the comment does not hide a
@@ -174,11 +194,14 @@ function namesAfter(
   text: string,
   verb: RegExp,
 ): { list: string[]; endsOnWord: boolean; later: string[]; laterEndsOnWord: boolean } {
-  const mention = /[(\[*_`~"']*@([A-Za-z0-9](?:[\w.-]*[A-Za-z0-9])?(?:\[bot\])?)(?:['’]s)?[)\]*_`~"']*(?:['’]s)?/iy
-  const separator = /[^\S\n]*(?:,[^\S\n]*(?:\n[^\S\n]*)?)?(?:(?:&|\+|\/|\band\b|\bor\b)(?:\/(?:and|or)\b)?[^\S\n]*(?:\n[^\S\n]*)?)?/iy
+  const mention = new RegExp(`${OPENERS}@(${LOGIN}${BOT})${POSSESSIVE}${CLOSERS}${POSSESSIVE}`, 'iy')
+  const separator = new RegExp(
+    String.raw`${SPACE}*(?:,${SPACE}*(?:\n${SPACE}*)?)?(?:(?:&|\+|\/|\band\b|\bor\b)(?:\/(?:and|or)\b)?${SPACE}*(?:\n${SPACE}*)?)?`,
+    'iy',
+  )
   const rest = text.slice(verb.exec(text)?.[0].length ?? 0)
   const list: string[] = []
-  let at = /^[^\S\n]*(?:[:,—–-]+[^\S\n]*(?:\n[^\S\n]*)?)?/.exec(rest)![0].length
+  let at = new RegExp(String.raw`^${SPACE}*(?:[:,—–-]+${SPACE}*(?:\n${SPACE}*)?)?`).exec(rest)![0].length
   let end = at
   for (;;) {
     mention.lastIndex = at
@@ -190,7 +213,7 @@ function namesAfter(
     separator.exec(rest)
     at = separator.lastIndex
   }
-  const endsOnWord = list.length > 0 && /^[^\S\n]+[A-Za-z]/.test(rest.slice(end))
+  const endsOnWord = list.length > 0 && new RegExp(`^${INTO_WORD}`).test(rest.slice(end))
   const crossed = rest.slice(list.length > 0 ? end : 0, at).includes('\n')
   const line = crossed ? '' : rest.slice(at).split('\n', 1)[0]!
   const mentions = [...line.matchAll(MENTION)]
@@ -202,13 +225,13 @@ function namesAfter(
 }
 
 /** What follows a mention that runs straight on into a word, past a possessive or closing markup. */
-const RUNS_ON = /^(?:['’]s)?[)\]*_`~"']*(?:['’]s)?[^\S\n]+[A-Za-z]/
+const RUNS_ON = new RegExp(`^${POSSESSIVE}${CLOSERS}${POSSESSIVE}${INTO_WORD}`)
 
 /**
  * A mention anywhere in text: not the end of another name, a path or a team, though it may sit in
  * `_` emphasis or follow the `/` that joins two mentions.
  */
-const MENTION = /(?:(?<=(?:^|[^\w@./-])_*)|(?<=\/))@([A-Za-z0-9](?:[\w.-]*[A-Za-z0-9])?(?:\[bot\])?)/gi
+const MENTION = new RegExp(String.raw`(?:(?<=(?:^|[^${NAME_CHARS}])_*)|(?<=\/))@(${LOGIN}${BOT})`, 'gi')
 
 /**
  * The names a tracker should resolve for `isStop` and `isGoAhead` to read `body`: exactly the
