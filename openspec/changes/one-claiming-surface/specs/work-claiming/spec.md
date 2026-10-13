@@ -174,9 +174,15 @@ counts as no name, as in a stop, so "carry on, @alice approved it" lifts the sto
 Where the names are unclear, a go-ahead errs the other way from a stop, because lifting a stop by
 mistake costs more than leaving one in place. A go-ahead with no Igor's name straight after the
 phrase SHALL count the mentions later on its opening line, and a list of names that runs straight
-on into a word SHALL lose its last name, whichever of the two the go-ahead reads. Whether a go-ahead names an Igor is read before that loss,
-so one whose only Igor is the name it loses lifts the stop for no Igor. A name the tracker cannot
-resolve counts as an Igor's.
+on into a word SHALL lose its last name, whichever of the two the go-ahead reads. Whether a
+go-ahead names an Igor is read before that loss, so one whose only Igor is the name it loses lifts
+the stop for no Igor. A name the tracker cannot resolve counts as an Igor's.
+
+The later mentions SHALL NOT be read past a line break that the opening punctuation or the list's
+last separator crossed, so "go ahead:" followed by "thanks @igor-backend" on the next line is a
+bare go-ahead and lifts the stop for every Igor (decided by Adam, 2026-10-13). This is the one
+place a go-ahead does not err toward lifting fewer stops: "go ahead:" on its own line is usually
+meant for everyone, and a mention on the next line belongs to another sentence.
 
 Where a stop is said on an item a person handed to the Igor while no run of the Igor is active
 on it, the Igor SHALL, on the next cycle that sees the stop, remove itself from the holder field
@@ -226,6 +232,12 @@ never another Igor's.
 - **WHEN** somebody says stop on an item two Igors work, and somebody then says
   "go ahead and pick it back up, @igor-backend"
 - **THEN** the stop is lifted for the backend Igor only
+
+#### Scenario: A go-ahead on its own line is bare
+
+- **WHEN** somebody says stop on an item two Igors work, and somebody then says "go ahead:" with
+  "thanks @igor-backend" on the next line
+- **THEN** the stop is lifted for both Igors
 
 #### Scenario: A go-ahead whose list runs on into the next clause
 

@@ -472,6 +472,12 @@ backend Igor), and a list that runs straight on into a word loses its last name 
 @igor-frontend keep waiting" lifts the stop for no Igor rather than reading as bare. A stop reads
 these comments as before. The parser stays shared; the two verbs differ only in what they make of what it read.
 
+**Decided by Adam, 2026-10-13: a go-ahead does not read later mentions across a line break.**
+Where its opening punctuation or its list's last separator crossed a line break, as in "go ahead:"
+then "thanks @igor-backend" on the next line, the go-ahead is bare and lifts every Igor's stop. It
+is the one place a go-ahead does not err toward lifting fewer stops, kept because "go ahead:" on
+its own line is usually meant for everyone and the mention below it belongs to another sentence.
+
 **Decided by Adam, 2026-10-11: a name that is no Igor's counts as no name.** "Stop — @alice is
 taking over" stops every Igor on the item, and "carry on, @alice approved it" lifts every stop.
 The name reading needs to know which names are Igors, and a role does not say: a role file may not
