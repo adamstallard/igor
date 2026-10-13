@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { ABSOLUTE_CEILING_MS } from './execute.js'
 import { OUTBOX_SUFFIX, TREE_PREFIX } from './worktree.js'
 import type { Reporter } from './wiring.js'
+import { escapeRegExp } from './text.js'
 
 /**
  * Reclaims working trees left behind by a process that died.
@@ -34,8 +35,7 @@ export const SWEEP_AFTER_MS = ABSOLUTE_CEILING_MS + 60 * 60 * 1000
  * silently — an unescaped `igor.tree-` matches `igorXtree-abc`.
  */
 export function nameRuleFor(prefix: string, suffix = ''): RegExp {
-  const literal = (part: string) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  return new RegExp(`^${literal(prefix)}[A-Za-z0-9]+${literal(suffix)}$`)
+  return new RegExp(`^${escapeRegExp(prefix)}[A-Za-z0-9]+${escapeRegExp(suffix)}$`)
 }
 
 const TREE_NAME = nameRuleFor(TREE_PREFIX)

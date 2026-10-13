@@ -1,6 +1,7 @@
 import type { Entry } from './entry.js'
 import type { Role } from './role.js'
 import { scoreEntry, type ScoringOptions } from './scoring.js'
+import { oneLine } from './text.js'
 
 /**
  * Getting lore in front of a worker.
@@ -60,9 +61,9 @@ export function estimateTokens(text: string): number {
 /** What a reader needs to judge the lesson: when it applies, what it is, and how firmly it is held. */
 export function renderEntry(fired: Fired): string {
   const { entry } = fired
-  const lines = [`### ${entry.claim.replace(/\s+/g, ' ').trim()}`, '']
+  const lines = [`### ${oneLine(entry.claim)}`, '']
 
-  lines.push(`**Applies:** ${fired.entry.conditions.prose.replace(/\s+/g, ' ').trim()}`)
+  lines.push(`**Applies:** ${oneLine(fired.entry.conditions.prose)}`)
   if (entry.conditions.paths?.length) {
     lines.push(`**Paths:** ${entry.conditions.paths.join(', ')}`)
   }

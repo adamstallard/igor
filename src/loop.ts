@@ -19,6 +19,7 @@ import { countStages, screen, staleOwnArtifact, universalSkip, type Holding } fr
 import { isStop } from './signals.js'
 import { fingerprint, loadDeferrals, stillDeferred, type DeferralState } from './deferred.js'
 import { systemPrompt, triageBatch, TRIAGE_MODEL } from './triage.js'
+import { oneLine } from './text.js'
 
 /**
  * One claimed item, start to finish.
@@ -47,7 +48,7 @@ export function declineReason(transcript: string, limit = 400): string {
     .trim()
   if (cleaned === '') return 'it read this and found nothing it could usefully change'
   const paragraphs = cleaned.split(/\n\s*\n/).filter((p) => p.trim().length > 40)
-  const first = (paragraphs[0] ?? cleaned).replace(/\s+/g, ' ').trim()
+  const first = oneLine(paragraphs[0] ?? cleaned)
   if (first.length <= limit) return first
   const cut = first.slice(0, limit)
   const at = cut.lastIndexOf('. ')
