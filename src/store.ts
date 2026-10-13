@@ -207,7 +207,9 @@ export interface CreateTarget {
  * Where `create` writes, and the ids it may not reuse there.
  *
  * `into` names a candidate directory outside the store, laid out the same way so that
- * `propose --from` reads back what was written.
+ * `propose --from` reads back what was written. Only the store's rejections are read, never
+ * that directory's: a rejection is written on merge, into the store's own `rejected/`, so a
+ * scratch directory has none of its own to find.
  *
  * Ids are taken against the store as well as the target, because `propose` drops a candidate
  * whose id is already in the store — a collision left to be found there costs the work of

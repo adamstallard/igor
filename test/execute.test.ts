@@ -10,20 +10,25 @@ import type {
   CatchUpRequest,
   ClaimVerdict,
   CodeHost,
+  InFlight,
   ResolutionRequest,
   Tracker,
 } from '../src/adapter.js'
+import { stillHeld } from '../src/claiming.js'
 import type { Role } from '../src/role.js'
 import {
-  ABSOLUTE_CEILING_MS, branchFor, claudeWorker, complete, DENIED_COMMAND_LIMIT, denialsFrom, describeTool, execute,
+  ABSOLUTE_CEILING_MS, branchFor, claudeWorker, complete, conflictPrompt, DENIED_COMMAND_LIMIT, denialsFrom, describeTool, execute,
   ExecutionError, limitWindow, MODEL_SILENCE_MS, permits, prBody, PR_BODY_LIMIT, recordExecution, renderProgress, spendByModel, stripLinkage,
   TOOL_SILENCE_MS, usageLimit, watchWorker, workerEnv, workerPrompt, workerSystemPrompt,
-  describeCommand, refusalPath,
+  describeCommand, refusalPath, declarations, DECLARATION_FILE,
   type ExecutionResult, type Progress, type WorkerEvent, type WorkerRunner,
 } from '../src/execute.js'
 import { CAPACITY_PATH } from '../src/capacity.js'
-import { withTree, type ChangedFile, type TreeProvider, type WorkingTree } from '../src/worktree.js'
+import { blobSha, withTree, type BaseChange, type ChangedFile, type TreeProvider, type WorkingTree } from '../src/worktree.js'
 import { tempDir } from './tmp.js'
+
+/** Where Igor puts the outbox: outside the tree, so the prompt names an absolute path. */
+const OUTBOX = '/tmp/igor-outbox-test'
 
 const MINUTE = 60 * 1000
 const HOUR = 60 * MINUTE
@@ -72,6 +77,7 @@ const candidate = (over: Partial<Candidate> = {}): Candidate =>
     body: 'Uses toISOString().',
     labels: ['bug'],
     assignees: [],
+    holders: [],
     paths: [],
     state: 'open',
     ...over,
@@ -80,9 +86,8 @@ const candidate = (over: Partial<Candidate> = {}): Candidate =>
 const role = (over: Partial<Role> = {}): Role =>
   ({
     name: 'triage',
-    allow: ['comment', 'draft-pr', 'unassign'],
+    allow: ['comment', 'draft-pr'],
     commands: [],
-    completion: 'unassign',
     instructions: ['Prefer small diffs.'],
     reviewers: [],
     settleSeconds: 10,
@@ -90,20 +95,30 @@ const role = (over: Partial<Role> = {}): Role =>
     ...over,
   }) as Role
 
+/** The commit every fake tree here was cut from, and what the artifact must be published over. */
+const CLONE_SHA = 'clonesha'
+
 /** A provider whose trees are plain directories, so the seam is testable without a network. */
-function fakeProvider(changes: ChangedFile[], opts: { failProvision?: boolean } = {}) {
-  const log = { provisioned: 0, released: 0, paths: [] as string[] }
+function fakeProvider(
+  changes: ChangedFile[],
+  opts: { failProvision?: boolean; noHead?: boolean } = {},
+) {
+  const log = { provisioned: 0, released: 0, paths: [] as string[], outboxes: [] as string[] }
   const provider: TreeProvider = {
     name: 'fake',
     provision: async () => {
       if (opts.failProvision) throw new Error('cannot clone')
       log.provisioned++
       const path = tempDir('igor-test-tree-')
+      const outbox = tempDir('igor-test-outbox-')
       log.paths.push(path)
+      log.outboxes.push(outbox)
       const tree: WorkingTree = {
         path,
+        outbox,
         repo: 'o/r',
         changes: async () => changes,
+        ...(opts.noHead === true ? {} : { head: async () => CLONE_SHA }),
         release: async () => {
           log.released++
         },
@@ -142,23 +157,33 @@ function fakeCodeHost(opts: { caughtUp?: CatchUp[] } = {}): {
   return { host, seen, resolved, asked }
 }
 
-function fakeTracker() {
+function fakeTracker(opts: { releaseLeavesHolder?: boolean } = {}) {
   const released: string[] = []
+  const reported: string[] = []
   const t: Tracker = {
     name: 'fake',
     nativeHolderField: true,
+    holderField: { holds: 'list', distinctFromAssignee: true },
+    holder: 'igor:triage',
+    holderSetBy: async () => undefined,
+    directed: async () => [],
+    findLinking: async () => undefined,
+    createIssue: async () => 'https://github.com/o/r/issues/100',
     identity: async () => 'igor-bot',
     search: async () => [],
     claim: async () => true,
     commentsSince: async () => [],
     verifyClaim: async () => ({ status: 'held' }),
-    report: async () => {},
+    report: async (_c, m) => {
+      reported.push(m)
+    },
     release: async (_c, as) => {
       released.push(as)
+      return opts.releaseLeavesHolder !== true
     },
     linkage: () => 'Closes #7',
   }
-  return { t, released }
+  return { t, released, reported }
 }
 
 describe('a worker that fails with something to say', () => {
@@ -254,23 +279,26 @@ describe('the action space is enforced at the loop', () => {
     expect(workerSystemPrompt(role(), ['draft-pr'])).toMatch(/run no commands/)
   })
 
-  it('refuses a completion the role does not permit', async () => {
-    const { t, released } = fakeTracker()
-    const r = await complete(t, candidate(), role({ completion: 'close', allow: ['comment'] }), 'igor-bot')
-    expect(r?.action).toBe('close')
-    expect(released).toEqual([])
-  })
-
-  it('refuses loudly rather than silently falling back to the default', async () => {
-    const { t } = fakeTracker()
-    const r = await complete(t, candidate(), role({ completion: 'close', allow: ['comment', 'close'] }), 'igor-bot')
-    expect(r?.why).toMatch(/not implemented/)
-  })
-
-  it('releases the claim on the default completion', async () => {
-    const { t, released } = fakeTracker()
-    expect(await complete(t, candidate(), role(), 'igor-bot')).toBeUndefined()
+  it('releases the claim a finished run holds', async () => {
+    const { t, released, reported } = fakeTracker()
+    await complete(t, candidate(), role(), 'igor-bot')
     expect(released).toEqual(['igor-bot'])
+    expect(reported).toEqual([])
+  })
+
+  it('releases it whatever the role allows', async () => {
+    const { t, released } = fakeTracker()
+    await complete(t, candidate(), role({ allow: ['comment'] }), 'igor-bot')
+    expect(released).toEqual(['igor-bot'])
+  })
+
+  it('says so on the item where the release did not clear the holder', async () => {
+    // The release is the last call of a run that published. A surface answering "still held"
+    // there leaves the run reported as produced, the pull request open, and the item held by an
+    // Igor that has finished with it — with nobody told.
+    const { t, reported } = fakeTracker({ releaseLeavesHolder: true })
+    await complete(t, candidate(), role(), 'igor-bot')
+    expect(reported).toEqual([stillHeld(role())])
   })
 })
 
@@ -305,6 +333,81 @@ describe('rendering a command pattern for the worker', () => {
   })
 })
 
+describe('what a worker is told about undoing the base', () => {
+  const artifact = (): InFlight => ({
+    kind: 'pull-request',
+    ref: '#42',
+    url: 'https://example.test/42',
+    draft: false,
+    author: 'igor-bot',
+    mergeable: 'conflicting',
+    branch: 'igor/triage/7-timestamps',
+    base: 'main',
+  })
+
+  const base: BaseChange[] = [
+    { path: 'src/a.ts', before: blobSha('base\n'), after: blobSha('theirs\n'), head: blobSha('ours\n') },
+    { path: 'src/gone.ts', before: blobSha('base\n'), head: blobSha('base\n') },
+  ]
+
+
+  it('names the file to write, what it is for, and what leaving it out costs', () => {
+    // A channel a worker is not told about is a guard that only ever refuses: every
+    // legitimate revert becomes a handoff, whatever the worker meant.
+    const p = conflictPrompt(candidate(), artifact(), OUTBOX, ['src/a.ts'], base)
+    expect(p).toContain(`${OUTBOX}/${DECLARATION_FILE}`)
+    expect(p).toMatch(/hands the item to a\s+person/)
+    expect(p).toContain('"reverts"')
+  })
+
+  it('gives the base state to quote for each conflicted path, and for no other', () => {
+    // The state is the half of a declaration a worker cannot read off the tree — it is not
+    // given git — and a declaration naming the wrong one authorizes nothing. Only the
+    // conflicted paths, because the base's diff as a whole is unbounded.
+    const p = conflictPrompt(candidate(), artifact(), OUTBOX, ['src/a.ts'], base)
+    expect(p).toContain(`- src/a.ts: ${blobSha('theirs\n')}`)
+    expect(p).not.toContain('src/gone.ts')
+  })
+
+  it('says a deleted path is deleted rather than naming a blob that does not exist', () => {
+    const p = conflictPrompt(candidate(), artifact(), OUTBOX, ['src/gone.ts'], base)
+    expect(p).toContain('- src/gone.ts: deleted')
+  })
+
+  it('leaves the marker-free paragraph last, where the rest of this prompt puts it', () => {
+    // That paragraph is the last thing a worker reads before it resolves a delete/modify
+    // conflict, and the tests above it read it by position. The declaration goes before it.
+    const p = conflictPrompt(candidate(), artifact(), OUTBOX, ['src/a.ts'], base)
+    expect(p.split('\n\n').at(-1)).toMatch(/^Where a conflicted file has no markers/)
+  })
+})
+
+describe('reading a declaration a worker wrote', () => {
+  it('takes the entries it can read and nothing else', () => {
+    const sha = blobSha('theirs\n')
+    expect(declarations(JSON.stringify({ reverts: [{ path: 'a.ts', discards: sha }] })))
+      .toEqual([{ path: 'a.ts', discards: sha }])
+  })
+
+  it('authorizes nothing where the file is not readable as a declaration', () => {
+    // Every unreadable shape yields no declaration rather than an error: the consequence of
+    // having none is a refusal naming the paths, which is what an unreadable file deserves.
+    for (const content of [
+      'not json at all',
+      '[]',
+      '{"reverts": {}}',
+      '{"all": true}',
+      '{"reverts": [{"path": "*", "discards": "abc"}]}',
+      '{"reverts": [{"path": "  ", "discards": "abc"}]}',
+      '{"reverts": [{"discards": "abc"}]}',
+      '{"reverts": [{"path": "a.ts"}]}',
+      '{"reverts": [null]}',
+    ]) {
+      expect(declarations(content), content).toEqual([])
+    }
+  })
+})
+
 describe('the trusted channel', () => {
   it('fences the item and says it is data', () => {
     const s = workerSystemPrompt(role(), ['draft-pr'])
@@ -325,6 +428,51 @@ describe('the trusted channel', () => {
 
   it('truncates a very long body rather than paying for all of it', () => {
     expect(workerPrompt(candidate({ body: 'x'.repeat(20000) }), 'Closes #7')).toContain('[truncated]')
+  })
+})
+
+describe('the conflict a worker is handed when one side deleted the file', () => {
+  const artifact = (): InFlight => ({
+    kind: 'pull-request',
+    ref: '#42',
+    url: 'https://example.test/42',
+    draft: false,
+    author: 'igor-bot',
+    mergeable: 'conflicting',
+    branch: 'igor/triage/7-timestamps',
+    base: 'main',
+  })
+
+  /** The marker-free paragraph alone, unwrapped, so an assertion reads the prose not the layout. */
+  const markerFree = (): string =>
+    (conflictPrompt(candidate(), artifact(), OUTBOX, ['doomed.ts']).split('\n\n').at(-1) ?? '').replace(/\s+/g, ' ')
+
+  it('points at the copy left on disk rather than assuming the artifact is the side that survived', () => {
+    // Git leaves the surviving side in the tree whichever side deleted, so on `DU` — the
+    // artifact deleted, the base edited — the copy sitting there is the *base's*. A sentence
+    // that names the artifact as the side on disk is backwards in both directions there:
+    // keeping the file keeps the base's copy, and the base removed nothing to accept.
+    const p = markerFree()
+    expect(p).toMatch(/copy left on disk is the side that survived/i)
+    // Conditional, not a claim about every marker-free conflict. A binary, a path with `-merge`
+    // set, and a submodule's gitlink all conflict without markers and none of them is one side
+    // deleting what the other edited — asserted as a fact, the sentence lies to the worker in
+    // each, and the advice under it describes a choice that is not on offer.
+    expect(p).toMatch(/^Where a conflicted file has no markers because one side deleted/)
+    expect(p).not.toMatch(/keep the artifact's version/i)
+    expect(p).not.toMatch(/accept main's removal/i)
+  })
+
+  it('says it in terms that hold whichever side deleted, naming neither the artifact nor the base', () => {
+    // One sentence covering two orientations works only while it names no side: name one
+    // and it is written for that orientation and wrong for the other.
+    const p = markerFree()
+    expect(p).not.toMatch(/artifact/i)
+    expect(p).not.toMatch(/\bmain\b/)
+  })
+
+  it('offers both moves, so the worker can take the deletion as well as the surviving copy', () => {
+    expect(markerFree()).toMatch(/delete it to take the deletion/i)
   })
 })
 
@@ -489,6 +637,24 @@ describe('the pull request and the ledger point at one transcript', () => {
     expect(record['usage']).toEqual({ assistantTurns: 3, cacheReadTokensPeak: 3000 })
   })
 
+  it('records what a published resolution undid, which its diff cannot show', async () => {
+    // A restored deletion reads in the diff as the file still being there, so the record is
+    // the only place an undone base change is legible at all — and a declaration is meant to
+    // make it a statement rather than an exemption from being seen.
+    const { item, result } = await run()
+    const reverts = ['src/a.ts (base blob 0f1e2d)', 'src/gone.ts, which the base deleted']
+    await recordExecution('acme/lore', item, role(), { ...result, reverts })
+
+    expect(ledger.records[0]?.['reverts']).toEqual(reverts)
+  })
+
+  it('leaves the field out of a run that undid nothing', async () => {
+    const { item, result } = await run()
+    await recordExecution('acme/lore', item, role(), result)
+
+    expect('reverts' in (ledger.records[0] ?? {})).toBe(false)
+  })
+
   it('records the figure where the worker reported one', async () => {
     const { item, result } = await run()
     await recordExecution('acme/lore', item, role(), result)
@@ -562,12 +728,12 @@ describe('a run killed mid-flight is not recorded as free', () => {
 describe('which pull request is preferred is stated rather than inferred', () => {
   it('prefers a draft where a role permits both', async () => {
     // Only reversible artifacts are produced: a draft is an offer, unmergeable by accident.
-    const { seen } = await run({ allow: ['pr', 'draft-pr', 'unassign'] })
+    const { seen } = await run({ allow: ['pr', 'draft-pr'] })
     expect(seen[0]?.draft).toBe(true)
   })
 
   it('opens a ready pull request where that is all the role permits', async () => {
-    const { seen } = await run({ allow: ['pr', 'unassign'] })
+    const { seen } = await run({ allow: ['pr'] })
     expect(seen[0]?.draft).toBe(false)
   })
 
@@ -576,6 +742,89 @@ describe('which pull request is preferred is stated rather than inferred', () =>
     expect(result.outcome).toBe('refused')
     expect(result.reason).toMatch(/may not open a pull request/)
     expect(seen).toEqual([])
+  })
+})
+
+describe('a file whose name did not survive being decoded', () => {
+  beforeEach(() => {
+    ledger.records.length = 0
+    ledger.files.length = 0
+  })
+
+  const bytes = Buffer.from([0x63, 0x61, 0x66, 0xe9, 0x2e, 0x6d, 0x64])
+
+  /** What `changes()` reports for a file git named in bytes that are not valid UTF-8. */
+  const unnameable: ChangedFile[] = [
+    { path: 'src/a.ts', content: 'fixed', kind: 'modified' },
+    { path: bytes.toString('utf8'), content: 'notes\n', kind: 'modified', rawName: bytes },
+  ]
+
+  async function publish(changes: ChangedFile[]) {
+    const { provider } = fakeProvider(changes)
+    const { host, seen } = fakeCodeHost()
+    const { t } = fakeTracker()
+    const result = await execute(provider, t, host, candidate(), role(), {
+      worker: async () => ({ result: 'Fixed it.', total_cost_usd: 0.02 }),
+    })
+    return { result, seen }
+  }
+
+  it('publishes nothing rather than publishing at the decoded spelling', async () => {
+    // Published at the U+FFFD spelling a modified file lands at a path no file on disk has,
+    // so the branch carries it twice; a deletion removes nothing; and two names differing
+    // only in those bytes collide on one path. The bytes are in hand by this point, and
+    // throwing them away at the last step is a stranger state than never having had them.
+    const { result, seen } = await publish(unnameable)
+    expect(result.outcome).toBe('failed')
+    expect(seen).toEqual([])
+  })
+
+  it('names the file as git wrote it, which is the whole point of having the bytes', async () => {
+    const { result } = await publish(unnameable)
+    expect(result.reason).toContain('caf\\xe9.md')
+    expect(result.reason).not.toContain('�')
+  })
+
+  it('refuses over a deletion too, where the mangled path would remove nothing', async () => {
+    const { result, seen } = await publish([
+      { path: bytes.toString('utf8'), content: '', kind: 'deleted', rawName: bytes },
+    ])
+    expect(result.outcome).toBe('failed')
+    expect(seen).toEqual([])
+  })
+
+  it('still records what the run changed, so the diff is not lost from the account', async () => {
+    const { result } = await publish(unnameable)
+    expect(result.changed).toEqual(unnameable)
+  })
+
+  it('does not let an ordinary name spell the escape of an unnameable one', async () => {
+    // A backslash is a legal byte in a filename. Rendered beside a name that was escaped into
+    // one, the two read alike, and the record cannot say which file stopped the run — the
+    // collision this refusal exists to stop, reappearing in the account of it.
+    const escaped = Buffer.from([0x61, 0xe9, 0x2e, 0x6d, 0x64])
+    const { result } = await publish([
+      { path: 'a\\xe9.md', content: 'ordinary\n', kind: 'modified' },
+      { path: escaped.toString('utf8'), content: 'notes\n', kind: 'modified', rawName: escaped },
+    ])
+    await recordExecution('acme/lore', candidate(), role(), result)
+
+    const written = ledger.records[0]?.['changed'] as string[]
+    expect(new Set(written).size).toBe(written.length)
+  })
+
+  it('writes the run record under the bytes too, not under the spelling', async () => {
+    // The reason and the record are read by the same person, one after the other. A record
+    // that spells the file with U+FFFD sends them looking for a file that is not there.
+    const { result } = await publish(unnameable)
+    await recordExecution('acme/lore', candidate(), role(), result)
+    expect(ledger.records[0]?.['changed']).toContain('modified caf\\xe9.md')
+  })
+
+  it('leaves an ordinary change alone', async () => {
+    const { result, seen } = await publish([{ path: 'src/a.ts', content: 'fixed', kind: 'modified' }])
+    expect(result.outcome).toBe('produced')
+    expect(seen).toHaveLength(1)
   })
 })
 
@@ -1174,6 +1423,32 @@ describe('a worker may run only the commands its role declares', () => {
     expect(argv.slice(at, at + 3)).toEqual(['--allowed-tools', 'Bash(npm test:*)', 'Bash(git diff)'])
     // Editing comes from the mode, so the allowlist never has to carry Edit or Write.
     expect(argv).toContain('acceptEdits')
+  })
+
+  it('grants the outbox as a second directory, because nothing outside the tree is writable', async () => {
+    // Measured against the real CLI, not assumed: with `--add-dir` naming the directory the
+    // write outside the working directory succeeds, and without it the same write is refused
+    // however `acceptEdits` is set. A channel the worker cannot write to is no channel.
+    const { provider, log } = fakeProvider([])
+    const { t } = fakeTracker()
+    const { host } = fakeCodeHost()
+    const run = await execute(
+      provider, t, host, candidate(), role(),
+      { worker: claudeWorker(stubCommand(REPORT_ARGV)) },
+    )
+    const argv = JSON.parse(run.transcript) as string[]
+    const granted = argv.flatMap((a, i) => (a === '--add-dir' ? [argv[i + 1]!] : []))
+    const tree = log.paths.at(-1)!
+    const outbox = log.outboxes.at(-1)!
+
+    expect(granted).toHaveLength(2)
+    expect(granted[0]).toBe(tree)
+    // The tree's own outbox and no other directory. Asserting only that it is somewhere
+    // outside the tree passes an implementation that grants the temp root or the home
+    // directory — writable, and released with `rm -rf`.
+    expect(granted[1]).toBe(outbox)
+    expect(outbox).not.toBe(tree)
+    expect(outbox.startsWith(`${tree}/`)).toBe(false)
   })
 
   it('passes no allowlist at all where a role declares none', async () => {
@@ -1880,7 +2155,7 @@ describe('the configurations one run can prove wrong', () => {
   it('names the role’s allow list where the action space is the dead end', async () => {
     // A fact about the role: the work is done and nothing about this item stopped it being
     // published, so the next item meets the same wall.
-    const { result } = await run({ allow: ['comment', 'unassign'] })
+    const { result } = await run({ allow: ['comment'] })
     expect(result.outcome).toBe('refused')
     expect(result.cures).toEqual(['role:triage:allow'])
   })
@@ -1889,7 +2164,7 @@ describe('the configurations one run can prove wrong', () => {
     // The reason the field is a list. Taking either alone leaves the other uncorrected, and
     // the run after the fix stops on a wall nothing in the record named.
     const { item, result } = await run(
-      { allow: ['comment', 'unassign'] },
+      { allow: ['comment'] },
       {
         worker: async () => ({
           result: 'Fixed it.',
@@ -1901,7 +2176,7 @@ describe('the configurations one run can prove wrong', () => {
     expect(result.cures).toEqual(['role:triage:commands', 'role:triage:allow'])
 
     // And both reach the record, which is what a condition would later be counted from.
-    await recordExecution('acme/lore', item, role({ allow: ['comment', 'unassign'] }), result)
+    await recordExecution('acme/lore', item, role({ allow: ['comment'] }), result)
     expect(ledger.records[0]?.['cures']).toEqual(['role:triage:commands', 'role:triage:allow'])
   })
 
@@ -2462,5 +2737,132 @@ describe('a refusal leaves the envelope behind, not only the verdict', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+describe('an artifact carries the removals as well as the edits', () => {
+  /** One item, one set of changes, and whatever reached the code host. */
+  async function publish(changes: ChangedFile[]) {
+    const { provider } = fakeProvider(changes)
+    const { host, seen } = fakeCodeHost()
+    const { t } = fakeTracker()
+    const result = await execute(provider, t, host, candidate(), role(), {
+      worker: async () => ({ result: 'Done.', total_cost_usd: 0.01 }),
+    })
+    return { result, request: seen[0] }
+  }
+
+  it('publishes a deletion alongside the edits rather than dropping it', async () => {
+    // Dropped, the pull request looks complete and is not: the reviewer reads a refactor that
+    // still has the module it removed.
+    const { result, request } = await publish([
+      { path: 'src/a.ts', content: 'fixed', kind: 'modified' },
+      { path: 'src/gone.ts', content: '', kind: 'deleted' },
+    ])
+    expect(result.outcome).toBe('produced')
+    expect(request?.files.map((f) => f.path)).toEqual(['src/a.ts'])
+    expect(request?.deletions).toEqual(['src/gone.ts'])
+    expect(result.refusals).toEqual([])
+  })
+
+  it('publishes a change that is only deletions', async () => {
+    // The worker ran and was paid for. Refusing here spends a full run to discover a limit.
+    const { result, request } = await publish([
+      { path: 'src/gone.ts', content: '', kind: 'deleted' },
+      { path: 'test/gone.test.ts', content: '', kind: 'deleted' },
+    ])
+    expect(result.outcome).toBe('produced')
+    expect(request?.files).toEqual([])
+    expect(request?.deletions).toEqual(['src/gone.ts', 'test/gone.test.ts'])
+    expect(result.refusals).toEqual([])
+  })
+
+  it('does not send a path as both a file and a removal', async () => {
+    // A rename that leaves a re-export behind: porcelain reports the rename's original path as
+    // deleted, and the recreated file at that same path as untracked. Sent as both, one tree
+    // entry carries the path twice — the shim is dropped, or the whole publish is rejected.
+    const { request } = await publish([
+      { path: 'src/old.ts', content: '', kind: 'deleted' },
+      { path: 'src/new.ts', content: 'moved', kind: 'modified' },
+      { path: 'src/old.ts', content: 'export * from "./new.js"', kind: 'added' },
+    ])
+    expect(request?.files.map((f) => f.path)).toEqual(['src/new.ts', 'src/old.ts'])
+    expect(request?.deletions).toEqual([])
+  })
+
+  it('leaves no duplicate behind a rename', async () => {
+    // Porcelain reports a rename as the new path plus the original, and the original is a
+    // deletion. Kept, the file is in the pull request twice.
+    const { result, request } = await publish([
+      { path: 'src/new.ts', content: 'moved', kind: 'added' },
+      { path: 'src/old.ts', content: '', kind: 'deleted' },
+    ])
+    expect(result.outcome).toBe('produced')
+    expect(request?.files.map((f) => f.path)).toEqual(['src/new.ts'])
+    expect(request?.deletions).toEqual(['src/old.ts'])
+  })
+})
+
+describe('an artifact carries each file\'s mode', () => {
+  it('publishes the mode the worker\'s tree holds, edited or new', async () => {
+    // The artifact's tree is the base's with these files over it, so a file sent without its
+    // mode loses the executable bit it had: a script the worker only edited stops being
+    // runnable in the pull request.
+    const { provider } = fakeProvider([
+      { path: 'scripts/build.sh', content: '#!/bin/sh\necho built\n', kind: 'modified', executable: true },
+      { path: 'scripts/new.sh', content: '#!/bin/sh\necho new\n', kind: 'added', executable: true },
+      { path: 'src/a.ts', content: 'fixed', kind: 'modified' },
+    ])
+    const { host, seen } = fakeCodeHost()
+    const { t } = fakeTracker()
+
+    await execute(provider, t, host, candidate(), role(), {
+      worker: async () => ({ result: 'Done.', total_cost_usd: 0.01 }),
+    })
+
+    expect(seen[0]?.files).toEqual([
+      { path: 'scripts/build.sh', content: '#!/bin/sh\necho built\n', executable: true },
+      { path: 'scripts/new.sh', content: '#!/bin/sh\necho new\n', executable: true },
+      { path: 'src/a.ts', content: 'fixed' },
+    ])
+  })
+})
+
+describe('the base the artifact is laid over', () => {
+  it('is the commit the tree was cut from, not the branch head at publish time', async () => {
+    // The base branch moves while the worker runs, and a publish that re-reads its head lays
+    // the artifact over a tree the worker never saw. Where both deleted the same path, the
+    // host refuses the whole tree request — every change the run made, lost to a removal that
+    // was correct when it was read.
+    const { provider } = fakeProvider([
+      { path: 'src/a.ts', content: 'fixed', kind: 'modified' },
+      { path: 'src/gone.ts', content: '', kind: 'deleted' },
+    ])
+    const { host, seen } = fakeCodeHost()
+    const { t } = fakeTracker()
+
+    await execute(provider, t, host, candidate(), role(), {
+      worker: async () => ({ result: 'Done.', total_cost_usd: 0.01 }),
+    })
+
+    expect(seen[0]?.baseSha).toBe(CLONE_SHA)
+  })
+
+  it('is left to the host where the tree cannot say what it was cut from', async () => {
+    // `head` is optional on the same terms as `merge`, because the provider seam says nothing
+    // about how a tree is made. A provider without it publishes as it always did rather than
+    // not publishing at all.
+    const { provider } = fakeProvider([{ path: 'src/a.ts', content: 'fixed', kind: 'modified' }], {
+      noHead: true,
+    })
+    const { host, seen } = fakeCodeHost()
+    const { t } = fakeTracker()
+
+    const result = await execute(provider, t, host, candidate(), role(), {
+      worker: async () => ({ result: 'Done.', total_cost_usd: 0.01 }),
+    })
+
+    expect(result.outcome).toBe('produced')
+    expect(seen[0]).not.toHaveProperty('baseSha')
   })
 })

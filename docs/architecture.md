@@ -9,6 +9,19 @@ than restating it.
 
 ---
 
+## 0. What Igor is for
+
+**Think with your own agent; act through the team's.** A person still decides with their own
+AI. What Igor replaces is the sub-agents that act for them inside a session, whose work and
+lessons stay in that session. Igors act in the team's shared space instead: whatever an Igor
+needs to continue a piece of work is on the tracker or in lore, never in a process (§1, §2).
+Igors are defined by roles and claim work where everyone can see it (§2.1, §5.2), and they use
+the seats team members have set aside for their roles (§6.3). One test follows for any feature:
+if it only works because something is remembered in a process, a session file, or one person's
+machine, it breaks the premise.
+
+---
+
 ## 1. Shape of the system
 
 An **Igor** is an instance of a **role**. It holds no durable state. Retire it and nothing
@@ -27,19 +40,37 @@ Igors poll rather than waiting for triggers. Polling avoids needing a public end
 webhook relay per platform, and per-surface bearer-token management. The cost is latency,
 which for this class of work is irrelevant.
 
-**What that argument does and does not cover.** It holds wherever a push would require the
-surface to reach *in* — a self-hosted Igor behind a firewall cannot receive a webhook without
-becoming a service someone operates. It does not hold for a surface the Igor already holds an
-outbound connection to. A Discord bot keeps a socket open and is handed every message in its
-channels; polling that channel asks for information already arriving, at higher latency and
-more calls. Take the push there.
+**Discord is polled too, though a socket there would need no public endpoint.** A bot could
+hold a gateway socket, which is outbound and would not break *nothing may require inbound
+reachability*. Igor reads new channel messages through Discord's REST API on its normal cycle
+instead, because:
 
-Two things that does not change. Discovery still polls, because a tracker has no push a
-firewalled Igor can receive. And a push is not coordination: it tells one Igor that something
-happened and decides nothing about who takes it, so the claim protocol is untouched.
+- **Chat is where work is asked for.** A person asks in chat, an Igor opens an issue on the
+  org's claiming tracker that links the chat message, and posts the issue's link back. A few
+  minutes' latency is acceptable there, as it is on the tracker.
+- **One role may run as several interchangeable processes.** A socket per process would hand
+  every message to each of them, so one process would have to own the connection. Polling
+  needs no owner.
+- **No heartbeat or reconnect to maintain.**
 
-Where it earns its keep is **stop**. A stop is currently seen at the next checkpoint, and its
-whole value is being fast — the one place in this design where latency is not irrelevant.
+**Each poll asks Discord for a channel's messages after the newest one already handled**, then
+moves that marker to the newest message it has now handled. The marker is kept with Igor's
+other state (§5.0.2), so any process of the role, or a restarted one, carries on where the
+last poll stopped. It lives on the state branch, keyed by role and channel id.
+
+**The marker only saves work; the link prevents a duplicate issue.** Every issue an Igor creates
+from a chat message links that message. Before creating one, the Igor looks on the claiming
+tracker for an issue that already links the message, and creates nothing if one exists; it
+then posts that issue's link in the chat only if the chat has no reply with it yet. A lost or
+stale marker therefore costs API calls, never a second issue, as §5.0.2 requires of all saved state.
+
+**Discord directs work and never holds a claim.** It has no holder field, so a claim there
+would be a bare message with nothing to verify. A request in chat becomes an issue on the
+claiming tracker, and the issue's link is posted back in the chat.
+
+**Stop needs no push either.** A stop happens on the claiming tracker: a person replies stop,
+or removes the Igor's `igor:<role>` label or its Linear delegation. Igors already poll that
+tracker, so the stop is seen on the next poll.
 
 ---
 
@@ -69,59 +100,52 @@ Three distinct objects, often confused:
 Routing rule: guidance specific to one role's behavior is role config; guidance applying to
 anyone touching an area is lore.
 
-### 2.1 Roles — **planned** (`core-igor-loop`)
+### 2.1 Roles — **built** (`core-igor-loop`)
 
-Roles and Igors are **many-to-many**. Many Igors can run the same role; one Igor can hold
-several.
+**An Igor holds exactly one role.** Its identity on every platform (a GitHub App on GitHub, an
+app user on Linear) is that role, so a person sees which role took an issue and can hand work to
+a role by name. This was decided in [#156](https://github.com/adamstallard/igor/pull/156).
 
-Roles become real objects in `core-igor-loop`, not before. `lore-from-reviews` deliberately
-defines none: its reviewer comes from a mined comment's author, and routing guidance into
-role config is meaningless while nothing loads role config. Entries there carry a `scope`
-**label** (`role:frontend`) which is a tag, not a foreign key — enough to promote from later,
-costing nothing now. Defining the schema in the change that actually consumes it also means
-defining it with more information than we have today.
+Processes running one role under its identity are one Igor. Running several at once needs
+`concurrent-instances`, which tells their claims apart by rank; without it, two such processes
+would both claim and work the same item. A role's file names one parent with
+`extends`, and parents can be chained. Settings that several roles share go in a common parent,
+such as `engineering.yaml`: it grants what they all may do, each specialist role narrows it, and
+a broad role like `fullstack` keeps it. (§6.0 covers how each kind of setting is inherited.)
+
+A lore entry's `role:frontend` scope is a **label**, not a reference to a role file: an entry
+can name a role before any role file defines it.
 
 **`reviewers` is a list, not an owner.** Any one of them can approve a lore entry or role
 config change. No quorum and no single accountable person — that would be org structure
 leaking into config for no benefit.
 
-Until roles exist, the same need is met by a store-level `reviewers` list in the lore tool's
-config, which is where an entry escalates when the author it was mined from does not respond.
-Roles later narrow that to per-role lists; they do not introduce the concept.
+A store without roles uses the store-level `reviewers` list in the lore tool's config, which is
+also where an entry escalates when the author it was mined from doesn't respond. A role narrows
+it to a per-role list.
 
-**One Igor may hold several roles, but the reason is conditional.** The original argument was
-that a seat costs the same idle, so a role too narrow to fill its allowance wastes capacity
-already paid for — holding a second role absorbs the slack.
+**Why an Igor holds one role.** Narrow Igors buy three things a broad one gives up:
 
-That argument depends entirely on **one seat per Igor**. Seats can be shared (§6.5), and once
-they are, the pressure disappears: five narrow Igors on one pooled seat beat one broad Igor,
-because specialization buys things breadth destroys —
-
-- **Legibility.** If every Igor does everything, "which Igor claimed this" carries no
-  information. A narrow identity tells a human what lane the work is in.
+- **Legibility.** The Igor's name is its role, so "which Igor claimed this" says which lane
+  the work is in, and a person hands work to a role by naming it.
 - **Differential trust.** The docs Igor may open pull requests freely while the infra Igor may
-  only comment. One Igor holding every role forces the action space to be the union or the
-  intersection of its roles, and both are wrong.
+  only comment. An Igor holding two roles would need an action space that is the union or the
+  intersection of theirs, and both are wrong.
 - **Failure isolation.** A bad role config breaks one lane rather than everything.
 
-Under a shared pool the priority ordering moves to **fleet level** — one ordering across Igors
-rather than a ranked list inside each — which is cleaner anyway. Role breadth then becomes an
-empirical tuning decision that follows expected work volume, exactly like staffing: a role that
-reliably fills capacity gets dedicated resources, one that does not gets pooled.
+**Several Igors may draw on one seat (§6.5).** A narrow role's unused capacity goes to the
+other Igors on its seat. A role that reliably fills a seat can be given its own, and one that
+doesn't shares one.
 
-Three properties make that safe:
+Two properties follow:
 
-- **Multi-role at discovery, single-role at execution.** An Igor runs the union of its
-  roles' queries, but triage assigns each candidate to exactly one role, and only that
-  role's standing instructions and lore scopes load for the work. The discovery surface
-  widens; the working context does not get diluted, so one role's conventions cannot bleed
-  into another's task.
-- **Priority is fleet-level, not per-Igor.** Ranking roles inside a single Igor so spare
-  budget flows down its own list only makes sense when each Igor owns a seat. Seats are
-  pooled (§6.5), so the ordering belongs across Igors. Ties break by item age either way.
-- **Interchangeability survives.** An Igor is still fully described by its ordered role
-  list, so two Igors with the same list remain swappable. Worth keeping explicit, because
-  this is the property that would quietly erode into Igors having individual identities.
+- **Priority is fleet-level.** Which work goes first is ordered across Igors, not inside one,
+  because seats are shared (§6.5). Ties break by item age.
+- **Processes of an Igor are interchangeable.** An Igor is fully described by its role, so any
+  process running that role under that identity can replace any other. Adding capacity to a
+  role means more processes of the same Igor, not another identity. Worth keeping explicit,
+  because this is the property that would quietly erode into processes having individual
+  identities.
 
 ---
 
@@ -129,7 +153,7 @@ Three properties make that safe:
 
 ### 3.1 Store — **built**
 
-One markdown file per entry, in git, at a configurable path in the *operating team's* repo
+One markdown file per entry, in git, at the root of the *operating team's* own repository
 (lore is their data; Igor is the tool). The filename is the entry id, so a file is findable
 directly from a supersession pointer or provenance reference.
 
@@ -501,6 +525,19 @@ A direction in the recognizer's activation space separating "condition present" 
 state at layer L on the final input token, project onto the condition vector, threshold. If
 it exceeds, the intervention applies for the remainder of the pass.
 
+**Building one: difference of means first, a linear probe once there are examples.** The mean
+hidden state where the condition applied, minus the mean where it didn't, works from a few dozen
+examples and can't overfit. A logistic-regression probe separates the condition from what merely
+co-occurs with it, and gives comparable probabilities, but needs a few hundred. Keep whichever
+does better on held-out filter decisions (§4.2.1), with thresholds set for recall. Which layer,
+and whether to read the final token or an average over the context, is settled once per
+recognizer model by the same validation.
+
+**A vector belongs to one recognizer build.** Model weights, quantization and runtime all shift
+activations, so a vector built on one build fires differently on another. The lore repository
+names the build its vectors were made with, and a recognizer running a different one fires none
+of them. The runtime must also expose hidden states, which some local model servers do not.
+
 ### 4.2.1 The filter that precedes vectors also trains them — **planned**
 
 Condition vectors are built from contrastive examples, and §4.2 does not say where those come
@@ -585,6 +622,12 @@ it; they are not ground truth. Good enough to catch gross errors, not a correctn
 **Known unexplored:** defining trigger *conditions* over SAE features. Existing work uses
 sparse features to construct and denoise the *disposition*; the inversion appears absent
 from the literature.
+
+An SAE is trained per recognizer model, not per organization, so a published one for the chosen
+model may serve. If feature rules do prove useful, their likely entry points are guardrails on a
+learned vector ("never when *test fixture* is active"), role lanes, which must be legible anyway,
+and new entries with no examples yet. Expect them to win on legibility, not accuracy: reported
+results so far find that probes built on SAE features do not beat plain linear probes.
 
 ### 4.4 Post-hoc recognition — **planned**
 
@@ -783,8 +826,8 @@ That trades bytes for requests, so a past day is read once per process and held.
 gate reads the whole spend log and `serve` gates once per item, so an uncached read costs a
 request per day of history on every item — sixty gates an hour against a 5,000/hour REST
 budget reaches the limit in roughly eighty days, and sooner where several processes share one
-machine account, since that limit is per account. Today's partition and the directory listing
-are always re-read: both are constant, and it was the per-day term that grew.
+App installation, since that limit is per installation. Today's partition and the directory
+listing are always re-read: both are constant, and it was the per-day term that grew.
 
 **Stops are not kept there, and the principle holds without an exception.** Whether an item
 carries a stop is asked of the tracker before every claim, over the cooldown window: the stop
@@ -835,10 +878,8 @@ lane:                                   # APPEND — AND-ed with everything inhe
 instructions: |                         # APPEND — org's plus this role's
   Prefer the shared query hook over fetch in useEffect.
 
-completion: unassign                    # OVERRIDE — unassign | close | assign
+allow: [draft-pr, comment]              # MONOTONIC — subset of inherited
 
-allow: [draft-pr, comment, unassign]    # MONOTONIC — subset of inherited, and must cover
-                                        # the completion above
 commands:                               # MONOTONIC — subset of inherited
   - "npm test:*"                        # what the worker may run, so it can check itself
   - "npx tsc --noEmit"
@@ -855,6 +896,12 @@ one. Narrowing means an entry the parent already lists, verbatim: deciding wheth
 is narrower than an inherited `npm *` is a matcher, and the same reasoning that gets one command
 past the check gets every command past it.
 
+A setup starts from `templates/org.yaml`, which `igor init` writes as the store's `roles/org.yaml`:
+the entries a worker's own tools cannot reach — `git rm` and `git mv`, since no file tool deletes,
+and `git log`, `git show` and `git blame` — with the project's own build and test commands left
+commented, because only the team knows what they are. It is the org file that has to carry them:
+a role may narrow what it inherits, so a command listed there and nowhere above it is refused.
+
 **Legibility is a standing constraint, not a finishing touch.** People read these, and so do
 models writing them — a flat obvious schema is easier to generate correctly than a nested one
 with implicit structure. Every level of nesting should have to earn itself.
@@ -870,18 +917,19 @@ any amount of prose:
 - **`igor role explain <name>`** — the effective merged config, annotated with which level each
   value came from. Under inheritance, "what does this role actually do" is hard to answer by
   reading three files, and that is exactly when people guess.
-- **`igor role dry-run <name>`** — run discovery and triage over recent items and print what it
+- **`igor run <name> --plan`** — run discovery and triage over recent items and print what it
   *would* have claimed and why, claiming nothing. This is how a lane predicate gets found wrong
-  before anything posts publicly.
+  before anything posts publicly. It persists nothing: no watermark, no cycle record, so looking
+  at the backlog does not consume it.
 
-Dry-run is the one to build first. It also recovers the useful half of shadow mode — seeing
+The preview was the one to build first. It also recovers the useful half of shadow mode — seeing
 what an Igor would do without it doing anything — as a **development affordance** rather than a
 runtime mode, which is where it belonged.
 
 ### 5.0.4 Work already in flight — **built**
 
-An Igor unassigns itself on completion, so the item returns to the pool and is rediscovered
-next cycle. Without a check it would claim it again and redo work sitting in review.
+A finished run releases its claim, so the item is open work again and is rediscovered next
+cycle. Without a check it would claim it again and redo work sitting in review.
 
 **The rule is universal, the detection is per-adapter.** "Do not duplicate work already in
 flight" is never an org preference, so it is tool behaviour rather than config. But *how* you
@@ -894,22 +942,29 @@ Slack, ClickUp, GitHub, Linear, and Discord are *examples* of surfaces, not the
 architecture. An adapter provides: `search` returning normalized candidates, `claim`,
 `verify_claim`, `report`, and `identity`. Everything above that line is surface-agnostic.
 
-GitHub ships first on ubiquity — it is the one platform nearly every team has. Linear
-second (shares the assignment model), Discord third (forces the convention path).
+GitHub ships first on ubiquity — it is the one platform nearly every team has. Discord
+second, Linear third: GitHub can serve as project management, and Discord directs work while
+Linear would be another claiming tracker.
+
+**Discord is a direction surface, never a claiming tracker.** A claiming tracker has a holder
+field, as GitHub and Linear do. Discord has none, so a claim there would be a bare message with
+nothing to verify. A person asks for work in a Discord channel; the Igor opens an issue on the
+claiming tracker, claims it there, and posts the issue's link back in the channel.
 
 ### 5.2 One claim mechanism, not two — **built**
 
 **Use the assignment field for visibility; use ordering for correctness.** Those are separate
 jobs and conflating them produced a design with two race mechanisms.
 
-Where a tracker has an assignee field, an Igor sets it — that is the native signal humans read,
-and it is what makes a claim legible without anyone learning a convention. Where a surface has
-only messages, the claim is a post.
+Every claiming tracker has a holder field, and an Igor sets it — that is the native signal
+humans read, and it is what makes a claim legible without anyone learning a convention. The
+claim message follows. A surface with only messages, such as Discord, never holds a claim
+(§5.1).
 
-Correctness comes from the same place either way: **writes have a genuine total order at the
-storage layer**, so true ties essentially never occur and no tie-break rule is needed. Post,
-wait a settle interval, re-read, and stand down if someone was first. Every surface orders its
-writes, so one path covers all of them.
+Correctness comes from ordering: **writes have a genuine total order at the storage layer**, so
+true ties essentially never occur and no tie-break rule is needed. Claim, wait a settle
+interval, re-read, and stand down if someone was first. Every tracker orders its writes, so one
+path covers all of them.
 
 **A conditional write was considered and dropped.** "Set assignee only if unset" would be
 atomic where it exists — but it exists only on some trackers, so it cannot replace the ordering
@@ -946,7 +1001,7 @@ from a second command:
 
 That yields pause-with-resume without inventing a second verb, and the resume signal is just a
 message on the surface. The failure it avoids: if stop blacklisted an item permanently, a human
-who stopped to look and then wandered off would have silently deleted that work from the pool,
+who stopped to look and then wandered off would have silently removed that work from what is open,
 since the watermark already marks it seen.
 
 **A minimal stop belongs in `core-igor-loop`, not in `directed-interaction`.** The conversational
@@ -1107,12 +1162,11 @@ rather than invisible.
 
 ### 6.0 Policy is org config, not tool behaviour — **built**
 
-Three times this design encoded one org's convention as though it were universal: a canonical
-label, tracker query syntax, and what an Igor does when work is finished. The rule that
-prevents a fourth:
+Twice this design encoded one org's convention as though it were universal: a canonical label,
+and tracker query syntax. The rule that prevents a third:
 
-- **Deterministic and decides behaviour** → config. Completion actions, permitted artifacts,
-  who gets assigned next.
+- **Deterministic and decides behaviour** → config. Permitted artifacts, who gets assigned
+  next.
 - **Needs judgment, applies conditionally** → lore. "This area is sensitive, hand it to a
   person."
 - **Neither** belongs hardcoded in the tool.
@@ -1127,14 +1181,14 @@ shared by all frontend roles is possible later without a second artifact type. W
 role repeats "never touch `label:Human`" and "link the issue in the pull request body", someone
 updates one and forgets three, and conventions drift: the fleet problem applied to config.
 
-**"A role may narrow, never loosen" is too broad as stated** — completion behaviour is not more
-or less permissive than another choice, just different. Merge semantics are per field kind:
+**"A role may narrow, never loosen" is too broad as stated** — a poll interval is not more or
+less permissive than another, just different. Merge semantics are per field kind:
 
 - **Monotonic** — a role may only restrict. Permitted artifact types, repos and surfaces in
-  reach, whether it may close or reassign, budget ceiling. The org sets a maximum; a role
+  reach, commands, budget ceiling. The org sets a maximum; a role
   lowers it and can never raise it. This is where differential trust lives and where loosening
   would be self-escalation.
-- **Override** — last level wins. Completion action, poll interval. Not
+- **Override** — last level wins. Seat, poll interval, settle interval, cooldown. Not
   permission-shaped, so there is no direction in which to be strict.
 - **Append** — levels accumulate. Standing instructions, and lane predicates conjoined with
   AND. This is the neat one: an org-wide exclusion is structurally impossible for a role to
@@ -1150,8 +1204,8 @@ worth pinning before anything depends on them.
 - **Stop is unconditional and open to anyone** (§5.3).
 - **Ingested content is data, never instruction** (§5.4).
 
-Everything else — completion behaviour, whether an Igor may close, even whether it is confined
-to reversible artifacts — is policy with a safe default. Reversible-only in particular was
+Everything else — which artifacts an Igor may open, even whether it is confined to reversible
+ones — is policy with a safe default. Reversible-only in particular was
 being treated as inviolable when it is really a strong default an org may raise for a role it
 has come to trust.
 
@@ -1170,10 +1224,15 @@ rewrite — turning the eventual fully-open migration into a dial rather than a 
 
 ### 6.3 Budget — **built**
 
-- **There is no proactive quota API.** `/usage` shows historical spend; no hook or endpoint
-  warns before a cap. Wind-down must therefore be built reactively — catch the limit error,
-  then spend whatever remains on a handoff — with proactive self-tracking as an
-  optimization, never a correctness dependency.
+- **There is no proactive quota API, but there is a warning.** `/usage` shows historical spend,
+  and the usage endpoint refuses a seat token (§6.3.3). The worker's own stream does report the
+  seat's windows, including an `allowed_warning` once a threshold is crossed. Wind-down is still
+  built reactively — catch the limit error, then spend whatever remains on a handoff — with
+  proactive tracking as an optimization, never a correctness dependency: the warning is
+  undocumented and could change without notice. The reserve line decided in §6.3.4 changes the
+  second half of that once it is built: a reserved seat will then rest on the stream reading. A
+  seat whose effective reserve is 0 is admitted with no reading, so losing the stream stops only
+  reserved seats.
 - **Per-invocation cost is available**: headless `claude -p --output-format json` returns
   `total_cost_usd` and a per-model breakdown, so a wrapper can sum real spend. These are
   documented as client-side estimates.
@@ -1184,15 +1243,16 @@ rewrite — turning the eventual fully-open migration into a dial rather than a 
   against a subscription seat. Refresh behavior past expiry is undocumented; budget for an
   annual manual regeneration as a known operational task.
 
-### 6.3.1 Capacity is read from the seat — **decided, and false for a seat token**
+### 6.3.1 Capacity is read from the seat — **decided; for a seat token, from the stream (§6.3.3)**
 
 Read §6.3.3 first. The reasoning below holds for an interactive login and not for the only
 credential a seat can hold, which is most of the point of it.
 
 `claude -p '/usage'` reports the fraction of a seat's session and weekly limits consumed, plus
-when each resets. It costs nothing, spends no tokens, is answered client-side in under a
-second, and can be run under any token. So an Igor asks its own seat whenever the answer
-matters.
+when each resets. Measured under an interactive login, it costs nothing, spends no tokens and
+answers in under a second; where the answer comes from was not measured. So an Igor whose
+credential can ask asks its own seat whenever the answer matters. A seat's `setup-token`
+credential cannot: under one, `/usage` returns a cost summary and no percentages (§6.3.3).
 
 This removes the machinery a stored reading would need. There is no cap in dollars to derive,
 because the comparison happens in percent — the unit the provider actually reports. There is no
@@ -1234,40 +1294,187 @@ This lands with the command allowlist (§5.0.3) and not before it. Until a worke
 commands, the credentials it inherits are unreachable; granting the commands without fixing the
 environment is what makes them reachable.
 
-### 6.3.3 A seat token cannot be measured — **open**
+### 6.3.3 A seat token is measured from the worker's own stream
 
-`claude setup-token` credentials authenticate and spend correctly and report no usage.
-Measured on one machine, same command, same directory:
+`claude setup-token` credentials authenticate and spend correctly, and **their seat's windows are
+readable** — only not from where they were first looked for. Measured 2026-09-27 against one
+seat, every row with the same `setup-token` credential:
 
-| | interactive login | `setup-token` |
-|---|---|---|
-| `auth status` | `authMethod: claude.ai`, `subscriptionType: team` | `authMethod: oauth_token`, no identity fields |
-| `-p '/usage'` | session and weekly percentages | a session cost summary |
+| where | what comes back |
+|---|---|
+| CLI: `claude -p '/usage'` | a session cost summary, no percentages |
+| API: `GET /api/oauth/usage` | `403 permission_error`, `oauth_scope_insufficient`, requires `user:profile` |
+| API: `GET /api/oauth/profile` | `403`, requires `user:profile` or `user:office` |
+| stream: `claude -p … --output-format stream-json --verbose` | a `rate_limit_event` carrying both windows |
 
-Windows are reported against a subscription, and the CLI resolves none for these credentials.
-So "can be run under any token" in §6.3.1 is wrong, and with it the claim that there is no cap
-in dollars to derive: for a seat there is, because percent is unavailable.
+The event, as captured:
 
-What this does and does not cost, which is narrower than it first looks:
+```json
+{"type":"rate_limit_event","rate_limit_info":{"status":"allowed_warning","resetsAt":1790982000,
+ "rateLimitType":"seven_day","utilization":0.86,"isUsingOverage":false,"surpassedThreshold":0.75,
+ "unifiedWindows":{"five_hour":{"utilization":0.07,"resetsAt":1790569200},
+                   "seven_day":{"utilization":0.86,"resetsAt":1790982000}}}}
+```
 
-- **Igors sharing a seat with each other is unaffected.** Every Igor writes its spend to the
-  same state branch, so the record is complete for any consumer that keeps books. Sharing is
-  only opaque where the other consumer is a person.
-- **A reserve as a floor survives exactly.** Igor capping its own cumulative spend at
-  `(1 - reserve) x capacity` leaves the rest by construction, whatever the owner does. That
-  needs Igor's own record and a capacity figure, not a reading.
-- **A reserve that adapts does not.** Narrowing the floor because the owner is measurably
-  behind their own pace — `budget-pacing`'s fourth requirement — needs to see the owner.
-- **`budget_share` is untouched**, being computed from recorded cost already.
+**Why the API refuses.** A `setup-token` credential carries neither `user:profile` nor
+`user:office`, so it can neither learn whose account it is — which is why `auth status` shows it
+with `authMethod: oauth_token` and no identity fields — nor read usage. `claude setup-token` takes
+no options, so there is no asking for the scope. The stream is not gated by it because the
+figures arrive as a consequence of spending: a claude-swap contributor found the same values in
+`anthropic-ratelimit-unified-*` headers on successful `/v1/messages` calls, which is presumably
+what the CLI relays. That last part is inference, not measurement.
 
-Capacity itself need not be guessed: one `/usage` reading from an interactive login on the same
-account, divided into the spend Igor recorded over that window, gives it. That is a calibration
-and not a stored reading, and the distinction matters because §6.3.1 rejected the latter.
+**The fields.** `utilization` runs 0 to 1; `resetsAt` is epoch seconds; `rateLimitType` names the
+window the top-level figures describe; `status` is `allowed`, `allowed_warning` — with the
+threshold it crossed in `surpassedThreshold` — or `rejected`; `isUsingOverage` says whether extra
+usage is being spent. `unifiedWindows` reported the five-hour window at 7% while the event was
+about the weekly one, so every window appears to be included whichever one is being warned about.
 
-**Calibration was built once and deleted** in `188a762`, on the premise that the CLI reports
-the number for free. It does, for a login. Anything reviving it should start from that history
-rather than from scratch, and should not revive the destructive part — running a seat to its
-limit to discover the limit.
+**What this changes.**
+
+- **Every worker run is a reading of its own seat**, taken with the seat's own credential: no
+  interactive login, no rotating refresh token, no observer on somebody's laptop. Workers
+  already run with these flags (`src/execute.ts`) and keep only the terminal `result` event,
+  discarding this one.
+- **Calibration is no longer the only way to bound a seat.** It used one `/usage` reading from an
+  interactive login on the same account, divided into the spend Igor recorded over the window.
+  Under §6.3.4 it bounds nothing at all: the gate compares the reading itself, and a capacity
+  figure is kept only for display.
+- **An adaptive reserve becomes possible**, and §6.3.4 is the one decided. The reading is of the
+  whole seat, so it includes the owner's own use. That is what `budget-pacing`'s fourth
+  requirement (*A reserve decays toward the reset…*) needed to see, and §6.3.4 supersedes that
+  requirement. Relating a percentage of a window to dollars of recorded spend no longer matters for
+  the gate, because the gate compares percent against percent.
+
+**Still open.**
+
+- **A seat below every threshold.** This capture was past 75% of the week. Events are known to
+  appear on ordinary runs, but whether one on a seat under every threshold carries the numbers is
+  unverified; a fresh seat's first run settles it.
+- **Per-model weekly windows** do not appear in the event, so per-model tracking still needs
+  another source.
+- **The exhausted shape** is contributor-reported as `status: "rejected"`, `utilization: 1`, and a
+  non-zero exit rather than a block, and has not been captured here (#57, #15).
+
+**Calibration was built once and deleted** in `188a762`, on the premise that the CLI reports the
+number for free. It does, for a login. Anything reviving it should start from that history rather
+than from scratch, and should not revive the destructive part — running a seat to its limit to
+discover the limit. It was specified a second time on #143, as *calibration admission* (let an
+unread reserved seat in one item at a time until it has a figure). That was dropped on 2026-09-28
+with §6.3.4, which needs no figure to gate a seat.
+
+### 6.3.4 A seat's reserve is a line that moves toward the reset — **decided 2026-09-28; specified on #143, not built**
+
+Decided by Adam on 2026-09-28 and specified on [#143](https://github.com/adamstallard/igor/pull/143)
+(branch `seat-from-stream`). **Nothing here is built.** The shipped gate still bounds Igor's
+recorded dollars by `(1 − reserve) × capacity` (`derivedWindow` and `describeWindow` in
+`src/budget.ts`) until #143's second gate lands.
+
+**The rule.** For each window, Igor may start work on a seat only while the seat's latest unreset
+reading of that window — the `rate_limit_event` utilization of §6.3.3 — is below
+
+```
+line      = 1 − reserve × remaining
+remaining = (resetsAt − now) ÷ window length
+```
+
+which is the same line as `(1 − reserve) + reserve × elapsed`. The session and the week each have
+one, and a seat is admitted only while it is below both. Where the role drawing on the seat declares
+a higher reserve of its own, that one is used (below).
+
+| reserve | just after a reset | halfway | 10% left | at the reset |
+|---|---|---|---|---|
+| 0 | 100% | 100% | 100% | 100% |
+| 0.3 | 70% | 85% | 97% | 100% |
+| 1 | 0% | 50% | 90% | 100% |
+
+At reserve 0 the line is 100% throughout: no reserve and no pacing. At reserve 1 the line equals
+`elapsed`, which is even pacing. That is `budget-pacing`'s `target × elapsed`, except that it
+always reaches 100% at the reset, so it never strands capacity.
+
+**Why a line and not a bound on Igor's spend.** In Adam's words: *"we don't need to know how much
+the seat holder is using, and igor will adapt to fill the usage whether they're using more or
+less."* The reading is of the whole seat, so the owner's use is already in it. A quiet owner
+leaves Igor room up to the line. A busy owner leaves Igor less. Nobody has to work out which part
+of the reading is whose. Capacity left unspent at a reset is lost to everyone, so holding any of
+it back until then protects nobody.
+
+**What a reserve promises the owner.** At any moment, Igor leaves `reserve` × the part of the
+window still to come, assuming linear spend. At 0.5, that is half of what remains. It is not a
+fixed share of the window that is always the owner's; that was the old wording, and under the line
+it is false. If Igor is taking too much, or the owner tends to spend late in a window, the owner
+raises the reserve.
+
+**One line does both jobs, protecting the owner and pacing the spend.** There is no separate pace
+line to take the lower of. On #143's branch, `budget-pacing`'s pace line, dead band and reserve
+decay requirements are removed. Only *Waiting on pace is distinguishable from having nothing to
+do* survives, as waiting on the line. A reserve on a dedicated seat now means pacing, and a
+dedicated seat defaults to reserve 0. The config check that refuses a reserve on a dedicated seat
+(`parseOrgBudget`) goes in #143's second gate. That check also refuses a reserve of exactly 1; the
+table's reserve-1 row needs the parser to allow 1, which is also #143's second gate.
+
+**A role may set a reserve too, and that is how roles get priority.** A role file may declare its
+own `reserve`, which applies to every seat the role draws on. The line for that role on that seat
+uses the effective reserve `r = max(seat reserve, role reserve)`:
+
+```
+line = 1 − r × remaining
+```
+
+On a shared seat, that orders roles with no coordination between them. If frontend declares 0.3
+and generalist 0 on the same seat, frontend stops at 70% just after a reset while generalist runs
+to 100%, so generalist tends to use more of the seat. This is priority, not a guaranteed share: a
+lower-reserve role can still take capacity a higher one was waiting for. That is accepted, with no
+new mechanism. The remedies are choosing which roles a seat serves, and adding seats.
+Also decided 2026-09-28, specified on #143, and not built.
+
+**What it replaces.**
+
+- **The dollar gate.** `(1 − reserve) × capacity` on Igor's recorded spend is no longer the gate.
+  Capacity figures stay only as a display in `igor budget`.
+- **Calibration admission** (§6.3.3), dropped. A reserved seat with no unreset reading is not
+  admitted. A probe on the Igor server reads it first, and the probe also holds off once the seat
+  is at the line. A seat whose effective reserve is 0 has a line of 100% throughout, so it needs no
+  reading to be admitted.
+- **`budget-pacing`'s *A reserve decays toward the reset, on the clock or on the owner's
+  consumption*.** It is superseded, and so are its statements that the weekly reserve does not
+  decay and that a reserve never narrows to nothing. Under the line, both windows narrow, all the
+  way to the reset.
+
+**Accepted cost: overshoot by one run.** Igor's own spend shows up only in the next reading, so
+between readings Igor cannot see it, and each Igor can overshoot the line by at most one run.
+That limit is held per Igor and not coordinated across Igors, until a reserved seat is actually
+shared. `concurrent-instances` checks the gate once per item in each process, so under it the
+limit is one run per process.
+
+**A refusal counts as a reading.** A refusal is a 100% observation of its window until that
+window resets, and an input to the line: #39's row for a refused run, and #75's for a refused
+triage call. It is the one input that does not depend on the stream.
+
+**A probe opens and clears the credential stop.** A probe that gets a 401 opens
+`seat:<id>:credential`, and a probe that succeeds counts as the clearing check. So a revoked seat
+nobody has read is reported out of rotation, and clearing it spends no item. The stop is held by
+#65's breaker, or by the condition record if #101 lands.
+
+**A handoff for a window the line has shut states the crossing, marked approximate.** The line
+rises as the window runs down, so a reading `u` below 1 is under the line again once
+`remaining < (1 − u) ÷ r`. At reserve 0.3, a reading of 85% is shut until halfway through the
+window, and only a reading of 100% waits for the reset. The handoff states that crossing, not the
+reset, and marks it approximate, because a reading is a lower bound until its reset and the seat
+can be back later than the crossing, never earlier (#74).
+
+These three were decided by Adam on 2026-09-28, with the rest of this section, and are specified on
+#143 (#74 for the handoff hour). None is built.
+
+**Window length is measured, not assumed.** A probe placed just after a known reset measures the
+window's length. It also shows whether windows run on a fixed schedule or start at first use.
+Until that is measured, the built-in 5 hours and 7 days stand.
+
+**What losing the stream costs.** A seat whose effective reserve is 0 is admitted with no reading,
+so if the event stops arriving, or a seat below every threshold turns out to emit no numbers
+(§6.3.3, *Still open*), only reserved seats stop. A refusal still reads a reserved seat as full.
+
+**Still open.** How old an unreset reading can be before the line distrusts it (#69).
 
 ### 6.4 Graceful handoff — **built**
 
@@ -1276,7 +1483,7 @@ other Igors back off, then it goes silent mid-task. So exhaustion must produce a
 state-of-work, remaining steps, and suggested pickups. The summarizing call should be cheap
 and separate, not competing for the exhausted budget.
 
-### 6.5 A seat is a pool, not an identity — **planned**
+### 6.5 A seat is capacity, not an identity — **planned**
 
 Nothing prevents several Igors, or an Igor and a human, from running against the same
 subscription seat. One token, several processes. Three configurations, with different
@@ -1295,18 +1502,24 @@ consequences:
   the one it replaces.
 
 **A reserve floor is required whenever a human shares the seat.** Igors stop at a configured
-fraction of the allowance and leave the remainder untouched, so a person never sits down to
-find their capacity was quietly consumed overnight. Without it the failure is invisible,
-unattributable, and lands on the human; with it, it is a configured limit they chose.
+line below the seat's allowance, so a person never sits down to find their capacity was quietly
+consumed overnight. Without it the failure is invisible, unattributable, and lands on the human;
+with it, it is a configured limit they chose. What that line is was decided on 2026-09-28
+(§6.3.4, not built): it rises from `1 − reserve` just after a reset to 100% at the reset. At any
+moment Igor leaves `reserve` × the part of the window still to come, assuming linear spend, and
+not a fixed share of the window. A person who finds Igor taking too much, or who tends to spend
+late, raises the reserve.
 
 Two practical notes: several processes on one token may hit per-account concurrency limits,
 and all activity appears under one account upstream — so distinguishing which Igor did what
 depends on local logging, not on anything the provider records.
 
-#### 6.5.1 Ordered pools and ceilings — **decided**
+#### 6.5.1 Which seats a role uses, and ceilings — **built; the grouping is being replaced (#148)**
 
-Three concepts, no more: a **seat** is capacity, a **pool** is an ordered list of seats, and a
-role's `budget_share` is a **ceiling** on what it may draw from its pool.
+Three concepts, no more: a **seat** is capacity, a **pool** (the config key) is an ordered list
+of the seats a role may use, and a role's `budget_share` is a **ceiling** on what it may draw
+from them. #148 replaces the list with a file per seat naming the roles it serves, the seat
+chosen by headroom rather than by order.
 
 ```yaml igor:budget
 seats:
@@ -1319,21 +1532,21 @@ seats:
   - id: adam
     owner: adam@example.com
     token_env: IGOR_SEAT_ADAM
-    reserve: 0.5             # Adam keeps half his allowance for himself
+    reserve: 0.5             # Igor leaves Adam half of what remains of each window (§6.3.4)
 
 pools:
   - id: engineering
     seats: [fleet-1, fleet-2, adam]
 ```
 
-**Pool order is the whole allocation mechanism.** An Igor takes the first seat in its pool with
+**Order is the whole allocation mechanism today.** An Igor takes the first listed seat with
 headroom, so dedicated capacity drains before anyone's personal allowance is touched. That
 single ordering replaces a separate overflow concept, and it means the common arrangement —
 some dedicated seats, plus whatever the team has spare — is expressed by listing them in that
 order.
 
 **`budget_share` is a ceiling, not a reservation, and shares need not sum to one.** Three roles
-may each declare `0.4`. It reads as "this role may never consume more than 40% of the pool",
+may each declare `0.4`. It reads as "this role may never consume more than 40% of the seats it may use",
 not "40% is set aside for it". The reasons are practical:
 
 - Adding a fourth Igor would otherwise mean editing three other roles to make room. Ceilings
@@ -1346,18 +1559,18 @@ The failure mode of ceilings is that a busy role can crowd out a quiet one. That
 `igor budget`, self-corrects when the busy role finishes, and never reaches the humans, because
 each seat's own `reserve` is checked first and independently.
 
-**Enforcement order**, most protective first: the seat's reserve, then the role's ceiling
-against its trailing spend, then the next seat in the pool. Exhausting every seat in a pool is
+**Enforcement order**, most protective first: the seat's reserve (the reserve line, taken with
+the role's own reserve where that is higher, once §6.3.4 is built), then the role's ceiling
+against its trailing spend, then the next seat it may use. Exhausting every one is
 a graceful handoff (§5.5), never a hard stop.
 
-**Where legibility comes from.** Config states the *policy* — which pool a role draws on and
+**Where legibility comes from.** Config states the *policy* — which seats a role may use and
 what its ceiling is. The record states the *fact* — every invocation stores role, seat, cost
 and time, so "which Igor spent whose allowance" is answerable historically even though the
 seat is chosen dynamically. `igor budget` reports both: per seat its windows, what each has
 used, its reserve and headroom; per role its ceiling, spend and which seats it drew on.
 
-A role may still name a single seat rather than a pool, for an Igor that must never borrow a
-human's capacity. The pool is the general case, not the only one.
+A role may still name a single seat, for an Igor that must never use a person's capacity.
 
 ### 6.6 Distribution: public repository now, npm later — **planned**
 
@@ -1391,6 +1604,17 @@ The tool refuses to start on a config found inside its own installation, and oth
 upward from the working directory the way git does, so running it anywhere inside the lore
 repository works with no flags.
 
+**The store is at the root of its repository, not in a subdirectory of one.** A nested store
+takes the host repository's access, visibility and lifecycle: who may push there becomes who may
+propose an entry, `publicStore` falls back to the host's visibility, and archiving or
+transferring the project takes the team's lore with it. `loadConfig` therefore asks
+`git -C <destination> rev-parse --is-bare-repository --is-inside-work-tree --show-prefix` and
+refuses a non-empty prefix — which makes git a load-time dependency of every command, including
+the ones that never reach GitHub. `--show-prefix` alone is not enough: a bare repository and
+anything inside a gitdir both answer it with empty output and would read as a root. The
+redirecting environment variables (`GIT_DIR`, `GIT_WORK_TREE`, `GIT_COMMON_DIR`) are removed from
+the child, because `-C <destination>` is the whole question.
+
 This generalizes: **the destination is not merely "where lore goes" — it is the team's Igor
 state.** Lore today, role definitions and fleet configuration later. Igor stays stateless and
 shared; everything specific to a team lives in one repository they own.
@@ -1403,11 +1627,10 @@ process per Igor each holding its own credentials.
 - **One shared recognizer.** This is where the local open-weight model (§4.1) runs, and sharing
   is what makes its cost argument work at all — serving one model to a dozen loops is cheap,
   standing one up per Igor is absurd.
-- **One secret store**, with seat tokens pooled (§6.5). Members of the org can see each other's
-  keys, which is an ordinary trade for an internal tool and the right default; per-user
-  isolation is what you add when someone has a reason, not what you start with.
-- **Surface credentials are org-level anyway** — a GitHub App or token for the organization,
-  not one per Igor.
+- **One secret store** for seat tokens, on the server, readable by its operator and nobody
+  else (#148).
+- **Surface credentials are installed on the organization** — one GitHub App per role (§6.9),
+  not one per process, so every process of a role can share its App.
 
 The cost is a single point of failure and a wider blast radius if the box is compromised.
 
@@ -1440,19 +1663,149 @@ worktrees cannot check out the same branch — which does not bite, since each t
 branch. Moot for the first Igor, which runs one task at a time; recorded so nobody builds
 clone-per-task and has to unpick it.
 
-**Cleanup is a startup sweep, not an exit hook** — **built**. Release runs from a `finally`, which SIGKILL,
-an OOM kill and a power loss all skip, so a crashed run strands a full checkout and nothing ever
-reclaims it. `wire` removes `igor-tree-*` directories older than the worker's absolute ceiling
-plus an hour before the first cycle. Age is the only safe signal: several processes of one role
-is the point of §6.7.1, so a tree that looks idle may belong to a live sibling, and the
-threshold sits above the longest a tree can be in use — the ceiling, and the clone and push
-either side of the worker — rather than close to it. A surviving tree is debris, never
-a checkpoint — its worker's context died with its process, so nothing resumes from it.
+**Cleanup is a startup sweep, not an exit hook** — **built**. A tree is released in a `finally`,
+and a `finally` doesn't run on SIGKILL, an OOM kill or a power loss, so a crashed run would leave
+its checkout behind for good. Instead, `wire` reclaims abandoned trees before the first cycle: it
+removes every `igor-tree-*` directory older than the worker's absolute ceiling plus an hour, and
+the `-outbox` directory beside each one. A crash strands both, and the outbox is the one holding
+the run's declarations.
+
+**Age is the only safe signal.** Several Igor processes can share one temp directory: different
+roles already do when run by hand, and §6.7.1 plans several processes of one role. So a tree that
+looks idle may belong to a live sibling. The threshold therefore sits above the longest
+a tree can be in use: the worker's ceiling, plus the clone before it and the push after it.
+Deleting a live sibling's tree corrupts its run, while leaving debris an hour longer only costs
+disk.
+
+A tree that survives a crash is debris, never a checkpoint: its worker's context died with its
+process, so nothing can resume from it.
 
 The **seam** this arrives behind is specified now, in `core-igor-loop`'s `task-execution`:
 execution obtains a disposable working tree through one provisioning function and assumes
 nothing about its shape — not a clone, not a worktree. The shared object store above is then a
 swap behind that function rather than a change to how execution is written.
+
+### 6.7.2a The tree is read with rename detection off, and every removal is checked against HEAD
+
+`changes()` reads `git status --porcelain -z -uall --no-renames`. Detection folds two changed
+paths into one record, and a fold **loses a path from the input** rather than misreading one that
+is present — which is a different kind of defect from every other one this function has had, all
+of which were misreadings of a record that was there. Where a conflicted merge leaves one path
+unmerged and the worker deletes another that resembles it, the pair is reported as a rename of the
+unmerged path and the deletion is absent from the output entirely. Nothing downstream can recover
+what was never read, so no cross-check placed after the read can fix it.
+
+Off, the same two paths arrive as a removal and an addition, which is the shape the artifact wants
+anyway: the tree API removes a path or adds one and has no notion of a move.
+
+**Every removal is checked against HEAD before it enters the change list.** The tree API refuses a
+removal of a path `base_tree` does not hold with `422 GitRPC::BadObjectState`, and refuses the whole
+tree request, so one such entry costs the run everything the worker produced. One batched,
+pathspec-limited `git ls-tree HEAD` answers for all of them, run only where there is a removal to
+check: the cost is local and proportional to the removals in hand, not to the size of the repository.
+It runs with `core.precomposeunicode=false`, because darwin otherwise precomposes the pathspec and a
+name HEAD holds in decomposed form is matched by nothing.
+
+The check is on HEAD rather than on the status flags because no flag answers the question. An index
+column of `A` says the path is the run's own invention, but an intent-to-add path deleted before it
+was committed prints a column of *space*, indistinguishable from a tracked file's unstaged deletion;
+and the unmerged codes whose "ours" side HEAD never held — `DD`, `DU`, `AA`, `AU`, `UA` — are told
+apart from `UD` and `UU`, which it did, only by the tree. Both places a removal is emitted are
+covered: the gone-check and the unmerged branch of the content read's catch.
+
+A name that is not text is kept unchecked, because `spawn` writes `argv` as UTF-8 and those bytes
+cannot make the trip. Nothing is lost by it: execution stops on any such name before it builds a
+tree, and the handoff names the file by its bytes.
+
+**The base is the commit the tree was cut from**, not the branch head at publish time. A tree
+offers it through `WorkingTree.head()`, and execution passes it to the host as
+`ArtifactRequest.baseSha`; the resolution path has always had it, since `commitOnBranch` lays its
+tree over `parents[0]` and that is the clone's own HEAD. Re-reading the branch head instead opened
+a window the length of a worker run — a path the base branch deleted inside it, and the worker
+deleted too, was published as a removal of a path the base tree no longer held — and reading it
+cost a round-trip to buy that window. The artifact is laid over a base that may since have moved,
+which is an ordinary pull request branch and what the catch-up merge is for.
+
+Asking HEAD directly is what closed the last two routes to that 422, both of which had survived
+guards written against the status flags:
+[#121](https://github.com/adamstallard/igor/issues/121), the intent-to-add path deleted before
+commit, and the `DU` path the artifact branch itself deleted and the base modified — which a worker
+reaches by following the conflict prompt's own instruction to delete the file to accept the base's
+removal. **The one case where HEAD is not the base** is a worker that ran `git commit`: nothing
+grants that command, and such a run already fails loudly on a `base_tree` the host cannot resolve.
+
+### 6.7.2b A resolution may not undo what the base did, unless it says so
+
+**When a worker resolves a conflict on an Igor's own pull request, the resolution is refused if
+it would silently undo a change the base made.** The resolution is published as a commit with
+two parents, the artifact's head and the base it takes in, so its tree *is* the merge result. A
+path the resolution never mentions publishes the artifact's copy, and if the base changed that
+path, the change is gone the moment the artifact merges. **Review cannot catch it:** a reverted
+deletion reads as the file still being there, a reverted rewrite as the file being unchanged, and
+the diff against the base looks unremarkable.
+
+Before the commit, `undone()` takes each path the base changed since the merge base and compares
+what stood there then, what the base holds now, and what this commit would publish: the
+resolution's own file, its own deletion, or head's copy for a path it never mentions. The base's
+change is undone in a different way for each kind of change:
+
+- the base deleted the path: undone if anything publishes there, whatever it holds;
+- the base added it: undone if nothing publishes there;
+- the base rewrote it: undone if what publishes is exactly the merge base's content.
+
+Taking the base's side, combining both sides, honouring a deletion the base made and meeting a
+change the artifact already had all pass. The blobs are read in `merge()`, as two `--raw` diffs
+off the merge base, because only the clone holds the merge base and both trees: the code host
+that publishes has neither.
+
+**One check of the published tree, not one per way of getting there.** The two instances behind
+this guard, a dropped deletion and a status code that threw on read, are the same outcome reached
+two ways, and checking the outcome covers routes nobody has found yet. #118 reached the same
+conclusion for removals: it replaced three route-specific checks, each of which missed the next
+case, with one that asks HEAD the requirement's own question
+([#118](https://github.com/adamstallard/igor/issues/118)). This check runs on the change list
+that read produces, and compares against the tree that list would publish.
+
+**An undone base change is publishable where the worker declares it.** The worker writes
+`reverts.json`, as `{"reverts": [{"path": …, "discards": …}]}`, one entry per path naming the
+blob the base holds, or `deleted` where the base deleted the path, into the run's **outbox**, and
+the loop reads it there.
+
+The outbox is a directory beside the clone, never inside it. The Igor makes it empty for the
+run, and grants the worker that one directory with `--add-dir`, measured to be needed: nothing
+outside the working directory is writable otherwise. It is removed in the same `release()` as the
+tree, first, and whether or not the tree's removal succeeds; where a crash runs no `release()`,
+the startup sweep above reclaims it. So whatever is in it was put there during this run, and that
+is how a declaration is known to be this run's. **No file the repository keeps can be one**, at
+any path: a committed declaration would be in every fresh clone and authorize the same revert on
+every run, each reporting a declaration nobody made.
+
+**Rejected: deciding provenance by asking about the file.** Whether a file on disk is the one the
+repository keeps cannot be answered reliably. The answer fails wherever the filesystem's idea of
+a path and git's differ (a symbolic link at the path or above it, a case variant, a merge that
+rewrites the file), and wherever a clean filter or an attribute change makes a checkout differ
+from its blob. The outbox answers by place instead, so no path inside the tree is reserved: a
+`reverts.json` the repository keeps is ordinary content, carried and compared like any other.
+
+Three properties keep a declaration from becoming a switch that ends up always on. **It can
+never be blanket:** no wildcard, no per-resolution flag, nothing a role or an org config can set,
+so the permission is given again for each resolution. **It names what it overrides:** a
+declaration naming a state the base does not hold authorizes nothing, and one written for a path
+cannot apply to another. **A declared revert is still reported**, on the commit, on the item and
+in the run record, because almost the whole value of the guard is that an undone base change
+stops being invisible.
+
+**Untrusted text can reach the declaration, and that is an accepted cost.** A worker reads the
+item, the diff and the conflicting content, and an injection that can produce the revert can
+produce the declaration beside it. Reporting does not prevent that; it makes the revert name
+itself and the change it discarded, so the attack is attributable rather than silent. The
+alternative, refusing every revert, leaves a legitimate one no way through an Igor at all. The
+case for that alternative is in `guard-silent-reverts`'s `design.md`.
+
+Two false negatives are known and accepted. **Partial erosion**, content matching neither side,
+is treated as a resolution, because nothing distinguishes it from a legitimate combination. And a
+**binary** file, read as UTF-8 (§6.7.3), can never hash to the merge base's blob, so a binary
+restored to it is not caught; that is part of the binary problem in §6.7.3, not a separate gap.
 
 ### 6.7.3 A binary in an artifact is corrupted, not dropped — **known, and deliberately unguarded**
 
@@ -1491,82 +1844,75 @@ essentially credential provisioning. And there is no hosting business here, only
 Deployment work belongs to `core-igor-loop`, the first change that introduces a continuously
 running process. `lore-from-reviews` is a batch CLI and needs none of it.
 
-### 6.9 Igors act as machine users on GitHub, not as a GitHub App — **decided**
+### 6.9 On GitHub an Igor is a GitHub App, one per role — **decided**
 
 Three identities are separate and stay separate: **who acts** on the surface, **which seat
 pays** for the model, and **which role's policy governs**. Config already splits the second
-and third; this section is about the first.
+and third; this section is about the first. It was decided in
+[#156](https://github.com/adamstallard/igor/pull/156).
 
-**A GitHub App cannot be an assignee.** Measured against a real repository: the
-can-this-user-be-assigned check returns 404 for an app's bot user and the assignment attempt
-returns 403. An App is otherwise the tidier answer — scoped permissions, no seat, obviously not
-a person — but claiming by assignment is the whole reason assignment was chosen over a comment,
-and an App would silently degrade GitHub to a message-only surface. So Igors act as **machine
-users**: ordinary accounts with repository access.
+**An App claims with a label, because it cannot be an assignee.** Measured against a real
+repository: the can-this-user-be-assigned check returns 404 for an app's bot user, and the
+assignment attempt returns 403. So an Igor claims an issue with the label `igor:<role>` plus
+the claim comment, and the assignee field stays the person's. An App has scoped permissions,
+takes no seat, needs no personal token renewed, and is plainly not a person. Machine users are
+not supported. An Igor that must be an issue assignee or a requested reviewer, which an App
+cannot be, is out of scope.
 
-**One account per role, not one per org and not one per instance.** Roles are few, stable, and
-are what a person actually wants to see in an assignee field. A single shared account also
-breaks claim verification outright: every Igor reading the assignee back would see its own
-name and conclude it holds the item, so two Igors would proceed on one issue. Per-instance
-accounts solve nothing further, since instances of a role are interchangeable — that is the
-premise the name comes from.
+**One identity per role, not one per org and not one per instance.** Roles are few, stable,
+and are what a person wants to see on a claimed issue, and a person hands an issue to a role by
+adding that role's label. Per-instance identities solve nothing further, since instances of a
+role are interchangeable — that is the premise the name comes from.
 
-**A claim message is posted regardless.** It is required anyway on surfaces with no assignment
-(§5.2), it carries the stop instruction, and it names the specific Igor — which is what makes
-a shared account survivable if an org ever chooses one. One mechanism covering three needs
-beats three mechanisms.
+**A claim message is posted regardless.** Every claiming tracker pairs it with the holder field
+(§5.2). It carries the stop instruction and names the specific Igor.
 
-Interaction with worktrees (§6.7.2): fetching is shared and can use one read-only credential
-for the bare object store, while pushing is per-role and uses that role's own. A worktree is
-created per task and a task belongs to one Igor, so git identity is set when the worktree is
-created rather than configured globally.
+**The App is the role's name, and its credentials are in the Igor's environment.** `igor serve
+reviewer` acts as the App whose `GITHUB_APP_IDENTITY`, `GITHUB_APP_ID` and private key are in
+its environment, on a server `/etc/igor/reviewer.env`. No role file names an App: a lore pull
+request changing one could point an Igor at another Igor's App on the same server.
+
+**Igor mints the App's token itself and hands it to one process at a time.** It signs a JSON web
+token with the key, mints an installation token, and mints again once half the token's life has
+passed. Each `gh` call gets the token as `GH_TOKEN` in its own environment, and each clone and
+fetch gets a credential helper through `GIT_CONFIG_*` in its own. Nothing is written to disk or
+to a git config, so the worker, which inherits neither, never holds a credential for GitHub. An
+Igor that cannot act as its App on every repository it touches refuses to start, naming why.
 
 #### 6.9.1 The rule generalizes by claim primitive, not by surface
 
-**A claim must live in a field the acting identity is permitted to occupy.** Where no such
-field admits a non-human identity, the actor has to be a machine account. Where the claim is a
-message, identity can travel in the payload.
+**A claim lives in a field the acting identity is permitted to occupy.** A surface with no
+holder field holds no claims (§5.1).
 
 Do not read GitHub's constraint as a general one. A surface having a structural claim field
 does not imply that field accepts only real users — Linear's does not — and treating one
 surface's quirk as a law costs the better mechanism everywhere else.
 
 - **GitHub** — only real users may be assignees, and an App's bot user may not (404/403,
-  measured). Machine account per Igor.
+  measured). The App claims with its `igor:<role>` label, which follows the rules Linear's
+  delegate does.
 - **ClickUp** — no bot or service-account concept exists at all; both personal tokens and
-  OAuth attribute actions to a human. Machine account per Igor, and it is a paid seat each.
+  OAuth attribute actions to a human. Claiming there would take a machine account per Igor, and
+  a paid seat each.
 - **Linear** — has a first-class app identity (`actor=app`) that costs no seat, and although
   an app still cannot be the *assignee*, Linear provides a parallel `Issue.delegate` field
-  that an app may occupy. It is singular, so it is an exclusive claim, and filterable and
-  searchable in the UI. Strictly better than GitHub, at zero cost.
-- **Message surfaces** — the claim is the message.
+  that an app may occupy, and may set on itself (measured 2026-10-03). It is singular, so it is
+  an exclusive claim, and filterable and searchable in the UI. Strictly better than GitHub, at
+  zero cost.
+- **Message surfaces**, such as Discord — no holder field, so no claims. A person asks for work
+  there, and the Igor claims it on the tracker.
 
-Two Linear-specific consequences worth recording before anyone builds the adapter. **Delegation
-may be human-initiated only**: nothing in the documentation says an app may set its own
-`delegateId`, and if it cannot, Igors cannot claim their own work there. That is a ten-minute
-empirical test against a scratch workspace and it gates the whole approach. And **a delegate is
-not inert the way an assignee is**: dismissing the agent session removes the delegate. That is
-a hazard for a claim ledger and simultaneously a gift — it is a *native stop primitive*, and it
-should map onto `verifyClaim` returning `stopped` rather than being worked around.
+**On Linear, a delegate is not inert the way an assignee is**: dismissing the agent session
+removes the delegate. That is a hazard for a claim ledger and simultaneously a gift — it is a
+*native stop primitive*, and it should map onto `verifyClaim` returning `stopped` rather than
+being worked around.
 
 Linear's agents API is a Developer Preview and may change.
 
-A message-only surface is the opposite case: the claim *is* the message
-and Igor authors its content, so the role name travels inside the payload and one bot per org
-suffices. Verification re-reads the channel, finds the earliest claim for the item, and checks
-whether it names this role — which works whatever account posted it. The shared-account failure
-that breaks GitHub cannot arise, because nothing is being read back out of a field that only
-holds accounts.
+Where an Igor posts on a message surface:
 
-Consequences for a message-only adapter:
-
-- **Parse a machine-readable claim line, never the display name.** Display names are for
-  people, are spoofable where webhooks are available, and are simply wrong under a shared bot.
 - **Per-role display names are legibility, not identity.** Where a surface offers per-message
-  name overrides, use them so a human sees which Igor — and still parse the payload.
-- **Prefer a thread over a mention for stop.** A claim that opens a thread makes a stop a reply
-  in that thread: correctly scoped without parsing who was addressed, and it matches the bare
-  `stop` case. Mention-parsing is the fallback for surfaces without threads.
+  name overrides, use them so a human sees which Igor.
 - **Inbound identity is unaffected.** Messages arrive with a real author on every surface, so
   the authority intersection (§5.4) holds regardless of how many bots do the posting.
 
@@ -1631,8 +1977,8 @@ Agreed in principle, not scoped, roughly in dependency order:
 7. Post-hoc output recognition (§4.4).
 8. Difficulty routing (§6.2).
 9. Publishing to npm, and pinning the promotion workflow to a release (§6.6).
-10. Seat pooling and the fleet-level budget policy, with a reserve floor where a human shares
-    the seat (§6.5).
-11. Additional adapters: Linear, then Discord.
+10. Shared seats and the fleet-level budget policy, with a reserve where a person shares their
+    seat (§6.5).
+11. Additional adapters: Discord (#160), then Linear (#161).
 12. Binaries in an artifact, refused or carried rather than corrupted (§6.7.3) — needs a role
     that can touch one.

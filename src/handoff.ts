@@ -1,7 +1,9 @@
+import { relabelSentence, stillHeld } from './claiming.js'
 import type { Artifact, Candidate, Tracker } from './adapter.js'
 import type { ExecutionResult } from './execute.js'
 import type { Role } from './role.js'
 import type { SeatVerdict } from './budget.js'
+import { carried } from './worktree.js'
 
 /**
  * What an Igor says before it lets go of something it claimed.
@@ -53,7 +55,19 @@ export type HandoffReason =
   // run can be refused an action and have been denied a command, and both have to be fixed.
   // Nothing suppresses an item handed back carrying any, so a sentence promising no retry
   // does not belong on it.
-  | { kind: 'failure'; detail: string; cures?: readonly string[] }
+  | {
+      kind: 'failure'
+      detail: string
+      cures?: readonly string[]
+      /**
+       * What happens to the item next, where that is not "nothing until somebody answers". Absent
+       * means the default sentence, "It will not retry", which is true of every handoff the
+       * deferral record then holds. A caller whose item comes back unasked says so here, or the
+       * item carries a promise the next cycle breaks. On a directed handoff, `retry` and the
+       * default both read as the sentence saying how to hand the item over again.
+       */
+      next?: 'retry' | 'published'
+    }
   // Looking carefully and finding nothing is a result, not a breakdown, and reads as one.
   | { kind: 'nothing-to-do'; detail: string }
 
@@ -63,6 +77,11 @@ export interface Handoff {
   remaining: string[]
   suggested: string[]
   artifact?: Artifact
+  /**
+   * Set where a person handed the item to this Igor. Releasing it removes the label they added,
+   * so the handoff says how to hand it over again in place of any promise that it comes back.
+   */
+  directed?: true
 }
 
 const MINUTE = 60_000
@@ -118,8 +137,12 @@ export function stepsFrom(
     return { done, remaining }
   }
 
-  const edits = result.changed.filter((c) => c.kind !== 'deleted').length
-  if (edits > 0) done.push(`changed ${edits} file${edits === 1 ? '' : 's'}`)
+  // Counted apart, because a run whose every change was a removal is real work and reads as
+  // none under a single "changed" clause. Counted the way the artifact is built, so the two
+  // never disagree about whether a path was removed.
+  const { written, removed } = carried(result.changed)
+  if (written.length > 0) done.push(`changed ${written.length} file${written.length === 1 ? '' : 's'}`)
+  if (removed.length > 0) done.push(`removed ${removed.length} file${removed.length === 1 ? '' : 's'}`)
   // An artifact that already existed was brought up to date, not opened — saying otherwise
   // tells the reader a pull request they have been reviewing for a week is new.
   if (result.artifact) {
@@ -152,8 +175,8 @@ export function stepsFrom(
       remaining.push(
         result.artifact !== undefined
           ? `what was published is on ${result.artifact.ref}; the rest needs a person`
-          : edits > 0
-            ? 'the edits were made but never published, so they are gone with the working copy'
+          : result.changed.length > 0
+            ? 'the changes were made but never published, so they are gone with the working copy'
             : 'all of it — nothing usable was produced',
       )
       break
@@ -228,25 +251,69 @@ function clauseFor({ seat, verdict }: { seat: string; verdict: SeatVerdict }): s
   }
 }
 
+/**
+ * Why nothing can be spent, and when that stops being true.
+ *
+ * One sentence for both places the Igor says it — the handoff on an item it claimed, and the
+ * cycle report where it claimed nothing — so the two cannot come to describe the same gate
+ * differently. The seat is named only where one ran out; a pool that named no seat has none to
+ * name.
+ */
+export function noCapacity(
+  reason: {
+    seat?: string
+    blocked?: SeatVerdict
+    passedOver?: readonly { seat: string; verdict: SeatVerdict }[]
+    resetAt?: string
+    resetApproximate?: boolean
+  },
+  now: number = Date.now(),
+): string {
+  return (
+    unspendable(reason.blocked, reason.passedOver) ??
+    `the budget${reason.seat ? ` on seat \`${reason.seat}\`` : ''} is used up` +
+      (reason.resetAt
+        ? `, back ${reason.resetApproximate === true ? 'around' : 'at'} ` +
+          `${clock(reason.resetAt)}${until(reason.resetAt, now)}`
+        : ', and when it returns is not known')
+  )
+}
+
 export function composeHandoff(role: Role, candidate: Candidate, handoff: Handoff, now: number = Date.now()): string {
+  const reason = handoff.reason
+  const directed = handoff.directed === true
+  // A directed item's hand-over is the label a person added, and the release that follows this
+  // handoff removes it, so nothing brings the item back but the person: every tail says so.
+  const relabel = relabelSentence(role).replace(/\.$/, '')
+  const tail =
+    reason.kind !== 'failure'
+      ? undefined
+      : reason.cures !== undefined && reason.cures.length > 0
+        ? `Nothing about this item caused that — ${keys(reason.cures)} ` +
+          `${reason.cures.length === 1 ? 'is' : 'are'} what would change it` +
+          (directed ? `. ${relabel}` : ' — so it comes back to this rather than waiting for a reply')
+        : reason.next === 'published'
+          ? directed
+            ? // Handing the item over again while the pull request is open changes nothing: a
+              // hand-over waits for work in flight to close.
+              `What it published stands. Once that pull request closes, add the \`igor:${role.name}\` ` +
+              `label again to have it try again`
+            : 'What it published stands, and is caught up there if it stops merging'
+          : directed
+            ? relabel
+            : reason.next === 'retry'
+              ? 'It will try again next cycle'
+              : 'It will not retry'
   const why =
-    handoff.reason.kind === 'budget'
-      ? (unspendable(handoff.reason.blocked, handoff.reason.passedOver) ??
-          `the budget${handoff.reason.seat ? ` on seat \`${handoff.reason.seat}\`` : ''} is used up` +
-            (handoff.reason.resetAt
-              ? `, back ${handoff.reason.resetApproximate === true ? 'around' : 'at'} ` +
-                `${clock(handoff.reason.resetAt)}${until(handoff.reason.resetAt, now)}`
-              : ', and when it returns is not known'))
-      : handoff.reason.kind === 'nothing-to-do'
-        ? handoff.reason.detail
+    reason.kind === 'budget'
+      ? noCapacity(reason, now) + (directed ? `. ${relabel}` : '')
+      : reason.kind === 'nothing-to-do'
+        ? directed
+          ? `${reason.detail.replace(/\.$/, '')}. ${relabel}`
+          : reason.detail
         : // Another layer's sentence, and several of them end in a full stop of their own —
           // the seat's "export it." among them, which the reader then meets as "export it.."
-          `it hit something it could not get past: ${handoff.reason.detail.replace(/\.$/, '')}. ` +
-          (handoff.reason.cures === undefined || handoff.reason.cures.length === 0
-            ? 'It will not retry'
-            : `Nothing about this item caused that — ${keys(handoff.reason.cures)} ` +
-              `${handoff.reason.cures.length === 1 ? 'is' : 'are'} what would change it — so it ` +
-              'comes back to this rather than waiting for a reply')
+          `it hit something it could not get past: ${reason.detail.replace(/\.$/, '')}. ${tail}`
 
   const who =
     handoff.suggested.length > 0 ? `${handoff.suggested.join(' or ')} could pick this up.` : ''
@@ -311,10 +378,20 @@ export async function handOff(
 
   let released = false
   try {
-    await tracker.release(candidate, identity)
-    released = true
+    // What the surface recorded, not merely that nothing was raised. The handoff above has
+    // already said this was released, so a release that did not take leaves a false sentence
+    // on the item unless the next line corrects it.
+    released = await tracker.release(candidate, identity)
   } catch {
     // Recorded by the caller through the returned flags; nothing here can fix it.
+  }
+  // Unconditional on what the handoff post did, like the other two sites. `posted` answers
+  // whether *this process saw* the write succeed, and a surface that accepted the handoff and
+  // threw on the way home leaves the false sentence on the item with that flag false. Where
+  // nothing landed the correction still stands on its own: the item is held, and saying so is
+  // true whether or not anybody read a handoff first.
+  if (!released) {
+    await tracker.report(candidate, stillHeld(role)).catch(() => undefined)
   }
 
   return { posted, released, text, ...(error === undefined ? {} : { error }) }
@@ -329,12 +406,13 @@ export async function handOffFrom(
   candidate: Candidate,
   role: Role,
   identity: string,
-  claimedAt: string,
+  /** The claim being given up: when it was taken, and whether a person directed it. */
+  claim: { claimedAt: string; directed?: true },
   reason: HandoffReason,
   result?: ExecutionResult,
   now: number = Date.now(),
 ): Promise<HandoffOutcome> {
-  const { done, remaining } = stepsFrom(claimedAt, result, now)
+  const { done, remaining } = stepsFrom(claim.claimedAt, result, now)
   return handOff(
     tracker,
     candidate,
@@ -346,6 +424,7 @@ export async function handOffFrom(
       remaining,
       suggested: suggest(role, candidate, identity),
       ...(result?.artifact ? { artifact: result.artifact } : {}),
+      ...(claim.directed === true ? { directed: true as const } : {}),
     },
     now,
   )

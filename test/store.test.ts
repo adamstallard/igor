@@ -1,7 +1,8 @@
+import { execFileSync } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { slugFromClaim, uniqueId } from '../src/id.js'
 import { score } from '../src/scoring.js'
 import {
@@ -276,6 +277,135 @@ describe('finding the config', () => {
       expect(() => loadConfig()).toThrow(/repository holding your lore/)
     } finally {
       process.chdir(cwd)
+    }
+  })
+})
+
+describe('the store sits at the root of its repository', () => {
+  /** A config file of its own, so the destination under test is the only thing that varies. */
+  function configFor(destination: string): string {
+    const path = join(tempStore(), 'igor.config.yaml')
+    writeFileSync(path, `destination: ${JSON.stringify(destination)}\n`)
+    return path
+  }
+
+  function repo(): string {
+    const root = tempStore()
+    execFileSync('git', ['-C', root, 'init', '-q'])
+    return root
+  }
+
+  afterEach(() => vi.unstubAllEnvs())
+
+  it('accepts a destination at the root', () => {
+    const root = repo()
+    expect(loadConfig(configFor(root)).destination).toBe(root)
+  })
+
+  it('refuses a subdirectory, naming where it sits and what a nested store inherits', () => {
+    const root = repo()
+    mkdirSync(join(root, 'lore'))
+    const load = () => loadConfig(configFor(join(root, 'lore')))
+    expect(load).toThrow(ConfigError)
+    expect(load).toThrow(/sits at lore\/ within its repository/)
+    expect(load).toThrow(/access, visibility and lifecycle/)
+  })
+
+  it('keeps a leading space that is part of the directory name', () => {
+    // git emits the prefix raw and terminates it with a newline, so only that newline may come
+    // off. Trim the line and the prefix reads `lore/` — a directory that is not the store, in a
+    // message that sends somebody to the wrong place.
+    const root = repo()
+    mkdirSync(join(root, ' lore'))
+    const thrown = (() => {
+      try {
+        loadConfig(configFor(join(root, ' lore')))
+      } catch (e) {
+        return (e as Error).message
+      }
+      return ''
+    })()
+    expect(thrown).toContain('sits at ' + ' lore/' + ' within its repository')
+  })
+
+  it('refuses a destination that is not inside a git repository', () => {
+    // Reading an unknown prefix as the root is the one outcome that must not happen.
+    expect(() => loadConfig(configFor(tempStore()))).toThrow(/git could not say where it sits/)
+  })
+
+  it('refuses a bare repository, which reports an empty prefix like a root does', () => {
+    const bare = tempStore()
+    execFileSync('git', ['-C', bare, 'init', '--bare', '-q'])
+    expect(() => loadConfig(configFor(bare))).toThrow(/bare git repository/)
+  })
+
+  it('refuses a path inside the gitdir, which reports an empty prefix like a root does', () => {
+    // `.git` and everything under it answers `--show-prefix` with nothing, so the prefix alone
+    // reads the gitdir as a root. git ignores its own directory, so a store there could never be
+    // committed.
+    const root = repo()
+    mkdirSync(join(root, '.git', 'lore'))
+    expect(() => loadConfig(configFor(join(root, '.git', 'lore')))).toThrow(/gitdir/)
+    expect(() => loadConfig(configFor(join(root, '.git')))).toThrow(/gitdir/)
+  })
+
+  // `-C <dir>` is the whole question. Either of these in the environment answers a different one
+  // — git exports GIT_DIR to `filter-branch` and `submodule foreach` — and the subdirectory then
+  // reads as a root. One test per variable, because a scrub list loses an entry silently.
+  for (const name of ['GIT_DIR', 'GIT_WORK_TREE']) {
+    it(`asks about the destination, not about an inherited ${name}`, () => {
+      const root = repo()
+      mkdirSync(join(root, 'lore'))
+      vi.stubEnv(name, name === 'GIT_DIR' ? join(repo(), '.git') : join(root, 'lore'))
+
+      expect(() => loadConfig(configFor(join(root, 'lore')))).toThrow(/sits at lore\//)
+    })
+  }
+
+  it('blames a destination git refuses to take as an argument, not PATH', () => {
+    // A NUL byte makes `execFileSync` throw before it spawns anything, so there is no exit code
+    // — but git is fine and the destination is exactly what is wrong. Only a spawn that happened
+    // and produced no exit code means git could not be run.
+    const bad = join(tempStore(), '\u0000lore')
+    const load = () => loadConfig(configFor(bad))
+    expect(load).toThrow(/cannot be used as a store/)
+    expect(load).not.toThrow(/git could not be run/)
+  })
+
+  it('says git could not be run, rather than blaming a destination that is fine', () => {
+    // No exit code means the process never ran to completion — absent from PATH, not executable,
+    // killed. There is no stderr to quote, and naming the destination sends somebody to inspect a
+    // path that is correct.
+    const root = repo()
+    const path = configFor(root)
+    const empty = tempStore()
+    vi.stubEnv('PATH', empty)
+
+    expect(() => loadConfig(path)).toThrow(/git could not be run/)
+    expect(() => loadConfig(path)).not.toThrow(/cannot be used as a store/)
+  })
+
+  it('reads the prefix as everything after the last answer, newlines included', () => {
+    // A newline is as legal in a directory name as a leading space, and taking the prefix as one
+    // line drops everything before the last one — which here is the whole name, leaving a store
+    // one directory down looking like a root.
+    const root = repo()
+    mkdirSync(join(root, '\nlead'))
+    expect(() => loadConfig(configFor(join(root, '\nlead')))).toThrow(/sits at/)
+  })
+
+  it('carries what git said when it cannot place the destination at all', () => {
+    // "not inside a git repository" is a lie for a repository git refuses to read — dubious
+    // ownership on a bind mount or a CI container is the common one — and git's own line names
+    // the remedy.
+    const before = process.env['LC_ALL']
+    process.env['LC_ALL'] = 'C'
+    try {
+      const missing = join(tempStore(), 'no-such-directory')
+      expect(() => loadConfig(configFor(missing))).toThrow(/cannot change to/)
+    } finally {
+      if (before === undefined) delete process.env['LC_ALL']
+      else process.env['LC_ALL'] = before
     }
   })
 })
