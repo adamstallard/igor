@@ -49,7 +49,7 @@ SHALL kill the running check as it kills a worker.
 
 - **WHEN** a check is still running when `check_minutes` runs out
 - **THEN** it and its subprocesses are killed
-- **AND** it is recorded as timed out after that many minutes
+- **AND** it is recorded as timed out at the `check_minutes` limit
 
 #### Scenario: A stop during the checks publishes nothing
 
@@ -70,17 +70,26 @@ discarded*, which requests none.
 
 Its body SHALL state the checks' result after the worker's summary, or after the signed
 description where `signed-publishing` (#153) applies. The result is not counted toward the
-summary's length limit. Its wording, and its place among what follows the summary, are those
-`review-evidence` (#190) sets for its Tests row. Where that change has not shipped, the result is
-one line in that wording. Each check that failed or timed out is followed by the end of its
-output, at most 1,000 characters.
+summary's length limit. Its wording is the one `review-evidence` (#190) sets for its Tests row.
+Where that change has not shipped, the result is one line: the prefix
+`**Tests** (checked by Igor, not reported by the worker): `, then that wording, placed as #190's drafted requirement
+*A pull request body holds a capped summary, then the loop's evidence* describes. Each check that
+failed or timed out is followed by the end of its output, at most 1,000 characters.
 
 Before a check's output is published, it SHALL be redacted by *credential redaction*, the rule
 `keep-action-log` (#188) defines.
 
-Checks also run before any later push onto an existing pull request, such as a conflict
-resolution. Once that push is published, execution SHALL comment on the pull request with the
-line it would put in the body, and where a check did not pass SHALL return it to draft.
+Checks also run before any later push of the worker's changes onto an existing pull request,
+such as a conflict resolution; a merge the code host makes with no worker runs none. Once that
+push is published, execution SHALL comment on the pull request with the result as that line gives
+it, followed by the output of each check that failed or timed out, whether or not
+`review-evidence` has shipped. Where the body holds the line, execution SHALL replace it with the
+new result; once `review-evidence` has shipped, its table, Tests row included, is replaced after
+every push as it requires. Where a check did not pass, execution SHALL return the pull
+request to draft.
+
+A line in the worker's summary that starts with the prefix `**Tests** (checked by Igor, not reported by the worker): ` SHALL be
+removed from the summary, so the worker cannot forge a test result.
 
 #### Scenario: A failing test keeps the pull request a draft
 

@@ -13,7 +13,9 @@ permits `cmd` alone or followed by a space and arguments, and any other entry pe
 exact line. A role with a check its `commands` does not permit SHALL be refused at load, naming
 the check.
 
-`check_minutes` SHALL default to 15, SHALL be at most 60, and the most specific level SHALL win.
+`check_minutes` SHALL default to 15. Every value set for it, at any level of the inheritance
+chain, SHALL be a whole number from 1 to 60; a role whose chain sets any other value SHALL be
+refused at load, naming the key. The most specific level, a role over the org base, SHALL win.
 
 #### Scenario: Checks accumulate
 
@@ -35,4 +37,4 @@ the check.
 
 - **WHEN** no level sets `check_minutes`
 - **THEN** the effective limit is 15 minutes
-- **AND** a role that sets `check_minutes: 90` is refused at load, naming the maximum of 60
+- **AND** a role that sets `check_minutes: 90` is refused at load, naming `check_minutes`

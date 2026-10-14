@@ -4,11 +4,14 @@
       user, its kill, and its removal of what the worker user wrote.
 - [ ] 0.2 Start after `concurrent-instances` (#179) has merged. Its sweep goes by rank, so the
       checks need no change to `src/sweep.ts`.
+- [ ] 0.3 Archive this change only after `keep-action-log` (#188) and `review-evidence` (#190)
+      are archived, so the requirements and wording it points at are in force first.
 
 ## 1. Role keys
 
 - [ ] 1.1 Add `checks` and `check_minutes` to `ROLE_KEYS` and `Role` in `src/role.ts`. Merge
-      `checks` by appending, `check_minutes` by override, with a default of 15 and a maximum of 60.
+      `checks` by appending, `check_minutes` by override, with a default of 15, refusing any
+      value that is not a whole number from 1 to 60.
 - [ ] 1.2 Refuse a role whose effective check no effective `commands` entry permits. A `cmd:*`
       entry permits `cmd` alone or followed by a space and arguments; any other entry permits only
       the identical line. Also refuse a check holding a newline or any of these characters:
@@ -31,10 +34,12 @@
       group with the code that kills workers on a stop or termination.
 - [ ] 2.4 While checks run, call `claimStatus` on a timer every `checkpointMs`, never two calls at
       once, and on `stopped` kill the running check and return the stop outcome.
-- [ ] 2.5 Keep each check's exit code, duration, and the last 1,000 characters of its combined
-      stdout and stderr. Keep the output only in memory, for the body. Before it is used, redact
-      it with credential redaction, the function described in `keep-action-log` (#188) task 3.1,
-      which also says which change builds it.
+- [ ] 2.5 Keep each check's exit code, duration, and its combined stdout and stderr. Redact the
+      whole output with credential redaction, the function described in `keep-action-log`
+      (#188) task 3.1. Build that function here only if neither #188 nor #190 has shipped, as
+      that task says; then keep its last 1,000
+      characters, only in memory, for the body. Redacting first means a token the cut would
+      split is still found.
 
 ## 3. Publishing and recording
 
@@ -42,11 +47,13 @@
       lists `draft-pr`, still requesting `role.reviewers` unless the claim was lost.
 - [ ] 3.2 Where `review-evidence` (#190) has shipped, fill its Tests row from the checks' results,
       in its wording and its body order. Until it ships, append one line to `prBody` after the
-      summary, outside `PR_BODY_LIMIT`, in the order that change sets for lines written before
-      its table exists. The line starts with a prefix that belongs to this change and echoes
-      #190's table heading, `**Tests** (checked by Igor, not reported by the worker): `. It
-      continues with the Tests row's value exactly as #190's task 2.1 words it. The values below are
-      that wording, and neither change may reword them apart from the other:
+      summary, outside `PR_BODY_LIMIT`, placed as #190's drafted requirement *A pull request body
+      holds a capped summary, then the loop's evidence* describes, and remove from the summary
+      any line that starts with this line's prefix. This change defines the prefix, which echoes
+      #190's table heading: `**Tests** (checked by Igor, not reported by the worker): `. The line continues with the Tests
+      row's value exactly as #190's task 2.1 words it. #190's task 2.1 is the source: it also
+      words results these examples do not show, such as a check with no exit code. The examples
+      below are in that wording, and neither change may reword it apart from the other:
 
       ```
       **Tests** (checked by Igor, not reported by the worker): pass: `npm test`, `npx tsc --noEmit`
@@ -55,7 +62,7 @@
       **Tests** (checked by Igor, not reported by the worker): **fail**: `npm test` exited 1; `npx tsc --noEmit` passed; the pull request is a draft because of it
       ```
       ```
-      **Tests** (checked by Igor, not reported by the worker): **fail**: `npm test` timed out after 15 minutes; `npx tsc --noEmit` was not run; the pull request is a draft because of it
+      **Tests** (checked by Igor, not reported by the worker): **fail**: `npm test` timed out at the 15-minute limit; `npx tsc --noEmit` was not run; the pull request is a draft because of it
       ```
       ```
       **Tests** (checked by Igor, not reported by the worker): not checked: the role declares no checks
@@ -74,9 +81,12 @@
 
       </details>
       ````
-- [ ] 3.3 On the conflict-resolution path, and on any other push onto an existing pull request,
-      run the checks before the push and, once it is published, comment on the pull request with
-      the line 3.2 gives and any output, whatever the result. Where a check did not pass, return the pull request to draft with a
+- [ ] 3.3 On the conflict-resolution path, and on any other push of the worker's changes onto
+      an existing pull request (not a clean server-side `catchUp`, the path where the code host
+      merges the base with no worker), run the checks before the push
+      and, once it is published, comment on the pull request with the line 3.2 gives, prefix and
+      all, and any output, whatever the result and whether or not #190 has shipped. Where the
+      body holds that line, replace it; once #190 has shipped, its table is replaced instead. Where a check did not pass, return the pull request to draft with a
       new `CodeHost` method backed by GitHub's `convertPullRequestToDraft` mutation.
 - [ ] 3.4 Add `checks: [{ command, result, exitCode, seconds }]` to the execution row, with
       `result` one of `passed`, `failed`, `timed-out`, `not-run`.

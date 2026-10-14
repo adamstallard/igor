@@ -32,8 +32,9 @@
    evidence of what failed.
 
    **Decided (Adam, 2026-10-13): a draft is within `pr`.** A role whose `allow` lists `pr` and
-   not `draft-pr` still gets a draft when a check fails, as work published after a lost claim
-   already goes out as a draft whatever `allow` lists.
+   not `draft-pr` still gets a draft when a check fails. `allow` says what the work may become,
+   and a draft is a pull request not yet ready: work published after a lost claim already goes
+   out as one wherever `allow` permits a pull request at all.
 7. **Checks also run before a later push onto an existing pull request, such as a conflict
    resolution. Once the push is published, their result is reported in a comment**, whatever it
    is, and a failure returns the pull request to draft. Rejected: leaving a ready pull request ready over failing tests. Also rejected:
@@ -81,8 +82,12 @@ None.
   run). **Decided (Adam,
   2026-10-13):** that row's wording is the only text for the result. Until #190 ships, this
   change writes a line that uses it verbatim, so the pull request says the same either way.
-  #190 also sets where the result goes in the body, and the order of the lines this change and
-  `scope-check` (#187) write before #190's table exists.
+  Until then, the line goes where #190's drafted requirement *A pull request body holds a capped
+  summary, then the loop's evidence* describes: before the scope line that `scope-check` (#187)
+  writes. This change archives after #190, so that requirement is in force by then.
+- **Archive after `keep-action-log` (#188) and `review-evidence` (#190).** This change points
+  at *credential redaction*, which #188 states, and at #190's requirement and row wording. Archiving this change first would leave the in-force specs pointing at a
+  requirement not yet in them.
 - **Overlaps `keep-action-log` (#188)**, which defines *credential redaction*. Published check
   output is redacted by that rule, through one function the two changes and #190 share. #188's
   task 3.1 says which change builds it.
