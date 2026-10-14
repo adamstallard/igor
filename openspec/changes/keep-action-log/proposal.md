@@ -19,8 +19,11 @@ Each is the reviewer's to decide, except where marked **Decided**.
    as `SEAT_A`.
 
    **Decided (Adam, 2026-10-13): this is the only redaction rule.** `loop-verifies-commands`
-   (#189) redacts published check output by it, and `review-evidence` (#190) every command, path
-   and output in its table. Neither restates it.
+   (#189) redacts published check output by it, and `review-evidence` (#190) redacts every
+   command, path and output in the evidence table it adds to the pull request body. Neither
+   restates the rule. *Rejected:* each change stating its own set of values and patterns to
+   redact, which lets the sets drift apart, so a value one change redacts another could
+   publish.
 3. **What is kept depends on who can read the store, asked of GitHub at write time.** A private
    store keeps the whole log. A public store keeps no output text. It keeps commands and paths
    only where the worked repository is public too; otherwise it keeps only which tools ran and
