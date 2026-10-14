@@ -1,6 +1,6 @@
 ## ADDED Requirements
 
-### Requirement: The worker's tool calls are recorded beside its transcript
+### Requirement: Every model step's tool calls are recorded beside the transcript
 
 Every run that started the worker SHALL write an action log to the state branch at
 `transcripts/<tracker>/<repo>/<native>.<at>.actions.json`, whatever the run's outcome, a killed
@@ -8,12 +8,19 @@ worker included. `<tracker>`, `<repo>` and `<native>` are those of the item's tr
 `<at>` is the millisecond time on the run's `executions.ndjson` row (its ledger row), with every
 run of characters outside `[A-Za-z0-9_-]` replaced by `-`. Where a log already exists at that
 path, `-2`, `-3` and so on SHALL be added to `<at>` until the path is free, so no run's log
-overwrites another's. The run's row SHALL name that path. A run whose worker made
-no tool call SHALL write no log, and its row SHALL name none.
+overwrites another's. The run's row SHALL name that path.
+
+The log covers every model step Igor runs in that run: the worker (its subagents included), and
+the two steps `signed-publishing` (#153) adds after it for a role whose `skills` list names
+them, the bug-hunter step where it lists `bug-hunter` and the prose pass where it lists `prose`.
+Each entry SHALL name the step that made it, `worker`, `bug-hunter` or `prose`, and every rule
+below applies to each step's calls alike. A run whose steps made no tool call at all SHALL write
+no log, and its row SHALL name none.
 
 The log SHALL list the tool calls in the order they were made, the subagents' calls included and
 marked with the call that started them. Each entry SHALL hold:
 
+- the step that made it;
 - the tool's name;
 - its input: the command for a shell call (`Bash`), the path for a file tool (`Read`, `Write`,
   `Edit`, `NotebookEdit`), the pattern for a search (`Grep`, `Glob`), and for any other tool its
@@ -41,6 +48,12 @@ state branch.
   the later implementation run of the two-gate workflow (#150)
 - **THEN** the state branch holds two action logs, one per run
 - **AND** each run's ledger row names its own log
+
+#### Scenario: The bug-hunter step's calls are logged and labelled
+
+- **WHEN** a role's `skills` list names `bug-hunter`, and #153's bug-hunter step runs `npm test`
+  after the worker finishes
+- **THEN** the action log holds that call, labelled `bug-hunter`, after the worker's calls
 
 #### Scenario: Edited contents are not logged
 
@@ -127,7 +140,7 @@ private, so that each unknown keeps the least.
 
 The log SHALL be cut to one of three tiers, and SHALL record which one applied:
 
-- `whole`, for a private store: every entry as "The worker's tool calls are recorded beside its
+- `whole`, for a private store: every entry as "Every model step's tool calls are recorded beside the
   transcript" describes;
 - `no-output`, for a public store and a public worked repository: every entry without its
   output;

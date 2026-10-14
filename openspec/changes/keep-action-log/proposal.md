@@ -82,7 +82,8 @@ None.
 
 ### Modified Capabilities
 
-- `task-execution`: a run's tool calls are recorded to the state branch, redacted, capped, and
+- `task-execution`: the tool calls of every model step in a run, the worker's and #153's
+  bug-hunter step's and prose pass's, are recorded to the state branch, redacted, capped, and
   cut according to who can read the store.
 
 ## Impact
@@ -100,3 +101,9 @@ None.
   `loop-verifies-commands` (#189), in either order; archive order follows the same sequence.
   This change builds credential redaction's function, which #189 and #190 call. #187 and #189
   write only into #190's evidence table, so they follow #190.
+- **Decided (Adam, 2026-10-13): the log covers every model step Igor runs**, not the worker
+  alone. `signed-publishing` (#153) adds two model steps after the worker, a bug-hunter step and
+  a prose pass, for a role whose `skills` list names them. Each entry is labelled with its
+  step, and #190's evidence table lists the shell calls of all three. Decisions 1 and 5 apply to
+  every step's calls alike. *Rejected:* logging the worker alone, which leaves the tests
+  bug-hunter runs and the files the prose pass edits outside the audit.

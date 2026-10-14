@@ -23,8 +23,12 @@
       a shell call's exit code from its result's text, in the spec's three cases.
       Redact each kept string as it is collected (3.1), so nothing downstream holds it
       unredacted.
-- [ ] 2.2 Carry the collected calls on the `ExecutionResult` of every path that started the worker, the
-      throw path included.
+- [ ] 2.2 Collect the same way, in each step's own event handler, from the bug-hunter step and
+      the prose pass that `signed-publishing` (#153) runs after the worker. Label every entry
+      `worker`, `bug-hunter` or `prose`.
+- [ ] 2.3 Carry all the steps' collected calls on the `ExecutionResult` of every path that
+      started the worker, the throw path included, appending the later steps' calls after the
+      worker's.
 
 ## 3. Write
 
