@@ -40,6 +40,12 @@
    is, and a failure returns the pull request to draft. Rejected: leaving a ready pull request ready over failing tests. Also rejected:
    reporting only by editing the body, which notifies nobody watching the pull request.
 
+**Also decided (Adam, 2026-10-13):** checks run after #153's staging and signing (decision
+4); a pull request opened after a lost claim requests no reviewers, even with a failed check,
+an exception to decision 6, which otherwise requests them;
+and checks run before every later push of the worker's changes (decision 7). The comment after
+such a push is posted only where the role declares checks.
+
 ## Why
 
 Today the loop runs no test or lint command (#186). The worker's system prompt lists the role's
@@ -53,9 +59,9 @@ change passes is the worker saying so.
 - After the worker exits and its changes are read, the loop runs each check in the worker's tree,
   under the worker's user and environment, within one time limit, re-reading the claim while
   they run.
-- The pull request body states the checks' result in the wording of `review-evidence`'s Tests
-  row: each check passed, failed with its exit code and the output's last lines, timed out, or
-  was not run; or the role declares none. A failure opens the pull
+- The checks' result fills the Tests row of `review-evidence`'s evidence table: each check
+  passed, failed with its exit code and the output's last lines, timed out, or was not run; or
+  the role declares none. A failure opens the pull
   request as a draft.
 - Each execution row records each check's command, result, exit code and duration.
 
@@ -79,17 +85,12 @@ None.
   change to the sweep.
 - **Overlaps `review-evidence` (#190).** Its Tests row shows this change's results, read from
   the `checks` results on the execution row (passed, failed with its exit code, timed out, or not
-  run). **Decided (Adam,
-  2026-10-13):** that row's wording is the only text for the result. Until #190 ships, this
-  change writes a line that uses it verbatim, so the pull request says the same either way.
-  Until then, the line goes where #190's drafted requirement *A pull request body holds a capped
-  summary, then the loop's evidence* describes: before the scope line that `scope-check` (#187)
-  writes. This change archives after #190, so that requirement is in force by then.
-- **Archive after `keep-action-log` (#188) and `review-evidence` (#190).** This change points
-  at *credential redaction*, which #188 states, and at #190's requirement and row wording. Archiving this change first would leave the in-force specs pointing at a
-  requirement not yet in them.
-- **Overlaps `keep-action-log` (#188)**, which defines *credential redaction*. Published check
-  output is redacted by that rule, through one function the two changes and #190 share. #188's
-  task 3.1 says which change builds it.
+  run). **Decided (Adam, 2026-10-13):** that row is the only place in the body the result is
+  written, in the wording #190 gives it; this change writes no line of its own into the body.
+- **Build order: `keep-action-log` (#188), then `review-evidence` (#190), then this change and
+  `scope-check` (#187) in either order**, since the two do not depend on each other. Archive order follows the same sequence, so the redaction rule and the
+  table this change points at exist, in code and in the in-force specs, before it lands.
+- **Overlaps `keep-action-log` (#188)**, which defines *credential redaction* and builds its
+  function. Published check output is redacted by that function.
 - Code: `src/role.ts`, `src/execute.ts`, and the GitHub adapter (returning a pull request to
   draft). Docs: `README.md` roles section, `templates/org.yaml`.
