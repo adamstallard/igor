@@ -95,6 +95,17 @@ own code around the worker) checked about the run. From that table the loop sets
   carried-forward `not checked`, in this change's wording; #187 decides
   those cases. *Rejected:* a scope rule of this change's own, which could drift from #187's.
 
+- **The opening block is defined once, in this change's requirement *A pull request body holds a
+  capped summary, then the loop's evidence*; #153 points at it.** On a revision, a push
+  answering a reviewer's change request under #150, it is recomputed from the latest
+  bug-hunter run, and the "item changed" note compares the item with
+  the version approved at gate one (decided 2026-10-13). *Rejected:* keeping gate two's block
+  unchanged, which would show bug-hunter decisions a revision has already settled.
+- **The Commands row, renamed "Commands run", shows the shell calls of every model step #188
+  logs**: the worker (its subagents included) and #153's bug-hunter step and prose pass. #188
+  labels each call with its step, `worker`, `bug-hunter` or `prose` (decided 2026-10-13). *Rejected:* the
+  worker's calls alone, which hides the tests bug-hunter ran.
+
 **Where this meets #153.** For a role that lists `prose`, the body is the opening block, then
 the signed description, then the marker and the evidence section. #153 defines the description
 as exactly the span between the opening block and the marker, and `prose verify-post` runs on exactly that span

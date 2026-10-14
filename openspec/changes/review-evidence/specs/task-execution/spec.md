@@ -21,6 +21,12 @@ The body of a pull request an Igor opens SHALL hold, in this order:
    section keeps that pointer unchanged: it points at the transcript of the run whose summary
    the body holds.
 
+This requirement is the one definition of the opening block; `signed-publishing` (#153) points
+here. A revision, under #150, is a push answering a reviewer's change request. On a revision the
+loop SHALL recompute the opening block: bug-hunter's open decisions come from the latest
+bug-hunter run (none where the role does not list bug-hunter), and the note that the item
+changed compares the item with the version approved at gate one.
+
 Every line the loop adds outside the opening block SHALL come after the marker. For a role under
 #153, `prose verify-post` runs on the span between items 1 and 3, as #153 defines it.
 
@@ -45,8 +51,8 @@ each quoted so that it cannot end its code span or block, its cell, or the table
 
 Each time a run publishes the worker's changes onto an existing pull request, the loop SHALL
 replace the evidence section with one built from that run, leaving the opening block and the
-description as they are. `signed-publishing` (#153) decides when the description and the
-opening block are rewritten. A merge of the base that the code host makes
+description as they are, except on a revision: there the loop recomputes the opening block as
+above, and `signed-publishing` (#153) rewrites the description. A merge of the base that the code host makes
 without a worker leaves the table as it is.
 
 #### Scenario: A long summary is cut and points at the transcript
@@ -81,8 +87,10 @@ The evidence table SHALL have these rows, each filled only from the loop's recor
   run. Where any did not pass, `loop-verifies-commands` makes the pull request a draft, the row
   says so, and the
   end of the output of each check that failed or timed out follows the table.
-- **Commands the worker ran:** how many shell (`Bash`) calls the worker and its subagents made,
-  and how many of them failed: exited non-zero, failed with no code, or never returned.
+- **Commands run:** how many shell (`Bash`) calls the run's model steps made, and how many of
+  them failed, whichever step made them. The steps are the worker, its subagents counted as the
+  worker, and #153's bug-hunter step and prose pass; `keep-action-log` (#188) labels each call
+  `worker`, `bug-hunter` or `prose`, the only three labels. A call failed where it exited non-zero, failed with no code, or never returned.
   The commands are listed, up to a cap, each with what `keep-action-log` (#188) recorded for it:
   its exit code, an error with no code, or no result for a call that never returned. Any beyond
   the cap are counted.

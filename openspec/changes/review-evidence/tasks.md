@@ -33,17 +33,17 @@
       | Check | Result |
       |---|---|
       | Tests | pass: `<check>`, `<check>` |
-      | Commands the worker ran | <n>, <k> failed |
+      | Commands run | <n>, <k> failed |
       | Files changed | <n>, all inside <scope> |
       | Spec scenarios | <n> changed, each tagged by a test |
       | Sandbox denials | none |
       | Cost | $<0.00>, <n> turns |
 
-      <details><summary>Commands the worker ran</summary>
+      <details><summary>Commands run</summary>
 
-      | Result | Command |
-      |---|---|
-      | <exit code, `failed`, or `no result`> | `<command>` |
+      | Step | Result | Command |
+      |---|---|---|
+      | <`worker`, `bug-hunter` or `prose`> | <exit code, `failed`, or `no result`> | `<command>` |
 
       </details>
       ```
@@ -103,7 +103,9 @@
 
       The commands' `<details>` block comes after every output block.
 
-      The commands are the worker's and its subagents' shell (`Bash`) calls. A command's Result
+      The commands are the shell (`Bash`) calls of every model step #188 logs, each listed with
+      its step's label in the Step column. The labels are exactly `worker` (its subagents
+      included), `bug-hunter` and `prose`. A command's Result
       is the exit code `keep-action-log` recorded, `failed` where it recorded an error with no
       code, or `no result` for a call that never returned.
 
