@@ -184,10 +184,10 @@ export const AMBIENT_TOKENS = ['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY'] a
  *
  * `execute` asks it of the environment it built for a worker, and `readAllSeats` of the one a
  * worker on that seat would get, so both hash the same thing: a seat's token as
- * `CLAUDE_CODE_OAUTH_TOKEN`, or the ambient pair a seat naming no source forwards. Over the whole set rather than whichever variable the
- * provider prefers, so replacing either reads as a new credential. A signed-in `~/.claude` under
- * the forwarded `HOME` is in no variable, so nothing names it and no refusal can be held
- * against it.
+ * `CLAUDE_CODE_OAUTH_TOKEN`, or the ambient pair a seat naming no source forwards. Over the whole
+ * set rather than whichever variable the provider prefers, so replacing either reads as a new
+ * credential. A signed-in `~/.claude` under the forwarded `HOME` is in no variable, so nothing
+ * names it and no refusal can be held against it.
  */
 export function credentialFingerprint(env: NodeJS.ProcessEnv): string | undefined {
   const held = AMBIENT_TOKENS.filter((name) => env[name] !== undefined && env[name] !== '')
