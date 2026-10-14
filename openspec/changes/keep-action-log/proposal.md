@@ -24,7 +24,9 @@ Each is the reviewer's to decide, except where marked **Decided**.
 3. **What is kept depends on who can read the store, asked of GitHub at write time.** A private
    store keeps the whole log. A public store keeps no output text. It keeps commands and paths
    only where the worked repository is public too; otherwise it keeps only which tools ran and
-   whether they failed. A store whose visibility cannot be read is treated as public.
+   whether they failed. Each unknown resolves toward keeping the least: a store whose visibility cannot be read is
+   treated as public, and a worked repository whose visibility cannot be read as private, since a
+   public store with a private worked repository is the tier that keeps the least.
    *Rejected:* one rule for both, which is either useless in a private store or leaks in a public
    one. *Rejected:* trusting `publicStore`, the cached flag #91 shows can be stale.
 
@@ -91,3 +93,7 @@ None.
   list this change collects, redacted and before it is cut to what the store's visibility
   allows (decision 3), since the pull request is read by the worked repository's readers, not
   the store's.
+- Build order: this change, then `review-evidence` (#190), then `scope-check` (#187) and
+  `loop-verifies-commands` (#189), in either order; archive order follows the same sequence.
+  This change builds credential redaction's function, which #189 and #190 call. #187 and #189
+  write only into #190's evidence table, so they follow #190.

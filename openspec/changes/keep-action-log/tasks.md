@@ -1,3 +1,10 @@
+## 0. Order
+
+- [ ] 0.1 Build this change first: `review-evidence` (#190) follows it, since it calls this
+      change's redaction function, then `scope-check` (#187) and `loop-verifies-commands`
+      (#189) in either order, since they write only into #190's table. Archive in the same
+      order.
+
 ## 1. Measure
 
 - [x] 1.1 Measure, on a real `claude -p --output-format stream-json` run, how a shell call's
@@ -28,10 +35,9 @@
       worker starts, and add a seat token read later in the run before the next string is
       redacted.
       The marker is exactly `[redacted]`. `loop-verifies-commands` (#189) and `review-evidence`
-      (#190) redact with the same function: whichever of the three changes ships first builds
-      it, and the others call it.
+      (#190) call this function and build none of their own.
 - [ ] 3.2 Read the store's and the worked repository's visibility with `isPublic`, treating an
-      error as public, and cut the entries to the tier that applies.
+      error on the store as public and on the worked repository as private, and cut the entries to the tier that applies.
 - [ ] 3.3 Cap inputs at 1,000 characters and output at its last 2,000, then trim the document to
       512 KiB from the start, recording how many entries were dropped.
 - [ ] 3.4 In `recordExecution`, write the log after the transcript, catching and reporting its
@@ -49,7 +55,8 @@
       `*_TOKEN` in the Igor's environment are logged as `[redacted]`. A 3-character value of a
       variable named `*_KEY` is not.
 - [ ] 4.4 Each tier: private store; public store with public repository; public store with
-      private repository; a visibility read that throws.
+      private repository; the store's visibility read throws; the worked repository's visibility
+      read throws.
 - [ ] 4.5 A log past 512 KiB keeps its latest calls and counts the dropped ones.
 - [ ] 4.6 A failed log write still lets the capacity observation be written.
 - [ ] 4.7 Exit codes: an error beginning `Exit code 128` records 128; a result that is not an

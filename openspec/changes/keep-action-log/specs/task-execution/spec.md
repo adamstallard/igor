@@ -120,8 +120,10 @@ anything reads or writes it.
 ### Requirement: What the action log keeps follows who can read the store
 
 At write time, the Igor SHALL ask GitHub whether the store and the worked repository are
-private. It SHALL NOT rely on the `publicStore` config key for this. A repository whose
-visibility cannot be read SHALL be treated as public.
+private. It SHALL NOT rely on the `publicStore` config key for this, since a cached flag can
+be out of date (#91). A store whose visibility cannot
+be read SHALL be treated as public, and a worked repository whose visibility cannot be read as
+private, so that each unknown keeps the least.
 
 The log SHALL be cut to one of three tiers, and SHALL record which one applied:
 
@@ -136,6 +138,12 @@ The log SHALL be cut to one of three tiers, and SHALL record which one applied:
 
 - **WHEN** a worker on a private repository runs commands, and the store is public
 - **THEN** the log lists each call's tool and error status, with no command, path or output
+
+#### Scenario: An unknown worked repository counts as private
+
+- **WHEN** the store is public and GitHub cannot be asked whether the worked repository is
+  private
+- **THEN** the log is cut to `tools-only`
 
 #### Scenario: Unknown visibility keeps the least
 
