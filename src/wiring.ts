@@ -135,8 +135,8 @@ export async function wire(
       for (const r of readings) {
         if (r.error !== undefined) out.warn(`seat "${r.seat.id}": ${r.error}`)
       }
-      const now = Temporal.Now.instant()
-      const conditions = conditionsFrom(rows, settings, now.epochMilliseconds, (key) => {
+      const now = Date.now()
+      const conditions = conditionsFrom(rows, settings, now, (key) => {
         const scope = scopeOf(key)
         if (scope?.kind === 'seat') return readings.find((r) => r.seat.id === scope.name)?.fingerprint
         return appKeyFor(key)
@@ -152,7 +152,7 @@ export async function wire(
         readings,
         spend,
         boundsForSeats(observations, spend, config.budget.seats),
-        now.toString({ fractionalSecondDigits: 3 }),
+        new Date(now).toISOString(),
         conditions,
       )
       const probes = [...due, ...(gate.probes ?? [])]

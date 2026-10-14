@@ -712,8 +712,8 @@ program
     // than as one broken line.
     const spend = runsOf(rows)
     const bounds = boundsForSeats(observations, spend, config.budget.seats)
-    const now = Temporal.Now.instant()
-    const conditions = conditionsFrom(rows, config.conditions, now.epochMilliseconds, (key) => {
+    const now = Date.now()
+    const conditions = conditionsFrom(rows, config.conditions, now, (key) => {
       const scope = scopeOf(key)
       return scope?.kind === 'seat' ? readings.find((r) => r.seat.id === scope.name)?.fingerprint : undefined
     })
@@ -728,7 +728,7 @@ program
         readings,
         spend,
         bounds,
-        now.toString({ fractionalSecondDigits: 3 }),
+        new Date(now).toISOString(),
         conditions,
       )
       process.stdout.write(`\npool ${pool.id}: ${gate.reason}\n`)
