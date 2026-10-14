@@ -54,12 +54,26 @@
 - [ ] 3.1 Replace the cut of the worker's final message (`prBody`, capped by `PR_BODY_LIMIT`)
       with a description the prose pass writes and signs, published uncut
 - [ ] 3.2 Rewrite, sign and verify it again whenever Igor pushes to the pull request
-- [ ] 3.3 Tests: a signed description is published unchanged and uncut as the body's part before
-      `<!-- igor:evidence -->`, or as the whole body where there is no marker; an evidence
-      section after the marker (`review-evidence`, #190) is not verified as part of it; a
-      follow-up commit replaces the description with a newly signed one
+- [ ] 3.3 Tests: a signed description is published unchanged and uncut as the body's span
+      between the opening block (#150's opening text, then the linkage line) and
+      `<!-- igor:evidence -->`, or to the end of the body where there is no marker;
+      `prose verify-post` runs on exactly that span; neither the opening block nor the evidence
+      section after the marker (`review-evidence`, #190) is verified as part of it; a follow-up
+      commit replaces the description with a newly signed one
+
+- [ ] 3.4 Test: at gate one (#150), a signed description holding a closing keyword is returned
+      to the prose pass, since #150 keeps closing keywords out of a gate-one body and the code
+      cannot strip one without breaking the signature
 
 ## 4. Measuring
 
 - [ ] 4.1 Record the cost of each new step per item, so an org can choose which skills to list
       for every role
+
+## 5. Archive
+
+- [ ] 5.1 Before archiving, check whether `loop-verifies-commands` (#189) has archived. Both
+      changes MODIFY *Merge semantics differ by field kind*, this one adding `skills` and #189
+      adding `checks`. If #189 archived first, rewrite this change's MODIFIED text from the
+      in-force requirement, which by then lists `checks`, adding `skills` to it, so that
+      archiving keeps both.

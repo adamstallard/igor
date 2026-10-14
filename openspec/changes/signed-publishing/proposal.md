@@ -36,11 +36,14 @@ fixes this for every piece of text an Igor publishes:
 - **Text the code assembles from recorded state is not signed:** handoffs, stop receipts and
   claim messages. The code's authors wrote it and it is reviewed as code. A handoff is needed
   exactly when a model call may be impossible, so `graceful-handoff` stays as it is.
-- **A pull request body may end in an evidence section the code assembles.** The separate
-  change `review-evidence` (#190) has Igor's code append one, starting at the marker
-  `<!-- igor:evidence -->`. The description is everything before the marker, or the whole body
-  where there is none, and is exactly the signed text. The evidence section is not signed and
-  not part of the description.
+- **A pull request body is the opening block, then the signed description, then the code's
+  evidence section** (decided 2026-10-13). The opening block is the opening text the two-gate workflow (#150) places first (gate one's "specification only"
+  opening and the paths it refused to publish; at gate two, the note that the item changed after
+  the spec was approved, and bug-hunter's open decisions), then the line linking the pull request to its item. Every line the code adds
+  after the description starts at the marker `<!-- igor:evidence -->`, which
+  `review-evidence` (#190) defines. The description is exactly the span between the opening
+  block and the marker, or to the end where there is no marker, and `prose verify-post` runs on
+  exactly that span. Neither the opening block nor the evidence section is signed.
 
 Replies from `directed-interaction`, and the numbered questions from
 [#140](https://github.com/adamstallard/igor/pull/140), are published text, so this change
@@ -79,8 +82,8 @@ governs them. Neither change is edited here: the rule lives in one place, and th
   public yet. Prose is in review there, and so is bug-hunter's caller-commits mode. Igor loads
   both from a pinned directory with `--add-dir`, as
   [#152](https://github.com/adamstallard/igor/issues/152) decides.
-- **Correct whichever of this change and `review-evidence` (#190) lands first.** Where #190
-  has shipped, the description is the body before its marker. Where it has not, there is no
-  marker, and the description is the whole body.
+- **Works whichever of this change and `review-evidence` (#190) lands first.** Where #190 has
+  shipped, the description ends at its marker. Where it has not, there is no marker, and the
+  description runs to the end of the body.
 - **No GitHub Action.** Igor runs the checks in its own pipeline, so a CI check would only
   re-verify its work (#139, section 4).

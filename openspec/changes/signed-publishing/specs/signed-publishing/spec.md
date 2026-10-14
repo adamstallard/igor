@@ -10,9 +10,9 @@ check per skill:
 - **`bug-hunter`:** every commit SHALL carry a `Bug-hunter:` trailer bound to its staged tree.
 
 A role that does not list a skill SHALL NOT be checked for it, and publishes as it does without
-this capability. Each skill's check SHALL be defined in Igor's code. Only these two skills have
-a check, so a table of checks in configuration would hold two rows and invite a third that no
-code reads.
+this capability. Each skill's check SHALL be defined in Igor's code, not in configuration: only
+these two skills have a signing check, and a configurable table of checks would invite a row
+for a skill that no code checks.
 
 #### Scenario: A role listing prose has its posts and commits checked
 
@@ -71,21 +71,25 @@ fails. The code verifies because the model's word is not
 proof.
 
 The code SHALL publish the verified text exactly. A pull request body is the one place the
-code adds to it: the separate change `review-evidence` (#190) has Igor's code append an
-evidence section after the signed text, starting at the marker `<!-- igor:evidence -->`. The
-code assembles that section, so it is not signed and is not part of the signed text.
+code adds lines around it. Before the signed text comes the opening block: for a role under
+the opening text the two-gate workflow (#150) places first (gate one's "specification only"
+opening and the paths it refused to publish; at gate two, the note that the item changed after
+the spec was approved, and bug-hunter's open decisions), then the line linking the pull request to its item. After the signed text, every
+line the code adds starts at the marker `<!-- igor:evidence -->`: the evidence section of
+`review-evidence` (#190). The code assembles both the opening block and the evidence section,
+so neither is signed or part of the signed text.
 
-In a pull request body, the signed text is everything before the marker, apart from the
-whitespace that separates it from the marker, and `prose verify-post` runs on that part alone.
-Where there is no marker, because #190 has not shipped, the signed text is the whole body.
+In a pull request body, the signed text is exactly the span between that opening block and the
+marker, apart from the whitespace that separates it from each, or from the opening block to the
+end of the body where there is no marker. `prose verify-post` SHALL run on exactly that span.
 
 #### Scenario: Signed text is published unchanged
 
 - **WHEN** a model step returns text whose footer verifies
 - **THEN** the code publishes exactly that text
-- **AND** in a pull request body, the part before `<!-- igor:evidence -->`, or the whole body
-  where there is no marker, is exactly that text, and anything from the marker on is the
-  evidence section Igor's code assembled
+- **AND** in a pull request body, the span between the linkage line (with any two-gate opening
+  text) and `<!-- igor:evidence -->`, or to the end where there is no marker, is exactly that
+  text, and anything from the marker on is the evidence section Igor's code assembled
 
 #### Scenario: Text edited after signing is not published
 

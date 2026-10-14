@@ -67,16 +67,23 @@ For a role whose `skills` lists `prose`, the prose pass SHALL write the pull req
 `prose sign`. The code that creates or edits the pull request SHALL run `prose verify-post` on
 the description first, as the signed-publishing capability requires.
 
-The separate change `review-evidence` (#190) has Igor's code append an evidence section to
-the pull request body, starting at the marker `<!-- igor:evidence -->`. The code assembles that
-section from its own record of the run, so it is not signed and is not part of the description.
-#190 builds the section when the pull request is opened and replaces it on each later push.
+The pull request body holds, in order: the opening block, which is, for a role under
+the opening text the two-gate workflow (#150) places first (gate one's "specification only"
+opening and the paths it refused to publish; at gate two, the note that the item changed after
+the spec was approved, and bug-hunter's open decisions), then the line linking the pull request to its item; then the description; then, from the marker `<!-- igor:evidence -->` on, the evidence section that
+`review-evidence` (#190) has the code assemble. Every line the code adds after the description
+goes after the marker. The code assembles the evidence section from its own record of the run,
+so it is not signed and is not part of the description.
 
-The description is everything in the body before the marker, apart from the whitespace that
-separates it from the marker. Where there is no marker, because #190 has not shipped, the
-description is the whole body. The description SHALL be exactly the signed text, footer
+The description is exactly the span between the opening block and the marker, apart from the
+whitespace that separates it from each, or to the end of the body where there is no marker.
+`prose verify-post` SHALL run on exactly that span. The description SHALL be exactly the signed
+text, footer
 included, and the code SHALL NOT cut it: the 700-character cap (`PR_BODY_LIMIT`) on the
-worker's own summary does not apply to it.
+worker's own summary does not apply to it. At gate one, #150 keeps every closing keyword out of
+the body, and the code cannot strip one from a signed description without breaking its
+signature. So a gate-one description that holds a closing keyword SHALL be returned to the prose
+pass, as text that fails verification is.
 
 The description SHALL describe the pull request as it stands. When Igor pushes another commit
 to the pull request, the description SHALL be rewritten, signed again, and verified before it
@@ -85,8 +92,9 @@ replaces the old one. Replacing the description leaves the evidence section to #
 #### Scenario: A signed description is published
 
 - **WHEN** the prose pass returns a description whose footer verifies
-- **THEN** the pull request is created with a body whose part before `<!-- igor:evidence -->`,
-  or whole body where there is no marker, is exactly that description
+- **THEN** the pull request is created with a body whose span between the linkage line (with any
+  two-gate opening text) and `<!-- igor:evidence -->`, or to the end where there is no marker,
+  is exactly that description
 - **AND** anything from the marker on is the evidence section Igor's code assembled, not signed
 
 #### Scenario: The description follows the pull request
