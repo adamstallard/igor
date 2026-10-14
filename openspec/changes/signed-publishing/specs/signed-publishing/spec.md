@@ -71,10 +71,9 @@ fails. The code verifies because the model's word is not
 proof.
 
 The code SHALL publish the verified text exactly. A pull request body is the one place the
-code adds lines around it. Before the signed text comes the opening block: for a role under
-the opening text the two-gate workflow (#150) places first (gate one's "specification only"
-opening and the paths it refused to publish; at gate two, the note that the item changed after
-the spec was approved, and bug-hunter's open decisions), then the line linking the pull request to its item. After the signed text, every
+code adds lines around it. Before the signed text comes the opening block: the line linking the pull request to its item, preceded, for a role under
+the two-gate workflow (#150), by the text #150 places first (`review-evidence`, #190, sets where
+that text goes). After the signed text, every
 line the code adds starts at the marker `<!-- igor:evidence -->`: the evidence section of
 `review-evidence` (#190). The code assembles both the opening block and the evidence section,
 so neither is signed or part of the signed text.

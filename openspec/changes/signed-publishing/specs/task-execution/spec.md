@@ -2,7 +2,9 @@
 
 ### Requirement: A commit is signed by bug-hunter and the prose pass before it is committed
 
-Before `produce()` commits a worker's change, the model steps for the skills the role lists
+Before Igor commits a worker's change, whether `produce()` opens a pull request with it or, under
+the two-gate workflow (#150), `commitOnBranch` pushes gate two's implementation or a revision onto
+an existing pull request, the model steps for the skills the role lists
 SHALL run in the working tree, with its changes staged. Each runs only where the role's
 `skills` lists it (signed-publishing, *Igor verifies what each skill in a role's list
 requires*); a role that lists neither commits as it does without this capability.
@@ -11,17 +13,20 @@ requires*); a role that lists neither commits as it does without this capability
    skipped at triage, `Bug-hunter-Tree:` over the tree it reviewed.
 2. **The prose pass**, where the role lists `prose`, SHALL rewrite the docs and comments the change touches, write the commit
    message, run `prose check` over the staged tree and that message, and return the
-   `Prose: ✓ <tree>:<message>` trailer. The message's subject SHALL be the issue title, and its
-   body SHALL explain the change and end with `Closes #N`.
+   `Prose: ✓ <tree>:<message>` trailer. The message's subject SHALL be the issue title, with any
+   closing keyword in it dropped, and its body SHALL explain the change. The body SHALL end with
+   `Closes #N` on a commit that completes the item: any commit of a role outside #150, and gate
+   two's implementation commit. Every other commit under #150, gate one's and each revision's,
+   SHALL end with `Refs #N`, since #150 keeps closing keywords off them.
 
 If both run and the prose pass changes a file after bug-hunter signed its tree, bug-hunter
 SHALL run once more to sign the new tree.
 
-`produce()` SHALL commit only when all of these hold for the steps that ran:
+Igor SHALL commit, through either path, only when all of these hold for the steps that ran:
 
 - the tree it uploads equals every signed tree;
 - where the prose pass ran, `prose verify-staged` accepts the `Prose:` trailer against that
-  tree and the message, and the subject equals the issue title.
+  tree and the message, and the subject is the issue title as above.
 
 A failure SHALL go back to the step that signed, as the signed-publishing capability requires.
 The commit SHALL carry the message, then the `Bug-hunter:`, `Bug-hunter-Tree:` and `Prose:`
@@ -31,11 +36,11 @@ trailers of the steps that ran. Merge commits carry none of these trailers.
 
 - **WHEN** a role lists `prose` and `bug-hunter`, both signed trees equal the uploaded tree,
   the trailer verifies, and the subject is the issue title
-- **THEN** `produce()` commits the message with the trailers appended
+- **THEN** the message is committed with the trailers appended
 
 #### Scenario: A tree mismatch refuses the commit
 
-- **WHEN** the tree `produce()` uploads differs from a signed tree
+- **WHEN** the tree Igor uploads differs from a signed tree
 - **THEN** nothing is committed
 - **AND** the step that signed that tree runs again
 
@@ -50,6 +55,18 @@ trailers of the steps that ran. Merge commits carry none of these trailers.
 - **WHEN** the message's subject differs from the issue title
 - **THEN** nothing is committed
 - **AND** the prose pass receives the message back with the reason
+
+#### Scenario: A gate-one commit refers to its item without closing it
+
+- **WHEN** a role under #150 commits gate one's specification, and the issue title holds
+  `Fixes #12`, and the item is issue #40
+- **THEN** the subject is the title without `Fixes #12`, and the body ends with `Refs #40`
+
+#### Scenario: Gate two's commit is signed and closes the item
+
+- **WHEN** gate two pushes its implementation onto the pull request through `commitOnBranch`
+- **THEN** the commit is signed and verified as one `produce()` makes, and its body ends with
+  `Closes #N`
 
 #### Scenario: Bug-hunter signs again after the prose pass edits a file
 
@@ -67,10 +84,9 @@ For a role whose `skills` lists `prose`, the prose pass SHALL write the pull req
 `prose sign`. The code that creates or edits the pull request SHALL run `prose verify-post` on
 the description first, as the signed-publishing capability requires.
 
-The pull request body holds, in order: the opening block, which is, for a role under
-the opening text the two-gate workflow (#150) places first (gate one's "specification only"
-opening and the paths it refused to publish; at gate two, the note that the item changed after
-the spec was approved, and bug-hunter's open decisions), then the line linking the pull request to its item; then the description; then, from the marker `<!-- igor:evidence -->` on, the evidence section that
+The pull request body holds, in order: the opening block: the line linking the pull request to its item, preceded, for a role under
+the two-gate workflow (#150), by the text #150 places first (`review-evidence`, #190, sets where
+that text goes); then the description; then, from the marker `<!-- igor:evidence -->` on, the evidence section that
 `review-evidence` (#190) has the code assemble. Every line the code adds after the description
 goes after the marker. The code assembles the evidence section from its own record of the run,
 so it is not signed and is not part of the description.
@@ -85,9 +101,12 @@ the body, and the code cannot strip one from a signed description without breaki
 signature. So a gate-one description that holds a closing keyword SHALL be returned to the prose
 pass, as text that fails verification is.
 
-The description SHALL describe the pull request as it stands. When Igor pushes another commit
-to the pull request, the description SHALL be rewritten, signed again, and verified before it
-replaces the old one. Replacing the description leaves the evidence section to #190.
+The description SHALL describe the pull request as it stands. When Igor pushes a commit that
+changes what the worker did, gate two's implementation or a revision under #150, the description
+SHALL be rewritten, signed again, and verified before it replaces the old one, and the opening
+block SHALL be recomputed for that push. A catch-up resolution, which only brings the base
+branch in, leaves the description as it is. Replacing the description leaves the evidence
+section to #190, which rebuilds it on the same push.
 
 #### Scenario: A signed description is published
 
@@ -99,5 +118,10 @@ replaces the old one. Replacing the description leaves the evidence section to #
 
 #### Scenario: The description follows the pull request
 
-- **WHEN** Igor pushes a follow-up commit to its pull request
+- **WHEN** Igor pushes gate two's implementation or a revision to its pull request
 - **THEN** the description is rewritten, signed and verified before it is replaced
+
+#### Scenario: A resolution leaves the description
+
+- **WHEN** Igor pushes a catch-up resolution to its pull request
+- **THEN** the description is left as it is

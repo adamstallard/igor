@@ -17,20 +17,31 @@ fixes this for every piece of text an Igor publishes:
   pinned skills from #174's `igor` plugin. The org base may set it for every role and a role may
   add to it, never remove; an unknown name is refused at load. Igor's code checks per listed
   skill, and a role that lists neither `prose` nor `bug-hunter` publishes as today. Everything
-  below applies to a role according to its list.
+  below applies to a role according to its list. *Rejected:* a switch for "posts" and
+  "commits", which cannot say which skill's check applies.
 - **Every text a model writes for an Igor to publish is signed by the model step that wrote
   it.** That covers pull request descriptions, replies, questions, and any other model-written
   post to GitHub, Discord or Linear. The step signs with the prose skill's `prose sign`, which
   appends a `prose ✓ <6 hex>` footer hashed over the text above it.
 - **The code that posts runs `prose verify-post` on the exact text first**, and posts nothing
   that fails.
-- **A commit is written and signed by two model steps before `produce()` commits it:**
+- **Every commit Igor pushes, other than a merge, is written and signed by two model steps
+  first**, whether
+  `produce()` opens a pull request with it or #150's `commitOnBranch` pushes gate two's
+  implementation or a revision (decided 2026-10-13, so that #189's checks, which run on the signed tree, test what is
+  committed on every push; rejected: signing only in `produce()`, which leaves gate two's commit unsigned):
   - bug-hunter, in its caller-commits mode, returns `Bug-hunter:` and `Bug-hunter-Tree:`;
-  - the prose pass writes the message (the issue title as the subject, an explanation, and
-    `Closes #N`), runs `prose check`, and returns the `Prose: ✓ <tree>:<message>` trailer.
+  - the prose pass writes the message, runs `prose check`, and returns the
+    `Prose: ✓ <tree>:<message>` trailer. The subject is the issue title with any closing
+    keyword dropped. The body explains the change and ends with `Closes #N` on a commit that
+    completes the item: any commit of a role outside #150, and gate two's implementation commit
+    under it. It ends with `Refs #N` on
+    gate one's and each revision's commit (decided 2026-10-13, matching #150's rule that a
+    gate-one commit closes nothing; rejected: `Closes #N` everywhere, which would close the
+    issue when gate one merges).
 
-  `produce()` commits through the API only when `prose verify-staged` accepts the trailer, the
-  staged tree equals both signed trees, and the subject equals the issue title.
+  Igor commits through the API only when `prose verify-staged` accepts the trailer, the staged
+  tree equals both signed trees, and the subject is the issue title as above.
 - **A failed check goes back to the model step with the reason**, to redo and sign again. After
   two attempts, the code publishes nothing and records the failure.
 - **Text the code assembles from recorded state is not signed:** handoffs, stop receipts and
@@ -43,7 +54,14 @@ fixes this for every piece of text an Igor publishes:
   after the description starts at the marker `<!-- igor:evidence -->`, which
   `review-evidence` (#190) defines. The description is exactly the span between the opening
   block and the marker, or to the end where there is no marker, and `prose verify-post` runs on
-  exactly that span. Neither the opening block nor the evidence section is signed.
+  exactly that span. Neither the opening block nor the evidence section is signed. Rejected:
+  signing the whole body, which would put code-assembled text under the model's signature and
+  break it each time the code rebuilds its section.
+- **The description is rewritten only when what the worker did changes** (decided 2026-10-13):
+  on gate two's implementation and on each revision, with the opening block recomputed for that
+  push. A catch-up resolution, a push that only merges the base branch in and resolves its
+  conflicts, leaves it as it is. Rejected: rewriting on every push, which costs
+  a model call for a resolution that changes nothing the description says.
 
 Replies from `directed-interaction`, and the numbered questions from
 [#140](https://github.com/adamstallard/igor/pull/140), are published text, so this change
@@ -68,10 +86,11 @@ governs them. Neither change is edited here: the rule lives in one place, and th
   adding.
 
 - `task-execution`: owns producing the artifact, so it gains what is specific to a commit and a
-  pull request. The commit is verified against the signed trees, the prose trailer and the
-  issue title before `produce()` commits it. The pull request description is written by the
-  prose pass instead of cut from the worker's final message, is published uncut, and is
-  re-signed whenever Igor pushes another commit to the pull request.
+  pull request. Every commit Igor pushes, other than a merge, is verified against the signed
+  trees, the prose trailer and the issue title before it is committed, whether by `produce()`
+  or by #150's `commitOnBranch`. The pull request description is written by the prose pass
+  instead of cut from the worker's final message, is published uncut, and is re-signed on gate
+  two and on each revision, never on a catch-up resolution.
 
 ## Impact
 
@@ -80,8 +99,7 @@ governs them. Neither change is edited here: the rule lives in one place, and th
   for the skills it lists; task 4.1 measures the cost per item.
 - **Depends on the prose and bug-hunter skills** from the shared-skills repository, which is not
   public yet. Prose is in review there, and so is bug-hunter's caller-commits mode. Igor loads
-  both from a pinned directory with `--add-dir`, as
-  [#152](https://github.com/adamstallard/igor/issues/152) decides.
+  both as the `igor` plugin, with `--plugin-dir`, as `pinned-skills` (#174) builds it.
 - **Works whichever of this change and `review-evidence` (#190) lands first.** Where #190 has
   shipped, the description ends at its marker. Where it has not, there is no marker, and the
   description runs to the end of the body.

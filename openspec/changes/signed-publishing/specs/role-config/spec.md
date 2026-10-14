@@ -40,6 +40,11 @@ A role that declares no `skills`, and inherits none, uses no pinned skill.
 
 Inheritance SHALL apply three merge semantics, selected per field:
 
+The `allow` vocabulary is a **closed set**, so a typo fails validation rather than silently
+granting nothing: `comment`, `review-comment`, `draft-pr`, `pr`, `label`, `merge`, `send`. A role
+that lists any other word is refused at load, naming the valid actions. The safe default an org
+base should ship with is `[draft-pr, comment]` — everything reversible, nothing final.
+
 - **Monotonic** for permission-shaped fields (`allow`, `commands`, `budget_share`,
   repositories and surfaces in reach): a role MAY restrict what it inherits and MUST NOT
   widen it.
@@ -47,11 +52,6 @@ Inheritance SHALL apply three merge semantics, selected per field:
   level wins.
 - **Append** for `instructions`, `lane` and `skills`: levels accumulate, with lane constraints
   conjoined. A role may add to an appended list it inherits and never drop an entry from it.
-
-The `allow` vocabulary is a **closed set**, so a typo fails validation rather than silently
-granting nothing: `comment`, `review-comment`, `draft-pr`, `pr`, `label`, `merge`, `send`. A role
-that lists any other word is refused at load, naming the valid actions. The safe default an org
-base should ship with is `[draft-pr, comment]` — everything reversible, nothing final.
 
 #### Scenario: Role narrows a permission
 
@@ -66,8 +66,10 @@ base should ship with is `[draft-pr, comment]` — everything reversible, nothin
 #### Scenario: Role attempting to widen its commands is rejected
 
 - **WHEN** the org base permits the command `npm test` and a role also declares `npm install`
-- **THEN** validation fails, for the reason widening `allow` fails: a role that may give itself one
-  command it was not given may give itself any, since nothing bounds which
+- **THEN** validation fails, for the reason widening `allow` fails: a role that can grant
+  itself a command can grant itself every command, since only an exact match can be checked
+  without a pattern matcher, and a matcher that lets one wider pattern through also lets `*`
+  through
 
 #### Scenario: An action outside the vocabulary is refused
 
@@ -93,4 +95,5 @@ base should ship with is `[draft-pr, comment]` — everything reversible, nothin
 #### Scenario: Skills accumulate down inheritance
 
 - **WHEN** the org base declares `skills: [prose]` and a role declares `skills: [bug-hunter]`
-- **THEN** the role's effective `skills` holds both, and the role cannot drop the org base's entry
+- **THEN** the role's effective `skills` holds both, and the role cannot drop the org base's
+  entry

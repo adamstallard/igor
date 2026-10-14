@@ -93,7 +93,9 @@ measures.
 ### 1. Igor opens the prose hook's gate for its worker
 
 **Decided:** Igor runs `prose start` for the worker's session id itself, before the worker
-starts.
+starts. *Rejected:* leaving the worker to open the gate with its own first call, which spends
+a turn, and where the worker's first act is a file write, has that write blocked by the gate
+described below.
 
 If prose's hooks are installed for the user Igor runs as, the first-write gate blocks a
 worker's first file write until prose's first call has run in that session. The gate is per
@@ -115,16 +117,18 @@ rather than inherited, so `start` runs with the same values the worker gets.
 in its hook payload. Task 0.3 measures it.
 
 **Interactions.** `--bare` would skip hooks, and the gate with them, but it also drops the
-seat's OAuth token (#144), so it is no way around the gate. #152 loads skills with `--add-dir`,
-which loads a skill but not its hooks, so whether the gate runs in a worker depends on the hooks
-in the server user's settings. Where it does not run, the steps above cost one `start` call.
+seat's OAuth token (#144), so it is no way around the gate. `pinned-skills` (#174) loads skills
+as the `igor` plugin with `--plugin-dir`; the plugin declares no hooks and the install wires
+none, so the plugin itself never starts the gate. The gate still runs where prose's hooks are
+installed for the user Igor runs as, and Igor's own `prose start` above opens it there.
 
 ### 2. The worker is granted the scripts it signs with, by path
 
 **Decided:** a role that lists `prose` or `bug-hunter` is granted the commands its skills
 need, from the list below, by path into the
-pinned skills directory from #152. Where Igor's own code can run a script instead, as in item
-1, it does, and the role needs no grant for it.
+pinned skills directory that `pinned-skills` (#174) installs. Where Igor's own code can run a script instead, as in item
+1, it does, and the role needs no grant for it. *Rejected:* granting the scripts by bare
+name, which would run whatever copy is first on the worker's `PATH`.
 
 `prose check`, `prose sign` and bug-hunter's scripts in caller-commits mode are shell commands
 the model step runs, and the `commands` list in igor-lore's `roles/org.yaml` allows none of
@@ -140,7 +144,8 @@ them without this grant.
 | `git add -A` after the worker ends | code | task 2.1 |
 | `prose verify-post`, `prose verify-staged` | code | verifying is the code's half |
 
-So the grant, with `<skills>` the pinned directory:
+So the grant, where `<skills>` stands for `<skills_dir>/skills`, the `skills/` folder of the
+pinned directory (#174):
 
 - `python3 <skills>/prose/scripts/prose.py check`
 - `python3 <skills>/prose/scripts/prose.py sign`
@@ -152,7 +157,8 @@ Bug-hunter's tests run under the `npm test` and `npx vitest run` entries the lis
 ### 3. The clone's staged tree is measured against the API's tree before either is trusted
 
 **Decided:** measure first (task 0.4), and if the two trees can differ, sign and verify against
-the API's tree instead of the clone's index.
+the API's tree instead of the clone's index. *Rejected:* assuming the two trees agree, which
+fails silently on the first executable or deletion where they do not.
 
 `prose verify-staged` checks the git index, but Igor builds its commit through the Git Data
 API (`createBranchWithFiles`) and never stages in its clone. Comparing the signed trees with
@@ -169,7 +175,8 @@ executable file among the changes.
 ### 4. Igor's posting code refuses an unsigned post
 
 **Decided:** a test that Igor itself refuses a post without a valid footer, with no hook
-installed (task 1.4).
+installed (task 1.4). *Rejected:* relying on prose's posting hook, which guards only posts made
+from a Claude Code session.
 
 Prose's posting hook guards only posts made from a Claude Code session. Igor posts from its
 own code, so `prose verify-post` in Igor's posting code is the only guard.
