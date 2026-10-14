@@ -70,10 +70,22 @@ For a role whose `skills` lists `prose`, the code that publishes a model-written
 fails. The code verifies because the model's word is not
 proof.
 
+The code SHALL publish the verified text exactly. A pull request body is the one place the
+code adds to it: the separate change `review-evidence` (#190) has Igor's code append an
+evidence section after the signed text, starting at the marker `<!-- igor:evidence -->`. The
+code assembles that section, so it is not signed and is not part of the signed text.
+
+In a pull request body, the signed text is everything before the marker, apart from the
+whitespace that separates it from the marker, and `prose verify-post` runs on that part alone.
+Where there is no marker, because #190 has not shipped, the signed text is the whole body.
+
 #### Scenario: Signed text is published unchanged
 
 - **WHEN** a model step returns text whose footer verifies
 - **THEN** the code publishes exactly that text
+- **AND** in a pull request body, the part before `<!-- igor:evidence -->`, or the whole body
+  where there is no marker, is exactly that text, and anything from the marker on is the
+  evidence section Igor's code assembled
 
 #### Scenario: Text edited after signing is not published
 

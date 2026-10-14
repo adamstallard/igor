@@ -67,14 +67,27 @@ For a role whose `skills` lists `prose`, the prose pass SHALL write the pull req
 `prose sign`. The code that creates or edits the pull request SHALL run `prose verify-post` on
 the description first, as the signed-publishing capability requires.
 
+The separate change `review-evidence` (#190) has Igor's code append an evidence section to
+the pull request body, starting at the marker `<!-- igor:evidence -->`. The code assembles that
+section from its own record of the run, so it is not signed and is not part of the description.
+#190 builds the section when the pull request is opened and replaces it on each later push.
+
+The description is everything in the body before the marker, apart from the whitespace that
+separates it from the marker. Where there is no marker, because #190 has not shipped, the
+description is the whole body. The description SHALL be exactly the signed text, footer
+included, and the code SHALL NOT cut it: the 700-character cap (`PR_BODY_LIMIT`) on the
+worker's own summary does not apply to it.
+
 The description SHALL describe the pull request as it stands. When Igor pushes another commit
 to the pull request, the description SHALL be rewritten, signed again, and verified before it
-replaces the old one.
+replaces the old one. Replacing the description leaves the evidence section to #190.
 
 #### Scenario: A signed description is published
 
 - **WHEN** the prose pass returns a description whose footer verifies
-- **THEN** the pull request is created with exactly that description
+- **THEN** the pull request is created with a body whose part before `<!-- igor:evidence -->`,
+  or whole body where there is no marker, is exactly that description
+- **AND** anything from the marker on is the evidence section Igor's code assembled, not signed
 
 #### Scenario: The description follows the pull request
 

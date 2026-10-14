@@ -51,10 +51,13 @@
 
 ## 3. The pull request description
 
-- [ ] 3.1 Replace the transcript excerpt with a description the prose pass writes and signs
+- [ ] 3.1 Replace the cut of the worker's final message (`prBody`, capped by `PR_BODY_LIMIT`)
+      with a description the prose pass writes and signs, published uncut
 - [ ] 3.2 Rewrite, sign and verify it again whenever Igor pushes to the pull request
-- [ ] 3.3 Tests: a signed description is published unchanged; a follow-up commit replaces it
-      with a newly signed one
+- [ ] 3.3 Tests: a signed description is published unchanged and uncut as the body's part before
+      `<!-- igor:evidence -->`, or as the whole body where there is no marker; an evidence
+      section after the marker (`review-evidence`, #190) is not verified as part of it; a
+      follow-up commit replaces the description with a newly signed one
 
 ## 4. Measuring
 

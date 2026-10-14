@@ -1,7 +1,10 @@
 ## Why
 
 An Igor publishes text that no check has read: the commit message is the issue title, and the
-pull request description is the last 700 characters of the worker's transcript. Nothing holds
+pull request description is the start of the worker's final message. A message longer than
+700 characters is cut to its first 700. The cut falls at the last sentence end in those 700
+characters, where that end comes after character 350; otherwise it falls at character 700.
+A pointer to the full transcript follows the cut. Nothing holds
 either to the prose rules, and nothing records that bug-hunter ran over the code being
 committed. Issue [#139](https://github.com/adamstallard/igor/issues/139) decides the rule that
 fixes this for every piece of text an Igor publishes:
@@ -33,6 +36,11 @@ fixes this for every piece of text an Igor publishes:
 - **Text the code assembles from recorded state is not signed:** handoffs, stop receipts and
   claim messages. The code's authors wrote it and it is reviewed as code. A handoff is needed
   exactly when a model call may be impossible, so `graceful-handoff` stays as it is.
+- **A pull request body may end in an evidence section the code assembles.** The separate
+  change `review-evidence` (#190) has Igor's code append one, starting at the marker
+  `<!-- igor:evidence -->`. The description is everything before the marker, or the whole body
+  where there is none, and is exactly the signed text. The evidence section is not signed and
+  not part of the description.
 
 Replies from `directed-interaction`, and the numbered questions from
 [#140](https://github.com/adamstallard/igor/pull/140), are published text, so this change
@@ -59,8 +67,8 @@ governs them. Neither change is edited here: the rule lives in one place, and th
 - `task-execution`: owns producing the artifact, so it gains what is specific to a commit and a
   pull request. The commit is verified against the signed trees, the prose trailer and the
   issue title before `produce()` commits it. The pull request description is written by the
-  prose pass instead of cut from the transcript, and is re-signed whenever the pull request
-  changes.
+  prose pass instead of cut from the worker's final message, is published uncut, and is
+  re-signed whenever Igor pushes another commit to the pull request.
 
 ## Impact
 
@@ -71,5 +79,8 @@ governs them. Neither change is edited here: the rule lives in one place, and th
   public yet. Prose is in review there, and so is bug-hunter's caller-commits mode. Igor loads
   both from a pinned directory with `--add-dir`, as
   [#152](https://github.com/adamstallard/igor/issues/152) decides.
+- **Correct whichever of this change and `review-evidence` (#190) lands first.** Where #190
+  has shipped, the description is the body before its marker. Where it has not, there is no
+  marker, and the description is the whole body.
 - **No GitHub Action.** Igor runs the checks in its own pipeline, so a CI check would only
   re-verify its work (#139, section 4).
