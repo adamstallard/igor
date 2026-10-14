@@ -14,8 +14,10 @@ marked with the call that started them. Each entry SHALL hold:
 - its input: the command for a shell call (`Bash`), the path for a file tool (`Read`, `Write`,
   `Edit`, `NotebookEdit`), the pattern for a search (`Grep`, `Glob`), and for any other tool its
   input as given;
-- whether the result was an error, and the exit code where the stream states one;
-- for a shell call or an error result, the last 2,000 characters of the output.
+- whether the result was an error, and for a shell call its exit code, read as *A shell call's exit
+  code is read from its result's text* says;
+- for a shell call or an error result, the last 2,000 characters of the output as the stream
+  gives it: standard output and standard error together, and the `Exit code <n>` prefix kept.
 
 The log SHALL NOT hold what a file tool read or wrote, nor the text of an edit. A shell call's
 output is kept as output, whatever the command printed.
@@ -41,17 +43,53 @@ state branch.
 - **THEN** the failure is reported
 - **AND** the run's capacity observation is still written
 
-### Requirement: The action log carries no credential the Igor knows
+### Requirement: A shell call's exit code is read from its result's text
 
-Each string SHALL be redacted as the call is collected, before anything reads or writes it.
-Redaction replaces each of these with `[redacted]`:
+A shell call's exit code SHALL be recorded as one of three:
 
-- the token of every seat the Igor has read, whatever its source;
+- `0`, where the result is not an error;
+- the number `<n>`, where the result is an error and its text begins `Exit code <n>`;
+- no code, where the result is an error and its text does not begin that way. The entry then
+  holds its error status and output, and no code.
+
+A call that never returned a result, as when the worker is killed during it, SHALL be recorded
+with no result: no error status, no code and no output.
+
+The code is parsed from a text prefix, not read from a field. A change to that text's format
+SHALL leave an error result with its error status and no code, never with a wrong code.
+
+#### Scenario: A failing command's code is parsed from its text
+
+- **WHEN** a shell call's result is an error whose text begins `Exit code 128`
+- **THEN** the entry records exit code 128
+
+#### Scenario: A successful command records 0
+
+- **WHEN** a shell call's result is not an error
+- **THEN** the entry records exit code 0
+
+#### Scenario: An error in an unknown format records no code
+
+- **WHEN** a shell call's result is an error whose text does not begin `Exit code`
+- **THEN** the entry records the error and no exit code
+
+### Requirement: Credential redaction replaces every credential the Igor knows
+
+*Credential redaction* is one rule, applied wherever this or another change says text is
+redacted. It replaces each of these with `[redacted]`:
+
+- the token of every seat the Igor has read, whatever its source and whatever its variable's
+  name;
 - the value of every variable in the worker's environment, and in the Igor's own, whose name
   contains `TOKEN`, `KEY`, `SECRET`, `PASSWORD` or `CREDENTIAL`, matched exactly, where the value
   is at least 8 characters long;
-- a private key block, an `age` encryption secret key (`AGE-SECRET-KEY-1…`), and a string in the shape of a GitHub, Anthropic, AWS
-  or Slack token.
+- a private key block (`-----BEGIN … PRIVATE KEY-----` to its `END` line), an `age` encryption
+  secret key (`AGE-SECRET-KEY-1…`), and a token by its prefix: GitHub (`ghp_`, `gho_`, `ghu_`,
+  `ghs_`, `ghr_`, `github_pat_`), Anthropic (`sk-ant-`), an AWS access key ID (`AKIA` and 16
+  capital letters or digits), and Slack (`xoxa-`, `xoxb-`, `xoxp-`, `xoxr-`, `xoxs-`).
+
+The action log SHALL apply credential redaction to each string as the call is collected, before
+anything reads or writes it.
 
 #### Scenario: The seat token is redacted
 
@@ -62,6 +100,11 @@ Redaction replaces each of these with `[redacted]`:
 
 - **WHEN** a seat's token comes from its `token_file`, and a command the worker runs prints it
 - **THEN** the logged output holds `[redacted]` where the token was
+
+#### Scenario: A short value is not a credential
+
+- **WHEN** a variable named `DEPLOY_KEY` holds a 3-character value
+- **THEN** credential redaction leaves that value in place
 
 ### Requirement: What the action log keeps follows who can read the store
 

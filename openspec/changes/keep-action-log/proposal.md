@@ -1,21 +1,26 @@
 ## Decisions for the reviewer
 
+Each is the reviewer's to decide, except where marked **Decided**.
+
 1. **Keep a log of the worker's tool calls, not its raw stream.** Each call keeps its tool, its
    command or path cut to 1,000 characters, whether it failed, and for a shell command the last
    2,000 characters of its output. Nothing a file tool read or wrote is kept, nor an edit's
    text; the artifact carries what was written. A shell command's output is kept, even where
    the command printed a file. *Rejected:* saving the stream whole. It holds every file the
    worker read, in full.
-2. **Redact the credentials the Igor knows, by exact value, as well as by pattern, as each call
-   is collected.** The values matched exactly are every seat token the Igor has read, from
-   whatever source, and every value of 8 characters or more in a variable whose name contains
-   `TOKEN`, `KEY`, `SECRET`, `PASSWORD` or `CREDENTIAL`. The Igor gives the worker its seat
-   token (`src/execute.ts:868`), so `env` prints it, and until #163 is fixed the worker can read
-   the Igor's own credentials too. Redacting at collection means `review-evidence`, which lists
-   the worker's commands in the pull request body, reads them already redacted. *Rejected:*
-   patterns alone, which miss a token whose shape no pattern names. *Rejected:* matching
-   variables by name alone, which misses a seat whose `token_env` names a variable such as
-   `SEAT_A`.
+2. **Redact the credentials the Igor knows, by exact value as well as by pattern, as each call
+   is collected.** The rule, *credential redaction*, is stated in this change's spec. Matching
+   seat tokens by exact value matters because the Igor gives the worker its seat token (`src/execute.ts:868`), so `env`
+   prints it, and until #163 is fixed by `worker-user` (#175) the worker can read the Igor's own credentials too.
+   Redacting at collection means `review-evidence` (#190), which lists the worker's commands in
+   the pull request body, reads them already redacted.
+   *Rejected:* patterns alone, which miss a token whose shape no pattern names. *Rejected:*
+   matching variables by name alone, which misses a seat whose `token_env` names a variable such
+   as `SEAT_A`.
+
+   **Decided (Adam, 2026-10-13): this is the only redaction rule.** `loop-verifies-commands`
+   (#189) redacts published check output by it, and `review-evidence` (#190) every command, path
+   and output in its table. Neither restates it.
 3. **What is kept depends on who can read the store, asked of GitHub at write time.** A private
    store keeps the whole log. A public store keeps no output text. It keeps commands and paths
    only where the worked repository is public too; otherwise it keeps only which tools ran and
@@ -35,6 +40,12 @@
 5. **Kept for every run that started the worker**, whatever its outcome, the worker killed
    included. *Rejected:* keeping it only beside an artifact. A run that failed is where somebody
    most needs to see what was done.
+6. **A shell call's exit code is parsed from the start of its result's text.** The stream holds
+   no field for it: a failing call's result is an error whose text begins `Exit code <n>`
+   (`design.md`). The log records `0` for a result that is not an error, `<n>`
+   for an error beginning that way, and no code for any other error. A change to that text's
+   format degrades the entry to its error status, never to a wrong code.
+   *Rejected:* dropping the exit code, which loses what tells a test failure from a crash.
 
 ## Why
 
@@ -73,6 +84,8 @@ None.
   log in `recordExecution` after the transcript.
 - `src/github.ts`: `isPublic` is reused for the store and the worked repository.
 - Overlaps: #175 (`worker-user`) removes the worker's route to the Igor's credentials; until it
-  lands, decision 2 is the only guard on this log. `review-evidence` reads the command list
-  this change collects, redacted and before it is cut to what the store's visibility allows (decision 3), since the pull request is read by the
-  worked repository's readers, not the store's.
+  lands, decision 2 is all that keeps the Igor's credentials, which the worker can then read,
+  out of this log. `review-evidence` (#190) reads the command
+  list this change collects, redacted and before it is cut to what the store's visibility
+  allows (decision 3), since the pull request is read by the worked repository's readers, not
+  the store's.
