@@ -5,7 +5,7 @@
 A role file SHALL accept `skim_max_paths` and `skim_max_lines`. They are the largest number of
 paths a run changed and published, and the largest number of lines it added and removed counted
 together, with which a pull request may still be labelled `review: skim`. Both SHALL be whole
-numbers of at least 0. Each may be set in the org base, the settings every role inherits, and in
+numbers of at least 0; a role with any other value SHALL be refused at load, naming the key. Each may be set in the org base, the settings every role inherits, and in
 a role, and the most specific level SHALL win. `skim_max_paths` SHALL default to 5 and
 `skim_max_lines` to 200.
 

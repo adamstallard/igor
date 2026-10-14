@@ -41,7 +41,7 @@
 
       | Result | Command |
       |---|---|
-      | <exit code, or `failed`> | `<command>` |
+      | <exit code, `failed`, or `no result`> | `<command>` |
 
       </details>
       ```
@@ -62,8 +62,10 @@
       | Files changed | `<n>, not checked against scope: no push to this pull request has been checked` |
       | Spec scenarios | ``**<k> of <n> changed have no test:** `<capability>: <Scenario>`, `<capability>: <Scenario>` `` |
       | Spec scenarios | `none changed` |
+      | Spec scenarios | `not checked: a specification pull request carries no tests` |
       | Spec scenarios | `not checked: the repository has no openspec/specs/` |
       | Spec scenarios | `not checked: the spec-trace skill is not installed` |
+      | Spec scenarios | `not checked: spec-trace failed` |
       | Sandbox denials | ``**<n>**: `<command>`, `<command>` `` |
       | Cost | `not reported, <n> turns` |
 
@@ -73,23 +75,39 @@
       and an earlier one was, the scope part is that earlier result's, followed by
       ` (found by an earlier push; this push was not checked)`.
 
-      At gate one, the scope is the one change directory the pull request adds, so with none or
-      more than one there is nothing to check against.
+      Before `review-evidence` ships, `scope-check` (#187) writes the Files changed value on a line
+      of its own, behind a prefix of its own, in this wording, and the line and the row must not
+      be reworded apart. Once `review-evidence` ships, the Files changed row replaces that line.
 
       Where the run declared that it undid a base change, the Files changed value, whichever it
       is, ends with ``; undoes the base's change to `<path>` ``, listing each such path as
       `` `<path>`, `<path>` ``.
 
       In a failing Tests row, `<result>` is one per check, in the order the role declares them:
-      `` `<check>` passed ``, `` `<check>` exited <code> ``, `` `<check>` timed out after <n>
-      minutes `` or `` `<check>` was not run ``. Under the table, each check that failed or timed
-      out gets a ``<details><summary>Output of `<check>`</summary>`` block holding the end of its
-      output, as `loop-verifies-commands` keeps it. Before `review-evidence` ships,
-      `loop-verifies-commands` writes the Tests value on a line of its own, in this wording, and
-      the two must not be reworded apart. Once it ships, the Tests row replaces that line.
+      `` `<check>` passed ``, `` `<check>` exited <code> ``, `` `<check>` failed with no exit
+      code `` (killed by a signal, or not found), `` `<check>` timed out at the <n>-minute limit ``
+      (`<n>` is the role's `check_minutes`) or `` `<check>` was not run ``. Under the table, in
+      the order the role declares the checks, each check that failed or timed out gets this
+      block, holding the end of its output as `loop-verifies-commands` keeps it, in a fence one
+      backtick longer than the longest run of backticks in the output, and at least three:
 
-      A command's Result is the exit code `keep-action-log` recorded, or `failed` where it
-      recorded an error with no code.
+      ````
+      <details><summary>Output of `<check>`</summary>
+
+      ```
+      <the end of the output>
+      ```
+
+      </details>
+      ````
+
+      The commands' `<details>` block comes after every output block. Before `review-evidence` ships,
+      `loop-verifies-commands` writes the Tests value on a line of its own, in this wording, and
+      the line and the row must not be reworded apart. Once `review-evidence` ships, the Tests
+      row replaces that line.
+
+      A command's Result is the exit code `keep-action-log` recorded, `failed` where it recorded
+      an error with no code, or `no result` for a call that never returned.
 
       Show at most 30 commands in the list. Where more were run, end the list with the line for
       the action log's tier, the level of detail `keep-action-log` keeps for the store
@@ -97,17 +115,17 @@
 
       | Tier | Line |
       |---|---|
-      | `whole` or `no-output` | `and <n> more in the action log` |
-      | `tools-only` | `and <n> more, not kept: the action log of a private repository in a public store keeps no commands` |
+      | `whole` or `no-output` | `and <m> more in the action log` |
+      | `tools-only` | `and <m> more, not kept: the action log of a private repository in a public store keeps no commands` |
 
-      Name at most 10 paths outside
-      scope, and at most 10 denied commands, then `and <n> more`. Cut each command shown to 200
+      `<m>` is how many are left out. Name at most 10 paths outside scope, and at most 10
+      denied commands, then `and <m> more`. Cut each command shown to 200
       characters. Leave out the commands' `<details>` block when the Commands row says
       `not recorded`.
 
       Quote every command and path the table shows: a newline becomes a space, `|` becomes
-      `\|`, and a value holding a backtick is quoted with a longer run of backticks. Put check
-      output in a fence longer than any run of backticks it holds. Redact each first, with the
+      `\|`, and a value holding a backtick is quoted with a longer run of backticks. Redact each
+      first, with the
       credential redaction function `keep-action-log` (#188) task 3.1 describes.
 - [ ] 2.2 Write `reviewLabel(record, role)`, returning `review: skim` only when all four
       conditions of *One review label sorts a pull request for triage, never for merging* hold,
@@ -126,7 +144,12 @@
       `prose verify-post` on the description alone.
 - [ ] 2.4 Add `CodeHost.setReviewLabel(artifact, label)`, which adds one label and removes the
       other, and `CodeHost.replaceEvidence(artifact, table)`, which replaces the body from
-      `<!-- igor:evidence -->` to its end. Implement both in `src/github.ts`.
+      `<!-- igor:evidence -->` to its end. Where the body has no marker, as on a pull request
+      opened before this change shipped, it removes every line that starts with
+      `**Tests** (checked by Igor, not reported by the worker): ` (the prefix of
+      `loop-verifies-commands`'s line) or
+      `**Files changed** (checked by Igor, not reported by the worker): ` (the prefix of
+      `scope-check`'s line), then appends the section. Implement both in `src/github.ts`.
 - [ ] 2.5 Call them after `produce()`, which opens every new pull request, gate one's included;
       after a catch-up's `resolve()`; and, for a `two-gate`
       role, after gate two's and each revision's publish (#150 task 7.1), not after a clean
@@ -143,9 +166,10 @@
       push, checked or not.
 - [ ] 3.4 Fill the Spec scenarios row by running
       `python3 <skills_dir>/skills/spec-trace/scripts/spec_trace.py report --include-changes`
-      and `check` in the pull request's tree, from the pinned skills directory of `pinned-skills`
-      (#174). Keep the scenarios of the spec files the run published. Where the tree has no
-      `openspec/specs/`, or the script is missing, use the matching `not checked` value from 2.1.
+      in a tree holding exactly the pull request's head, from the pinned skills directory of
+      `pinned-skills` (#174). Keep the scenarios of the spec files the pull request changes
+      against its base. At gate one, where the tree has no `openspec/specs/`, where the script is
+      missing, or where it exits non-zero, use the matching `not checked` value from 2.1.
 
 Each of 3.1 to 3.4 is done when its source change ships. Until then, its row shows the
 `not checked` or `not recorded` text from 2.1. If this change is archived before its source
@@ -157,3 +181,8 @@ changes ship, file an issue for each task still open.
 - [ ] 4.2 A test for each verbatim value in 2.1, including that no row reads `pass` when its
       source is absent.
 - [ ] 4.3 The Spec scenarios row never changes the label.
+
+## 5. Archive
+
+- [ ] 5.1 Archive this change only after `keep-action-log` (#188) is archived, so the
+      *credential redaction* requirement it points at is in force first.

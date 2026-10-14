@@ -41,9 +41,9 @@ own code around the worker) checked about the run. From that table the loop sets
    *Rejected:* having the model step write the table. The model would then restate the facts it
    is being checked against.
 6. **The Files row and the label take the scope result `scope-check` states for each push.**
-   `scope-check` does not check a resolution, which carries the base branch's changes that no
-   issue names. For such a push the scope result shown is the last checked one, marked as from
-   an earlier push. *Rejected:* making every resolution `review: read`, which would
+   For a push `scope-check` does not check, such as a resolution, the scope result shown is the
+   last checked one, marked as from an earlier push. `scope-check` supplies both the result and
+   that marking; this change only shows them. *Rejected:* making every resolution `review: read`, which would
    relabel a reviewed pull request each time the base moved.
 
 **Decided (Adam, 2026-10-13):**
@@ -58,28 +58,25 @@ own code around the worker) checked about the run. From that table the loop sets
 - **The Tests row's wording is the one wording for the checks' result, wherever it is
   published.** Until this change ships, `loop-verifies-commands` (#189) writes a line that uses
   the same wording verbatim. Once it ships, the Tests row replaces that line.
-- **This change sets the order of what follows the summary.** Once it ships, the body is the
-  worker's summary (or, for a role under #153, the signed description), then the evidence
-  section. Until it ships, the lines that other changes write follow the summary in a fixed
-  order: the checks line from `loop-verifies-commands` (#189), then the scope line from
-  `scope-check` (#187). Once it ships, the evidence section replaces both lines.
+- **This change sets the order of what follows the summary**, in its requirement *A pull
+  request body holds a capped summary, then the loop's evidence*. Before this change ships,
+  `loop-verifies-commands` (#189) and `scope-check` (#187) each write their result as a line of
+  their own; the same requirement orders those lines, and once this change ships the table
+  replaces them.
 
 - **The Spec scenarios row comes from spec-trace.** The loop runs the `spec-trace` skill's
   script from the pinned skills directory that `pinned-skills` (#174) installs. It uses that
   script as it is: no separate download, and no rewrite in TypeScript. The Igor image carries `python3` (#192), which #153's loop
-  already needs for `prose.py`. The row reads `not checked` where the repository has no
-  `openspec/specs/` or the skill is not installed. The worker loads `igor:spec-trace` as it loads
-  `prose` and `bug-hunter`, and tags the scenario on each test it writes. The loop's run of the
+  already needs for `prose.py`. The row reads `not checked`, with the reason, where it cannot
+  apply. A role whose `skills` lists `spec-trace` has its worker load `igor:spec-trace`, as
+  `signed-publishing` (#153) has it load `prose` and `bug-hunter`, and tag the scenario on each test it writes. The loop's run of the
   script is the check: deterministic, with no model call.
 
 **Where this meets #153.** For a role that lists `prose`, the pull request body is the signed
 description followed by a code-assembled evidence section, which starts at the marker
-`<!-- igor:evidence -->`. `prose verify-post` covers the description only. Three places in #153
-say the code publishes exactly the text it verified: the `task-execution` scenario *A signed
-description is published* ("exactly that description"), the `signed-publishing` requirement *The
-code verifies text before it publishes it* with its scenario *Signed text is published
-unchanged*, and its task 3.3. Whichever of #153 and this change lands second rewords all three to
-say that the part of the body before the marker is exactly that description.
+`<!-- igor:evidence -->`. #153 defines the description as the part of the body before that
+marker (#153, amended 2026-10-13). So `prose verify-post` never covers the evidence section;
+what it checks before the marker is #153's to say.
 
 ## Why
 
@@ -117,6 +114,11 @@ Three rows come from records that other changes, drafted alongside this one, add
 - **`scope-check`** (#187): the scope result (the Files row), including, under the two-gate
   workflow (#150), the result for each gate.
 
+**Archive after `keep-action-log` (#188).** This change may ship first; only its archiving
+waits. Its spec points at *credential redaction*, which #188 states, and the in-force specs
+take that pointer only when this change is archived. Archived first, they would point at a
+requirement not yet in them.
+
 The Spec scenarios row needs `pinned-skills` (#174), an open change here, and the `spec-trace`
 skill, which is not yet merged into shared-skills.
 
@@ -132,8 +134,8 @@ None.
 
 ### Modified Capabilities
 
-- `task-execution`: adds three requirements: what the body holds, what each evidence row
-  reports, and the review label.
+- `task-execution`: adds four requirements: what the body holds, what each evidence row
+  reports, how the Spec scenarios row is read, and the review label.
 - `role-config`: adds `skim_max_paths` and `skim_max_lines`.
 
 ## Impact

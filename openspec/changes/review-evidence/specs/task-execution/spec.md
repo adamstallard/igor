@@ -22,9 +22,15 @@ top of the body comes before item 1: gate one's "specification only" opening, an
 outside `openspec/changes/` that gate one refused to publish. Gate two's note that the item changed after the approval comes between items 1
 and 2.
 
+After the summary or signed description, the table's rows SHALL come in the order *Each evidence
+row reports what the loop recorded, or says it was not checked* lists them, so the checks' result
+comes before the scope result. The same order SHALL bind the lines that `loop-verifies-commands`
+(#189) and `scope-check` (#187) write before this change ships: the checks line, then the scope
+line. Those changes point here for it, and archive after this one.
+
 Every value in the table SHALL come from what the loop itself recorded or kept of the run, never
-from the worker's summary. Check output is one such value: `loop-verifies-commands` (#189) keeps
-it in memory and never writes it to the execution record.
+from the worker's summary. Check output is one such value, as `loop-verifies-commands` (#189)
+keeps it.
 Every occurrence of the marker, and every line that repeats the table's heading,
 `**Checked by Igor, not reported by the worker**`, SHALL be removed from the summary.
 
@@ -71,18 +77,20 @@ The evidence table SHALL have these rows, each filled only from the loop's recor
   says so, and the
   end of the output of each check that failed or timed out follows the table.
 - **Commands the worker ran:** how many commands the worker ran and how many of them failed.
-  Every command is listed with the exit code `keep-action-log` (#188) recorded for it, or as
-  failed where that change recorded an error with no code.
-- **Spec scenarios:** the OpenSpec scenarios the run's published spec files add or change, and
-  whether a test tags each, as *The Spec scenarios row is read from spec-trace* says.
+  The commands are listed, up to a cap, each with what `keep-action-log` (#188) recorded for it:
+  its exit code, an error with no code, or no result for a call that never returned. Any beyond
+  the cap are counted.
 - **Files changed:** how many paths the run published, the scope result that `scope-check`
   (#187) states for this push, and any base change the run declared it undid (*A base change is
   undone only where the resolution says so*).
+- **Spec scenarios:** the OpenSpec scenarios the run's published spec files add or change, and
+  whether a test tags each, as *The Spec scenarios row is read from spec-trace* says.
 - **Sandbox denials:** each command the sandbox stopped.
 - **Cost:** the reported cost and the number of turns.
 
 A row the loop holds no record for SHALL say `not checked` and why; the Commands row says
-`not recorded` instead. No row SHALL report a pass it did not record.
+`not recorded` instead, and the Cost row says `not reported` for a cost the provider did not
+report. No row SHALL report a pass it did not record.
 
 The execution record SHALL keep the count of assistant turns on every run, including runs whose
 cost was reported, and the number of lines the run's published paths add and remove.
@@ -115,26 +123,29 @@ cost was reported, and the number of lines the run's published paths add and rem
 ### Requirement: The Spec scenarios row is read from spec-trace
 
 The loop SHALL fill the Spec scenarios row by running the `spec-trace` skill's script,
-`<skills_dir>/skills/spec-trace/scripts/spec_trace.py`, in the pull request's tree.
-`<skills_dir>` is the pinned skills directory that `pinned-skills` (#174) installs. It SHALL make
-no model call for the row.
+`<skills_dir>/skills/spec-trace/scripts/spec_trace.py report --include-changes`, in a tree
+holding exactly the pull request's head. `<skills_dir>` is the pinned skills directory that
+`pinned-skills` (#174) installs. It SHALL make no model call for the row.
 
-The script's `report --include-changes` gives each scenario, as open changes will leave the specs,
-with the tests that tag it. From it the row lists each scenario that a spec file the run published
-adds or changes, and whether a test tags it. The script's `check` finds a tag that names no
-scenario, and the row lists each such tag. It SHALL say `not checked`, with the reason, where the repository has no
-`openspec/specs/`, or where the skill is not installed in that directory.
+The report gives each scenario, with the deltas of every open change in the repository applied,
+and the tests that tag it.
+From it the row counts the scenarios in the spec files the pull request changes against its base,
+and names each of them that no test tags. The row SHALL say `not checked`, with the reason, on a
+gate-one pull request under `follow-the-two-gate-workflow` (#150), which carries no tests; where
+the repository has no `openspec/specs/`; where the skill is not installed in that directory; and
+where the script fails.
 
-The worker SHALL load the skill, named `igor:spec-trace` in the `igor` plugin, as it loads
-`prose` and `bug-hunter`, and SHALL tag each test it writes with the scenario that test checks.
-The loop's run of the script verifies those tags.
+A role whose `skills` lists `spec-trace` has its worker load the skill, named `igor:spec-trace`
+in the `igor` plugin, as `signed-publishing` (#153) has it load `prose` and `bug-hunter`. That
+worker tags each test it writes with the scenario that test checks, and the loop's run of the
+script shows whether it did. The loop runs the script whether or not the role lists the skill.
 
 The Spec scenarios row SHALL NOT change the review label.
 
 #### Scenario: A scenario without a test is shown
 
-- **WHEN** gate two's push changes a spec delta that adds two scenarios, and a test the push
-  carries tags only one
+- **WHEN** a pull request's spec delta adds two scenarios, and after gate two's push a test in
+  the pull request tags only one
 - **THEN** the Spec scenarios row names the scenario no test tags
 
 #### Scenario: A repository without specs is not checked
@@ -144,7 +155,8 @@ The Spec scenarios row SHALL NOT change the review label.
 
 #### Scenario: A missing skill is not checked
 
-- **WHEN** the pinned skills directory holds no `spec-trace` skill
+- **WHEN** the pinned skills directory holds no `spec-trace` skill (a role listing it would be
+  refused at load under #153, so no role lists it)
 - **THEN** the Spec scenarios row says `not checked` and why, and the run goes on
 
 ### Requirement: One review label sorts a pull request for triage, never for merging
