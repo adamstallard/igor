@@ -33,18 +33,34 @@
 
    **Decided (Adam, 2026-10-13): a draft is within `pr`.** A role whose `allow` lists `pr` and
    not `draft-pr` still gets a draft when a check fails. `allow` says what the work may become,
-   and a draft is a pull request not yet ready: work published after a lost claim already goes
-   out as one wherever `allow` permits a pull request at all.
+   and a draft is a pull request not yet ready. Work published after a lost claim, where the
+   Igor stopped holding its claim on the issue mid-run, already goes out as a draft wherever
+   `allow` permits a pull request at all. *Rejected:* opening the pull request ready because
+   `allow` lists only `pr`, which presents failing work as ready for review.
 7. **Checks also run before a later push onto an existing pull request, such as a conflict
    resolution. Once the push is published, their result is reported in a comment**, whatever it
    is, and a failure returns the pull request to draft. Rejected: leaving a ready pull request ready over failing tests. Also rejected:
    reporting only by editing the body, which notifies nobody watching the pull request.
 
-**Also decided (Adam, 2026-10-13):** checks run after #153's staging and signing (decision
-4); a pull request opened after a lost claim requests no reviewers, even with a failed check,
-an exception to decision 6, which otherwise requests them;
-and checks run before every later push of the worker's changes (decision 7). The comment after
-such a push is posted only where the role declares checks.
+**Also decided (Adam, 2026-10-13):**
+
+- **Checks run after #153's staging and signing** (decision 4). #153 signs every commit Igor
+  pushes other than a merge, including, under the two-gate workflow (#150), gate two's
+  implementation and each revision answering a reviewer. Its prose pass, a model step, may edit
+  docs and comments before it signs. A conflict resolution is a merge and carries no signature:
+  Igor stages the merged tree in its clone, and the checks run on that. *Rejected:* checks before
+  signing, which test a tree the prose pass may still change.
+- **A pull request opened after a lost claim requests no reviewers**, even with a failed check,
+  an exception to decision 6. *Rejected:* requesting them anyway, which asks people to review
+  work the Igor no longer holds the issue for.
+- **Checks run before every later push of the worker's changes** (decision 7, widened from a
+  conflict resolution to gate two's push and each revision too). *Rejected:* checking only the
+  opening run, which leaves gate two's implementation untested.
+- **The comment after such a push is posted only where the role declares checks.** It is the
+  one place this change writes outside #190's table, an accepted exception to the decision
+  below that the table carries its result. *Rejected:* no comment, which leaves a
+  changed result unannounced; and a comment for a role with no checks, which says nothing on
+  every push.
 
 ## Why
 
@@ -87,6 +103,8 @@ None.
   the `checks` results on the execution row (passed, failed with its exit code, timed out, or not
   run). **Decided (Adam, 2026-10-13):** that row is the only place in the body the result is
   written, in the wording #190 gives it; this change writes no line of its own into the body.
+  *Rejected:* a line of this change's own in the body, outside the table, which would give the
+  same result two wordings and two places.
 - **Build order: `keep-action-log` (#188), then `review-evidence` (#190), then this change and
   `scope-check` (#187) in either order**, since the two do not depend on each other. Archive order follows the same sequence, so the redaction rule and the
   table this change points at exist, in code and in the in-force specs, before it lands.
