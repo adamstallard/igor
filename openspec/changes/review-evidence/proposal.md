@@ -1,59 +1,85 @@
+**In short:** the pull request body gains an evidence section, a table of what the loop (Igor's
+own code around the worker) checked about the run. From that table the loop sets one label,
+`review: skim` or `review: read`, which sorts pull requests for a reviewer.
+
 ## Decisions for the reviewer
 
-1. **The evidence goes in the pull request body, as a table under the summary.** The worker's
-   summary is what it says it did. The table is what was checked, built by the loop (Igor's own
-   code around the worker) from its own record of the run.
+1. **The evidence goes in the pull request body, as a section after the summary.** The worker's
+   summary is what it says it did. The evidence table is what was checked, built by the loop
+   (Igor's own code around the worker) from its own record of the run.
    *Rejected:* a separate comment, which sinks below the discussion and is edited apart from the
    body. Also rejected: a GitHub check run, which needs `checks: write` on every Igor's App and
    shows only pass or fail.
-2. **A row whose check did not run says `not checked`, and that makes the label `review: read`.**
-   This holds whether the check was never built, was not configured, or does not cover this
-   push, as `scope-check` does not cover a push onto an existing pull request.
+2. **A row whose check did not run says `not checked`.** This holds whether the check was never
+   built, was not configured, or could not be applied, as when an issue names no paths. A
+   `not checked` Tests or Files changed row makes the label `review: read`; the Commands and Spec
+   scenarios rows never change the label.
    *Rejected:* leaving the row out. Without the row, a reviewer cannot tell a check that passed
    from one that never ran.
 3. **The rule for the label:** `review: skim` only when all four hold:
    - every one of the role's `checks` (`loop-verifies-commands`) passed when the loop ran it;
-   - the scope check ran and found no changed path outside the issue's scope;
-   - the run published at most 5 paths, and did not declare that it undoes a change the base
-     branch made (a catch-up resolution must declare such an undo, under *A base change is
-     undone only where the resolution says so*);
+   - the scope result for this push (decision 6) found no changed path outside scope;
+   - the run's change is small, and it did not declare that it undoes a change the base branch
+     made. A catch-up resolution, a run that merges the base branch into the pull request and
+     resolves its conflicts, must declare such an undo, under the in-force `task-execution`
+     requirement *A base change is undone only where the resolution says so*;
    - the sandbox denied nothing.
 
    Anything else is `review: read`. The commands the worker ran, and their exit codes, never
    change the label.
    *Rejected:* making any non-zero exit mean `read`, since a worker that writes the test first
-   runs it and watches it fail. Also rejected: a threshold on changed lines, which the record
-   does not keep.
+   runs it and watches it fail.
 4. **The label sorts pull requests and does nothing else.** A person still approves every Igor
    pull request (`task-execution`, *A person approves every Igor pull request*). Under #150 the
-   go signal is still a person's approving review. The label never approves, merges, skips a
+   go signal for gate two, the implementation, is still a person's approving review. The label never approves, merges, skips a
    reviewer request or marks a draft ready.
    *Rejected:* requesting no reviewer on a `skim` pull request.
-5. **The table is assembled by Igor's code, so it is not signed.** Under #153
-   (`signed-publishing`), a model step writes the description above the table and signs it with
-   a `prose ✓` footer. #153 exempts text the code assembles from recorded state, such as a
-   handoff. The table follows the footer, and `prose verify-post` covers the description
-   only.
+5. **The evidence section is assembled by Igor's code, so it is not signed.** Under #153
+   (`signed-publishing`), a model step writes the description and signs it with a `prose ✓`
+   footer. #153 exempts from signing the text the code assembles from recorded state, such as
+   the message an Igor posts when it hands an issue back.
    *Rejected:* having the model step write the table. The model would then restate the facts it
    is being checked against.
-6. **The loop sets the label without `label` in the role's `allow`**, as it sets its
-   `igor:<role>` claim label. `allow` governs what the worker's output may become; the label is the loop's own.
-   *Rejected:* requiring `label` in `allow`. The default org base, `[draft-pr, comment]`, would
-   then label nothing.
+6. **The Files row and the label take the scope result `scope-check` states for each push.**
+   `scope-check` does not check a resolution, which carries the base branch's changes that no
+   issue names. For such a push the scope result shown is the last checked one, marked as from
+   an earlier push. *Rejected:* making every resolution `review: read`, which would
+   relabel a reviewed pull request each time the base moved.
 
-**Still open:**
+**Decided (Adam, 2026-10-13):**
 
-- **#153 (`signed-publishing`).** For a role that lists `prose`, #153 replaces the worker's
-  summary with a description the prose pass writes and signs, and its scenario *A signed
-  description is published* says the pull request is created with "exactly that description".
-  Whichever of the two changes lands second rewords item 2 of *A pull request body holds a
-  capped summary, then the loop's evidence* to name the signed description, and adds "followed
-  by the evidence table" to that scenario.
-- **#150 (two-gate workflow).** Under it, every Igor pull request would be `review: read`.
-  `scope-check` flags gate one, whose change directory the issue cannot name before it exists.
-  It also checks nothing pushed onto an existing pull request, and gate two pushes onto gate
-  one's pull request. Settling this
-  belongs to `scope-check` or #150, not this change.
+- **The loop sets the label without `label` in the role's `allow`**, as it sets its
+  `igor:<role>` claim label. `allow` governs what the worker's output may become; the label is
+  the loop's own.
+- **"Small" is a setting:** at most `skim_max_paths` changed paths (default 5) and at most
+  `skim_max_lines` changed lines (default 200), both holding. The org base and a role may set
+  each, and the most specific level wins. The defaults are a starting point, to be tuned from
+  data such as how often a `review: skim` pull request still needed changes.
+- **The Tests row's wording is the one wording for the checks' result, wherever it is
+  published.** Until this change ships, `loop-verifies-commands` (#189) writes a line that uses
+  the same wording verbatim. Once it ships, the Tests row replaces that line.
+- **This change sets the order of what follows the summary.** Once it ships, the body is the
+  worker's summary (or, for a role under #153, the signed description), then the evidence
+  section. Until it ships, the lines that other changes write follow the summary in a fixed
+  order: the checks line from `loop-verifies-commands` (#189), then the scope line from
+  `scope-check` (#187). Once it ships, the evidence section replaces both lines.
+
+- **The Spec scenarios row comes from spec-trace.** The loop runs the `spec-trace` skill's
+  script from the pinned skills directory that `pinned-skills` (#174) installs. It uses that
+  script as it is: no separate download, and no rewrite in TypeScript. The Igor image carries `python3` (#192), which #153's loop
+  already needs for `prose.py`. The row reads `not checked` where the repository has no
+  `openspec/specs/` or the skill is not installed. The worker loads `igor:spec-trace` as it loads
+  `prose` and `bug-hunter`, and tags the scenario on each test it writes. The loop's run of the
+  script is the check: deterministic, with no model call.
+
+**Where this meets #153.** For a role that lists `prose`, the pull request body is the signed
+description followed by a code-assembled evidence section, which starts at the marker
+`<!-- igor:evidence -->`. `prose verify-post` covers the description only. Three places in #153
+say the code publishes exactly the text it verified: the `task-execution` scenario *A signed
+description is published* ("exactly that description"), the `signed-publishing` requirement *The
+code verifies text before it publishes it* with its scenario *Signed text is published
+unchanged*, and its task 3.3. Whichever of #153 and this change lands second rewords all three to
+say that the part of the body before the marker is exactly that description.
 
 ## Why
 
@@ -68,11 +94,14 @@ request. No requirement governs the body: the 700-character limit exists only in
 ## What Changes
 
 - The body is the line linking it to its issue, the worker's summary capped at 700 characters,
-  then an evidence table. The cap becomes a requirement.
-- The table has five rows, each from the loop's own record: tests, commands the worker ran,
-  files changed, sandbox denials, and cost and turns.
-- The execution record keeps the turn count on every run. It is kept today only when the
-  provider reported no cost (`src/execute.ts:1496-1498`).
+  then an evidence section. The cap becomes a requirement.
+- The table has six rows, each from the loop's own record: tests, commands the worker ran,
+  files changed, spec scenarios, sandbox denials, and cost and turns.
+- The execution record keeps the turn count on every run, and the count of lines the run
+  changed. Today
+  the turn count is kept only when the provider reported no cost (`src/execute.ts:1496-1498`).
+- Two role keys, `skim_max_paths` and `skim_max_lines`, set how small a change must be for
+  `review: skim`.
 - Igor sets one label on the pull request, `review: skim` or `review: read`.
 - A later run that publishes onto the pull request replaces both the table and the label. A
   merge the code host makes without a worker changes neither.
@@ -81,14 +110,19 @@ request. No requirement governs the body: the 700-character limit exists only in
 
 Three rows come from records that other changes, drafted alongside this one, add:
 
-- **`loop-verifies-commands`**: the loop's run of the role's `checks` (the Tests row).
-- **`keep-action-log`**: each command the worker ran, with its exit code where the stream
-  states one (the Commands row), and the redaction every command, path and output line in the table gets.
-- **`scope-check`**: the changed paths outside the issue's scope (the Files row). It checks
-  only a new pull request, so a push onto an existing one is labelled `review: read`.
+- **`loop-verifies-commands`** (#189): the result of each of the role's `checks` (the Tests row).
+- **`keep-action-log`** (#188): each command the worker ran, with its exit code where it recorded
+  one (the Commands row). It also defines *credential redaction*, which every command, path and
+  output in the table goes through.
+- **`scope-check`** (#187): the scope result (the Files row), including, under the two-gate
+  workflow (#150), the result for each gate.
+
+The Spec scenarios row needs `pinned-skills` (#174), an open change here, and the `spec-trace`
+skill, which is not yet merged into shared-skills.
 
 This change can ship before any of them. Until a row's source change ships, that row says
-`not checked` or `not recorded`, and the label is `review: read`.
+`not checked` or `not recorded`. A `not checked` Tests or Files row makes the label
+`review: read`; the Commands row never changes the label.
 
 ## Capabilities
 
@@ -100,10 +134,11 @@ None.
 
 - `task-execution`: adds three requirements: what the body holds, what each evidence row
   reports, and the review label.
+- `role-config`: adds `skim_max_paths` and `skim_max_lines`.
 
 ## Impact
 
 - `src/execute.ts`: `prBody`, the publish and catch-up paths, and the execution record.
 - `src/adapter.ts` `CodeHost` and `src/github.ts`: replacing a pull request's evidence table
   and setting its label.
-- No configuration changes.
+- `src/role.ts`: the two thresholds.
