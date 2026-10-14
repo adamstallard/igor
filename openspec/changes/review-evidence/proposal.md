@@ -50,18 +50,27 @@ own code around the worker) checked about the run. From that table the loop sets
 
 - **The loop sets the label without `label` in the role's `allow`**, as it sets its
   `igor:<role>` claim label. `allow` governs what the worker's output may become; the label is
-  the loop's own.
+  the loop's own. *Rejected:* requiring `label` in `allow`, under which the org base's default
+  `allow` list, `[draft-pr, comment]`, would label nothing.
 - **"Small" is a setting:** at most `skim_max_paths` changed paths (default 5) and at most
   `skim_max_lines` changed lines (default 200), both holding. The org base and a role may set
   each, and the most specific level wins. The defaults are a starting point, to be tuned from
-  data such as how often a `review: skim` pull request still needed changes.
+  data such as how often a `review: skim` pull request still needed changes. A catch-up
+  resolution counts only what the Igor's own resolution changed. *Rejected:* a fixed limit in
+  code, which no repository could tune; and counting a resolution's incoming base changes, which
+  would turn a pull request to `review: read` each time the base moved far.
 - **The body is the opening block, then the summary or signed description, then the marker
   `<!-- igor:evidence -->` and everything else the loop adds**, in the requirement *A pull
   request body holds a capped summary, then the loop's evidence*. The opening block is the text
   #150 places first, then the linkage line; it is the only code-added text before the
-  description, and every other code-added line comes after the marker. `loop-verifies-commands`
-  (#189) and `scope-check` (#187) write only into this change's table, never a line of their
-  own.
+  description, and every other code-added line comes after the marker. At gate two, #150's
+  note that the item changed after approval and bug-hunter's open decisions go in the opening
+  block, so rebuilding the evidence section never drops them. `loop-verifies-commands` (#189)
+  and `scope-check` (#187) write only into this change's table, never a line of their own; build
+  and archive order is #188, then this change, then #187 and #189. *Rejected:* signing the whole
+  body, which puts code-assembled text under the model's signature; placing gate two's notes
+  after the marker, where a rebuilt section drops them; and letting #187 and #189 write lines of
+  their own before the table exists, which gives one result two wordings.
 
 - **The Spec scenarios row comes from spec-trace.** The loop runs the `spec-trace` skill's
   script from the pinned skills directory that `pinned-skills` (#174) installs. It uses that
@@ -70,9 +79,21 @@ own code around the worker) checked about the run. From that table the loop sets
   patterns. The row reads `not checked`, with the reason, where it cannot apply, including
   where spec-trace finds no test files. Once #153 has shipped (this change does not wait for it),
   a role whose `skills` lists
-  `spec-trace` has its worker load `igor:spec-trace`, as #153 has it load `prose` and
-  `bug-hunter`, and tag the scenario on each test it writes. The loop's run of the script is
-  the check: deterministic, with no model call. The row never changes the label.
+  `spec-trace` has its worker directed to use `igor:spec-trace`, as #153 does for `prose` and
+  `bug-hunter`. #174 already loads every installed skill for every role, so listing it adds only
+  that direction. The worker so directed tags the scenario on each test it writes. The loop's run of the script is
+  the check: deterministic, with no model call. The row never changes the label. *Rejected:*
+  fetching or porting the script, which leaves two copies to keep in step; and a test-pattern
+  setting in Igor, which spec-trace's own detection makes unnecessary; and letting the row change
+  the label, which would make every repository without specs `review: read`.
+- **Past its cap of 30, the commands list ends with a line that says only what #188's action
+  log actually kept of the commands left out**, including when the log could not be written at
+  all. *Rejected:* always pointing at the action log, which is
+  false where the log keeps no commands or was never written.
+- **The Files changed row shows whatever `scope-check` (#187) states for a push**, including
+  its result when the earlier scope results it keeps in `executions.ndjson` are lost, and a
+  carried-forward `not checked`, in this change's wording; #187 decides
+  those cases. *Rejected:* a scope rule of this change's own, which could drift from #187's.
 
 **Where this meets #153.** For a role that lists `prose`, the body is the opening block, then
 the signed description, then the marker and the evidence section. #153 defines the description

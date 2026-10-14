@@ -61,6 +61,7 @@
       | Files changed | `<n>, not checked against scope: this pull request's specification adds no change directory` |
       | Files changed | `<n>, not checked against scope: this pull request's specification adds more than one change directory` |
       | Files changed | `<n>, not checked against scope: this push was not checked, and no earlier result is recorded` |
+      | Files changed | `<n>, not checked against scope: neither the issue nor the approved change names a path` (gate two, where the change gate one approved names nothing either) |
       | Spec scenarios | ``**<k> of <n> changed have no test:** `<capability>: <Scenario>`, `<capability>: <Scenario>` `` |
       | Spec scenarios | `none changed` |
       | Spec scenarios | `not checked: a specification pull request carries no tests` |

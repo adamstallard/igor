@@ -8,7 +8,7 @@ The body of a pull request an Igor opens SHALL hold, in this order:
    places first (gate one's "specification only" opening and the paths outside
    `openspec/changes/` that gate one refused to publish; at gate two, the note that the item
    changed after the spec was approved, and the open decisions bug-hunter left for a person,
-   which #150 places first so they survive a rebuilt evidence section); then the line linking
+   which go first so that rebuilding the evidence section never drops them); then the line linking
    the pull request to its
    item by the adapter's convention, or at gate one the non-closing reference #150 requires;
 2. the worker's summary, at most 700 characters, cut at the last sentence end in its first 700
@@ -45,8 +45,8 @@ each quoted so that it cannot end its code span or block, its cell, or the table
 
 Each time a run publishes the worker's changes onto an existing pull request, the loop SHALL
 replace the evidence section with one built from that run, leaving the opening block and the
-description as they are, apart from what other changes rewrite: #153 rewrites the signed
-description on each push, and #150 the opening block at gate two. A merge of the base that the code host makes
+description as they are. `signed-publishing` (#153) decides when the description and the
+opening block are rewritten. A merge of the base that the code host makes
 without a worker leaves the table as it is.
 
 #### Scenario: A long summary is cut and points at the transcript
@@ -143,9 +143,10 @@ where the script fails; and where it finds no test files. The script finds the t
 from the repository's test runner configuration (shared-skills PR #21); the loop passes it no
 patterns.
 
-Where `signed-publishing` (#153) has shipped, a role whose `skills` lists `spec-trace` has its
-worker load the skill, named `igor:spec-trace`
-in the `igor` plugin, as `signed-publishing` (#153) has it load `prose` and `bug-hunter`. That
+`pinned-skills` (#174) loads every installed skill for every role, so a role's `skills` list
+decides only which skills its worker is directed to use. Where `signed-publishing` (#153) has
+shipped, a role whose `skills` lists `spec-trace` has its worker directed to use the skill, named `igor:spec-trace`
+in the `igor` plugin, as #153 directs it to use `prose` and `bug-hunter`. That
 worker tags each test it writes with the scenario that test checks, and the loop's run of the
 script shows whether it did. The loop runs the script whether or not the role lists the skill:
 it is the loop's own check, not one of the checks #153 makes on what a listed skill signed, so
