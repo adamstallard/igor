@@ -14,27 +14,18 @@
 # run time, through the env_file and secrets in deploy/docker-compose.yml.
 
 ARG NODE_VERSION=26.3.0
-ARG GIT_VERSION=2.54.0
-ARG GIT_SHA256=f689162364c10de79ef89aa8dbf48731eb057e34edbbd20aca510ce0154681a3
+# git's and python's pins are Debian package versions, epoch and revision included. Each python
+# pin covers a family of packages that depend on one another at exactly that version, and the
+# base stage's apt-get install names every member. PYTHON3_VERSION: python3, python3-minimal,
+# libpython3-stdlib. PYTHON3_13_VERSION: python3.13, python3.13-minimal, libpython3.13-stdlib,
+# libpython3.13-minimal.
+ARG GIT_VERSION=1:2.47.3-0+deb13u1
+ARG PYTHON3_VERSION=3.13.5-1
+ARG PYTHON3_13_VERSION=3.13.5-2+deb13u5
 ARG GH_VERSION=2.94.0
 ARG GH_SHA256_AMD64=a757f1ba6db18f4de8cbadb244843a5f89bc75b5e7c6fc127d2bd77fbd12ed62
 ARG GH_SHA256_ARM64=705a23b70b0f1b7ba4c302fdcef392ce3edaacfa7ce8e85e4d93d72ea800a538
 ARG CLAUDE_CODE_VERSION=2.1.296
-
-# --- git, built from source: no Debian release ships the pinned version -----------------------
-FROM node:${NODE_VERSION}-trixie-slim AS git
-ARG GIT_VERSION
-ARG GIT_SHA256
-RUN apt-get update \
- && apt-get install -y --no-install-recommends \
-      ca-certificates curl xz-utils make gcc libc6-dev libcurl4-gnutls-dev zlib1g-dev \
- && rm -rf /var/lib/apt/lists/*
-WORKDIR /build
-RUN curl -fsSLo git.tar.xz "https://www.kernel.org/pub/software/scm/git/git-${GIT_VERSION}.tar.xz" \
- && echo "${GIT_SHA256}  git.tar.xz" | sha256sum -c - \
- && tar -xJf git.tar.xz --strip-components=1 \
- && make -j"$(nproc)" prefix=/usr/local NO_TCLTK=1 NO_GETTEXT=1 NO_PERL=1 NO_PYTHON=1 NO_EXPAT=1 \
-      DESTDIR=/out install
 
 # --- gh, the release binary checked against its published checksum ---------------------------
 FROM node:${NODE_VERSION}-trixie-slim AS gh
@@ -60,14 +51,27 @@ RUN case "${TARGETARCH}" in \
 # --- base: node, git, gh and claude, shared by every target below ----------------------------
 FROM node:${NODE_VERSION}-trixie-slim AS base
 ARG GIT_VERSION
+ARG PYTHON3_VERSION
+ARG PYTHON3_13_VERSION
 ARG GH_VERSION
 ARG CLAUDE_CODE_VERSION
-# Runtime libraries for the git built above: libcurl for HTTPS remotes, zlib for objects.
+# git and python3 from Debian at exactly the pinned package versions. Every package of a python
+# family is named here. An unnamed one would come in at its newest revision, and that revision
+# requires the rest of its family at the same newer revision, not the pinned one, so the build
+# would fail the day Debian published an update. Named, the build fails only once Debian drops
+# the pinned revision from its archive.
+# python3 runs the Python scripts of the skills a worker loads, and prose.py, which Igor runs to
+# check the signature on text a worker wants to publish.
 # ca-certificates lets git, gh and claude verify TLS. less is the pager git and gh use.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates libcurl3t64-gnutls zlib1g less \
+ && apt-get install -y --no-install-recommends \
+      "git=${GIT_VERSION}" \
+      "python3=${PYTHON3_VERSION}" "python3-minimal=${PYTHON3_VERSION}" \
+      "libpython3-stdlib=${PYTHON3_VERSION}" \
+      "python3.13=${PYTHON3_13_VERSION}" "python3.13-minimal=${PYTHON3_13_VERSION}" \
+      "libpython3.13-stdlib=${PYTHON3_13_VERSION}" "libpython3.13-minimal=${PYTHON3_13_VERSION}" \
+      ca-certificates less \
  && rm -rf /var/lib/apt/lists/*
-COPY --from=git /out/usr/local/ /usr/local/
 COPY --from=gh /usr/local/bin/gh /usr/local/bin/gh
 # The npm package installs the native binary for this platform from a version-locked
 # optional dependency, so the version here is the version that runs.
@@ -76,9 +80,11 @@ RUN npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
 # Without this, claude's background updater replaces the pinned binary in a running container.
 # With it, claude changes version only when the image is rebuilt with a new pin.
 ENV DISABLE_AUTOUPDATER=1
-# A build that installed some other version of git, gh or claude fails here. The base image
-# tag already fixes node's version.
-RUN git --version | grep -qx "git version ${GIT_VERSION}" \
+# A build that installed some other version of git, python, gh or claude fails here. The base
+# image tag already fixes node's version.
+RUN [ "$(dpkg-query -W -f='${Version}' git)" = "${GIT_VERSION}" ] \
+ && [ "$(dpkg-query -W -f='${Version}' python3)" = "${PYTHON3_VERSION}" ] \
+ && [ "$(dpkg-query -W -f='${Version}' python3.13)" = "${PYTHON3_13_VERSION}" ] \
  && gh --version | grep -q "^gh version ${GH_VERSION} " \
  && claude --version | grep -q "^${CLAUDE_CODE_VERSION} "
 
@@ -127,9 +133,9 @@ RUN ln -s /opt/igor/dist/cli.js /usr/local/bin/igor
 # deploy/docker-compose.yml mounts the lore repository here. A host directory keeps its host
 # owner, and git refuses a repository it does not own without this.
 RUN git config --system --add safe.directory /srv/lore \
- # Igor merges a base branch into a task's tree with merge --no-commit, which git refuses
- # without a committer identity. Igor publishes through the GitHub API, so this identity is
- # in no commit anyone sees. A user or repository identity overrides it.
+ # A placeholder, because git merge --no-commit refuses to run without a committer identity. Safe
+ # while igor publishes every commit through GitHub's API as its App and never runs git push. If
+ # it ever pushes a commit made here, this identity goes public: set the App's bot identity instead.
  && git config --system user.name igor \
  && git config --system user.email igor@localhost.invalid
 WORKDIR /srv/lore

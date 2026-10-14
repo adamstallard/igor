@@ -344,16 +344,42 @@ shows the current values:
 | tool | version | how the image gets it |
 |---|---|---|
 | node | 26.3.0 | the `node:26.3.0-trixie-slim` base image |
-| git | 2.54.0 | built from kernel.org's source tarball, checked against its SHA-256 |
+| git | 2.47.3 | Debian trixie's package, pinned to its full version `1:2.47.3-0+deb13u1` |
+| python3 | 3.13.5 | Debian trixie's packages: `python3` `3.13.5-1` and the interpreter, `python3.13` `3.13.5-2+deb13u5` |
 | `gh` | 2.94.0 | the release tarball, checked against its SHA-256 for each architecture |
 | `claude` | 2.1.296 | `npm install -g @anthropic-ai/claude-code@2.1.296` |
 
-No Debian release ships git 2.54.0, which is why git is built from source. The build
-ends by running each tool's `--version` and fails if any differs from its pin. The image sets
+The build ends by checking the installed version of git, python3, `gh` and `claude`, and fails
+if any differs from its pin; node's version is fixed by the base image's tag. The image sets
 `DISABLE_AUTOUPDATER=1`, so `claude` changes only when the image is rebuilt with a new pin.
 
-To move git or `gh`, change the version and its checksum together. kernel.org's
-`sha256sums.asc` lists git's checksums, and each `gh` release publishes a `checksums.txt`.
+To move `gh`, change the version and its checksums together; each `gh` release publishes a
+`checksums.txt`.
+
+Igor's own code is not Python, but the image needs python3. A worker runs the shared skills,
+whose scripts are Python (`prose`, `bug-hunter`, `spec-trace`). Igor itself runs `prose.py` to
+check the signature on text a worker wants to publish
+([#153](https://github.com/adamstallard/igor/issues/153),
+[#174](https://github.com/adamstallard/igor/issues/174)). The image has no pip and no virtual
+environment, so those scripts can use only Python's standard library.
+
+**A Debian pin holds back security fixes until you move it.** A fix first appears in
+`trixie-security` beside the pinned revision. The image keeps building, still with the pinned,
+unfixed revision. At Debian's next point release, `trixie` itself carries only the new revision,
+apt cannot find the pinned one, and the image stops building. Move a pin when a security fix
+for git or python lands, rather than waiting for the build to break. To see what the archive
+carries, ask the base image:
+
+```bash
+docker run --rm node:26.3.0-trixie-slim sh -c \
+  'apt-get update -qq && apt-cache madison git python3 python3.13'
+```
+
+`madison` lists each version the archive holds, newest first. Set `GIT_VERSION` to git's newest,
+`PYTHON3_VERSION` to python3's and `PYTHON3_13_VERSION` to python3.13's, epoch and revision
+included, and let CI run the suite against it. Each python variable also pins the other packages
+of its family, which Debian always publishes at the same version as the one `madison` lists:
+the `Dockerfile` comment above `GIT_VERSION` names them.
 
 ### Upgrading the `claude` pin
 
