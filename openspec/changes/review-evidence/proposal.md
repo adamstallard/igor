@@ -55,28 +55,29 @@ own code around the worker) checked about the run. From that table the loop sets
   `skim_max_lines` changed lines (default 200), both holding. The org base and a role may set
   each, and the most specific level wins. The defaults are a starting point, to be tuned from
   data such as how often a `review: skim` pull request still needed changes.
-- **The Tests row's wording is the one wording for the checks' result, wherever it is
-  published.** Until this change ships, `loop-verifies-commands` (#189) writes a line that uses
-  the same wording verbatim. Once it ships, the Tests row replaces that line.
-- **This change sets the order of what follows the summary**, in its requirement *A pull
-  request body holds a capped summary, then the loop's evidence*. Before this change ships,
-  `loop-verifies-commands` (#189) and `scope-check` (#187) each write their result as a line of
-  their own; the same requirement orders those lines, and once this change ships the table
-  replaces them.
+- **The body is the opening block, then the summary or signed description, then the marker
+  `<!-- igor:evidence -->` and everything else the loop adds**, in the requirement *A pull
+  request body holds a capped summary, then the loop's evidence*. The opening block is the text
+  #150 places first, then the linkage line; it is the only code-added text before the
+  description, and every other code-added line comes after the marker. `loop-verifies-commands`
+  (#189) and `scope-check` (#187) write only into this change's table, never a line of their
+  own.
 
 - **The Spec scenarios row comes from spec-trace.** The loop runs the `spec-trace` skill's
   script from the pinned skills directory that `pinned-skills` (#174) installs. It uses that
-  script as it is: no separate download, and no rewrite in TypeScript. The Igor image carries `python3` (#192), which #153's loop
-  already needs for `prose.py`. The row reads `not checked`, with the reason, where it cannot
-  apply. A role whose `skills` lists `spec-trace` has its worker load `igor:spec-trace`, as
-  `signed-publishing` (#153) has it load `prose` and `bug-hunter`, and tag the scenario on each test it writes. The loop's run of the
-  script is the check: deterministic, with no model call.
+  script as it is: no separate download, and no rewrite in TypeScript. The Igor image carries the `python3` it needs (#192). The script finds the repository's test
+  files from its test runner configuration (shared-skills PR #21), so the loop passes no
+  patterns. The row reads `not checked`, with the reason, where it cannot apply, including
+  where spec-trace finds no test files. Once #153 has shipped (this change does not wait for it),
+  a role whose `skills` lists
+  `spec-trace` has its worker load `igor:spec-trace`, as #153 has it load `prose` and
+  `bug-hunter`, and tag the scenario on each test it writes. The loop's run of the script is
+  the check: deterministic, with no model call. The row never changes the label.
 
-**Where this meets #153.** For a role that lists `prose`, the pull request body is the signed
-description followed by a code-assembled evidence section, which starts at the marker
-`<!-- igor:evidence -->`. #153 defines the description as the part of the body before that
-marker (#153, amended 2026-10-13). So `prose verify-post` never covers the evidence section;
-what it checks before the marker is #153's to say.
+**Where this meets #153.** For a role that lists `prose`, the body is the opening block, then
+the signed description, then the marker and the evidence section. #153 defines the description
+as exactly the span between the opening block and the marker, and `prose verify-post` runs on exactly that span
+(#153, amended 2026-10-13).
 
 ## Why
 
@@ -90,8 +91,9 @@ request. No requirement governs the body: the 700-character limit exists only in
 
 ## What Changes
 
-- The body is the line linking it to its issue, the worker's summary capped at 700 characters,
-  then an evidence section. The cap becomes a requirement.
+- The body is the opening block (the linkage line, after any opening text #150 places first),
+  then the worker's summary capped at 700 characters, or for a role under #153 the signed
+  description uncut, then the marker and the evidence section. The cap becomes a requirement.
 - The table has six rows, each from the loop's own record: tests, commands the worker ran,
   files changed, spec scenarios, sandbox denials, and cost and turns.
 - The execution record keeps the turn count on every run, and the count of lines the run
@@ -105,7 +107,7 @@ request. No requirement governs the body: the 700-character limit exists only in
 
 ## Dependencies
 
-Three rows come from records that other changes, drafted alongside this one, add:
+Three rows come from changes drafted alongside this one:
 
 - **`loop-verifies-commands`** (#189): the result of each of the role's `checks` (the Tests row).
 - **`keep-action-log`** (#188): each command the worker ran, with its exit code where it recorded
@@ -114,16 +116,14 @@ Three rows come from records that other changes, drafted alongside this one, add
 - **`scope-check`** (#187): the scope result (the Files row), including, under the two-gate
   workflow (#150), the result for each gate.
 
-**Archive after `keep-action-log` (#188).** This change may ship first; only its archiving
-waits. Its spec points at *credential redaction*, which #188 states, and the in-force specs
-take that pointer only when this change is archived. Archived first, they would point at a
-requirement not yet in them.
+**Build order: `keep-action-log` (#188), then this change, then `scope-check` (#187) and
+`loop-verifies-commands` (#189).** Archive order follows the same sequence. This change points
+at #188's *credential redaction*, and #187 and #189 write only into this change's table.
 
 The Spec scenarios row needs `pinned-skills` (#174), an open change here, and the `spec-trace`
 skill, which is not yet merged into shared-skills.
 
-This change can ship before any of them. Until a row's source change ships, that row says
-`not checked` or `not recorded`. A `not checked` Tests or Files row makes the label
+Until #187 and #189 ship, their rows say `not checked`. A `not checked` Tests or Files row makes the label
 `review: read`; the Commands row never changes the label.
 
 ## Capabilities

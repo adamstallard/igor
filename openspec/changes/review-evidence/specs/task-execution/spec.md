@@ -4,35 +4,38 @@
 
 The body of a pull request an Igor opens SHALL hold, in this order:
 
-1. the line linking the pull request to its item, the issue it works, by the adapter's
-   convention;
-2. the worker's summary, at most 700 characters. A longer summary SHALL be cut at the last
-   sentence end in its first 700 characters where that end falls after character 350, and
-   otherwise at 700 characters, and SHALL end with a pointer to the full transcript the run
-   keeps on the state branch. For a role whose `skills` lists `prose`, the description that
-   `signed-publishing` (#153) has its prose pass, a model step, write and sign takes the
-   summary's place, uncut: the 700-character limit does not apply
-   to it;
-3. the evidence section: the marker `<!-- igor:evidence -->`, then the evidence table, which the
-   loop builds from its own record of the run.
+1. the opening block: for a role under `follow-the-two-gate-workflow` (#150), the text that change
+   places first (gate one's "specification only" opening and the paths outside
+   `openspec/changes/` that gate one refused to publish; at gate two, the note that the item
+   changed after the spec was approved, and the open decisions bug-hunter left for a person,
+   which #150 places first so they survive a rebuilt evidence section); then the line linking
+   the pull request to its
+   item by the adapter's convention, or at gate one the non-closing reference #150 requires;
+2. the worker's summary, at most 700 characters, cut at the last sentence end in its first 700
+   characters where that end falls after character 350, and otherwise at 700 characters. For a
+   role whose `skills` lists `prose`, the description `signed-publishing` (#153) has signed takes
+   the summary's place, uncut, as #153 requires;
+3. the evidence section: the marker `<!-- igor:evidence -->`, then, where the summary was cut, a
+   pointer to the full transcript the run keeps on the state branch (the branch of the store
+   that holds Igor's run records), then the evidence table and the blocks under it. A rebuilt
+   section keeps that pointer unchanged: it points at the transcript of the run whose summary
+   the body holds.
 
-Nothing the loop assembles SHALL come between the summary or signed description and the evidence
-section. For a role under `follow-the-two-gate-workflow` (#150), the text that change puts at the
-top of the body comes before item 1: gate one's "specification only" opening, and the paths
-outside `openspec/changes/` that gate one refused to publish. Gate two's note that the item changed after the approval comes between items 1
-and 2.
+Every line the loop adds outside the opening block SHALL come after the marker. For a role under
+#153, `prose verify-post` runs on the span between items 1 and 3, as #153 defines it.
 
-After the summary or signed description, the table's rows SHALL come in the order *Each evidence
-row reports what the loop recorded, or says it was not checked* lists them, so the checks' result
-comes before the scope result. The same order SHALL bind the lines that `loop-verifies-commands`
-(#189) and `scope-check` (#187) write before this change ships: the checks line, then the scope
-line. Those changes point here for it, and archive after this one.
+The table's rows SHALL come in the order *Each evidence row reports what the loop recorded, or
+says it was not checked* lists them.
 
-Every value in the table SHALL come from what the loop itself recorded or kept of the run, never
-from the worker's summary. Check output is one such value, as `loop-verifies-commands` (#189)
-keeps it.
+Every value in the table SHALL come from what the loop itself recorded or kept, never from the
+worker's summary. That record is this run's, except for the scope part on a push
+`scope-check` (#187) does not check, which comes from the pull request's last recorded scope
+result. Check output is kept by
+`loop-verifies-commands` (#189).
 Every occurrence of the marker, and every line that repeats the table's heading,
-`**Checked by Igor, not reported by the worker**`, SHALL be removed from the summary.
+`**Checked by Igor, not reported by the worker**`, SHALL be removed from the summary. A signed description
+holding either SHALL NOT be edited, since that would break its signature; it SHALL be returned to
+the prose pass, as `signed-publishing` (#153) returns any text that fails.
 
 Commands, paths and check output in the table are text the worker wrote or the repository's code
 printed. Each SHALL
@@ -41,14 +44,16 @@ command or path SHALL be shown on one line as inline code, and check output in a
 each quoted so that it cannot end its code span or block, its cell, or the table.
 
 Each time a run publishes the worker's changes onto an existing pull request, the loop SHALL
-replace the table with one built from that run. A merge of the base that the code host makes
+replace the evidence section with one built from that run, leaving the opening block and the
+description as they are, apart from what other changes rewrite: #153 rewrites the signed
+description on each push, and #150 the opening block at gate two. A merge of the base that the code host makes
 without a worker leaves the table as it is.
 
 #### Scenario: A long summary is cut and points at the transcript
 
 - **WHEN** the worker's summary is 1,500 characters
-- **THEN** the body holds at most its first 700 characters, then the transcript pointer, then
-  the evidence table
+- **THEN** the body holds at most its first 700 characters, then the marker, the transcript
+  pointer and the evidence table
 
 #### Scenario: A summary cannot pose as evidence
 
@@ -76,21 +81,22 @@ The evidence table SHALL have these rows, each filled only from the loop's recor
   run. Where any did not pass, `loop-verifies-commands` makes the pull request a draft, the row
   says so, and the
   end of the output of each check that failed or timed out follows the table.
-- **Commands the worker ran:** how many commands the worker ran and how many of them failed.
+- **Commands the worker ran:** how many shell (`Bash`) calls the worker and its subagents made,
+  and how many of them failed: exited non-zero, failed with no code, or never returned.
   The commands are listed, up to a cap, each with what `keep-action-log` (#188) recorded for it:
   its exit code, an error with no code, or no result for a call that never returned. Any beyond
   the cap are counted.
-- **Files changed:** how many paths the run published, the scope result that `scope-check`
+- **Files changed:** how many paths the run published (for a catch-up resolution, only the
+  paths its own resolution changed), the scope result that `scope-check`
   (#187) states for this push, and any base change the run declared it undid (*A base change is
   undone only where the resolution says so*).
-- **Spec scenarios:** the OpenSpec scenarios the run's published spec files add or change, and
+- **Spec scenarios:** the OpenSpec scenarios in the spec files the pull request changes, and
   whether a test tags each, as *The Spec scenarios row is read from spec-trace* says.
 - **Sandbox denials:** each command the sandbox stopped.
 - **Cost:** the reported cost and the number of turns.
 
-A row the loop holds no record for SHALL say `not checked` and why; the Commands row says
-`not recorded` instead, and the Cost row says `not reported` for a cost the provider did not
-report. No row SHALL report a pass it did not record.
+A row the loop holds no record for SHALL say `not checked` and why; the Cost row says
+`not reported` for a cost the provider did not report. No row SHALL report a pass it did not record.
 
 The execution record SHALL keep the count of assistant turns on every run, including runs whose
 cost was reported, and the number of lines the run's published paths add and remove.
@@ -103,7 +109,7 @@ cost was reported, and the number of lines the run's published paths add and rem
 #### Scenario: A failed check is shown as failed
 
 - **WHEN** the loop ran the check `npm test` and it exited 1
-- **THEN** the Tests row says `fail`, names `npm test` with its exit code, and says the pull
+- **THEN** the Tests row says `**fail**`, names `npm test` with its exit code, and says the pull
   request is a draft because of it
 - **AND** the end of the check's output follows the table
 
@@ -132,13 +138,18 @@ and the tests that tag it.
 From it the row counts the scenarios in the spec files the pull request changes against its base,
 and names each of them that no test tags. The row SHALL say `not checked`, with the reason, on a
 gate-one pull request under `follow-the-two-gate-workflow` (#150), which carries no tests; where
-the repository has no `openspec/specs/`; where the skill is not installed in that directory; and
-where the script fails.
+the repository has no `openspec/specs/`; where the skill is not installed in that directory;
+where the script fails; and where it finds no test files. The script finds the test files itself,
+from the repository's test runner configuration (shared-skills PR #21); the loop passes it no
+patterns.
 
-A role whose `skills` lists `spec-trace` has its worker load the skill, named `igor:spec-trace`
+Where `signed-publishing` (#153) has shipped, a role whose `skills` lists `spec-trace` has its
+worker load the skill, named `igor:spec-trace`
 in the `igor` plugin, as `signed-publishing` (#153) has it load `prose` and `bug-hunter`. That
 worker tags each test it writes with the scenario that test checks, and the loop's run of the
-script shows whether it did. The loop runs the script whether or not the role lists the skill.
+script shows whether it did. The loop runs the script whether or not the role lists the skill:
+it is the loop's own check, not one of the checks #153 makes on what a listed skill signed, so
+a role need not list the skill for the row to be filled.
 
 The Spec scenarios row SHALL NOT change the review label.
 
@@ -172,7 +183,9 @@ The label SHALL be `review: skim` only when all four hold:
 - the Files changed row's scope result found no path outside scope, whether it is this push's or,
   for a push `scope-check` does not check, the last checked push's;
 - the run published at most the role's `skim_max_paths` paths, added and removed at most its
-  `skim_max_lines` lines between them, and declared no base change undone;
+  `skim_max_lines` lines between them, and declared no base change undone. For a catch-up
+  resolution these count only what the Igor's own resolution changed, never what the base
+  brought in;
 - the Sandbox denials row says `none`.
 
 Otherwise the label SHALL be `review: read`, including where the Tests row, or the Files changed
