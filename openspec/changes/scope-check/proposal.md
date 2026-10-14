@@ -47,8 +47,9 @@
   Anything else is flagged, even a path the issue names: gate one publishes a specification, and
   a path outside that specification's directory is not what gate one is for.
 - **Gate two's** push onto that pull request is checked against what the issue names plus what
-  the approved change names: its directory, and the paths its `tasks.md`, `design.md` and spec
-  deltas name. It is the one push onto an existing pull request that is checked. A resolution
+  the approved change names. The approved change is the specification a reviewer approved at
+  gate one. It names its directory, the paths its `proposal.md`, `tasks.md`, `design.md` and spec
+  deltas name, and files sharing those named files' stems. It is the one push onto an existing pull request that is checked. A resolution
   and a revision answering a change request are not.
 
 The pull request's own change is the one directory the gate-one artifact adds. An artifact that
@@ -94,8 +95,13 @@ None.
 - **Where the result appears** is set by `review-evidence` (PR #190), drafted in parallel. Once
   it ships, this result fills the scope part of its table's Files changed row, in its wording,
   and its review label (`review: skim` or `review: read`) uses this result. Before then, this
-  change writes one line, in the order #190 sets for the lines this change and
-  `loop-verifies-commands` (#189) write.
+  change writes one line: its own prefix,
+  `**Files changed** (checked by Igor, not reported by the worker): `, then that row's value,
+  verbatim. The pull request so states the same value before and after #190 ships. The line goes
+  where #190's drafted requirement *A pull request body holds a capped summary, then the loop's
+  evidence* describes; this change archives after #190, so that requirement is in force by then.
+- **Archive after `review-evidence` (#190)**, so the requirement and wording this change points at
+  are in force first.
 - **`signed-publishing`** (PR #153) has a model step write and sign the description. The result
   is assembled by the code from the run's record, so it is not signed: it follows the signed
   description, as #190 sets out.

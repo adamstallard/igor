@@ -1,3 +1,8 @@
+## 0. Order
+
+- [ ] 0.1 Archive this change only after `review-evidence` (#190) is archived, so the
+      requirement and row wording it points at are in force first.
+
 ## 1. The comparison
 
 - [ ] 1.1 Read the named set from the item's title and body: files as `extractPaths` reads them,
@@ -15,38 +20,44 @@
 - [ ] 1.6 For a `two-gate` role (after `follow-the-two-gate-workflow`, #150, ships): at gate one,
       the named set is the one change directory the artifact adds; with none or more than one,
       the result is not checked. At gate two, add to the item's named set each change directory
-      the pull request's diff held before the worker ran, the paths its `tasks.md`, `design.md` and
-      `specs/**` name by the reading in 1.1, and their stems as in 1.4
+      the pull request's diff held before the worker ran, the paths its `proposal.md`,
+      `tasks.md`, `design.md` and `specs/**` name by the reading in 1.1, and their stems as in 1.4
 - [ ] 1.7 On a push that is not checked, read the pull request's latest scope result from
       `executions.ndjson`, for the body only; record no new result
 
 ## 2. Where the result goes
 
 - [ ] 2.1 Before `review-evidence` (#190) ships, `prBody` appends one line after the worker's
-      summary, outside `PR_BODY_LIMIT`, in the order #190 sets for lines written before its table
-      exists. The lines, verbatim; the list after the colon may be cut to ten paths followed by
-      `and K more`, where K is how many are left out, and nothing else may be reworded. A path holding a backtick is quoted with a
-      longer run of backticks, so no path can end its code span:
+      summary, outside `PR_BODY_LIMIT`, placed as #190's drafted requirement *A pull request
+      body holds a capped summary, then the loop's evidence* describes. It removes from the
+      summary any line that starts with the line's prefix. The prefix, which this change owns,
+      is `**Files changed** (checked by Igor, not reported by the worker): `: `Files changed` echoes #190's row label, and the rest echoes
+      its table heading. After the prefix comes the Files changed value exactly as #190's task
+      2.1 words it. The lines below are that wording, and neither change may reword it apart
+      from the other. `<n>` is how many paths the run published, and `<k>` how many of them are
+      outside. Paths are listed, capped and quoted as #190's task 2.1 lists, caps and quotes
+      them:
 
       ```
-      Scope: every changed path is one the issue names.
-      Scope: N of M changed paths are outside what the issue names: `a`, `b`.
-      Scope: not checked, because the issue names no paths.
-      Scope: every changed path is in this specification's change, `openspec/changes/<name>/`.
-      Scope: N of M changed paths are outside this specification's change, `openspec/changes/<name>/`: `a`, `b`.
-      Scope: not checked, because this specification adds no change directory.
-      Scope: not checked, because this specification adds more than one change directory.
-      Scope: every path the implementation changed is one the issue or the approved change names.
-      Scope: N of M paths the implementation changed are outside what the issue and the approved change name: `a`, `b`.
-      Scope: not checked, because no push to this pull request has been checked.
+      **Files changed** (checked by Igor, not reported by the worker): <n>, all inside the issue's scope
+      **Files changed** (checked by Igor, not reported by the worker): **<n>, <k> outside the issue's scope:** `<path>`, `<path>`
+      **Files changed** (checked by Igor, not reported by the worker): <n>, not checked against scope: the issue names no paths
+      **Files changed** (checked by Igor, not reported by the worker): <n>, all inside this pull request's specification change
+      **Files changed** (checked by Igor, not reported by the worker): **<n>, <k> outside this pull request's specification change:** `<path>`, `<path>`
+      **Files changed** (checked by Igor, not reported by the worker): <n>, not checked against scope: this pull request's specification adds no change directory
+      **Files changed** (checked by Igor, not reported by the worker): <n>, not checked against scope: this pull request's specification adds more than one change directory
+      **Files changed** (checked by Igor, not reported by the worker): <n>, all inside the issue's and the approved change's scope
+      **Files changed** (checked by Igor, not reported by the worker): **<n>, <k> outside the issue's and the approved change's scope:** `<path>`, `<path>`
+      **Files changed** (checked by Igor, not reported by the worker): <n>, not checked against scope: no push to this pull request has been checked
       ```
 
-      On a push that is not checked, the last recorded result's line is repeated with `Scope:`
-      replaced by:
-
-      ```
-      Scope, as an earlier push found (this push was not checked):
-      ```
+      On a push that is not checked, `<n>` is still this run's count. Everything after `<n>, `
+      is the last recorded result's, followed by
+      ` (found by an earlier push; this push was not checked)`. Where the run is a catch-up
+      resolution that declared it undid a change the base branch made (as the in-force
+      requirement *A base change is undone only where the resolution says so* requires it to),
+      the line ends as #190's row does, with
+      ``; undoes the base's change to `<path>` ``, listing each such path as #190 does.
 
 - [ ] 2.2 Where `review-evidence` has shipped, fill the scope part of its Files changed row, in
       that change's wording, instead of writing the line in 2.1

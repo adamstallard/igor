@@ -24,7 +24,10 @@ The item's comments, and the role's `lane.paths.under`, name nothing.
 The result SHALL be stated after the worker's summary, or the signed description where
 `signed-publishing` (#153) applies, outside the summary's length limit, where `review-evidence`
 (#190) places it: in the scope part of its table's Files changed row, or, before that change
-ships, as one line in the order that change sets. The result is one of:
+ships, as one line holding that row's value in that row's wording, placed as #190's drafted
+requirement *A pull request body holds a capped summary, then the loop's evidence* describes.
+That line starts with the prefix `**Files changed** (checked by Igor, not reported by the worker): `. A line in the worker's summary
+that starts with that prefix SHALL be removed from the summary, so the worker cannot forge it. The result is one of:
 
 - **in scope**: every carried path is named;
 - **outside**: the paths that are not named, each listed;
@@ -37,8 +40,9 @@ review it.
 Of the pushes onto an existing pull request, only gate two's is checked (*Under the two-gate
 workflow, scope follows the gate*). Any other push, such as a resolution or a revision answering a
 change request, is not checked, and leaves the pull request's last result in force. That run
-records no scope result. Wherever the body is written again after that push, as
-`review-evidence` (#190) and gate two each write it, it states the last
+records no scope result. Wherever the body is written again after that push (after every push
+once `review-evidence` (#190) ships, and whenever a revision after gate two rewrites it), it
+states the last
 result recorded for the pull request, marked as from an earlier push, or, where none is recorded,
 that no push to the pull request has been checked.
 
@@ -101,9 +105,10 @@ and the result says which.
 Every path that push carries is compared with what the item names, by the rules of *A pull
 request states which changed paths its item does not name*, and with what the approved change
 names. The approved change is the change directory, or directories, that the pull request
-carried before gate two's worker ran. Each names every path in it, and every path that its
-`tasks.md`, its `design.md` or a file under its `specs/` names by the first two of those rules, together with a
-file sharing a named file's stem. The result is stated and recorded as for a new pull request.
+carried before gate two's worker ran. Each such directory names every path in it; every path
+that its `proposal.md`, its `tasks.md`, its `design.md` or a file under its `specs/` names as a
+file, directory or glob, by the first two rules of that requirement; and every file sharing the
+stem of a file so named. The result is stated and recorded as for a new pull request.
 
 A revision answering a change request, at either gate, is not checked.
 
