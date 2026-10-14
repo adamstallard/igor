@@ -45,22 +45,33 @@
 
 - **Gate one** expects only the pull request's own change directory under `openspec/changes/`.
   Anything else is flagged, even a path the issue names: gate one publishes a specification, and
-  a path outside that specification's directory is not what gate one is for.
+  a path outside that specification's directory is not what gate one is for. *Rejected:*
+  checking gate one against what the issue names, which flags every spec pull request, since
+  no issue can name a change directory before it exists.
 - **Gate two's** push onto that pull request is checked against what the issue names plus what
   the approved change names. The approved change is the specification a reviewer approved at
   gate one. It names its directory, the paths its `proposal.md`, `tasks.md`, `design.md` and spec
-  deltas name, and files sharing those named files' stems. It is the one push onto an existing pull request that is checked. A resolution
-  and a revision answering a change request are not.
+  deltas name, and files sharing those named files' stems. Gate two's push is the one push onto
+  an existing pull request that is checked; a resolution and a revision answering a change request are not.
+  *Rejected:* leaving gate two unchecked, which leaves the implementation, the push most likely
+  to stray, with no scope check at all.
 
 **Also decided (Adam, 2026-10-13):**
 
 - The pull request's own change is the one directory the gate-one artifact adds. An artifact
   that adds none, or more than one, is reported as not checked rather than guessed at.
-- A push that is not checked keeps the last checked result, marked as from an earlier push
-  (decision 6).
+  *Rejected:* taking every change directory the artifact touches as its own, which would never
+  flag a spec pull request that edits someone else's change.
+- A push that is not checked keeps the last result recorded by a push that ran the check,
+  marked as from an earlier push (decision 6). That result may itself say "not checked", as
+  when the issue named nothing; it carries forward all the same. *Rejected:* stating "not
+  checked" after every such push, for the reason decision 6 gives, and because #190 labels any
+  pull request whose result is "not checked" `review: read`, so every resolution would demote
+  it.
 - Where the record of earlier results is missing, as when the state branch holding
   `executions.ndjson` has been lost or reset, the result reads "not checked", never "no push has
-  been checked".
+  been checked". *Rejected:* "no push has been checked", which the loop cannot know once the
+  record is gone.
 
 ## Why
 
