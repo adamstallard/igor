@@ -3,9 +3,13 @@
 ### Requirement: The loop runs the role's checks in the worker's tree
 
 Where the worker changed the tree, execution SHALL run each of the role's effective `checks` in
-that tree, in the order declared, after the tree's changes are read and before the claim is
-re-read. Every check SHALL run, even after one fails. What a check writes SHALL NOT reach the
-artifact.
+that tree, in the order declared. They SHALL run after execution reads which paths the worker
+changed, and before it re-reads the item's claim. Where `signed-publishing` (#153) stages and signs
+the tree before the commit, the checks SHALL also run after that staging and signing. Every check
+SHALL run, even after one fails.
+
+What a check writes SHALL NOT reach the artifact: the artifact carries only the changes read, and
+staged where #153 applies, before the checks ran.
 
 Each check SHALL run as the worker ran: as the same user, in its own process group, and with
 the environment the worker was given, without the seat token.
@@ -58,30 +62,34 @@ SHALL kill the running check as it kills a worker.
 Each execution row SHALL record each check's command line and result: passed, failed, timed
 out or not run, with its exit code and how long it ran. The row SHALL NOT hold a check's output.
 
-A pull request opened after checks SHALL be a draft where any check did not pass, even where the
-role's `allow` lists `pr` and not `draft-pr`, and SHALL still request the role's reviewers. Its
-body SHALL carry one line for the checks, after the worker's summary and not counted toward the
-700-character limit on that summary:
+A draft is within `pr`: where a role's `allow` lists `pr`, the loop may open its pull request as
+a draft. A pull request opened after checks SHALL be a draft where any check did not pass,
+whether or not `allow` lists `draft-pr`. It SHALL still request the role's reviewers, unless the
+claim was lost. A lost claim falls under *Work finished before a claim is lost is offered, not
+discarded*, which requests none.
 
-- every check passed: the line names them and says Igor ran them;
-- a check did not pass: the line names it and its result, followed by the last lines of its
-  output, at most 1,000 characters for each such check;
-- the role declares no checks: the line says Igor ran none, naming the role.
+Its body SHALL state the checks' result after the worker's summary, or after the signed
+description where `signed-publishing` (#153) applies. The result is not counted toward the
+summary's length limit. Its wording, and its place among what follows the summary, are those
+`review-evidence` (#190) sets for its Tests row. Where that change has not shipped, the result is
+one line in that wording. Each check that failed or timed out is followed by the end of its
+output, at most 1,000 characters.
 
-Before output is published, each credential value the Igor holds SHALL be replaced in it by
-`[redacted]`: every seat token, and the value of each variable in the Igor's environment whose
-name contains `TOKEN`, `KEY`, `SECRET`, `PASSWORD` or `CREDENTIAL`.
+Before a check's output is published, it SHALL be redacted by *credential redaction*, the rule
+`keep-action-log` (#188) defines.
 
-Where checks follow a conflict resolution on an existing pull request, execution SHALL comment
-on it with the same line, and where a check did not pass SHALL return it to draft.
+Checks also run before any later push onto an existing pull request, such as a conflict
+resolution. Once that push is published, execution SHALL comment on the pull request with the
+line it would put in the body, and where a check did not pass SHALL return it to draft.
 
 #### Scenario: A failing test keeps the pull request a draft
 
 - **WHEN** a role allows `pr` and `draft-pr`, and a check exits non-zero
 - **THEN** the pull request is opened as a draft
-- **AND** its body names the check, its exit code and the end of its output
+- **AND** its body names the check, its exit code and the end of its output, and says the pull
+  request is a draft because of it
 
-#### Scenario: A role that may only open ready pull requests
+#### Scenario: A draft is within `pr`
 
 - **WHEN** a role allows `pr` and not `draft-pr`, and a check fails
 - **THEN** the pull request is opened as a draft
@@ -89,12 +97,12 @@ on it with the same line, and where a check did not pass SHALL return it to draf
 #### Scenario: Passing checks are stated
 
 - **WHEN** every check passes
-- **THEN** the body names each check and says Igor ran it
+- **THEN** the body names each check and says it passed
 
 #### Scenario: A role with no checks says so
 
 - **WHEN** the role declares no checks
-- **THEN** the body says Igor ran none, naming the role
+- **THEN** the body says the role declares no checks
 
 #### Scenario: A credential in a check's output is not published
 
@@ -103,6 +111,7 @@ on it with the same line, and where a check did not pass SHALL return it to draf
 
 #### Scenario: A resolution that breaks the tests
 
-- **WHEN** a conflict resolution is published to a ready pull request and a check fails
+- **WHEN** a conflict resolution, or any other later push, is published to a ready pull request
+  and a check fails
 - **THEN** the pull request is returned to draft
 - **AND** a comment on it names the failed check
