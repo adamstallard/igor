@@ -3,8 +3,12 @@
 ### Requirement: The worker's tool calls are recorded beside its transcript
 
 Every run that started the worker SHALL write an action log to the state branch at
-`transcripts/<tracker>/<repo>/<native>.actions.json`, whatever the run's outcome, a killed
-worker included. The run's `executions.ndjson` row SHALL name that path. A run whose worker made
+`transcripts/<tracker>/<repo>/<native>.<at>.actions.json`, whatever the run's outcome, a killed
+worker included. `<tracker>`, `<repo>` and `<native>` are those of the item's transcript path.
+`<at>` is the millisecond time on the run's `executions.ndjson` row (its ledger row), with every
+run of characters outside `[A-Za-z0-9_-]` replaced by `-`. Where a log already exists at that
+path, `-2`, `-3` and so on SHALL be added to `<at>` until the path is free, so no run's log
+overwrites another's. The run's row SHALL name that path. A run whose worker made
 no tool call SHALL write no log, and its row SHALL name none.
 
 The log SHALL list the tool calls in the order they were made, the subagents' calls included and
@@ -30,6 +34,13 @@ state branch.
 - **WHEN** a worker runs `npm test`, it fails, and the run ends with no artifact
 - **THEN** the action log holds the call, its error, and the end of its output
 - **AND** the run's ledger row names the log
+
+#### Scenario: A later run of the same item keeps the earlier log
+
+- **WHEN** two runs of the same item each start the worker, such as the specification run and
+  the later implementation run of the two-gate workflow (#150)
+- **THEN** the state branch holds two action logs, one per run
+- **AND** each run's ledger row names its own log
 
 #### Scenario: Edited contents are not logged
 

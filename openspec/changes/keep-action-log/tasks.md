@@ -35,7 +35,9 @@
 - [ ] 3.3 Cap inputs at 1,000 characters and output at its last 2,000, then trim the document to
       512 KiB from the start, recording how many entries were dropped.
 - [ ] 3.4 In `recordExecution`, write the log after the transcript, catching and reporting its
-      failure. Name its path in the ledger row as `actions` only where the worker made a tool
+      failure, at the path the spec gives, keyed by the row's `at`. Reuse the character rule of
+      `refusalPath` (`src/execute.ts`), which already names refusal envelopes from a time, and
+      add the numeric suffix where the path is taken. Name its path in the ledger row as `actions` only where the worker made a tool
       call, and record the tier as `tier` in the log.
 
 ## 4. Tests
@@ -52,3 +54,4 @@
 - [ ] 4.6 A failed log write still lets the capacity observation be written.
 - [ ] 4.7 Exit codes: an error beginning `Exit code 128` records 128; a result that is not an
       error records 0; an error in any other format records no code.
+- [ ] 4.8 Two runs of one item write two logs, and each ledger row names its own.

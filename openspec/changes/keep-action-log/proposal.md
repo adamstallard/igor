@@ -57,8 +57,10 @@ what changed as a result". A run keeps only the worker's closing summary as its 
 
 ## What Changes
 
-- Each run that started the worker writes `transcripts/<tracker>/<repo>/<native>.actions.json`
-  to the state branch, beside the transcript, and its `executions.ndjson` row names it.
+- Each run whose worker made a tool call writes
+  `transcripts/<tracker>/<repo>/<native>.<at>.actions.json` to the state branch, beside the
+  item's transcript (`<native>` is the item's id in its tracker, `<at>` the run's time), and its
+  `executions.ndjson` row names it.
 - Every kept string is redacted as it is collected, and every entry and the whole file are
   capped.
 - How much is kept follows the store's visibility, read from GitHub.
