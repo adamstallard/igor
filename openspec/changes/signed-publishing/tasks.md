@@ -43,8 +43,8 @@
 - [ ] 2.2 A bug-hunter step in caller-commits mode; parse its result block
 - [ ] 2.3 A prose pass step, given the issue title and number and, under #150, the gate, that
       writes the message and runs `prose check`. The subject drops any closing keyword in the
-      title; the body ends with `Closes #N` outside #150 and on gate two's implementation commit,
-      and with `Refs #N` on gate one's and each revision's
+      title; the body ends with `Closes #N` for a role not using #150 and on every gate-two commit,
+      revisions included, and with `Refs #N` on gate one's commits, its revisions included
 - [ ] 2.4 Run bug-hunter once more when the prose pass changed a file after its signature
 - [ ] 2.5 In `produce()` and in #150's `commitOnBranch`, check that the uploaded tree equals both signed trees, that
       `prose verify-staged` accepts the trailer, and that the subject is the issue title with

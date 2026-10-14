@@ -33,12 +33,14 @@ fixes this for every piece of text an Igor publishes:
   - bug-hunter, in its caller-commits mode, returns `Bug-hunter:` and `Bug-hunter-Tree:`;
   - the prose pass writes the message, runs `prose check`, and returns the
     `Prose: ✓ <tree>:<message>` trailer. The subject is the issue title with any closing
-    keyword dropped. The body explains the change and ends with `Closes #N` on a commit that
-    completes the item: any commit of a role outside #150, and gate two's implementation commit
-    under it. It ends with `Refs #N` on
-    gate one's and each revision's commit (decided 2026-10-13, matching #150's rule that a
-    gate-one commit closes nothing; rejected: `Closes #N` everywhere, which would close the
-    issue when gate one merges).
+    keyword (GitHub's `close`, `fix` or `resolve` in any form, followed by an issue reference, as in a title like `Login fails (fixes #12)`) dropped, so a title cannot close an issue by itself. The body explains the
+    change and ends with `Closes #N` on any commit of a role not using the two-gate workflow
+    (#150) and, under #150, on every gate-two commit, the implementation and each revision after
+    it. It ends with `Refs #N` only on gate one's commits, its revisions
+    included (decided 2026-10-13, matching #150's rule that gate one closes nothing; rejected:
+    `Closes #N` everywhere, which would close the issue when gate one merges, and `Refs #N` on
+    gate-two revisions, which leaves the issue open where a squash merge keeps only a revision's
+    message).
 
   Igor commits through the API only when `prose verify-staged` accepts the trailer, the staged
   tree equals both signed trees, and the subject is the issue title as above.
@@ -48,9 +50,8 @@ fixes this for every piece of text an Igor publishes:
   claim messages. The code's authors wrote it and it is reviewed as code. A handoff is needed
   exactly when a model call may be impossible, so `graceful-handoff` stays as it is.
 - **A pull request body is the opening block, then the signed description, then the code's
-  evidence section** (decided 2026-10-13). The opening block is the opening text the two-gate workflow (#150) places first (gate one's "specification only"
-  opening and the paths it refused to publish; at gate two, the note that the item changed after
-  the spec was approved, and bug-hunter's open decisions), then the line linking the pull request to its item. Every line the code adds
+  evidence section** (decided 2026-10-13). `review-evidence` (#190) defines the opening block,
+  which ends with the line linking the pull request to its item. Every line the code adds
   after the description starts at the marker `<!-- igor:evidence -->`, which
   `review-evidence` (#190) defines. The description is exactly the span between the opening
   block and the marker, or to the end where there is no marker, and `prose verify-post` runs on

@@ -14,9 +14,10 @@ requires*); a role that lists neither commits as it does without this capability
 2. **The prose pass**, where the role lists `prose`, SHALL rewrite the docs and comments the change touches, write the commit
    message, run `prose check` over the staged tree and that message, and return the
    `Prose: ✓ <tree>:<message>` trailer. The message's subject SHALL be the issue title, with any
-   closing keyword in it dropped, and its body SHALL explain the change. The body SHALL end with
-   `Closes #N` on a commit that completes the item: any commit of a role outside #150, and gate
-   two's implementation commit. Every other commit under #150, gate one's and each revision's,
+   closing keyword in it dropped (GitHub's `close`, `fix` or `resolve` in any form, followed by an issue reference, as in a title like `Login fails (fixes #12)`), and its body SHALL explain the change. The body SHALL
+   end with `Closes #N` on any commit of a role not using the two-gate workflow (#150), and
+   under #150 on every gate-two commit,
+   the implementation and each revision after it. Gate one's commits, its revisions included,
    SHALL end with `Refs #N`, since #150 keeps closing keywords off them.
 
 If both run and the prose pass changes a file after bug-hunter signed its tree, bug-hunter
@@ -84,9 +85,8 @@ For a role whose `skills` lists `prose`, the prose pass SHALL write the pull req
 `prose sign`. The code that creates or edits the pull request SHALL run `prose verify-post` on
 the description first, as the signed-publishing capability requires.
 
-The pull request body holds, in order: the opening block: the line linking the pull request to its item, preceded, for a role under
-the two-gate workflow (#150), by the text #150 places first (`review-evidence`, #190, sets where
-that text goes); then the description; then, from the marker `<!-- igor:evidence -->` on, the evidence section that
+The pull request body holds, in order: the opening block, which ends with the line linking the
+pull request to its item and which `review-evidence` (#190) defines; then the description; then, from the marker `<!-- igor:evidence -->` on, the evidence section that
 `review-evidence` (#190) has the code assemble. Every line the code adds after the description
 goes after the marker. The code assembles the evidence section from its own record of the run,
 so it is not signed and is not part of the description.
@@ -104,15 +104,15 @@ pass, as text that fails verification is.
 The description SHALL describe the pull request as it stands. When Igor pushes a commit that
 changes what the worker did, gate two's implementation or a revision under #150, the description
 SHALL be rewritten, signed again, and verified before it replaces the old one, and the opening
-block SHALL be recomputed for that push. A catch-up resolution, which only brings the base
+block SHALL be recomputed for that push, since its notes come from that push's bug-hunter run,
+as #190 sets out. A catch-up resolution, which only brings the base
 branch in, leaves the description as it is. Replacing the description leaves the evidence
 section to #190, which rebuilds it on the same push.
 
 #### Scenario: A signed description is published
 
 - **WHEN** the prose pass returns a description whose footer verifies
-- **THEN** the pull request is created with a body whose span between the linkage line (with any
-  two-gate opening text) and `<!-- igor:evidence -->`, or to the end where there is no marker,
+- **THEN** the pull request is created with a body whose span between the opening block and `<!-- igor:evidence -->`, or to the end where there is no marker,
   is exactly that description
 - **AND** anything from the marker on is the evidence section Igor's code assembled, not signed
 
