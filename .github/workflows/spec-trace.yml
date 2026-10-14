@@ -1,0 +1,21 @@
+name: spec-trace
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  spec-trace:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Every scenario in openspec/specs is tagged by a test
+        env:
+          # spec_trace.py from adamstallard/shared-skills, pinned to a full commit SHA so a
+          # change there cannot fail this repository's CI. To move the pin, fetch the script
+          # at the new commit with the URL below, run `python3 spec_trace.py check` in this
+          # repository, and fix what it reports before putting that commit here.
+          SPEC_TRACE_SHA: 23383b49321fcbc975238674608ce433f62c0724
+        run: |
+          curl -fsSL "https://raw.githubusercontent.com/adamstallard/shared-skills/$SPEC_TRACE_SHA/.agents/skills/spec-trace/scripts/spec_trace.py" -o "$RUNNER_TEMP/spec_trace.py"
+          python3 "$RUNNER_TEMP/spec_trace.py" check
