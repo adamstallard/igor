@@ -1,7 +1,7 @@
 ## 0. Order
 
-- [ ] 0.1 Archive this change only after `review-evidence` (#190) is archived, so the
-      requirement and row wording it points at are in force first.
+- [ ] 0.1 Build this change after `review-evidence` (#190) has merged, which itself follows
+      `keep-action-log` (#188). Archive in the same order, after #190.
 
 ## 1. The comparison
 
@@ -27,50 +27,19 @@
 
 ## 2. Where the result goes
 
-- [ ] 2.1 Before `review-evidence` (#190) ships, `prBody` appends one line after the worker's
-      summary, outside `PR_BODY_LIMIT`, placed as #190's drafted requirement *A pull request
-      body holds a capped summary, then the loop's evidence* describes. It removes from the
-      summary any line that starts with the line's prefix. The prefix, which this change owns,
-      is `**Files changed** (checked by Igor, not reported by the worker): `: `Files changed` echoes #190's row label, and the rest echoes
-      its table heading. After the prefix comes the Files changed value exactly as #190's task
-      2.1 words it. The lines below are that wording, and neither change may reword it apart
-      from the other. `<n>` is how many paths the run published, and `<k>` how many of them are
-      outside. Paths are listed, capped and quoted as #190's task 2.1 lists, caps and quotes
-      them:
-
-      ```
-      **Files changed** (checked by Igor, not reported by the worker): <n>, all inside the issue's scope
-      **Files changed** (checked by Igor, not reported by the worker): **<n>, <k> outside the issue's scope:** `<path>`, `<path>`
-      **Files changed** (checked by Igor, not reported by the worker): <n>, not checked against scope: the issue names no paths
-      **Files changed** (checked by Igor, not reported by the worker): <n>, all inside this pull request's specification change
-      **Files changed** (checked by Igor, not reported by the worker): **<n>, <k> outside this pull request's specification change:** `<path>`, `<path>`
-      **Files changed** (checked by Igor, not reported by the worker): <n>, not checked against scope: this pull request's specification adds no change directory
-      **Files changed** (checked by Igor, not reported by the worker): <n>, not checked against scope: this pull request's specification adds more than one change directory
-      **Files changed** (checked by Igor, not reported by the worker): <n>, all inside the issue's and the approved change's scope
-      **Files changed** (checked by Igor, not reported by the worker): **<n>, <k> outside the issue's and the approved change's scope:** `<path>`, `<path>`
-      **Files changed** (checked by Igor, not reported by the worker): <n>, not checked against scope: no push to this pull request has been checked
-      ```
-
-      On a push that is not checked, `<n>` is still this run's count. Everything after `<n>, `
-      is the last recorded result's, followed by
-      ` (found by an earlier push; this push was not checked)`. Where the run is a catch-up
-      resolution that declared it undid a change the base branch made (as the in-force
-      requirement *A base change is undone only where the resolution says so* requires it to),
-      the line ends as #190's row does, with
-      ``; undoes the base's change to `<path>` ``, listing each such path as #190 does.
-
-- [ ] 2.2 Where `review-evidence` has shipped, fill the scope part of its Files changed row, in
-      that change's wording, instead of writing the line in 2.1
-- [ ] 2.3 The execution row gains `scope: { checked: boolean, basis, reason, change, compared:
+- [ ] 2.1 Fill the scope part of #190's Files changed row with this result, in the wording
+      #190's task 2.1 gives, including the earlier-push form for a push that is not checked.
+      Write nothing else into the body
+- [ ] 2.2 The execution row gains `scope: { checked: boolean, basis, reason, change, compared:
       number, outside: string[] }`: `basis` is `issue`, `gate-one` or `gate-two`; `reason` names
       why it was not checked; `change` is gate one's change directory; `compared` is how many
-      paths were compared. With these, a later push that is not checked can write the same line
-      again
+      paths were compared. With these, the table after a later push that is not checked can
+      state the same result again
 
 ## 3. Tests
 
 - [ ] 3.1 One test per scenario in the spec delta
 - [ ] 3.2 A path outside the named set leaves `draft` and `reviewers` exactly as they were
-- [ ] 3.3 A resolution and a revision record no `scope` field, and a body written after either
+- [ ] 3.3 A resolution and a revision record no `scope` field, and the table built after either
       states the last recorded result as an earlier push's
 - [ ] 3.4 Mutation-check 3.1 and 3.2: remove the comparison, confirm each goes red

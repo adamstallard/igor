@@ -52,8 +52,15 @@
   deltas name, and files sharing those named files' stems. It is the one push onto an existing pull request that is checked. A resolution
   and a revision answering a change request are not.
 
-The pull request's own change is the one directory the gate-one artifact adds. An artifact that
-adds none, or more than one, is reported as not checked rather than guessed at.
+**Also decided (Adam, 2026-10-13):**
+
+- The pull request's own change is the one directory the gate-one artifact adds. An artifact
+  that adds none, or more than one, is reported as not checked rather than guessed at.
+- A push that is not checked keeps the last checked result, marked as from an earlier push
+  (decision 6).
+- Where the record of earlier results is missing, as when the state branch holding
+  `executions.ndjson` has been lost or reset, the result reads "not checked", never "no push has
+  been checked".
 
 ## Why
 
@@ -92,25 +99,24 @@ None.
 - **Which paths an artifact carries** is governed by open changes `carry-only-what-happened`
   (PR #125) and `carry-what-a-tree-holds` (PR #137). This check compares whatever paths the artifact
   carries; with those two changes, those are exactly the paths the worker changed.
-- **Where the result appears** is set by `review-evidence` (PR #190), drafted in parallel. Once
-  it ships, this result fills the scope part of its table's Files changed row, in its wording,
-  and its review label (`review: skim` or `review: read`) uses this result. Before then, this
-  change writes one line: its own prefix,
-  `**Files changed** (checked by Igor, not reported by the worker): `, then that row's value,
-  verbatim. The pull request so states the same value before and after #190 ships. The line goes
-  where #190's drafted requirement *A pull request body holds a capped summary, then the loop's
-  evidence* describes; this change archives after #190, so that requirement is in force by then.
-- **Archive after `review-evidence` (#190)**, so the requirement and wording this change points at
-  are in force first.
+- **Where the result appears** is `review-evidence` (PR #190): this result fills the scope part of
+  its table's Files changed row, in its wording. #190's label needs a checked result with no
+  path outside for `review: skim`, so a path outside makes it `review: read`; #190 builds that,
+  and this change only supplies the result. This change writes nothing else into the body.
+- **Build order: `keep-action-log` (#188), then `review-evidence` (#190), then this change and
+  `loop-verifies-commands` (#189) in either order.** Archive order follows the same sequence, so
+  the row this change fills exists in code before this change merges, and in the in-force specs
+  before it is archived.
 - **`signed-publishing`** (PR #153) has a model step write and sign the description. The result
-  is assembled by the code from the run's record, so it is not signed: it follows the signed
-  description, as #190 sets out.
+  is assembled by the code, so it sits in #190's evidence section, after the marker
+  `<!-- igor:evidence -->` that ends the signed description.
 - **`follow-the-two-gate-workflow`** (PR #150) defines the gates this check follows. Without it,
   every role is checked as a one-gate role.
 
 ## Impact
 
-- `src/execute.ts`: the comparison, the line in `prBody`, and a field on the execution row; and,
-  for a `two-gate` role, which gate is running.
+- `src/execute.ts`: the comparison, the scope part of the Files changed row, and a field on the
+  execution row; and, for a `two-gate` role, reading which gate is running, as #150 determines
+  it.
 - No change to what is published, to draft status, or to the rule that a person approves every
   Igor pull request.
