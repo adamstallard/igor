@@ -23,9 +23,14 @@
    test. A failing
    test is evidence the change is wrong; an unnamed path is often only evidence that the issue was
    written briefly.
-6. **A new pull request is checked; a resolution is not.** A resolution brings the base branch into
-   an existing pull request, so it carries the base's changes, which no item names. Rejected: checking resolutions too, which would flag every
-   path the base brought in.
+6. **A new pull request is checked. Of the pushes onto an existing pull request, only gate two's
+   is checked, under the two-gate workflow (below); a resolution, or a revision answering a
+   change request, is not.** A resolution brings the base branch into an existing pull request, so it carries the base's
+   changes, which no item names. Rejected: checking resolutions too, which would flag every path
+   the base brought in. A push that is not checked leaves the last checked result in force, and a
+   body written after it says that result came from an earlier push. Rejected: stating "not
+   checked" after every resolution, which would discard a result that still describes the pull
+   request's own changes.
 7. **A capability or change points only at what its own files say.** Naming `task-execution`
    puts `openspec/specs/task-execution/` in scope, plus any file, directory or glob its files name.
    A capability those files mention adds nothing more, and `openspec/changes/archive/` is no
@@ -35,11 +40,19 @@
    Rejected: a table mapping each capability to source paths. Nothing would keep it current, and a
    stale table hides exactly the paths it forgot.
 
-**Still open:** under `follow-the-two-gate-workflow` (PR #150), gate one's spec is a new change
-directory no issue names, so every gate-one pull request would list all its paths as outside.
-Gate two pushes onto that pull request, so its code is never checked. One answer: on a two-gate
-role, gate one counts its own change directory as named, and gate two is checked against the
-approved change's files. This change does not decide it.
+**Decided (Adam, 2026-10-13): the check understands both gates of the two-gate workflow**
+(`follow-the-two-gate-workflow`, #150; this part applies only once that change ships):
+
+- **Gate one** expects only the pull request's own change directory under `openspec/changes/`.
+  Anything else is flagged, even a path the issue names: gate one publishes a specification, and
+  a path outside that specification's directory is not what gate one is for.
+- **Gate two's** push onto that pull request is checked against what the issue names plus what
+  the approved change names: its directory, and the paths its `tasks.md`, `design.md` and spec
+  deltas name. It is the one push onto an existing pull request that is checked. A resolution
+  and a revision answering a change request are not.
+
+The pull request's own change is the one directory the gate-one artifact adds. An artifact that
+adds none, or more than one, is reported as not checked rather than guessed at.
 
 ## Why
 
@@ -52,10 +65,13 @@ of the comparison: `Candidate.paths`, read from the item's text by `extractPaths
 
 ## What Changes
 
-- Before opening a new pull request, the loop compares every path the artifact carries with the
-  paths the item names, and with what any OpenSpec capability or change the item names points at.
-- The pull request body states the result in one line the loop writes, after the worker's summary
-  and outside its 700-character limit.
+- The loop compares every path the artifact carries with the paths the item names, and with what
+  any OpenSpec capability or change the item names points at, before opening a new pull request.
+- Under the two-gate workflow, gate one's new pull request is compared with its own change
+  directory instead. Gate two's push onto that pull request is compared with the issue and the
+  approved change, before it is published.
+- The pull request body states the result after the worker's summary, outside the summary's
+  length limit, where `review-evidence` (#190) places it.
 - The run's row in `executions.ndjson` records whether scope was checked and which paths were
   outside it.
 
@@ -75,17 +91,20 @@ None.
 - **Which paths an artifact carries** is governed by open changes `carry-only-what-happened`
   (PR #125) and `carry-what-a-tree-holds` (PR #137). This check compares whatever paths the artifact
   carries; with those two changes, those are exactly the paths the worker changed.
-- **Where the result appears** overlaps `review-evidence` (PR #190), drafted in parallel. Its
-  evidence table has a Files changed row with its own verbatim wording. Where the table exists,
-  this result fills that row's scope part, and this change's line is not written.
-- **`signed-publishing`** (PR #153) has a model step write and sign the description. The line is
-  assembled by the code from the run's record, so it is not signed: it follows the signed
-  description's footer, which #153's exemption for code-assembled text allows.
-- **Review labels.** A triage label (`review: skim` or `review: read`) built from this result and
-  others is not part of this change.
+- **Where the result appears** is set by `review-evidence` (PR #190), drafted in parallel. Once
+  it ships, this result fills the scope part of its table's Files changed row, in its wording,
+  and its review label (`review: skim` or `review: read`) uses this result. Before then, this
+  change writes one line, in the order #190 sets for the lines this change and
+  `loop-verifies-commands` (#189) write.
+- **`signed-publishing`** (PR #153) has a model step write and sign the description. The result
+  is assembled by the code from the run's record, so it is not signed: it follows the signed
+  description, as #190 sets out.
+- **`follow-the-two-gate-workflow`** (PR #150) defines the gates this check follows. Without it,
+  every role is checked as a one-gate role.
 
 ## Impact
 
-- `src/execute.ts`: the comparison, the line in `prBody`, and a field on the execution row.
+- `src/execute.ts`: the comparison, the line in `prBody`, and a field on the execution row; and,
+  for a `two-gate` role, which gate is running.
 - No change to what is published, to draft status, or to the rule that a person approves every
   Igor pull request.
