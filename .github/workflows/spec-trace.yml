@@ -15,7 +15,7 @@ jobs:
           # change there cannot fail this repository's CI. To move the pin, fetch the script
           # at the new commit with the URL below, run `python3 spec_trace.py check` in this
           # repository, and fix what it reports before putting that commit here.
-          SPEC_TRACE_SHA: 48717c8f403d21c48c0b8cc43d9e822b6acc8802
+          SPEC_TRACE_SHA: e3beebf1bee39c49fad25a2c33e6f25a1d0bb5c8
         run: |
           curl -fsSL "https://raw.githubusercontent.com/adamstallard/shared-skills/$SPEC_TRACE_SHA/.agents/skills/spec-trace/scripts/spec_trace.py" -o "$RUNNER_TEMP/spec_trace.py"
           python3 "$RUNNER_TEMP/spec_trace.py" check
