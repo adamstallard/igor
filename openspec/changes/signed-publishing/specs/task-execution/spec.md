@@ -85,10 +85,15 @@ For a role whose `skills` lists `prose`, the prose pass SHALL write the pull req
 `prose sign`. The code that creates or edits the pull request SHALL run `prose verify-post` on
 the description first, as the signed-publishing capability requires.
 
-The pull request body holds, in order: the opening block, which ends with the line linking the
-pull request to its item and which `review-evidence` (#190) defines; then the description; then, from the marker `<!-- igor:evidence -->` on, the evidence section that
-`review-evidence` (#190) has the code assemble. Every line the code adds after the description
-goes after the marker. The code assembles the evidence section from its own record of the run,
+The pull request body holds, in order: the opening block, then the description, then, from the
+marker `<!-- igor:evidence -->` on, the evidence section. Once `review-evidence` (#190) ships,
+it defines the opening block. Until then, the opening block is the line linking the pull
+request to its item, preceded for a role under the two-gate workflow (#150) by the text #150 places first (gate one's "specification only" opening and the paths gate one
+refused to publish; at gate two, the note that the issue changed after the spec was approved,
+and bug-hunter's open decisions).
+
+`review-evidence` (#190) has the code assemble the evidence section. Every line the code adds
+after the description goes after the marker. The code assembles the evidence section from its own record of the run,
 so it is not signed and is not part of the description.
 
 The description is exactly the span between the opening block and the marker, apart from the
