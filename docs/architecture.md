@@ -11,14 +11,21 @@ than restating it.
 
 ## 0. What Igor is for
 
-**Think with your own agent; act through the team's.** A person still decides with their own
-AI. What Igor replaces is the sub-agents that act for them inside a session, whose work and
+**Decide together; act through the team's agents.** When each person's agent talks to the
+others' agents, every agent holds one person's partial view, and decisions end up in traffic
+nobody reads. Igor makes agents part of a shared process instead. People keep personal agents
+for private thinking, but they decide together in a shared channel or document, and what a
+personal agent produces is posted there as a proposal. A scribe Igor folds those proposals into
+one record of what was decided. The scribe is not built: its design is a proposal under
+review, in [`openspec/changes/discussion-scribe/`](../openspec/changes/discussion-scribe/).
+
+Igor also replaces the sub-agents that act for a person inside a session, whose work and
 lessons stay in that session. Igors act in the team's shared space instead: whatever an Igor
 needs to continue a piece of work is on the tracker or in lore, never in a process (§1, §2).
 Igors are defined by roles and claim work where everyone can see it (§2.1, §5.2), and they use
 the seats team members have set aside for their roles (§6.3). One test follows for any feature:
 if it only works because something is remembered in a process, a session file, or one person's
-machine, it breaks the premise.
+machine, it breaks the premise that Igors work in the team's shared space.
 
 ---
 
