@@ -3,10 +3,16 @@
 AI teammates that find their own work, claim it in the open, and draw on what the team
 has already learned.
 
-Keep your own AI for thinking: brainstorming, asking, deciding. When it's time to act, hand the
-work to Igors instead of sub-agents in your session. They take it from the team's tracker and put
-their claims, questions, handoffs and pull requests there, in plain view. What the team
-teaches them becomes [lore](#lore) every Igor reads, not memory stuck in one person's sessions.
+Igor makes agents part of a shared process instead of each person's private helper. When it's
+time to act, hand the work to Igors instead of sub-agents in your session. They take it from the
+team's tracker and put their claims, questions, handoffs and pull requests there, in plain view.
+What the team teaches them becomes [lore](#lore) every Igor reads, not memory stuck in one
+person's sessions.
+
+Deciding belongs in the open too. People keep personal agents for private thinking, but they
+brainstorm and decide together in a shared channel or document, where an Igor called the scribe
+keeps a single shared record of what was decided. The scribe is not built: its design is a
+proposal under review, in [`openspec/changes/discussion-scribe/`](openspec/changes/discussion-scribe/).
 
 An Igor is a named teammate that holds one role. Nothing durable lives inside one: run
 five, kill four mid-week, and nothing is lost. The roles live in git, the knowledge belongs to the
