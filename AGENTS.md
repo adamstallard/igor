@@ -36,6 +36,20 @@ assumed. `docs/architecture.md` holds the decisions, and a change's `design.md` 
 implementation contradicted — including in a change already archived, which is read before the
 code by whoever next touches that area.
 
+**A test names the scenario it checks**, with a comment above it:
+`// @scenario <capability>: <Scenario name>`, the capability being the directory under
+`openspec/specs/`. CI fails on:
+
+- a scenario in `openspec/specs/` that no test tags, unless `openspec/spec-trace-baseline.txt`
+  lists it;
+- a tag that names no scenario in `openspec/specs/` or in an open change's specs under
+  `openspec/changes/`;
+- a baseline line whose scenario a test now tags. Delete that line in the change that adds the tag.
+
+So tag a test in the pull request that writes it, even while its scenario is only in an open
+change. Once archiving moves the scenario into `openspec/specs/`, CI requires the tag. See the
+`spec-trace` skill in adamstallard/shared-skills.
+
 **A comment describes the code as it is now.** No history, no narration of what changed. Where
 a past mistake is worth preventing, write it as a warning in the present tense. See the
 `sharper-comments` skill.
