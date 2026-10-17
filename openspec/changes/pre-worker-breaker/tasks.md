@@ -87,12 +87,32 @@
 
 ## 5. After #101 merges
 
-- [ ] 5.0 Restate against #101's text: its `work-discovery` watermark requirement lists why a
+Whether sections 2 to 4 also wait for #101 is open in the proposal.
+
+- [ ] 5.0 Add `specs/work-discovery/spec.md` to this change, restating #101's watermark
+      requirement once it is in force. That requirement lists why a
       cycle does not take an item (budget, a condition, no answer to the claim), and the
       watermark does not advance past an item left untaken for one of those reasons. A cycle
-      ended by two identical failures before the worker leaves its remaining items untaken too,
-      and the watermark must not pass them either. Add a `MODIFIED` block that names this
-      reason, copied whole from #101's requirement once it is in force
+      ended by either two-in-a-row rule leaves its remaining items untaken too, and the watermark
+      must not pass them either (Adam, 2026-10-17): two identical failures before the worker on
+      different items, or two surface failures in a row. The file holds a `MODIFIED` block,
+      copied whole from the requirement as it is in force when this task is done, including any
+      edit #106 (`role-keyed-watermark`) has made to it. The block names these two reasons and
+      adds these two scenarios, which may be reworded to match #101's text:
+
+      ```markdown
+      #### Scenario: An item a cycle never reached after two identical failures is seen again
+
+      - **WHEN** a cycle decides to work three items, and the first two fail before the worker
+        with the same failure, so the identical-failure rule ends the cycle
+      - **THEN** the next cycle reconsiders the third
+
+      #### Scenario: An item a cycle never reached after an outage is seen again
+
+      - **WHEN** a cycle decides to work three items, and the first two each end in a tracker or
+        code-host failure, so the surface-failure rule ends the cycle
+      - **THEN** the next cycle reconsiders the third
+      ```
 
 ## 6. Close
 

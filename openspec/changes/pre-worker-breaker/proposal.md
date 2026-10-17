@@ -40,17 +40,24 @@
     the Igor's own setup, such as a seat whose token is unset. #101's `condition-backoff` says an
     item SHALL NOT be suppressed for such a fault. This holds for an item alone in its cycle too,
     which decision 7 otherwise lets count a failure every item would meet.
+12. **The discovery watermark does not advance past the items a cycle never reached because a
+    two-in-a-row rule ended it** (Adam, 2026-10-17): the surface-failure rule, as well as the
+    identical-failure rule. The watermark is the point past which discovery treats items as seen.
+    #101's watermark requirement already keeps the watermark below an item left untaken for three
+    reasons: the budget ran out, a condition stopped the cycle, or the claim got no answer. Task
+    5.0 adds the two rules to those reasons, with a scenario for each.
 
 **Still open:**
 
 - **The masks are unmeasured.** Nobody has checked that real repeated failures give one
   signature after masking (task 0.1). If they never match, the breaker never trips, which is
   today's behaviour.
-- **Whether the discovery watermark passes items a cycle leaves untaken when a two-in-a-row rule
-  ends it.** #101's watermark requirement holds the watermark for three reasons: budget, a
-  condition and an unanswered claim. Task 5.0 adds a cycle ended by the identical-failure rule
-  as a fourth. A cycle ended by the surface rule, which `igor run` now applies too (decision 9),
-  is in neither #101's list nor task 5.0.
+- **Whether this change's code waits for #101.** Decision 12's watermark rule is written against
+  #101's watermark requirement (task 5.0). Without #101, the watermark moves past every item
+  triage gave a verdict to, before the cycle works any item. So a cycle that the identical-failure
+  rule, or `igor run`'s new surface rule (decision 9), ends early leaves items that are never seen
+  again. `serve`'s surface rule already does this today. The choices are to hold sections 2 to 4
+  until #101 merges, or to build them first and accept the loss until then. Not decided.
 - **The set-down sentence names what lifts a deferral.** #141, which lets only someone with
   write access lift a deferral, changes that sentence if it lands first (task 3.2).
 
