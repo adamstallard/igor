@@ -254,6 +254,163 @@ coordinator.
 
 **Knowing how many processes are running.** Nothing needs the number.
 
+## What the model proves
+
+[`model/ConcurrentInstances.tla`](model/ConcurrentInstances.tla) models this change in TLA+, and
+CI runs TLC, the TLA+ model checker, on each configuration file beside it
+(`.github/workflows/tla-concurrent-instances.yml`).
+
+**As written, the change lets two processes work one item.** Where the change leaves a choice
+open, an implementation may take either value, so `ConcurrentInstances.cfg` gives each such choice
+the weaker one: the value nothing in the change rules out. TLC finds a violation there, and that
+file's CI check fails.
+
+Findings 1 to 7 below each come with a candidate amendment. `Amended.cfg` and `AmendedLiveness.cfg`
+take all seven, and TLC finds no violation in either. Undo any one of the seven and TLC finds a
+violation again, so each is needed. Finding 8, a state branch rolled back to an old commit, breaks
+the model even with all seven; it has no amendment here, and the two amended configurations assume
+it away. None of the amendments is in the requirements. Each is a decision for Adam, who approves
+this change.
+
+### Invariants and properties
+
+| Name | Requirement it proves | What it says |
+| --- | --- | --- |
+| `NoTwoWorkers` | *A claim names the process that took it*; *Assignment expresses a claim; ordering resolves it* | Never two live workers on one item. |
+| `LiveRankNeverGone` | *A retired rank does not hold its items forever*, scenarios *The bound does not shorten a run* and *A lost state branch takes no live rank's claim* | A live rank's claim is never taken: a rank that was running, with its heartbeat written, when another process read the heartbeat files, and has kept running since, is not gone to that process. |
+| `MarkNeverPassesUntaken` | *Processes saving one source keep the lower watermark* | The replayed mark never passes an item no live process has taken: such an item is among some live process's candidates this cycle, or above the mark some live process would replay. |
+| `OrphanRecovered` (liveness) | *A process recovers the claims of its own predecessor*; *A retired rank does not hold its items forever*, scenario *A crashed rank is still recovered after the branch is lost* | A crashed rank's claims are eventually recovered: a labelled item that no running process holds is eventually worked again or released. |
+| `EveryItemHandled` (liveness) | *Processes saving one source keep the lower watermark*, with *A process recovers the claims of its own predecessor* | Every item is eventually finished or stopped. |
+| `StopNeverLost` (liveness) | *Stop is unconditional and open to anyone*, already in `openspec/specs/work-claiming`, not added by this change | A stop is never lost: eventually no worker runs on the item and its label is off, for good. |
+
+The liveness properties hold in behaviours where some process is eventually always running.
+
+*A conflicted state write discards nothing*, with the scenario *A heartbeat replaces only its own
+rank's*, is assumed rather than proved. It says a rejected write is retried and lands the same line,
+so the model treats a conflict as a delay before the write lands, during which a crash can lose it.
+
+*Contention is resolved before a claim, not after it* is not checked at all. It decides which
+process posts a claim message, not whether two processes work, and the model does not time the
+rank-proportional wait.
+
+### What TLC found, and the amendment that removes each
+
+Each finding names the model constant that selects between the change as written and the
+amendment. Each trace comes from `Amended.cfg` with that one constant set to its value in
+`ConcurrentInstances.cfg`.
+
+1. **A cycle's heartbeat read goes stale while the cycle works** (`FreshView`). A process reads the
+   heartbeat files once a cycle, and a cycle includes its worker runs. The change allows two
+   readings of that once-a-cycle read, which `VerdictAtRead` selects, and both fail. If the age
+   read at the start is counted forward to each later decision (`VerdictAtRead = FALSE`), a sibling
+   that is alive and writing looks gone once the reader has worked longer than the bound, and the
+   reader adopts the sibling's claim. If the age is kept as read (`VerdictAtRead = TRUE`), a rank that was gone at the read and restarts afterwards stays
+   gone to the reader for the rest of the cycle. In TLC's trace, rank 1 restarts, claims item 2 and
+   works it. Rank 2, still deciding by the read it made before rank 1 came back, leaves rank 1's
+   message out, posts its own, and works item 2 as well.
+   *Amendment:* read the heartbeat files again before each claim decision, when choosing a
+   candidate and when verifying.
+2. **A restarted rank can claim before its first heartbeat lands** (`HeartbeatFirst`). Nothing
+   requires a started process's heartbeat before its first claim. In TLC's trace, rank 2 restarts
+   after more than three intervals down and posts a claim message on item 2 while its file still
+   reads as gone. Rank 1 posts after it and verifies; it leaves rank 2's message out as a gone
+   rank's, so both hold the item.
+   *Amendment:* a started process writes its heartbeat, and sees the write land, before its first
+   cycle.
+3. **A returning rank takes back an item that a sibling adopted from it** (`AdoptReleases`). Rank 1
+   claims item 1 and crashes. Three intervals later rank 2 adopts it: it posts a claim message, and
+   rank 1's earlier message does not count while rank 1 is gone. Rank 1 restarts, writes its
+   heartbeat and finds its own message the earliest on the item, so it takes the item as its
+   predecessor's claim and works it while rank 2 is still working it. Verification has the same
+   flaw: a process whose message comes after a gone rank's holds the item only while that rank is
+   gone, and loses it to the rank when it returns.
+   *Amendment:* a process that takes an item over a gone rank's claim message first releases the
+   item, by removing the label and adding it again, so that message falls before the latest
+   release and never counts again.
+4. **A verification late by more than the bound** (`SettleWithinPoll`). Rank 1 posts a claim
+   message and crashes. Rank 2 posts after it, but verifies only once rank 1 has been gone for three
+   intervals, so rank 2 holds the item and works it. Rank 1 restarts, finds its own message the
+   earliest, and works the item too.
+   *Amendment:* a claim is verified within one poll interval of its message, and a verification
+   later than that stands down.
+5. **A loser removes the winner's label** (`LoserRemovesLabel`). The in-force scenario *Losing Igor
+   removes itself from a list* has a loser remove its own entry. Processes of one role share one
+   label, so a loser among them removes the winner's label, and the removal is a release: no claim
+   message posted before it counts. The winner finds the label removed by its own bot account,
+   which the in-force rules read as its own release, and goes on working. The loser finds the item
+   unlabelled on its next cycle, claims it and works it too.
+   *Amendment:* a process that loses to a process of its own role leaves the label in place.
+6. **A mark written before the cycle's claims loses items in a crash** (`MarkAtTriage`). If a cycle
+   appends its mark as soon as triage ends and the process crashes before claiming, every item it
+   meant to take is at or below a mark, and no process sees the item again until it is updated.
+   This holds with one process too: no requirement says when in the cycle the mark is written.
+   *Amendment:* append the mark only after the cycle has attempted every candidate.
+7. **A crashed rank's claim can sit below every mark** (`LabelSweep`). Rank 2 claims an item and
+   crashes. Rank 1 sees the item while rank 2 still counts, passes it as held, and appends a mark
+   above the item's update time. While rank 2 counts, its lower mark keeps the replayed mark below
+   the item. Once rank 2 is gone its mark stops counting, the replay uses rank 1's higher mark,
+   nothing updates the item, and discovery never offers it again, so no process recovers the claim.
+   *Amendment:* each cycle also considers every item that carries the role's label, whatever the
+   mark.
+8. **A state branch rolled back to an old commit makes every live rank look gone**
+   (`BranchRollback`). *A missing heartbeat starts the clock* covers files that are missing. A
+   reset to an old commit leaves every file present but old, so in TLC's trace rank 2 reads rank
+   1's file, counts rank 1 gone, adopts the item rank 1 is working, and works it too. This holds
+   with all seven amendments. `Amended.cfg` and `AmendedLiveness.cfg` therefore assume a reset
+   deletes the files.
+
+One trace shows a cost that breaks no invariant. Between a claim's label and its message, a
+sibling reading the item finds the label and no message, counts the claim as nobody's, and posts a
+message of its own. One of the two then stands down, which is the claim-and-retract that
+*Contention is resolved before a claim, not after it* exists to prevent.
+
+### Bounds and results
+
+All runs use two ranks, both declared, an abandonment bound of three poll intervals, and TLC 2.19
+from `tla2tools.jar` v1.7.4. Time is unbounded: the model holds each age capped at the bound.
+
+| Configuration | Items | Environment | Checks | Result | Distinct states | Time |
+| --- | --- | --- | --- | --- | --- | --- |
+| `ConcurrentInstances.cfg` | 2 | 1 crash, 1 lost or rolled-back branch | invariants | `LiveRankNeverGone` violated in 3 steps (finding 8) | 141 | under 1 s |
+| `Amended.cfg` | 2 | 1 crash, 1 lost branch | invariants | no violation | 35,210,990 | 3 min 18 s |
+| `AmendedLiveness.cfg` | 1 | 1 crash, 1 stop | invariants and liveness | no violation | 1,599,308 | 3 min 25 s |
+
+Times are on 4 TLC workers. TLC stops at the first violation, so `ConcurrentInstances.cfg` reports
+only one of the findings.
+
+Each finding above was reproduced by setting its constant in `Amended.cfg` to the value in
+`ConcurrentInstances.cfg`. Findings 1 to 6 and 8 break an invariant. Finding 7 breaks
+`OrphanRecovered`, which needs `PROPERTY OrphanRecovered` added to that copy of `Amended.cfg`, with
+`MaxLosses = 0` to keep the run short.
+
+Two runs are not in CI. With a crash, a lost branch and a stop together, `Amended.cfg`'s settings
+pass with 173,040,700 distinct states in 14 min 40 s on 8 workers. With three ranks, an exhaustive
+run did not finish in 50 minutes; TLC's random simulation then checked 359,520,039 states in
+behaviours up to 80 steps long and found no violation, which is evidence rather than proof.
+
+To reproduce a run, download `tla2tools.jar` from the TLA+ release v1.7.4
+(`https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar`) into `model/`, and
+from `model/` run:
+
+```sh
+java -cp tla2tools.jar tlc2.TLC -workers auto -config Amended.cfg ConcurrentInstances.tla
+```
+
+### Where the change is silent, the model assumes
+
+- **One clock.** Every process reads a heartbeat's age the same way, with no clock skew.
+- **Triage says proceed** for every candidate that is not finished.
+- **A stop is permanent.** No go-ahead or cooldown follows it.
+- **A stop on an item whose holder is down is answered by the next process that reaches the item**,
+  which releases the claim. That holder is the reader's own predecessor or a gone rank. The change
+  does not say who answers such a stop.
+- **A worker that finds its role's label removed by its own bot account keeps working.** The
+  in-force rules call that removal the Igor's own release and say nothing more.
+- **A claim is visible at once.** The settle interval's length is not modelled.
+- **A live rank's heartbeat lands within one poll interval**, as the change states. A heartbeat
+  that cannot be written for three intervals, such as through a rate limit or an outage, would make
+  a live rank look gone, and is not modelled.
+
 ## Since review: the reserve becomes a line checked against a stream reading (2026-09-28)
 
 Recorded 2026-09-28. This changes no requirement or task here.
