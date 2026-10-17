@@ -24,32 +24,33 @@
 7. **An item alone in its cycle counts a failure every item would meet, once per cycle** (Adam,
    2026-10-11). With one run, nothing tells the item's failure from the environment's.
 8. **The deferral lifts by `work-triage`'s existing rule**, with no rule of its own.
-9. **Both cycles apply decision 5: `serve`'s and the one `igor run` runs.** The coordinating
-   agent chose this on 2026-10-11, for Adam to overrule.
+9. **Both cycles apply both two-in-a-row rules** (Adam, 2026-10-17): `serve`'s cycle and the one
+   `igor run` runs each end on two surface failures in a row (decision 4) and on two identical
+   failures before the worker on different items in a row (decision 5), through the one
+   comparison function both call (task 4.5). Without the surface rule in `igor run`, tracker
+   failures whose messages differ each count toward their item's breaker during an outage.
+10. **A set-down can be posted for a failure that a later run excludes** (Adam, 2026-10-17).
+    Whether a failure is part of an outage, or of two identical failures on different items, is
+    known only when the next run in the same cycle fails. The breaker decides and posts during
+    the failing run, so an item with two genuine failures behind it can be set down by the first
+    failure of an outage. It comes back when answered. *Rejected:* holding the decision until the
+    next run, which a crash between the two runs loses, since it was never written to the log.
+11. **A failure that #101 records as a condition never counts toward the breaker** (Adam,
+    2026-10-17). Such a failure is one whose run records a *cure key*, #101's name for a fault in
+    the Igor's own setup, such as a seat whose token is unset. #101's `condition-backoff` says an
+    item SHALL NOT be suppressed for such a fault. This holds for an item alone in its cycle too,
+    which decision 7 otherwise lets count a failure every item would meet.
 
 **Still open:**
 
-- **The set-down is posted before the run is known to be excluded.** Whether a failure is part
-  of an outage, or of two identical failures on different items, is known only after the next
-  run. An item with two genuine failures behind it is set down by the first failure of an
-  outage, though both the surface-failure rule and decision 5 say that failure does not count. *Recommendation:* accept and record it; the item
-  comes back when answered, and the alternative, holding the decision until the next run, was
-  rejected because a crash between items loses it.
-- **A fact about the Igor sets an item down.** #101's change, `condition-backoff`, says in its
-  `work-triage` delta that an item SHALL NOT be suppressed where the cause was a fact about the
-  Igor, such as a seat whose token is unset. A full disk, an expired clone token or an unset
-  token met alone in three cycles sets the item down here. *Recommendation:* a failure #101
-  records as a condition (a fault in the Igor's own configuration, recognised by its cure key,
-  that stops the Igor or its seat rather than the item) never counts toward the breaker, and the
-  remaining alone-in-cycle cost stays accepted (decision 7).
-- **`igor run` has no surface-failure rule.** Decision 9 gives it the identical-failure rule
-  only. Its cycle never stops on two tracker failures, so
-  during an outage, tracker failures whose messages differ count toward each item's breaker.
-  *Recommendation:* the one comparison function (task 4.5) applies both two-in-a-row rules, in
-  both cycles.
 - **The masks are unmeasured.** Nobody has checked that real repeated failures give one
   signature after masking (task 0.1). If they never match, the breaker never trips, which is
   today's behaviour.
+- **Whether the discovery watermark passes items a cycle leaves untaken when a two-in-a-row rule
+  ends it.** #101's watermark requirement holds the watermark for three reasons: budget, a
+  condition and an unanswered claim. Task 5.0 adds a cycle ended by the identical-failure rule
+  as a fourth. A cycle ended by the surface rule, which `igor run` now applies too (decision 9),
+  is in neither #101's list nor task 5.0.
 - **The set-down sentence names what lifts a deferral.** #141, which lets only someone with
   write access lift a deferral, changes that sentence if it lands first (task 3.2).
 
@@ -88,7 +89,12 @@ first two failures are retried as today.
   failure before the worker that was not identical, starts the count again. An edit or a reply
   does not. So once a deferral lifts, an identical failure sets the item down again at once.
 - **An outage is not the item's failure.** A failure in a cycle that the outage rule then ended
-  does not count toward any item's breaker.
+  does not count toward any item's breaker. The breaker decides during the failing run, before
+  the cycle's end is known, so a set-down can be posted for a failure that a later run excludes.
+- **A fault in the Igor's own setup is not the item's failure.** A failure whose run records one
+  of #101's cure keys never counts toward the breaker. It keeps the run row (the log's row for a
+  run, which carries no `kind`) it writes today, because #101 builds its conditions only from
+  run rows.
 - **The deferral lifts as any handed-back item's does.** That rule is `work-triage`'s *An item
   handed back is not re-worked until something answers*. The breaker adds no rule of its own,
   so [#141](https://github.com/adamstallard/igor/pull/141)'s "only a writer lifts a deferral"
@@ -131,9 +137,13 @@ None.
   the third. Its claim-window path does the same for a refused claim.
 - `src/claiming.ts`: the claim withdrawal carries the set-down sentence on the third failure.
 - `src/handoff.ts`: a `set-down` tail for a failure handoff.
-- `src/serve.ts`: ends a cycle on two identical failures before the worker on different items in
-  a row, and appends an outage row whenever it ends a cycle, naming the items it covers.
-- `src/cli.ts`: its single cycle ends on the same two failures and appends the same outage row.
+- A cycle-rule function that `src/serve.ts` and `src/cli.ts` both call: it ends a cycle on two
+  surface failures in a row, and on two identical failures before the worker on different items
+  in a row.
+- `src/serve.ts`, `src/cli.ts`: each appends an outage row whenever that function ends its cycle.
+  The row names every item that failed in the cycle when two surface failures ended it, and
+  only the two items when two identical failures did. `igor run`'s single cycle in `src/cli.ts` gains the surface rule,
+  which only `serve` applies today.
 - `src/wiring.ts`, `src/cli.ts`: write a row for each failure before the worker, and supply the
   count reader.
 - Readers of `executions.ndjson`: #101's `stuck-conditions` requires every reader that counts

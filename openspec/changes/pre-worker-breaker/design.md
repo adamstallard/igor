@@ -11,6 +11,10 @@ failure happens.
  "source": "tree", "signature": "git clone exited #: fatal: …", "reason": "…"}
 ```
 
+A failure that records a cure key (#101's name for a fault in the Igor's own setup) writes no
+`pre-worker` row. It keeps the ordinary run row, the row without a `kind` that the log holds for
+each run (*A failure that records a cure key never counts*, below).
+
 Three places could hold the count. Two are rejected.
 
 - **Rejected: in memory.** It does not survive a restart, and a deterministic failure survives
@@ -40,17 +44,28 @@ the item down again.
 
 ### Counting
 
-For one item and one role, walk the rows newest first:
+A *run row* is a row without a `kind`. For one item and one role, walk the rows newest first,
+and apply to each row the first step that fits it:
 
 1. Skip a `pre-worker` row that an `outage` row excludes (below).
-2. Count a `pre-worker` row whose `source` and `signature` match the failure in hand.
-3. Stop at a run row, or at a `pre-worker` row that does not match.
-4. Skip rows of any other `kind`, such as #101's `probe` and `check` rows.
+2. Skip a run row that started no worker and carries `cures`: a failure that recorded a cure key
+   (below).
+3. Count a `pre-worker` row whose `source` and `signature` match the failure in hand.
+4. Stop at any other run row, or at a `pre-worker` row that does not match.
+5. Skip rows of any other `kind`, such as #101's `probe` and `check` rows.
 
-The failure in hand is one more. At three or more, the item is set down. A run row is a row
-without a `kind`. A failure before the worker writes a `pre-worker` row in place of a run row,
-whether `execute` threw it or returned it (a catch-up merge that fails, for example), so every
-run row records a run that started the worker.
+The failure in hand is one more, unless it records a cure key. At three or more, the item is set
+down. A failure before the worker writes a `pre-worker` row in place of a run row, whether
+`execute` threw it or returned it (a catch-up merge that fails is one it returns). The one
+exception is a failure that records a cure key, which keeps its run row (below).
+
+**A failure that records a cure key never counts** (Adam, 2026-10-17). #101 records a cure key
+for a fault in the Igor's own setup, such as a seat whose token is unset. #101's `work-triage`
+delta says an item is never suppressed, that is held back as a set-down item is, for such a
+fault. Such a failure keeps the run row it writes today, carrying `cures`, instead of a
+`pre-worker` row: #101 counts conditions from run rows and skips every row with a `kind`, so a
+`pre-worker` row would hide the fault from #101. *Counting* skips that run row (step 2), as it
+skips a `pre-worker` row an outage excludes: the row neither counts nor breaks the sequence.
 
 A count at or past three after a lifted deferral sets the item down on the first identical
 failure. That is deliberate (spec, *In a row*; accepted by Adam, 2026-10-11): the answer that
@@ -92,7 +107,8 @@ the log sees what was compared.
 
 ## Outages: an `outage` row excludes the cycle's failures
 
-`serve` ends a cycle on the second surface failure in a row. When it does, it appends:
+Either cycle, `serve`'s or `igor run`'s, ends on the second surface failure in a row. When it
+does, it appends:
 
 ```json
 {"at": "…", "kind": "outage", "role": "web", "since": "<cycle start>", "items": ["…", "…"]}
@@ -104,8 +120,16 @@ outage rule ended. Only `pre-worker` rows are affected, since only they count. A
 `pre-worker` row for a named item and role, written at or after `since` and before the outage
 row, does not count.
 
-- **Rejected: delay each row until the next run shows whether the cycle continued.** That means
-  holding rows in memory across items, and losing them on a crash or a shutdown between items.
+**The set-down does not wait for the outage row** (Adam, 2026-10-17). A third identical failure
+sets its item down during its own run. If the next run's failure then ends the cycle, the
+outage row excludes the failure from later counts, but the set-down already posted stands, and
+the item comes back when answered.
+
+Two other ways to keep an outage from setting an item down were rejected:
+
+- **Rejected: delay each row, or the set-down, until the next run shows whether the cycle
+  continued.** That means holding the decision in memory across items, and losing it on a crash
+  or a shutdown between items.
 - **Rejected: count no tracker or code-host failure at all.** Adam named a tracker or code-host
   call during the claim as a failure the breaker counts.
 
@@ -128,15 +152,19 @@ rule writes, so *Counting* excludes both failures with no new row kind. This doe
 tree failure a surface failure: `surfaceFailed` still follows only the tracker and code-host
 tags.
 
-**Both cycles apply it: `serve`'s and the single cycle `igor run` runs.** They share no cycle
-code: `serve` keeps its surface-failure count in `src/serve.ts`, and `src/cli.ts` runs its own
-loop over the items it claims. A rule in only one of them would let the other set down the whole
-backlog, so the comparison is one function both loops call. The coordinating agent decided this
-on 2026-10-11, not Adam.
+**Both cycles apply both rules: `serve`'s and the single cycle `igor run` runs** (Adam,
+2026-10-17). Today the two share no cycle code: `serve` keeps its surface-failure count in
+`src/serve.ts`, and `src/cli.ts` runs its own loop over the items it claims, with no surface
+rule. A rule in only one of them would let the other set down the whole backlog. Without the
+identical-failure rule, a full disk fails every item the same way in every cycle. Without the
+surface rule, an outage fails every item's tracker call, and where the messages differ the
+identical-failure rule does not end the cycle either; each failure counts, and three such
+cycles set every item down. So this change adds one function, which both loops call, that
+applies both two-in-a-row tests.
 
-The comparison needs nothing from the log. The loop keeps the previous run's item, source and
-signature for the length of one cycle, which a crash loses at no cost: the next cycle starts
-comparing afresh.
+The comparison needs nothing from the log. The function keeps the previous run's item, source,
+signature and whether it was a surface failure for the length of one cycle, which a crash loses
+at no cost: the next cycle starts comparing afresh.
 
 ## Where the set-down is said
 

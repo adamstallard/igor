@@ -50,8 +50,8 @@
       before `execute` spawned the worker, or a failure `execute` returns before spawning it;
       `execute` reports whether it spawned the worker, so a worker that started and produced
       nothing is not counted): build the signature, ask the count reader for the
-      trailing count, and on a count of 3 or more including this one, return `handed-off` with
-      `handoff: 'failure'` and the set-down tail. Otherwise refuse as today. A count reader that
+      trailing count, and on a count of 3 or more including this one, unless the failure
+      records a cure key, return `handed-off` with `handoff: 'failure'` and the set-down tail. Otherwise refuse as today. A count reader that
       throws or is absent counts as 0
 - [ ] 3.5 The threshold is a named constant, 3, with a comment saying why three
 - [ ] 3.6 Tests, one per scenario in *A failure before the worker that repeats sets the item
@@ -62,22 +62,28 @@
 
 - [ ] 4.1 Append a `kind: 'pre-worker'` row for each failure before the worker, with `item`,
       `role`, `source`, `signature` and `reason`, wherever a run is recorded today: `serve`'s
-      event handler and the single-cycle loops in `src/cli.ts`
-- [ ] 4.2 `serve` appends a `kind: 'outage'` row when it ends a cycle on two surface failures,
-      with `role`, the cycle's start as `since`, and every item whose run failed before the
-      worker in that cycle
+      event handler and the single-cycle loops in `src/cli.ts`. A failure that records one of
+      #101's cure keys keeps the run row it writes today, with its `cures`, so #101's conditions
+      still see it
+- [ ] 4.2 Each cycle, `serve`'s and `igor run`'s, appends a `kind: 'outage'` row when it ends on
+      two surface failures, with `role`, the cycle's start as `since`, and every item whose run
+      failed in that cycle, before or after the worker, as `design.md` says
 - [ ] 4.3 Supply the count reader through `wiring.ts`: it reads `executions.ndjson` with `readLog`
 - [ ] 4.4 Check that every reader of `executions.ndjson` that counts runs skips `pre-worker` and
       `outage` rows. #101's `stuck-conditions` requires readers to skip rows carrying a `kind`,
       and its task 2.3 builds that
-- [ ] 4.5 Both cycles end when two runs in a row, of different items, fail before the worker
-      with the same source and signature: `serve`'s, and the single cycle `igor run` runs in
-      `src/cli.ts`. The two share no cycle code, so put the comparison in one function both call,
-      keeping the previous run's item, source and signature for the cycle only. Each cycle that
-      ends this way appends the same `outage` row as 4.2, naming both items
-- [ ] 4.6 Tests, one per scenario in *Two identical failures before the worker on different items
-      end the cycle*, through both `serve` and `igor run`: the cycle ends and neither count moves;
-      different failures continue and both count; an item alone in its cycle counts once
+- [ ] 4.5 One function, which `serve`'s cycle and the single cycle `igor run` runs in
+      `src/cli.ts` both call, applies both two-in-a-row rules: it ends the cycle on two surface
+      failures in a row, and on two runs in a row, of different items, that fail before the worker
+      with the same source and signature. It keeps the previous run's item, source, signature and
+      whether it was a surface failure, for the cycle only. Move `serve`'s surface-failure count
+      into it, so `igor run` gains the surface rule. A cycle that ends on two surface failures
+      appends the `outage` row of 4.2; one that ends on two identical failures appends an
+      `outage` row naming only those two items
+- [ ] 4.6 Tests through both `serve` and `igor run`: one per scenario in *Two identical failures
+      before the worker on different items end the cycle* (the cycle ends and neither count
+      moves; different failures continue and both count; an item alone in its cycle counts once),
+      and two tracker failures in a row with different messages ending the cycle
 
 ## 5. After #101 merges
 
