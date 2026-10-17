@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { stillAssigned } from '../src/claiming.js'
+import { stillHeld } from '../src/claiming.js'
 import type {
   Artifact,
   ArtifactRequest,
@@ -26,10 +26,10 @@ import { budgetGate } from '../src/budget.js'
 import { tempDir } from './tmp.js'
 
 const candidate = (over: Partial<Candidate> = {}): Candidate =>
-  ({ id: 'github:o/r#7', tracker: 'github', repo: 'o/r', native: '7', title: 'A bug', body: '', author: 'reporter', assignees: [], labels: [], paths: [], state: 'open', ...over }) as unknown as Candidate
+  ({ id: 'github:o/r#7', tracker: 'github', repo: 'o/r', native: '7', title: 'A bug', body: '', author: 'reporter', assignees: [], holders: [], labels: [], paths: [], state: 'open', ...over }) as unknown as Candidate
 
 const role = (over: Partial<Role> = {}): Role =>
-  ({ name: 'triage', reviewers: ['alice'], allow: ['comment', 'draft-pr', 'unassign'], commands: [], completion: 'unassign', instructions: [], settleSeconds: 0, cooldownMinutes: 60, ...over }) as Role
+  ({ name: 'triage', reviewers: ['alice'], allow: ['comment', 'draft-pr'], commands: [], instructions: [], settleSeconds: 0, cooldownMinutes: 60, ...over }) as Role
 
 function deps(opts: {
   caughtUp?: CatchUp[]
@@ -46,8 +46,8 @@ function deps(opts: {
   /** A publish that fails after the worker ran — a branch left by a closed pull request. */
   produceThrows?: boolean
   /**
-   * A tracker that will not give the claim up. The completion action is an unassign, so this
-   * is what a 503 on the last call of a run that already published looks like.
+   * A tracker that will not give the claim up. A finished run ends by releasing its claim, so
+   * this is what a 503 on the last call of a run that already published looks like.
    */
   releaseThrows?: boolean
   /**
@@ -64,6 +64,12 @@ function deps(opts: {
   const tracker: Tracker = {
     name: 'fake',
     nativeHolderField: true,
+    holderField: { holds: 'list', distinctFromAssignee: true },
+    holder: 'igor:triage',
+    holderSetBy: async () => undefined,
+    directed: async () => [],
+    findLinking: async () => undefined,
+    createIssue: async () => 'https://github.com/o/r/issues/100',
     identity: async () => 'igor-bot',
     search: async () => [],
     claim: async () => opts.claimSticks ?? true,
@@ -293,7 +299,7 @@ describe('an Igor never goes silent on something it claimed', () => {
     // behind the other: the handoff names a cure, somebody makes it, and the next run stops
     // on the one nothing told them about.
     const { d, posts } = deps({ changes: [{ path: 'a.ts', kind: 'modified', content: 'x' }] })
-    const r = await runItem(d, candidate(), role({ allow: ['comment', 'unassign'] }), 'igor-bot', {
+    const r = await runItem(d, candidate(), role({ allow: ['comment'] }), 'igor-bot', {
       ...noWait,
       worker: async () => ({
         result: 'Fixed it.',
@@ -380,8 +386,7 @@ describe('a claim held through a failure that is not the item\'s', () => {
   })
 
   it('keeps what the run produced when the failure comes after the work', async () => {
-    // The completion action is an unassign, so the last call of a successful run is a release
-    // — and a 503 there reaches the handler with a draft already open. A handoff composed
+    // The last call of a successful run is the release of its claim — and a 503 there reaches the handler with a draft already open. A handoff composed
     // without the result says "the work never started" beside a live pull request, links it
     // nowhere, and reports the run as costing nothing.
     const { d, posts, produced } = deps({
@@ -396,7 +401,7 @@ describe('a claim held through a failure that is not the item\'s', () => {
     const handoff = posts.find((m) => m.includes('https://example.test/9'))
     expect(handoff).toBeDefined()
     expect(handoff).not.toContain('the work never started')
-    expect(posts.at(-1)).toBe(stillAssigned())
+    expect(posts.at(-1)).toBe(stillHeld(role()))
     expect(r.execution?.artifact?.url).toBe('https://example.test/9')
     expect(r.costUsd).toBe(0.02)
   })
@@ -503,7 +508,7 @@ describe('a claim held through a failure that is not the item\'s', () => {
     let ran = 0
     const { d } = deps({
       caughtUp: [{ outcome: 'conflict' }, { outcome: 'already-current' }],
-      merge: { conflicts: [], head: 'headsha', broughtIn: 'basesha' },
+      merge: { conflicts: [], head: 'headsha', broughtIn: 'basesha', baseChanges: [] },
       changes: [{ path: 'src/a.ts', content: 'merged\n', kind: 'modified' }],
       releaseThrows: true,
     })
@@ -547,8 +552,8 @@ describe('a stop gets a receipt, not a handoff', () => {
     const r = await runItem(d, candidate(), role(), 'igor-bot', noWait)
 
     expect(r.outcome).toBe('stopped')
-    expect(posts.findIndex((m) => m.includes('released this'))).toBeLessThan(posts.indexOf(stillAssigned()))
-    expect(posts.at(-1)).toBe(stillAssigned())
+    expect(posts.findIndex((m) => m.includes('released this'))).toBeLessThan(posts.indexOf(stillHeld(role())))
+    expect(posts.at(-1)).toBe(stillHeld(role()))
   })
 
   it('leaves the receipt uncorrected where the release did clear the holder', async () => {
@@ -556,7 +561,7 @@ describe('a stop gets a receipt, not a handoff', () => {
     const { d, posts } = deps({ verdicts: [{ status: 'stopped', by: 'bob' }] })
     await runItem(d, candidate(), role(), 'igor-bot', noWait)
 
-    expect(posts).not.toContain(stillAssigned())
+    expect(posts).not.toContain(stillHeld(role()))
     expect(posts.at(-1)).toMatch(/stopped at bob's request/)
   })
 
@@ -573,7 +578,7 @@ describe('a stop gets a receipt, not a handoff', () => {
 
     expect(r.outcome).toBe('stopped')
     expect(posts.at(-2)).toMatch(/stopped at bob's request/)
-    expect(posts.at(-1)).toBe(stillAssigned())
+    expect(posts.at(-1)).toBe(stillHeld(role()))
   })
 
   it('corrects the hand-over note where the stand-down did not clear the holder', async () => {
@@ -589,7 +594,7 @@ describe('a stop gets a receipt, not a handoff', () => {
 
     expect(r.outcome).toBe('lost')
     expect(r.spoke).toBe(true)
-    expect(posts.at(-1)).toBe(stillAssigned())
+    expect(posts.at(-1)).toBe(stillHeld(role()))
   })
 
   it('stays silent on a lost claim it did release, as before', async () => {
@@ -602,7 +607,7 @@ describe('a stop gets a receipt, not a handoff', () => {
     const r = await runItem(d, candidate(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
 
     expect(r.outcome).toBe('lost')
-    expect(posts.some((m) => m === stillAssigned())).toBe(false)
+    expect(posts.some((m) => m === stillHeld(role()))).toBe(false)
   })
 
   it('on a stop during a run that changed nothing', async () => {
@@ -774,6 +779,9 @@ describe('items handed back earlier', () => {
         if (throws) throw new Error('tracker unreachable')
         return spoken[c.id] ?? []
       },
+      holder: 'igor:triage',
+      holderField: { holds: 'list', distinctFromAssignee: true },
+      directed: async () => [],
     } as unknown as Tracker
     return { t, asked: () => asked }
   }
@@ -840,6 +848,9 @@ describe('items somebody stopped', () => {
         if (throws) throw new Error('tracker unreachable')
         return (spoken[c.id] ?? []).filter((m) => Date.parse(m.at) >= Date.parse(since))
       },
+      holder: 'igor:triage',
+      holderField: { holds: 'list', distinctFromAssignee: true },
+      directed: async () => [],
     } as unknown as Tracker
     return { t, asked: () => asked }
   }
@@ -986,7 +997,7 @@ describe('standing down after the settle window', () => {
     // Unassigning or moving an item somebody else took would undo their claim.
     const { d, released } = then({ status: 'lost', by: 'alice' })
     await runItem(d, candidate(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
-    // Exactly one release, the stand-down — not a second from the completion policy.
+    // Exactly one release, the stand-down — not a second from the end of a finished run.
     expect(released).toEqual(['igor-bot'])
   })
 
@@ -1015,6 +1026,9 @@ describe('the cost of checking deferrals', () => {
         asked += 1
         return []
       },
+      holder: 'igor:triage',
+      holderField: { holds: 'list', distinctFromAssignee: true },
+      directed: async () => [],
     } as unknown as Tracker
     let state = NO_DEFERRALS
     for (const c of items) state = defer(state, c, 'nothing to do', NOW2)
@@ -1052,7 +1066,7 @@ describe('one read, several windows', () => {
     const t: CommentSource = {
       commentsSince: async (_c, since) => {
         asked.push(since)
-        return spoken.filter((m) => Date.parse(m.at) >= Date.parse(since))
+        return spoken.filter((m) => Date.parse(m.at) >= Date.parse(since)).map((m) => ({ ...m, accounts: {} }))
       },
     }
     return { t, asked }

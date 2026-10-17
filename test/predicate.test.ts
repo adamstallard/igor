@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Candidate, InFlight } from '../src/adapter.js'
 import type { Lane } from '../src/role.js'
-import { countStages, laneVerdict, screen, staleOwnArtifact, universalSkip } from '../src/predicate.js'
+import { countStages, heldByOthers, laneVerdict, screen, staleOwnArtifact, universalSkip } from '../src/predicate.js'
 
 function inFlight(over: Partial<InFlight> = {}): InFlight {
   return {
@@ -30,6 +30,7 @@ function candidate(over: Partial<Candidate> = {}): Candidate {
     state: 'open',
     labels: [],
     assignees: [],
+    holders: [],
     paths: [],
     createdAt: '2026-09-01T00:00:00Z',
     updatedAt: '2026-09-12T00:00:00Z',
@@ -237,5 +238,26 @@ describe('screening a whole discovery result', () => {
     // universal, or an org could believe its lane is doing the work.
     const only = screen(lane, [candidate({ state: 'closed', labels: ['ai'] })])
     expect(only[0]!.verdict.stage).toBe('universal')
+  })
+})
+
+describe('who holds an item, by label', () => {
+  const holding = { holder: 'igor:reviewer', distinctFromAssignee: true }
+
+  it('takes an item with neither an assignee nor an igor label', () => {
+    expect(universalSkip(candidate(), 'r[bot]', holding)).toBeUndefined()
+  })
+
+  it('leaves an item assigned to a person that carries no label of its own', () => {
+    expect(universalSkip(candidate({ assignees: ['alice'] }), 'r[bot]', holding)?.reason).toBe('held by alice')
+  })
+
+  it('takes an item a person assigned to themselves and handed to it by label', () => {
+    expect(universalSkip(candidate({ assignees: ['alice'], holders: ['igor:reviewer'] }), 'r[bot]', holding)).toBeUndefined()
+  })
+
+  it("leaves an item with another Igor's label, even where a person added its own too", () => {
+    expect(universalSkip(candidate({ holders: ['igor:backend'] }), 'r[bot]', holding)?.reason).toBe('held by igor:backend')
+    expect(heldByOthers(candidate({ holders: ['igor:reviewer', 'igor:backend'] }), 'r[bot]', holding)).toEqual(['igor:backend'])
   })
 })

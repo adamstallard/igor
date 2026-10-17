@@ -61,7 +61,7 @@ const ROLE_STUB = `# One Igor: where it looks for work, and how it narrows what 
 
 # Narrow what ${ORG_ROLE}.yaml grants. A role may drop an action or a command it inherits
 # and may never add one, and a lane it declares is AND-ed with the one above.
-# allow: [comment, unassign]
+# allow: [comment]
 # lane:
 #   paths:
 #     under: [src/]
