@@ -34,7 +34,8 @@ refused by #153's `role-config` rule.
 ### Requirement: Every model call names the plugin directory
 
 Every `claude -p` process Igor spawns SHALL carry `--plugin-dir <skills_dir>` when
-`skills_dir` is set: the worker, triage, and every other model step. No call SHALL pass
+`skills_dir` is set: the worker, triage, and every other model step. The usage read (`runUsage`,
+which `igor budget` runs) is the one exception and SHALL NOT carry it. No call SHALL pass
 `--bare`.
 
 The worker invokes an `igor:<name>` skill itself, through the Skill tool, when its task calls
@@ -43,8 +44,8 @@ for it.
 The flag loads every skill installed under `skills_dir` for every role. A role's `skills` list
 (#153) does not decide what loads.
 
-A skill elsewhere with the same name as a pinned one, in the home directory or in the worked
-repository, loads under its own name beside `igor:<name>` and does not replace it.
+A skill with the same name as a pinned one in the home directory of the user a call runs as
+loads under its own name beside `igor:<name>` and does not replace it.
 
 #### Scenario: The worker names the directory
 
@@ -58,8 +59,13 @@ repository, loads under its own name beside `igor:<name>` and does not replace i
 
 #### Scenario: Every other model call names the directory
 
-- **WHEN** Igor spawns any other `claude -p` with `skills_dir` set, such as a seat probe or a usage read
+- **WHEN** Igor spawns any other `claude -p` with `skills_dir` set, such as #143's seat probe
 - **THEN** its arguments include `--plugin-dir` followed by `skills_dir`
+
+#### Scenario: The usage read names no plugin directory
+
+- **WHEN** `igor budget` runs the usage read with `skills_dir` set
+- **THEN** its arguments do not include `--plugin-dir`
 
 #### Scenario: No call passes --bare
 
@@ -71,10 +77,59 @@ repository, loads under its own name beside `igor:<name>` and does not replace i
 - **WHEN** `skills_dir` is absent
 - **THEN** no `claude -p` call carries `--plugin-dir`
 
+### Requirement: No call loads the worked repository's settings
+
+No `claude -p` process Igor spawns, the startup check and the usage read included, SHALL load
+the worked repository's `.claude/settings.json`, `.mcp.json`, skills under `.claude/skills/` or
+`CLAUDE.md`. Every such process SHALL pass `--setting-sources user` and `--strict-mcp-config`
+to keep them out. If task 0.3 finds that any of the four still loads with those flags, the means
+goes back to Adam, and the rule that none loads still holds.
+
+#### Scenario: A call names only the user's settings
+
+- **WHEN** Igor spawns any `claude -p`
+- **THEN** its arguments include `--setting-sources user` and `--strict-mcp-config`
+
+#### Scenario: A repository's own settings do not reach the worker
+
+- **WHEN** the worked repository holds a `.claude/settings.json` with a hook, a `.mcp.json`, a
+  skill under `.claude/skills/` and a `CLAUDE.md`
+- **THEN** the worker's `system/init` event lists neither that skill nor that MCP server
+- **AND** that hook does not run
+- **AND** the worker is not given that `CLAUDE.md`
+
+### Requirement: Each worker run starts with an empty home directory
+
+For each worker it spawns, Igor SHALL create a new, empty directory and pass it as the worker's
+`HOME`, and SHALL remove that directory after the worker exits, whatever the run's outcome. No
+two workers SHALL share one, whether they run one after another or at the same time.
+
+Where the worker runs as a separate Unix user (#175), who creates, owns and removes this
+directory is still open (proposal, *Still open*), as is whether a worker in an empty home can
+authenticate as its seat (task 0.3).
+
+#### Scenario: A later worker does not load what an earlier one wrote
+
+- **WHEN** a worker writes a hook, a `CLAUDE.md` or a skill under `$HOME/.claude`
+- **AND** Igor later spawns another worker
+- **THEN** the second worker's `HOME` is a different, empty directory
+- **AND** the first worker's home directory no longer exists
+
+#### Scenario: Two workers at once get different homes
+
+- **WHEN** two workers run at the same time
+- **THEN** each has its own `HOME`, and neither is the other's
+
+#### Scenario: The home is removed after a failed run
+
+- **WHEN** a worker exits with an error or is killed
+- **THEN** Igor removes the home directory it created for that worker
+
 ### Requirement: Igor confirms its skills load before its first model call
 
 Where `skills_dir` is set, before it spawns its first `claude -p` that could spend a seat, Igor
-SHALL run `claude -p --plugin-dir <skills_dir> --output-format stream-json --verbose` with a
+SHALL run `claude -p --plugin-dir <skills_dir> --setting-sources user --strict-mcp-config
+--output-format stream-json --verbose` with a
 one-word prompt and stdin closed, from an empty temporary directory, with an environment holding
 only `PATH` and a `HOME` that is another empty temporary directory. It SHALL read the `skills`
 list of the `system/init` event and confirm that `igor:<name>` is in it for every entry under

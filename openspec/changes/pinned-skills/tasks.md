@@ -13,18 +13,25 @@
 - [ ] 0.2 Confirm the shared-skills commit to pin carries bug-hunter's caller-commits mode
       (`caller-result.sh`) and prose's `start`, `check`, `sign`, `verify-staged` and
       `verify-post`
-- [ ] 0.3 Measure, on the Claude Code version the server runs, and record in `design.md`:
+- [ ] 0.3 Before building, measure on the Claude Code version the server runs, and record in
+      `design.md`:
       - the base directory a skill is given when its entry under `<skills_dir>/skills/` is the
-        manager's link into a clone, not a plain directory. If it is the clone's path, #153's
-        grants name the clone's path instead;
-      - whether `--setting-sources user` and `--strict-mcp-config` keep the working directory's
-        `.claude/settings.json`, `.mcp.json`, skills and `CLAUDE.md` out of a call (for the open
-        question on the worked repository's settings);
-      - what `claude -p` does when `--plugin-dir` names a directory that does not exist;
-      - whether `git -C <clone> rev-parse HEAD` works as the service user on a root-owned clone,
-        or stops on git's ownership check;
+        manager's link into a clone, not a plain directory. **If it is the clone's path, stop:
+        the choice of flag goes back to Adam.** This replaces 0.1's fallback of naming the
+        clone's path in #153's grants;
       - whether a worker started with `--plugin-dir <skills_dir>` under `acceptEdits` can write
-        a file under `skills_dir`. If it can, the choice of flag goes back to Adam
+        a file under `skills_dir`. **If it can, stop: the choice of flag goes back to Adam;**
+      - whether `--setting-sources user` and `--strict-mcp-config` keep the working directory's
+        `.claude/settings.json`, `.mcp.json`, skills and `CLAUDE.md` out of a call, including
+        when the worker is also passed `--add-dir <its tree>` as it is today. If any of the
+        four still loads, the means of excluding it goes back to Adam;
+      - that the startup check's call still prints `system/init` before it fails to log in
+        with those two flags added;
+      - that a worker whose `HOME` is a new, empty directory authenticates with its seat's
+        token and receives a `rate_limit_event`. If it does not, the proposal's decision 9 (an
+        empty home per worker) goes back to Adam;
+      - whether `git -C <clone> rev-parse HEAD` works as the service user on a root-owned clone,
+        or stops on git's ownership check
 
 ## 1. Configuration
 
@@ -41,18 +48,28 @@
 
 - [ ] 2.1 One function that builds the arguments every `claude -p` shares, including
       `--plugin-dir <skills_dir>` when it is set. Use it in `claudeWorker` (`src/execute.ts`),
-      `runClaude` (`src/triage.ts`) and `runUsage` (`src/budget.ts`); the usage read is built
-      as specified unless Adam exempts it (proposal, *Still open*). #143's seat probe and #153's
-      steps, built in those changes, call it as well
-- [ ] 2.2 Tests: the worker's, triage's and the usage read's arguments carry
-      `--plugin-dir <skills_dir>` when it is set, and no `--plugin-dir` when it is not; no
-      call's arguments include `--bare`
+      `runClaude` (`src/triage.ts`) and `runUsage` (`src/budget.ts`). Every call gets
+      `--setting-sources user` and `--strict-mcp-config`; every call but `runUsage` gets
+      `--plugin-dir`. #143's seat probe and #153's steps, built in those changes, call it as
+      well
+- [ ] 2.2 Tests: the worker's and triage's arguments carry `--plugin-dir <skills_dir>` when it
+      is set, and no `--plugin-dir` when it is not; the usage read's never carry it; every
+      call's arguments, the startup check's included, carry `--setting-sources user` and
+      `--strict-mcp-config`; no call's arguments include `--bare`
+- [ ] 2.3 In `claudeWorker` (`src/execute.ts`), create a new empty directory for each worker,
+      pass it as the worker's `HOME`, and remove it after the worker exits, on every outcome.
+      Where the worker runs as #175's separate user, this waits on the proposal's open question
+      of who creates, owns and removes that directory
+- [ ] 2.4 Tests: two workers in a row, and two at the same time, get different `HOME`
+      directories, each empty at start; the directory is gone after a successful run, a failed
+      run and a killed run
 
 ## 3. Startup check
 
 Runs in `wire` (`src/wiring.ts`), before the first model call, only when `skills_dir` is set.
 
-- [ ] 3.1 Run `claude -p --plugin-dir <skills_dir> --output-format stream-json --verbose`
+- [ ] 3.1 Run `claude -p --plugin-dir <skills_dir> --setting-sources user --strict-mcp-config
+      --output-format stream-json --verbose`
       with a one-word prompt, stdin closed, from an empty temporary directory, and an
       environment of `PATH` and a `HOME` that is another empty temporary directory. Read
       the `system/init` event's `skills`, then stop the process. Refuse to start when

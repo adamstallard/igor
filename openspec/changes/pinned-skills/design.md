@@ -52,11 +52,13 @@ directory. The results, verbatim:
 
 - **The worker uses its skills through the Skill tool**, in normal mode (result 1). No step has
   to open with a slash command.
-- **The base directory is the plugin's**, `<skills_dir>/skills/<name>`, not a resolved clone.
-  So #153's grants under `<skills_dir>/skills` match the path the model is given. Task 0.1's
-  notes do not say whether `canary` was a symlink, which is how the manager installs a skill. If
-  it was a plain directory, the base directory given for a linked skill is unmeasured, and task
-  0.3 measures it.
+- **The base directory is the plugin's**, `<skills_dir>/skills/<name>`, not a resolved clone,
+  for the skill task 0.1 measured. Task 0.1's notes do not say whether `canary` was a symlink,
+  which is how the manager installs a skill, so whether #153's grants under
+  `<skills_dir>/skills` match the path the model is given is not yet known. Task 0.3 measures
+  it before the implementation is built. If a linked skill is given the clone's path instead,
+  the choice of flag goes back to Adam (decided by Adam, 2026-10-17). That replaces task 0.1's
+  fallback of having #153's grants name the clone's path.
 - **#144's risk stands.** If `--bare` becomes the default for `claude -p`, Igor must opt out
   explicitly.
 
@@ -85,7 +87,9 @@ manager's links under `skills/`.
 - **`--plugin-dir` is not documented as granting file access.** `claude --help` describes
   `--add-dir` as "Additional directories to allow tool access to", and `--plugin-dir` only as
   loading a plugin. This matters because write access to the skills is one reason `--add-dir`
-  is rejected (below). It was read from the help text, not measured; task 0.3 measures it.
+  is rejected (below). It was read from the help text, not measured. Task 0.3 measures it
+  before the implementation is built; if the worker can write the skills, the choice of flag goes back to Adam
+  (decided by Adam, 2026-10-17).
 
 ### What holds whichever flag is used
 
@@ -157,15 +161,35 @@ does not list is neither directed nor granted, and #153's grants by path are per
 
 ### What normal mode loads besides the plugin
 
-Without `--bare`, a call also loads the service user's hooks, its `CLAUDE.md` and its home
-skills (`~/.claude/skills`), and the worked repository's own `.claude` settings, skills and
-`CLAUDE.md`. Namespacing keeps every `igor:<name>` skill from being replaced (measured), but the
-rest still reaches the worker. A dedicated Igor server's service user has none of the first
-three, and nor does the separate worker user of #175.
+Without `--bare`, a call also loads the hooks, `CLAUDE.md` and home skills (`~/.claude/skills`)
+of the user it runs as, and, unless told not to, the worked repository's own `.claude` settings,
+skills and `CLAUDE.md` (measured). Namespacing keeps every `igor:<name>` skill from being
+replaced, but the rest reaches the model. A dedicated Igor server's service user has no hooks,
+`CLAUDE.md` or home skills, and nor does the separate worker user of #175. Two decisions of
+2026-10-17, below, keep the repository's files out of every call and give each worker an empty
+home.
 
-**Decided by Adam, 2026-10-11: Igor makes no startup check of them.** `docs/deployment.md`
-tells the operator to keep the service user and the worker user free of them, and why (task
+**Decided by Adam, 2026-10-11: Igor makes no startup check of the users' hooks, `CLAUDE.md` or
+home skills.** `docs/deployment.md` tells the operator to keep the service user and the worker
+user free of them, and why (task
 5.3). A check comes back only if a shared server becomes a supported setup.
+
+**Decided by Adam, 2026-10-17: no call loads the worked repository's settings.** The worker
+can edit the repository, so its `.claude/settings.json`, `.mcp.json`, skills and `CLAUDE.md`
+are text an item can steer, the same reason the `role-config` spec keeps a worker's allowed
+commands in the role file. Every call passes `--setting-sources user`, which loads the user's
+settings and not the project's or local ones, and `--strict-mcp-config`, which ignores every MCP
+configuration not passed with `--mcp-config`. The help text says only that much; whether the
+two also keep the repository's skills and `CLAUDE.md` out is unmeasured, and task 0.3 measures
+all four.
+
+**Decided by Adam, 2026-10-17: each worker gets a fresh, empty home, removed after it exits.**
+`--setting-sources user` still loads the home directory, and under #175 the worker user owns
+and writes its home, so a worker an item steers could plant hooks, a `CLAUDE.md` or skills in
+`~/.claude` for every later worker. Task 5.3's note to the operator cannot stop that; a home
+that lives only for one run can. The note still names the worker user, because #153's later
+model steps may run with that user's own home, which is still open. So is how the per-run home
+fits #175's worker user and #153's session mark (proposal, *Still open*).
 
 ### The startup check is a call with no token and an empty `HOME`
 
@@ -228,6 +252,8 @@ triage to `stream-json --verbose` changes the output flags, not this one. One ar
 for every call keeps the two from drifting (task 2.1).
 
 `runUsage` in `src/budget.ts` reads a seat's `/usage`. #143 withdraws `igor observe` but keeps
-this read. As specified, it carries the flag like every other call. It also runs on a person's
-machine for `igor budget`, where `skills_dir` names a server path, so the proposal asks whether
-to exempt it.
+this read. **Decided by Adam, 2026-10-17: it carries no `--plugin-dir`.** It runs no skill, so
+the flag gives it nothing. And on a person's machine, where `igor budget` runs it, `skills_dir`
+names a server path that does not exist there, and what `claude -p` does with a missing plugin
+directory is unmeasured. It still passes `--setting-sources user` and `--strict-mcp-config`,
+like every call.
