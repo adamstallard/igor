@@ -13,6 +13,18 @@
 - [ ] 0.2 Confirm the shared-skills commit to pin carries bug-hunter's caller-commits mode
       (`caller-result.sh`) and prose's `start`, `check`, `sign`, `verify-staged` and
       `verify-post`
+- [ ] 0.3 Measure, on the Claude Code version the server runs, and record in `design.md`:
+      - the base directory a skill is given when its entry under `<skills_dir>/skills/` is the
+        manager's link into a clone, not a plain directory. If it is the clone's path, #153's
+        grants name the clone's path instead;
+      - whether `--setting-sources user` and `--strict-mcp-config` keep the working directory's
+        `.claude/settings.json`, `.mcp.json`, skills and `CLAUDE.md` out of a call (for the open
+        question on the worked repository's settings);
+      - what `claude -p` does when `--plugin-dir` names a directory that does not exist;
+      - whether `git -C <clone> rev-parse HEAD` works as the service user on a root-owned clone,
+        or stops on git's ownership check;
+      - whether a worker started with `--plugin-dir <skills_dir>` under `acceptEdits` can write
+        a file under `skills_dir`. If it can, the choice of flag goes back to Adam
 
 ## 1. Configuration
 
@@ -28,11 +40,13 @@
 ## 2. The flag on every call
 
 - [ ] 2.1 One function that builds the arguments every `claude -p` shares, including
-      `--plugin-dir <skills_dir>` when it is set. Use it in `claudeWorker` (`src/execute.ts`,
-      the spawn at `:965`), `runClaude` (`src/triage.ts:145`) and `runUsage`
-      (`src/budget.ts:235`). #143's seat probe and #153's steps use it too
-- [ ] 2.2 Tests: the worker's and triage's arguments carry `--plugin-dir <skills_dir>` when it
-      is set, and no `--plugin-dir` when it is not; no call's arguments include `--bare`
+      `--plugin-dir <skills_dir>` when it is set. Use it in `claudeWorker` (`src/execute.ts`),
+      `runClaude` (`src/triage.ts`) and `runUsage` (`src/budget.ts`); the usage read is built
+      as specified unless Adam exempts it (proposal, *Still open*). #143's seat probe and #153's
+      steps, built in those changes, call it as well
+- [ ] 2.2 Tests: the worker's, triage's and the usage read's arguments carry
+      `--plugin-dir <skills_dir>` when it is set, and no `--plugin-dir` when it is not; no
+      call's arguments include `--bare`
 
 ## 3. Startup check
 
@@ -52,13 +66,22 @@ Runs in `wire` (`src/wiring.ts`), before the first model call, only when `skills
       ```
       claude -p --plugin-dir <skills_dir> printed no system/init event, so Igor cannot confirm its skills load
       ```
-- [ ] 3.2 Report each skill and the commit its files come from (`git -C <resolved dir>
-      rev-parse HEAD`), one startup line per skill:
+- [ ] 3.2 Report each skill and the commit its files come from, one startup line per skill.
+      `<resolved dir>` is the directory the skill's entry under `<skills_dir>/skills/` resolves
+      to, and the commit is `git -C <resolved dir> rev-parse HEAD`:
 
       ```
       skill igor:<name>: <12-hex commit> (<resolved dir>)
       ```
-- [ ] 3.3 Tests: each refusal above with its message; a passing check starts; the check's
+
+      Where the commit cannot be read, or `<resolved dir>` is not in a git clone, the line says
+      so and the start goes on:
+
+      ```
+      skill igor:<name>: commit not checked (<resolved dir>): <git's error>
+      ```
+- [ ] 3.3 Tests: each refusal above with its message; a passing check starts; an unreadable
+      commit starts with the not-checked line; no check runs without `skills_dir`; the check's
       environment holds no `CLAUDE_CODE_OAUTH_TOKEN` and no `ANTHROPIC_API_KEY` even when the
       process has them, and its `HOME` is not the service user's
 

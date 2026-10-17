@@ -53,9 +53,10 @@ directory. The results, verbatim:
 - **The worker uses its skills through the Skill tool**, in normal mode (result 1). No step has
   to open with a slash command.
 - **The base directory is the plugin's**, `<skills_dir>/skills/<name>`, not a resolved clone.
-  So #153's grants under `<skills_dir>/skills` match the path the model is given. The setup does
-  not say whether `canary` was a symlink, as the manager installs; if it was a plain directory,
-  a link's reported path is the one point still unmeasured.
+  So #153's grants under `<skills_dir>/skills` match the path the model is given. Task 0.1's
+  notes do not say whether `canary` was a symlink, which is how the manager installs a skill. If
+  it was a plain directory, the base directory given for a linked skill is unmeasured, and task
+  0.3 measures it.
 - **#144's risk stands.** If `--bare` becomes the default for `claude -p`, Igor must opt out
   explicitly.
 
@@ -81,8 +82,10 @@ manager's links under `skills/`.
 - **A plugin skill's name carries the plugin's name**, so a same-named skill elsewhere loads
   beside it and cannot replace it.
 - **The plugin loads under `--bare`** and appears in the event's `plugins` list.
-- **`--plugin-dir` grants no file access.** `claude --help` describes `--add-dir` as
-  "Additional directories to allow tool access to"; `--plugin-dir` only loads a plugin.
+- **`--plugin-dir` is not documented as granting file access.** `claude --help` describes
+  `--add-dir` as "Additional directories to allow tool access to", and `--plugin-dir` only as
+  loading a plugin. This matters because write access to the skills is one reason `--add-dir`
+  is rejected (below). It was read from the help text, not measured; task 0.3 measures it.
 
 ### What holds whichever flag is used
 
@@ -222,5 +225,9 @@ stops running as a seat.
 
 The seat probe is a `claude -p` and carries the flag like any other call. #143's switch of
 triage to `stream-json --verbose` changes the output flags, not this one. One argument builder
-for every call keeps the two from drifting (task 2.1). `runUsage` in `src/budget.ts` carries the
-flag while it exists; #143's gate two removes it.
+for every call keeps the two from drifting (task 2.1).
+
+`runUsage` in `src/budget.ts` reads a seat's `/usage`. #143 withdraws `igor observe` but keeps
+this read. As specified, it carries the flag like every other call. It also runs on a person's
+machine for `igor budget`, where `skills_dir` names a server path, so the proposal asks whether
+to exempt it.

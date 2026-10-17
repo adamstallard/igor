@@ -3,19 +3,17 @@
 ### Requirement: Skills come from one configured plugin directory
 
 Igor SHALL load the skills its model steps run from one Claude Code plugin directory, named by
-`skills_dir` in `igor.config.yaml`. The directory SHALL hold `.claude-plugin/plugin.json` naming
-the plugin `igor`, and the skills under `skills/`, one entry per skill, installed by the
-shared-skills manager. A skill named `<name>` therefore has its files under
-`<skills_dir>/skills/<name>/` and loads as `igor:<name>`. Every path Igor or a grant names for
-that skill's scripts SHALL be under that directory, and a step that asks for the skill by name
-SHALL use `igor:<name>`.
+`skills_dir` in `igor.config.yaml`. The directory holds `.claude-plugin/plugin.json` naming the
+plugin `igor`, and one entry per skill under `skills/`. A skill named `<name>` therefore has its
+files under `<skills_dir>/skills/<name>/` and loads as `igor:<name>`. Every path Igor or a grant
+names for that skill's scripts SHALL be under that directory, and a step that asks for the skill
+by name SHALL use `igor:<name>`.
 
-`skills_dir` SHALL be an absolute path. A relative path is refused at load, because the only
-directory it could be relative to is the lore repository, which Igor writes to.
+`skills_dir` SHALL be an absolute path, and a relative one SHALL be refused at load.
 
-Where `skills_dir` is absent, Igor loads no skills. No skill is then installed, so a role whose
-`skills` list names any skill is refused at load by role-config's *A role declares the skills
-its worker uses* (#153); this capability adds no refusal of its own.
+Where `skills_dir` is absent, Igor names no plugin directory, so no `igor:<name>` skill loads.
+This capability refuses nothing because `skills_dir` is absent. A role that lists a skill is
+refused by #153's `role-config` rule.
 
 #### Scenario: An absolute directory is accepted
 
@@ -27,22 +25,26 @@ its worker uses* (#153); this capability adds no refusal of its own.
 - **WHEN** `igor.config.yaml` sets `skills_dir: skills`
 - **THEN** loading the configuration fails, naming `skills_dir` and saying it must be absolute
 
+#### Scenario: A step names a skill by its plugin name
+
+- **WHEN** a model step directs the worker to use the skill `prose`, and grants its scripts
+- **THEN** it names the skill `igor:prose`
+- **AND** every script path it grants is under `<skills_dir>/skills/prose/`
+
 ### Requirement: Every model call names the plugin directory
 
 Every `claude -p` process Igor spawns SHALL carry `--plugin-dir <skills_dir>` when
 `skills_dir` is set: the worker, triage, and every other model step. No call SHALL pass
-`--bare` (decided by Adam, 2026-10-11): under `--bare` a seat's token runs as an API key, with
-no `rate_limit_event`, so the call is not read as a seat (measured).
+`--bare`.
 
 The worker invokes an `igor:<name>` skill itself, through the Skill tool, when its task calls
-for it (measured).
+for it.
 
 The flag loads every skill installed under `skills_dir` for every role. A role's `skills` list
-(#153) decides which skills its worker is directed to use and which of them Igor verifies; it
-does not decide what loads.
+(#153) does not decide what loads.
 
 A skill elsewhere with the same name as a pinned one, in the home directory or in the worked
-repository, loads under its own name beside `igor:<name>` and does not replace it (measured).
+repository, loads under its own name beside `igor:<name>` and does not replace it.
 
 #### Scenario: The worker names the directory
 
@@ -52,6 +54,11 @@ repository, loads under its own name beside `igor:<name>` and does not replace i
 #### Scenario: Triage names the directory
 
 - **WHEN** Igor spawns a triage call with `skills_dir` set
+- **THEN** its arguments include `--plugin-dir` followed by `skills_dir`
+
+#### Scenario: Every other model call names the directory
+
+- **WHEN** Igor spawns any other `claude -p` with `skills_dir` set, such as a seat probe or a usage read
 - **THEN** its arguments include `--plugin-dir` followed by `skills_dir`
 
 #### Scenario: No call passes --bare
@@ -66,17 +73,19 @@ repository, loads under its own name beside `igor:<name>` and does not replace i
 
 ### Requirement: Igor confirms its skills load before its first model call
 
-Before it spawns its first `claude -p` that could spend a seat, Igor SHALL run
-`claude -p --plugin-dir <skills_dir> --output-format stream-json --verbose` from an empty
-temporary directory, with an environment holding only `PATH` and a `HOME` that is another empty
-temporary directory. It SHALL read the `skills` list of the `system/init` event and confirm that
-`igor:<name>` is in it for every entry under `<skills_dir>/skills/`. With no token and no
-stored login, the call cannot authenticate, so it costs nothing. It prints the event first,
-then exits with `Not logged in` (measured).
+Where `skills_dir` is set, before it spawns its first `claude -p` that could spend a seat, Igor
+SHALL run `claude -p --plugin-dir <skills_dir> --output-format stream-json --verbose` with a
+one-word prompt and stdin closed, from an empty temporary directory, with an environment holding
+only `PATH` and a `HOME` that is another empty temporary directory. It SHALL read the `skills`
+list of the `system/init` event and confirm that `igor:<name>` is in it for every entry under
+`<skills_dir>/skills/`. With no token and no stored login, the call prints the event and then
+fails to authenticate, at no cost.
 
 Igor SHALL refuse to start when an installed skill is missing from the list, or when no
-`system/init` event arrives. It SHALL report the commit each skill's files come from, so a
-change in what is loaded shows in the log.
+`system/init` event arrives. It SHALL report, for each skill, the commit of the git clone that
+the skill's entry under `<skills_dir>/skills/` resolves to. Where that commit cannot be read, or
+the entry is not in a git clone, it SHALL report the skill's commit as not checked, and the
+check still passes on the list alone.
 
 #### Scenario: Every installed skill loads
 
@@ -90,6 +99,17 @@ change in what is loaded shows in the log.
 - **WHEN** a skill is installed under `skills_dir` but `igor:<name>` is missing from the
   event's `skills` list
 - **THEN** Igor refuses to start, naming the skill
+
+#### Scenario: An unreadable commit is reported as not checked
+
+- **WHEN** every installed skill loads, but the commit of one skill's files cannot be read
+- **THEN** Igor starts
+- **AND** it reports that skill's commit as not checked
+
+#### Scenario: No skills_dir, no check
+
+- **WHEN** `skills_dir` is absent
+- **THEN** Igor runs no skills check
 
 #### Scenario: No init event stops the start
 
