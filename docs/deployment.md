@@ -21,6 +21,10 @@ Igor shells out rather than reimplementing, so four things must be on the path:
 The floor is 26 rather than something older because Igor resolves provider reset phrases with
 `Temporal`, which 26 is the first release to ship unflagged.
 
+The image in [Docker](#docker) below carries all four at exact versions, which are the ones CI
+tests against. On a host you install them yourself; matching those versions gets you what CI
+tested.
+
 **"On the path" means the service's path, not your shell's.** A service inherits no shell
 profile, and systemd's default `PATH` doesn't include `~/.local/bin`, which is where `claude`'s
 native installer puts it for whoever ran the installer. `deploy/igor.service` sets
@@ -297,12 +301,119 @@ prompt shutdown, and do not lower it.
 
 ## Docker
 
+The `Dockerfile` at the repository root has two targets on one base:
+
+- `runtime` is what `deploy/docker-compose.yml` runs: node, git, `gh` and `claude`, with `igor`
+  on the path, running as the image's `node` user.
+- `development` has the same tools and no Igor. The devcontainer and CI are both built from it.
+
 ```bash
-cp deploy/env.example .env      # then fill it in
+cp deploy/env.example deploy/.env       # then fill it in
+cp <the App's key> deploy/maintenance.pem && chmod 600 deploy/maintenance.pem
+sudo chown 1000:1000 deploy/maintenance.pem   # Linux hosts only; skip on macOS
+git clone <your lore repository> deploy/lore
 docker compose -f deploy/docker-compose.yml up -d
 ```
 
+Compose reads `.env`, `lore` and `maintenance.pem` from `deploy/`, beside the compose file, not
+from the directory you run it in. Compose mounts the key at `/run/secrets/maintenance.pem`, so
+set `GITHUB_APP_PRIVATE_KEY_FILE=/run/secrets/maintenance.pem` in `deploy/.env`, replacing the
+systemd path `env.example` ships with.
+
+The container runs as uid 1000, and outside swarm, compose mounts the key and the lore
+checkout with their host owner and mode. So on a Linux host the key must be owned by uid 1000,
+which is what the `chown` above does. The lore checkout only needs to be readable by uid 1000,
+because Igor writes its state to the `igor-state` branch through the GitHub API, not into the
+checkout. Without the `chown`, the Igor refuses to start, saying the private key cannot be read.
+
+Docker Desktop on macOS opens mounted files as your own user, so there the key must stay
+yours. Chowned to uid 1000 and `0600`, your user can no longer read it, and compose fails to
+mount it.
+
+Nothing secret is in the image. Seat tokens and the App's key reach the container at run time,
+through `env_file` and `secrets`, and `.dockerignore` keeps `.env` and `.pem` files out of the
+build context.
+
 `stop_grace_period: 15m` is the same consideration as the systemd timeout, for the same reason.
+
+### Pinned versions
+
+Each tool's version is set in one place, an `ARG` at the top of the `Dockerfile`. The table
+shows the current values:
+
+| tool | version | how the image gets it |
+|---|---|---|
+| node | 26.3.0 | the `node:26.3.0-trixie-slim` base image |
+| git | 2.47.3 | Debian trixie's package, pinned to its full version `1:2.47.3-0+deb13u1` |
+| python3 | 3.13.5 | Debian trixie's packages: `python3` `3.13.5-1` and the interpreter, `python3.13` `3.13.5-2+deb13u5` |
+| `gh` | 2.94.0 | the release tarball, checked against its SHA-256 for each architecture |
+| `claude` | 2.1.296 | `npm install -g @anthropic-ai/claude-code@2.1.296` |
+
+The build ends by checking the installed version of git, python3, `gh` and `claude`, and fails
+if any differs from its pin; node's version is fixed by the base image's tag. The image sets
+`DISABLE_AUTOUPDATER=1`, so `claude` changes only when the image is rebuilt with a new pin.
+
+To move `gh`, change the version and its checksums together; each `gh` release publishes a
+`checksums.txt`.
+
+Igor's own code is not Python, but the image needs python3. A worker runs the shared skills,
+whose scripts are Python (`prose`, `bug-hunter`, `spec-trace`). Igor itself runs `prose.py` to
+check the signature on text a worker wants to publish
+([#153](https://github.com/adamstallard/igor/issues/153),
+[#174](https://github.com/adamstallard/igor/issues/174)). The image has no pip and no virtual
+environment, so those scripts can use only Python's standard library.
+
+**A Debian pin holds back security fixes until you move it.** A fix first appears in
+`trixie-security` beside the pinned revision. The image keeps building, still with the pinned,
+unfixed revision. At Debian's next point release, `trixie` itself carries only the new revision,
+apt cannot find the pinned one, and the image stops building. Move a pin when a security fix
+for git or python lands, rather than waiting for the build to break. To see what the archive
+carries, ask the base image:
+
+```bash
+docker run --rm node:26.3.0-trixie-slim sh -c \
+  'apt-get update -qq && apt-cache madison git python3 python3.13'
+```
+
+`madison` lists each version the archive holds, newest first. Set `GIT_VERSION` to git's newest,
+`PYTHON3_VERSION` to python3's and `PYTHON3_13_VERSION` to python3.13's, epoch and revision
+included, and let CI run the suite against it. Each python variable also pins the other packages
+of its family, which Debian always publishes at the same version as the one `madison` lists:
+the `Dockerfile` comment above `GIT_VERSION` names them.
+
+### Upgrading the `claude` pin
+
+`claude` is the pin that matters. Igor reads the CLI's output rather than an API with a
+contract: the result envelope's `result`, `is_error`, `total_cost_usd`, `modelUsage`,
+`terminal_reason`, `rate_limit_info`, `session_id` and `permission_denials`, and the text
+`/usage` prints for `igor budget`. A release that renames or reshapes any of these breaks
+nothing loudly. Costs read as zero, limits go unnoticed, or a seat reads as unreadable.
+
+1. Read the release notes for every version between the pin and the target. Look for changes
+   to `-p`, to `--output-format json` and `stream-json`, to `/usage`, and to authentication:
+   a seat's `setup-token` must still be honoured
+   ([igor#144](https://github.com/adamstallard/igor/issues/144)).
+2. Change `CLAUDE_CODE_VERSION` in the `Dockerfile`. That one line is the whole change.
+3. Rebuild and run `igor budget` in the container, with `deploy/.env` holding a seat's token:
+   `docker compose -f deploy/docker-compose.yml run --build --rm maintenance igor budget`.
+   Every seat should print its windows.
+4. Let one Igor work one small item, then read the `igor-state` branch of the lore repository.
+   The item's record under `executions/` should show a non-zero cost and per-model usage, and
+   its transcript should be under `transcripts/` on the same branch.
+
+CI runs the test suite against the new pin, but the tests run a stand-in script, not the real
+CLI. Steps 3 and 4 are what check the format.
+
+### Developing in the image
+
+`.devcontainer/devcontainer.json` opens a clone in the `development` target and runs `npm ci`
+when the container is created. That `npm ci` writes Linux builds into the checkout's
+`node_modules`, so run `npm ci` again before running anything from the same checkout on a
+macOS host. Some tests create commits, so git needs an identity in the container. VS Code
+copies yours in; with the `devcontainer` CLI, set `user.name` and `user.email` yourself.
+
+CI (`.github/workflows/ci.yml`) builds the same target on every pull request and every push to
+`main`, then runs `npm run typecheck` and `npm test` inside it.
 
 ## macOS
 
