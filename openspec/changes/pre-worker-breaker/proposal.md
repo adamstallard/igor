@@ -1,3 +1,58 @@
+## Decisions
+
+1. **A breaker per item** (Adam, 2026-10-11). Today a failure before the worker is refused: the
+   claim is given back and the item is tried again next cycle. On the third identical failure in
+   a row, the item is instead handed back deferred, or *set down*, and that run's message says
+   the Igor has stopped retrying and what brings the item back. *Rejected:* a configurable
+   threshold. Three is a constant, as in #101 (about to merge), whose stops open on the third
+   recurrence: one trips on a blip, two can be coincidence.
+2. **The count is rebuilt from `executions.ndjson`**, one `kind: "pre-worker"` row per failure.
+   *Rejected:* a count in memory, which a restart loses; and a store of its own, which two Igors
+   can overwrite and which can disagree with the log (`design.md`).
+3. **Identical means the same source and the same masked message.** The source is which
+   surface's call threw. *Rejected:* the source alone, and the raw message, which names a
+   temporary path that differs every run. *Accepted risk* (Adam, 2026-10-11): `HTTP 404` and
+   `HTTP 500` from the same call count as identical.
+4. **Only a tracker or code-host failure counts toward the surface-failure rule**, which ends a
+   cycle on two such failures in a row (Adam, 2026-10-11). Which surface failed is known from
+   which surface's call threw. *Rejected:* reading it from the
+   error's wording.
+5. **Two identical failures before the worker, on different items in a row, end the cycle**
+   (Adam, 2026-10-11), and neither counts toward its item's breaker.
+6. **After a deferral lifts, one identical failure sets the item down again** (Adam,
+   2026-10-11), not three. The answer that lifted it did not cure the failure.
+7. **An item alone in its cycle counts a failure every item would meet, once per cycle** (Adam,
+   2026-10-11). With one run, nothing tells the item's failure from the environment's.
+8. **The deferral lifts by `work-triage`'s existing rule**, with no rule of its own.
+9. **Both cycles apply decision 5: `serve`'s and the one `igor run` runs.** The coordinating
+   agent chose this on 2026-10-11, for Adam to overrule.
+
+**Still open:**
+
+- **The set-down is posted before the run is known to be excluded.** Whether a failure is part
+  of an outage, or of two identical failures on different items, is known only after the next
+  run. An item with two genuine failures behind it is set down by the first failure of an
+  outage, though both the surface-failure rule and decision 5 say that failure does not count. *Recommendation:* accept and record it; the item
+  comes back when answered, and the alternative, holding the decision until the next run, was
+  rejected because a crash between items loses it.
+- **A fact about the Igor sets an item down.** #101's change, `condition-backoff`, says in its
+  `work-triage` delta that an item SHALL NOT be suppressed where the cause was a fact about the
+  Igor, such as a seat whose token is unset. A full disk, an expired clone token or an unset
+  token met alone in three cycles sets the item down here. *Recommendation:* a failure #101
+  records as a condition (a fault in the Igor's own configuration, recognised by its cure key,
+  that stops the Igor or its seat rather than the item) never counts toward the breaker, and the
+  remaining alone-in-cycle cost stays accepted (decision 7).
+- **`igor run` has no surface-failure rule.** Decision 9 gives it the identical-failure rule
+  only. Its cycle never stops on two tracker failures, so
+  during an outage, tracker failures whose messages differ count toward each item's breaker.
+  *Recommendation:* the one comparison function (task 4.5) applies both two-in-a-row rules, in
+  both cycles.
+- **The masks are unmeasured.** Nobody has checked that real repeated failures give one
+  signature after masking (task 0.1). If they never match, the breaker never trips, which is
+  today's behaviour.
+- **The set-down sentence names what lifts a deferral.** #141, which lets only someone with
+  write access lift a deferral, changes that sentence if it lands first (task 3.2).
+
 ## Why
 
 When a claimed run fails **before the worker starts**, the item is refused and tried again next
@@ -52,8 +107,6 @@ three times and then set down, and stay down after the cause was fixed.
 
 Out of scope:
 
-- **Making the threshold configurable.** Three is a constant, chosen as #101's credential
-  threshold was: one trips on a blip, two can be coincidence.
 - **Catch-ups the code host settles on its own.** They take no claim and post nothing, so there
   is nothing to repeat. A catch-up that escalates into a claimed run is covered like any other.
 
@@ -67,9 +120,9 @@ None.
 
 - `work-claiming`: a failure before the worker that repeats three times sets the item down, two
   identical ones on different items in a row end the cycle, and only a tracker or code-host
-  failure counts as the surface failing. Both are added as
-  requirements of their own rather than as changes to *A claim that cannot be kept is given back,
-  out loud*, which `one-claiming-surface` also modifies.
+  failure counts as the surface failing. Modifying the in-force *A claim that cannot be kept is
+  given back, out loud* would mean restating its whole text, so all three are added as
+  requirements of their own.
 
 ## Impact
 
@@ -83,7 +136,6 @@ None.
 - `src/cli.ts`: its single cycle ends on the same two failures and appends the same outage row.
 - `src/wiring.ts`, `src/cli.ts`: write a row for each failure before the worker, and supply the
   count reader.
-- Readers of `executions.ndjson`: any that counts runs skips rows carrying a `kind`, the rule
-  #101 states too. The spend readers in `src/budget.ts` only sum cost, which a row without one
-  leaves unchanged.
+- Readers of `executions.ndjson`: #101's `stuck-conditions` requires every reader that counts
+  runs to skip rows carrying a `kind`, and its task 2.3 makes the readers do so. The two kinds added here rely on that rule.
 - `src/deferred.ts`: no change. The breaker defers through the existing handoff path.

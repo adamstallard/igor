@@ -1,3 +1,12 @@
+## 0. Before building
+
+- [ ] 0.1 Capture real failure messages, each twice on separate runs: a clone on a full disk, a
+      clone with an expired token, a branch set up that fails, and a tracker call answered 5xx.
+      Check that each pair gives one signature after `design.md`'s masks and that different
+      causes give different ones, and record the captures in `design.md`. If a pair does not
+      match, change the masks; a breaker whose signatures never match never trips, which is
+      today's behaviour
+
 ## 1. The agreement (gate one, this pull request)
 
 - [x] 1.1 `work-claiming`: only a tracker or code host failing counts as the surface failing; a
@@ -37,8 +46,10 @@
 - [ ] 3.3 `claimWithdrawn` takes the same sentence, appended after "Nothing was done, so there is
       nothing to clean up." On the third identical failure in the claim window, post it even
       where the claim message never landed
-- [ ] 3.4 In `runItem`, on a failure before the worker (a refused claim window, or a throw with no
-      worker output and nothing published): build the signature, ask the count reader for the
+- [ ] 3.4 In `runItem`, on a failure before the worker (a refused claim window, a throw raised
+      before `execute` spawned the worker, or a failure `execute` returns before spawning it;
+      `execute` reports whether it spawned the worker, so a worker that started and produced
+      nothing is not counted): build the signature, ask the count reader for the
       trailing count, and on a count of 3 or more including this one, return `handed-off` with
       `handoff: 'failure'` and the set-down tail. Otherwise refuse as today. A count reader that
       throws or is absent counts as 0
@@ -53,12 +64,12 @@
       `role`, `source`, `signature` and `reason`, wherever a run is recorded today: `serve`'s
       event handler and the single-cycle loops in `src/cli.ts`
 - [ ] 4.2 `serve` appends a `kind: 'outage'` row when it ends a cycle on two surface failures,
-      with `role`, the cycle's start as `since`, and the two runs' items
+      with `role`, the cycle's start as `since`, and every item whose run failed before the
+      worker in that cycle
 - [ ] 4.3 Supply the count reader through `wiring.ts`: it reads `executions.ndjson` with `readLog`
-- [ ] 4.4 Every reader of `executions.ndjson` that counts runs skips rows carrying a `kind`. This
-      is `condition-backoff`'s task 2.3 too; whichever lands first adds it. Today's spend
-      readers only sum cost, which a row without one leaves unchanged, so check each rather
-      than assume
+- [ ] 4.4 Check that every reader of `executions.ndjson` that counts runs skips `pre-worker` and
+      `outage` rows. #101's `stuck-conditions` requires readers to skip rows carrying a `kind`,
+      and its task 2.3 builds that
 - [ ] 4.5 Both cycles end when two runs in a row, of different items, fail before the worker
       with the same source and signature: `serve`'s, and the single cycle `igor run` runs in
       `src/cli.ts`. The two share no cycle code, so put the comparison in one function both call,
@@ -68,7 +79,16 @@
       end the cycle*, through both `serve` and `igor run`: the cycle ends and neither count moves;
       different failures continue and both count; an item alone in its cycle counts once
 
-## 5. Close
+## 5. After #101 merges
 
-- [ ] 5.1 `npm test` passes; `openspec validate pre-worker-breaker --strict` passes
-- [ ] 5.2 Gate two closes #155
+- [ ] 5.0 Restate against #101's text: its `work-discovery` watermark requirement lists why a
+      cycle does not take an item (budget, a condition, no answer to the claim), and the
+      watermark does not advance past an item left untaken for one of those reasons. A cycle
+      ended by two identical failures before the worker leaves its remaining items untaken too,
+      and the watermark must not pass them either. Add a `MODIFIED` block that names this
+      reason, copied whole from #101's requirement once it is in force
+
+## 6. Close
+
+- [ ] 6.1 `npm test` passes; `openspec validate pre-worker-breaker --strict` passes
+- [ ] 6.2 Gate two closes #155

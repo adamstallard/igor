@@ -3,12 +3,16 @@
 ### Requirement: Only a tracker or code host failing counts as the surface failing
 
 The cycle stops on two surface failures in a row (*A claim that cannot be kept is given back, out
-loud*). A run SHALL count toward that only where a call to the tracker or the code host failed. A
-run that failed in its working tree, such as a clone, a branch set up or a full disk, or in the
-Igor's own code SHALL NOT count, whether it failed before or after the worker ran.
+loud*); this capability calls that the *outage rule*. A run SHALL count toward it only where the
+call that threw was the tracker's or the code host's. A run that failed in its working tree, such
+as a clone, a branch set up or a full disk, or in the Igor's own code SHALL NOT count, whether it
+failed before or after the worker ran.
 
-Which call failed SHALL be known from which surface's call threw, and SHALL NOT be read back out
-of the error's wording. A table of error shapes misses the first error it does not list.
+Which surface's call threw SHALL be known from the call itself, and SHALL NOT be read back out of
+the error's wording. Knowing the surface does not tell a surface that did not answer from one
+that answered and refused this item, such as a code host refusing a branch the item already
+owns. Only a second item failing tells them apart, and the outage rule's two in a row is that
+test.
 
 A failure in one item's working tree is not the tracker failing. Counted as if it were, it ends
 the cycle one item early when a real outage follows it.
@@ -24,6 +28,12 @@ the cycle one item early when a real outage follows it.
 - **WHEN** two runs in a row fail because a call to the tracker failed
 - **THEN** the cycle is recorded as failed and the remaining items are not attempted
 
+#### Scenario: A failure in the Igor's own code is not a surface failure
+
+- **WHEN** two runs in a row fail with an error that no tracker, code host or working-tree call
+  threw
+- **THEN** the cycle continues to the remaining items and is not recorded as failed
+
 #### Scenario: A code host that does not answer after the worker ran is a surface failure
 
 - **WHEN** a run fails because the code host did not answer a call made after the worker ran
@@ -31,14 +41,19 @@ the cycle one item early when a real outage follows it.
 
 ### Requirement: A failure before the worker that repeats sets the item down
 
-A run *fails before the worker* when it ends after its claim began and before the worker was paid
-for. Examples are a failure in the claim window, in provisioning the working tree,
-in setting up its branch, or in a tracker or code-host call made before the worker starts. Such a
-run is refused and tried again next cycle, because a retry costs nothing. Where the failure is
-deterministic, it repeats every poll, each time claiming the item and posting on it.
+A run *fails before the worker* when it ends in failure after its claim began and before the
+worker started, whether the failure was thrown or returned. Examples are a failure in the claim
+window (while the claim is being taken), in provisioning the working tree, in setting up its
+branch, or in a tracker or code-host call made before the worker starts. Such a run is refused:
+its claim is given back and the item is tried again next cycle, unless the discovery watermark
+has moved past it, after which discovery does not see it again until it is edited
+(`work-discovery`).
+Where the failure is deterministic, it repeats every poll, each time claiming the item and
+posting on it.
 
-The Igor SHALL count an item's failures before the worker, for its own role, in a row. On the
-third identical one it SHALL hand the item back deferred instead of refusing it. What it posts on
+The Igor SHALL count an item's failures before the worker, for its own role, in a row; that count
+is the item's *breaker*. On the third identical one it SHALL hand the item back deferred instead
+of refusing it. What it posts on
 the item on that run SHALL say that it has stopped retrying and what brings the item back. It
 SHALL say so once: the runs before the third say what they say today, and a deferred item is not
 claimed, so nothing is posted after it.
@@ -47,13 +62,13 @@ claimed, so nothing is posted after it.
 code host, the working tree or the Igor's own code. The message is compared with its variable
 parts masked: digit runs, hexadecimal identifiers and the working tree's temporary path.
 
-**In a row** means nothing broke the sequence. A run of the item that reached the worker, or a
+**In a row** means nothing broke the sequence. A run of the item that started the worker, or a
 failure before the worker that is not identical, SHALL start the count again. An edit or a reply
 SHALL NOT. So once the deferral lifts, an identical failure sets the item down again at once.
 The answer that lifted it did not cure the failure.
 
-**The count SHALL survive a restart.** It is rebuilt from the run record, never held only in
-memory.
+**The count SHALL survive a restart.** It is rebuilt from the execution log
+(`executions.ndjson`), never held only in memory.
 
 **An outage is not the item's failure.** A run that failed in a cycle the outage rule then ended
 SHALL NOT count toward any item's breaker, and neither SHALL a run that *Two identical failures
@@ -64,8 +79,7 @@ items that sort first, each waiting for an answer about a fault that was never t
 back is not re-worked until something answers*). The breaker adds no rule of its own about what
 lifts it.
 
-**A count that cannot be read sets nothing down.** The run is refused and retried as before. The
-record is a cache, and failing toward the work is the right direction for one.
+**A count that cannot be read sets nothing down.** The run is refused and retried as before.
 
 #### Scenario: The first two identical failures are retried
 
@@ -82,19 +96,30 @@ record is a cache, and failing toward the work is the right direction for one.
 
 #### Scenario: A repeated failure in the claim window sets the item down
 
-- **WHEN** a tracker call in the claim window fails the same way on three consecutive runs of an
-  item, in cycles that continued to other items
+- **WHEN** a tracker call in the claim window gets no answer, the same way, on three consecutive
+  runs of an item, in cycles that continued to other items
 - **THEN** the third run releases the claim and says the Igor has stopped retrying
 - **AND** the item is not claimed next cycle
+
+#### Scenario: Failures that differ only in their variable parts are identical
+
+- **WHEN** an item's clone fails three runs in a row with messages that differ only in the
+  working tree's temporary path and a number
+- **THEN** the third run sets the item down
+
+#### Scenario: Each role counts its own failures
+
+- **WHEN** an item fails before the worker the same way twice for one role and once for another
+- **THEN** neither role sets the item down
 
 #### Scenario: A different failure starts the count again
 
 - **WHEN** an item failed before the worker twice in one way and then once in another
 - **THEN** the item is not set down, and the newest failure is the first of its count
 
-#### Scenario: A run that reached the worker starts the count again
+#### Scenario: A run that started the worker starts the count again
 
-- **WHEN** an item failed before the worker twice, then a run of it reached the worker, then it
+- **WHEN** an item failed before the worker twice, then a run of it started the worker, then it
   failed before the worker in the first way again
 - **THEN** the item is not set down
 

@@ -22,13 +22,15 @@ Three places could hold the count. Two are rejected.
   separate store for its conditions for both reasons (Adam, 2026-10-11), and a per-item failure
   count is the same kind of thing, a trailing run of identical events.
 - **Chosen: rows in the log.** Appends cannot overwrite each other. The log is already where a
-  run is recorded, and #101 already has rows that are not runs, carrying a `kind`, so this adds a
-  row kind rather than a mechanism. A failure before the worker writes no row today, because
+  run is recorded, and #101 adds rows that are not runs, carrying a `kind`, so this adds a row
+  kind rather than a mechanism. A failure before the worker writes no row today, because
   `cli.ts` records only a run with an `execution`, and this row fills that gap in the record too.
 
 The log is read only on a failure before the worker, never on a healthy run, so the breaker costs
-nothing until it is needed. `readLog` caches settled days, so the read is one request for today's
-partition.
+nothing until it is needed. The log is kept on the `igor-state` branch, one file per day.
+`readLog` reads a past day's file once per process and re-reads the list of day files and
+today's file every time, so after a process's first read the breaker costs two requests to the
+code host.
 
 **What the deferral itself uses is unchanged.** The third failure's run returns as a `failure`
 handoff carrying no cures, and the existing `shouldDefer` and `noteHandoff` path writes it to
@@ -42,11 +44,13 @@ For one item and one role, walk the rows newest first:
 
 1. Skip a `pre-worker` row that an `outage` row excludes (below).
 2. Count a `pre-worker` row whose `source` and `signature` match the failure in hand.
-3. Stop at anything else for this item and role: a run row, or a `pre-worker` row that does not
-   match.
+3. Stop at a run row, or at a `pre-worker` row that does not match.
+4. Skip rows of any other `kind`, such as #101's `probe` and `check` rows.
 
-The failure in hand is one more. At three or more, the item is set down. A run row is any row
-without a `kind`, which is every row written today.
+The failure in hand is one more. At three or more, the item is set down. A run row is a row
+without a `kind`. A failure before the worker writes a `pre-worker` row in place of a run row,
+whether `execute` threw it or returned it (a catch-up merge that fails, for example), so every
+run row records a run that started the worker.
 
 A count at or past three after a lifted deferral sets the item down on the first identical
 failure. That is deliberate (spec, *In a row*; accepted by Adam, 2026-10-11): the answer that
@@ -94,8 +98,11 @@ the log sees what was compared.
 {"at": "…", "kind": "outage", "role": "web", "since": "<cycle start>", "items": ["…", "…"]}
 ```
 
-`items` names the runs in that sequence. A `pre-worker` row for a named item and role, written at
-or after `since` and before the outage row, does not count.
+`items` names every item whose run failed in that cycle, before or after the worker, including
+the two whose surface failures ended it, because the spec excludes every failure in a cycle the
+outage rule ended. Only `pre-worker` rows are affected, since only they count. A
+`pre-worker` row for a named item and role, written at or after `since` and before the outage
+row, does not count.
 
 - **Rejected: delay each row until the next run shows whether the cycle continued.** That means
   holding rows in memory across items, and losing them on a crash or a shutdown between items.
