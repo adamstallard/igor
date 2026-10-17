@@ -4,11 +4,14 @@
 
 A worker user is configured where `IGOR_WORKER_USER` in the Igor's environment names one. It
 SHALL be read from nowhere else. Where a worker user is configured, execution SHALL run the
-worker as that user, and every process the worker starts SHALL run as that user too. The worker user SHALL be neither root nor
-the user the Igor runs as. The worker SHALL NOT be able to read any credential the Igor holds:
-the files its environment was loaded from, any private key or token file it reads, the private
-key that decrypts seat files, and the Igor's own process environment, which holds the App key
-where it is given inline as `GITHUB_APP_PRIVATE_KEY`.
+worker as that user, and every process the worker starts SHALL run as that user too. Every
+other `claude -p` the Igor starts with the worker's tree as its working directory SHALL run as
+that user as well, such as a model step that signs the worker's pull request text, or the
+worker's commit, before publishing (#153). The worker user SHALL be neither root nor the user the Igor runs as. The
+worker SHALL NOT be able to read any credential the Igor holds: the files its environment was
+loaded from, any private key or token file it reads, the private key that decrypts seat files,
+and the Igor's own process environment, which holds the App key where it is given inline as
+`GITHUB_APP_PRIVATE_KEY`.
 
 The seat token the worker spends SHALL reach it only through the environment of the process
 the Igor starts. It SHALL NOT appear in any process's arguments, and SHALL NOT be written to a
@@ -37,6 +40,12 @@ system's file permissions are the barrier that holds whatever the worker runs.
 - **AND** it is in no process's arguments
 - **AND** the Igor writes it to no file
 
+#### Scenario: A model step after the worker runs as the worker user
+
+- **WHEN** the Igor starts a `claude -p` in the worker's tree after the worker exits, such as a
+  prose pass that runs the repository's tests
+- **THEN** that process, and every process it starts, runs as the worker user
+
 #### Scenario: The worker user is read from the environment only
 
 - **WHEN** `igor.config.yaml` names a worker user and `IGOR_WORKER_USER` is unset
@@ -50,10 +59,11 @@ directory holding the running `igor` and the `node` executable it runs on.
 
 The worker user SHALL be able to create, edit and remove files in its working tree, write its
 outbox, and run the role's allowed commands, including `git rm` and `git mv`. It SHALL NOT be
-able to write the tree's git directory, the lore checkout, the Igor's installation, the Igor
-user's home directory, or the Igor's credential files. The Igor SHALL write its records, the
-`igor-state` branch with `executions.ndjson` among them, only through the code host with its
-own credential, never in a local file the worker could write.
+able to write the tree's git directory, the lore checkout, the Igor's installation,
+`skills_dir` where it is set (#174), the Igor user's home directory, or the Igor's credential
+files. The Igor SHALL write its records, such as `executions.ndjson` on the `igor-state`
+branch, only through the code host with its own credential, never in a local file the worker
+could write.
 
 A worker that can write a file the Igor later executes or trusts has the Igor's identity, and
 then the separate user protects nothing.
@@ -107,22 +117,48 @@ as the Igor.
 
 ### Requirement: The Igor reads no file on the worker's behalf through a link
 
-When the Igor reads what a worker changed, it SHALL find the changed paths against its own
-index, never an index the worker could write. It SHALL NOT follow a symbolic link, and SHALL NOT
-read a path through a directory that is a link. A changed path that is a link, or lies beneath
-one, SHALL stop the run before anything is published, naming the path. A changed file the Igor
-cannot read SHALL stop the run the same way, rather than be left out of the artifact. The
-worker's declaration file in the outbox SHALL be read only if it is a regular file.
+The Igor SHALL read what a worker changed only after every process that runs as the worker
+user in the tree has exited, the last model step included. It SHALL find the changed paths
+against its own index, never an index the worker could write. It SHALL NOT follow a symbolic
+link, and SHALL NOT read a path through a directory that is a link. A changed path that lies
+beneath a link SHALL stop the run before anything is published, naming the path. A changed file
+the Igor cannot read SHALL stop the run the same way, rather than be left out of the artifact.
+The worker's declaration file in the outbox SHALL be read only if it is a regular file.
+
+Once #137 has archived its requirement *An artifact carries a changed path as the tree holds
+it* into this spec, a changed path that is itself a link SHALL be published as a link, as that
+requirement carries one. The Igor SHALL NOT follow the link to do so. Until then, a changed
+link SHALL stop the run before anything is published, naming the path.
 
 The Igor can read its own credentials and the worker cannot. A link the worker makes to the
 App's key, read by the Igor and published as the content of a file, would publish the key in a
 pull request.
 
-#### Scenario: A link to a credential is not published
+#### Scenario: A link to a credential is published as a link
 
-- **WHEN** a worker creates `notes.txt` as a link to a file only the Igor can read
+- **WHEN** #137's requirement is archived into this spec
+- **AND** a worker creates `notes.txt` as a link to a file only the Igor can read
+- **THEN** the artifact carries `notes.txt` as a link whose target is that file's path
+- **AND** the linked file's content is in no artifact, comment or record
+
+#### Scenario: A link stops the run until links can be published
+
+- **WHEN** #137's requirement is not yet archived into this spec
+- **AND** a worker creates `notes.txt` as a link to a file only the Igor can read
 - **THEN** the run stops naming `notes.txt`
 - **AND** the linked file's content is in no artifact, comment or record
+
+#### Scenario: A path beneath a linked directory stops the run
+
+- **WHEN** a worker replaces a directory in its tree with a link, and a changed path lies
+  beneath it
+- **THEN** the run stops naming that path
+- **AND** nothing is read through the link
+
+#### Scenario: The tree is read after the last model step
+
+- **WHEN** a model step after the worker creates a link in the tree
+- **THEN** the Igor's link checks see it
 
 #### Scenario: An index the worker edited hides nothing
 
@@ -170,7 +206,9 @@ They SHALL check that the Igor belongs to the worker's group. And they SHALL che
 user, that it can execute the `claude` the Igor resolves; that it cannot read the Igor's process
 environment, any credential file the Igor's configuration names, or a canary file the check
 creates that only the Igor can read; and that it cannot write the lore checkout or the Igor's
-installation. Any failure SHALL refuse the start, naming what failed and the path involved.
+installation. Where `skills_dir` is set, they SHALL try once, as the worker user, to create and
+delete a file in it; the worker never needs to write there. Any failure, a successful create
+among them, SHALL refuse the start, naming what failed and the path involved.
 
 A worker user that can read the key protects nothing, and nothing else would notice. The process
 that holds the credentials is the only one that knows where they are, so it checks.
@@ -205,6 +243,12 @@ that holds the credentials is the only one that knows where they are, so it chec
 
 - **WHEN** the worker user can write the lore checkout
 - **THEN** the Igor refuses to start, naming the lore checkout
+
+#### Scenario: The worker user can write skills_dir
+
+- **WHEN** `skills_dir` is set and the worker user can create a file in it
+- **THEN** the Igor refuses to start, naming `skills_dir`
+- **AND** the file the check created is deleted
 
 #### Scenario: The worker user cannot run claude
 
