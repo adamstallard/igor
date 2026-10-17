@@ -282,13 +282,14 @@ here, it broke us in March" — which nobody searches for because nobody knows t
 entire justification for unbidden firing, and it is why better search cannot replace the
 channel.
 
-**Open: may the worker query surfaces mid-task?** Reading the repository is obviously
-available. Searching Linear or Slack for the discussion behind an ambiguous item is not
-specified. Recommended: allow read-only surface search, capped in call count, with everything
-returned marked untrusted exactly as ingested content already is (§5.4). A human would read
-the original discussion before touching something ambiguous, and forbidding it buys no safety
-— the content is equally untrusted whether it arrives by firing or by fetching. The cap
-guards against rabbit-holing, not against attack.
+**Decided: the worker may also search the trackers and chat tools Igor works on, read-only and
+capped.** Not built; issue #180 tracks it. This widens the Ambient channel above from the
+codebase to the discussion behind an ambiguous item, on GitHub, Linear or Slack, as a person
+would read it before touching the code. Search is read-only and capped in call count; the size
+of the cap is open. Everything a search returns is marked untrusted, as the claimed item already
+is (§5.4). Forbidding search buys no safety: the worker already reads untrusted text in the item
+it claimed, and text it fetches is just as untrusted. The cap stops a worker spending its run on
+searching; it is not a defence against attack.
 
 ### 3.3 Firing — **built** (injection; relevance filtering still ahead)
 
@@ -1986,3 +1987,19 @@ Agreed in principle, not scoped, roughly in dependency order:
 11. Additional adapters: Discord (#160), then Linear (#161).
 12. Binaries in an artifact, refused or carried rather than corrupted (§6.7.3) — needs a role
     that can touch one.
+
+## 9. Testing
+
+### 9.1 `src/cli.ts` is wiring, and its wiring is untested — **decided**
+
+Nothing in the test suite drives `src/cli.ts`, and that is accepted (#95). The module calls
+`program.parseAsync()` at its top level, so importing it runs whatever command the process's own
+arguments name, and a configuration error there calls `process.exit(1)`. A module is loaded once
+per process, so a test that imports it runs at most one command, and can exit the test process.
+A subprocess harness would catch wiring and nothing else, at the cost of slow tests and a kind of
+fixture the repository has none of.
+
+**The rule that keeps the untested part small:** each action in `cli.ts` is a few lines that
+parse, call and print. Anything with a branch in it is extracted into a module and tested there,
+as `src/staleness.ts` and `src/flags.ts` are. What no test catches is an argument passed in the
+wrong place, so a reviewer reads each action's few lines for exactly that.
