@@ -41,34 +41,6 @@ and its ancestors say all it may do.
 - **AND** a later change to a `frontend` role extending `engineering` does not change what
   `fullstack` may do
 
-### Requirement: A role declares sources, lane, behaviour, permissions, and reviewers
-
-A role file SHALL support: `extends`, `seat`, `sources`, `lane`, `instructions`, `allow`,
-`commands`, `budget_share`, and `reviewers`. Each `sources` entry MUST name a
-`tracker` and carry that tracker's own query verbatim. Entries failing validation SHALL be
-rejected rather than loaded.
-
-`commands` names the shell commands a worker may run, and is the only thing that lets one
-run anything at all. It is declared on the role and nowhere else: a worker that can edit
-files can edit a settings file in the repository it is working, so an allowlist read from
-there is one the worker can widen for itself.
-
-#### Scenario: Well-formed role accepted
-
-- **WHEN** a role declares a tracker source, a lane, standing instructions, an allow list, and
-  reviewers
-- **THEN** validation passes and the role loads
-
-#### Scenario: Declared commands bound what the worker may run
-
-- **WHEN** a role declares `commands` and an item is executed
-- **THEN** the worker may run those commands and nothing else
-
-#### Scenario: Source without a tracker rejected
-
-- **WHEN** a `sources` entry omits `tracker`
-- **THEN** validation fails, because a query cannot be dispatched without knowing who executes it
-
 ### Requirement: Merge semantics differ by field kind
 
 Inheritance SHALL apply three merge semantics, selected per field:
@@ -124,6 +96,34 @@ base should ship with is `[draft-pr, comment]` — everything reversible, nothin
 
 ## ADDED Requirements
 
+### Requirement: A role declares its sources, lane, behaviour, permissions, and reviewers
+
+A role file SHALL support: `extends`, `seat`, `sources`, `lane`, `instructions`, `allow`,
+`commands`, `budget_share`, and `reviewers`. Each `sources` entry MUST name a
+`tracker` and carry that tracker's own query verbatim. Entries failing validation SHALL be
+rejected rather than loaded.
+
+`commands` names the shell commands a worker may run, and is the only thing that lets one
+run anything at all. It is declared on the role and nowhere else: a worker that can edit
+files can edit a settings file in the repository it is working, so an allowlist read from
+there is one the worker can widen for itself.
+
+#### Scenario: Well-formed role accepted
+
+- **WHEN** a role declares a tracker source, a lane, standing instructions, an allow list, and
+  reviewers
+- **THEN** validation passes and the role loads
+
+#### Scenario: Declared commands bound what the worker may run
+
+- **WHEN** a role declares `commands` and an item is executed
+- **THEN** the worker may run those commands and nothing else
+
+#### Scenario: Source without a tracker rejected
+
+- **WHEN** a `sources` entry omits `tracker`
+- **THEN** validation fails, because a query cannot be dispatched without knowing who executes it
+
 ### Requirement: An Igor holds exactly one role
 
 An Igor SHALL hold exactly one role, and its identity on every surface SHALL be that role: a
@@ -162,3 +162,13 @@ releases its claim.
 
 **Migration**: Delete `completion` from role files. A role file that still sets it is refused as
 any key that is not a role key is.
+
+### Requirement: A role declares sources, lane, behaviour, permissions, and reviewers
+
+**Reason**: Its scenarios *Unrecognized completion action rejected* and *Claim wording is not a
+role setting* no longer hold: a role names no completion action, and nothing singles out the claim
+wording, which strict key checking refuses like any key that is not a role key (Adam, 2026-10-11).
+OpenSpec will not archive a `MODIFIED` block that drops a scenario.
+
+**Migration**: Replaced by *A role declares its sources, lane, behaviour, permissions, and
+reviewers*, added by this change, which keeps every other rule and scenario.
