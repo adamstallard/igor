@@ -1480,8 +1480,12 @@ so if the event stops arriving, or a seat below every threshold turns out to emi
 
 The failure mode the claim protocol creates: an Igor announces "I'm on this", humans and
 other Igors back off, then it goes silent mid-task. So exhaustion must produce a posted
-state-of-work, remaining steps, and suggested pickups. The summarizing call should be cheap
-and separate, not competing for the exhausted budget.
+state-of-work, remaining steps, and suggested pickups. The Igor writes the handoff from what
+it has already recorded about the run: the steps done and left come from the run's outcome,
+its changed files, its refusals and any artifact, and the suggested pickups are the role's
+reviewers and the item's author. No path makes a model call. The failure that demands a
+handoff, such as an exhausted seat budget, is often one in which no call can be made, and a
+handoff that needed one would fail exactly when it is needed.
 
 ### 6.5 A seat is capacity, not an identity — **planned**
 

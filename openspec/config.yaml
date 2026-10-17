@@ -18,3 +18,10 @@ schema: spec-driven
 #       - Always include a "Non-goals" section
 #     tasks:
 #       - Break tasks into chunks of max 2 hours
+
+# spec-check enforces the proposal rule below: openspec/spec-check.yaml says
+# `decisions-first: enforce`, so `spec-check check` fails a proposal that does
+# not open with a Decisions section.
+rules:
+  proposal:
+    - "Open with a Decisions section listing the decisions the reviewer is asked to approve. Where a decision turned down a real alternative, name it and say why; do not make one up. Then list the questions this change leaves for later. Then everything else."

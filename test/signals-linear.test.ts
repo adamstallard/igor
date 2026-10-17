@@ -122,28 +122,34 @@ describe('every pattern signals.ts matches with runs in linear time', () => {
     })
   }
 
-  // recheck checks one pattern at a time, so it cannot see the loop in `addressed()` that decides,
-  // for each place it finds the name, whether that place is on a quoted line. Each body below is
-  // four times GitHub's 65,536-character limit and names the Igor thousands of times, in the three
-  // shapes a loop that rereads the line at every name is slow on: all on one line (about 29,000
-  // names), after a long indent that the quote test would rescan (about 14,500), and on a quoted
-  // line, where every name is skipped (about 29,000). That loop takes 2 to 4 seconds on each.
-  // Reading each line once, `isStop` and `isGoAhead` together take a few milliseconds, so the
-  // 250 ms bound fails the slow loop with room to spare, and gives a loaded machine about fifty
-  // times what the calls need.
-  const LONG = 4 * 65_536
-  const names = `${bareName(IDENTITY)} `.repeat(LONG)
-  for (const [shape, body] of [
-    ['on one line', names],
-    ['after a long indent', `.\n${' '.repeat(LONG / 2)}${names}`],
-    ['on a quoted line', `> ${names}`],
-  ] as const) {
-    it(`a comment naming the Igor many times ${shape} reads in linear time`, () => {
-      const text = body.slice(0, LONG)
-      const started = performance.now()
-      isStop(text, IDENTITY, {})
-      isGoAhead(text, IDENTITY, {})
-      expect(performance.now() - started).toBeLessThan(250)
-    })
-  }
+  // recheck checks one pattern at a time, so it cannot see the loop in `addressed()` that finds each
+  // line's quoting `>`. test/run4-findings.test.ts compares the cost of many mentions on one short
+  // line; this compares it after a long indent, where a loop that rescans the indent at every
+  // mention, instead of once per line, costs indent times mentions. As there, it reads the same
+  // number of mentions in two shapes and compares CPU time, so a slow machine does not fail it.
+  // The short shape is sixteen rounds of 1,500 mentions after a 6,000-space indent; the long shape
+  // is one round of 24,000 after a 96,000-space indent. Linear code costs about the same for both,
+  // and the rescanning loop about sixteen times as much for the long one; the bound is 5.
+  it('the cost of reading mentions after a long indent grows in step with their number', () => {
+    const read = (copies: number, rounds: number): number => {
+      const body = `.\n${' '.repeat(4 * copies)}${`${bareName(IDENTITY)} `.repeat(copies)}`
+      const before = process.cpuUsage()
+      for (let i = 0; i < rounds; i++) {
+        isStop(body, IDENTITY, {})
+        isGoAhead(body, IDENTITY, {})
+      }
+      const { user, system } = process.cpuUsage(before)
+      return user + system
+    }
+    // Warms up the compiler before anything is measured.
+    read(1500, 16)
+    read(24000, 1)
+    const short = Math.min(...Array.from({ length: 5 }, () => read(1500, 16)))
+    // The short shape sets the bound, so it takes the best of five: a stall there would loosen the
+    // bound enough to let a rescanning loop through. The long one gets up to three tries and stops
+    // at the first under the bound, so one garbage collection or stall there does not fail it.
+    let long = Infinity
+    for (let i = 0; i < 3 && long >= 5 * short; i++) long = Math.min(long, read(24000, 1))
+    expect(long).toBeLessThan(5 * short)
+  })
 }, 300_000)

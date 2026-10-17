@@ -50,38 +50,25 @@ function addressed(text: string, identity: string, verb: RegExp): boolean {
   const mention = mentionOf(identity)
   if (mention === undefined) return false
   // Every mention of the name is tried, so one in passing earlier in the comment does not hide a
-  // later "@name stop". A mention on a quoted line (`> `) is someone else's words being quoted,
-  // so it never addresses this Igor. A line is quoted when its first character other than
-  // whitespace is `>`, before the mention. A line after a quoted one, with no `>` of its own, is
-  // not quoted, though Markdown's lazy continuation would quote it, so a stop typed under a quote
-  // still counts.
-  //
-  // Each line is read once, as the mentions move forward through the text. Looking back for the
-  // start of the line at every mention instead costs time quadratic in the length of a comment
-  // that names the Igor many times on one line.
-  let lineEnd = -1
-  let quoteAt = Infinity
+  // later "@name stop". A mention after a line's opening `>` quotes somebody else's words, so it
+  // is skipped rather than read as a request.
+  // Each line's `>` is looked for once, at the first mention on that line, and reused for the
+  // other mentions on it. Searching back to the line's start from every mention instead rescans
+  // a long line once per mention, which makes a comment of thousands of mentions on one line
+  // take seconds.
+  let nextBreak = text.indexOf('\n')
+  let quoteMark = quoteMarkAt(text, 0)
   for (const found of text.matchAll(mention)) {
-    while (lineEnd <= found.index && lineEnd !== text.length) {
-      const lineStart = lineEnd + 1
-      lineEnd = text.indexOf('\n', lineStart)
-      if (lineEnd === -1) lineEnd = text.length
-      QUOTE_MARK.lastIndex = lineStart
-      quoteAt = QUOTE_MARK.test(text) ? QUOTE_MARK.lastIndex - 1 : Infinity
+    if (nextBreak !== -1 && nextBreak <= found.index) {
+      const lineStart = text.lastIndexOf('\n', found.index) + 1
+      nextBreak = text.indexOf('\n', lineStart)
+      quoteMark = quoteMarkAt(text, lineStart)
     }
-    if (quoteAt < found.index) continue
+    if (quoteMark !== -1 && quoteMark < found.index) continue
     if (verb.test(text.slice(found.index + found[0].length).trim())) return true
   }
   return false
 }
-
-/**
- * The `>` that quotes a line, found from the line's start past any whitespace but a line break.
- * Sticky, so it matches only at the line start `addressed()` puts in `lastIndex`; without the
- * flag it would find a `>` anywhere later in the text. One instance serves every call, which is
- * safe only because `lastIndex` is set before each `test`.
- */
-const QUOTE_MARK = new RegExp(`${SPACE}*>`, 'y')
 
 /**
  * A mention of `identity` and any further mentions up to where the verb would start, or
@@ -110,6 +97,17 @@ function mentionOf(identity: string): RegExp | undefined {
     'gi',
   )
 }
+
+/**
+ * Where the `>` quoting the line at `lineStart` sits, or -1 if the line is not quoted. Only
+ * whitespace other than a line break may come before the `>`. `QUOTE_MARK` must stay sticky, so
+ * it matches at `lineStart` and nowhere later.
+ */
+function quoteMarkAt(text: string, lineStart: number): number {
+  QUOTE_MARK.lastIndex = lineStart
+  return QUOTE_MARK.test(text) ? QUOTE_MARK.lastIndex - 1 : -1
+}
+const QUOTE_MARK = new RegExp(`${SPACE}*>`, 'y')
 
 /**
  * Which mentioned names count as Igors, as the tracker resolved them, keyed by the name as
