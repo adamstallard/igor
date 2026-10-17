@@ -28,9 +28,19 @@
    repository it is working". The means is `--setting-sources user` and `--strict-mcp-config`
    on every call, once task 0.3 confirms that those flags keep all four out; if they do not,
    the means goes back to Adam and the rule stands.
-9. **Each worker run gets a fresh, empty home directory, removed after the run** (Adam,
-   2026-10-17). Under #175 the worker user owns its home, so without this a worker an item
-   steers could plant hooks, a `CLAUDE.md` or skills in `~/.claude` for every later worker.
+9. **Before each worker run, Igor resets the worker user's `~/.claude`, and only that** (Adam,
+   2026-10-17, narrowing the same day's decision of a fresh, empty home per run). Under #175
+   the worker user owns its home, so without a reset a worker an item steers could plant hooks,
+   a `CLAUDE.md` or skills in `~/.claude` for every later worker. Igor recreates `~/.claude`
+   from a clean template that Igor owns and the worker user cannot write, before every
+   `claude -p` it starts as the worker user: the worker, and each of #153's later model steps
+   in the worker's working tree. The rest of the home persists across runs, so `~/.gitconfig`
+   with #175's `safe.directory` setting, #153's session mark (the file `prose start` writes under `~/.local/state`, which #153's prose steps check for), and tool caches such
+   as `~/.cache` stay. A file a run leaves elsewhere in the home, such as `~/.npmrc`, can steer
+   later runs of the same instance. Adam accepted that risk within one instance; #175 gives each
+   Igor instance its own worker user, so such a file reaches no other instance. *Rejected:* a
+   fresh, empty home per run, which lost `~/.gitconfig`, #153's session mark and the caches a
+   repository's tests need.
 10. **The usage read passes no `--plugin-dir`** (Adam, 2026-10-17). `igor budget` runs it on a
     person's machine, where `skills_dir` names a server path, and it runs no skill.
 11. **Two facts the decisions rest on are measured before the implementation is built**
@@ -41,29 +51,27 @@
 
 **Still open:**
 
-- **How decision 9 fits #175 and #153.** #175 lets `sudo` set the worker's `HOME` to the worker
-  user's own home, and keeps git's `safe.directory` setting in that home's `~/.gitconfig`; that
-  setting is how the worker's git trusts a tree the service user owns. #153 writes prose's
-  session mark into the worker's `HOME` before the worker starts. A home the service user
-  creates for each run is owned by the service user, holds no `~/.gitconfig` and has no mark,
-  and #175 says only the worker user can remove what the worker writes. Who creates the home, who owns and removes it, and what may be placed
-  in it before the worker starts are not decided.
-- **Whether #153's model steps get the worker's fresh home.** #153 runs further `claude -p`
-  steps in the same tree after the worker, and under #175 they run as the worker user too.
-  Whether each starts with a fresh home, shares the worker's, or uses the worker user's own home
-  is not decided. A step that shares the worker's home loads whatever the worker wrote to
-  `~/.claude`. Because those steps may use the worker user's own home, task 5.3's note still
-  tells the operator to keep that home clean.
-- **A seat with no token source, and an org with no seats.** Such a worker runs on the host's
-  own Claude login, stored under `HOME`. An empty home holds none, so under decision 9 that
-  worker cannot authenticate. Is that accepted, or does such a worker keep a home with the
-  login?
-- **A worker in an empty home authenticating as its seat** is unmeasured (task 0.3). If it
-  fails, decision 9 goes back to Adam.
-- **A toolchain that reads its configuration from the home directory.** With decision 9, a
-  worker's build or test starts with no `~/.gitconfig`, `~/.npmrc` or tool cache. The
-  `task-execution` rule *A toolchain still runs* passes a home directory for such tools, and a
-  repository whose tests need a file there now fails them. Is that accepted?
+- **The home of a worker that runs as the service user Igor runs as.** Decision 9 resets the worker
+  user's `~/.claude`. Under #175's same-user mode (`igor run`, and `igor serve --same-user`)
+  there is no worker user, and the worker's home is the person's or the service user's own.
+  Whether anything is reset there, or the worker gets another home, is not decided.
+- **A worker on a stored login.** An organization that declares no seats, and, until #171 is
+  built, a seat that names no token, run their workers on a Claude login stored in the home,
+  not on a seat token in the environment. On Linux Claude Code keeps that login in
+  `~/.claude/.credentials.json`. Decision 9's reset removes it before every run, so such a
+  worker cannot authenticate as the worker user, unless the template holds a login. Whether
+  that is accepted, or how such a worker authenticates, is not decided.
+- **The template.** Decision 9 says Igor owns it and the worker user cannot write it. Where it
+  lives, how Igor finds it, what it holds, and whether #175's start check probes that the worker
+  cannot write it are not decided (task 2.3).
+- **A worker process that outlives its run.** #175 accepts that a process which leaves its
+  process group with `setsid()` survives #175's kill of the run's process group. It runs as the worker user, so it can rewrite
+  `~/.claude` after the reset and before the next call. Whether the reset must first end every
+  process of the worker user, or decision 9's guarantee is narrowed, is not decided.
+- **`~/.claude.json`.** Claude Code keeps per-user and per-project state in `~/.claude.json`,
+  outside `~/.claude`, so the reset leaves it and a worker can write it. Whether normal mode
+  takes anything from it that steers a call, beyond the MCP servers `--strict-mcp-config`
+  ignores, is unmeasured (task 0.3).
 
 ## Why
 
@@ -90,9 +98,10 @@ replaces it.
   granting file access, and task 0.3 measures whether it does (decision 11). Every installed
   skill loads for every role; a role's `skills` list (#153) decides what its worker
   uses and what Igor verifies.
-- **No call loads the worked repository's settings** (decision 8), **and each worker starts
-  with an empty home** (decision 9). No call loads what a worker wrote to the repository's
-  `.claude`, and no later worker loads what an earlier one wrote to its `~/.claude`.
+- **No call loads the worked repository's settings** (decision 8), **and each run as the
+  worker user starts with a clean `~/.claude`** (decision 9). No call loads what a worker wrote
+  to the repository's `.claude`, and no later run loads what an earlier one wrote to its
+  `~/.claude`.
 - **Before its first model call, Igor confirms each installed skill loads.** It reads the skill
   list from the `system/init` event of a `claude -p` call with no token and an empty `HOME`.
   That call fails to authenticate, at no cost, after printing the event.
@@ -113,10 +122,9 @@ replaces it.
 None as deltas. The flags are added to calls owned by `task-execution` and `work-triage`, and
 the rules cover every call, so they live in one place, `pinned-skills`.
 
-Decision 9 does narrow a `task-execution` requirement: *The worker is given an explicit
-environment* passes "a home directory", and that home becomes a new one per worker. The
-narrowing is stated in `pinned-skills` instead of a modified block of that requirement, because
-#175 and #171 both already modify it.
+Decision 9 does not change the home directory that `task-execution`'s *The worker is given an
+explicit environment* passes: under #175 that is still the worker user's own, and only its
+`~/.claude` is reset.
 
 ## Impact
 

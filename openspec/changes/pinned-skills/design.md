@@ -166,8 +166,8 @@ of the user it runs as, and, unless told not to, the worked repository's own `.c
 skills and `CLAUDE.md` (measured). Namespacing keeps every `igor:<name>` skill from being
 replaced, but the rest reaches the model. A dedicated Igor server's service user has no hooks,
 `CLAUDE.md` or home skills, and nor does the separate worker user of #175. Two decisions of
-2026-10-17, below, keep the repository's files out of every call and give each worker an empty
-home.
+2026-10-17, below, keep the repository's files out of every call and reset the worker user's
+`~/.claude` before each call made as that user.
 
 **Decided by Adam, 2026-10-11: Igor makes no startup check of the users' hooks, `CLAUDE.md` or
 home skills.** `docs/deployment.md` tells the operator to keep the service user and the worker
@@ -183,13 +183,46 @@ configuration not passed with `--mcp-config`. The help text says only that much;
 two also keep the repository's skills and `CLAUDE.md` out is unmeasured, and task 0.3 measures
 all four.
 
-**Decided by Adam, 2026-10-17: each worker gets a fresh, empty home, removed after it exits.**
-`--setting-sources user` still loads the home directory, and under #175 the worker user owns
-and writes its home, so a worker an item steers could plant hooks, a `CLAUDE.md` or skills in
-`~/.claude` for every later worker. Task 5.3's note to the operator cannot stop that; a home
-that lives only for one run can. The note still names the worker user, because #153's later
-model steps may run with that user's own home, which is still open. So is how the per-run home
-fits #175's worker user and #153's session mark (proposal, *Still open*).
+**Decided by Adam, 2026-10-17: before each worker run, Igor resets the worker user's
+`~/.claude`, and nothing else in its home.** `--setting-sources user` still loads the home
+directory, and under #175 the worker user owns and writes its home, so a worker an item steers
+could plant hooks, a `CLAUDE.md` or skills in `~/.claude` for every later worker. Task 5.3's
+note to the operator cannot stop that; recreating `~/.claude` from a clean template before each
+call can. The same decision first gave each worker a fresh, empty home, and was narrowed to
+`~/.claude` the same day, because an empty home loses what later runs need:
+
+- `~/.gitconfig`, where #175's start check sets `safe.directory` so the worker's git trusts a
+  tree the service user owns;
+- #153's session mark (the file `prose start` writes under `~/.local/state`, which #153's prose steps check for);
+- tool caches such as `~/.cache`, and any configuration a repository's tests read from the
+  home.
+
+How the reset works:
+
+- **Who owns the template:** the service user Igor runs as, or root. The worker user can read it and cannot write
+  it, so no run can change what the next run starts from. Where it lives and what it holds are
+  open (proposal, *Still open*).
+- **Who performs the reset:** Igor, as the worker user, through #175's `sudo` spawn. Under #175
+  only the worker user can remove what a worker wrote.
+- **When:** before every `claude -p` Igor starts as the worker user. That is the worker and
+  each of #153's later model steps in the worker's working tree, which under #175 also run as
+  the worker user. A
+  step after the worker therefore never loads what the worker wrote to `~/.claude`.
+- **Authentication:** a seat's token reaches `claude` through its environment, not `~/.claude`,
+  so the reset leaves it untouched (task 0.3 confirms it). A worker with no seat token runs on
+  a login stored in `~/.claude`, which the reset removes. Once #171 is built, Igor refuses a seat
+  file that names no token, so no seat is in that case. An organization that declares no seats
+  still is, and so is a seat naming no token before #171 is built; both are open (proposal,
+  *Still open*).
+- **What persists, and why that is accepted:** everything outside `~/.claude`, tool caches
+  included. A file a run leaves there, such as `~/.npmrc`, can steer later runs of the same
+  instance. Adam accepted that risk within one instance. #175 gives each Igor instance its own
+  worker user and home, so such a file reaches no other instance.
+
+Where the worker runs as the service user Igor runs as, under #175's same-user mode, there is no
+worker user to reset, and what home that worker gets is open (proposal, *Still open*). So are a
+worker process that escapes #175's kill of the run's process group and rewrites `~/.claude` after the reset, and what Claude Code
+reads from `~/.claude.json`, which sits outside `~/.claude`.
 
 ### The startup check is a call with no token and an empty `HOME`
 

@@ -98,32 +98,39 @@ goes back to Adam, and the rule that none loads still holds.
 - **AND** that hook does not run
 - **AND** the worker is not given that `CLAUDE.md`
 
-### Requirement: Each worker run starts with an empty home directory
+### Requirement: Each run as the worker user starts with a clean ~/.claude
 
-For each worker it spawns, Igor SHALL create a new, empty directory and pass it as the worker's
-`HOME`, and SHALL remove that directory after the worker exits, whatever the run's outcome. No
-two workers SHALL share one, whether they run one after another or at the same time.
+Where the worker runs as a separate Unix user (#175), Igor SHALL replace that user's `~/.claude`
+with a fresh copy of a clean template before every `claude -p` it starts as that user: the
+worker, and each later model step in the worker's working tree (#153). The worker user SHALL NOT be able
+to write the template. Nothing else in the
+worker user's home SHALL be reset: `~/.gitconfig`, #153's session mark (the file `prose start` writes under `~/.local/state`, which #153's prose steps check for), and tool caches such as `~/.cache` persist
+across runs.
 
-Where the worker runs as a separate Unix user (#175), who creates, owns and removes this
-directory is still open (proposal, *Still open*), as is whether a worker in an empty home can
-authenticate as its seat (task 0.3).
+#### Scenario: A later run does not load what an earlier one wrote to ~/.claude
 
-#### Scenario: A later worker does not load what an earlier one wrote
+- **WHEN** a worker writes a hook, a `CLAUDE.md` or a skill under `~/.claude`
+- **AND** Igor later starts another `claude -p` as the worker user
+- **THEN** that call's `~/.claude` holds only what the template holds
+- **AND** the hook does not run, and neither that `CLAUDE.md` nor that skill loads
 
-- **WHEN** a worker writes a hook, a `CLAUDE.md` or a skill under `$HOME/.claude`
-- **AND** Igor later spawns another worker
-- **THEN** the second worker's `HOME` is a different, empty directory
-- **AND** the first worker's home directory no longer exists
+#### Scenario: A model step after the worker gets a clean ~/.claude
 
-#### Scenario: Two workers at once get different homes
+- **WHEN** a worker writes a hook under `~/.claude`
+- **AND** Igor then starts a model step in the worker's working tree, such as #153's prose pass
+- **THEN** the step's `~/.claude` holds only what the template holds
 
-- **WHEN** two workers run at the same time
-- **THEN** each has its own `HOME`, and neither is the other's
+#### Scenario: The rest of the home persists
 
-#### Scenario: The home is removed after a failed run
+- **WHEN** a run leaves the worker user's `~/.gitconfig`, a file under `~/.cache` and #153's
+  session mark under `~/.local/state` in its home
+- **AND** Igor starts the next run as the worker user
+- **THEN** each of those files is still there
 
-- **WHEN** a worker exits with an error or is killed
-- **THEN** Igor removes the home directory it created for that worker
+#### Scenario: The worker cannot change the template
+
+- **WHEN** a worker tries to write into the template Igor resets `~/.claude` from
+- **THEN** the write is refused
 
 ### Requirement: Igor confirms its skills load before its first model call
 

@@ -27,9 +27,11 @@
         four still loads, the means of excluding it goes back to Adam;
       - that the startup check's call still prints `system/init` before it fails to log in
         with those two flags added;
-      - that a worker whose `HOME` is a new, empty directory authenticates with its seat's
-        token and receives a `rate_limit_event`. If it does not, the proposal's decision 9 (an
-        empty home per worker) goes back to Adam;
+      - that a worker whose `~/.claude` was just reset from the template authenticates with
+        its seat's token from its environment and receives a `rate_limit_event`;
+      - what a call in normal mode reads from `~/.claude.json` besides MCP servers, such as
+        per-project tool permissions, and whether a worker writing it changes a later call. **If
+        it does, the scope of the reset (decision 9) goes back to Adam;**
       - whether `git -C <clone> rev-parse HEAD` works as the service user on a root-owned clone,
         or stops on git's ownership check
 
@@ -56,13 +58,18 @@
       is set, and no `--plugin-dir` when it is not; the usage read's never carry it; every
       call's arguments, the startup check's included, carry `--setting-sources user` and
       `--strict-mcp-config`; no call's arguments include `--bare`
-- [ ] 2.3 In `claudeWorker` (`src/execute.ts`), create a new empty directory for each worker,
-      pass it as the worker's `HOME`, and remove it after the worker exits, on every outcome.
-      Where the worker runs as #175's separate user, this waits on the proposal's open question
-      of who creates, owns and removes that directory
-- [ ] 2.4 Tests: two workers in a row, and two at the same time, get different `HOME`
-      directories, each empty at start; the directory is gone after a successful run, a failed
-      run and a killed run
+- [ ] 2.3 Build once the proposal's open question on the template is answered, and only where
+      #175 is built; without a worker user there is nothing to reset. Before every `claude -p`
+      Igor starts as #175's worker user (`claudeWorker` in `src/execute.ts`), replace the worker
+      user's `~/.claude` with a fresh copy of the template. #153's model steps call the same
+      reset, built in #153, as they call 2.1's argument builder. The copy runs as the worker
+      user, through #175's `sudo` spawn, because only that user can remove what a worker wrote.
+      The template is a directory owned by the service user Igor runs as, or root, readable by
+      the worker user and not writable by it. Reset nothing else in the home
+- [ ] 2.4 Tests: a hook, a `CLAUDE.md` and a skill a worker wrote under `~/.claude` are gone
+      before the next worker and before a model step after the worker; `~/.gitconfig`, a file
+      under `~/.cache` and a file at #153's session-mark path under `~/.local/state` survive; the
+      reset runs as the worker user
 
 ## 3. Startup check
 
