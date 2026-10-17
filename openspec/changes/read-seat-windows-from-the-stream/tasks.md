@@ -403,9 +403,13 @@ requirements are in force:
       401 row), out of seat-budget into a stuck-conditions delta written against #101's text (Adam,
       2026-10-17). In it, a probe's 401 counts as one occurrence of `seat:<id>:credential`, as a
       run's does, so one probe 401 no longer opens the condition alone: it opens once its occurrences
-      reach #101's recurrence threshold. A probe that succeeds counts as the check that clears the condition. Whether
-      that probe waits for #101's growing cooldown or keeps the hourly limit follows the answer to
-      the proposal's open question on it
+      reach #101's recurrence threshold. A probe that succeeds clears the condition; how else
+      #101 clears it is unchanged. That clearing probe keeps this change's limit of once an hour,
+      and does not wait for #101's cooldown, which grows from 15 minutes to 6 hours (Adam,
+      2026-10-17). The delta modifies #101's *A seat's refused credential is a condition on that
+      seat*. #171 (`seat-files`) modifies the same requirement and archives after this change, in
+      the same commit, so #171's block would replace this delta's. #171's block must therefore
+      carry this delta's rules too: when writing this delta, tell #171
 - [ ] 15.2 `condition-backoff/design.md` (from #101) and `concurrent-instances/design.md` link to
       `docs/architecture.md` §6.3.4 by the anchor `#634-…specified-on-143-not-built`. This change
       renames the heading to "— **built**", so update both links to the new anchor

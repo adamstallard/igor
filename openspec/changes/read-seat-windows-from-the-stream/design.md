@@ -620,9 +620,10 @@ hour. #101 opens a condition once its key's occurrences reach a configurable rec
 provisionally 3, and clears it by running an
 item after a cooldown that grows from 15 minutes to 6 hours. In the delta, a probe's 401 counts as
 one occurrence of `seat:<id>:credential`, like a run's. One probe 401 therefore no longer opens the
-condition alone; it opens at #101's threshold. A probe that succeeds counts as the check that clears the
-condition. Whether that clearing probe waits for #101's growing cooldown or keeps this change's
-hourly limit is open (proposal, *Still open*).
+condition alone; it opens at #101's threshold. A probe that succeeds clears the condition. That
+clearing probe keeps this change's limit of once an hour; it does not wait for #101's growing
+cooldown (Adam, 2026-10-17). A seat whose token has been fixed is therefore back within the hour,
+however long the condition has been open.
 
 **Never on a seat with no token source (Adam, 2026-10-17).** Such a seat's runs spend the server's
 default Claude login, and their readings are the seat's (*Whose reading it is*): the gate chose the seat,
@@ -770,7 +771,8 @@ says the role may draw on three seats, not a pool of three.
 ## Settled on 2026-10-17
 
 - **A probe's credential rules move into a stuck-conditions delta** once #101's spec is in force
-  (*A seat probe*, above; task 15.1).
+  (*A seat probe*, above; task 15.1). The probe that clears the seat's credential condition,
+  `seat:<id>:credential`, keeps the hourly limit and does not wait for #101's cooldown.
 - **A seat naming no token source** keeps its runs' readings and is never probed, and #171 refuses
   such a seat file (*Whose reading it is*, and *A seat probe*).
 - **Issue #69, which asks how old a reading may be before the line distrusts it, is closed with this

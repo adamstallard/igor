@@ -46,10 +46,12 @@ to merge; #171 is `seat-files`, which moves seat configuration into one file per
     `stuck-conditions` delta** (Adam, 2026-10-17). There a probe's 401 counts as one occurrence of
     `seat:<id>:credential`, like a run's, so one probe 401 no longer opens the condition alone: it
     opens once its occurrences reach #101's recurrence threshold, which is
-    configurable and provisionally 3. A probe that succeeds counts as the check that clears
-    the condition (task 15.1). *Rejected:* keeping the probe's own rule, which opens the condition
-    on one 401 and clears it with a successful probe made at most once an hour, beside #101's,
-    which opens at that threshold and clears by running an item after a growing cooldown.
+    configurable and provisionally 3. A probe that succeeds clears the condition (task 15.1).
+    That clearing probe keeps this change's limit of once an hour and does not wait for #101's
+    cooldown, which grows from 15 minutes to 6 hours (Adam, 2026-10-17), so a seat whose token
+    is fixed is back within the hour. *Rejected:* keeping the probe's own opening rule, a single
+    401, beside #101's, which opens the same condition only at its threshold: one condition would
+    open by two different rules.
 14. **A seat naming no token source keeps its runs' readings, and is never probed** (Adam,
     2026-10-17). Its runs are work the gate put on that seat, which the operator set up to spend the
     server's default Claude login, so their readings are the seat's. A probe is a call Igor makes
@@ -71,10 +73,6 @@ to merge; #171 is `seat-files`, which moves seat configuration into one file per
 
 **Still open:**
 
-- **Whether the probe that clears a seat's credential condition waits for #101's cooldown.** Once
-  the rules move into a stuck-conditions delta (decision 13), a successful probe is the clearing
-  check. Not decided: whether that probe is made only after #101's cooldown, which grows from 15
-  minutes to 6 hours, or keeps this change's limit of once an hour (task 15.1).
 - **A guaranteed per-role share.** Not specified; added only if a role's reserve proves too weak a
   priority.
 - **The `rejected` shape** (#57) is contributor-reported, not captured (task 1.5).
