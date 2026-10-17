@@ -244,6 +244,72 @@ export async function requestReviewers(
   }
 }
 
+export interface IssueComment {
+  /** The issue or pull request the comment is on. */
+  number: number
+  author: string
+  body: string
+  /**
+   * When it was posted, to the second. Compared against `PrState.updatedAtInstant`, so it must
+   * never be truncated to a day: a nudge and the activity it is measured against are often the
+   * same day.
+   */
+  createdAt: string
+}
+
+interface RawComment {
+  user: { login: string } | null
+  body: string | null
+  created_at: string
+  issue_url: string
+}
+
+function toComment(c: RawComment): IssueComment {
+  return {
+    number: Number(c.issue_url.slice(c.issue_url.lastIndexOf('/') + 1)),
+    author: c.user?.login ?? '',
+    body: c.body ?? '',
+    createdAt: c.created_at,
+  }
+}
+
+/**
+ * Every comment on a pull request's conversation, oldest first. Review comments on the diff are
+ * a different endpoint and are not here.
+ *
+ * Paginated in full: a single capped page drops the newest comments, and the newest is the one
+ * a caller is looking for.
+ */
+export async function comments(repo: string, number: number): Promise<IssueComment[]> {
+  return (
+    await ghPaginated<RawComment>(['api', `repos/${repo}/issues/${number}/comments?per_page=100`])
+  ).map(toComment)
+}
+
+/**
+ * Every conversation comment in the repository edited at or after `since`, across every issue
+ * and pull request — one paginated read where asking each pull request would cost one each.
+ */
+export async function commentsSince(repo: string, since: string): Promise<IssueComment[]> {
+  return (
+    await ghPaginated<RawComment>([
+      'api',
+      `repos/${repo}/issues/comments?since=${since}&per_page=100`,
+    ])
+  ).map(toComment)
+}
+
+/**
+ * Posts a comment on a pull request's conversation. It goes through the issues endpoint by the
+ * pull request's number, which for a pull request is governed by the `pull-requests` scope.
+ */
+export async function comment(repo: string, number: number, body: string): Promise<void> {
+  await gh(
+    ['api', `repos/${repo}/issues/${number}/comments`, '--method', 'POST', '--input', '-'],
+    JSON.stringify({ body }),
+  )
+}
+
 export interface PrState {
   number: number
   state: 'open' | 'closed'
