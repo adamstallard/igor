@@ -188,9 +188,14 @@ export interface TreeProvider {
  */
 export const OUTBOX_SUFFIX = '-outbox'
 
-function runBytes(cmd: string, args: readonly string[], cwd?: string): Promise<Buffer> {
+function runBytes(
+  cmd: string,
+  args: readonly string[],
+  cwd?: string,
+  env?: NodeJS.ProcessEnv,
+): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] })
+    const child = spawn(cmd, args, { cwd, stdio: ['ignore', 'pipe', 'pipe'], ...(env === undefined ? {} : { env }) })
     // Never decode a chunk as it arrives: a multi-byte character the pipe splits in two becomes
     // replacement characters on both sides of the boundary, so a path git listed or the reason
     // it refused comes back wrong and nothing raises. Bytes in, one decode at the end.
@@ -207,8 +212,71 @@ function runBytes(cmd: string, args: readonly string[], cwd?: string): Promise<B
   })
 }
 
-async function run(cmd: string, args: readonly string[], cwd?: string): Promise<string> {
-  return (await runBytes(cmd, args, cwd)).toString('utf8')
+async function run(cmd: string, args: readonly string[], cwd?: string, env?: NodeJS.ProcessEnv): Promise<string> {
+  return (await runBytes(cmd, args, cwd, env)).toString('utf8')
+}
+
+/** Supplies the token one git command authenticates to GitHub with. */
+export type GitToken = () => Promise<string>
+
+/** The config key both helper entries set. A URL-scoped key, so no other host is touched. */
+const HELPER_KEY = 'credential.https://github.com.helper'
+
+/**
+ * The variable the helper reads the token from. It is set in one git child's environment and
+ * nowhere else, so the token is never in an argument list, where `ps` would show it.
+ */
+const TOKEN_VARIABLE = 'IGOR_GIT_TOKEN'
+
+/**
+ * The environment of one git child that authenticates to GitHub with `token` and leaves nothing
+ * behind. Nothing is written to a config file: a helper there would reach every git that reads
+ * it, the worker's among them.
+ *
+ * `GIT_CONFIG_*` outranks every config file. Its first entry, an empty helper, clears any helper
+ * a config file sets for `https://github.com`; the second answers git's `get` with the token.
+ * Both are numbered after the `GIT_CONFIG_*` entries already in `base`, which keep working.
+ *
+ * **Without `configFiles`, for the clone and the fetches, no global or system config file is
+ * read.** A file there can take a command off the token without naming a helper:
+ * `url.<base>.insteadOf` turns `https://github.com/` into SSH, which authenticates as the host's
+ * key, or into a URL carrying a person's token. So a proxy set only as `http.proxy` there does
+ * not reach these commands; the environment's proxy variables do. The repository's own
+ * `.git/config` is still read by the fetches `merge` makes, which run before the worker can
+ * edit it.
+ *
+ * **With `configFiles`, for the checkout after the clone**, which fetches nothing through git
+ * itself: the tree is made under the configuration every later git command in it reads, so a
+ * smudge filter such as Git LFS's runs, and authenticates with the token where it fetches.
+ */
+export function gitEnv(
+  base: NodeJS.ProcessEnv,
+  token: string,
+  options: { configFiles?: boolean } = {},
+): NodeJS.ProcessEnv {
+  const raw = (base['GIT_CONFIG_COUNT'] ?? '').trim()
+  const offset = raw === '' ? 0 : Number(raw)
+  if (!Number.isInteger(offset) || offset < 0) {
+    throw new TreeError(`GIT_CONFIG_COUNT is "${raw}", which git refuses; fix or unset it`)
+  }
+  return {
+    ...base,
+    GIT_CONFIG_COUNT: String(offset + 2),
+    [`GIT_CONFIG_KEY_${offset}`]: HELPER_KEY,
+    [`GIT_CONFIG_VALUE_${offset}`]: '',
+    [`GIT_CONFIG_KEY_${offset + 1}`]: HELPER_KEY,
+    [`GIT_CONFIG_VALUE_${offset + 1}`]:
+      `!f() { test "$1" = get || return 0; echo username=x-access-token; echo "password=$${TOKEN_VARIABLE}"; }; f`,
+    [TOKEN_VARIABLE]: token,
+    ...(options.configFiles === true ? {} : { GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' }),
+    // A refused token fails the command rather than waiting on a prompt nobody will answer.
+    GIT_TERMINAL_PROMPT: '0',
+  }
+}
+
+/** The environment for one networked git command: as the token's holder, or as inherited without one. */
+async function networkEnv(token: GitToken | undefined): Promise<NodeJS.ProcessEnv | undefined> {
+  return token === undefined ? undefined : gitEnv(process.env, await token())
 }
 
 /** One `git status -z` record: the two status columns, and the name as the bytes git wrote. */
@@ -403,6 +471,8 @@ export class ClonedTree implements WorkingTree {
     readonly path: string,
     readonly repo: string,
     outbox?: string,
+    /** Authenticates the fetches `merge` makes; without it they use whatever git is configured with. */
+    private readonly token?: GitToken,
   ) {
     this.outbox = outbox ?? `${path}${OUTBOX_SUFFIX}`
   }
@@ -531,10 +601,12 @@ export class ClonedTree implements WorkingTree {
    */
   async merge(ref: string): Promise<MergeState> {
     const git = (...args: string[]): Promise<string> => run('git', ['-C', this.path, ...args])
+    const fetch = async (...args: string[]): Promise<string> =>
+      run('git', ['-C', this.path, 'fetch', '--quiet', ...args], undefined, await networkEnv(this.token))
     if ((await git('rev-parse', '--is-shallow-repository')).trim() === 'true') {
-      await git('fetch', '--quiet', '--unshallow', 'origin')
+      await fetch('--unshallow', 'origin')
     }
-    await git('fetch', '--quiet', 'origin', ref)
+    await fetch('origin', ref)
     const head = (await git('rev-parse', 'HEAD')).trim()
     const broughtIn = (await git('rev-parse', 'FETCH_HEAD')).trim()
     let conflicts: string[]
@@ -637,19 +709,31 @@ export class ClonedTree implements WorkingTree {
 export class CloneProvider implements TreeProvider {
   readonly name = 'clone'
 
-  constructor(private readonly depth = 1) {}
+  constructor(
+    private readonly depth = 1,
+    /** Authenticates the clone and the tree's later fetches, for one command each. */
+    private readonly token?: GitToken,
+  ) {}
 
   async provision(repo: string, ref?: string): Promise<WorkingTree> {
     const dir = await mkdtemp(join(tmpdir(), TREE_PREFIX))
-    const args = ['clone', '--depth', String(this.depth), '--quiet']
+    const args = ['clone', '--depth', String(this.depth), '--quiet', '--no-checkout']
     if (ref !== undefined) args.push('--branch', ref)
     args.push(`https://github.com/${repo}.git`, dir)
     // Made before the worker ever sees it and left empty: an outbox that already held something
     // would let whatever put it there speak as this run's worker.
     const outbox = `${dir}${OUTBOX_SUFFIX}`
     try {
-      await run('gh', ['auth', 'setup-git'])
-      await run('git', args)
+      // One token for both commands: the checkout follows the clone at once.
+      const token = this.token === undefined ? undefined : await this.token()
+      await run('git', args, undefined, token === undefined ? undefined : gitEnv(process.env, token))
+      // Checked out apart from the clone, so the checkout reads the config files the clone
+      // must not; see `gitEnv`. An empty repository has no HEAD and nothing to check out.
+      const head = await run('git', ['-C', dir, 'rev-parse', '--quiet', '--verify', 'HEAD^{commit}']).catch(() => '')
+      if (head.trim() !== '') {
+        const checkout = token === undefined ? undefined : gitEnv(process.env, token, { configFiles: true })
+        await run('git', ['-C', dir, 'reset', '-q', '--hard', 'HEAD'], undefined, checkout)
+      }
       await mkdir(outbox, { recursive: true })
     } catch (error) {
       // Both removals are attempted whatever either does, and the original error is rethrown:
@@ -662,7 +746,7 @@ export class CloneProvider implements TreeProvider {
       ])
       throw error
     }
-    return new ClonedTree(dir, repo, outbox)
+    return new ClonedTree(dir, repo, outbox, this.token)
   }
 }
 

@@ -23,6 +23,12 @@ function fakeTracker(candidates: Candidate[], onSearch?: () => void): Tracker {
   return {
     name: 'github',
     nativeHolderField: true,
+    holderField: { holds: 'list', distinctFromAssignee: true },
+    holder: 'igor:triage',
+    holderSetBy: async () => undefined,
+    directed: async () => [],
+    findLinking: async () => undefined,
+    createIssue: async () => 'https://github.com/o/r/issues/100',
     identity: async () => 'igor-bot',
     search: async () => {
       onSearch?.()
