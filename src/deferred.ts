@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import type { Candidate, Comment } from './adapter.js'
 import { readState, writeState } from './state.js'
+import { instant } from './time.js'
 
 /**
  * Why an Igor stays quiet on an item it would otherwise pick up: it handed the item back and
@@ -85,7 +86,7 @@ export function stillDeferred(
 
 function newest<T extends { at: string }>(entries: Record<string, T>, floor: number): Record<string, T> {
   const kept = Object.entries(entries)
-    .filter(([, e]) => Date.parse(e.at) > floor)
+    .filter(([, e]) => instant(e.at) > floor)
     .sort(([, a], [, b]) => Date.parse(b.at) - Date.parse(a.at))
     .slice(0, MAX_ENTRIES)
   return Object.fromEntries(kept)

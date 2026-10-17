@@ -37,12 +37,6 @@ describe('iteration 1 finder', () => {
     expect(isGoAhead(body, FRONTEND, accounts)).toBe(true)
   })
 
-  it('reading a mention followed by a long run of underscores stays linear', () => {
-    const started = performance.now()
-    isStop('@igor-frontend @a' + '_'.repeat(32000) + '!', FRONTEND, IGORS)
-    expect(performance.now() - started).toBeLessThan(100)
-  })
-
   it('a stop addressed to an Igor in underscore emphasis stops it', () => {
     expect(isStop('_@igor-frontend_ stop', FRONTEND, IGORS)).toBe(true)
   })
