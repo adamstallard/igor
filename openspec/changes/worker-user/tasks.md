@@ -1,13 +1,17 @@
 ## 0. Order and dependencies
 
-- [ ] 0.1 Build on `main` as it stands at gate two. The start-up probe covers every credential
-      path the configuration has by then: `GITHUB_APP_PRIVATE_KEY_FILE` if #156 has merged,
-      `seatKey` if #171 has, and seat `token_file` paths while they exist. Whichever of those
-      lands after this change adds its own path to the probe, and this task links the issue
-      that says so.
+- [ ] 0.1 Build on `main` as it stands at gate two, when the implementation is pushed after this
+      specification is approved. The start-up probe covers every credential path the
+      configuration has by then: `GITHUB_APP_PRIVATE_KEY_FILE`, `seatKey` if #171 has merged,
+      and seat `token_file` paths while they exist. If #171 has not merged, file an issue asking
+      #171 to add `seatKey` to this probe, and link it here.
 - [ ] 0.2 Run the measurements in section 6 before building sections 2 to 4. Record each result in
       `design.md`, including any that contradicts it, and change the design before the code where
       one does.
+- [ ] 0.3 If #101 (`condition-backoff`) has merged, record a `sudo` spawn failure of the worker
+      under a cure key scoped to the whole Igor, #101's name for the key a recurring failure is
+      grouped under. A key of that scope stops the Igor, where an item-scoped one would fail
+      every item in turn.
 
 ## 1. Starting the worker as another user
 
@@ -30,23 +34,31 @@
       primary group and mode `2770`, and removes group write from the git directory and
       everything under it.
 - [ ] 2.2 Before the worker starts, the Igor copies the git directory's index into the outbox
-      and sets `GIT_INDEX_FILE` to that copy in the worker's environment. After the worker exits, every
-      git command the Igor runs to read changes uses the same copy. `GIT_INDEX_FILE` is not a
-      `GIT_CONFIG_*` variable, so #156's worker-environment requirement still holds.
+      and sets `GIT_INDEX_FILE` to that copy in the worker's environment, as the modified
+      worker-environment requirement allows. After the worker exits, every git command the Igor
+      runs to read changes uses the git directory's own index, never the copy.
 - [ ] 2.3 Every git command the Igor runs in a tree, in both modes, names the git directory and
       the tree with `--git-dir` and `--work-tree`, so a `.git` the worker replaced is never read
       by the Igor. Without a worker user, the git directory stays inside the tree and the
       index is not copied.
 - [ ] 2.4 The sweep's name rule takes `<tree>-git` as it takes `<tree>-outbox`.
 - [ ] 2.5 Tests on a real clone, run as one user: the modes and group after provisioning; status
-      read against the outbox's index copy reports a `git rm` and a `git mv` made with
-      `GIT_INDEX_FILE` set; a `.git` file in the tree pointing elsewhere does not change what the
+      read against the git directory's index reports a `git rm` and a `git mv` made with
+      `GIT_INDEX_FILE` set to the copy; a file marked skip-worktree or assume-unchanged in the
+      copy is still read as changed; a `.git` file in the tree pointing elsewhere does not change what the
       Igor reads; the sweep removes a stranded `-git` directory.
 
 ## 3. Nothing run, nothing followed
 
 - [ ] 3.1 Every git command the Igor runs in a tree passes
-      `-c core.hooksPath=/dev/null -c core.fsmonitor=false`, in both modes.
+      `-c core.hooksPath=/dev/null -c core.fsmonitor=false -c submodule.recurse=false`, and
+      `--ignore-submodules=all` where the command takes it, in both modes. A changed path that
+      is a submodule entry or holds its own `.git` stops the run before publishing (verbatim;
+      Adam may reword):
+
+      ```
+      `<path>` is a nested repository, and Igor reads none a worker made, so nothing was published
+      ```
 - [ ] 3.2 Before reading changes, the Igor kills the worker's process group, which is already gone
       when the worker exited by itself.
 - [ ] 3.3 `changes()` refuses a path that is a link or has a link among its directories, checking
@@ -63,7 +75,11 @@
       `<path>` could not be read by this Igor, and an artifact without it would be incomplete, so nothing was published
       ```
 
-      "is" becomes "are" for more than one path, as the unnameable-path stop does.
+      "is" becomes "are" for more than one path, as the existing stop for a path
+      that is not text does (`src/worktree.ts`). Every
+      `<path>` in these reasons, and in 3.1's, is escaped for a code span with `quoteName`'s
+      escaping (`src/worktree.ts`): the worker chooses the names, and a backtick in one would
+      otherwise end the span.
 - [ ] 3.4 The declaration file is opened with `O_NOFOLLOW` and read only if it is a regular file.
       Otherwise the run stops with (verbatim; Adam may reword):
 
@@ -74,7 +90,9 @@
 - [ ] 3.5 Tests, in both modes: a hook and a `core.fsmonitor` setting in the tree do not run; a
       link to a file outside the tree stops the run, and that file's content is in no
       `ChangedFile`, reason or record; a file under a linked directory stops it the same way; a
-      file with mode `000` stops it; a linked declaration file is not read.
+      file with mode `000` stops it; a linked declaration file is not read; a nested repository
+      whose configuration defines a filter stops the run and its filter does not run; a path
+      holding a backtick is escaped in the reason.
 
 ## 4. Kill, release, sweep
 
@@ -107,6 +125,10 @@
 
       ```
       this Igor is not in "<group>", the group of its worker user "<worker>", so it cannot read what the worker writes. Add it with SupplementaryGroups= in the unit, then restart.
+      ```
+
+      ```
+      the worker user "<worker>" cannot run <path>, the claude this Igor uses. Install claude where both users can run it: docs/deployment.md, "A separate user for the worker".
       ```
 
       ```
@@ -143,7 +165,7 @@
       ! workers run as <igor-user>, the same user as this Igor, so a worker can read every credential this Igor holds. Set IGOR_WORKER_USER to a separate user: docs/deployment.md, "A separate user for the worker".
       ```
 
-- [ ] 5.5 Tests with an injected probe: each refusal, in order; the first failure stops the check;
+- [ ] 5.5 Tests with an injected probe: each refusal, in order, the `claude` check among them; the first failure stops the check;
       `serve` refuses with no worker user and runs with `--same-user`; `run` runs and prints the
       notice; the notice is absent with a worker user.
 
@@ -171,6 +193,9 @@ file in the service user's home. Each holds a random string and nothing else. Ne
 - [ ] 6.5 Record what `sudo` writes to the auth log per worker start. If it is the whole prompt,
       add `Defaults:igor !syslog` (or what the measurement shows works) to
       `deploy/sudoers.example`, with a comment saying why.
+- [ ] 6.6 Run two Igor units with one worker user and a worker in each. Record whether either
+      worker can read the other's `/proc/<pid>/environ`, or list and write the other's tree
+      through `/proc/<pid>/cwd`. The answer goes to the open question on a shared worker user.
 
 ## 7. An automated end-to-end test
 
