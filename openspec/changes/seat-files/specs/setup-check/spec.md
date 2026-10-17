@@ -3,9 +3,13 @@
 ### Requirement: The check says whether the server's key matches the committed one
 
 Where `igor.config.yaml` declares `seatKey`, `igor doctor` SHALL report whether the public key
-derived from that private key equals the one committed in `seats/recipient.txt`, and SHALL report a
-finding where it does not, where the key file cannot be read, or where `seats/recipient.txt` is
-absent.
+derived from that private key equals the one committed in `seats/recipient.txt`. It SHALL report a
+finding where they differ, or where `seats/recipient.txt` is absent. Where the person running the
+check cannot read the key file, as an operator other than the service user usually cannot, it
+SHALL report the key match as unchecked, naming the path and the reason, and never as passing.
+
+Where a seat file carries `encrypted_token` and `igor.config.yaml` declares no `seatKey`, it SHALL
+report a finding naming those seat files.
 
 A mismatched key fails silently: every token encrypted from then on is unreadable on the server,
 and nothing says so until each seat is reported unreadable in turn.
@@ -15,6 +19,22 @@ and nothing says so until each seat is reported unreadable in turn.
 - **WHEN** `seatKey` names a private key whose public key differs from `seats/recipient.txt`
 - **THEN** it is reported as a finding, saying new tokens will be encrypted to a key the server
   does not hold
+
+#### Scenario: A key the check cannot read is unchecked
+
+- **WHEN** `seatKey` names a file the person running `igor doctor` cannot read
+- **THEN** the key match is reported as unchecked, naming the path and the reason
+- **AND** it is not reported as passing
+
+#### Scenario: No public key committed
+
+- **WHEN** `seatKey` is declared and `seats/recipient.txt` is absent
+- **THEN** it is reported as a finding
+
+#### Scenario: Ciphertext with no key to read it
+
+- **WHEN** `seats/bob.yaml` carries `encrypted_token` and `igor.config.yaml` declares no `seatKey`
+- **THEN** it is reported as a finding, naming `seats/bob.yaml`
 
 #### Scenario: A matching key
 

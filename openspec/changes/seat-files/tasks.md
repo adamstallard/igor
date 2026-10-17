@@ -9,6 +9,11 @@ measurement.
 - [ ] 1.1 Confirm `age-encryption` decrypts what `age -r <recipient> | base64 | tr -d '\n'`
       produces on macOS and Linux, after `base64 -d`, and that `age-keygen -y` derives the same
       recipient the package derives from the identity
+- [ ] 1.2 Measure revoking one `setup-token` at Anthropic: that one token can be revoked without
+      the holder's other tokens, how soon the next request with it is refused, and whether a run
+      already in progress is refused. Record the result in `design.md`. Task 9.4's and 9.7's
+      "stops the seat at once" says what the measurement found, such as "stops the seat within
+      <n> minutes", and the proposal's open question is closed with it
 
 ## 2. Seats from files
 
@@ -67,10 +72,13 @@ measurement.
       variable* and *A seat's token travels as ciphertext in its file*; the plaintext appears in
       no record, transcript or handoff; the existing `token_file` and `token_command` tests in
       `test/budget.test.ts` are removed with the code they test
+- [ ] 3.7 `src/execute.ts`'s worker environment: a seat whose token cannot be decrypted fails
+      naming the seat and the reason, per the `task-execution` delta, with a test; the file and
+      command cases and their tests go
 
 ## 4. Which seats a role draws on
 
-- [ ] 4.1 `src/role.ts` `requireSeat` (`:594-630`): a role's seats are the seat files listing it;
+- [ ] 4.1 `src/role.ts` `checkSeat` (`:517`): a role's seats are the seat files listing it;
       `seat:` narrows to one, which must list the role. Refusals, worded so:
 
       ```
@@ -134,7 +142,12 @@ measurement.
       encrypted_token: <ciphertext>
       ```
 
-- [ ] 7.4 An existing seat: replace `encrypted_token` and change nothing else
+- [ ] 7.4 An existing seat naming `encrypted_token`: replace it and change nothing else. One naming
+      `token_env` is refused before the token is read, worded so:
+
+      ```
+      seats/<id>.yaml names token_env: its token is set on the Igor server by the operator, so `igor seat add` does not rotate it.
+      ```
 - [ ] 7.5 Commit on branch `seat/<id>`. Push to the lore repository where `gh api` says the holder
       may push, and otherwise to their fork, creating it with `gh repo fork` where it does not
       exist. Open the pull request through `gh`. Its body:
@@ -150,7 +163,8 @@ measurement.
       ```
 
 - [ ] 7.6 Refusals before the token is read: no `seats/recipient.txt` on the default branch; an
-      invalid id; not in a clone of the lore repository or of a fork of it
+      invalid id; a seat naming `token_env` (7.4); not in a clone of the lore repository or of a
+      fork of it. After it is read: an empty token
 - [ ] 7.7 Tests, with `gh` faked: the scenarios of *`igor seat add` lends a seat in one step*, and
       that no argument list, written file or child environment contains the token
 
@@ -160,7 +174,9 @@ Composes with `check-a-lore-repository` (#113). Whichever builds second adds the
 the other built.
 
 - [ ] 8.1 The key match, per *The check says whether the server's key matches the committed one*,
-      with a test for each of its scenarios
+      with a test for each of its scenarios. A key file the person running the check cannot read
+      is reported unchecked with the reason, the way `check-a-lore-repository` reports a check it
+      cannot make
 - [ ] 8.2 The notice workflow, per *The check says whether seat owners are told of changes to
       their seat files*, read from the default branch the way the reconciliation-workflow check
       reads its file, with a test for each of its scenarios. The finding, worded so:
@@ -168,6 +184,14 @@ the other built.
       ```
       .github/workflows/seat-notice.yml is missing from <branch>, so no lender is told when a pull request changes their seat file, and revoking their token is their only veto. Run `igor init` to write it.
       ```
+- [ ] 8.3 A seat file carrying `encrypted_token` while `igor.config.yaml` declares no `seatKey` is
+      a finding, worded so:
+
+      ```
+      seats/<id>.yaml carries an encrypted token, and igor.config.yaml names no seatKey, so Igor cannot read that seat. Set seatKey to the private key whose public half is seats/recipient.txt.
+      ```
+- [ ] 8.4 Worker-user (#175): its start-up probe checks that the worker user cannot read the file
+      `seatKey` names. Whichever of the two changes builds second adds it
 
 ## 9. Docs and templates
 
@@ -224,7 +248,8 @@ leaks.
       limits Igor's share, you can watch your usage at claude.ai); that you are mentioned on any
       pull request that changes your seat file, as long as `owner` is your GitHub login; and
       **revoking the token at Anthropic is how you withdraw or object to anything: it stops the
-      seat at once, whatever any file says**
+      seat, whatever any file says**, with "at once" replaced by the speed task 1.2 measured, such
+      as "within <n> minutes", if the token is not refused at once
 - [ ] 9.5 `docs/seats.md`, **getting the token:** `claude setup-token`, once, in your own
       terminal, and why it never goes into chat, email, or a file unencrypted
 - [ ] 9.6 `docs/seats.md`, **lending it:** `igor seat add` in one step, and the manual equivalent
@@ -251,10 +276,13 @@ leaks.
 - [ ] 9.9 `README.md`: the quick start declares a seat file and puts the token in the
       environment, with the shell wrapper `docs/deployment.md` already has; `token_command` and
       `token_file` go. *Budgets* loses `pools:` and `pool:engineering`, and its sample `igor budget`
-      output loses the `pool engineering:` line
+      output loses the `pool engineering:` line. The note "(#148 replaces `pools:` …)" goes, since
+      it describes this change as future
 - [ ] 9.10 `docs/architecture.md` §6.5.1: a seat file lists the roles it serves, and the seat is
       chosen by headroom; "Order is the whole allocation mechanism today" and the `pools:`
-      example go. §6.3.2's list of token mechanisms becomes `encrypted_token` and `token_env`
+      example go, and the heading loses its "being replaced (#148)" marker. §6.3.2's list of
+      token mechanisms becomes `encrypted_token` and `token_env`. §6.7.1's "One secret store for
+      seat tokens, on the server" describes a lent token as ciphertext in its seat file
 - [ ] 9.11 `igor.config.example.yaml`: `budget` goes, replaced by a comment pointing at `seats/`
       and `seatKey`:
 
@@ -314,7 +342,7 @@ leaks.
                 set -euo pipefail
                 marker='<!-- igor-seat-notice -->'
                 told=$(gh api --paginate "repos/$REPO/issues/$PR/comments" \
-                  --jq ".[] | select(.body | startswith(\"$marker\")) | .body" \
+                  --jq ".[] | select(.user.login == \"github-actions[bot]\") | select(.body | startswith(\"$marker\")) | .body" \
                   | grep -oE '@[A-Za-z0-9-]+' | sort -u || true)
                 lines=()
                 while IFS= read -r path; do
@@ -336,7 +364,8 @@ leaks.
       ```
 
 - [ ] 10.2 `src/init.ts`: `igor init` installs `seat-notice.yml` beside `reconcile-on-merge.yml`,
-      under the same rules for an existing file
+      under the same rules for an existing file, and it can be named as a target, per the
+      `lore-store` delta
 - [ ] 10.3 Tests in `test/template.test.ts`: the template parses; its only trigger is
       `pull_request_target` with `paths: ['seats/**']`; its permissions are exactly
       `contents: read` and `pull-requests: write`; it runs on `ubuntu-latest`; it has no
@@ -344,6 +373,22 @@ leaks.
       `github.event.pull_request.head`
 - [ ] 10.4 Tests of the script, run under bash with `gh` faked: each scenario of *A pull request
       that changes a seat file mentions that seat's owner*, and a path such as
-      `seats/$(touch x).yaml` or one containing a space or `*`, which is neither run nor expanded
+      `seats/$(touch x).yaml` or one containing a space or `*`, which is neither run nor expanded;
+      and a comment carrying the marker whose author is not `github-actions[bot]`, which does not
+      count as a mention already made
 - [ ] 10.5 In `adamstallard/igor-lore`, with task 6.1: add `.github/workflows/seat-notice.yml`
       from the template
+
+## 11. Matching condition-backoff (#101)
+
+#101's `stuck-conditions` is an open change, not yet a spec, so this change cannot modify it. If
+#101 archives first, as the build order has it, this change adds a `stuck-conditions` delta making
+these three changes. If this change archives first, #101's text is amended to make them:
+
+- [ ] 11.1 *A seat's refused credential is a condition on that seat* hashes the plaintext token of
+      a lent seat, as *A seat's token travels as ciphertext in its file* requires
+- [ ] 11.2 *Reporting tells a refused credential from an unreadable one, and clears nothing* says
+      "check a path or a variable". A seat file has no path, so it reads "a variable or a seat's
+      key", or as the restating change words it
+- [ ] 11.3 Where an unreadable seat stops every role drawing on it, the outcome of the proposal's
+      open question on passing such a seat over is applied

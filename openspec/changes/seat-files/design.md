@@ -10,34 +10,17 @@ seat's line for a window rises from `1 − reserve` just after a reset to 100% a
 the larger of the seat's and the role's reserve, and a reading is the seat's most recent unreset
 observation of the window.
 
-## Decisions (Adam)
-
-- **2026-09-28:** one file per seat; pools dropped.
-- **2026-10-04:** no seat file may name `token_command` or `token_file`; this change removes the
-  in-force pool requirement; seat choice is most headroom, soonest reset as tie-break (#147).
-- **2026-10-11: nothing is specified whose only job is handling an older setup.** Igor has no
-  users yet. `adamstallard/igor-lore`'s one seat is moved by hand (task 6.1).
-- **2026-10-11: the token travels as ciphertext in the seat file**, replacing the GitHub-secret
-  and deploy-workflow model chosen on 2026-09-28. The section below has the reasons.
-- **2026-10-11, accepted as this design proposed:** `token_env` is fixed to `IGOR_SEAT_<ID>`; a
-  role naming a seat its file does not list is refused; the seat-choice details below; per-role
-  reserves stay on the role (#143); base64 age through the `age-encryption` package; the
-  seat-id format; `roles` required and possibly empty; an unknown role refused; the config key
-  `seatKey`. The `work-triage` requirements that say "pool" are reworded here.
-- **2026-10-11: the lender's control is their token, not a review rule.** Adam: "vetoing or
-  revoking should be done by revoking their token, not through some other process." This
-  supersedes three answers given earlier the same day: a CODEOWNERS line per seat file with
-  code-owner review required, Igor warning at load when either is missing, and `igor doctor`
-  reporting the operator standing in as code owner for a holder with no GitHub account. None of
-  them is specified. *What a lender's control rests on* below has the reasoning.
+The decisions, with who made them and the alternatives they turned down, open the proposal.
+This file gives the reasoning behind them.
 
 ## How the token reaches the server
 
 **The holder encrypts their token to the server's public key, and the ciphertext goes in their
 seat file.** The pull request that adds `seats/<id>.yaml` carries it, as `encrypted_token`. The
 server reads the seat file from its lore checkout and decrypts the token with its private key when
-it reads the seat. No GitHub secret, no workflow and no runner are involved, and a lender needs no
-access to the lore repository beyond opening a pull request, so they can contribute from a fork.
+it reads the seat. Delivering the token needs no GitHub secret, workflow or runner, and a lender
+needs no access to the lore repository beyond opening a pull request, so they can contribute from
+a fork.
 
 1. The server has an age keypair, made with `age-keygen` as the service user. The private key
    stays on the server at the path `igor.config.yaml` names as `seatKey`. The public key is
@@ -47,8 +30,10 @@ access to the lore repository beyond opening a pull request, so they can contrib
 3. Once the pull request merges and the server's lore checkout has it, Igor decrypts the token
    with the private key whenever it reads the seat.
 
-Rotating is the same pull request with new ciphertext: `igor seat add` again. Revoking is
-revoking the token at Anthropic, which takes effect at once, or removing the seat file.
+Rotating is the same pull request with new ciphertext: `igor seat add` again. A lender revokes by
+revoking the token at Anthropic; the operator can also remove the seat file, which takes effect
+when the server's lore checkout next updates. Nobody has measured whether a revoked token is
+refused at once (task 1.2); the lender guide says what the measurement finds.
 
 ### The server's private key is the whole protection
 
@@ -145,10 +130,11 @@ has to be. Nothing writes it to disk or to an argument list.
 
 ### Decryption composes with #101's credential condition
 
-#101 keys a seat's refused credential by a digest of the credential the seat resolved. The digest
-is taken of the decrypted token, not the ciphertext. age encryption is randomized, so a holder who
-re-encrypts the same token produces a different ciphertext, and a digest of that would read as a
-new credential and clear a condition the provider would only refuse again.
+#101's *A seat's refused credential is a condition on that seat* keys the condition by a full
+SHA-256 hash of the credential the seat resolved. For a lent seat that is the decrypted token, as
+*A seat's token travels as ciphertext in its file* requires. age encryption is randomized, so a
+holder who re-encrypts the same token produces a different ciphertext, and a hash of that would
+read as a new credential and clear a condition the provider would only refuse again.
 
 ## How a seat is chosen without pools
 
@@ -162,9 +148,11 @@ seat that does not list it is refused at load, naming the seat file to change. O
 **Priority.** Among the seats that serve the role and that no rule passes over, the Igor picks
 the one with the most headroom:
 
-1. **Eligible** means every existing rule lets this role spend on the seat now: no open credential
-   condition (#101), a reading below the line in both windows, or no reading where the line's
-   reserve is 0 (#143), and the role under its `budget_share` ceiling on the seat.
+1. **Eligible** means every other rule lets this role spend on the seat now. Those rules belong
+   to #143 (the line; the probe made when the line rises past a seat's last reading; extra usage;
+   a missing reading), to
+   `budget_share`, and to #101 (an open credential condition). The headroom rule names them and
+   restates none.
 2. **Headroom** of a window is the role's line on that seat minus the reading, in percentage
    points. A seat's headroom is the smaller of its two windows' headrooms, because the window
    with less room is the one that stops it.

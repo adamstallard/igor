@@ -27,15 +27,17 @@ Seats SHALL be read from `seats/` and from nowhere else. Where `seats/` is absen
 file, no seats are declared and budget is not enforced. Files in `seats/` other than `*.yaml`,
 such as `recipient.txt`, are not seats.
 
-One file per seat lets a lender state the terms of their seat in a pull request of their own,
-touching nothing else, and lets anyone read those terms, and who changed them, from that file's
-history.
-
 #### Scenario: A seat file declares a seat
 
 - **WHEN** `seats/bob.yaml` declares an owner, a reserve of 0.5, `roles: [generalist]` and an
   `encrypted_token`
 - **THEN** a seat `bob` is declared with that owner, reserve, role and token
+
+#### Scenario: An id outside the format is refused
+
+- **WHEN** `seats/Bob_1.yaml` declares a seat
+- **THEN** it is refused, naming the file and saying a seat's id is lowercase letters, digits and
+  hyphens, starting with a letter or digit
 
 #### Scenario: A redundant id is refused
 
@@ -70,8 +72,12 @@ history.
 ### Requirement: A seat file names its token only by ciphertext or its own variable
 
 A seat file SHALL name its token, where it names one, with exactly one of `encrypted_token` and
-`token_env`. A seat file naming both SHALL be refused, naming the file and both keys. A seat file
-naming `token_command` or `token_file` SHALL be refused, naming the file and the key, and saying a
+`token_env`. These two are the token mechanisms, and a seat *names a token source* where its file
+names one of them. #143's *A seat nothing has read is probed on the Igor server with its own token*
+uses both terms: it probes only a seat that names a token source.
+
+A seat file naming both SHALL be refused, naming the file and both keys. A seat file naming
+`token_command` or `token_file` SHALL be refused, naming the file and the key, and saying a
 seat file names its token only with `encrypted_token` or `token_env`.
 
 `token_env` SHALL be `IGOR_SEAT_` followed by the seat's id uppercased, with every character other
@@ -80,19 +86,12 @@ refused, naming the file, the name it gave and the name it must give. An id hold
 letters, digits and hyphens, so no two ids yield the same variable. The variable holds a plain
 token the operator put in the server's environment.
 
-A seat file naming neither reads through whatever login is ambient, as a seat naming no token did
-before seat files existed.
+A seat file naming neither is read, and spent from, on whatever login is ambient on the server.
+Whether that should be allowed is an open question in the proposal.
 
 Neither form runs or reads anything on the server beyond the seat's own token, so nothing depends
-on telling an operator's seat file from a lender's. `token_command` is run by Igor's own process
-with that process's environment, which holds every other seat's token and the GitHub token, so
-whoever could merge one could run code on the server. That is acceptable while every
-configuration change gets careful review, and a hole once lending a seat is meant to be easy.
-
-The variable's name is fixed because a free choice is the same hole by other means. A seat file
-naming `GH_TOKEN` would hand the GitHub token to `claude` as a seat credential. A seat file naming
-another seat's variable would spend that seat under a different id, with a reserve and roles its
-holder never chose.
+on telling an operator's seat file from a lender's. The variable's name is fixed so that a seat
+file cannot name `GH_TOKEN`, or another seat's variable.
 
 #### Scenario: A command is refused, naming the key
 
@@ -144,9 +143,11 @@ be reported unreadable with the reason, and no other credential SHALL be used in
 `seatKey` declared, a key file that cannot be read, a key that does not match, or a ciphertext
 that does not decrypt.
 
-A seat's credential, wherever another rule compares or digests it, SHALL be the plaintext token.
-age encryption is randomized, so one token encrypted twice yields two ciphertexts, and comparing
-ciphertexts would read a re-encrypted token as a new credential.
+A seat's credential, wherever another rule compares or hashes it, such as
+`stuck-conditions`' *A seat's refused credential is a condition on that seat* (#101), SHALL be the
+plaintext token and never the ciphertext. age encryption is randomized, so one token encrypted
+twice yields two ciphertexts, and a hash of the new ciphertext would read as a new credential and
+clear a condition the provider would only refuse again.
 
 `seatKey` is optional. A configuration with no `encrypted_token` needs none.
 
@@ -178,6 +179,17 @@ can read the lore repository, which may be anyone.
   holds
 - **THEN** the seat is reported unreadable, saying its token could not be decrypted with the key
   at that path
+
+#### Scenario: A key file that cannot be read is unreadable, not substituted
+
+- **WHEN** `seatKey` names a file the Igor cannot read
+- **THEN** the seat is reported unreadable, naming the path and the reason
+- **AND** no other credential is used in its place
+
+#### Scenario: The plaintext is kept nowhere
+
+- **WHEN** a seat's token has been decrypted and a run has used it
+- **THEN** the plaintext is in no file the Igor wrote, no argument list and no record
 
 #### Scenario: Re-encrypting a token is the same credential
 
@@ -235,22 +247,22 @@ reserve is 0, SHALL count as 0% used. Where two seats have equal headroom, the g
 the one whose week window resets soonest; a seat with no known week reset SHALL come after every
 seat with one. Seats still tied SHALL be taken in id order.
 
-The other rules decide eligibility, and this one only orders what they admit: a seat with an open
-credential condition, a seat at or past its line in either window, a reserved seat with no reading,
-and a seat where the role is at its `budget_share` ceiling are passed over before headroom is
-compared. Where no seat that serves the role is eligible, the Igor SHALL hand off rather than stop
-silently.
+Which seats a role may spend on now is decided by the other rules, and this one only orders what
+they admit. Those rules are *The reserve is untouchable* and *A seat nothing has read is probed on
+the Igor server with its own token* (the line, and the probe made when the line rises past a
+seat's last reading), *A seat spending extra
+usage has no headroom*, *A missing reading closes a reserved seat and changes nothing else*,
+*`budget_share` is a ceiling, not a reservation*, and `stuck-conditions`' *A seat's refused
+credential is a condition on that seat* (#101). Where no seat that serves the role is eligible,
+the Igor SHALL hand off rather than stop silently.
 
-Most headroom puts dedicated seats ahead of lent ones without anybody ordering them: a lent seat
-declares a reserve, so its line is lower and it has less headroom at the same reading. It spreads
-load across seats rather than draining one before the next. The tie-break spends the capacity a
-reset is about to destroy; the week is the window whose leftover capacity is actually lost, since
-a session refills within hours.
+The tie-break spends the capacity a reset is about to destroy: leftover capacity in a week is lost
+at its reset, while a session refills within hours.
 
 #### Scenario: A dedicated seat is drawn on before a lent one
 
-- **WHEN** a role is served by a dedicated seat at reserve 0 and a lent seat at reserve 0.5, both
-  read at 40% in both windows, early in their weeks
+- **WHEN** a role that declares no reserve is served by a dedicated seat at reserve 0 and a lent
+  seat at reserve 0.5, both read at 40% in both windows, early in their weeks
 - **THEN** the dedicated seat is chosen, because its line is higher
 
 #### Scenario: Load spreads across dedicated seats
@@ -271,8 +283,8 @@ a session refills within hours.
 
 #### Scenario: An unread dedicated seat is drawn on
 
-- **WHEN** a new dedicated seat at reserve 0 has no reading, and another seat serving the role is
-  read at 50%
+- **WHEN** a new dedicated seat at reserve 0 has no reading, another seat serving the role is read
+  at 50%, and the role declares no reserve
 - **THEN** the new seat is chosen, with its headroom counted from 0% used
 
 #### Scenario: A seat without headroom is passed over, not waited on
@@ -307,13 +319,11 @@ checkout and no file contents, only the list of changed paths, each matched agai
 `^seats/[a-z0-9][a-z0-9-]*\.yaml$` before use. Its token SHALL be limited to reading contents and
 writing pull requests.
 
-Revoking the token is a lender's veto over how their seat is used, and a veto is worth only as
-much as the lender's chance to use it. Without the mention, a lender learns of a change to their
-seat's roles or reserve only by watching the file's history.
+A mention SHALL be recognised as already made only from a comment the workflow itself posted.
 
 `pull_request_target` runs with a token that can write to the repository. A workflow on it that
-read the pull request's head would hand a fork's code or data that token, which is why reading
-nothing from the head is part of the requirement and not a detail of the template.
+read the pull request's head would hand a fork's code or data that token, so reading nothing from
+the head is part of this requirement, not a detail of the template.
 
 #### Scenario: An operator's change mentions the lender
 
@@ -352,6 +362,18 @@ nothing from the head is part of the requirement and not a detail of the templat
   `seats/dana.yaml`
 - **THEN** a new comment mentions `@dana` only
 
+#### Scenario: A mention someone else wrote does not count
+
+- **WHEN** the pull request's author posts a comment shaped like the workflow's notice that
+  mentions `@bob`, then changes `seats/bob.yaml`
+- **THEN** the workflow still mentions `@bob`
+
+#### Scenario: The workflow holds no more than it needs
+
+- **WHEN** the shipped workflow is read
+- **THEN** it runs on a GitHub-hosted runner, checks nothing out, and its token can only read
+  contents and write pull requests
+
 #### Scenario: A path that is not a seat file is ignored
 
 - **WHEN** a pull request changes `seats/recipient.txt`, or a file whose name does not match the
@@ -370,8 +392,10 @@ of it, and SHALL:
 4. Where `seats/<id>.yaml` does not exist on the default branch, write it with the holder's GitHub
    login as `owner`, the `reserve` and `roles` given as options, and the ciphertext as
    `encrypted_token`.
-5. Where `seats/<id>.yaml` already exists on the default branch, replace its `encrypted_token` and
-   change nothing else. This is how a token is rotated.
+5. Where `seats/<id>.yaml` already exists on the default branch and names `encrypted_token`,
+   replace its `encrypted_token` and change nothing else. This is how a token is rotated. Where it
+   names `token_env`, refuse before reading the token, saying the seat's token is set on the
+   server by its operator.
 6. Commit on a new branch, push it to the lore repository where the holder may, and otherwise to
    their fork, and open a pull request against the default branch.
 
@@ -379,8 +403,12 @@ The token SHALL NOT be written to disk, to an argument list, or to any process's
 command SHALL refuse, before reading the token, where `seats/recipient.txt` is absent on the
 default branch, or `<id>` is not a valid seat id.
 
+`igor seat add` takes no role, so it acts with the holder's own `gh` login. `surface-adapter`'s
+*On GitHub, every call an Igor makes acts as its App* covers only `igor run` and `igor serve`, and
+says a command that takes no role keeps the person's own login.
+
 The key is read from the default branch because a pull request can change the working tree's
-copy. Whoever replaces `recipient.txt` receives every token encrypted to it afterwards.
+copy, and whoever replaces `recipient.txt` receives every token encrypted to it afterwards.
 
 #### Scenario: A first seat is lent
 
@@ -410,6 +438,18 @@ copy. Whoever replaces `recipient.txt` receives every token encrypted to it afte
 - **WHEN** the holder pastes the token
 - **THEN** it is not shown on the terminal, and it is in no file, argument list or child
   environment
+
+#### Scenario: An operator's seat is not rotated this way
+
+- **WHEN** a holder runs `igor seat add adam` and the default branch's `seats/adam.yaml` names
+  `token_env`
+- **THEN** the command refuses before asking for the token, saying that seat's token is set on the
+  server by its operator
+
+#### Scenario: An empty token or an invalid id is refused
+
+- **WHEN** the holder enters an empty token, or runs `igor seat add Bob_1`
+- **THEN** the command refuses, and opens no pull request
 
 #### Scenario: No public key, no token read
 
