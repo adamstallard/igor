@@ -6,9 +6,9 @@ A condition SHALL be keyed by what would cure it, and SHALL stop exactly what th
 a refused command stops the role whose `commands` refused it, an unreadable seat is taken out of
 the choice of every role drawing on that seat, a credential belonging to an Igor stops that Igor.
 A role with another eligible seat SHALL keep working on it (seat-budget's *A role draws on the
-seat with the most headroom*). A role whose seats are all under open conditions SHALL stop.
-Whether a role with no eligible seat, where some but not all of its seats are under open
-conditions, stops or hands off is an open question in the `seat-files` proposal. A condition
+seat with the most headroom*). A role whose seats are all under open conditions SHALL stop. A
+role with no eligible seat, where some but not all of its seats are under open conditions, SHALL
+hand off, naming those conditions, as seat-budget's requirement says. A condition
 SHALL be rebuilt from the execution log on the state branch, with no stored record of its own:
 from the run rows that carry its cure key, and from condition rows the loop appends for what no
 run shows, such as a probe being taken. Every Igor appends to the one log, so the same cure met

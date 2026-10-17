@@ -1,16 +1,12 @@
-Build after `condition-backoff` (#101), `read-seat-windows-from-the-stream` (#143) and worker-user
-(#175). Line numbers
-below are main's at the time of writing and will have moved under those three changes; the names are
+Build after `condition-backoff` (#101), `read-seat-windows-from-the-stream` (#143), worker-user
+(#175) and `check-a-lore-repository` (#113, which adds `igor doctor`). Line numbers
+below are main's at the time of writing and will have moved under those four changes; the names are
 what to find. Where a task quotes text in a fenced block, that text is the deliverable: it may be
 reworded only where a measurement in section 1 contradicts it, and then `design.md` records the
 measurement.
 
 ## 1. Measure what the guides depend on
 
-- [ ] 1.0 Confirm that GitHub's prefilled new-file link (`/new/<branch>?filename=…&value=…`) keeps
-      its prefilled value through the fork GitHub makes for a lender without write access, and
-      accepts a whole url-encoded seat file carrying ciphertext. Record the result in `design.md`.
-      If either fails, the choice of how a lender without `gh` proposes the file goes back to Adam
 - [ ] 1.1 Confirm `age-encryption` decrypts what `age -r <recipient> | base64 | tr -d '\n'`
       produces on macOS and Linux, after `base64 -d`, and that `age-keygen -y` derives the same
       recipient the package derives from the identity
@@ -77,6 +73,17 @@ measurement.
 - [ ] 3.7 `src/execute.ts`'s worker environment: a seat whose token cannot be decrypted fails
       naming the seat and the reason, per the `task-execution` delta, with a test; the file and
       command cases and their tests go
+- [ ] 3.8 Where no worker user is configured (#175's same-user mode), no seat's `encrypted_token`
+      is decrypted and no such seat is drawn on; seats naming `token_env` run. At start Igor
+      prints, worded so, once per such seat:
+
+      ```
+      seat "<id>" is lent, and workers run as <igor-user>, which can read the key that decrypts it, so this Igor leaves it undecrypted. Lending needs a separate worker user: docs/deployment.md, "A separate user for the worker".
+      ```
+
+      Build this now. How a role whose only seats are such seats behaves, stopping or handing
+      off, waits for the proposal's open question. Test: the scenario of *A lent seat is
+      decrypted only where the worker has a user of its own*
 
 ## 4. Which seats a role draws on
 
@@ -126,9 +133,9 @@ measurement.
 - [ ] 7.1 `src/cli.ts`: `igor seat add <id> [--reserve <r>] [--roles <a,b>]`. In a clone of the
       lore repository, or of a fork of it, the lore repository comes from the clone's `upstream`
       remote where there is one, and otherwise
-      `origin`; the holder's login from `gh api user`. What the command does outside a clone, and
-      how it finds the holder's login without `gh`, is an open question in the proposal: build
-      those parts once it is settled, and not before
+      `origin`; the holder's login from `gh api user`. Which lore repository the command uses
+      outside a clone, and how it commits there, is an open question in the proposal: build that
+      part once it is settled, and not before
 - [ ] 7.1a Check `owner` with `gh api users/<owner>` before writing the seat file. A login it does
       not find is refused, worded so:
 
@@ -159,7 +166,7 @@ measurement.
       ```
       seats/<id>.yaml names token_env: its token is set on the Igor server by the operator, so `igor seat add` does not rotate it.
       ```
-- [ ] 7.5 Where `gh` is installed and signed in: commit on branch `seat/<id>`. Push to the lore
+- [ ] 7.5 Commit on branch `seat/<id>`. Push to the lore
       repository where `gh api` says the holder may push, and otherwise to their fork, creating it
       with `gh repo fork` where it does not exist. Open the pull request through `gh`. Its body:
 
@@ -173,31 +180,22 @@ measurement.
       Rotates seat <id>'s token. Nothing else about the seat changes. After merging, the operator updates the server's lore checkout.
       ```
 
-- [ ] 7.5a Where `gh` is not installed or not signed in: open this link in the browser, or print it
-      where no browser opens, and push nothing. The link's form is the deliverable and is not
-      reworded; `<url-encoded file>` is the whole seat file of 7.3:
+- [ ] 7.6 Refusals before the token is read: `gh` not installed or not signed in; no
+      `seats/recipient.txt` on the default branch; an invalid id; a seat naming `token_env` (7.4).
+      After it is read: an empty token. Running outside a clone is neither refused nor built
+      here: it waits for the open question of 7.1. The `gh` refusal, worded so:
 
       ```
-      https://github.com/<org>/<repo>/new/<default-branch>?filename=seats/<id>.yaml&value=<url-encoded file>
+      igor seat add opens your pull request through gh, so it needs gh installed and signed in: https://cli.github.com, then `gh auth login`.
       ```
-
-      Printed with it, worded so:
-
-      ```
-      Open this link, signed in to GitHub, and click "Propose new file". GitHub forks the repository for you if you cannot write to it.
-      ```
-
-- [ ] 7.6 Refusals before the token is read: no `seats/recipient.txt` on the default branch; an
-      invalid id; a seat naming `token_env` (7.4). After it is read: an empty token. Running
-      outside a clone is not refused here; it is the open question of 7.1
-- [ ] 7.7 Tests, with `gh` faked and with `gh` absent: the scenarios of *`igor seat add` lends a
+- [ ] 7.7 Tests, with `gh` faked, signed out and absent: the scenarios of *`igor seat add` lends a
       seat in one step*, and that no argument list, written file or child environment contains the
       token
 
 ## 8. `igor doctor`
 
-Composes with `check-a-lore-repository` (#113). Whichever builds second adds these to the command
-the other built.
+Adds to the `igor doctor` command that `check-a-lore-repository` (#113) builds, which is built
+first (Adam, 2026-10-17).
 
 - [ ] 8.1 The key match, per *The check says whether the server's key matches the committed one*,
       with a test for each of its scenarios. A key file the person running the check cannot read
@@ -266,7 +264,7 @@ leaks.
     `seat-notice.yml` workflow mentions them on any pull request changing their file; keep it
     installed (`igor init` puts it there), and tell a lender whose `owner` is not a GitHub login
     about a change some other way. Require a pull request before merging to the default branch,
-    since a direct push changes a seat file with no notice; `igor doctor` reports a branch that
+    since only a pull request's notice comes before the change lands; `igor doctor` reports a branch that
     does not
   - **Checking it:** `igor doctor`, and `igor budget` showing the new seat as readable
   - **When things go wrong:** removing a seat (delete its file); a lender withdrawing (they revoke
@@ -288,10 +286,10 @@ leaks.
       terminal, and why it never goes into chat, email, or a file unencrypted. A plain token
       pasted into a pull request is public as soon as it is pushed, before Igor can refuse it, and
       is to be revoked at once
-- [ ] 9.6 `docs/seats.md`, **lending it:** one path, `npx igor-agent seat add <id>`, with Node as
-      the only prerequisite: what it asks for, that it opens the pull request through `gh` where
-      `gh` is signed in, and otherwise gives a link to click "Propose new file" on. No manual `age`
-      steps and no route through a clone
+- [ ] 9.6 `docs/seats.md`, **lending it:** one path, `npx igor-agent seat add <id>`, with Node and
+      `gh`, installed and signed in, as the prerequisites: what it asks for, and that it opens the
+      pull request through `gh`. A person with no GitHub account lends through the operator, whose
+      login is then the seat file's `owner`. No manual `age` steps and no route through a clone
 - [ ] 9.7 `docs/seats.md`, **afterwards:** watching your usage at claude.ai, and what to do when
       you are mentioned on a pull request changing your seat file (say so there if you object; revoke
       the token if it merges anyway); **changing your mind:** rotating (`npx igor-agent seat add`
@@ -334,21 +332,27 @@ leaks.
 - [ ] 10.1 `templates/seat-notice.yml`, worded so. The comment's text is the deliverable too:
 
       ```yaml
-      # Tells a seat's owner when a pull request changes their seat file, by mentioning them on it.
-      # Revoking their token is a lender's veto over how their seat is used, and this is how they
-      # hear about a change in time to use it.
+      # Tells a seat's owner about every change to their seat file, by mentioning them: on the
+      # pull request that changes it, and again on the commit that lands it on the default
+      # branch. Revoking their token is a lender's veto over how their seat is used, and this is
+      # how they hear about a change in time to use it. The push notice also runs for a change
+      # pushed with no pull request. GitHub starts no workflow for a push made with a workflow's
+      # own GITHUB_TOKEN, so a commit made that way may get no notice.
       #
       # It runs on pull_request_target, so it also runs for pull requests from forks, with a token
       # that can comment. That trigger runs with this repository's permissions, so this job reads
       # nothing from the pull request's head: no checkout and no file contents, only the list of
       # changed paths, each matched against the seat-file pattern before use. The owner comes from
-      # the default branch's copy of the file. Keep it that way: reading or running the head here
+      # the copy of the file before the change: the default branch's for a pull request, the
+      # commit before the push for a push. Keep it that way: reading or running the head here
       # would hand a fork's code a token that can write to this repository.
       name: Notify seat owners
 
       on:
         pull_request_target:
           types: [opened, reopened, synchronize, ready_for_review]
+          paths: ['seats/**']
+        push:
           paths: ['seats/**']
 
       permissions:
@@ -357,55 +361,90 @@ leaks.
 
       jobs:
         notify:
+          if: >-
+            github.event_name == 'pull_request_target' ||
+            github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
           runs-on: ubuntu-latest
           steps:
-            - name: Mention the owner of each seat file this pull request changes
+            - name: Mention the owner of each seat file this change touches
               env:
                 GH_TOKEN: ${{ github.token }}
                 REPO: ${{ github.repository }}
+                EVENT: ${{ github.event_name }}
                 PR: ${{ github.event.pull_request.number }}
                 DEFAULT: ${{ github.event.repository.default_branch }}
                 AUTHOR: ${{ github.event.pull_request.user.login }}
+                BEFORE: ${{ github.event.before }}
+                AFTER: ${{ github.sha }}
               run: |
                 set -euo pipefail
                 marker='<!-- igor-seat-notice -->'
-                told=$(gh api --paginate "repos/$REPO/issues/$PR/comments" \
-                  --jq ".[] | select(.user.login == \"github-actions[bot]\") | select(.body | startswith(\"$marker\")) | .body" \
-                  | grep -oE '@[A-Za-z0-9-]+' | sort -u || true)
+                if [[ "$EVENT" == push ]]; then
+                  # An all-zero BEFORE is the push that creates the branch: nothing to compare.
+                  [[ "$BEFORE" =~ ^0+$ ]] && exit 0
+                  ref="$BEFORE"; told=''; what='this push changes'
+                  paths=$(gh api "repos/$REPO/compare/$BEFORE...$AFTER" \
+                    --jq '.files[] | .filename, (.previous_filename // empty)' | sort -u)
+                else
+                  ref="$DEFAULT"; what='this pull request changes'
+                  told=$(gh api --paginate "repos/$REPO/issues/$PR/comments" \
+                    --jq ".[] | select(.user.login == \"github-actions[bot]\") | select(.body | startswith(\"$marker\")) | .body" \
+                    | grep -oE '@[A-Za-z0-9-]+' | sort -u || true)
+                  paths=$(gh api --paginate "repos/$REPO/pulls/$PR/files" \
+                    --jq '.[] | .filename, (.previous_filename // empty)' | sort -u)
+                fi
                 lines=()
                 while IFS= read -r path; do
                   [[ "$path" =~ ^seats/[a-z0-9][a-z0-9-]*\.yaml$ ]] || continue
-                  owner=$(gh api "repos/$REPO/contents/$path?ref=$DEFAULT" --jq .content 2>/dev/null \
+                  owner=$(gh api "repos/$REPO/contents/$path?ref=$ref" --jq .content 2>/dev/null \
                     | base64 -d | sed -n 's/^owner:[[:space:]]*\([A-Za-z0-9-]*\)[[:space:]]*$/\1/p' \
                     | head -n 1) || continue
                   [[ "$owner" =~ ^[A-Za-z0-9](-?[A-Za-z0-9])*$ ]] || continue
-                  [[ "$(tr A-Z a-z <<<"$owner")" == "$(tr A-Z a-z <<<"$AUTHOR")" ]] && continue
+                  if [[ "$EVENT" != push ]]; then
+                    [[ "$(tr A-Z a-z <<<"$owner")" == "$(tr A-Z a-z <<<"$AUTHOR")" ]] && continue
+                  fi
                   grep -qixF "@$owner" <<<"$told" && continue
                   told+=$'\n'"@$owner"
-                  lines+=("- @$owner: this pull request changes your seat file, \`$path\`.")
-                done < <(gh api --paginate "repos/$REPO/pulls/$PR/files" \
-                  --jq '.[] | .filename, (.previous_filename // empty)' | sort -u)
+                  lines+=("- @$owner: $what your seat file, \`$path\`.")
+                done <<<"$paths"
                 [[ ${#lines[@]} -eq 0 ]] && exit 0
                 body="$marker"$'\n'"$(printf '%s\n' "${lines[@]}")"$'\n\n'
-                body+="Your seat serves the roles and keeps the reserve its file states. If you don't agree to this change, say so here. To stop your seat being used at all, revoke its token at Anthropic, whatever this pull request does."
-                gh api "repos/$REPO/issues/$PR/comments" -f body="$body" > /dev/null
+                body+="Your seat serves the roles and keeps the reserve its file states. "
+                if [[ "$EVENT" == push ]]; then
+                  body+="This change is already on $DEFAULT. If you don't agree to it, reply here or tell the operator. "
+                else
+                  body+="If you don't agree to this change, say so here. "
+                fi
+                body+="To stop your seat being used at all, revoke its token at Anthropic, whatever this change does."
+                if [[ "$EVENT" == push ]]; then
+                  gh api "repos/$REPO/commits/$AFTER/comments" -f body="$body" > /dev/null
+                else
+                  gh api "repos/$REPO/issues/$PR/comments" -f body="$body" > /dev/null
+                fi
       ```
 
 - [ ] 10.2 `src/init.ts`: `igor init` installs `seat-notice.yml` beside `reconcile-on-merge.yml`,
       under the same rules for an existing file, and it can be named as a target, per the
       `lore-store` delta
-- [ ] 10.3 Tests in `test/template.test.ts`: the template parses; its only trigger is
-      `pull_request_target` with `paths: ['seats/**']`; its permissions are exactly
+- [ ] 10.3 Tests in `test/template.test.ts`: the template parses; its triggers are
+      `pull_request_target` and `push`, each with `paths: ['seats/**']`, and its job runs on a push
+      only to the default branch; its permissions are exactly
       `contents: read` and `pull-requests: write`; it runs on `ubuntu-latest`; it has no
       `uses:` step and no `actions/checkout`; and no expression in it reads
       `github.event.pull_request.head`
 - [ ] 10.4 Tests of the script, run under bash with `gh` faked: each scenario of *A pull request
-      that changes a seat file mentions that seat's owner*, and a path such as
+      that changes a seat file mentions that seat's owner*, the push scenarios among them, with the
+      owner read at the commit before the push and the comment posted on the pushed commit; and a path such as
       `seats/$(touch x).yaml` or one containing a space or `*`, which is neither run nor expanded;
       and a comment carrying the marker whose author is not `github-actions[bot]`, which does not
       count as a mention already made
 - [ ] 10.5 In `adamstallard/igor-lore`, with task 6.1: add `.github/workflows/seat-notice.yml`
       from the template
+- [ ] 10.6 On a test repository with the template installed, measure and record in `design.md`:
+      whether a push to the default branch made by a workflow with `GITHUB_TOKEN`, through the
+      Actions bypass, runs `seat-notice.yml`; whether one made by a person does; and that the
+      push job's comment on the commit posts with the template's permissions. Until the first is
+      measured to work, no guide says such a commit gets a notice
 
 ## 11. Matching condition-backoff (#101)
 
@@ -421,9 +460,9 @@ of its requirements. Build each against #101's code:
       private key file that `seatKey` names, never a token file path
 - [ ] 11.3 *A condition's scope is its cure's scope*: an unreadable seat, including one whose token
       cannot be decrypted, is taken out of every role's choice, and a role stops where every seat
-      serving it is under an open condition (Adam, 2026-10-17). Test each of its seat scenarios.
-      The case of a role with no eligible seat where only some seats are under conditions waits
-      for the proposal's open question
+      serving it is under an open condition (Adam, 2026-10-17). A role with no eligible seat
+      where only some seats are under conditions, and the rest are at their lines, hands off,
+      naming each condition in the handoff (Adam, 2026-10-17). Test each of its seat scenarios
 
 ## 12. Publishing to npm as `igor-agent`
 
@@ -436,15 +475,19 @@ of its requirements. Build each against #101's code:
       AI teammates that find their own work, claim it in the open, and draw on what the team has already learned.
       ```
 
-      `files` lists what the installed package reads, `engines` is `node >= 26`, and a licence
-      check runs before publishing. What the check covers is open in the proposal
+      `files` lists what the installed package reads, and `engines` is `node >= 26`
+- [ ] 12.2a A licence check, run by 12.3 before publishing: the package's own `license` field and
+      every dependency's licence are each on an allowlist kept in the repository, and any that is
+      not fails the release, naming the package and its licence (Adam, 2026-10-17). Which
+      licences the allowlist holds is open in the proposal
 - [ ] 12.3 A release workflow under `.github/workflows/`, triggered by pushing a version tag, on
-      GitHub-hosted runners: it builds, runs the licence check, and runs
-      `npm publish --provenance` with an npm token held as a repository secret. Its permissions
-      include `id-token: write`, which provenance needs
-- [ ] 12.4 Test from a clean machine with only Node installed that `npx igor-agent seat add` works,
-      after the first release and once the proposal's open question on running without `gh` or a
-      clone is settled. Record the result in `design.md`
+      GitHub-hosted runners: it builds, runs the licence check, and publishes through npm trusted
+      publishing (OIDC), with `id-token: write` in its permissions and no npm token stored
+      anywhere (Adam, 2026-10-17). Configure `igor-agent` on npm to trust this workflow. Trusted
+      publishing adds provenance to each version
+- [ ] 12.4 Test from a clean machine with only Node and a signed-in `gh` installed that
+      `npx igor-agent seat add` works, after the first release and once the proposal's open
+      question on running outside a clone is settled. Record the result in `design.md`
 
 ## 13. Archiving
 

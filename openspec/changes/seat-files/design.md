@@ -4,9 +4,9 @@ The proposal says what must be true. This file covers the parts where how is a c
 reaches the server, how a seat is chosen without pools, and what a lender's control over their
 seat rests on.
 
-Build order is `condition-backoff` (#101), `read-seat-windows-from-the-stream` (#143) and
-worker-user (#175), then this change. Where this file says "line", "reading" or "headroom", it means
-them as #143 defines them: a seat's line for a window rises from `1 − reserve` just after a reset to
+Build order is `condition-backoff` (#101), `read-seat-windows-from-the-stream` (#143),
+worker-user (#175) and `check-a-lore-repository` (#113), then this change. Where this file says "line" or "reading", it means them as #143
+defines them, and it defines "headroom" itself (*How a seat is chosen without pools*): a seat's line for a window rises from `1 − reserve` just after a reset to
 100% at the next reset, using the larger of the seat's and the role's reserve, and a reading is the
 seat's most recent observation of the window taken since that window last reset.
 
@@ -49,6 +49,11 @@ operator must get right:
   needs every holder to revoke their token and issue a new one.
 - **A leak:** treat every seat token as leaked. Rotate the key, and every holder revokes at
   Anthropic and re-issues.
+- **Who must not read it: the worker.** A worker running as the Igor's own user could read the
+  key, and with it every lent token. So where #175's worker user is not configured (`igor run`,
+  and `igor serve --same-user`), Igor decrypts no lent seat and runs only seats naming
+  `token_env` (Adam, 2026-10-17). Lending needs #175's setup. How such an undecrypted seat counts
+  in seat choice is open in the proposal.
 
 ### Why ciphertext in history no longer rules this out
 
@@ -156,15 +161,16 @@ seat that does not list it is refused at load, naming the seat file to change. O
 the one with the most headroom:
 
 1. **Eligible** means every other rule lets this role spend on the seat now. Those rules belong
-   to #143 (the line; the probe made when the line rises past a seat's last reading; extra usage;
+   to #143 (the line; the probe made when the line rises past a seat's last reading, so a seat held at its
+   line is read again before it is drawn on; extra usage;
    a missing reading), to
    `budget_share`, and to #101 (an open condition on the seat, such as a refused credential or a
    token that cannot be decrypted). Seat-budget's *A role draws on the seat with the most
    headroom* names them and restates none. A seat under
    such a condition is passed over, so a role with another eligible seat keeps working (Adam,
-   2026-10-17). A role whose seats are all under open conditions stops, as #101 says. Whether a
-   role with no eligible seat, where some seats are under a condition and the rest are ineligible
-   for other reasons, should hand off or stop is open in the proposal.
+   2026-10-17). A role whose seats are all under open conditions stops, as #101 says. In every
+   other case where the role has no eligible seat, such as some seats under a condition and the
+   rest at their lines, it hands off, and the handoff names each condition (Adam, 2026-10-17).
 2. **Headroom** of a window is the role's line on that seat minus the reading, in percentage
    points. A seat's headroom is the smaller of its two windows' headrooms, because the window
    with less room is the one that stops it.
@@ -210,6 +216,12 @@ lender without a GitHub account, and a lender who wants to rotate their own toke
 review only they could give. Revoking already gives the lender a veto that needs none of it, and
 that works the same for a lender with no GitHub account.
 
+**A lender with no GitHub account lends through the operator (Adam, 2026-10-17).** Lending for
+yourself needs a GitHub account, to run `igor seat add` with `gh` and to be mentioned. Someone
+without one gives the operator their token, and the operator's login is the seat file's `owner`.
+Decision 24 also accepts that `gh api users/<owner>` shows only that a login exists, not that it
+belongs to the holder.
+
 **Who controls `seats/recipient.txt`.** Whoever can merge to the lore repository's default branch
 can replace it, and every token encrypted afterwards is readable by whoever holds the matching
 private key. That is the operator, who is trusted with every token anyway, since the server
@@ -225,7 +237,19 @@ as [#176](https://github.com/adamstallard/igor/issues/176).
 **Decided 2026-10-11 (Adam): a pull request touching `seats/<id>.yaml` @-mentions that seat's
 owner on the pull request**, so their veto does not depend on watching the file's history.
 
-**Chosen: a workflow on GitHub-hosted runners, triggered by `pull_request_target` on `seats/**`.**
+**Decided 2026-10-17 (Adam): it also mentions the owner on every push to the default branch that
+changes their seat file**, on the pushed commit, so a lender hears of a change however it landed.
+Lore setup puts GitHub Actions on the default branch's protection bypass list, so that the
+reconciliation workflow can commit, and that also lets a workflow on any pushed branch commit a
+seat-file change to the default branch with no pull request. The bypass stays; the push notice is
+meant to cover what it lets through. GitHub documents that a push made with the automatic
+`GITHUB_TOKEN` starts no workflow. If that holds for a push through the bypass, the push notice
+never fires for it; task 10.6 measures it (proposal, *Still open*). A change merged through a pull request is mentioned twice, once on the pull request and
+once on its commit. The comparison API lists at most 300 changed files, so a push changing more
+than that may leave a seat file unmentioned.
+
+**Chosen: a workflow on GitHub-hosted runners, triggered by `pull_request_target` and `push` on
+`seats/**`.**
 It ships as `templates/seat-notice.yml`, and `igor init` installs it beside
 `reconcile-on-merge.yml`. On each push to a pull request that touches `seats/`, it posts one
 comment mentioning the owner of each seat file the pull request changes, renames or deletes, and
@@ -246,10 +270,18 @@ So this workflow reads nothing from the head:
 - **The owner comes from the default branch's copy** of each matching file, never from the pull
   request's. A seat file the pull request adds has no default-branch copy, so it mentions nobody:
   its author is the lender, or an operator declaring a seat by hand.
-- **The token is scoped** to `contents: read` and `pull-requests: write`.
+- **The token is scoped** to `contents: read` and `pull-requests: write`. A comment on a commit
+  needs only `contents: read` (GitHub's table of the permissions each endpoint needs, checked
+  2026-10-17).
 
-An owner is mentioned only when the default-branch file's `owner` is a GitHub login and is not the
-pull request's author. A lender whose `owner` is not a GitHub login cannot be mentioned; the
+On a push, the job runs only for the default branch, and reads the list of changed paths from the
+comparison of the commits before and after the push, matched the same way. The owner comes from
+the file as it was before the push, so a seat file the push adds mentions nobody, as on a pull
+request. Each owner is mentioned once per push, in one comment on the pushed commit.
+
+On a pull request, an owner is mentioned only when the default-branch file's `owner` is a GitHub
+login and is not the pull request's author. On a push, the owner is read from the file as it was
+before the push, and nobody is left out for having pushed. A lender whose `owner` is not a GitHub login cannot be mentioned; the
 operator guide says to tell them some other way.
 
 **Rejected alternatives:**
@@ -268,8 +300,8 @@ operator guide says to tell them some other way.
   pull requests, and a notice that waits on the server being up is no notice when it is down.
 
 **Decided 2026-10-17 (Adam): the lore repository's default branch requires a pull request before
-merging.** A direct push changes a seat file with no pull request for the workflow to run on, so
-no lender hears of it. `check-a-lore-repository` (#113) already reports a default branch that
+merging.** Only a pull request's notice reaches the lender before the change lands; the push
+notice comes after it. `check-a-lore-repository` (#113) already reports a default branch that
 accepts direct pushes.
 
 **Decided 2026-10-17 (Adam): a plain token pasted into a pull request is an accepted risk.** It is
@@ -287,24 +319,19 @@ default branch.
 
 ## How `igor seat add` opens the pull request
 
-**Decided 2026-10-17 (Adam).** Where `gh` is installed and signed in, `igor seat add` commits the
-seat file on a branch, pushes it to the lore repository where the holder may push and otherwise to
-their fork, and opens the pull request with `gh`. Otherwise it opens GitHub's prefilled new-file
-link in the browser, or prints it where no browser can be opened:
+**Decided 2026-10-17 (Adam): `igor seat add` requires `gh`, installed and signed in.** It commits
+the seat file on a branch, pushes it to the lore repository where the holder may push and
+otherwise to their fork, and opens the pull request with `gh`. Without `gh`, or signed out, it
+refuses before reading the token. Igor never holds the lender's GitHub credentials: `gh` holds its
+own login.
 
-```
-https://github.com/<org>/<repo>/new/<default-branch>?filename=seats/<id>.yaml&value=<url-encoded file>
-```
+*Rejected:* GitHub's prefilled new-file link as a fallback without `gh`. The steps before the link
+still needed `gh` or a clone, to find the lore repository, the holder's login (which becomes
+`owner`) and the public key, which a private repository serves only to a signed-in client. And a
+rotation could not use it, because the new-file link cannot replace a file that already exists.
 
-GitHub forks the repository for a lender without write access, and the lender clicks "Propose new
-file" to open the pull request. That the prefilled value survives the fork, and that the link
-holds a whole seat file with its ciphertext, is not measured yet (task 1.0); if either fails, the
-choice goes back to Adam. Either way Igor never holds the lender's GitHub credentials: `gh`
-holds its own login, and the browser holds the lender's own GitHub session.
-
-Without `gh`, the steps that come before the link are open in the proposal: finding the lore
-repository, the holder's login (which becomes `owner`) and the public key. So is a rotation without
-`gh`, because GitHub's new-file link cannot replace a file that already exists.
+Which lore repository the command uses outside a clone, and how it commits there without one, is
+open in the proposal.
 
 ## Publishing to npm
 
@@ -312,11 +339,14 @@ repository, the holder's login (which becomes `owner`) and the public key. So is
 `npx igor-agent seat add` is a lender's whole install. The description is the README's opening
 line, verbatim, so the package and the README cannot drift into two pitches (#27).
 
-A tag push runs a release workflow on GitHub-hosted runners. It builds the JavaScript, checks the
-package, and runs `npm publish --provenance` with an npm token held as a repository secret.
-Provenance links each published version to the workflow run and commit that built it.
+A tag push runs a release workflow on GitHub-hosted runners. It builds the JavaScript, runs the
+licence check, and publishes through **npm trusted publishing** (Adam, 2026-10-17): npm trusts
+this workflow by its OIDC identity, so no npm token is stored anywhere, and each version gets
+provenance linking it to the workflow run and commit that built it. *Rejected:* an npm token held
+as a repository secret. Any writer can read a repository secret (*Options rejected*), so any
+writer could have published `igor-agent`, which lenders run through `npx`.
 
-The npm token as a repository secret is Adam's decision. It conflicts with this file's reason for
-rejecting plain repository secrets (*Options rejected*): any writer can read a repository secret,
-so any writer could publish `igor-agent`, which lenders run through `npx`. That conflict is an
-open question in the proposal.
+**The licence check covers the package and every dependency (Adam, 2026-10-17).** The package's
+own `license` field and each dependency's licence must be on an allowlist kept in the repository,
+or the release fails, naming the package and its licence. Which licences the allowlist holds is
+open in the proposal.

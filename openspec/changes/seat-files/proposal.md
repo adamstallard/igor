@@ -21,7 +21,7 @@
 6. **A pull request changing a seat file @-mentions its owner**, through
    `templates/seat-notice.yml`, which `igor init` installs (Adam, 2026-10-11). It runs on
    `pull_request_target` on GitHub-hosted runners and reads nothing from the pull request's head.
-   *Rejected:* a pull request template line, CODEOWNERS without review, the `pull_request`
+   It also runs on pushes to the default branch (decision 26). *Rejected:* a pull request template line, CODEOWNERS without review, the `pull_request`
    trigger, a self-hosted runner, and Igor commenting (`design.md`).
 7. **`igor doctor` reports a missing `seat-notice.yml`, and a server private key (`seatKey`) whose
    public half does not match `seats/recipient.txt`** (Adam, 2026-10-11). A change to
@@ -51,7 +51,8 @@
     accepted** (Adam, 2026-10-17). The notice workflow must not read the pull request's head, so
     nothing can catch it there. The lender guide says so (task 9.5).
 14. **The lore repository's default branch requires a pull request before merging** (Adam,
-    2026-10-17), so every change to a seat file goes through the notice workflow.
+    2026-10-17), so a change to a seat file made through a pull request is noticed before it
+    lands. A push that bypasses the rule is noticed only after it lands (decision 26).
     `check-a-lore-repository` (#113) reports a branch that does not.
 15. **An undecryptable seat is passed over where the role has another usable seat** (Adam,
     2026-10-17). Under #101 it would otherwise stop every role its file lists. A role whose seats
@@ -69,56 +70,60 @@
     token is how a lender withdraws, and promises no speed.
 19. **Igor is published to npm in this change** (Adam, 2026-10-17): package `igor-agent`, `bin`
     `igor`, its description the README's opening line verbatim (#27). `package.json` declares
-    `files` and `engines: node >= 26`, and a licence check runs before publishing. Publishing is a
-    tag-triggered workflow on GitHub-hosted runners, with npm provenance and an npm token held as
-    a repository secret (section 12 of `tasks.md`).
+    `files` and `engines: node >= 26`. Publishing is a tag-triggered workflow on GitHub-hosted
+    runners using **npm trusted publishing (OIDC)**, so no npm token is stored anywhere and
+    provenance is built in (Adam, 2026-10-17). *Rejected:* an npm token held as a repository
+    secret, which any writer could read and use to publish `igor-agent`, which lenders run
+    through `npx`. Before publishing, a **licence check covers both the package's own licence
+    field and every dependency's licence**, against an allowlist, and fails the release otherwise
+    (Adam, 2026-10-17). Section 12 of `tasks.md` holds the work.
 20. **The keys are X25519 keys in age's format** (Adam, 2026-10-17).
-21. **The lender guide documents one path, `npx igor-agent seat add`**, with Node as the only
-    prerequisite (Adam, 2026-10-17). It has no manual `age` section and no route through a clone.
-22. **`igor seat add` opens the pull request through `gh` where `gh` is installed and signed in**
-    (Adam, 2026-10-17). Otherwise it opens, or prints, GitHub's prefilled new-file link, which
-    forks the repository for a lender without write access; the lender then clicks "Propose new
-    file". Igor never holds the lender's GitHub credentials.
+21. **The lender guide documents one path, `npx igor-agent seat add`**, with Node and a
+    signed-in `gh` as the prerequisites (Adam, 2026-10-17; the `gh` prerequisite is decision 22). It has no manual `age` section and no route through a clone.
+22. **`igor seat add` requires `gh`, installed and signed in, and opens the pull request
+    through it** (Adam, 2026-10-17). Without `gh` it refuses. Igor never holds the lender's GitHub
+    credentials: `gh` keeps its own login. *Rejected:* opening GitHub's prefilled new-file link
+    where `gh` is missing, which still needed `gh` or a clone to find the lore repository, the
+    holder's login and the public key, and could not replace an existing file for a rotation.
+23. **Igor refuses to decrypt a lent seat where the worker runs as the Igor's own user** (Adam,
+    2026-10-17). Under #175's same-user mode (`igor run`, and `igor serve --same-user`) a worker
+    could read `seatKey` and so every lent token. There, only the operator's own `token_env`
+    seats run. Lending requires the worker-user setup of #175.
+24. **A lender needs a GitHub account to lend for themselves, and that is accepted** (Adam,
+    2026-10-17). Someone without one lends through the operator, whose login is then the seat
+    file's `owner`. That `gh api users/<owner>` proves a login exists, not that it is the
+    holder's, is accepted too.
+25. **A role with no eligible seat, where some seats are under an open condition and the rest are
+    at their reserve lines, hands off, naming the condition in the handoff** (Adam, 2026-10-17).
+    It stops only when every seat serving it is under a condition, as #101 says.
+26. **The notice workflow also runs on pushes to the default branch that touch `seats/**`**, and
+    @-mentions each changed seat's owner on the commit (Adam, 2026-10-17), so a lender hears of a
+    change however it landed, including one committed by a workflow through GitHub Actions'
+    bypass of the branch's protection, which lore setup keeps. Whether such a commit triggers the
+    workflow is open (*Still open*).
+27. **`igor doctor` (#113, `check-a-lore-repository`) is built before this change** (Adam,
+    2026-10-17). Decisions 12 and 14 and section 8 of `tasks.md` add to the command #113 builds.
 
 **Still open:**
 
-- **What `igor seat add` does without `gh`, beyond printing the link.** Decision 22 covers
-  opening the pull request. Three steps before it assume `gh` or a clone: knowing which lore
-  repository to use (found today from the clone's remote), knowing the holder's login for
-  `owner` and checking it (`gh api user`, `gh api users/<owner>`), and reading
-  `seats/recipient.txt` and any existing seat file from the default branch, which a private
-  repository refuses without a credential. A clean machine with only Node (task 12.4) has
-  neither `gh` nor a clone. And for a rotation, GitHub's new-file link cannot replace a file
-  that exists, and its edit link takes no prefilled content.
-- **A worker run as the Igor's own user can read `seatKey`.** #175 still lets `igor run` and
-  `igor serve --same-user` run the worker as the Igor's own user. Decision 11 orders the builds,
-  and says nothing about those two modes once seats carry ciphertext.
-- **`gh api users/<owner>` confirms that a login exists, not that it is the holder's.** A login
-  that exists but belongs to a stranger passes decision 12's check. Also, `design.md` allows a
-  lender with no GitHub account, and `igor doctor` would report that lender's seat file as a
-  finding for as long as the file exists. Such a lender also cannot open their own pull request
-  or follow the prefilled link, so the argument that the lender states the terms in their own
-  pull request does not hold for them.
-- **Whether a role with no eligible seat, where at least one seat is under an open condition,
-  should hand off or stop.** Decision 15 covers only a role with another usable seat. A role whose
-  seats are all under open conditions stops, as #101 says, and a role whose seats are all at their
-  lines hands off. A role with some of each is not decided.
-- **Whether GitHub's prefilled link works as decision 22 needs** (task 1.0): that its value
-  survives the automatic fork, and that it holds a whole seat file with ciphertext. If not, the
-  choice goes back to Adam.
-- **GitHub Actions on the bypass list can still change a seat file without a pull request.** Lore
-  setup lets GitHub Actions bypass the default branch's protection, so that the reconciliation
-  workflow can commit. That also lets a workflow on a pushed branch commit a seat-file change to
-  the default branch with no pull request and no notice. Decision
-  14's pull-request-only merges do not close that.
-- **Decision 19's npm token conflicts with `design.md`'s reason for rejecting repository
-  secrets.** Every writer can read a repository secret, so any writer could publish `igor-agent`,
-  which lenders run through `npx`. npm's trusted publishing, through OIDC, would need no stored
-  token. Decision 19 stands as given until Adam says otherwise.
-- **`igor doctor` is defined by `check-a-lore-repository` (#113)**, which is not in this change's
-  build order. Decisions 12 and 14 and section 8 of `tasks.md` rely on it.
-- **What decision 19's licence check covers**: the package's own licence field and `LICENSE`
-  file, its dependencies' licences, or both.
+- **Which lore repository `igor seat add` uses outside a clone, and how it commits there.**
+  Decision 22 settles that `gh` is required, but the clean-machine test (task 12.4) has Node
+  and `gh` and no clone. Inside a clone the repository comes from its remote and the command
+  commits and pushes a branch. Outside one, it needs the repository named somehow, and the
+  commit made without a local clone, through `gh`'s API or a clone it makes itself. Neither is
+  decided (tasks 7.1 and 12.4).
+- **How a lent seat refused under same-user mode counts in seat choice** (decision 23). If such
+  a seat counts as one under an open condition, a role whose seats are all lent stops. If it
+  counts as merely ineligible, the role hands off, since decision 25 has a role stop only when
+  every seat is under a condition. Nor is it said whether
+  #143's probe, which would need the seat's decrypted token, skips such a seat. Not decided.
+- **Whether decision 26's push notice fires for the case it was added for.** GitHub documents
+  that a push made with a repository's automatic `GITHUB_TOKEN` starts no workflow, and the
+  reconciliation workflow, the one lore setup puts on the bypass list, pushes with that token.
+  If GitHub's documented behaviour holds for that push, a seat-file change committed through the
+  bypass gets no notice. Unmeasured (task 10.6);
+  the guides promise no notice for that case until it is measured.
+- **Which licences the allowlist of decision 19 holds.** Not decided (task 12.2).
 
 ## Why
 
@@ -167,12 +172,13 @@ from [#147](https://github.com/adamstallard/igor/issues/147).
   breaks a tie. A role may still name a single seat, which must list it.
 - **A pull request that changes a seat file mentions its owner**, through a workflow `igor init`
   installs, so the lender hears of a change in time to revoke. It runs on `pull_request_target`
-  on GitHub-hosted runners and reads nothing from the pull request's head.
+  on GitHub-hosted runners and reads nothing from the pull request's head. It also mentions the
+  owner on each push to the default branch that changes their file.
 - **`igor seat add`** lends a seat in one step: it reads the token without echoing it, encrypts
-  it, writes the seat file, and opens the pull request through `gh`, or gives the lender
-  GitHub's prefilled link to propose the file. Run again, it rotates the token.
+  it, writes the seat file, and opens the pull request through `gh`, which it requires. Run
+  again, it rotates the token.
 - **Igor is published to npm as `igor-agent`**, so a lender runs `npx igor-agent seat add` with
-  nothing installed but Node.
+  nothing installed but Node and a signed-in `gh`.
 - **The `work-triage` requirements stop saying "pool"**, and speak of the seats serving a role.
 - **Docs for both sides.** The operator guide in `docs/deployment.md`; the lender guide in
   `docs/seats.md`, which says what a lender trusts the operator with and that revoking the token
@@ -224,8 +230,8 @@ None. `setup-check` gains requirements here, and is created by whichever of this
 - `docs/deployment.md`, `docs/seats.md`, `docs/architecture.md` §6.5.1, `README.md`,
   `igor.config.example.yaml`, `deploy/`.
 - `adamstallard/igor-lore`: `seats/adam.yaml`.
-- Build order: `condition-backoff` (#101), `read-seat-windows-from-the-stream` (#143) and
-  worker-user (#175), then this. This change and #143 archive together, #143 first (Adam,
+- Build order: `condition-backoff` (#101), `read-seat-windows-from-the-stream` (#143),
+  worker-user (#175) and `check-a-lore-repository` (#113), then this. This change and #143 archive together, #143 first (Adam,
   2026-10-17), so no in-force text names `capacity_estimate` or `dedicated`, the keys the two
   changes remove. The `MODIFIED` blocks here are
   written against #143's text where #143 modifies the same requirement.

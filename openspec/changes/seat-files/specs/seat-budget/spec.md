@@ -260,10 +260,10 @@ credential is a condition on that seat*) and a token that cannot be read or decr
 `stuck-conditions`' *A condition's scope is its cure's scope* makes a condition on the seat. A seat
 under such a condition SHALL be passed over, and the role SHALL keep working on its other eligible
 seats. Where every seat that serves the role is under such a condition, the role SHALL stop, as
-`stuck-conditions` says. Where no seat that serves the role is eligible and none is under such a
-condition, such as when every seat is at its line, the Igor SHALL hand off rather than stop
-silently. Where no seat is eligible, some are under such a condition and the rest are ineligible for
-other reasons, whether the role stops or hands off is an open question in the proposal.
+`stuck-conditions` says. Where no seat that serves the role is eligible and not every one is under
+such a condition, such as when every seat is at its line, or some are under a condition and the
+rest are at their lines, the Igor SHALL hand off the item instead of stopping the role. A handoff
+where some seats are under a condition SHALL name each such condition.
 
 The tie-break spends the capacity a reset is about to destroy: leftover capacity in a week is lost
 at its reset, while a session refills within hours.
@@ -321,9 +321,16 @@ at its reset, while a session refills within hours.
   decrypted
 - **THEN** the role stops, as `stuck-conditions` says, and does not hand off
 
+#### Scenario: Seats under a condition and seats at their lines are a handoff
+
+- **WHEN** a role is served by two seats, one with an open condition because its token cannot be
+  decrypted and the other at its line
+- **THEN** the Igor hands off, and does not stop
+- **AND** the handoff names the first seat's condition
+
 #### Scenario: Exhausting every seat that serves a role is a handoff
 
-- **WHEN** no seat that serves a role is eligible
+- **WHEN** no seat that serves a role is eligible, and not every one is under an open condition
 - **THEN** the Igor hands off rather than stopping silently
 
 ### Requirement: A pull request that changes a seat file mentions that seat's owner
@@ -335,16 +342,24 @@ branch's copy of the file. An owner SHALL be mentioned at most once per pull req
 mentioned on a pull request they opened, and SHALL NOT be mentioned where `owner` is not a GitHub
 login.
 
+The same workflow SHALL also run on every push to the default branch that changes, renames or
+deletes a seat file, and SHALL comment on the pushed commit, @-mentioning each changed seat's
+owner, read from the file as it was before the push. A change merged through a pull request
+mentions them again on its commit. Whether a commit a workflow pushes with the repository's
+automatic token triggers this run is not measured (task 10.6): GitHub documents that such a push
+starts no workflow.
+
 The workflow SHALL run on GitHub-hosted runners, triggered by `pull_request_target` so that it can
-comment on pull requests from forks, and SHALL read nothing from the pull request's head: no
+comment on pull requests from forks, and by `push`. It SHALL read nothing from a pull request's
+head: no
 checkout and no file contents, only the list of changed paths, each matched against
 `^seats/[a-z0-9][a-z0-9-]*\.yaml$` before use. Its token SHALL be limited to reading contents and
-writing pull requests.
+writing pull requests; a comment on a commit needs only reading contents.
 
 A mention SHALL be recognised as already made only from a comment the workflow itself posted.
 
-The lore repository's default branch SHALL require a pull request before merging, because a seat
-file changed by a direct push has no pull request for the workflow to comment on. `igor doctor`
+The lore repository's default branch SHALL require a pull request before merging, because only
+a pull request's notice reaches the lender before the change lands; a push notice comes after. `igor doctor`
 reports a default branch that does not require one, through `check-a-lore-repository`'s check
 that direct pushes are prevented (#113).
 
@@ -407,6 +422,17 @@ the head is part of this requirement, not a detail of the template.
   request before merging
 - **THEN** `igor doctor` reports it, by `check-a-lore-repository`'s check of direct pushes
 
+#### Scenario: A push to the default branch mentions the owner on the commit
+
+- **WHEN** a commit that changes `seats/bob.yaml`, whose `owner` before the push is `bob`, is
+  pushed to the default branch with no pull request
+- **THEN** a comment on that commit mentions `@bob`
+
+#### Scenario: A push to another branch mentions nobody
+
+- **WHEN** a commit changing `seats/bob.yaml` is pushed to a branch other than the default branch
+- **THEN** no comment is posted for that push
+
 #### Scenario: A path that is not a seat file is ignored
 
 - **WHEN** a pull request changes `seats/recipient.txt`, or a file whose name does not match the
@@ -430,15 +456,13 @@ installed, and SHALL:
    replace its `encrypted_token` and change nothing else. This is how a token is rotated. Where it
    names `token_env`, refuse before reading the token, saying the seat's token is set on the
    server by its operator.
-6. Where `gh` is installed and signed in: commit on a new branch, push it to the lore repository
-   where the holder may and otherwise to their fork, and open a pull request against the default
-   branch with `gh`. Otherwise: open in the browser, or print where it cannot, GitHub's
-   prefilled new-file link for `seats/<id>.yaml` holding the file, from which the holder proposes
-   the file as a pull request.
+6. Commit on a new branch, push it to the lore repository where the holder may and otherwise to
+   their fork, and open a pull request against the default branch with `gh`.
 
-Igor SHALL NOT hold the holder's GitHub credentials: `gh` keeps its own login, and the prefilled
-link is used in the holder's own browser. How the command finds the lore repository and the
-holder's login without `gh` or a clone is an open question in the proposal.
+The command SHALL require `gh`, installed and signed in, and SHALL refuse before reading the token
+where it is missing or signed out. Igor SHALL NOT hold the holder's GitHub credentials: `gh` keeps
+its own login. Which lore repository the command uses outside a clone, and how it commits there,
+is an open question in the proposal.
 
 The token SHALL NOT be written to disk, to an argument list, or to any process's environment. The
 command SHALL refuse, before reading the token, where `seats/recipient.txt` is absent on the
@@ -464,12 +488,11 @@ copy, and whoever replaces `recipient.txt` receives every token encrypted to it 
 - **WHEN** `gh` is signed in and the holder cannot push to the lore repository
 - **THEN** the branch is pushed to their fork and the pull request opened from there
 
-#### Scenario: A holder without `gh` gets the prefilled link
+#### Scenario: A holder without `gh` is refused
 
 - **WHEN** `gh` is not installed, or not signed in
-- **THEN** the command opens or prints
-  `https://github.com/<org>/<repo>/new/<default-branch>?filename=seats/<id>.yaml&value=<url-encoded file>`
-- **AND** it pushes nothing and holds no GitHub credential
+- **THEN** the command refuses before asking for the token, saying it needs `gh` signed in
+- **AND** it writes and pushes nothing
 
 #### Scenario: An owner that is not a GitHub login is refused
 
@@ -510,6 +533,23 @@ copy, and whoever replaces `recipient.txt` receives every token encrypted to it 
 - **WHEN** the default branch has no `seats/recipient.txt`
 - **THEN** the command refuses before asking for the token, saying the operator commits the
   server's public key there
+
+### Requirement: A lent seat is decrypted only where the worker has a user of its own
+
+Where no worker user is configured, so that the worker runs as the Igor's own user (#175's
+`igor run`, and `igor serve --same-user`), Igor SHALL NOT decrypt any seat's `encrypted_token`,
+and SHALL NOT draw on that seat. Only seats naming `token_env` SHALL run there. Igor SHALL say so
+when it starts, naming each seat it leaves undecrypted. A worker running as the Igor's own user
+can read the key `seatKey` names, and with it every lent token.
+
+#### Scenario: Same-user mode leaves a lent seat undecrypted
+
+- **WHEN** `igor run` starts with no worker user configured, and the seats serving its role are
+  one naming `encrypted_token` and one naming `token_env`
+- **THEN** the seat naming `encrypted_token` is not decrypted and not drawn on
+- **AND** the seat naming `token_env` is drawn on
+- **AND** Igor says, when it starts, that it leaves the lent seat undecrypted because workers run
+  as its own user
 
 ### Requirement: A spend with no seat behind it is not made
 
