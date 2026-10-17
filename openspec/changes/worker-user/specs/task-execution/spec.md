@@ -94,8 +94,14 @@ then the separate user protects nothing.
 
 The Igor SHALL run git in a worker's tree with hooks, the filesystem monitor and submodule
 recursion turned off. It SHALL NOT run any program that the worker could have written or
-named, as the Igor's user. A changed path that is a submodule entry or a nested repository
+named, as the Igor's user. A changed path that holds a nested repository with working content
 SHALL stop the run before anything is published, naming the path.
+
+Once #137 has archived its requirement *An artifact carries a changed path as the tree holds
+it* into this spec, a changed submodule pointer (a gitlink) SHALL be published as the commit it
+names, as that requirement carries one, and the Igor SHALL NOT enter the submodule's directory
+or run git in it to do so. Until then, a changed gitlink SHALL stop the run before anything is
+published, naming the path.
 
 Git runs a hook, an fsmonitor command, or a filter that repository configuration names, as
 whoever runs git. Where that is the Igor, a worker that could name one would be running code
@@ -115,10 +121,24 @@ as the Igor.
 - **THEN** the filter does not run
 - **AND** the run stops naming the nested repository
 
+#### Scenario: A moved submodule pointer is published as a pointer
+
+- **WHEN** #137's requirement is archived into this spec
+- **AND** a run's changes move a submodule's gitlink to another commit
+- **THEN** the artifact carries the gitlink naming that commit
+- **AND** the Igor runs no git command inside the submodule's directory
+
+#### Scenario: A moved submodule pointer stops the run until pointers can be published
+
+- **WHEN** #137's requirement is not yet archived into this spec
+- **AND** a run's changes move a submodule's gitlink to another commit
+- **THEN** the run stops naming the submodule's path
+
 ### Requirement: The Igor reads no file on the worker's behalf through a link
 
-The Igor SHALL read what a worker changed only after every process that runs as the worker
-user in the tree has exited, the last model step included. It SHALL find the changed paths
+The Igor SHALL read what a worker changed only after every process it started as the worker
+user for the run has exited, whatever that process is: the worker, a later model step, or a
+check that runs the role's commands (#189). It SHALL find the changed paths
 against its own index, never an index the worker could write. It SHALL NOT follow a symbolic
 link, and SHALL NOT read a path through a directory that is a link. A changed path that lies
 beneath a link SHALL stop the run before anything is published, naming the path. A changed file
@@ -160,6 +180,11 @@ pull request.
 - **WHEN** a model step after the worker creates a link in the tree
 - **THEN** the Igor's link checks see it
 
+#### Scenario: The tree is read after the role's checks
+
+- **WHEN** a check that runs the role's commands as the worker user creates a link in the tree
+- **THEN** the Igor's link checks run after that check exits, and see the link
+
 #### Scenario: An index the worker edited hides nothing
 
 - **WHEN** a worker modifies a file and marks it unchanged in the index copy it was given
@@ -177,6 +202,20 @@ pull request.
 - **WHEN** a worker creates a file the Igor cannot read
 - **THEN** the run stops naming the file
 - **AND** no artifact is published without it
+
+### Requirement: A signature binds to the tree the Igor staged
+
+Where a worker user is configured and a step signs a staged tree, such as #153's prose pass and
+bug hunt, the Igor's code SHALL stage the changed paths in the Igor's own index, which the worker
+user cannot write. The signature SHALL be bound to the tree of that index, and never to the
+worker's index copy or to any other copy the worker user could change.
+
+#### Scenario: A signature is checked against the Igor's index
+
+- **WHEN** a step after the worker signs the staged tree
+- **AND** the worker had marked a changed file unchanged in its index copy
+- **THEN** the tree the signature is checked against is the one the Igor staged in its own
+  index, holding that file's change
 
 ### Requirement: A kill, a release and a sweep reach what the worker owns
 

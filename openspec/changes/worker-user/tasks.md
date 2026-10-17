@@ -5,7 +5,8 @@
       configuration has by then: `GITHUB_APP_PRIVATE_KEY_FILE`, `seatKey` if #171 has merged,
       and seat `token_file` paths while they exist. If #171 has not merged, file an issue asking
       #171 to add `seatKey` to this probe, and link it here.
-- [ ] 0.2 Run the measurements in section 6 before building sections 2 to 4. Record each result in
+- [ ] 0.2 Run measurements 6.1 to 6.5 before building sections 2 to 4; 6.6 informs the docs, and
+      6.7 waits on the proposal's open question on naming the worker user. Record each result in
       `design.md`, including any that contradicts it, and change the design before the code where
       one does.
 - [ ] 0.3 If #101 (`condition-backoff`) has merged, record a `sudo` spawn failure of the worker
@@ -13,14 +14,20 @@
       grouped under. A key of that scope stops the Igor, where an item-scoped one would fail
       every item in turn.
 - [ ] 0.4 If #137 (`carry-what-a-tree-holds`) has archived, build 3.3's publishing of a changed
-      link as a link. If not, build 3.3's stop, file an issue asking whichever of #137 and this
-      change archives second to replace the stop with the publishing and drop the condition on
-      #137 from *The Igor reads no file on the worker's behalf through a link*, and link it
-      here.
-- [ ] 0.5 If #153 (`signed-publishing`) has merged, its model steps go through 1.4. If not, file
-      an issue asking #153 to run them through this change's spawn, and link it here.
+      link as a link, and 3.1's publishing of a changed gitlink as a pointer. If not, build both
+      stops, file an issue asking whichever of #137 and this change archives second to replace
+      those two stops with the publishing and drop the conditions on #137 from *The Igor reads no file on
+      the worker's behalf through a link* and *Nothing the worker writes is executed by the
+      Igor*, and link it here.
+- [ ] 0.5 If #153 (`signed-publishing`) has merged, its model steps go through 1.4, and its
+      staging goes through 2.5. If not, file an issue asking #153 to run its steps through this
+      change's spawn and to stage through 2.5, and link it here.
 - [ ] 0.6 If #174 (`pinned-skills`) has merged, add `skills_dir` to the probe in 5.1. If not,
       file an issue asking #174 to add it, and link it here.
+- [ ] 0.7 If #189 (`loop-verifies-commands`) has merged, its checks go through 1.4's spawn and
+      3.2 waits for them. If not, file an issue asking #189 to run its checks before the Igor's
+      final read, as *The Igor reads no file on the worker's behalf through a link* requires,
+      and link it here.
 
 ## 1. Starting the worker as another user
 
@@ -55,26 +62,38 @@
       by the Igor. Without a worker user, the git directory stays inside the tree and the
       index is not copied.
 - [ ] 2.4 The sweep's name rule takes `<tree>-git` as it takes `<tree>-outbox`.
-- [ ] 2.5 Tests on a real clone, run as one user: the modes and group after provisioning; status
+- [ ] 2.5 Where a step signs a staged tree (#153), the Igor's code stages the changed paths in the
+      git directory's own index, never the copy, and the tree a signature is checked against is
+      that index's tree.
+- [ ] 2.6 Tests on a real clone, run as one user: the modes and group after provisioning; status
       read against the git directory's index reports a `git rm` and a `git mv` made with
       `GIT_INDEX_FILE` set to the copy; a file marked skip-worktree or assume-unchanged in the
       copy is still read as changed; a `.git` file in the tree pointing elsewhere does not change what the
-      Igor reads; the sweep removes a stranded `-git` directory.
+      Igor reads; the sweep removes a stranded `-git` directory; a file marked unchanged in the
+      copy is in the tree 2.5 stages.
 
 ## 3. Nothing run, nothing followed
 
 - [ ] 3.1 Every git command the Igor runs in a tree passes
       `-c core.hooksPath=/dev/null -c core.fsmonitor=false -c submodule.recurse=false`, and
       `--ignore-submodules=all` where the command takes it, in both modes. A changed path that
-      is a submodule entry or holds its own `.git` stops the run before publishing (verbatim;
+      holds its own `.git` with working content stops the run before publishing (verbatim;
       Adam may reword):
 
       ```
       `<path>` is a nested repository, and Igor reads none a worker made, so nothing was published
       ```
+
+      A changed gitlink is published as the commit it names, with no git command run inside the
+      submodule's directory, where 0.4 builds that. Where it does not, the run stops before
+      publishing (verbatim; Adam may reword):
+
+      ```
+      `<path>` is a submodule whose commit changed, and this Igor publishes no submodule pointer, so nothing was published
+      ```
 - [ ] 3.2 Before reading changes, the Igor waits for the last process it started as the worker
-      user in the tree to exit, the last model step included, and kills that process's group,
-      which is already gone when the process exited by itself.
+      user for the run to exit, whether the worker, a model step or one of #189's checks, and
+      kills that process's group, which is already gone when the process exited by itself.
 - [ ] 3.3 `changes()` refuses a path that has a link among its directories, checking each
       component with `lstat`. A changed path that is itself a link is read with `readlink` and
       published as a link where 0.4 builds that, and is refused where it does not. `changes()`
@@ -117,8 +136,10 @@
       that, and stops the run where it does not, and either way that file's content is in no
       `ChangedFile`, reason or record; a file under a linked directory stops the run; a link a
       model step made after the worker is seen; a file with mode `000` stops the run; a linked declaration file is not read; a nested repository
-      whose configuration defines a filter stops the run and its filter does not run; a path
-      holding a backtick is escaped in the reason.
+      whose configuration defines a filter stops the run and its filter does not run; a moved
+      gitlink is published as a pointer where 0.4 builds that, and stops the run where it does
+      not, with no git command run inside the submodule either way; a link a check made is seen;
+      a path holding a backtick is escaped in the reason.
 
 ## 4. Kill, release, sweep
 
@@ -205,20 +226,19 @@
 
 ## 6. Measurements
 
-On a Linux host running the shipped unit, with a real `igor-worker-<role>`, Claude Code's
+On a Linux host running the shipped unit, with a real `igor-worker-<role>-<rank>`, Claude Code's
 current release and the worker's real flags. Canary files sit at the real paths with the real owners and
 modes: `/etc/igor/env`, `/etc/igor/<role>.env`, `/etc/igor/<role>.pem`, the `seatKey` path, and a
 file in the service user's home. Each holds a random string and nothing else. Never a real secret.
 
-- [ ] 6.1 Repeat #163's table with the worker running as `igor-worker-<role>`: the Read tool,
+- [ ] 6.1 Repeat #163's table with the worker running as `igor-worker-<role>-<rank>`: the Read tool,
       `head`, `tail`, and a test file run by `npm test` that reads each canary and
       `/proc/<igor pid>/environ`, and writes into the lore checkout and the git directory's `hooks/`.
       Every read and write is refused, and no canary string appears in the stream, the
       transcript or the published artifact.
 - [ ] 6.2 Under `sudo` in the unit: the stream parses as it does now; `kill -KILL -- -<pgid>` as
       the worker ends a running `npm test`; `sudo` works with `ProtectSystem=strict`,
-      `PrivateTmp=true` and no `NoNewPrivileges`; the exit status reaches the Igor; systemd
-      expands `%i` in `Environment=`, `SupplementaryGroups=` and `ReadWritePaths=`.
+      `PrivateTmp=true` and no `NoNewPrivileges`; the exit status reaches the Igor.
 - [ ] 6.3 `git rm` of a top-level file, `git mv`, `git log` and `git show`, run by the worker
       with the git directory read-only and outside the tree and `GIT_INDEX_FILE` in the outbox,
       all succeed, and the Igor's `changes()` reads them back. Claude Code's Edit and Write tools
@@ -228,11 +248,14 @@ file in the service user's home. Each holds a random string and nothing else. Ne
 - [ ] 6.5 Record what `sudo` writes to the auth log per worker start. If it is the whole prompt,
       add `Defaults:igor !syslog` (or what the measurement shows works) to
       `deploy/sudoers.example`, with a comment saying why.
-- [ ] 6.6 Before section 8 builds the per-role users, run two Igor units with one worker user
-      and a worker in each, since whether the `/proc` reach holds between units is unmeasured.
-      Record in `design.md`, *Each role has its own worker user*, whether either worker can read
+- [ ] 6.6 Run two Igor units with one worker user and a worker in each, since whether the `/proc`
+      reach holds between units is unmeasured. Record in `design.md`, *Each instance has its own
+      worker user*, and in 8.4's section of `docs/deployment.md`, whether either worker can read
       the other's `/proc/<pid>/environ`, or list and write the other's tree through
-      `/proc/<pid>/cwd`.
+      `/proc/<pid>/cwd`. Section 8 does not wait for it (Adam, 2026-10-17).
+- [ ] 6.7 Before 8.2 ships, once the proposal's open question on how the unit names the worker
+      user is answered: confirm the unit sets the worker user, its group and its home that way.
+      Sections 2 to 4 do not wait for this.
 
 ## 7. An automated end-to-end test
 
@@ -248,28 +271,31 @@ file in the service user's home. Each holds a random string and nothing else. Ne
 
 ## 8. Deployment
 
-- [ ] 8.1 New `deploy/sudoers.example`, verbatim except where 6.5 adds a line:
+- [ ] 8.1 New `deploy/sudoers.example`, verbatim except where 6.5 adds a line. 8.4's commands
+      copy its comment and write one line per instance in the form it shows:
 
       ```
-      # /etc/sudoers.d/igor. Install, then check, with:
-      #   sudo install -m 440 deploy/sudoers.example /etc/sudoers.d/igor && sudo visudo -c
+      # /etc/sudoers.d/igor, written by the commands in docs/deployment.md,
+      # "A separate user for the worker".
       #
-      # The Igor's service user may run commands as each role's worker user, and as nobody
+      # The Igor's service user may run commands as each instance's worker user, and as nobody
       # else: that is how a worker is started, killed and cleaned up after. It grants nothing
       # toward root. Anything the service user runs as a worker user, it could already do as
-      # itself. One line per role, naming igor-worker-<role>:
-      igor ALL=(igor-worker-maintenance) NOPASSWD: ALL
+      # itself. One line per instance <role>.<rank>, naming igor-worker-<role>-<rank>:
+      igor ALL=(igor-worker-maintenance-1) NOPASSWD: ALL
       ```
 
-- [ ] 8.2 `deploy/igor.service`: add `Environment=IGOR_WORKER_USER=igor-worker-%i` and
-      `SupplementaryGroups=igor-worker-%i`. Add `/var/lib/igor-worker-%i` to `ReadWritePaths=`.
-      Put `/usr/local/bin` first on `PATH` and change the `PATH` comment to say `claude` must
+- [ ] 8.2 `deploy/igor.service`: set `Environment=IGOR_WORKER_USER=`, `SupplementaryGroups=` and
+      a `ReadWritePaths=` entry for the instance's worker user `igor-worker-<role>-<rank>`, its
+      group and its home `/var/lib/igor-worker-<role>-<rank>`. `%i` is `<role>.<rank>` and
+      systemd cannot turn it into `<role>-<rank>`, so build these three settings once the
+      proposal's open question on it is answered. Put `/usr/local/bin` first on `PATH` and change the `PATH` comment to say `claude` must
       live where the worker can run it. Replace `NoNewPrivileges=true` with this comment (may be
       reworded):
 
       ```
       # No NoNewPrivileges=: it stops sudo from changing user, and sudo is how a worker runs as
-      # this role's worker user, which cannot read /etc/igor. See docs/deployment.md, "A
+      # this instance's worker user, which cannot read /etc/igor. See docs/deployment.md, "A
       # separate user for the worker".
       ```
 
@@ -280,7 +306,9 @@ file in the service user's home. Each holds a random string and nothing else. Ne
       the `igor` user's uid with mode `0600`.
 - [ ] 8.4 `docs/deployment.md`: add this section after *Before it can run*, and make it the
       fourth thing in that list. May be reworded; the commands may not change without
-      re-measuring them.
+      re-measuring them. The loop that creates each instance's user, home and sudoers line is
+      unmeasured: run it on section 6's host before this ships, and record the result in
+      `design.md`.
 
       ````markdown
       ## A separate user for the worker
@@ -291,22 +319,25 @@ file in the service user's home. Each holds a random string and nothing else. Ne
       the seat tokens. An issue anyone can file can ask it to. So the worker runs as a second
       user, which can read none of them, and `igor serve` refuses to start without one.
 
-      Each role gets its own worker user, `igor-worker-<role>`. Workers sharing one user could
-      read each other's seat tokens through `/proc`.
+      Each Igor instance, `igor@<role>.<rank>`, gets its own worker user,
+      `igor-worker-<role>-<rank>`, with its own home and sudoers line. Workers sharing one user
+      could read each other's seat tokens through `/proc`.
 
-      Once per role, here for `maintenance`:
-
-      ```bash
-      sudo useradd --system --create-home --home-dir /var/lib/igor-worker-maintenance \
-        --shell /usr/sbin/nologin igor-worker-maintenance
-      sudo chmod 700 /var/lib/igor-worker-maintenance
-      ```
-
-      Then add a line for the role to your copy of `deploy/sudoers.example`, and install it.
-      Do both again whenever a role is added:
+      List your instances, each with its rank: a unit named `igor@maintenance` is
+      `maintenance.1`. Then create each one's user and home, and write its sudoers line. Run it
+      again, listing every instance, whenever you add one:
 
       ```bash
-      sudo install -m 440 deploy/sudoers.example /etc/sudoers.d/igor && sudo visudo -c
+      instances="maintenance.1 generalist.1 generalist.2"
+      { grep '^#' deploy/sudoers.example
+      for i in $instances; do
+        u="igor-worker-${i%%.*}-${i#*.}"
+        id "$u" >/dev/null 2>&1 || sudo useradd --system --create-home \
+          --home-dir "/var/lib/$u" --shell /usr/sbin/nologin "$u"
+        sudo chmod 700 "/var/lib/$u"
+        echo "igor ALL=($u) NOPASSWD: ALL"
+      done; } > igor.sudoers
+      sudo visudo -cf igor.sudoers && sudo install -m 440 igor.sudoers /etc/sudoers.d/igor
       sudo chown -R igor:igor /etc/igor && sudo chmod 700 /etc/igor /home/igor
       ```
 
@@ -320,7 +351,7 @@ file in the service user's home. Each holds a random string and nothing else. Ne
 
       Then restart the Igors. Each one checks the arrangement as it starts and refuses, naming
       the path, if the worker can read a credential or write the lore checkout. To see it for
-      yourself, `sudo -u igor-worker-maintenance cat /etc/igor/env` must say `Permission denied`.
+      yourself, `sudo -u igor-worker-maintenance-1 cat /etc/igor/env` must say `Permission denied`.
 
       **On your own machine**, `igor run` runs the worker as you and says so when it starts.
       `igor serve` does the same only when passed `--same-user`.

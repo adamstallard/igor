@@ -34,22 +34,27 @@ sudo --non-interactive --user=<worker> --preserve-env=<names> -- \
   by every user on the host through `/proc/<pid>/cmdline` and `ps`.
 - **`PATH` goes through `env`**, because Debian and Ubuntu set `secure_path` in sudoers, and
   that replaces a preserved `PATH`. `PATH` is not a secret.
-- **`HOME` is the worker's own**, which sudo sets for the target user. Toolchain caches,
-  `~/.claude` and `~/.gitconfig` are the worker's, not the Igor's.
+- **`HOME` is the worker's own**, which sudo sets for the target user, and it lasts across
+  runs. Toolchain caches, `~/.claude` and `~/.gitconfig` are the worker's, not the Igor's.
+  Before each run, `~/.claude` alone is reset, and the rest of the home stays (#174's decision 9,
+  Adam, 2026-10-17). The Igor does the reset as the worker user, through this same `sudo`, by
+  copying a clean template that the Igor owns and the worker user can read but not write. #174
+  specifies the reset and its template.
 - **`claude` is resolved by the Igor** on its own `PATH` and passed as an absolute path, so the
   worker runs the same binary the Igor's triage does.
 - **The spawn is otherwise unchanged:** detached, so `sudo` leads a new process group, with
   stdio as pipes. With no terminal, sudo allocates no pty and the stream arrives as it does now
   (task 6.2 measures it).
 
-The sudoers rule, installed as `/etc/sudoers.d/igor`, has one line per role (Adam accepted the
-line on 2026-10-11, and one worker user per role on 2026-10-17). For the `maintenance` role:
+The sudoers rule, installed as `/etc/sudoers.d/igor`, has one line per Igor instance (Adam
+accepted the line on 2026-10-11, and one worker user per instance on 2026-10-17). For rank 1 of
+the `maintenance` role:
 
 ```
-igor ALL=(igor-worker-maintenance) NOPASSWD: ALL
+igor ALL=(igor-worker-maintenance-1) NOPASSWD: ALL
 ```
 
-`ALL` here means any command as `igor-worker-maintenance`, and as nobody else. That is no wider
+`ALL` here means any command as `igor-worker-maintenance-1`, and as nobody else. That is no wider
 than naming `claude`. Anything the service user could run as the worker, it could already run as
 itself with more privilege, and the rule grants no path to root. Naming commands instead would
 need one entry for `claude`, one for the kill and one for the removal, with argument patterns
@@ -75,22 +80,34 @@ is installed, and #144 shows releases change behaviour a deployment depends on.
 tokens minted elsewhere. That bounds a leak to one token's lifetime but stops nothing: the
 worker still reads whatever token, seat token or age key the Igor holds at that moment.
 
-### Each role has its own worker user (Adam, 2026-10-17)
+### Each instance has its own worker user (Adam, 2026-10-17)
 
-The template names a role's worker user `igor-worker-<role>`, and the unit sets it from its
-instance name (*The unit*, below).
+An Igor instance is one unit, `igor@<role>.<rank>` under #179 (`concurrent-instances`), and an
+instance named by its role alone is rank 1. Its worker user is `igor-worker-<role>-<rank>`, with
+its own home, `/var/lib/igor-worker-<role>-<rank>`, and its own sudoers line. The deployment
+templates generate all three for each instance. How the unit then names the user is open: systemd
+has no specifier that turns the `.` in `%i` into a `-` (proposal, *Still open*; *The unit*,
+below).
 
 On Linux, processes of one Unix user can normally read each other's `/proc/<pid>/environ` and
-follow each other's `/proc/<pid>/cwd`. With one worker user for every role, one role's worker could read another
-role's seat token, which the worker-environment requirement gives to no worker but that role's,
-and could edit the other's tree, whose output is then published under the other role's App. A
-shared home adds a second route: one role's worker can leave a file, such as `~/.npmrc`, that
-another role's worker then runs. A worker user per role closes both, at the cost of one more
-user and one more sudoers line per role.
+follow each other's `/proc/<pid>/cwd`. With one worker user shared by several instances, that
+opens three routes from one worker into another's:
 
-Whether that reach holds between two Igor units, each with its own mount namespace and `/tmp`,
-is not measured. Task 6.6 measures it before the deployment section of tasks.md builds the
-per-role users, and its result goes in this section.
+- **Its seat token**, read through `/proc/<pid>/environ`. The worker-environment requirement
+  gives each worker only its own seat's token, and the other worker may belong to another role
+  or to another rank of the same role drawing on a different seat.
+- **Its tree**, edited through `/proc/<pid>/cwd`, whose output is then published under the other
+  instance's name.
+- **Its home**, where one worker can leave a file, such as `~/.npmrc`, that the other then runs.
+
+A worker user per instance closes all three, at the cost of one more user, home and sudoers line
+per instance. Within one instance, a file a run
+leaves outside `~/.claude` reaches that instance's later runs, which is accepted (#174's decision
+9).
+
+Whether the `/proc` reach holds between two Igor units, each with its own mount namespace and
+`/tmp`, is not measured. Task 6.6 measures it, and its result goes in this section and in
+`docs/deployment.md`. The per-instance users do not wait for it.
 
 ### `IGOR_WORKER_USER` names the user, in the Igor's environment
 
@@ -109,12 +126,12 @@ does not join the Igor's group.
 
 | path | owner:group | mode | why |
 |---|---|---|---|
-| tree directory | igor:igor-worker-<role> | `2770` | setgid, so files created in it get the group |
-| tree files from the clone | igor:igor-worker-<role> | `0660`, directories `2770` | cloned under umask `007`, so the worker can edit and remove them |
-| git directory, `<tree>-git`, beside the tree | igor:igor-worker-<role> | group read, no group write | the worker reads history; it cannot write hooks or config |
-| outbox, `<tree>-outbox` | igor:igor-worker-<role> | `2770` | the worker writes declarations and its git index here |
-| files the worker creates | igor-worker-<role>:igor-worker-<role> | sudo's umask, at least `0027` | the Igor reads them through the group; only the worker writes them |
-| worker's home | igor-worker-<role>:igor-worker-<role> | `0700` | its caches and `~/.claude`, out of the Igor's way |
+| tree directory | igor:igor-worker-<role>-<rank> | `2770` | setgid, so files created in it get the group |
+| tree files from the clone | igor:igor-worker-<role>-<rank> | `0660`, directories `2770` | cloned under umask `007`, so the worker can edit and remove them |
+| git directory, `<tree>-git`, beside the tree | igor:igor-worker-<role>-<rank> | group read, no group write | the worker reads history; it cannot write hooks or config |
+| outbox, `<tree>-outbox` | igor:igor-worker-<role>-<rank> | `2770` | the worker writes declarations and its git index here |
+| files the worker creates | igor-worker-<role>-<rank>:igor-worker-<role>-<rank> | sudo's umask, at least `0027` | the Igor reads them through the group; only the worker writes them |
+| worker's home | igor-worker-<role>-<rank>:igor-worker-<role>-<rank> | `0700` | its caches, `~/.gitconfig` and `~/.claude`, out of the Igor's way; lasts across runs |
 | the Igor's home, lore checkout, `/etc/igor` | igor:igor | `0700`/`0750` | the worker is not in this group |
 
 **The git directory sits beside the tree, not in it.** The worker can write the tree's top
@@ -154,19 +171,40 @@ environment (the worker-environment requirement), so the start-up check sets `sa
 - A nested repository is the exception: its own `.git/config` is the worker's, and git running
   in the outer tree can recurse into it and run a filter that file defines. So every git command
   the Igor runs in a tree also passes `-c submodule.recurse=false` and `--ignore-submodules=all`
-  where the command takes it, and a changed path that is a submodule entry or holds its own
-  `.git` stops the run, naming it.
+  where the command takes it, and a changed path that holds its own `.git` with working content
+  stops the run, naming it.
+- **A changed submodule pointer is published as a pointer once #137 lands (Adam, 2026-10-17).**
+  A gitlink, mode `160000`, names a commit, and #137 publishes it as that commit. The Igor
+  publishes the commit the gitlink names and never enters the submodule's directory or runs git
+  in it. Until #137 lands, a changed gitlink stops the run, naming it, as a changed link does
+  (*The Igor reads changes without following links*, below).
 - The Igor does not run `npm`, `node` or any command in the tree. Only the worker user does.
 
-### Every model step in the tree runs as the worker (Adam, 2026-10-17)
+### Every model step in the tree runs as the worker, and every check runs before the final read (Adam, 2026-10-17)
 
 #153 (`signed-publishing`) adds `claude -p` steps after the worker: a prose pass and a bug hunt
 that sign the worker's text and commit. Bug-hunter runs `npm test`, so those steps run
 repository code, and they edit the tree. Run as the Igor, that code could read the Igor's
-credentials, and an edit made after the link checks would be published unchecked. So every
-`claude -p` the Igor starts with the tree as its working directory goes through the same `sudo`
-spawn as the worker, and the kill and the link checks below wait until the last of them has
-exited.
+credentials. So every `claude -p` the Igor starts with the tree as its working directory goes
+through the same `sudo` spawn as the worker.
+
+#189 (`loop-verifies-commands`) has the Igor run the role's checks, such as its tests, as the
+worker user. They run repository code too, which can change the tree. So the kill, the link
+checks below and the Igor's final read of the tree wait until the last process the Igor started
+as the worker user for the run has exited, whether it is the worker, a model step or a check. A
+process still running after the read could change files the link checks never saw, and the Igor
+reads the tree again when it stages for #153 (below), so those changes would be published.
+
+### The Igor stages for #153 (Adam, 2026-10-17)
+
+#153 binds each commit's signature to a staged tree. `git add` writes objects into the git
+directory, which is read-only to the worker user, and the index the worker can write is its copy
+in the outbox. So the Igor's code stages the changed paths in the Igor's own index, and the
+signature is bound to the tree of that index. The worker cannot change it, and a copy the worker
+could change, the index copy included, is never what a signature is bound to. #153's signing
+steps run as the worker user and cannot write that index, so the Igor stages before each of
+them, and #153's code checks each signature against the Igor's index afterwards. How a signing
+step reads the staged tree is #153's to say (task 0.5).
 
 ### The Igor reads changes without following links
 
@@ -175,7 +213,7 @@ worker made to `/etc/igor/<role>.pem` would be read as the Igor and published as
 content. With one user this was moot, because the worker could read the key itself. With two
 users it is the one remaining path to the key.
 
-So, once the last process the Igor started as the worker user in the tree has exited and its
+So, once the last process the Igor started as the worker user for the run has exited and its
 process group is killed, and before anything is read:
 
 - A changed path is checked with `lstat` on each component from the tree down. Where a
@@ -280,14 +318,15 @@ its steps are recorded only once someone has measured them.
 
 - `NoNewPrivileges=true` goes: it stops `sudo` from changing user at all. The worker keeps what
   any unprivileged account has and gains nothing else, since it has no sudoers entry.
-- `SupplementaryGroups=igor-worker-%i`, so the Igor is in its role's worker group without
-  relying on a login session. `%i` is the unit's instance name, the role.
-- `ReadWritePaths=` adds the worker's home, `/var/lib/igor-worker-%i`. The worker runs inside
-  the unit's mount namespace, where `ProtectSystem=strict` makes `/var` read-only.
+- The unit sets three things from the instance's worker user, `igor-worker-<role>-<rank>`:
+  `SupplementaryGroups=` with its group, so the Igor is in its worker group without relying on a
+  login session; `ReadWritePaths=` with its home, `/var/lib/igor-worker-<role>-<rank>`, because
+  the worker runs inside the unit's mount namespace, where `ProtectSystem=strict` makes `/var`
+  read-only; and `Environment=IGOR_WORKER_USER=`. `%i` is `<role>.<rank>`, and systemd has no
+  specifier that gives `<role>-<rank>`, so how the unit names the user is open (proposal, *Still
+  open*).
 - `PrivateTmp=true` stays. Each Igor instance has its own `/tmp`, so the workers of different
-  roles keep their trees in different directories.
-- `Environment=IGOR_WORKER_USER=igor-worker-%i`. Task 6.2 confirms systemd expands `%i` in
-  `Environment=`, `SupplementaryGroups=` and `ReadWritePaths=`.
+  instances keep their trees in different directories.
 - `PATH` puts `/usr/local/bin` first, where `claude` now lives, because the worker cannot enter
   the service user's home and so cannot run `~igor/.local/bin/claude`.
 
@@ -320,4 +359,5 @@ real secret. Results go back into this document, including where they contradict
 - Task 6.4: the environment Claude Code gives the commands it runs.
 - Task 6.5: what `sudo` logs per worker start.
 - Task 6.6: whether two workers running as one worker user, under two Igor units, can read each
-  other's `/proc/<pid>/environ` or enter each other's tree through `/proc/<pid>/cwd`.
+  other's `/proc/<pid>/environ` or enter each other's tree through `/proc/<pid>/cwd`. Its result
+  informs the docs; nothing waits for it.
