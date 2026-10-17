@@ -2,32 +2,33 @@
 
 Capacity and identity are different things, and the claim protocol currently conflates them.
 
-An Igor is one named teammate with one account, so a claim says who has your issue. Capacity is
-how many processes run behind that name. Wanting more backend throughput should mean starting
-more processes, not inventing `igor-backend-2` — a second name in the assignee field that
-nobody asked for and that means nothing to a reader.
+An Igor is one role with one identity, its GitHub App on GitHub, so a claim says which role has
+your issue. Capacity is how many processes run behind that identity. Wanting more backend
+throughput should mean starting more processes, not inventing a `backend-2` role — a second
+`igor:` label that nobody asked for and that means nothing to a reader.
 
-But two processes of one Igor cannot currently tell their claims apart. `verifyClaim` asks "am
-I among the assignees", both are `igor-backend`, and both answer yes. They would work the same
-item in parallel and open two pull requests.
+But two processes of one role cannot currently tell their claims apart. Both claim with the
+role's `igor:<role>` label, and verification asks whether any *other* holder's label is on the
+item. Neither finds one, so both answer that the claim is theirs. They would work the same item
+in parallel and open two pull requests.
 
-**Depends on `core-igor-loop`.** Nothing else is needed: the disambiguating mechanism already
-exists for a different reason.
+**Depends on `core-igor-loop` and `one-claiming-surface` (#156), both archived.** Nothing else
+is needed: the disambiguating mechanism, the claim message, already exists for a different
+reason.
 
 The universal skip for an item somebody else holds does not cover this. It cannot: an item only
-the Igor's account holds has to stay a candidate, or a claim left behind by a process that died
+the role's own label holds has to stay a candidate, or a claim left behind by a process that died
 is never recovered. That is precisely the case a sibling's live claim is indistinguishable from.
 
 ## What Changes
 
 **A process identifies itself, and a claim records which one took it.** Every claim already
-posts a message — added so a message-only surface can say *which* Igor holds something. It
-gains an instance marker, and verification becomes a conjunction: the account is among the
-holders, *and* the earliest claim message on the item is this process's.
+posts a message after setting the holder field, naming the Igor and saying how to stop it. The
+message gains the process's rank, and verification becomes a conjunction: the role's label is
+the only holder, *and* the earliest claim message on the item is this process's.
 
-That is the mechanism already committed to for surfaces with no holder field: storage ordering
-plus a settle interval. Nothing new is introduced, and no coordinator, lease service or
-inbound endpoint appears.
+That is the mechanism the claim protocol already uses: storage ordering plus a settle interval.
+Nothing new is introduced, and no coordinator, lease service or inbound endpoint appears.
 
 **Ordering is the surface's own sequence key, never a timestamp.** GitHub returns comment
 times to the second — `2026-09-15T01:11:12Z` — and sibling processes on one poll interval wake
@@ -40,24 +41,51 @@ nothing in the claim path compares times.
 **A dead process's claim is recovered by identity, not by waiting.** A sibling can observe only
 how old a claim is, and a worker bounded by silence rather than duration has no maximum age, so
 no age is conclusive. Because only one process runs at a rank, a claim carrying a process's own
-rank was left by a predecessor that is gone: it takes the item back and re-works it. A sibling
-leaves it alone. Correctness still never depends on knowing whether a process is alive — the
+rank was left by a predecessor that is gone, and the restarted process takes the item back and
+re-works it. A sibling leaves it alone. Correctness still never depends on knowing whether a process is alive — the
 question is whose claim it is, which does not decay.
 
 The cooldown does not cover this. It governs when a stopped or deferred item may be reconsidered,
 not a claim nobody is behind.
 
+**The worker's absolute ceiling goes.** `ABSOLUTE_CEILING_MS` killed a worker after 6 hours, and
+set the age past which the startup sweep deleted a working tree. The sweep now goes by rank, and
+Adam decided on 2026-10-13 to remove the ceiling entirely. A worker that keeps emitting events
+and never finishes is then killed by no limit, which is accepted: a person's stop is honoured at
+the next checkpoint. Once `budget-pacing` (#143) is built, the seat's reserve line, a spend
+threshold per seat, also stops new items; this change does not wait for it.
+
 **Retiring a rank is recorded, not detected.** A crash is not retirement: the supervisor restarts
 the process and it recovers its own claim. Removing a process is a decision, and the roster — the
 ranks that exist, declared like seats — is where it is recorded, so scaling down releases the
 orphan on the next cycle. An abandonment bound backs it up for the one case the roster cannot
-cover, a rank left declared that no longer runs. That bound governs how long an unattended claim
-may sit, never how long work may run, so it cuts nothing short.
+cover, a rank left declared that no longer runs. Each process writes a heartbeat to its own file
+on the state branch every poll interval, including while a worker runs, and its first one before
+its first cycle. A process counts a sibling gone only after it has itself watched the sibling's
+heartbeat fail to move forward for three poll intervals, 30 minutes at the default poll; any
+process may then take the sibling's claims. A lost, reset or rolled-back state branch moves no
+heartbeat forward, so it never makes a live rank look gone, and no two hosts' clocks are
+compared. A process that cannot write its heartbeat for two intervals stands down: it starts no
+claim, and its worker stops at its next checkpoint, which comes at least once an interval, so it
+has stopped before a sibling could count it gone at three. A process taking over an item from a
+gone rank first removes the label and adds it again. Without that, the gone rank's old claim
+message would count again when the rank returned, and both would work the item. The bound governs how long an unattended claim may
+sit, never how long work may run: a working process keeps writing heartbeats.
 
 **Discovery may hand the same candidate to several processes**, and that is allowed to happen.
 Watermarks are a cache, so the cost is duplicated triage rather than duplicated work; the claim
 protocol resolves the race after it. Preventing the overlap would need coordination this
 design has done without everywhere else.
+
+**Processes saving one source keep the lower watermark.** Each rank's latest mark for a source
+counts, and discovery uses the lowest of them, until a rank passes the abandonment bound and stops
+counting. A mark is an issue update time, and discovery triages only issues updated after it.
+A mark too low costs repeated triage; a mark too high skips issues a sibling has not taken,
+until the issue is updated again, such as by a new comment. When every rank is gone,
+discovery uses the lowest of every rank's latest mark rather than starting cold.
+A cycle appends its mark only after attempting every candidate, so a crash between triage and
+the claims loses no item. Every cycle also considers each item carrying its role's label,
+whatever the mark, so a crashed rank's claim is found even below every mark.
 
 **Each process has a rank, and rank decides both where it starts and when it may act.**
 
@@ -90,7 +118,7 @@ search order flows through discovery, screening and triage unchanged, so every p
 the same list and every process tries the first item first. N−1 lose it, then N−2 lose the
 second, and so on — quadratic wasted claims, each burning a settle interval and posting a claim
 comment that is immediately retracted. Diverging the order makes a collision incidental instead
-of guaranteed, and costs a shuffle.
+of guaranteed, and costs only the rank offset above.
 
 **Concurrent state writes conflict, and a conflicted write is retried rather than fatal.** Today
 one throws and the cycle is reported as failed, which is recoverable but reads as a defect.
@@ -102,8 +130,9 @@ once the ref settles succeeds.
 
 So retry is mandatory, and the only question is whether it is *correct*. **State becomes
 append-only, which is what makes it so.** `discovery.json` and `deferred.json` are both folds
-over a stream — the newest `updatedAt` per source, the last record per item — so each can be a
-log that is replayed on read. Retrying then means re-reading and re-appending the same line:
+over a stream — for discovery, each rank's latest mark per source and then the lowest across
+the ranks that count; for deferrals, the last record per item — so each can be a log that is
+replayed on read. Retrying then means re-reading and re-appending the same line:
 order-independent, and incapable of clobbering. Retrying a read-modify-write of a keyed map
 means re-applying a semantic change to a base that moved, and the naive form of it — reissuing
 the same bytes with a fresh sha — silently destroys whatever the other writer just recorded.
@@ -119,24 +148,27 @@ Explicitly out of scope:
 
   The tracker's rate limit is not like that, and is worth knowing before scaling ranks.
   Measured on a personal account: `core` (REST) allows 5,000 requests an hour, `graphql`
-  5,000 points, and `search` 30 a minute — three separate budgets, and the limit is per
-  *account*. Discovery runs on `graphql` so it does not compete; claims, comment reads and
-  every state read and write land in `core`.
+  5,000 points, and `search` 30 a minute — three separate budgets, each held by the identity
+  making the requests. Discovery runs on `graphql` so it does not compete; claims, comment reads
+  and every state read and write land in `core`.
 
-  One machine account per Igor therefore buys each Igor its own 5,000 an hour, which is a
-  capacity argument for per-Igor accounts on top of identity. But processes of one Igor share
-  an account, so N ranks divide one budget rather than multiplying it. Nothing here bounds
-  that, and nothing needs to yet; it is the ceiling on how far ranks scale, and it is reached
-  by request count rather than by spend.
+  Each role acting as its own GitHub App therefore gives each role its own budgets. But
+  processes of one role share their App, so N ranks divide one budget rather than multiplying
+  it. Nothing here bounds that, and nothing needs to yet; it is the ceiling on how far ranks
+  scale, and it is reached by request count rather than by spend.
 
 ## Capabilities
 
 ### Modified Capabilities
 
-- `work-claiming`: A claim is held by the process that took it, not by the account. Verification
-  distinguishes a sibling process from the Igor itself.
+- `work-claiming`: A claim is held by the process that took it, not by the role's identity.
+  Verification distinguishes a sibling process from the Igor itself, candidates are attempted
+  in an order that differs between processes, and a rank that misses three heartbeats releases
+  its claims.
 - `work-discovery`: A conflicted state write is retried rather than failing the cycle, and
-  candidates are attempted in an order that differs between processes.
+  processes saving one source keep the lower watermark.
+- `task-execution`: The worker's absolute ceiling is removed, and the startup sweep removes
+  working trees by rank rather than by age.
 
 ## Impact
 
