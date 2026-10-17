@@ -72,6 +72,11 @@ deleting a live sibling's tree corrupts its run, while leaving debris costs only
 - **WHEN** a process starts and finds a tree named with another declared rank of its role
 - **THEN** it leaves the tree, however old it is
 
+#### Scenario: Another role's tree is left
+
+- **WHEN** a process starts and finds a tree named with another role
+- **THEN** it leaves the tree, whatever its rank and however old it is
+
 #### Scenario: A retired rank's tree is removed
 
 - **WHEN** a process starts and finds a tree named with a rank of its role that the roster no

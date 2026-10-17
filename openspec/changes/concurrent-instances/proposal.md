@@ -60,13 +60,17 @@ the process and it recovers its own claim. Removing a process is a decision, and
 ranks that exist, declared like seats — is where it is recorded, so scaling down releases the
 orphan on the next cycle. An abandonment bound backs it up for the one case the roster cannot
 cover, a rank left declared that no longer runs. Each process writes a heartbeat to its own file
-on the state branch every poll interval, including while a worker runs. A rank that misses three
-heartbeats, 30 minutes at the default poll, is gone, and any process may take its claims. A rank whose heartbeat file is missing counts as last seen when a process first notices the file
-missing. A live rank rewrites its file within one poll, well inside the bound, so a lost state
-branch only delays when a crashed rank's claims can be taken, and never makes a live rank look
-gone. The
-bound governs how long an unattended claim may sit, never how long work may run: a working
-process keeps writing heartbeats.
+on the state branch every poll interval, including while a worker runs, and its first one before
+its first cycle. A process counts a sibling gone only after it has itself watched the sibling's
+heartbeat fail to move forward for three poll intervals, 30 minutes at the default poll; any
+process may then take the sibling's claims. A lost, reset or rolled-back state branch moves no
+heartbeat forward, so it never makes a live rank look gone, and no two hosts' clocks are
+compared. A process that cannot write its heartbeat for two intervals stands down: it starts no
+claim, and its worker stops at its next checkpoint, which comes at least once an interval, so it
+has stopped before a sibling could count it gone at three. A process taking over an item from a
+gone rank first removes the label and adds it again. Without that, the gone rank's old claim
+message would count again when the rank returned, and both would work the item. The bound governs how long an unattended claim may
+sit, never how long work may run: a working process keeps writing heartbeats.
 
 **Discovery may hand the same candidate to several processes**, and that is allowed to happen.
 Watermarks are a cache, so the cost is duplicated triage rather than duplicated work; the claim
@@ -79,6 +83,9 @@ counting. A mark is an issue update time, and discovery triages only issues upda
 A mark too low costs repeated triage; a mark too high skips issues a sibling has not taken,
 until the issue is updated again, such as by a new comment. When every rank is gone,
 discovery uses the lowest of every rank's latest mark rather than starting cold.
+A cycle appends its mark only after attempting every candidate, so a crash between triage and
+the claims loses no item. Every cycle also considers each item carrying its role's label,
+whatever the mark, so a crashed rank's claim is found even below every mark.
 
 **Each process has a rank, and rank decides both where it starts and when it may act.**
 

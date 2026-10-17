@@ -24,6 +24,12 @@
 - [ ] 2.3 Verification reads the claim with the lowest sequence key, not the earliest timestamp
 - [ ] 2.4 `RawComment` and the adapter's comment shape carry the surface's sequence key
 - [ ] 2.5 Tests: same-timestamp claims order; a sibling's claim is not our own
+- [ ] 2.6 A process that loses a claim to a process of its own role leaves the role's label in
+      place
+- [ ] 2.7 The re-read that verifies a claim comes within one poll interval of the claim message;
+      a later re-read stands down without working the item
+- [ ] 2.8 Tests: a same-role loser keeps the label on the item; a late verification stands down; a claim
+      message from before a release does not count
 
 ## 3. Contention
 
@@ -33,14 +39,16 @@
 
 ## 4. Recovery
 
-- [ ] 4.1 A claim carrying this process's own rank is taken and the item re-worked
+- [ ] 4.1 A claim whose earliest counted claim message carries this process's own rank is taken
+      and the item re-worked
 - [ ] 4.2 A claim carrying a declared rank that is not ours is left alone
 - [ ] 4.3 A claim carrying an undeclared rank is adoptable
 - [ ] 4.4 Every process overwrites `heartbeats/<role>.<rank>.json` on the state branch every poll
-      interval, from a timer that keeps running while a worker runs, and a claim whose rank's
-      heartbeat is older than three poll intervals is adoptable. A rank whose file is missing
-      counts as last seen when this process first noticed the file missing, a time kept in memory
-      only, and is adoptable three poll intervals after that
+      interval with the time by its own clock, from a timer that keeps running while a worker
+      runs. Each process keeps in memory, per sibling, the latest time it has read from the
+      sibling's file and when it last saw that time move forward. A claim is adoptable once three
+      poll intervals have passed since then, or since this process started if later. A missing
+      file, or one older than a time already read, does not move forward
 - [ ] 4.5 Working trees are named by role and rank, and the startup sweep removes those of its
       own rank and of undeclared ranks, never by age
 - [ ] 4.6 Remove `ABSOLUTE_CEILING_MS`, the worker's kill at it, and the failure reason that names it
@@ -53,6 +61,19 @@
 - [ ] 4.9 A `condition-backoff` probe records its rank, and lapses when that rank misses three
       heartbeats instead of after `SWEEP_AFTER_MS`. PR #101 builds `condition-backoff` and is not
       merged: whichever of #101 and this build lands second makes this edit
+- [ ] 4.10 A process's first heartbeat lands before its first cycle
+- [ ] 4.11 A process reads its role's heartbeat files before choosing each candidate and again
+      before verifying a claim
+- [ ] 4.12 Taking an item over a gone or undeclared rank's claim message removes the role's label
+      and adds it again before posting the claim message
+- [ ] 4.13 A process that has failed to write its heartbeat for two poll intervals starts no claim
+      and stops its running worker at the next checkpoint, leaving the claim; it resumes once a
+      heartbeat lands
+- [ ] 4.14 Tests for 4.10 to 4.13: a rolled-back heartbeat file does not count as moving forward;
+      a restart starts every sibling's count afresh; a returning rank leaves an item adopted from
+      it; a process that cannot write its heartbeat stands down before a sibling counts it gone
+- [ ] 4.15 Measure how often a running worker reaches a checkpoint, and make it at least once
+      every poll interval, including at a role's shortest allowed poll
 
 ## 5. State
 
@@ -64,6 +85,13 @@
 - [ ] 5.5 Tests: concurrent writers both survive; a retry preserves the winner's record; a
       lagging rank holds the mark down until it stops counting; with every rank gone, the lowest
       latest mark still applies
+- [ ] 5.6 A cycle appends its mark only after it has attempted every candidate it will attempt.
+      A cycle that stops early, because its budget ran out or its process stood down, appends a
+      mark below the oldest candidate it did not attempt. A cycle whose process crashes first
+      appends none
+- [ ] 5.7 Every cycle also considers each open item carrying the role's label, whatever the mark
+- [ ] 5.8 Tests: a crash between triage and the claims leaves the items above the mark; a crashed
+      rank's claim below every mark is taken over
 
 ## 6. Documentation
 

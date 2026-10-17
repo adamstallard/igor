@@ -68,6 +68,12 @@ When no rank counts, such as after every process of a role has been down past th
 discovery SHALL use the lowest of every rank's latest mark. Starting cold instead would triage
 again every item updated within the lookback a source with no mark gets, 7 days.
 
+A cycle SHALL append its mark only after it has attempted every candidate it will attempt. A
+cycle that stops attempting early, as when its budget runs out or its process stands down, SHALL
+hold its mark below the oldest candidate it did not attempt, and a cycle whose process crashes
+first appends none. Appended right after triage, a mark passes every item the cycle meant to
+take, and a crash before the claims leaves those items untaken and below every mark.
+
 #### Scenario: A lagging rank holds the mark down
 
 - **WHEN** rank 1 has saved a mark later than rank 2's for the same source, and neither has
@@ -84,7 +90,36 @@ again every item updated within the lookback a source with no mark gets, 7 days.
 - **WHEN** every rank that saved a mark for a source has missed three heartbeats
 - **THEN** discovery uses the lowest of those ranks' latest marks, not a cold start
 
+#### Scenario: A crash before the claims loses no item
+
+- **WHEN** a process crashes after triage and before it has attempted every candidate
+- **THEN** its cycle has appended no mark, and the items it meant to take are still above the
+  mark discovery uses
+
+#### Scenario: A cycle cut short holds its mark back
+
+- **WHEN** a cycle stops attempting candidates before the last one, because its budget ran out or
+  its process stood down
+- **THEN** the mark it appends is below the oldest candidate it did not attempt
+
 #### Scenario: A rank's own later save replaces its earlier one
 
 - **WHEN** one rank saves a mark for a source and later saves a later one
 - **THEN** only the later one counts for that rank
+
+### Requirement: Every cycle considers the items its role's label holds
+
+Every cycle SHALL consider, besides the items updated after the mark discovery uses, every open
+item that carries its role's label, whatever that item's update time.
+
+A crashed rank's claim can sit below every mark. A sibling that saw the item while the rank
+still counted passed it as held, and appended a mark past it; the crashed rank's own lower mark
+held the replayed mark down until the rank passed the abandonment bound, and then stopped
+counting. Nothing updates the item after that, so without this rule discovery never offers it
+again and the claim is never recovered.
+
+#### Scenario: A crashed rank's claim below every mark is recovered
+
+- **WHEN** a rank claims an item and crashes, a sibling appends a mark past the item, and the
+  rank passes the abandonment bound
+- **THEN** the sibling's next cycle still considers the item, and may take it over
