@@ -3,10 +3,11 @@
 ### Requirement: The worker is given an explicit environment holding no credential but its seat's token
 
 Execution SHALL construct the worker's environment rather than inheriting the Igor's, and that
-environment SHALL carry no credential other than the token of the seat the work is charged to.
-The tokens of other seats, and the credential the Igor acts on its surfaces with, MUST NOT be
-present. Where the chosen seat names a token source that cannot be read — an unset or empty variable, or
-an encrypted token that cannot be decrypted — execution SHALL fail naming the seat and the reason
+environment SHALL carry no credential other than the token of the seat the work is charged to. The
+tokens of other seats, and the credential the Igor acts on its surfaces with (the code host and
+tracker it claims, comments and publishes on), MUST NOT be present. Where the chosen seat names a
+token source that cannot be read — a variable that is unset, a variable that is set but empty, or an
+encrypted token that cannot be decrypted — execution SHALL fail naming the seat and the reason
 rather than spawning a worker that authenticates as something else.
 
 For an Igor acting as a GitHub App, the surface credential is anything that yields an App
@@ -19,10 +20,11 @@ branching and publishing all happen in the loop afterwards, with the loop's own 
 inherited environment is therefore a set of credentials nothing in the worker has a use for,
 one shell command away from a worker an item's text has steered.
 
-Only what running a toolchain requires is passed: the search path, a home directory, and the
-network settings the host is configured with. None of those is a credential, and without one a
-build or test fails outright, so each is needed and none lets the worker authenticate as
-anything.
+Only what running a toolchain requires is passed: the search path, a home directory, and the network
+settings the host is configured with. None of those is a credential, and a missing one shows as a
+toolchain error, never as the worker authenticating as something else. Where a worker user is
+configured, `GIT_INDEX_FILE` is passed too, naming the index copy in the worker's outbox, so that
+`git rm` and `git mv` work without write access to the git directory. It is not a credential.
 
 #### Scenario: The surface credential is absent
 
@@ -48,6 +50,12 @@ anything.
 - **THEN** execution fails naming the variable
 - **AND** no worker is spawned
 
+#### Scenario: A seat whose token variable is empty fails loudly
+
+- **WHEN** the chosen seat names a token variable that is set but empty
+- **THEN** execution fails naming the variable
+- **AND** no worker is spawned
+
 #### Scenario: A seat whose encrypted token cannot be decrypted fails loudly
 
 - **WHEN** the chosen seat carries an encrypted token that the key `seatKey` names cannot decrypt,
@@ -60,16 +68,22 @@ anything.
 - **WHEN** a worker runs a build or a test in its working tree
 - **THEN** the search path, home directory and network settings it needs are present
 
+#### Scenario: A worker running as its own user is given its index copy
+
+- **WHEN** a worker is spawned as the configured worker user
+- **THEN** `GIT_INDEX_FILE` in its environment names the index copy in its outbox
+
 ## REMOVED Requirements
 
 ### Requirement: The worker is given an explicit environment holding no credential but its seat's
 
-**Reason**: Its scenario *A seat whose file or command yields no token fails loudly* is false:
-a seat file names no token file or command (*A seat file names its token only by ciphertext or its
-own variable*). openspec will not archive a `MODIFIED` block that drops an in-force scenario. The
+**Reason**: Its scenario *A seat whose file or command yields no token fails loudly* is false: a
+seat file names no token file or command (*A seat file names its token only by ciphertext or its own
+variable*). openspec will not archive a `MODIFIED` block that drops an in-force scenario. The
 requirement is therefore removed and re-added under its full name: the in-force name stops at "its
-seat's", and the new one ends "its seat's token". The re-added requirement has a scenario for a
-token that cannot be decrypted in place of the dropped one.
+seat's", and the new one ends "its seat's token". The re-added requirement is written over
+worker-user's (#175) text, which is built first, and keeps its `GIT_INDEX_FILE` rule and scenario.
+It has a scenario for a token that cannot be decrypted in place of the dropped one.
 
 **Migration**: *The worker is given an explicit environment holding no credential but its seat's
 token*, which keeps every other rule and scenario.

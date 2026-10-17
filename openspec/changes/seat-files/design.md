@@ -4,11 +4,11 @@ The proposal says what must be true. This file covers the parts where how is a c
 reaches the server, how a seat is chosen without pools, and what a lender's control over their
 seat rests on.
 
-Build order is `condition-backoff` (#101), `read-seat-windows-from-the-stream` (#143), then this
-change. Where this file says "line", "reading" or "headroom", it means them as #143 defines them: a
-seat's line for a window rises from `1 − reserve` just after a reset to 100% at the reset, using
-the larger of the seat's and the role's reserve, and a reading is the seat's most recent unreset
-observation of the window.
+Build order is `condition-backoff` (#101), `read-seat-windows-from-the-stream` (#143) and
+worker-user (#175), then this change. Where this file says "line", "reading" or "headroom", it means
+them as #143 defines them: a seat's line for a window rises from `1 − reserve` just after a reset to
+100% at the next reset, using the larger of the seat's and the role's reserve, and a reading is the
+seat's most recent observation of the window taken since that window last reset.
 
 The decisions, with who made them and the alternatives they turned down, open the proposal.
 This file gives the reasoning behind them.
@@ -22,8 +22,8 @@ it reads the seat. Delivering the token needs no GitHub secret, workflow or runn
 needs no access to the lore repository beyond opening a pull request, so they can contribute from
 a fork.
 
-1. The server has an age keypair, made with `age-keygen` as the service user. The private key
-   stays on the server at the path `igor.config.yaml` names as `seatKey`. The public key is
+1. The server has an age X25519 keypair, made with `age-keygen` as the service user. The private
+   key stays on the server at the path `igor.config.yaml` names as `seatKey`. The public key is
    committed as `seats/recipient.txt`.
 2. The holder runs `claude setup-token`, encrypts the token to that public key, and opens a pull
    request adding `seats/<id>.yaml` with the ciphertext in it. `igor seat add` does all of it.
@@ -32,8 +32,8 @@ a fork.
 
 Rotating is the same pull request with new ciphertext: `igor seat add` again. A lender revokes by
 revoking the token at Anthropic; the operator can also remove the seat file, which takes effect
-when the server's lore checkout next updates. Nobody has measured whether a revoked token is
-refused at once (task 1.2); the lender guide says what the measurement finds.
+when the server's lore checkout next updates. Adam decided on 2026-10-17 not to measure how soon
+Anthropic refuses a revoked token, so no guide promises a speed.
 
 ### The server's private key is the whole protection
 
@@ -79,8 +79,9 @@ forever, readable by anyone who later holds the key. That permanence adds little
 - **A secrets manager with write-only drop paths:** needs another service.
 - **A one-time drop page on the server:** needs a public endpoint, which Igor's polling design
   avoids.
-- **Each holder runs their own runner:** breaks the rule that nothing runs on a seat holder's
-  machine.
+- **Each holder runs their own runner:** breaks the rule that nothing keeps running on a seat
+  holder's machine: no runner, daemon or scheduled job. A one-off command, such as `igor seat
+  add`, is fine.
 
 ### An operator's own seat may name `token_env` instead
 
@@ -90,9 +91,13 @@ whose token the operator holds and puts in the server's env file by hand, such a
 a variable and runs nothing, so it is as safe in a contributed file as ciphertext is, and it costs
 the operator no encryption step for a token already on the server. Its value is a plain token.
 
-Kept rather than requiring every seat to carry ciphertext: an operator would otherwise encrypt
-their own token to their own server only to decrypt it again, and a seat whose token lives in a
-secret store would need a re-encryption each time the store rotates it.
+A seat file naming neither key is refused (Adam, 2026-10-17). It would spend whatever login the
+server holds, which can be a pay-per-use API key. *Rejected:* allowing such a file behind a flag
+the operator sets.
+
+`token_env` is kept rather than requiring every seat to carry ciphertext: an operator would
+otherwise encrypt their own token to their own server only to decrypt it again, and a seat whose
+token lives in a secret store would need a re-encryption each time the store rotates it.
 
 ### `token_env` is fixed by the seat's id
 
@@ -121,8 +126,10 @@ which a YAML block scalar indented wrongly produces.
 
 Igor shells out to `git`, `gh` and `claude` rather than reimplementing them, so shelling out to
 `age` would be the house style. The package is chosen instead because of who runs `igor seat
-add`: a lender, on their own machine. With the package, that lender needs Node and `gh`, and no
-`age` binary. The server needs `age-keygen` once, to make the keypair. The package is Filippo
+add`: a lender, on their own machine, through `npx igor-agent seat add`. With the package, that
+lender needs only Node, and no `age` binary. Igor itself only encrypts and decrypts; the server's
+keypair is made once by the operator with `age-keygen`, the standard tool (step 1 above). The
+package is Filippo
 Valsorda's TypeScript implementation of the same format.
 
 The decrypted token lives only in the Igor process and the worker it spawns, which is where it
@@ -151,22 +158,33 @@ the one with the most headroom:
 1. **Eligible** means every other rule lets this role spend on the seat now. Those rules belong
    to #143 (the line; the probe made when the line rises past a seat's last reading; extra usage;
    a missing reading), to
-   `budget_share`, and to #101 (an open credential condition). The headroom rule names them and
-   restates none.
+   `budget_share`, and to #101 (an open condition on the seat, such as a refused credential or a
+   token that cannot be decrypted). Seat-budget's *A role draws on the seat with the most
+   headroom* names them and restates none. A seat under
+   such a condition is passed over, so a role with another eligible seat keeps working (Adam,
+   2026-10-17). A role whose seats are all under open conditions stops, as #101 says. Whether a
+   role with no eligible seat, where some seats are under a condition and the rest are ineligible
+   for other reasons, should hand off or stop is open in the proposal.
 2. **Headroom** of a window is the role's line on that seat minus the reading, in percentage
    points. A seat's headroom is the smaller of its two windows' headrooms, because the window
    with less room is the one that stops it.
-3. **A seat with no reading** of a window, eligible because its reserve is 0, counts as 0% used
-   there, so its headroom is its line. It is usually a new dedicated seat, and its first run gives
-   it the reading that ranks it properly from then on.
+3. **A seat with no reading** of a window counts as 0% used there, so its headroom is its line.
+   Only a seat at reserve 0 is eligible without a reading, because its line is 100% throughout
+   the window and no reading could be above it. Such a seat is usually a new one that no person
+   also uses, and its first run gives it the reading that ranks it from then on.
 4. **Ties** go to the seat whose week resets soonest, because capacity left at the reset is lost.
    The week is the window that is actually lost; a session refills within hours. A seat with no
    known week reset sorts after every seat with one. Seats still tied are taken in id order, so
    the choice is the same on every Igor.
 
-Most headroom prefers dedicated seats at reserve 0 over lent seats with a reserve, without anyone
-ordering them: a lent seat's line sits lower, so it has less headroom at the same reading. It also
-spreads load, where listed order drained one seat before touching the next.
+Most headroom prefers a seat at reserve 0 over a lent seat with a reserve, without anyone ordering
+them: a lent seat's line sits lower, so it has less headroom at the same reading. It also spreads
+load, where a pool's listed order drained one seat before touching the next.
+
+A seat file has no `dedicated` key (Adam, 2026-10-17). In the configuration this change replaces,
+`dedicated: true` marked a seat no person uses: it refused that seat a reserve and set its reserve
+to 0. After #143 any seat may keep a reserve and every seat's reserve defaults to 0, so the key
+would do nothing, and this ranking already spends a reserve-0 seat first.
 
 Exhausting every seat that serves the role is a handoff, as exhausting a pool was.
 
@@ -181,7 +199,7 @@ raises its reserve, which lowers its line and so its headroom.
 it is used are theirs, in a file whose history shows who changed what. Afterwards the operator can
 edit that file like any other in the lore repository, and nothing in Igor or GitHub asks the
 lender first. What stops a use the lender did not agree to is revoking the token at Anthropic,
-which ends the seat at once, wherever the token is and whatever any file says. A veto is only as
+which ends the seat, wherever the token is and whatever any file says. A veto is only as
 good as the lender's chance to use it, so a pull request changing their file mentions them
 (*The lender hears about a change to their seat file* below).
 
@@ -249,6 +267,15 @@ operator guide says to tell them some other way.
 - **Igor commenting from the server.** Igor watches its roles' sources, not the lore repository's
   pull requests, and a notice that waits on the server being up is no notice when it is down.
 
+**Decided 2026-10-17 (Adam): the lore repository's default branch requires a pull request before
+merging.** A direct push changes a seat file with no pull request for the workflow to run on, so
+no lender hears of it. `check-a-lore-repository` (#113) already reports a default branch that
+accepts direct pushes.
+
+**Decided 2026-10-17 (Adam): a plain token pasted into a pull request is an accepted risk.** It is
+public once pushed, before Igor can refuse it at load, and the workflow cannot catch it because it
+reads nothing from the head. The lender guide tells a lender this, and to revoke such a token.
+
 **Decided 2026-10-11 (Adam): `igor doctor` reports a missing `seat-notice.yml`.** Without it no
 lender is ever told of a change, and nothing else fails or reports it. The check reads the default
 branch, as the reconciliation-workflow check in `check-a-lore-repository` does.
@@ -257,3 +284,39 @@ branch, as the reconciliation-workflow check in `check-a-lore-repository` does.
 key affects only tokens encrypted after it lands; every token already on the server stays as it
 was. Each lender meets the new key when they next rotate, since `igor seat add` reads it from the
 default branch.
+
+## How `igor seat add` opens the pull request
+
+**Decided 2026-10-17 (Adam).** Where `gh` is installed and signed in, `igor seat add` commits the
+seat file on a branch, pushes it to the lore repository where the holder may push and otherwise to
+their fork, and opens the pull request with `gh`. Otherwise it opens GitHub's prefilled new-file
+link in the browser, or prints it where no browser can be opened:
+
+```
+https://github.com/<org>/<repo>/new/<default-branch>?filename=seats/<id>.yaml&value=<url-encoded file>
+```
+
+GitHub forks the repository for a lender without write access, and the lender clicks "Propose new
+file" to open the pull request. That the prefilled value survives the fork, and that the link
+holds a whole seat file with its ciphertext, is not measured yet (task 1.0); if either fails, the
+choice goes back to Adam. Either way Igor never holds the lender's GitHub credentials: `gh`
+holds its own login, and the browser holds the lender's own GitHub session.
+
+Without `gh`, the steps that come before the link are open in the proposal: finding the lore
+repository, the holder's login (which becomes `owner`) and the public key. So is a rotation without
+`gh`, because GitHub's new-file link cannot replace a file that already exists.
+
+## Publishing to npm
+
+**Decided 2026-10-17 (Adam): Igor is published as `igor-agent`**, with `bin` `igor`, so
+`npx igor-agent seat add` is a lender's whole install. The description is the README's opening
+line, verbatim, so the package and the README cannot drift into two pitches (#27).
+
+A tag push runs a release workflow on GitHub-hosted runners. It builds the JavaScript, checks the
+package, and runs `npm publish --provenance` with an npm token held as a repository secret.
+Provenance links each published version to the workflow run and commit that built it.
+
+The npm token as a repository secret is Adam's decision. It conflicts with this file's reason for
+rejecting plain repository secrets (*Options rejected*): any writer can read a repository secret,
+so any writer could publish `igor-agent`, which lenders run through `npx`. That conflict is an
+open question in the proposal.

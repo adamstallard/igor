@@ -1,26 +1,27 @@
-Build after `condition-backoff` (#101) and `read-seat-windows-from-the-stream` (#143). Line numbers
-below are main's at the time of writing and will have moved under those two changes; the names are
+Build after `condition-backoff` (#101), `read-seat-windows-from-the-stream` (#143) and worker-user
+(#175). Line numbers
+below are main's at the time of writing and will have moved under those three changes; the names are
 what to find. Where a task quotes text in a fenced block, that text is the deliverable: it may be
 reworded only where a measurement in section 1 contradicts it, and then `design.md` records the
 measurement.
 
 ## 1. Measure what the guides depend on
 
+- [ ] 1.0 Confirm that GitHub's prefilled new-file link (`/new/<branch>?filename=…&value=…`) keeps
+      its prefilled value through the fork GitHub makes for a lender without write access, and
+      accepts a whole url-encoded seat file carrying ciphertext. Record the result in `design.md`.
+      If either fails, the choice of how a lender without `gh` proposes the file goes back to Adam
 - [ ] 1.1 Confirm `age-encryption` decrypts what `age -r <recipient> | base64 | tr -d '\n'`
       produces on macOS and Linux, after `base64 -d`, and that `age-keygen -y` derives the same
       recipient the package derives from the identity
-- [ ] 1.2 Measure revoking one `setup-token` at Anthropic: that one token can be revoked without
-      the holder's other tokens, how soon the next request with it is refused, and whether a run
-      already in progress is refused. Record the result in `design.md`. Task 9.4's and 9.7's
-      "stops the seat at once" says what the measurement found, such as "stops the seat within
-      <n> minutes", and the proposal's open question is closed with it
 
 ## 2. Seats from files
 
 - [ ] 2.1 `src/budget.ts`: replace `parseOrgBudget` with a reader of `<destination>/seats/*.yaml`
       that returns the seats, each with its `roles`. The id is the filename; the keys are those
       the requirement lists, refused by `keyCheck` in the shape every other level uses. `Pool`,
-      `OrgBudget.pools`, `POOL_KEYS`, `BUDGET_KEYS` and `requireList`'s pool use go
+      `OrgBudget.pools`, `POOL_KEYS`, `BUDGET_KEYS` and `requireList`'s pool use go, and so do the
+      `dedicated` key and the `Seat.dedicated` field
 - [ ] 2.2 Refusals, worded so:
 
       ```
@@ -49,6 +50,7 @@ measurement.
       ```
       seats/<id>.yaml names `token_command`. A seat file names its token only with encrypted_token, the token encrypted to seats/recipient.txt, or token_env: IGOR_SEAT_<ID>, a variable in the server's environment.
       seats/<id>.yaml names `token_file`. A seat file names its token only with encrypted_token, the token encrypted to seats/recipient.txt, or token_env: IGOR_SEAT_<ID>, a variable in the server's environment.
+      seats/<id>.yaml names no token. A seat file names its token with encrypted_token, the token encrypted to seats/recipient.txt, or token_env: IGOR_SEAT_<ID>, a variable in the server's environment.
       seats/<id>.yaml names both encrypted_token and token_env. Keep one.
       seats/<id>.yaml names token_env: <given>. A seat's token variable is IGOR_SEAT_ plus its id: IGOR_SEAT_<ID>.
       seats/<id>.yaml: encrypted_token is not an age ciphertext. If it is a token, it is now in this repository's history: revoke it at Anthropic, then run `igor seat add <id>` with a new one.
@@ -121,17 +123,26 @@ measurement.
 
 ## 7. `igor seat add`
 
-- [ ] 7.1 `src/cli.ts`: `igor seat add <id> [--reserve <r>] [--roles <a,b>] [--dedicated]`. The
-      lore repository comes from the clone's `upstream` remote where there is one, and otherwise
-      `origin`; the holder's login from `gh api user`
+- [ ] 7.1 `src/cli.ts`: `igor seat add <id> [--reserve <r>] [--roles <a,b>]`. In a clone of the
+      lore repository, or of a fork of it, the lore repository comes from the clone's `upstream`
+      remote where there is one, and otherwise
+      `origin`; the holder's login from `gh api user`. What the command does outside a clone, and
+      how it finds the holder's login without `gh`, is an open question in the proposal: build
+      those parts once it is settled, and not before
+- [ ] 7.1a Check `owner` with `gh api users/<owner>` before writing the seat file. A login it does
+      not find is refused, worded so:
+
+      ```
+      <owner> is not a GitHub login, so no change to seats/<id>.yaml could mention you.
+      ```
 - [ ] 7.2 Read `seats/recipient.txt` from the lore repository's default branch with `gh api`. Read
       the token with echo off. Encrypt with `age-encryption`, base64 on one line
 - [ ] 7.3 A new seat: write `seats/<id>.yaml`. The file it writes:
 
       ```yaml
       # <id>'s seat: a Claude subscription lent to this team's Igors, on the terms below.
-      # To withdraw, or to stop any use you did not agree to, revoke the token at Anthropic:
-      # the seat stops at once. See docs/seats.md.
+      # To withdraw, or to stop any use you did not agree to, revoke the token at Anthropic,
+      # which stops the seat. See docs/seats.md.
       owner: <login>
       # The share of each window Igors leave for you, from 0 to 1.
       reserve: <r>
@@ -148,12 +159,12 @@ measurement.
       ```
       seats/<id>.yaml names token_env: its token is set on the Igor server by the operator, so `igor seat add` does not rotate it.
       ```
-- [ ] 7.5 Commit on branch `seat/<id>`. Push to the lore repository where `gh api` says the holder
-      may push, and otherwise to their fork, creating it with `gh repo fork` where it does not
-      exist. Open the pull request through `gh`. Its body:
+- [ ] 7.5 Where `gh` is installed and signed in: commit on branch `seat/<id>`. Push to the lore
+      repository where `gh api` says the holder may push, and otherwise to their fork, creating it
+      with `gh repo fork` where it does not exist. Open the pull request through `gh`. Its body:
 
       ```
-      Lends seat <id> to this team's Igors: <reserve> reserve, serving <roles>. The token is encrypted to seats/recipient.txt, so only the Igor server can read it. Revoking it at Anthropic stops the seat at once. After merging, the operator updates the server's lore checkout.
+      Lends seat <id> to this team's Igors: <reserve> reserve, serving <roles>. The token is encrypted to seats/recipient.txt, so only the Igor server can read it. Revoking it at Anthropic stops the seat. After merging, the operator updates the server's lore checkout.
       ```
 
       and, for a rotation:
@@ -162,11 +173,26 @@ measurement.
       Rotates seat <id>'s token. Nothing else about the seat changes. After merging, the operator updates the server's lore checkout.
       ```
 
+- [ ] 7.5a Where `gh` is not installed or not signed in: open this link in the browser, or print it
+      where no browser opens, and push nothing. The link's form is the deliverable and is not
+      reworded; `<url-encoded file>` is the whole seat file of 7.3:
+
+      ```
+      https://github.com/<org>/<repo>/new/<default-branch>?filename=seats/<id>.yaml&value=<url-encoded file>
+      ```
+
+      Printed with it, worded so:
+
+      ```
+      Open this link, signed in to GitHub, and click "Propose new file". GitHub forks the repository for you if you cannot write to it.
+      ```
+
 - [ ] 7.6 Refusals before the token is read: no `seats/recipient.txt` on the default branch; an
-      invalid id; a seat naming `token_env` (7.4); not in a clone of the lore repository or of a
-      fork of it. After it is read: an empty token
-- [ ] 7.7 Tests, with `gh` faked: the scenarios of *`igor seat add` lends a seat in one step*, and
-      that no argument list, written file or child environment contains the token
+      invalid id; a seat naming `token_env` (7.4). After it is read: an empty token. Running
+      outside a clone is not refused here; it is the open question of 7.1
+- [ ] 7.7 Tests, with `gh` faked and with `gh` absent: the scenarios of *`igor seat add` lends a
+      seat in one step*, and that no argument list, written file or child environment contains the
+      token
 
 ## 8. `igor doctor`
 
@@ -190,8 +216,15 @@ the other built.
       ```
       seats/<id>.yaml carries an encrypted token, and igor.config.yaml names no seatKey, so Igor cannot read that seat. Set seatKey to the private key whose public half is seats/recipient.txt.
       ```
-- [ ] 8.4 Worker-user (#175): its start-up probe checks that the worker user cannot read the file
-      `seatKey` names. Whichever of the two changes builds second adds it
+- [ ] 8.4 Add `seatKey` to worker-user's (#175) start-up probe, which is built first: the worker
+      user cannot read the file `seatKey` names, and a start where it can is refused, naming the
+      path. Test it with the probe's other paths
+- [ ] 8.5 The owner check, per *The check says whether each seat's owner is a GitHub login*, with a
+      test for each of its scenarios. The finding, worded so:
+
+      ```
+      seats/<id>.yaml names owner <owner>, which is not a GitHub login, so no change to that file mentions anyone.
+      ```
 
 ## 9. Docs and templates
 
@@ -228,11 +261,13 @@ leaks.
     if need be, and that the seat takes effect once the server's lore checkout is updated (#176)
   - **Declaring a seat by hand:** a seat file naming `token_env: IGOR_SEAT_<ID>`, and the token in
     `/etc/igor/env`; a secret store's output goes there too
-  - **What the lender keeps:** they can revoke their token at any time, which stops the seat at
-    once, and that is how they answer an edit to their seat file they did not agree to. The
+  - **What the lender keeps:** they can revoke their token at any time, which stops the seat, and
+    that is how they answer an edit to their seat file they did not agree to. The
     `seat-notice.yml` workflow mentions them on any pull request changing their file; keep it
     installed (`igor init` puts it there), and tell a lender whose `owner` is not a GitHub login
-    about a change some other way
+    about a change some other way. Require a pull request before merging to the default branch,
+    since a direct push changes a seat file with no notice; `igor doctor` reports a branch that
+    does not
   - **Checking it:** `igor doctor`, and `igor budget` showing the new seat as readable
   - **When things go wrong:** removing a seat (delete its file); a lender withdrawing (they revoke
     the token; delete the file); a leaked server key (above); a leaked seat token (its holder
@@ -248,36 +283,29 @@ leaks.
       limits Igor's share, you can watch your usage at claude.ai); that you are mentioned on any
       pull request that changes your seat file, as long as `owner` is your GitHub login; and
       **revoking the token at Anthropic is how you withdraw or object to anything: it stops the
-      seat, whatever any file says**, with "at once" replaced by the speed task 1.2 measured, such
-      as "within <n> minutes", if the token is not refused at once
+      seat, whatever any file says**. The guide promises no speed for it
 - [ ] 9.5 `docs/seats.md`, **getting the token:** `claude setup-token`, once, in your own
-      terminal, and why it never goes into chat, email, or a file unencrypted
-- [ ] 9.6 `docs/seats.md`, **lending it:** `igor seat add` in one step, and the manual equivalent
-      for someone without Igor installed:
-
-      ```sh
-      git clone <lore-repo> && cd <lore-repo>      # or your fork of it
-      git pull <lore-repo> main                    # recipient.txt as main has it
-      read -rs TOKEN    # paste the token: not shown, and not kept in your shell history
-      printf %s "$TOKEN" | age -r "$(cat seats/recipient.txt)" | base64 | tr -d '\n'; echo
-      unset TOKEN
-      ```
-
-      then a pull request adding `seats/<id>.yaml`, with that output as `encrypted_token`, their
-      reserve and the roles it serves
+      terminal, and why it never goes into chat, email, or a file unencrypted. A plain token
+      pasted into a pull request is public as soon as it is pushed, before Igor can refuse it, and
+      is to be revoked at once
+- [ ] 9.6 `docs/seats.md`, **lending it:** one path, `npx igor-agent seat add <id>`, with Node as
+      the only prerequisite: what it asks for, that it opens the pull request through `gh` where
+      `gh` is signed in, and otherwise gives a link to click "Propose new file" on. No manual `age`
+      steps and no route through a clone
 - [ ] 9.7 `docs/seats.md`, **afterwards:** watching your usage at claude.ai, and what to do when
       you are mentioned on a pull request changing your seat file (say so there if you object; revoke
-      the token if it merges anyway); **changing your mind:** rotating (`igor seat add` again, or the manual steps,
-      changing only `encrypted_token`), changing roles or reserve (a pull request to your file),
-      withdrawing or objecting (revoke at Anthropic, which takes effect at once), and the one-year
-      expiry (#145)
+      the token if it merges anyway); **changing your mind:** rotating (`npx igor-agent seat add`
+      again, changing only `encrypted_token`), changing roles or reserve (a pull request to your
+      file), withdrawing or objecting (revoke at Anthropic), and the one-year expiry (#145)
 - [ ] 9.8 `docs/seats.md` *What the floor rests on* and *Several people, one fleet* describe the
       line (#143) and choice by headroom, with no pool and no listed order
 - [ ] 9.9 `README.md`: the quick start declares a seat file and puts the token in the
       environment, with the shell wrapper `docs/deployment.md` already has; `token_command` and
       `token_file` go. *Budgets* loses `pools:` and `pool:engineering`, and its sample `igor budget`
-      output loses the `pool engineering:` line. The note "(#148 replaces `pools:` …)" goes, since
-      it describes this change as future
+      output loses the `pool engineering:` line, and its `dedicated: true` seat goes. The note
+      "(#148 replaces `pools:` …)" goes, since it describes this change as future. The install
+      section says Igor installs from npm as `igor-agent`, in place of "Igor is not on npm yet",
+      and the README's `npm unlink -g igor-lore` becomes `npm unlink -g igor-agent`
 - [ ] 9.10 `docs/architecture.md` §6.5.1: a seat file lists the roles it serves, and the seat is
       chosen by headroom; "Order is the whole allocation mechanism today" and the `pools:`
       example go, and the heading loses its "being replaced (#148)" marker. §6.3.2's list of
@@ -359,7 +387,7 @@ leaks.
                   --jq '.[] | .filename, (.previous_filename // empty)' | sort -u)
                 [[ ${#lines[@]} -eq 0 ]] && exit 0
                 body="$marker"$'\n'"$(printf '%s\n' "${lines[@]}")"$'\n\n'
-                body+="Your seat serves the roles and keeps the reserve its file states. If you don't agree to this change, say so here. To stop your seat being used at all, revoke its token at Anthropic: that takes effect at once, whatever this pull request does."
+                body+="Your seat serves the roles and keeps the reserve its file states. If you don't agree to this change, say so here. To stop your seat being used at all, revoke its token at Anthropic, whatever this pull request does."
                 gh api "repos/$REPO/issues/$PR/comments" -f body="$body" > /dev/null
       ```
 
@@ -381,14 +409,44 @@ leaks.
 
 ## 11. Matching condition-backoff (#101)
 
-#101's `stuck-conditions` is an open change, not yet a spec, so this change cannot modify it. If
-#101 archives first, as the build order has it, this change adds a `stuck-conditions` delta making
-these three changes. If this change archives first, #101's text is amended to make them:
+#101 is in force before this change is built, and the `stuck-conditions` delta here restates three
+of its requirements. Build each against #101's code:
 
-- [ ] 11.1 *A seat's refused credential is a condition on that seat* hashes the plaintext token of
-      a lent seat, as *A seat's token travels as ciphertext in its file* requires
-- [ ] 11.2 *Reporting tells a refused credential from an unreadable one, and clears nothing* says
-      "check a path or a variable". A seat file has no path, so it reads "a variable or a seat's
-      key", or as the restating change words it
-- [ ] 11.3 Where an unreadable seat stops every role drawing on it, the outcome of the proposal's
-      open question on passing such a seat over is applied
+- [ ] 11.1 *A seat's refused credential is a condition on that seat*: the hash is of the decrypted
+      token of a lent seat, never the ciphertext, and the ambient-credential case goes, since
+      every seat file names a token source. Test: the same token encrypted twice leaves an open
+      condition open
+- [ ] 11.2 *Reporting tells a refused credential from an unreadable one, and clears nothing*: the
+      report's remedy for an unreadable seat names the seat's `IGOR_SEAT_<ID>` variable or the
+      private key file that `seatKey` names, never a token file path
+- [ ] 11.3 *A condition's scope is its cure's scope*: an unreadable seat, including one whose token
+      cannot be decrypted, is taken out of every role's choice, and a role stops where every seat
+      serving it is under an open condition (Adam, 2026-10-17). Test each of its seat scenarios.
+      The case of a role with no eligible seat where only some seats are under conditions waits
+      for the proposal's open question
+
+## 12. Publishing to npm as `igor-agent`
+
+- [ ] 12.1 A build step that emits JavaScript: the package runs from `dist/` with no TypeScript
+      tooling installed, and `prepack` builds it
+- [ ] 12.2 `package.json`: `name` is `igor-agent`, `bin` is `igor`, and `description` is the
+      README's opening line, verbatim and not reworded:
+
+      ```
+      AI teammates that find their own work, claim it in the open, and draw on what the team has already learned.
+      ```
+
+      `files` lists what the installed package reads, `engines` is `node >= 26`, and a licence
+      check runs before publishing. What the check covers is open in the proposal
+- [ ] 12.3 A release workflow under `.github/workflows/`, triggered by pushing a version tag, on
+      GitHub-hosted runners: it builds, runs the licence check, and runs
+      `npm publish --provenance` with an npm token held as a repository secret. Its permissions
+      include `id-token: write`, which provenance needs
+- [ ] 12.4 Test from a clean machine with only Node installed that `npx igor-agent seat add` works,
+      after the first release and once the proposal's open question on running without `gh` or a
+      clone is settled. Record the result in `design.md`
+
+## 13. Archiving
+
+- [ ] 13.1 Archive this change together with `read-seat-windows-from-the-stream` (#143), in one
+      commit, #143 first

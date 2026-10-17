@@ -14,10 +14,9 @@ the accepted ones:
 |---|---|---|
 | `owner` | no | the holder: the person whose subscription it is, as their GitHub login where they have one |
 | `reserve` | no | as *Seats are named configuration entities with an owner and a reserve* defines it; 0 when absent |
-| `dedicated` | no | `true` for a seat nobody works on |
 | `roles` | yes | a list of the role names this seat serves; it MAY be empty |
-| `encrypted_token` | no | the seat's token, encrypted to the server's public key, as *A seat's token travels as ciphertext in its file* defines it |
-| `token_env` | no | the environment variable holding the seat's token, as *A seat file names its token only by ciphertext or its own variable* constrains it |
+| `encrypted_token` | one of these two | the seat's token, encrypted to the server's public key, as *A seat's token travels as ciphertext in its file* defines it |
+| `token_env` | one of these two | the environment variable holding the seat's token, as *A seat file names its token only by ciphertext or its own variable* constrains it |
 
 `roles` SHALL be a list of strings, each naming a role file under `roles/` other than the org
 base. A name with no role file SHALL be refused, naming the seat file, the name, and the roles
@@ -49,6 +48,11 @@ such as `recipient.txt`, are not seats.
 - **WHEN** a seat file declares `reserv: 0.5`
 - **THEN** it is refused, naming the file, the key `reserv` and the accepted keys
 
+#### Scenario: A `dedicated` key is refused
+
+- **WHEN** a seat file declares `dedicated: true`
+- **THEN** it is refused, naming the file, the key `dedicated` and the accepted keys
+
 #### Scenario: A seat file without roles is refused
 
 - **WHEN** a seat file omits `roles`
@@ -71,23 +75,21 @@ such as `recipient.txt`, are not seats.
 
 ### Requirement: A seat file names its token only by ciphertext or its own variable
 
-A seat file SHALL name its token, where it names one, with exactly one of `encrypted_token` and
-`token_env`. These two are the token mechanisms, and a seat *names a token source* where its file
-names one of them. #143's *A seat nothing has read is probed on the Igor server with its own token*
-uses both terms: it probes only a seat that names a token source.
+A seat file SHALL name its token with exactly one of `encrypted_token` and `token_env`. These two
+are the token mechanisms, and a seat *names a token source* where its file names one of them.
+#143's *A seat nothing has read is probed on the Igor server with its own token* uses the term
+*names a token source*: it probes only a seat that names one, which every seat file does.
 
-A seat file naming both SHALL be refused, naming the file and both keys. A seat file naming
-`token_command` or `token_file` SHALL be refused, naming the file and the key, and saying a
-seat file names its token only with `encrypted_token` or `token_env`.
+A seat file naming neither SHALL be refused, naming the file and both keys. A seat file naming both
+SHALL be refused, naming the file and both keys. A seat file naming `token_command` or `token_file`
+SHALL be refused, naming the file and the key, and saying a seat file names its token only with
+`encrypted_token` or `token_env`.
 
 `token_env` SHALL be `IGOR_SEAT_` followed by the seat's id uppercased, with every character other
 than a letter or digit replaced by `_`. A seat file whose `token_env` is any other name SHALL be
 refused, naming the file, the name it gave and the name it must give. An id holds only lowercase
 letters, digits and hyphens, so no two ids yield the same variable. The variable holds a plain
 token the operator put in the server's environment.
-
-A seat file naming neither is read, and spent from, on whatever login is ambient on the server.
-Whether that should be allowed is an open question in the proposal.
 
 Neither form runs or reads anything on the server beyond the seat's own token, so nothing depends
 on telling an operator's seat file from a lender's. The variable's name is fixed so that a seat
@@ -119,10 +121,11 @@ file cannot name `GH_TOKEN`, or another seat's variable.
 - **WHEN** `seats/fleet-1.yaml` declares `token_env: IGOR_SEAT_FLEET_1`
 - **THEN** it is accepted
 
-#### Scenario: A seat naming no token reads the ambient login
+#### Scenario: A seat naming no token is refused
 
 - **WHEN** a seat file names neither `encrypted_token` nor `token_env`
-- **THEN** the seat reads through whatever login is ambient
+- **THEN** it is refused at load, naming the file and both keys
+- **AND** nothing is spent on whatever login is ambient on the server
 
 ### Requirement: A seat's token travels as ciphertext in its file
 
@@ -249,25 +252,31 @@ seat with one. Seats still tied SHALL be taken in id order.
 
 Which seats a role may spend on now is decided by the other rules, and this one only orders what
 they admit. Those rules are *The reserve is untouchable* and *A seat nothing has read is probed on
-the Igor server with its own token* (the line, and the probe made when the line rises past a
-seat's last reading), *A seat spending extra
-usage has no headroom*, *A missing reading closes a reserved seat and changes nothing else*,
-*`budget_share` is a ceiling, not a reservation*, and `stuck-conditions`' *A seat's refused
-credential is a condition on that seat* (#101). Where no seat that serves the role is eligible,
-the Igor SHALL hand off rather than stop silently.
+the Igor server with its own token* (the line, and the probe made when the line rises past a seat's
+last reading), *A seat spending extra usage has no headroom*, *A missing reading closes a reserved
+seat and changes nothing else*, *`budget_share` is a ceiling, not a reservation*, and the
+seat-scoped conditions of `stuck-conditions` (#101): a refused credential (*A seat's refused
+credential is a condition on that seat*) and a token that cannot be read or decrypted, which
+`stuck-conditions`' *A condition's scope is its cure's scope* makes a condition on the seat. A seat
+under such a condition SHALL be passed over, and the role SHALL keep working on its other eligible
+seats. Where every seat that serves the role is under such a condition, the role SHALL stop, as
+`stuck-conditions` says. Where no seat that serves the role is eligible and none is under such a
+condition, such as when every seat is at its line, the Igor SHALL hand off rather than stop
+silently. Where no seat is eligible, some are under such a condition and the rest are ineligible for
+other reasons, whether the role stops or hands off is an open question in the proposal.
 
 The tie-break spends the capacity a reset is about to destroy: leftover capacity in a week is lost
 at its reset, while a session refills within hours.
 
-#### Scenario: A dedicated seat is drawn on before a lent one
+#### Scenario: A seat at reserve 0 is drawn on before a lent one
 
-- **WHEN** a role that declares no reserve is served by a dedicated seat at reserve 0 and a lent
-  seat at reserve 0.5, both read at 40% in both windows, early in their weeks
-- **THEN** the dedicated seat is chosen, because its line is higher
+- **WHEN** a role that declares no reserve is served by a seat at reserve 0 and a lent seat at
+  reserve 0.5, both read at 40% in both windows, early in their weeks
+- **THEN** the seat at reserve 0 is chosen, because its line is higher
 
-#### Scenario: Load spreads across dedicated seats
+#### Scenario: Load spreads across seats at reserve 0
 
-- **WHEN** two dedicated seats serve a role, one read at 70% and one at 30%
+- **WHEN** two seats at reserve 0 serve a role, one read at 70% and one at 30%
 - **THEN** the seat at 30% is chosen
 
 #### Scenario: The tighter window decides a seat's headroom
@@ -281,9 +290,9 @@ at its reset, while a session refills within hours.
   days
 - **THEN** the seat whose week resets tomorrow is chosen
 
-#### Scenario: An unread dedicated seat is drawn on
+#### Scenario: An unread seat at reserve 0 is drawn on
 
-- **WHEN** a new dedicated seat at reserve 0 has no reading, another seat serving the role is read
+- **WHEN** a new seat at reserve 0 has no reading, another seat serving the role is read
   at 50%, and the role declares no reserve
 - **THEN** the new seat is chosen, with its headroom counted from 0% used
 
@@ -295,9 +304,22 @@ at its reset, while a session refills within hours.
 
 #### Scenario: A reserved seat nothing has read is not drawn on
 
-- **WHEN** every dedicated seat serving a role is at its line, and the only other seat declares a
-  reserve and has no unreset reading of a window
+- **WHEN** every seat at reserve 0 serving a role is at its line, and the only other seat declares
+  a reserve and has no unreset reading of a window
 - **THEN** no seat is chosen, and the reserved seat is not spent from on a guess
+
+#### Scenario: An undecryptable seat is passed over, not stopped on
+
+- **WHEN** a role is served by two seats, and one has an open condition because its token cannot
+  be decrypted
+- **THEN** the role draws on the other seat
+- **AND** the role does not stop for the first seat's condition
+
+#### Scenario: A role whose only seat is undecryptable stops
+
+- **WHEN** the only seat serving a role has an open condition because its token cannot be
+  decrypted
+- **THEN** the role stops, as `stuck-conditions` says, and does not hand off
 
 #### Scenario: Exhausting every seat that serves a role is a handoff
 
@@ -320,6 +342,11 @@ checkout and no file contents, only the list of changed paths, each matched agai
 writing pull requests.
 
 A mention SHALL be recognised as already made only from a comment the workflow itself posted.
+
+The lore repository's default branch SHALL require a pull request before merging, because a seat
+file changed by a direct push has no pull request for the workflow to comment on. `igor doctor`
+reports a default branch that does not require one, through `check-a-lore-repository`'s check
+that direct pushes are prevented (#113).
 
 `pull_request_target` runs with a token that can write to the repository. A workflow on it that
 read the pull request's head would hand a fork's code or data that token, so reading nothing from
@@ -374,6 +401,12 @@ the head is part of this requirement, not a detail of the template.
 - **THEN** it runs on a GitHub-hosted runner, checks nothing out, and its token can only read
   contents and write pull requests
 
+#### Scenario: A branch that accepts direct pushes is reported
+
+- **WHEN** the lore repository has seat files and its default branch does not require a pull
+  request before merging
+- **THEN** `igor doctor` reports it, by `check-a-lore-repository`'s check of direct pushes
+
 #### Scenario: A path that is not a seat file is ignored
 
 - **WHEN** a pull request changes `seats/recipient.txt`, or a file whose name does not match the
@@ -382,8 +415,8 @@ the head is part of this requirement, not a detail of the template.
 
 ### Requirement: `igor seat add` lends a seat in one step
 
-`igor seat add <id>` SHALL be run by a holder in a clone of the lore repository, or of their fork
-of it, and SHALL:
+`igor seat add <id>` SHALL be run by a holder, as `npx igor-agent seat add <id>` where Igor is not
+installed, and SHALL:
 
 1. Read the public key from `seats/recipient.txt` on the lore repository's default branch on
    GitHub, not from the working tree.
@@ -391,21 +424,30 @@ of it, and SHALL:
 3. Encrypt it to that key, and base64-encode the result on one line.
 4. Where `seats/<id>.yaml` does not exist on the default branch, write it with the holder's GitHub
    login as `owner`, the `reserve` and `roles` given as options, and the ciphertext as
-   `encrypted_token`.
+   `encrypted_token`. Before writing, check with `gh api users/<owner>` that `owner` is a GitHub
+   login, and refuse where it is not.
 5. Where `seats/<id>.yaml` already exists on the default branch and names `encrypted_token`,
    replace its `encrypted_token` and change nothing else. This is how a token is rotated. Where it
    names `token_env`, refuse before reading the token, saying the seat's token is set on the
    server by its operator.
-6. Commit on a new branch, push it to the lore repository where the holder may, and otherwise to
-   their fork, and open a pull request against the default branch.
+6. Where `gh` is installed and signed in: commit on a new branch, push it to the lore repository
+   where the holder may and otherwise to their fork, and open a pull request against the default
+   branch with `gh`. Otherwise: open in the browser, or print where it cannot, GitHub's
+   prefilled new-file link for `seats/<id>.yaml` holding the file, from which the holder proposes
+   the file as a pull request.
+
+Igor SHALL NOT hold the holder's GitHub credentials: `gh` keeps its own login, and the prefilled
+link is used in the holder's own browser. How the command finds the lore repository and the
+holder's login without `gh` or a clone is an open question in the proposal.
 
 The token SHALL NOT be written to disk, to an argument list, or to any process's environment. The
 command SHALL refuse, before reading the token, where `seats/recipient.txt` is absent on the
 default branch, or `<id>` is not a valid seat id.
 
-`igor seat add` takes no role, so it acts with the holder's own `gh` login. `surface-adapter`'s
-*On GitHub, every call an Igor makes acts as its App* covers only `igor run` and `igor serve`, and
-says a command that takes no role keeps the person's own login.
+`igor seat add` runs as no role (its `--roles` only fills in the seat file), so it has no App
+identity, and where it uses `gh` it acts with the holder's own `gh` login.
+`surface-adapter`'s *On GitHub, every call an Igor makes acts as its App* covers only `igor run` and
+`igor serve`, and says a command that takes no role keeps the person's own login.
 
 The key is read from the default branch because a pull request can change the working tree's
 copy, and whoever replaces `recipient.txt` receives every token encrypted to it afterwards.
@@ -419,8 +461,20 @@ copy, and whoever replaces `recipient.txt` receives every token encrypted to it 
 
 #### Scenario: A holder without write access lends from a fork
 
-- **WHEN** the holder cannot push to the lore repository
+- **WHEN** `gh` is signed in and the holder cannot push to the lore repository
 - **THEN** the branch is pushed to their fork and the pull request opened from there
+
+#### Scenario: A holder without `gh` gets the prefilled link
+
+- **WHEN** `gh` is not installed, or not signed in
+- **THEN** the command opens or prints
+  `https://github.com/<org>/<repo>/new/<default-branch>?filename=seats/<id>.yaml&value=<url-encoded file>`
+- **AND** it pushes nothing and holds no GitHub credential
+
+#### Scenario: An owner that is not a GitHub login is refused
+
+- **WHEN** `gh api users/<owner>` finds no such user
+- **THEN** the command refuses before writing the seat file, naming the login
 
 #### Scenario: Running it again rotates the token
 
@@ -456,6 +510,63 @@ copy, and whoever replaces `recipient.txt` receives every token encrypted to it 
 - **WHEN** the default branch has no `seats/recipient.txt`
 - **THEN** the command refuses before asking for the token, saying the operator commits the
   server's public key there
+
+### Requirement: A spend with no seat behind it is not made
+
+Where seats are declared, every model call Igor makes on its own behalf SHALL be charged to the
+seat the gate chose for the role, and SHALL be made with that seat's credential. A seat probe is
+the one exception to the gate choosing: it is charged to the seat it reads and made with that
+seat's own credential.
+Where the gate names no seat, the call SHALL NOT be made, and no ambient credential SHALL be
+substituted for the seat the gate did not name. Where an organization declares no seats, budget is
+not enforced and this requirement places no condition on anything.
+
+The condition is whether the gate named a seat. Every seat file names its token (*A seat file
+names its token only by ciphertext or its own variable*), so a seat the gate names always has a
+credential of its own. What has no seat behind it is a call the gate refused to choose one for.
+
+This is the spending-side counterpart of the rule for reading a seat's token (*A seat's token
+travels as ciphertext in its file*): a seat naming a token that is not available is reported
+unreadable, and no other credential is used in its place. The same principle
+governs spending: a seat the gate did not name cannot be charged, and a credential no seat names
+cannot be attributed. It matters most for a model call that does not go through a worker, such as
+triage's model stage, which would otherwise fall back to the ambient login with nothing in the
+record naming what paid.
+
+Attributing that spend instead of refusing it was considered and rejected. A record saying an
+unnamed login paid is honest about a call that should not have been made, leaves the ceiling
+unenforced, and does nothing at all on a host where no ambient login exists: there the call
+fails with a message about not being logged in, which describes a machine whose credentials are
+configured correctly and whose seats the gate is simply holding back.
+
+The exemption for an organization with no seats is not an oversight to be tightened later. A
+deployment that declares no seats has asked for no ceiling and made no promise about which
+credential pays, and the fallback is what it runs on.
+
+#### Scenario: No seat, no spend
+
+- **WHEN** the gate names no seat for a role, because every seat that serves it is spent or none
+  can be used
+- **THEN** no model call is made on that role's behalf
+- **AND** no credential is substituted for the seat's
+
+#### Scenario: A spend nothing can attribute is refused rather than recorded as ambient
+
+- **WHEN** a call could only be made on a credential no seat names
+- **THEN** it is refused
+- **AND** it is not made and recorded against the ambient login instead
+
+#### Scenario: An unenforced budget is untouched
+
+- **WHEN** an organization declares no seats
+- **THEN** calls run on whatever login is ambient, as they did before
+- **AND** nothing is refused for want of a seat
+
+#### Scenario: A call that runs names the seat that paid
+
+- **WHEN** the gate names a seat and the call is made
+- **THEN** the call uses that seat's credential
+- **AND** the record names that seat as having paid
 
 ## MODIFIED Requirements
 
@@ -494,13 +605,66 @@ than the seat does, never less (*A role may hold back more of a seat than the se
 
 #### Scenario: A seat nobody works on may declare a reserve
 
-- **WHEN** a seat declared as dedicated declares a reserve of 0.5
+- **WHEN** a seat that nobody works on declares a reserve of 0.5
 - **THEN** configuration is valid
 - **AND** the seat is held to its line as any other seat is
 
 #### Scenario: A reserve of 1 is accepted
 
 - **WHEN** a seat declares a reserve of 1
+- **THEN** configuration is valid
+
+### Requirement: A role may hold back more of a seat than the seat does
+
+A role MAY declare a `reserve`, a fraction from 0 to 1, both included. It SHALL apply to every seat
+the role draws on, and it is not set per seat. The line that role's Igor checks on a seat SHALL use
+the larger of the seat's reserve and the role's (*The reserve is untouchable*). So a role can hold
+back more than a seat does and never less: a lender's reserve stays in force whatever a role
+declares. On a seat declaring reserve 0, the role's reserve alone sets that role's line. A role
+reserve is valid whatever seats the role draws on, a seat at reserve 0 included. The scenario title
+*A role reserve with a dedicated seat is valid* uses "dedicated seat" as plain English for a seat no
+person uses; a seat file has no `dedicated` key.
+
+How a role's reserve is inherited is role-config's *A role's reserve is raised by inheritance and
+never lowered*.
+
+It gives roles sharing a seat a priority without coordinating them. Every Igor compares the same
+whole-seat reading against its own line, so once the reading passes a higher-reserve role's line,
+only roles with a lower one take items there. With `frontend` at 0.3 and `generalist` at none on
+one seat, `frontend`'s line is 70% just after a reset and rises to 100% at the next reset, and
+`generalist` takes what lies above that line.
+
+It is a priority, not a guaranteed share. A lower-reserve role that always has work can hold the
+seat at a higher-reserve role's line for most of a window and so crowd it out. No mechanism is
+added against that. Two remedies exist: choosing which roles a seat serves, so a seat that does
+not serve the greedy role is kept from it; and more seats, so that the lower-reserve role is fully
+served elsewhere.
+
+#### Scenario: A higher-reserve role yields to a lower one
+
+- **WHEN** `frontend` declares a reserve of 0.3 and `generalist` declares none, both draw on one seat
+  declaring reserve 0, half its week remains, and its week reading is 88%
+- **THEN** `frontend`'s Igor takes no item on that seat, because its line is 85%
+- **AND** `generalist`'s Igor may, because its line is 100%
+
+#### Scenario: A role cannot lower a lender's reserve
+
+- **WHEN** a seat declares a reserve of 0.5 and a role drawing on it declares 0.2
+- **THEN** the role's line on that seat uses 0.5
+
+#### Scenario: One reserve for every seat the role draws on
+
+- **WHEN** a role declares a reserve of 0.3 and may draw on three seats
+- **THEN** each of the three is judged against a line using at least 0.3
+
+#### Scenario: A role reserve out of range is refused
+
+- **WHEN** a role declares a reserve below 0 or above 1
+- **THEN** validation fails
+
+#### Scenario: A role reserve with a dedicated seat is valid
+
+- **WHEN** a role naming a seat that no person uses, at reserve 0, declares a reserve of 0.4
 - **THEN** configuration is valid
 
 ### Requirement: `budget_share` is a ceiling, not a reservation
@@ -548,69 +712,6 @@ monotonically like every other permission, and needs no coordination when the fl
 - **THEN** the role is at its ceiling for the week on that seat
 - **AND** no capacity figure enters the decision
 
-### Requirement: A spend with no seat behind it does not happen
-
-Where seats are declared, every model call Igor makes on its own behalf SHALL be charged to the
-seat the gate chose for the role, and SHALL be made with that seat's credential where the seat
-names one. A seat probe is the one exception to the gate choosing: it is charged to the seat it
-reads and made with that seat's own credential, and it is made only on a seat that names one.
-Where the gate names no seat, the call SHALL NOT be made, and no ambient credential SHALL be
-substituted for the seat the gate did not name. Where an organization declares no seats, budget is
-not enforced and this requirement places no condition on anything.
-
-The condition is whether the gate named a seat, not whether a credential was found. A seat naming
-no token is already unaffected by the rule that governs token names — it runs on whatever login is
-ambient — and it is still a seat the gate chose, still bounded by its reserve, still named in the
-record as having paid. What has no seat behind it is a call the gate refused to choose one for.
-
-This is the spending-side counterpart of the reading rule already in force: a seat naming a
-token that is not available is reported unreadable and no other credential is used in its place.
-The same principle governs spending — a seat the gate did not name cannot be charged, and a
-credential no seat names cannot be attributed — but it was written only of readings, so the one
-spend in the cycle that does not go through a worker reached an ambient fallback with no seat
-behind it and nothing in the record naming what paid.
-
-Attributing that spend instead of refusing it was considered and rejected. A record saying an
-unnamed login paid is honest about a call that should not have been made, leaves the ceiling
-unenforced, and does nothing at all on a host where no ambient login exists: there the call
-fails with a message about not being logged in, which describes a machine whose credentials are
-configured correctly and whose seats are simply held.
-
-The exemption for an organization with no seats is not an oversight to be tightened later. A
-deployment that declares no seats has asked for no ceiling and made no promise about which
-credential pays, and the fallback is what it runs on.
-
-#### Scenario: No seat, no spend
-
-- **WHEN** the gate names no seat for a role, because every seat that serves it is spent or none
-  can be used
-- **THEN** no model call is made on that role's behalf
-- **AND** no credential is substituted for the seat's
-
-#### Scenario: A spend nothing can attribute is refused rather than recorded as ambient
-
-- **WHEN** a call could only be made on a credential no seat names
-- **THEN** it is refused
-- **AND** it is not made and recorded against the ambient login instead
-
-#### Scenario: An unenforced budget is untouched
-
-- **WHEN** an organization declares no seats
-- **THEN** calls run on whatever login is ambient, as they did before
-- **AND** nothing is refused for want of a seat
-
-#### Scenario: A call that runs names the seat that paid
-
-- **WHEN** the gate names a seat and the call is made
-- **THEN** the call uses that seat's credential where the seat names one
-- **AND** the record names that seat as having paid, whether or not it named a token
-
-#### Scenario: A seat naming no token is still a seat
-
-- **WHEN** the gate chooses a seat whose file names neither `encrypted_token` nor `token_env`
-- **THEN** the call is made, on the ambient login, as that configuration already permits
-- **AND** the seat is recorded as having paid
-
 ## REMOVED Requirements
 
 ### Requirement: A pool is an ordered list of seats, and order is the allocation mechanism
@@ -642,3 +743,12 @@ no longer exist. Seats are files under `seats/`, and pools are dropped.
 
 **Migration**: A seat file refuses a key nobody reads (*A seat is a file under `seats/`, and its
 filename is its id*).
+
+### Requirement: A spend with no seat behind it does not happen
+
+**Reason**: Its scenario *A seat naming no token is still a seat* is false: a seat file naming no
+token is refused (Adam, 2026-10-17). openspec will not apply a `MODIFIED` block that drops an
+in-force scenario, so the requirement is removed and re-added under a new name.
+
+**Migration**: *A spend with no seat behind it is not made*, which keeps every other rule and
+scenario.

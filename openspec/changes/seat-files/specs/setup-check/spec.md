@@ -64,3 +64,30 @@ simply never told.
 
 - **WHEN** the lore repository has no seat files
 - **THEN** no finding about the notice workflow is reported
+
+### Requirement: The check says whether each seat's owner is a GitHub login
+
+For each seat file naming an `owner`, `igor doctor` SHALL check with `gh api users/<owner>` that it
+is a GitHub login, and SHALL report a finding naming the seat file and the login where it is not.
+The finding SHALL say that no change to that seat file mentions anyone. Where the check cannot reach
+GitHub, the owner check is unchecked, as `check-a-lore-repository`'s *A check that cannot be made is
+skipped and said, not failed* (#113) says.
+
+The notice workflow mentions only a GitHub login, so where a seat's `owner` is not one, nobody is
+told of a change to that seat's file.
+
+#### Scenario: An owner that is no GitHub user
+
+- **WHEN** `seats/bob.yaml` names `owner: bob-smith`, and `gh api users/bob-smith` finds no user
+- **THEN** it is reported as a finding, naming `seats/bob.yaml` and `bob-smith`, and saying no
+  change to that file mentions anyone
+
+#### Scenario: An owner that is a GitHub user
+
+- **WHEN** every seat file's `owner` is a GitHub login
+- **THEN** no finding about owners is reported
+
+#### Scenario: GitHub cannot be reached
+
+- **WHEN** `gh api users/<owner>` fails for a reason other than the user not existing
+- **THEN** the owner check is reported as unchecked, with the reason, and not as passing
