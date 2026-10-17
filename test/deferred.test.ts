@@ -26,6 +26,7 @@ function candidate(over: Partial<Candidate> = {}): Candidate {
     state: 'open',
     labels: ['bug'],
     assignees: [],
+    holders: [],
     paths: [],
     createdAt: '2026-09-01T00:00:00Z',
     updatedAt: '2026-09-14T11:00:00Z',
@@ -35,7 +36,7 @@ function candidate(over: Partial<Candidate> = {}): Candidate {
   }
 }
 
-const said = (author: string): Comment => ({ author, at: '2026-09-14T11:30:00Z', body: 'here is why' })
+const said = (author: string): Comment => ({ author, at: '2026-09-14T11:30:00Z', body: 'here is why', accounts: {} })
 
 describe('the fingerprint', () => {
   it('ignores the timestamp, which the Igor’s own handoff moves', () => {

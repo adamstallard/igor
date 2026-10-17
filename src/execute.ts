@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process'
-import { stillAssigned } from './claiming.js'
+import { stillHeld } from './claiming.js'
 import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -2022,33 +2022,19 @@ export async function execute(
 }
 
 /**
- * Takes the role's own completion action. `permits` is checked again here even though role
- * resolution already refuses a completion outside `allow`: this is the last check before the
- * action is taken, and a role must never complete by an action it is forbidden.
+ * Releases the claim a finished run holds, leaving the artifact for its reviewers. Trust the
+ * answer `release` gives, not the call returning: where the holder is not clear, the item still
+ * names an Igor that has finished with it while the run reports success, so the item gets a
+ * comment saying it is still held.
  */
 export async function complete(
   tracker: Tracker,
   candidate: Candidate,
   role: Role,
   identity: string,
-): Promise<Refusal | undefined> {
-  if (!permits(role, role.completion)) {
-    return { action: role.completion, why: `role "${role.name}" does not permit its own completion action` }
-  }
-  switch (role.completion) {
-    case 'unassign': {
-      // Trust the answer `release` gives, not the call returning. If the holder is not clear, the
-      // item stays assigned to an Igor that has finished with it while the run reports success,
-      // so the item gets a comment saying it is still assigned.
-      const clear = await tracker.release(candidate, identity)
-      if (!clear) await tracker.report(candidate, stillAssigned()).catch(() => undefined)
-      return undefined
-    }
-    case 'assign':
-    case 'close':
-      // Not implemented: refuse, rather than silently complete some other way.
-      return { action: role.completion, why: `completion "${role.completion}" is not implemented yet` }
-  }
+): Promise<void> {
+  const clear = await tracker.release(candidate, identity)
+  if (!clear) await tracker.report(candidate, stillHeld(role)).catch(() => undefined)
 }
 
 /**
