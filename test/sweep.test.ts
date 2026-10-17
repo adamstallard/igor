@@ -48,6 +48,12 @@ describe('which names a sweep may touch', () => {
     }
   })
 
+  it('accepts the outbox a run leaves beside its tree', () => {
+    // Its sibling, and the only directory a crash strands that nothing else reclaims: the
+    // clone carries the work, the outbox carries the run's declaration.
+    expect(isTreeName('igor-tree-AbCdEf-outbox')).toBe(true)
+  })
+
   it('rejects everything that is not the prefix plus a random suffix', () => {
     const hostile = [
       '',
@@ -55,6 +61,10 @@ describe('which names a sweep may touch', () => {
       '..',
       'igor-tree',
       'igor-tree-',
+      'igor-tree--outbox',
+      'igor-tree-a/b-outbox',
+      'igor-tree-abc-outbox-outbox',
+      'igor-tree-abc-outboxes',
       'igor-tree-../../x',
       'igor-tree-..',
       'igor-tree-a/b',
@@ -67,7 +77,12 @@ describe('which names a sweep may touch', () => {
       'x-igor-tree-abc123',
       'IGOR-TREE-abc123',
       // The test suite's own fake provider makes these, and they are not ours to delete.
+      // The outboxes among them matter as much as the trees now that the rule reaches a
+      // suffix: a sweep that took them would delete a directory a running suite is using.
       'igor-test-tree-AbCdEf',
+      'igor-test-outbox-AbCdEf',
+      'igor-loop-outbox-AbCdEf',
+      'igor-serve-outbox-AbCdEf',
       'igor-lore-AbCdEf',
     ]
     for (const name of hostile) expect([name, isTreeName(name)]).toEqual([name, false])
@@ -107,6 +122,36 @@ describe('sweeping a directory', () => {
     for (const path of old) expect(existsSync(path)).toBe(false)
     expect(said).toHaveLength(1)
     expect(said[0]).toContain('swept 2 abandoned trees')
+  })
+
+  it('reclaims the outbox a crashed run left beside its tree', async () => {
+    // A run strands two directories, not one. `release()` removes both and SIGKILL runs
+    // neither, so a rule that matches only the clone leaves one directory per crash forever —
+    // and the one it leaves is the one holding the dead run's declaration.
+    const dir = root()
+    const clone = tree(dir, 'igor-tree-eeeeee')
+    const outbox = tree(dir, 'igor-tree-eeeeee-outbox')
+    const { out } = recorder()
+
+    const result = await sweepAbandonedTrees(out, { root: dir, now: Date.now() + SWEEP_AFTER_MS + HOUR })
+
+    expect(result).toMatchObject({ removed: 2, failed: 0 })
+    expect(existsSync(clone)).toBe(false)
+    expect(existsSync(outbox)).toBe(false)
+  })
+
+  it('leaves an outbox young enough to belong to a live process', async () => {
+    // Age is the only safe signal for the outbox too, and it is the more dangerous of the
+    // two to get wrong: deleting a live sibling's outbox throws away a declaration its
+    // worker already wrote, and the run then refuses a revert somebody did declare.
+    const dir = root()
+    const live = tree(dir, 'igor-tree-cccccc-outbox')
+    const { out } = recorder()
+
+    const result = await sweepAbandonedTrees(out, { root: dir })
+
+    expect(result.removed).toBe(0)
+    expect(existsSync(live)).toBe(true)
   })
 
   it('leaves a tree young enough to belong to a live process, ours or a sibling\'s', async () => {

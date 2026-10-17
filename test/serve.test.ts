@@ -17,15 +17,23 @@ import type { CycleDeps } from '../src/loop.js'
 import type { Role } from '../src/role.js'
 import type { TreeProvider, WorkingTree } from '../src/worktree.js'
 import { serve, untilSignalled, type ServeEvent } from '../src/serve.js'
+import { labelVerdictFrom } from '../src/github-adapter.js'
 import { tempDir } from './tmp.js'
+import { IGORS } from './igors.js'
+
+/**
+ * Fixture times, counted back from when the suite runs. Discovery reads `updatedAt` against the
+ * real clock (`sinceDays` below), so a fixed date would age out of the window.
+ */
+const STARTED = Date.now()
+const ago = (minutes: number): string => new Date(STARTED - minutes * 60_000).toISOString()
 
 const role = (over: Partial<Role> = {}): Role =>
   ({
     name: 'triage',
     reviewers: [],
-    allow: ['comment', 'draft-pr', 'unassign'],
+    allow: ['comment', 'draft-pr'],
     commands: [],
-    completion: 'unassign',
     instructions: [],
     settleSeconds: 0,
     cooldownMinutes: 60,
@@ -47,9 +55,10 @@ const issue = (n: number): Candidate =>
     state: 'open',
     labels: [],
     assignees: [],
+    holders: [],
     paths: [],
-    createdAt: '2026-09-13T00:00:00Z',
-    updatedAt: '2026-09-13T00:00:00Z',
+    createdAt: ago(120),
+    updatedAt: ago(120),
     ageDays: 0,
     idleDays: 0,
   }) as unknown as Candidate
@@ -59,6 +68,12 @@ function deps(found: Candidate[], opts: { searchThrows?: boolean; verdict?: Clai
   const tracker: Tracker = {
     name: 'github',
     nativeHolderField: true,
+    holderField: { holds: 'list', distinctFromAssignee: true },
+    holder: 'igor:triage',
+    holderSetBy: async () => undefined,
+    directed: async () => [],
+    findLinking: async () => undefined,
+    createIssue: async () => 'https://github.com/o/r/issues/100',
     identity: async () => 'igor-bot',
     search: async () => {
       searches += 1
@@ -97,6 +112,7 @@ function deps(found: Candidate[], opts: { searchThrows?: boolean; verdict?: Clai
       }
       return {
         path: tempDir('igor-serve-'),
+        outbox: tempDir('igor-serve-outbox-'),
         repo: 'o/r',
         changes: async () => [],
         release: async () => {},
@@ -567,5 +583,234 @@ describe('a published artifact that stopped merging', () => {
     // failure per cycle, not one per item and not one for the process.
     expect(events.filter((e) => e.kind === 'working')).toHaveLength(5)
     expect(s.failures).toBe(2)
+  })
+})
+
+describe('a surface credential refused while serving', () => {
+  it('takes no new item, says which identity was refused, and resumes once a token mints', async () => {
+    const { d, searches } = deps([issue(1)])
+    const { events, onEvent } = collect()
+    const answers: (true | string)[] = ['GitHub would not mint a token for the App "triage": 401 Bad credentials', true, true]
+    const s = await serve(d, role(), 'igor-bot', {
+      ...base,
+      maxCycles: 2,
+      onEvent,
+      credential: async () => answers.shift() ?? true,
+    })
+    const refused = events.filter((e) => e.kind === 'credential-refused')
+    expect(refused).toEqual([
+      { kind: 'credential-refused', cycle: 1, reason: 'GitHub would not mint a token for the App "triage": 401 Bad credentials' },
+    ])
+    // The refused cycle searched nothing and worked nothing; the next one did both.
+    expect(searches()).toBe(1)
+    expect(s.worked).toBe(1)
+  })
+
+  it('stops between items when the credential is refused mid-cycle', async () => {
+    const { d } = deps([issue(1), issue(2)])
+    const { events, onEvent } = collect()
+    const answers: (true | string)[] = [true, true, 'refused']
+    const s = await serve(d, role(), 'igor-bot', {
+      ...base,
+      maxCycles: 1,
+      onEvent,
+      credential: async () => answers.shift() ?? 'refused',
+    })
+    expect(s.worked).toBe(1)
+    expect(events.filter((e) => e.kind === 'credential-refused')).toHaveLength(1)
+  })
+})
+
+describe('items a person hands to this Igor by label', () => {
+  it('claims a handed-over item without triage, without writing the label, and without the settle interval', async () => {
+    const handed = { ...issue(5), holders: ['igor:triage'], assignees: ['adam'] } as Candidate
+    const { d } = deps([])
+    const claimed: string[] = []
+    const reported: string[] = []
+    let triaged = 0
+    Object.assign(d.tracker, {
+      directed: async () => [handed],
+      holderSetBy: async () => ({ self: false, by: 'adam', at: ago(120) }),
+      claim: async (c: Candidate) => {
+        claimed.push(c.id)
+        return true
+      },
+      report: async (_c: Candidate, m: string) => {
+        reported.push(m)
+      },
+    })
+    const s = await serve(d, role({ settleSeconds: 3600 }), 'igor-bot', {
+      ...base,
+      maxCycles: 1,
+      triage: async (cs) => {
+        triaged += cs.length
+        return approveAll(cs)
+      },
+      claim: { wait: async () => { throw new Error('waited the settle interval') } },
+    })
+    expect(s.worked).toBe(1)
+    expect(claimed).toEqual([])
+    expect(triaged).toBe(0)
+    expect(reported[0]).toContain('picked this up')
+  })
+
+  it("posts one notice, and claims nothing, where another Igor's label is there too", async () => {
+    const both = { ...issue(6), holders: ['igor:triage', 'igor:backend'] } as Candidate
+    const { d } = deps([])
+    const reported: string[] = []
+    Object.assign(d.tracker, {
+      directed: async () => [both],
+      holderSetBy: async () => ({ self: false, by: 'adam', at: ago(120) }),
+      report: async (_c: Candidate, m: string) => {
+        reported.push(m)
+      },
+    })
+    const s = await serve(d, role(), 'igor-bot', { ...base, maxCycles: 1 })
+    expect(s.worked).toBe(0)
+    expect(reported).toHaveLength(1)
+    expect(reported[0]).toContain('`igor:backend` holds it')
+  })
+})
+
+describe('an item handed over while a pull request is open for it', () => {
+  it('posts one notice naming the pull request, and claims nothing', async () => {
+    const handed = {
+      ...issue(7), holders: ['igor:triage'],
+      inFlight: { kind: 'pull-request', ref: '#8', url: 'https://github.com/o/r/pull/8', draft: true, author: 'someone', mergeable: 'clean', branch: 'b', base: 'main' },
+    } as Candidate
+    const { d } = deps([])
+    const reported: string[] = []
+    Object.assign(d.tracker, {
+      directed: async () => [handed],
+      holderSetBy: async () => ({ self: false, by: 'adam', at: ago(120) }),
+      report: async (_c: Candidate, m: string) => {
+        reported.push(m)
+      },
+    })
+    const s = await serve(d, role(), 'igor-bot', { ...base, maxCycles: 1 })
+    expect(s.worked).toBe(0)
+    expect(reported).toHaveLength(1)
+    expect(reported[0]).toContain('[#8](https://github.com/o/r/pull/8) is already open for it')
+  })
+})
+
+describe('an item handed over whose own artifact the cycle is catching up', () => {
+  it('is caught up, and gets no in-flight notice the catch-up has already made untrue', async () => {
+    const item = { ...rotting(7), holders: ['igor:triage'] } as Candidate
+    const { d, caughtUp } = deps([item], { caughtUp: [{ outcome: 'conflict' }] })
+    const reported: string[] = []
+    Object.assign(d.tracker, {
+      directed: async () => [item],
+      holderSetBy: async () => ({ self: false, by: 'adam', at: ago(120) }),
+      report: async (_c: Candidate, m: string) => {
+        reported.push(m)
+      },
+    })
+    await serve(d, role(), 'igor-bot', { ...base, maxCycles: 1 })
+    expect(caughtUp()).toHaveLength(1)
+    expect(reported.some((m) => m.includes('is already open for it'))).toBe(false)
+  })
+})
+
+describe('a handed-over item whose own pull request the cycle catches up', () => {
+  it('is caught up when a person handed it over after a stop, without waiting the cooldown', async () => {
+    const now = Date.now()
+    const iso = (m: number) => new Date(now - m * 60000).toISOString()
+    const item = { ...rotting(7), holders: ['igor:triage'], labels: ['igor:triage'] } as Candidate
+    const { d, caughtUp } = deps([item])
+    const reported: string[] = []
+    const comments = [{ author: 'adam', at: iso(10), body: 'stop' }]
+    Object.assign(d.tracker, {
+      directed: async () => [item],
+      holderSetBy: async () => ({ self: false, by: 'adam', at: iso(5) }),
+      commentsSince: async (_c: Candidate, since: string) => comments.filter((c) => Date.parse(c.at) >= Date.parse(since)),
+      report: async (_c: Candidate, m: string) => { reported.push(m) },
+    })
+    const { events, onEvent } = collect()
+    await serve(d, role(), 'igor-bot', { ...base, maxCycles: 1, onEvent })
+    const p = events.find((e) => e.kind === 'planned') as any
+    expect(p.report.toCatchUp).toHaveLength(1)
+    expect(caughtUp()).toHaveLength(1)
+  })
+
+  it('keeps the person\'s label, so the in-flight notice\'s promise holds once the pull request starts conflicting', async () => {
+    let cycle = 0
+    const said: { author: string; at: string; body: string }[] = []
+    const cur = () => ({ ...rotting(7, { mergeable: cycle <= 1 ? 'unknown' : 'conflicting' }), holders: ['igor:triage'], labels: ['igor:triage'] }) as Candidate
+    const { d, caughtUp } = deps([], { caughtUp: [{ outcome: 'conflict' }] })
+    const reported: string[] = []
+    const released: string[] = []
+    Object.assign(d.tracker, {
+      search: async () => { cycle += 1; return [cur()] },
+      directed: async () => [cur()],
+      holderSetBy: async () => ({ self: false, by: 'adam', at: ago(120) }),
+      commentsSince: async () => said,
+      report: async (_c: Candidate, m: string) => { reported.push(`cycle${cycle}: ${m.slice(0, 120)}`); said.push({ author: 'igor-bot', at: new Date().toISOString(), body: m }) },
+      release: async () => { released.push(`cycle${cycle}`); return true },
+    })
+    await serve(d, role(), 'igor-bot', { ...base, maxCycles: 2 })
+    expect(caughtUp()).toHaveLength(1)
+    expect(reported.some((r) => r.includes('is already open for it'))).toBe(true)
+    expect(released).toEqual([])
+  })
+})
+
+describe('a handed-over item stopped while nothing ran', () => {
+  it('loses its label as a stop and gets a receipt, and is not claimed', async () => {
+    const handed = { ...issue(9), holders: ['igor:triage'], labels: ['igor:triage'] } as Candidate
+    const { d } = deps([])
+    const reported: string[] = []
+    const released: boolean[] = []
+    Object.assign(d.tracker, {
+      directed: async () => [handed],
+      holderSetBy: async () => ({ self: false, by: 'adam', at: ago(120) }),
+      commentsSince: async () => [{ author: 'bob', at: ago(60), body: 'stop' }],
+      release: async (_c: Candidate, _as: string, how?: { stop?: boolean }) => { released.push(how?.stop === true); return true },
+      report: async (_c: Candidate, m: string) => { reported.push(m) },
+    })
+    const s = await serve(d, role(), 'igor-bot', { ...base, maxCycles: 1 })
+    expect(s.worked).toBe(0)
+    expect(released).toEqual([true])
+    expect(reported).toHaveLength(1)
+    expect(reported[0]).toContain("stopped at bob's request and released this")
+  })
+})
+
+describe('a stop said while the cycle works another item', () => {
+  it('is seen by the claim on that item, which stands down with a receipt', async () => {
+    const { d } = deps([issue(1), issue(2)])
+    // Comments per item, as GitHub keeps them: `since` filters on the edit time, the verdict on
+    // the creation time.
+    const comments: Record<string, { body: string; user: { login: string }; created_at: string; updated_at: string }[]> = {}
+    const say = (id: string, login: string, body: string) => {
+      const at = new Date().toISOString()
+      ;(comments[id] ??= []).push({ body, user: { login }, created_at: at, updated_at: at })
+    }
+    const outcomes: Record<string, string> = {}
+    Object.assign(d.tracker, {
+      verifyClaim: async (c: Candidate, as: string, since: string) =>
+        labelVerdictFrom({ login: as, accountId: 1, holder: 'igor:triage' }, ['igor:triage'], undefined,
+          (comments[c.id] ?? []).filter((m) => Date.parse(m.updated_at) >= Date.parse(since)), since, IGORS),
+      report: async (c: Candidate, m: string) => { say(c.id, 'igor-bot', m) },
+    })
+    const { events, onEvent } = collect()
+    await serve(d, role({ settleSeconds: 0 }), 'igor-bot', {
+      ...base,
+      maxCycles: 1,
+      onEvent,
+      // While item 1 is worked, somebody stops item 2, and the claim on item 2 comes later than
+      // its own settle window reaches back.
+      worker: async () => {
+        if (!(comments['github:o/r#2'] ?? []).some((m) => m.user.login === 'bob')) {
+          say('github:o/r#2', 'bob', 'stop')
+          // Longer than the checkpoint's one-second look back, so only the claim's scan can see it.
+          await new Promise((r) => setTimeout(r, 1500))
+        }
+        return { result: 'no change needed', total_cost_usd: 0 }
+      },
+    })
+    for (const e of events) if (e.kind === 'worked') outcomes[e.item.id] = e.run.outcome
+    expect(outcomes['github:o/r#2']).toBe('stopped')
+    expect((comments['github:o/r#2'] ?? []).some((m) => m.body.includes("stopped at bob's request"))).toBe(true)
   })
 })

@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import type { Candidate, ClaimVerdict, Tracker } from '../src/adapter.js'
 import type { Role } from '../src/role.js'
-import { checkpoint, claimMessage, claimStuck, claimWithdrawn, stillAssigned, stoodDownStuck, eligibleAfterStop, stopReceipt, takeClaim } from '../src/claiming.js'
+import { checkpoint, claimMessage, claimStuck, claimWithdrawn, handingBack, stillHeld, stoodDownStuck, eligibleAfterStop, stopReceipt, takeClaim, waitingMarker, waitingNotice } from '../src/claiming.js'
 import { isGoAhead, isStop } from '../src/signals.js'
+import { IGORS } from './igors.js'
 
 const NOW = Date.parse('2026-09-13T12:00:00Z')
 
@@ -13,6 +14,7 @@ const candidate = (over: Partial<Candidate> = {}): Candidate =>
     native: '7',
     title: 'A bug',
     assignees: [],
+    holders: [],
     labels: [],
     paths: [],
     state: 'open',
@@ -24,7 +26,7 @@ const role = (over: Partial<Role> = {}): Role =>
     name: 'triage',
     settleSeconds: 10,
     cooldownMinutes: 60,
-    allow: ['comment', 'unassign'],
+    allow: ['comment'],
     ...over,
   }) as Role
 
@@ -53,12 +55,19 @@ function tracker(
     verifyThrows?: boolean
     releaseThrows?: boolean
   releaseLeavesHolder?: boolean
+    holds?: 'single' | 'list'
   } = {},
 ) {
   const log: Log = { claimed: [], reported: [], reportAttempts: [], released: [], verifiedSince: [] }
   const t: Tracker = {
     name: 'fake',
     nativeHolderField: opts.native ?? true,
+    holderField: { holds: opts.holds ?? 'list', distinctFromAssignee: true },
+    holder: 'igor:triage',
+    holderSetBy: async () => undefined,
+    directed: async () => [],
+    findLinking: async () => undefined,
+    createIssue: async () => 'https://github.com/o/r/issues/100',
     identity: async () => 'igor-bot',
     search: async () => [],
     claim: async (_c, as) => {
@@ -111,7 +120,7 @@ describe('taking a claim', () => {
     const { t, log } = tracker({ status: 'held' }, { claimSticks: false })
     const r = await takeClaim(t, candidate(), role(), 'igor-bot', opts)
     expect(r.outcome).toBe('refused')
-    expect(r.reason).toMatch(/write access/)
+    expect(r.reason).toMatch(/the holder field does not name it/)
     expect(log.reported).toEqual([])
   })
 
@@ -136,6 +145,20 @@ describe('taking a claim', () => {
     const { t, log } = tracker({ status: 'held' })
     await takeClaim(t, candidate(), role({ settleSeconds: 10 }), 'igor-bot', opts)
     expect(Date.parse(log.verifiedSince[0]!)).toBe(NOW - 10_000)
+  })
+
+  it('lets a go-ahead lift a stop for its own claim, never for a hand-over or a checkpoint', async () => {
+    const { t } = tracker({ status: 'held' })
+    const liftable: (boolean | undefined)[] = []
+    const verify = t.verifyClaim.bind(t)
+    t.verifyClaim = async (c, as, since, o) => {
+      liftable.push(o?.liftable)
+      return verify(c, as, since, o)
+    }
+    const claim = await takeClaim(t, candidate(), role(), 'igor-bot', opts)
+    await takeClaim(t, candidate(), role(), 'igor-bot', { ...opts, directed: true })
+    await checkpoint(t, claim, 'igor-bot')
+    expect(liftable).toEqual([true, false, undefined])
   })
 
   it('posts no claim message on a surface where the caller announces itself', async () => {
@@ -394,26 +417,55 @@ describe('stop is unconditional', () => {
   it('is honoured from someone who has never touched the repository', () => {
     // No permission check exists to fail: recognition is textual and takes no identity of the
     // speaker into account beyond who is being addressed.
-    expect(isStop('stop', 'igor-bot')).toBe(true)
-    expect(isStop('@igor-bot stop', 'igor-bot')).toBe(true)
+    expect(isStop('stop', 'igor-bot', IGORS)).toBe(true)
+    expect(isStop('@igor-bot stop', 'igor-bot', IGORS)).toBe(true)
   })
 
   it('takes no configuration, so nothing can disable it', () => {
     // The signature is the guarantee: there is no options parameter to pass a policy through.
-    expect(isStop.length).toBe(2)
+    // The one input beyond the text and the Igor says which names are Igors, and that can only
+    // widen a stop: a name that is no Igor counts as no name, which stops every Igor.
+    expect(isStop.length).toBe(3)
+    for (const accounts of [{}, { 'igor-other': 'igor' as const }, { 'igor-other': 'other' as const }]) {
+      expect(isStop('stop', 'igor-bot', accounts)).toBe(true)
+      expect(isStop('stop @igor-bot', 'igor-bot', accounts)).toBe(true)
+    }
   })
 
   it('still does not fire on two people talking to each other', () => {
-    expect(isStop('@alice stop doing that', 'igor-bot')).toBe(false)
-    expect(isStop('this will stop working soon', 'igor-bot')).toBe(false)
+    expect(isStop('@alice stop doing that', 'igor-bot', IGORS)).toBe(false)
+    expect(isStop('this will stop working soon', 'igor-bot', IGORS)).toBe(false)
   })
 
   it('does not read a hyphenated word as the verb', () => {
     // A word boundary matches before a hyphen, so `stop-gap` read as a stop. Harmless while
     // this only fired inside a claim; it now gates items nobody has claimed.
-    expect(isStop('Stop-gap until the real fix lands', 'igor-bot')).toBe(false)
-    expect(isStop('@igor-bot stop-gap measures are fine', 'igor-bot')).toBe(false)
-    expect(isStop('stop. I will take it from here', 'igor-bot')).toBe(true)
+    expect(isStop('Stop-gap until the real fix lands', 'igor-bot', IGORS)).toBe(false)
+    expect(isStop('@igor-bot stop-gap measures are fine', 'igor-bot', IGORS)).toBe(false)
+    expect(isStop('stop. I will take it from here', 'igor-bot', IGORS)).toBe(true)
+  })
+})
+
+describe('a stop that names an Igor', () => {
+  // Decided by Adam, 2026-10-11: a bare stop stops every Igor on the item; one that names Igors
+  // stops only those.
+  it('stops only the Igors it names', () => {
+    expect(isStop('stop @igor-backend, frontend will take this', 'igor-frontend[bot]', IGORS)).toBe(false)
+    expect(isStop('stop @igor-backend, frontend will take this', 'igor-backend[bot]', IGORS)).toBe(true)
+    expect(isStop('stop @igor-backend and @igor-frontend', 'igor-frontend[bot]', IGORS)).toBe(true)
+    expect(isStop('stop @igor-frontend[bot]', 'igor-frontend[bot]', IGORS)).toBe(true)
+  })
+
+  it('still stops everyone where it names nobody', () => {
+    expect(isStop('stop', 'igor-frontend[bot]', IGORS)).toBe(true)
+    expect(isStop('stop, I have got this', 'igor-frontend[bot]', IGORS)).toBe(true)
+    expect(isStop('stop. I will take it from here', 'igor-frontend[bot]', IGORS)).toBe(true)
+  })
+
+  it('keeps the addressed form and its boundaries', () => {
+    expect(isStop('@igor-frontend stop', 'igor-frontend[bot]', IGORS)).toBe(true)
+    expect(isStop('@code-reviewer stop', 'reviewer[bot]', IGORS)).toBe(false)
+    expect(isStop('stop @code-reviewer', 'reviewer[bot]', IGORS)).toBe(false)
   })
 })
 
@@ -430,7 +482,7 @@ describe('the stop receipt', () => {
 })
 
 describe('what may follow a stop', () => {
-  const said = (...bodies: string[]) => async () => bodies.map((body) => ({ body, at: '' }))
+  const said = (...bodies: string[]) => async () => bodies.map((body) => ({ body, at: '', accounts: IGORS }))
   const base = {
     candidate: candidate(),
     stoppedAt: new Date(NOW - 30 * 60000).toISOString(),
@@ -444,6 +496,12 @@ describe('what may follow a stop', () => {
     const e = await eligibleAfterStop(base)
     expect(e.eligible).toBe(false)
     expect(e.reason).toContain('30 minutes left')
+  })
+
+  it('stays out where the go-ahead names only another Igor', async () => {
+    const e = await eligibleAfterStop({ ...base, since: said('go ahead @igor-other') })
+    expect(e.eligible).toBe(false)
+    expect((await eligibleAfterStop({ ...base, since: said('go ahead @igor-bot') })).eligible).toBe(true)
   })
 
   it('becomes eligible once the cooldown elapses and nobody took it', async () => {
@@ -509,12 +567,121 @@ describe('what may follow a stop', () => {
 describe('go-ahead recognition', () => {
   it('accepts the ordinary ways of saying it', () => {
     for (const s of ['go ahead', 'resume', 'carry on', 'continue', 'all yours', '@igor-bot go ahead']) {
-      expect(isGoAhead(s, 'igor-bot')).toBe(true)
+      expect(isGoAhead(s, 'igor-bot', IGORS)).toBe(true)
     }
   })
 
   it('does not fire on a remark about the work itself', () => {
-    expect(isGoAhead('we should go ahead with the redesign', 'igor-bot')).toBe(false)
-    expect(isGoAhead('I will continue this tomorrow', 'igor-bot')).toBe(false)
+    expect(isGoAhead('we should go ahead with the redesign', 'igor-bot', IGORS)).toBe(false)
+    expect(isGoAhead('I will continue this tomorrow', 'igor-bot', IGORS)).toBe(false)
+  })
+})
+
+describe('the messages that name the label', () => {
+  // Wording carried verbatim from one-claiming-surface's task 3.6a, approved by the reviewer.
+  it('says so where the claim could not be finished or released', () => {
+    expect(claimStuck(role())).toBe(
+      '**triage** could not finish taking this and could not release it either, so it still carries ' +
+        'its `igor:triage` label. Nothing was done. Remove the label to let another run pick it up.',
+    )
+  })
+
+  it('corrects a release that did not take', () => {
+    expect(stillHeld(role())).toBe(
+      'This still carries the `igor:triage` label — releasing it did not take. Remove the label to free it.',
+    )
+  })
+
+  it('says so where it stood down and could not remove its label', () => {
+    expect(stoodDownStuck(role())).toBe(
+      '**triage** stood down here, and could not remove its own `igor:triage` label. Remove the label to free it.',
+    )
+  })
+})
+
+describe('an item a person handed to this Igor', () => {
+  it('is not written again, waits no settle interval, and still posts the claim message', async () => {
+    const { t, log } = tracker({ status: 'held' })
+    let waited = false
+    const r = await takeClaim(t, candidate(), role(), 'igor-bot', {
+      ...opts,
+      directed: true,
+      wait: async () => {
+        waited = true
+      },
+    })
+    expect(r.outcome).toBe('held')
+    expect(log.claimed).toEqual([])
+    expect(waited).toBe(false)
+    expect(log.reported).toEqual([claimMessage(role(), 'igor-bot')])
+  })
+
+  it('still stands down where the person took it back before the claim', async () => {
+    const { t } = tracker({ status: 'stopped', by: 'alice', reason: 'removed the igor:triage label' })
+    const r = await takeClaim(t, candidate(), role(), 'igor-bot', { ...opts, directed: true })
+    expect(r.outcome).toBe('stopped')
+  })
+})
+
+describe('losing on a holder field that holds one value', () => {
+  it("replies and changes nothing, since the field names the winner", async () => {
+    const { t, log } = tracker({ status: 'lost', by: 'other-agent' }, { holds: 'single' })
+    const r = await takeClaim(t, candidate(), role(), 'igor-bot', opts)
+    expect(r.outcome).toBe('lost')
+    expect(log.released).toEqual([])
+    expect(log.reported.at(-1)).toBe(handingBack(role()))
+  })
+
+  it('removes only its own entry on a list', async () => {
+    const { t, log } = tracker({ status: 'lost', by: 'other-igor[bot]' })
+    await takeClaim(t, candidate(), role(), 'igor-bot', opts)
+    expect(log.released).toEqual(['igor-bot'])
+    expect(log.reported).not.toContain(handingBack(role()))
+  })
+
+  it('still removes itself on a stop', async () => {
+    const { t, log } = tracker({ status: 'stopped', by: 'alice' }, { holds: 'single' })
+    await takeClaim(t, candidate(), role(), 'igor-bot', opts)
+    expect(log.released).toEqual(['igor-bot'])
+  })
+})
+
+describe('the waiting notice', () => {
+  it('names the holding Igor and how to hand the item over, and carries its marker', () => {
+    const text = waitingNotice(role({ name: 'frontend' }), ['igor:backend'])
+    expect(text).toContain('**frontend** was asked to take this, but `igor:backend` holds it.')
+    expect(text).toContain('Removing that label hands it to **frontend**.')
+    expect(text).toContain(waitingMarker(['igor:backend']))
+  })
+
+  it('marks the same holders the same way, whatever their order', () => {
+    expect(waitingMarker(['igor:b', 'igor:a'])).toBe(waitingMarker(['igor:a', 'igor:b']))
+  })
+})
+
+describe('what may follow a stop, with a holder field distinct from the assignee', () => {
+  const holding = { holder: 'igor:triage', distinctFromAssignee: true }
+  const base = {
+    stoppedAt: new Date(NOW - 5 * 60000).toISOString(),
+    cooldownMinutes: 0,
+    since: async () => [],
+    identity: 'igor-bot',
+    now: NOW,
+    holding,
+  }
+
+  it('leaves the item to a person who assigned themselves after the stop', async () => {
+    const e = await eligibleAfterStop({ ...base, candidate: candidate({ assignees: ['alice'] }) })
+    expect(e.eligible).toBe(false)
+  })
+
+  it('takes it back where a person also handed it to this Igor', async () => {
+    const e = await eligibleAfterStop({ ...base, candidate: candidate({ assignees: ['alice'], holders: ['igor:triage'] }) })
+    expect(e.eligible).toBe(true)
+  })
+
+  it("leaves it to another Igor whose label is on it", async () => {
+    const e = await eligibleAfterStop({ ...base, candidate: candidate({ holders: ['igor:backend'] }) })
+    expect(e.eligible).toBe(false)
   })
 })

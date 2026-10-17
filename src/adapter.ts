@@ -7,6 +7,8 @@
  * though only GitHub ships now.
  */
 
+import type { Accounts } from './signals.js'
+
 /**
  * Whether an artifact still merges into its base.
  *
@@ -52,6 +54,11 @@ export interface Candidate {
   state: 'open' | 'closed'
   labels: string[]
   assignees: string[]
+  /**
+   * What the holder field shows, one entry per holder, spelled as `Tracker.holder` spells this
+   * Igor: on GitHub, the item's `igor:` labels.
+   */
+  holders: string[]
   /** Paths the item names. Issues have no files, so these are read out of the text. */
   paths: string[]
   createdAt: string
@@ -64,9 +71,9 @@ export interface Candidate {
 export type ClaimStatus = 'held' | 'lost' | 'stopped'
 
 /**
- * `stopped` outranks `lost`. An Igor that was both unassigned and stopped must report the
- * stop, because a stop carries a receipt obligation that losing a race does not — so
- * precedence belongs in the contract rather than in whichever call site checks first.
+ * `stopped` outranks `lost`. An Igor that was both removed from the holder field and stopped
+ * must report the stop, because a stop carries a receipt obligation that losing a race does
+ * not — so precedence belongs in the contract rather than in whichever call site checks first.
  */
 export interface ClaimVerdict {
   status: ClaimStatus
@@ -75,6 +82,44 @@ export interface ClaimVerdict {
   at?: string
   /** Verbatim text of the stop, for the receipt. */
   reason?: string
+  /**
+   * Set on a stop made by removing this Igor from the holder field rather than by a comment.
+   * Nothing a person wrote marks such a stop, so the receipt carries the mark the cooldown reads.
+   */
+  fromHolder?: true
+  /**
+   * Set on a held verdict where a go-ahead lifted a stop, to the go-ahead's creation time on the
+   * surface's clock. A later check scans for stops from here, so the stop it lifted does not end
+   * the run.
+   */
+  liftedAt?: string
+}
+
+/**
+ * How a tracker's holder field behaves. The loop reads this rather than the field's name, so it
+ * resolves claims and picks candidates the same way on every tracker.
+ */
+export interface HolderField {
+  /**
+   * `single`: a second write replaces the first, so the later writer holds the item, and a
+   * losing Igor must not clear the field, which by then names the winner. `list`: every write is
+   * kept, so any other holder present after the settle interval means the claim is lost.
+   */
+  holds: 'single' | 'list'
+  /**
+   * Whether the field is separate from the assignee. Where it is, the assignee is the person
+   * accountable, and an item assigned to a person is claimed only where the holder field names
+   * this Igor.
+   */
+  distinctFromAssignee: boolean
+}
+
+/** Who last put this Igor in an item's holder field. */
+export interface HolderSetting {
+  /** Whether it was this Igor itself, rather than a person or another account. */
+  self: boolean
+  by: string
+  at: string
 }
 
 export interface Source {
@@ -88,38 +133,68 @@ export interface Comment {
   author: string
   at: string
   body: string
+  /**
+   * The kind of each name this comment's opening stop or go-ahead mentions: `igor` or `other`, as
+   * the surface resolved it. A name it could not resolve is missing, and so is every name in a
+   * comment that does not open with a stop or a go-ahead, which leaves the record empty.
+   */
+  accounts: Accounts
 }
 
 export interface Tracker {
   readonly name: string
   /**
-   * Whether the surface has a field naming who holds an item. Determines how a claim is
-   * *expressed*, never how it is resolved — resolution is ordering plus a settle interval
-   * everywhere.
+   * Whether the surface has a field naming who holds an item. Every claiming tracker has one, so
+   * a claim is always the holder field plus the claim message.
    *
-   * Which field it is stays inside the adapter. GitHub's is the assignee; Linear's is
-   * `delegate`, since an app identity there may hold the latter and not the former.
+   * Which field it is stays inside the adapter. GitHub's is the Igor's `igor:<role>` label,
+   * because an App's bot cannot be an assignee; Linear's is `delegate`, since an app identity
+   * there may hold the latter and not the former.
    */
   readonly nativeHolderField: boolean
+  readonly holderField: HolderField
+  /** What the holder field shows when this Igor holds an item: `igor:<role>` on GitHub. */
+  readonly holder: string
+
+  /**
+   * Who last put this Igor in the item's holder field, or `undefined` where it is not there.
+   * Read from the tracker when asked, never from `candidate.holders`, which can be minutes old.
+   * Tells a person handing the item over from the Igor's own claim, which matters because an
+   * Igor that set the field and failed before its claim message also finds itself there.
+   */
+  holderSetBy(candidate: Candidate): Promise<HolderSetting | undefined>
+
+  /** Open items in `repo` whose holder field names this Igor, wherever the role's query looks. */
+  directed(repo: string): Promise<Candidate[]>
 
   /** Who this Igor is on this surface, for claiming and for reading its own claim back. */
   identity(): Promise<string>
 
   search(source: Source): Promise<Candidate[]>
 
-  /** Expresses a claim. Returns what the surface actually recorded, which may not be what was asked. */
+  /**
+   * Expresses a claim by setting the holder field. Returns what the surface recorded, read back,
+   * which may not be what was asked.
+   */
   claim(candidate: Candidate, as: string): Promise<boolean>
 
   /**
    * Re-reads the item to answer held / lost / stopped in one operation, rather than adding a
    * second one. `since` bounds the scan for a stop to what arrived after the claim.
+   *
+   * With `liftable`, a go-ahead after the latest stop in the comments lifts it, as it does for the
+   * cycle's own stop gate. A directed claim and a mid-run checkpoint leave it off: only a new
+   * hand-over restores a hand-over a stop cancelled, and a stop during a run ends that run.
    */
-  verifyClaim(candidate: Candidate, as: string, since: string): Promise<ClaimVerdict>
+  verifyClaim(candidate: Candidate, as: string, since: string, options?: { liftable?: boolean }): Promise<ClaimVerdict>
 
   /**
    * What has been said on an item since a moment, so the loop can ask whether anyone answered
    * something it left. Distinct from `verifyClaim`, which reads comments to reach a verdict
    * and returns the verdict rather than the material.
+   *
+   * The comments arrive in creation order, which decides whether a go-ahead follows a stop where
+   * the two share a timestamp.
    */
   commentsSince(candidate: Candidate, since: string): Promise<Comment[]>
 
@@ -135,11 +210,26 @@ export interface Tracker {
    */
   report(candidate: Candidate, message: string): Promise<string | undefined>
 
-  /** Gives the claim up, and answers whether the holder field is clear afterwards. */
-  release(candidate: Candidate, as: string): Promise<boolean>
+  /**
+   * Gives the claim up, removing only what names this Igor, and answers whether the holder field
+   * is clear of it afterwards, read back.
+   */
+  release(candidate: Candidate, as: string, how?: ReleaseHow): Promise<boolean>
+
+  /** An open item in `repo` whose description links `url`, as its link, or `undefined`. */
+  findLinking(repo: string, url: string): Promise<string | undefined>
+
+  /** Opens an item in `repo`, and answers its link. */
+  createIssue(repo: string, title: string, body: string): Promise<string>
 
   /** How an artifact refers back to an item on this tracker — `Closes #12`, a branch name, … */
   linkage(candidate: Candidate): string
+}
+
+/** Why a claim is being given back, where that changes what the release removes. */
+export interface ReleaseHow {
+  /** A person stopped the Igor. A stop removes this Igor from the holder field, whoever put it there. */
+  stop?: boolean
 }
 
 export interface ArtifactRequest {
@@ -154,7 +244,7 @@ export interface ArtifactRequest {
   baseSha?: string
   title: string
   body: string
-  files: { path: string; content: string }[]
+  files: { path: string; content: string; executable?: boolean }[]
   /**
    * Paths the work removed. Left out, the artifact looks complete to a reviewer and is not —
    * a refactor still carrying the module it removes, a rename with the file in two places.

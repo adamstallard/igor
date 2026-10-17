@@ -2,7 +2,7 @@ import { lstat, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ABSOLUTE_CEILING_MS } from './execute.js'
-import { TREE_PREFIX } from './worktree.js'
+import { OUTBOX_SUFFIX, TREE_PREFIX } from './worktree.js'
 import type { Reporter } from './wiring.js'
 
 /**
@@ -25,22 +25,26 @@ import type { Reporter } from './wiring.js'
 export const SWEEP_AFTER_MS = ABSOLUTE_CEILING_MS + 60 * 60 * 1000
 
 /**
- * Exactly what `mkdtemp` appends to the prefix: a non-empty run of alphanumerics. A name with a
- * separator, a dot, or no suffix at all was not made here.
+ * Exactly what `mkdtemp` appends to the prefix — a non-empty run of alphanumerics — and then
+ * whatever fixed suffix the caller adds after it. A name whose random part holds a separator or
+ * a dot, or that has no random part at all, was not made here.
  *
- * The prefix is escaped rather than interpolated raw. It holds no metacharacter today, but this
+ * Both ends are escaped rather than interpolated raw. Neither holds a metacharacter today, but this
  * rule decides what gets deleted, and a later prefix containing `.` or `+` would widen it
  * silently — an unescaped `igor.tree-` matches `igorXtree-abc`.
  */
-export function nameRuleFor(prefix: string): RegExp {
-  return new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[A-Za-z0-9]+$`)
+export function nameRuleFor(prefix: string, suffix = ''): RegExp {
+  const literal = (part: string) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`^${literal(prefix)}[A-Za-z0-9]+${literal(suffix)}$`)
 }
 
 const TREE_NAME = nameRuleFor(TREE_PREFIX)
+/** A run strands two directories, and only one of them is the checkout. */
+const OUTBOX_NAME = nameRuleFor(TREE_PREFIX, OUTBOX_SUFFIX)
 
 /** The only names a sweep may touch. */
 export function isTreeName(name: string): boolean {
-  return TREE_NAME.test(name)
+  return TREE_NAME.test(name) || OUTBOX_NAME.test(name)
 }
 
 /** Ours by name, and older than any live worker's tree can be. */

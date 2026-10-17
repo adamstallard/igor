@@ -1,10 +1,11 @@
 import type { Candidate } from './adapter.js'
 import type { CycleDeps, CycleOptions, CycleReport, ItemRun } from './loop.js'
-import { catchUpItem, planCycle, runItem } from './loop.js'
+import { catchUpItem, honourIdleStop, planCycle, runItem } from './loop.js'
 import type { Gate } from './budget.js'
 import { windsDownOnSignal } from './execute.js'
 import { noteHandoff, shouldDefer } from './deferred.js'
 import type { Role } from './role.js'
+import { waitingNotice } from './claiming.js'
 
 /**
  * The loop. One cycle, sleep, repeat.
@@ -37,6 +38,12 @@ export interface ServeOptions extends CycleOptions {
   sleep?: (ms: number) => Promise<void>
   /** Resolves when the process should wind down. */
   until?: Promise<void>
+  /**
+   * Whether the Igor can still act as its surface identity: `true`, or why not. Asked before each
+   * cycle's work and before each item, so a credential GitHub stops accepting stops new work
+   * until it is accepted again.
+   */
+  credential?: () => Promise<true | string>
 }
 
 export type ServeEvent =
@@ -47,6 +54,8 @@ export type ServeEvent =
   // detaches it from the role's share, which is computed per seat.
   | { kind: 'worked'; item: Candidate; run: ItemRun; seat?: string }
   | { kind: 'cycle-failed'; cycle: number; error: Error }
+  /** The surface credential was refused, so the cycle takes no new item. */
+  | { kind: 'credential-refused'; cycle: number; reason: string }
   | { kind: 'sleeping'; minutes: number }
   | { kind: 'stopping'; reason: string }
 
@@ -89,8 +98,9 @@ export async function serve(
     //
     // **The second one in a row ends the cycle, not the first.** A run cannot tell whether a
     // failure is the surface's or the item's: `codeHost.produce` fails inside `execute` for a
-    // branch the item already owns, while a tracker that does not answer the completion
-    // unassign fails outside it, so neither the error nor what the run reached separates them.
+    // branch the item already owns, while a tracker that does not answer the release that ends
+    // a finished run fails outside it, so neither the error nor what the run reached separates
+    // them.
     // How many items fail does: an outage fails every item, and a bad item fails one. A table
     // of error shapes is rejected, because the first error it doesn't list falls through.
     //
@@ -112,7 +122,19 @@ export async function serve(
       return true
     }
 
-    try {
+    // **A refused credential takes no new item, and says whose it was.** The question costs a
+    // mint at most, never an item, and it is asked again next cycle, which is how the Igor
+    // resumes once the credential works without waiting for an item to probe it.
+    const refused = async (): Promise<boolean> => {
+      const answer = (await options.credential?.()) ?? true
+      if (answer === true) return false
+      emit({ kind: 'credential-refused', cycle, reason: answer })
+      // The claim loop checks this before its own question, so one refusal is reported once.
+      abandoned = true
+      return true
+    }
+
+    if (!(await refused())) try {
       // Identity comes from the argument, never from the options: if the two disagreed, the
       // loop would screen holders as one Igor and claim as another.
       //
@@ -129,6 +151,7 @@ export async function serve(
           emit({ kind: 'stopping', reason: 'asked to stop between items' })
           break
         }
+        if (await refused()) break
         // Catching up counts against the gate like any other work. The quiet path spends
         // nothing, but the conflicting one spends a worker, and it is the same gate that
         // decides whether there is a worker to spend.
@@ -138,7 +161,11 @@ export async function serve(
           break
         }
         emit({ kind: 'working', item: candidate, ...(gate.seat === undefined ? {} : { seat: gate.seat }) })
-        const run = await catchUpItem(deps, candidate, role, identity, { ...options, budget: gate })
+        const run = await catchUpItem(deps, candidate, role, identity, {
+          ...options,
+          budget: gate,
+          claim: { ...options.claim, since: report.readAt },
+        })
         summary.worked += 1
         summary.costUsd += run.costUsd ?? 0
         if (shouldDefer(run.outcome, run.handoff, run.cures)) {
@@ -148,7 +175,20 @@ export async function serve(
         if (abandon(run)) break
       }
 
-      for (const { candidate } of report.toClaim) {
+      // A person handed these to this Igor while another Igor holds them. One notice each, which
+      // the cycle stops finding once it is posted; nothing is claimed.
+      // Stops said while nothing was running: the label comes off, with a receipt.
+      for (const { candidate, stop } of report.stopped) {
+        if (abandoned || winding || stop === undefined) continue
+        await honourIdleStop(deps.tracker, candidate, role, identity, stop).catch(() => undefined)
+      }
+
+      for (const { candidate, holders, notice } of report.waiting) {
+        if (abandoned || winding) break
+        await deps.tracker.report(candidate, notice ?? waitingNotice(role, holders ?? [])).catch(() => undefined)
+      }
+
+      for (const { candidate, directed, handedOverAt } of report.toClaim) {
         // The outage the catch-up loop met answers every claim here the same way, and claiming
         // is the louder of the two — a claim comment and a handoff on each.
         if (abandoned) break
@@ -158,6 +198,7 @@ export async function serve(
           emit({ kind: 'stopping', reason: 'asked to stop between items' })
           break
         }
+        if (await refused()) break
         const gate = await options.gate()
         if (gate.exhausted()) {
           emit({ kind: 'stopping', reason: gate.reason })
@@ -165,7 +206,17 @@ export async function serve(
         }
         emit({ kind: 'working', item: candidate, ...(gate.seat === undefined ? {} : { seat: gate.seat }) })
         const lore = await options.loreFor(candidate)
-        const run = await runItem(deps, candidate, role, identity, { ...options, budget: gate, lore })
+        const run = await runItem(deps, candidate, role, identity, {
+          ...options,
+          budget: gate,
+          lore,
+          // A claim scans for stops from when the cycle read the item, or for a handed-over item
+          // from the hand-over, so a stop said while the cycle worked other items stops it.
+          claim:
+            directed === true
+              ? { ...options.claim, directed: true, since: handedOverAt ?? report.readAt }
+              : { ...options.claim, since: report.readAt },
+        })
         summary.worked += 1
         // A run whose cost never arrived adds nothing here, so this total is a floor. The
         // ledger records the absence rather than a zero.
