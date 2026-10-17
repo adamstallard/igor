@@ -177,6 +177,12 @@ independently of any capacity estimate. The flag is recorded on every row from t
 it is a fact about the seat at that moment, but it shuts only that window: overage met in a session
 says nothing about the week, and shutting the week for it could hold a seat out for days.
 
+**What the flag means is unmeasured.** No capture holds `isUsingOverage: true`, and the event also
+carries `overageStatus` and `overageDisabledReason`. If the flag meant overage is enabled rather
+than being spent, this rule would shut every such seat window after window. So the rule is not
+built until task 1.4 captures a true value, and if the flag means something else the rule reads
+the field that does.
+
 **No opt-in (decided by Adam, 2026-09-27).** No configuration key lets an owner allow the fleet
 to spend extra usage. Overage costs real money, and a key for it is added only when somebody asks
 for one; until a change declares it, `strict-config-keys` refuses it like any other unread key.
@@ -239,8 +245,8 @@ below). Everything else in it is withdrawn:
 It is removed in gate two, along with the remedies in `src/budget.ts` that send an operator to it
 and the `scheduled-observation` citations in `src/capacity.ts` and `test/capacity.test.ts`. The
 built-in window lengths those citations justify are justified by *A window's length is measured,
-and so is whether it starts at first use* here. The docs that describe `igor observe` say, until then, that it is
-being withdrawn by this change.
+and so is whether it starts at first use* here. The docs on this branch already describe no
+`igor observe` command (task 9.5).
 
 **What is not removed.** The live `/usage` read in `readAllSeats` (`readUsage`, `parseUsage`,
 `runUsage`, `hasSubscription` in `src/budget.ts`) is not `igor observe`. It reads a seat on the
@@ -333,7 +339,7 @@ is even pacing.
 
 **Why it replaces the dollar bound.** The bound held Igor's recorded spend under
 `(1 − reserve) × capacity`. It needed a capacity in dollars for every window before a reserved
-seat could be used, which is what calibration admission and `capacity_estimate` existed to supply,
+seat could be used, which is what `capacity_estimate` existed to supply,
 and it held the whole reserve back until the reset, where whatever nobody used was lost. The line
 compares a fraction of the window against a fraction of the window, so it needs no dollar figure,
 and it compares against the whole seat, so it needs no figure for the owner's use. The owner who
@@ -351,7 +357,8 @@ seats go idle, and `igor budget` says why a seat is idle.
 
 **Which readings count.** The newest observation of the window, all-models, whose reset has not
 passed, whatever its source: a `stream` reading, an existing `usage` row, or a `limit` refusal.
-Fullness does not fall within an instance, so the newest unreset one is also the fullest. **A
+Fullness does not fall within an instance, one stretch of a window from one reset to the next, so
+the newest unreset reading is also the fullest (unmeasured; task 1.3). **A
 refusal counts as a reading** (Adam, 2026-09-28): an observation at 100% of its window until its
 reset, past every line. That covers the row a refused worker run already records from its envelope
 (#39) and the row #75 records for a refused triage call. It is the one gate input that does not
@@ -365,22 +372,24 @@ back.
 
 **A running item finishes.** The line decides whether work starts. The in-force scenario said
 Igor "hands off any in progress" at the bound, and that is replaced: stopping mid-item wastes what
-was spent. This is the rule calibration admission already had for a run that crossed.
+was spent.
 
 **How far past the line one Igor can go.** Between readings an Igor does not see its own spend. The
 gate before an item sees the last reading the previous run carried, and that reading is timed when
 its event arrived. So an Igor can pass the line by the item it admits plus whatever the previous run
-spent after its last event. Where a run's last event arrives near its end, that is about one run's
-spend, which is the cost Adam accepted. Where it arrives near the start, it can approach two.
-Measured 2026-10-11 (task 1.1a): a run gets one event, right after its first API call's response, so
-the last event is also the first, and the bound is the upper one, about two runs per process. Adam
-accepted this bound on 2026-09-28, as stated: about one run per process, up to two if a run's last
-event comes early. Every run carries a fresh reading, so the overshoot does not compound.
+spent after its last event. Measured 2026-10-11 (task 1.1a): a run gets one event, right after its
+first API call's response, so the last event is also the first, and nearly all of the previous run's
+spend comes after it. So one Igor process can overshoot by about two runs: the previous run, which
+its reading missed, and the item the gate admits. On 2026-09-28 Adam accepted an overshoot of one
+run, or two where a run's last event comes early; the measurement shows the event always comes
+early, so the accepted figure is two. Every run carries a fresh reading, so the overshoot does not
+compound.
 
 **Per Igor, not coordinated (settled by Adam, 2026-09-28).** Every Igor on a seat reads the same
 whole-seat reading, so they are held to one line without adding up each other's books. Each
-process can overshoot once, so N Igors can pass it by N runs, and so can N concurrent ranks of one
-Igor, as `concurrent-instances`' design now records. A coordination marker, a compare-and-swap on the
+process can overshoot by about two runs, so N processes on one seat can pass it by about 2N runs.
+That counts several Igors, and the several processes of one role that `concurrent-instances` runs
+at once. A coordination marker, a compare-and-swap on the
 state branch with a lease or `work-claiming`'s claim and settle, is taken up only once a reserved
 seat is actually shared by several Igors, together with the same gap on any spend bound that
 remains then. `budget_share` is one such bound (below).
@@ -396,11 +405,6 @@ passed over for that role and left to the probe. A seat at `r` = 0 runs with no 
 dedicated seat does today, and its first run's reading or first refusal reads it. The in-force
 scenarios *A dedicated seat runs uncalibrated* and *The first refusal calibrates it* are kept under
 their names as instances of that rule.
-
-**Calibration admission is removed.** It let a reserved seat with no capacity figure in one item at
-a time on a reading below `1 − reserve`, and existed only to get the seat a figure. The line needs
-no figure, so a reserved seat read below its line is admitted outright. Its one-at-a-time state,
-its own verdict and its tasks go with it.
 
 A reserve-0 seat naming no token source is never probed, and runs with no reading as before. A
 seat whose line uses a non-zero reserve and names no token source can only be read by a run, and
@@ -435,9 +439,9 @@ role back.
 Decided by Adam on 2026-09-28. On a seat nobody works on, a reserve holds capacity back for work
 that arrives later in the window, and at 1 it spends the window evenly. A dedicated seat defaults to
 reserve 0, because burning early is not waste when the work is there. So the validation that refuses
-a reserve on a dedicated seat (`src/budget.ts:1395-1397`, "is dedicated, so nobody is there to
-reserve capacity for") is removed in gate two. So are the parser forcing a dedicated seat's reserve
-to 0 (`src/budget.ts:1413`) and the range check that refuses a reserve of 1 (`src/budget.ts:1392`),
+a reserve on a dedicated seat (`parseOrgBudget` in `src/budget.ts`, "is dedicated, so nobody is
+there to reserve capacity for") is removed in gate two. So are the parser forcing a dedicated seat's
+reserve to 0 and its range check that refuses a reserve of 1,
 since a reserve of 1 now means even pacing. The `MODIFIED` *Seats are named configuration entities
 with an owner and a reserve* says a reserve is the share of the remaining window held back, from 0
 to 1 inclusive, on any seat. The key keeps its name `reserve` (confirmed by Adam, 2026-09-28).
@@ -459,9 +463,10 @@ such a seat still emits a `rate_limit_event`.
 **`budget_share` is measured against the reading (Adam, 2026-09-28).** It is a ceiling on one
 role's share of a seat, and is not the seat reserve. On the live path it is already measured against
 the reading: the role's share of Igor's recorded spend times the reading's `percentUsed`
-(`src/budget.ts:697-708`). On the derived path it divided by the capacity figure instead,
-`capacity.spentUsd / capacity.capacityUsd` (`src/budget.ts:648-663`), and was unchecked where there
-was no figure. Gate two moves that path to the reading too, so no figure in dollars is a gate input
+(`chooseSeat`'s live path in `src/budget.ts`). The derived path, used where no live `/usage`
+reading answers and the gate works from recorded observations, divides by the capacity figure
+instead, `capacity.spentUsd / capacity.capacityUsd`, and checks nothing where there is no figure.
+Gate two moves that path to the reading too, so no figure in dollars is a gate input
 anywhere. The reading counts the owner's use, so on a shared seat a role meets its ceiling sooner
 than its own spend would take it, which errs toward holding it back. *`budget_share` is a ceiling,
 not a reservation* carries a `MODIFIED` delta saying so.
@@ -542,9 +547,12 @@ per seat with that seat's token and `--output-format stream-json --verbose`, and
 
 **It is not free.** The earlier case for scheduling `/usage` rested on it costing nothing. A probe
 is a real model call, so it uses the cheapest model with a trivial prompt and no tools. Triage
-already calls the same model with tools denied (`TRIAGE_MODEL`, `src/triage.ts`). Its cost is
-recorded against the seat it read. A probe is made on no role's behalf, so the record says "seat
-probe" where a role would go. That needs `MODIFIED` deltas on *Every invocation records which role
+already calls the same model with tools denied (`TRIAGE_MODEL`, `src/triage.ts`). A probe's cost
+is recorded against the seat it read, on a spend row. Spend attribution, capacity and `igor budget`
+all count spend rows. #101 also records a credential check as a row of kind `check`, and its
+`loadSpend` skips those rows, so the cost must not ride on one. Where #101 records the probe as a
+credential check, the check row is a second row, and it carries no cost. A probe is made on no role's behalf, so the record says "seat probe" where
+a role would go. That needs `MODIFIED` deltas on *Every invocation records which role
 spent from which seat* and *A spend with no seat behind it does not happen*, whose in-force text
 requires a role and a seat the gate chose. A probe is the stated exception to the second, and only
 for a seat that names its own token.
@@ -555,13 +563,33 @@ learn something the log already bounds. So "stale" means past its reset. For an 
 probes return events, that is about one probe per session window, roughly five a day.
 
 **Bounds (settled by Adam, 2026-09-27).** At most one probe per seat per hour, and none while one is
-running. After a probe that got no event, or none that could be read, none for five hours: one
-session window. A failed probe is never retried in a loop. Tasks 6.1 and 6.4 build and test them.
+running. After a probe that got no event, or none that could be read, none for five hours. A failed
+probe is never retried in a loop. Tasks 6.1 and 6.4 build and test them. Each Igor holds one role,
+so a server runs one loop per role, and a seat several roles draw on would be probed by each. So
+the hour is counted from the most recent probe of the seat any Igor recorded in the log. Two Igors
+that start a probe in the same moment can both make it. That costs one extra probe, which is
+accepted as the overshoot is.
+
+**From an empty directory.** A probe carries a seat token. Run from a directory holding a project's
+`.claude/settings.json` or `CLAUDE.md`, it would load that project's hooks beside the token, and
+"no tools" does not stop a hook. So it runs from a fresh empty temporary directory.
+
+**One probe per known reset, not two.** *Window length and schedule, measured just after a reset*
+above places a post-reset probe ten minutes after each reset a reading stated. On an idle seat a
+reading also expires at that reset, which would call for a probe at once, and the post-reset probe
+would then fall inside the hour and never run. Where the reset is known, the post-reset probe is the probe for the expiry,
+and it measures the window too.
 
 **Never on a refused seat, nor on one spending extra usage.** An unexpired observation at 100% means
 the provider has already said no until its reset, so a probe there only spends a failed call. An
 unexpired overage reading means a probe would be billed beyond the subscription, and no opt-in
-exists.
+exists. Probes of the seat stop until the window that the overage reading's `rateLimitType` names
+resets, not any other: the flag is on every row of the event, and a session overage read off the
+week row would otherwise hold probes off for a week.
+
+**The line a probe checks is the seat's own.** The line is per role, and a probe is made for none,
+so a probe's exclusion uses the seat's reserve. The crossing probe (*Probed at a crossing*, below)
+is the exception: the gate makes it while deciding for a role, so it uses that role's line.
 
 **Never on a seat at or past its line (settled 2026-09-28).** A probe's consumption is Igor's. A
 seat's session reading can expire while its week reading is past the week's line, and probing it
@@ -641,7 +669,7 @@ scenarios became false are `REMOVED` and re-`ADDED` under new names.
   exhaustion where no reading can* is false.
 - ***A seat with no capacity figure at all protects no floor*** — `RENAMED` to *A seat with no reading
   is drawn on only where its line is the whole window*, and `MODIFIED`. No capacity figure admits a
-  seat, calibration admission is gone, and its scenarios are kept as instances of the no-reading rule.
+  seat, and its scenarios are kept as instances of the no-reading rule.
 - ***A pool is an ordered list of seats, and order is the allocation mechanism*** — "A seat declaring
   a reserve is drawn on only once it has a capacity figure". This change carries no delta for it,
   because the `seat-files` change removes it (see *Pools are dropped* below).
@@ -701,7 +729,7 @@ says the role may draw on three seats, not a pool of three.
 - **A role's reserve is raised by inheritance, never lowered**, and a child reserve below its
   parent's is refused, naming both (task 12.1).
 - **The overshoot is accepted:** about one run per process, up to two if a run's last event comes
-  early, as task 1.1a will measure.
+  early. Task 1.1a measured the upper end: about two runs per process.
 - **Losing the event:** seats whose effective reserve is 0 run without a reading, reserved seats go
   idle, and `igor budget` says why a seat is idle (task 7.6).
 - **The names:** the rename to *A seat with no reading is drawn on only where its line is the whole
@@ -723,6 +751,9 @@ says the role may draw on three seats, not a pool of three.
   seats.
 
 ## Still open
+
+The proposal lists every open question with a recommendation. Those raised by the spec check of
+2026-10-17 are only there; the ones below predate it.
 
 - **A guaranteed per-role share.** Not specified. Add it only if a role's reserve proves too weak a
   priority in practice. Choosing which roles a seat serves, and more seats, are the remedies.

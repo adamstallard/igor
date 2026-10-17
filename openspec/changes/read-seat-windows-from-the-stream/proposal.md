@@ -1,3 +1,83 @@
+## Decisions
+
+Terms used below. A **seat** is a Claude subscription Igors spend from. A **reading** is the
+provider's report of how full a seat's window is, carried in each run's output as a
+`rate_limit_event`. A window's **instance** is one stretch of it from one reset to the next. A
+**probe** is one minimal model call made on the server that runs the Igors, with a seat's own
+token, to get a reading. #101 is `condition-backoff`, which records stuck conditions and is about
+to merge; #171 is `seat-files`, which moves seat configuration into one file per seat.
+
+1. **The reserve is a line on the seat's reading that moves toward the reset** (Adam, 2026-09-28).
+   For each window, Igor starts work on a seat only while its newest unreset reading is below
+   `1 − r × remaining`, with `r` the larger of the seat's and the role's reserve and `remaining`
+   the fraction of the window still to come. The **line** rises as the window runs out, and the
+   instant it rises past a seat's last reading is the seat's **crossing**. *Rejected:* the
+   dollar bound `(1 − reserve) × capacity` on Igor's recorded spend, which needed a capacity in
+   dollars for every window before a reserved seat could start, and held the whole reserve back
+   until the reset, where whatever nobody used was lost.
+2. **A refusal is a reading at 100% of its window until its reset** (Adam, 2026-09-28).
+3. **A seat with no unreset reading is drawn on only where `r` is 0** (Adam, 2026-09-28). If the
+   provider stops sending the event, reserved seats go idle and `igor budget` says why.
+4. **Each Igor process may pass the line by about two runs, and processes do not coordinate.**
+   On 2026-09-28 Adam accepted one run, or two where a run's reading comes early in the run. Task
+   1.1a measured that it always comes early, right after the first call, so the figure approved
+   here is two. *Rejected for now:* a coordination marker across Igors, taken up once a reserved
+   seat is actually shared by several.
+5. **A role may declare a `reserve`**, applied to every seat it draws on, raised by inheritance and
+   never lowered (Adam, 2026-09-28).
+6. **A reserve on a dedicated seat is pacing**, from 0 to 1 inclusive, defaulting to 0 (Adam,
+   2026-09-28).
+7. **A seat nothing has read is probed on the Igor server with its own token** (Adam, 2026-09-27):
+   at most once an hour, five hours after a probe that got no event, never on a refused seat, one
+   spending extra usage, or one at its line. A seat is probed at its crossing before it is drawn on
+   again (Adam, 2026-10-10). *Rejected:* `igor observe` run on a lender's machine;
+   `scheduled-observation` is withdrawn with it.
+8. **Window length and schedule are measured by a probe ten minutes after a known reset** (Adam,
+   2026-09-28). The smallest gap between observed resets is a fallback that only shortens a length.
+9. **No figure in dollars gates anything** (Adam, 2026-09-28). `budget_share` is measured against
+   the reading, and `capacity_estimate` is removed with no handling of an old config beyond the
+   unknown-key refusal (Adam, 2026-10-11).
+10. **`budget-pacing` is withdrawn**; its one surviving requirement, holding back at the line, moves
+    here (Adam, 2026-09-28).
+11. **No overage opt-in** (Adam, 2026-09-27).
+12. **`allowed_warning` changes no gate decision; triage switches to the stream only after this is
+    built, with #75 the fallback; the observation log is read whole** (Adam, 2026-10-11).
+
+**Still open:**
+
+- **A probe's 401 and the credential condition of #101.** This change opens the seat's credential
+  condition on one 401 from a probe, and clears it by a probe at most hourly. #101, about to merge,
+  opens a condition only after three runs in a row record the condition's key, and clears it by
+  claiming one real item and running it on the seat, after a cooldown that grows from 15 minutes to
+  6 hours. *Recommendation:* once #101's
+  stuck-conditions spec is in force, move the probe's rules into a stuck-conditions delta, with a
+  probe's 401 counting as one occurrence and a successful probe as a clearing check (task 15.1).
+- **A seat naming no token source.** Its runs' readings are recorded as its own, yet it is never
+  probed because "its call would run on whatever login is ambient, which reads that login rather
+  than the seat". A run's reading of the ambient login cannot be the seat's while a probe's reading
+  of the same login is not. *Recommendation:* keep the attribution, since that login is
+  what the seat spends, and give the probe exclusion its real reason: a probe would spend a login no
+  seat names. Settle it with #171, whose open questions include whether a seat file may name no
+  token at all.
+- **Staleness (#69).** This change says a reading needs no staleness threshold until its window
+  resets, while #69 is open on exactly that. *Recommendation:* close #69 with this change's
+  reasoning, once task 1.3 confirms that fullness does not fall within an instance.
+- **`capacity_estimate` between two archives.** The in-force pool requirement says a reserved seat
+  starts on a `capacity_estimate`. #171 removes that requirement, and this change carries no block
+  for it. *Recommendation:* archive this change and #171 together, so no in-force text names a key
+  that no longer exists.
+- **`dedicated`.** Today a dedicated seat is refused a reserve and forced to 0, and that is all the
+  key does. Every seat already defaults to reserve 0, so once this change drops the refusal and
+  the forced zero, the key has no effect. *Recommendation:* drop the key, together with #171, which
+  declares it.
+- **A guaranteed per-role share.** Not specified; added only if a role's reserve proves too weak a
+  priority.
+- **The `rejected` shape** (#57) is contributor-reported, not captured (task 1.5).
+- **Per-model weekly windows** have no source for a token seat (#75 task 5.1).
+- **Two facts the gate rests on are unmeasured:** that fullness does not fall within an instance
+  (task 1.3), and what `isUsingOverage` means (task 1.4). The overage rule is not built until 1.4
+  confirms it.
+
 ## Why
 
 Every worker run already carries a reading of the seat that paid for it, and Igor throws it
@@ -60,12 +140,10 @@ tokens and the seat config.
   97% with a tenth left and 100% at the reset. At 0 it is the whole window; at 1 it is even pacing.
   It needs no figure for the owner's use and no dollar capacity, and Igor takes more when the owner
   uses less. It **replaces** the dollar bound `(1 − reserve) × capacity`. A capacity in dollars is
-  still derived and reported, and gates nothing. An item already running finishes, so each Igor can
-  pass the line by about one run's spend; that is accepted, per Igor.
+  still derived and reported, and gates nothing. An item already running finishes, so each Igor
+  process can pass the line by about two runs' spend (decision 4).
 - **A seat with no unreset reading is drawn on only where its line is 100%**, that is at `r` = 0.
-  Any other seat is left to the probe. Calibration admission, which let a reserved seat with no
-  figure in one item at a time to get it one, is removed: the line needs no figure. The probe holds
-  off a seat at or past its line.
+  Any other seat is passed over until a probe reads it.
 - **No figure in dollars gates anything.** A role's `budget_share` is measured against the
   reading on every path, and `capacity_estimate` is removed.
 - **A role may declare a `reserve`**, raised by inheritance and never lowered, and applied to every
@@ -104,6 +182,9 @@ Explicitly out of scope:
 
 ### Modified Capabilities
 
+- `role-config`: a role's `reserve` is raised by inheritance and never lowered.
+- `graceful-handoff`: where the line shut a window whose reading is below 100%, a budget handoff
+  states the line's crossing, not the reset.
 - `seat-budget`: a worker run's own output stream is a source of observations of the seat that
   paid for it, read with that seat's credential and recorded with a third source, `stream`. The
   reserve becomes a line on that reading that moves toward the reset, replacing the dollar bound,

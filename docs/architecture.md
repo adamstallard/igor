@@ -1361,9 +1361,7 @@ captures are kept with the `read-seat-windows-from-the-stream` change.
 **Calibration was built once and deleted** in `188a762`, on the premise that the CLI reports the
 number for free. It does, for a login. Anything reviving it should start from that history rather
 than from scratch, and should not revive the destructive part — running a seat to its limit to
-discover the limit. It was specified a second time on #143, as *calibration admission* (let an
-unread reserved seat in one item at a time until it has a figure). That was dropped on 2026-09-28
-with §6.3.4, which needs no figure to gate a seat.
+discover the limit. §6.3.4 needs no figure to gate a seat.
 
 ### 6.3.4 A seat's reserve is a line that moves toward the reset — **built**
 
@@ -1426,27 +1424,31 @@ may raise the reserve it inherits, never lower it.
 - **A dollar gate.** No figure in dollars gates anything: not `(1 − reserve) × capacity` on Igor's
   recorded spend, and not a role's `budget_share`, which is measured against the reading.
   Capacity figures are only a display in `igor budget`.
-- **Calibration admission** (§6.3.3). A reserved seat with no unreset reading is not
-  admitted. A probe on the Igor server reads it first, and the probe also holds off once the seat
-  is at the line. A seat whose effective reserve is 0 has a line of 100% throughout, so it needs no
+- **A capacity figure before a reserved seat may start.** A reserved seat with no unreset
+  reading is not admitted. The server that runs the Igors reads it first with a probe: one minimal
+  call on the seat's own token. No probe is made on a seat already at its line, since a probe
+  spends some of the seat. A seat whose effective reserve is 0 has a line of 100% throughout, so it needs no
   reading to be admitted.
 - **A reserve that decays on a schedule of its own.** The line narrows the reserve in both
   windows, the week included, all the way to the reset.
 
-**Accepted cost: overshoot by one run.** Igor's own spend shows up only in the next reading, so
-between readings Igor cannot see it, and each Igor can overshoot the line by at most one run.
-That limit is held per Igor and not coordinated across Igors, until a reserved seat is actually
-shared. `concurrent-instances` checks the gate once per item in each process, so under it the
-limit is one run per process.
+**Accepted cost: overshoot by about two runs.** A run's one event arrives right after its first
+API call (§6.3.3), so its reading shows none of that run's own spend. When the gate admits an item,
+the reading it sees therefore misses the previous run, and the item it admits adds a second run
+before the next reading shows either. So each Igor process can overshoot the line by about two
+runs. Igors sharing a seat do not coordinate, so N processes on one seat can overshoot by about 2N
+runs; a coordination marker is taken up once a reserved seat is actually shared by several.
 
 **A refusal counts as a reading.** A refusal is a 100% observation of its window until that
 window resets, and an input to the line: #39's row for a refused run, and #75's for a refused
-triage call. It is the one input that does not depend on the stream.
+triage call. Unlike a stream reading, it needs no `rate_limit_event`.
 
 **A probe opens and clears the credential stop.** A probe that gets a 401 opens
 `seat:<id>:credential`, and a probe that succeeds counts as the clearing check. So a revoked seat
-nobody has read is reported out of rotation, and clearing it spends no item. The stop is held by
-#65's breaker, or by the condition record if #101 lands.
+nobody has read is reported out of rotation. Clearing the stop needs no tracker item, where
+otherwise the only check would be claiming a real item and running it on the seat. The stop is the
+seat's credential condition, rebuilt from the execution log by #101 (`condition-backoff`). A run
+the provider refuses its credential opens the same condition.
 
 **A handoff for a window the line has shut states the crossing, marked approximate.** The line
 rises as the window runs down, so a reading `u` below 1 is under the line again once
@@ -1454,9 +1456,6 @@ rises as the window runs down, so a reading `u` below 1 is under the line again 
 window, and only a reading of 100% waits for the reset. The handoff states that crossing, not the
 reset, and marks it approximate, because a reading is a lower bound until its reset and the seat
 can be back later than the crossing, never earlier (#74).
-
-Naming that hour in the handoff is specified on [#74](https://github.com/adamstallard/igor/pull/74),
-and is not built.
 
 **Window length is measured, not assumed.** A probe placed just after a known reset measures the
 window's length. It also shows whether windows run on a fixed schedule or start at first use.

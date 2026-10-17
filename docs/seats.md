@@ -81,8 +81,9 @@ credential you hand over. The line above is checked against that reading. So:
 
 - A seat with a `reserve` that nothing has read yet is **passed over**, and the server that runs
   the Igors reads it with one small call on your token. No figure is guessed.
-- Between readings an Igor does not see its own spend, so it can pass the line by about one run's
-  worth before the next reading stops it. Every run carries a fresh reading.
+- A run's reading arrives right after its first call, so it shows none of that run's own spend.
+  An item already running finishes, and the next one starts on a reading that missed the run
+  before it, so an Igor can pass the line by about two runs' worth.
 - If the provider ever stops sending that reading, a seat with a reserve goes idle rather than
   being spent blind.
 - A seat with **no** reserve, used by roles that declare none either, is spent from with no

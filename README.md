@@ -456,9 +456,10 @@ anyway:
 It needs no figure for what the owner has used and no figure in dollars for the window. An owner
 who uses less leaves the Igor more, and one who uses more leaves it less. It assumes the owner's use
 is spread across the window, since the reserve is a share of the time still to come; an owner who
-finds the Igor takes too much, or who uses the seat late in the window, raises the reserve. An item
-already running finishes, so an Igor can pass the line by about one run before the next reading
-stops it. A seat with a reserve that nothing has read is not drawn on until the server reads it,
+finds the Igor takes too much, or who uses the seat late in the window, raises the reserve.
+The reading comes from the provider in each run's output, right after the run's first call, so
+it shows none of that run's own spend. An item already running finishes, and the next item starts
+on a reading that missed the one before it, so an Igor can pass the line by about two runs. A seat with a reserve that nothing has read is not drawn on until the server reads it,
 and `igor budget` says that is why it is idle. No figure in dollars decides anything, a role's
 `budget_share` included.
 

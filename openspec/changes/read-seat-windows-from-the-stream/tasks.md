@@ -22,12 +22,24 @@
       (`design.md`)
 - [ ] 1.2 Keep the capture as a test fixture beside the 2026-09-27 one from §6.3.3, so the parser
       is tested against what the provider sent rather than what was guessed
+- [ ] 1.3 Check that fullness does not fall within an instance: compare the successive readings of
+      one window instance across several runs on one seat, and record in `design.md` whether any
+      later reading is lower. If one is, treating an old reading as a lower bound (*A reading
+      bounds its window from below until the window resets*) goes back to Adam; the gate already
+      reads the newest reading either way
+- [ ] 1.4 Capture an event with `isUsingOverage: true` and record in `design.md` what it means
+      beside `overageStatus` and `overageDisabledReason`. Task 4.2 is not built until this
+      confirms the flag means extra usage is being spent; if it means something else, 4.2 reads
+      the field that does
+- [ ] 1.5 Capture a `rejected` event from a real refusal (#57), worker run and triage call, and
+      check *A refusal the stream reports is not recorded twice* and 3.3 against it, including
+      which window a per-model refusal names
 
 
 ## 2. Parsing, in `src/execute.ts`
 
 - [ ] 2.1 In `claudeWorker`'s `consume`, keep the last `event.type === 'rate_limit_event'` and the
-      instant it arrived, beside the terminal `result` (around line 985); return both from the
+      instant it arrived, beside the terminal `result`; return both from the
       runner without changing what `final` means
 - [ ] 2.2 `readingFrom(event, arrivedAt)` — pure, non-throwing, in the style of `asIso`: per window,
       `utilization` × 100 and `resetsAt` from epoch seconds via `fromEpoch`; `five_hour` →
@@ -68,7 +80,8 @@
       supersedes it, and that the run's own spend is excluded from the numerator by `at`
 - [ ] 4.2 A row with `isUsingOverage: true` for the window its event's `rateLimitType` named is
       treated by `spentFor` like a row at 100%: no headroom in that window until its reset, with
-      its own reason. The same flag on the event's other row shuts nothing. Tests: passed over
+      its own reason, once 1.4 has confirmed the flag. The same flag on the event's other row
+      shuts nothing. Tests: passed over
       while unexpired, usable after the reset with nothing run, a session overage leaves the week
       bounded as before
 - [ ] 4.3 Reporting presents an unexpired reading as a lower bound with its time, and a reading past
@@ -129,22 +142,28 @@
 
 - [ ] 6.1 In the serve loop, select the seats to probe: seats are declared; the seat names a token
       source; some window has no unexpired `usage` or `stream` observation; no unexpired row at
-      100%; no unexpired overage reading; no window whose newest unreset reading is at or past
-      that window's line (7.1, with the seat's own reserve, since a probe is made for no role);
-      not probed in the last hour; no probe of it running; and none in the last five hours
-      returned no event
+      100%; no unexpired overage reading for the window its `rateLimitType` names; no window whose
+      newest unreset reading is at or past that window's line (7.1, with the seat's own reserve,
+      since a probe is made for no role); no probe of it recorded by any Igor in the last hour; no
+      probe of it this process started still running; and every probe of it in the last five
+      hours got an event. Where a reading expired at a reset the server knows of, the probe is the
+      post-reset probe of 8.1, not a second one
 - [ ] 6.2 Spawn the probe as `claudeWorker` spawns a worker, with the environment written out
-      (§6.3.2) and only that seat's token. Use `TRIAGE_MODEL`, a trivial prompt, tools denied and
-      `--output-format stream-json --verbose`. Reuse 2.1–2.3's parsing
+      (§6.3.2) and only that seat's token, from a fresh empty temporary directory removed after.
+      Use `TRIAGE_MODEL`, a trivial prompt, tools denied and `--output-format stream-json
+      --verbose`. Reuse 2.1–2.3's parsing
 - [ ] 6.3 Record its event through 3.2's path as `stream` rows, timed at arrival. Record its cost
-      against the seat, marked as a seat probe in place of a role. Record no observation when no
-      event arrived
+      against the seat on a spend row, marked as a seat probe in place of a role, that
+      `loadSpend` returns. Where #101 has merged, its `check` row for the credential (6.7) is a
+      second row and carries no cost. Record no observation when no event arrived
 - [ ] 6.4 Tests: a reserved seat with no reading is probed once; a seat with both windows unexpired
       is not; a refused or overage seat is not until the reset; a seat whose week reading is past
       the week's line is not though its session reading has expired, and is once the line has
       risen past the reading; a seat with no token source is not; the hourly bound and the
       five-hour back-off hold; a probe's cost is recorded as a probe; a probe with no event
-      records nothing and is not retried in a loop
+      records nothing and is not retried in a loop; another Igor's probe within the hour holds
+      this one off; the probe's cost appears in `igor budget`'s spend; the probe runs from an
+      empty directory
 - [ ] 6.5 `igor budget` names a figure that came from a probe, or says a seat was probed and
       returned nothing, so an operator can tell a probed seat from an unread one. **May be
       reworded**
@@ -168,71 +187,70 @@
       has read is probed on the Igor server with its own token*, and a seat probed within the hour
       before its crossing staying held until the hour has passed
 
-## 7. The line, in `src/budget.ts`'s gate (replaces the dollar bound and calibration admission)
+## 7. The line, in `src/budget.ts`'s gate (replaces the dollar bound)
 
 - [ ] 7.1 `lineFor(reserve, resetsAt, length, now)` — pure, the only place the line is computed:
       `1 − r × clamp((resetsAt − now) ÷ length, 0, 1)`, with `remaining` = 1 where `resetsAt` is
       absent or does not resolve. `r` is `max(seat.reserve, role.reserve ?? 0)` (section 12).
       Tests: the table in `design.md` (0, 0.3, 0.5 and 1, at each column), clamping before and
       after the window, an unresolved reset
-- [ ] 7.2 **Derived path.** Replace the dollar bound in `derivedWindow` (`src/budget.ts:508-595`):
-      the allowance `(1 − seat.reserve) * capacity.capacityUsd` (`:538`), `overBound` / `overWhy`
-      (`:539-545`), the no-figure branch (`:568-584`) and `remainingUsd` (`:594`). A window is
+- [ ] 7.2 **Derived path.** Replace the dollar bound in `derivedWindow` (`src/budget.ts`):
+      the allowance `(1 − seat.reserve) * capacity.capacityUsd`, `overBound` / `overWhy`, the
+      no-figure branch and `remainingUsd`. A window is
       blocked when its newest unreset reading (4.4) is at or past its line, with a reason naming
       the reading, its time and the line. A window with no unreset reading is blocked only where
       `r` > 0, with its own verdict and reason, not `no-figure`. A refusal (`bound.spent`) still
       blocks as it does, and its reset still reaches the handoff
 - [ ] 7.3 **Live path.** Replace the fixed line in `seatStatus` / `hasHeadroom`
-      (`src/budget.ts:367-402`): `headroomPercent = line × 100 − percentUsed`, with the live
+      (`src/budget.ts`): `headroomPercent = line × 100 − percentUsed`, with the live
       reading's reset resolved through `resolveRecentReset` and `remaining` = 1 where it does not
-      resolve. Its callers: `chooseSeat`'s live path (`:680-716`, the reason at `:691` and the
-      chosen reason at `:713`), `budgetGate`'s shut windows (`:912-915`) and `renderBudget`'s live
-      rows (`:1242-1246`)
-- [ ] 7.4 `chooseSeat` (`src/budget.ts:597-735`): the chosen-seat reason on the derived path
-      (`:670-677`) says the headroom to the line rather than dollars of the session bound, and the
-      "no capacity figure and no reserve" wording goes. Its doc comment (`:597-610`, "judged on
-      `bounds` instead, in dollars") is reworded
-- [ ] 7.5 Verdicts and states. `SeatVerdict` (`src/budget.ts:452`) replaces `no-figure` with a
+      resolve. Its callers: `chooseSeat`'s live path (its passed-over and chosen reasons),
+      `budgetGate`'s shut windows and `renderBudget`'s live rows
+- [ ] 7.4 `chooseSeat` (`src/budget.ts`): the chosen-seat reason on the derived path says the
+      headroom to the line rather than dollars of the session bound, and the "no capacity figure
+      and no reserve" wording goes. Its doc comment ("judged on `bounds` instead, in dollars") is
+      reworded
+- [ ] 7.5 Verdicts and states. `SeatVerdict` (`src/budget.ts`) replaces `no-figure` with a
       verdict for a seat with no unreset reading (e.g. `unread`) and adds one for a seat at its
-      line (e.g. `holding`); its comment (`:440-451`) drops "`no-figure` to `igor observe` or a
-      declared capacity". `NO_CAPACITY_FIGURE` (`:482-487`) and `hasBoundHeadroom` (`:489-506`) go.
-      `poolVerdict` (`:469-485`) orders the new verdicts. `derivedReset` (`:747-788`) states the
-      instant a seat holding back passes its line (section 13), and keeps "not known" for an
-      unread one. `src/handoff.ts:204-208` and `:223-224` say "nothing has read" and "holding
-      back" instead of "no capacity figure". `src/keys.ts:5-6`'s example is reworded
-- [ ] 7.6 `WindowState` (`src/budget.ts:968-979`): `at-bound` and `bounded` become states on the
+      line (e.g. `holding`); its comment drops "`no-figure` to `igor observe` or a declared
+      capacity". Where #101 has merged, `SeatVerdict` also holds its `rejected` verdict, which
+      stays. `NO_CAPACITY_FIGURE` and `hasBoundHeadroom` go. `poolVerdict` orders the new
+      verdicts, `rejected` included. `derivedReset` states the instant a seat holding back passes
+      its line (section 13), and keeps "not known" for an unread one. The handoff text in
+      `src/handoff.ts` that says "no seat has a capacity figure to spend against" says "nothing
+      has read" and "holding back" instead. The `capacity_estimate` example in `src/keys.ts`'s
+      doc comment is reworded
+- [ ] 7.6 `WindowState` (`src/budget.ts`): `at-bound` and `bounded` become states on the
       line (e.g. `holding`, `within`); `unobserved` and `unmeasured` become one `unread` state;
-      `describeWindow` (`src/budget.ts:1040-1160`) is rewritten around the reading and the line:
-      the allowance at `:1042`, `overBound` / `overWhy` at `:1071-1075`, the no-figure branch and its
-      consequence at `:1112-1136` (including "run `igor observe`" at `:1122-1123`), and the
-      at-bound / bounded branches at `:1139-1159`. The capacity figure stays in the note, as
-      information. `WindowReport.used` (`:987-989`) shows the reading in percent where there is one
+      `describeWindow` is rewritten around the reading and the line: the allowance,
+      `overBound` / `overWhy`, the no-figure branch and its consequence (including "run
+      `igor observe`"), and the at-bound / bounded branches. The capacity figure stays in the
+      note, as information. `WindowReport.used` shows the reading in percent where there is one
 - [ ] 7.7 A running item is not stopped when a reading reaches the line; the next gate call finds
       the reading and starts nothing. Test it
 - [ ] 7.8 Tests to rewrite in `test/budget.test.ts`, each against the line rather than the dollar
-      bound: 'headroom is percent, straight from the reading' (`:219`, including 'gives a dedicated
-      seat the whole limit' at `:227`), 'a seat sitting exactly on its reserve' (`:236`), 'a seat
-      sitting exactly on its dollar bound' (`:327`, which becomes a seat exactly on its line),
-      'pool order is the allocation mechanism' (`:491`), 'the gate the loop consumes' (`:574`),
-      'an operator can tell the states apart from the report alone' (`:634`, including `:694` and
-      `:700`), 'a pool nobody could read is not a pool that ran out' (`:1002`, including `:1018`),
-      'a seat nothing can read is bounded by observation and record' (`:1102`, including `:1227`,
-      `:1233` and `:1259`), 'a seat the provider refused is spent until it resets' (`:1316`) and
-      'regression: what the hunt on §5 found' (`:1752`). In `test/handoff.test.ts`, 'names an
-      uncalibrated pool as uncalibrated rather than as spent' (`:209`). In
-      `test/capacity.test.ts`, 'the bounds the gate is handed' (`:538`) and 'a window read and
-      still uncalibrated is not a window nobody has read' (`:587`)
+      bound, every test inside each of these `describe` blocks: 'headroom is percent, straight
+      from the reading' (including 'gives a dedicated seat the whole limit'), 'a seat sitting
+      exactly on its reserve', 'a seat sitting exactly on its dollar bound' (which becomes a seat
+      exactly on its line), 'pool order is the allocation mechanism', 'the gate the loop
+      consumes', 'an operator can tell the states apart from the report alone', 'a pool nobody
+      could read is not a pool that ran out', 'a seat nothing can read is bounded by observation
+      and record', 'a seat the provider refused is spent until it resets' and 'regression: what
+      the hunt on §5 found'. In `test/handoff.test.ts`, 'names an uncalibrated pool as
+      uncalibrated rather than as spent'. In `test/capacity.test.ts`, 'the bounds the gate is
+      handed' (`:538`) and 'a window read and still uncalibrated is not a window nobody has read'
+      (`:587`)
 - [ ] 7.9 New tests: a reserved seat with a reading below its line and no capacity figure is
       chosen; one at or past it is passed over; one with no unreset reading is passed over at
       `r` > 0 and chosen at `r` = 0; the line rises with time on unchanged readings; both windows
       must pass; a capacity figure changes no verdict
 - [ ] 7.10 `budget_share` is measured against the reading on every path (Adam, 2026-09-28). On
-      the derived path (`src/budget.ts:648-663`) replace
+      the derived path in `chooseSeat` replace
       `(capacity.spentUsd / capacity.capacityUsd) * 100` with the window's newest unreset reading
-      (4.4), passed to `roleSharePercent` exactly as the live path does (`:697-708`). A window with
+      (4.4), passed to `roleSharePercent` exactly as the live path does. A window with
       no unreset reading gives the ceiling nothing to measure, and the no-reading rule decides the
       seat. Afterwards no gate reads `capacityUsd`. Update 'budget_share is a ceiling, not a
-      reservation' (`test/budget.test.ts:534`) and add a test that a share is reached on a seat
+      reservation' (`test/budget.test.ts`) and add a test that a share is reached on a seat
       with a reading and no capacity figure
 - [ ] 7.11 **A handoff states the crossing for a window the line shut** (moved from #74,
       `reset-by-comparison`, Adam, 2026-10-10). Where `budgetGate`'s `live` candidate builder, and
@@ -313,23 +331,24 @@ the stream reading, the probe, the line, a role's reserve, and no dollar bound, 
 ## 12. A role's reserve, and a reserve on any seat
 
 - [ ] 12.1 `src/role.ts`: an optional `reserve`, a number from 0 to 1 inclusive, beside
-      `budget_share` (`:72`, `:105`, `:332`, `:441-449`), refused outside that range. Inheritance
-      raises, never lowers (Adam, 2026-09-28): resolve the effective reserve as the largest along
-      the role's parents and `roles/org.yaml` (where `budget_share` takes the smallest, `:363-382`),
-      a role declaring none inheriting its parent's. A child declaring a reserve below its
-      parent's is refused, naming both values and both roles, as `:446-449` does for
+      `budget_share` in the role's fields, its key list and its parser, refused outside that
+      range. Inheritance raises, never lowers (Adam, 2026-09-28; role-config's *A role's reserve
+      is raised by inheritance and never lowered*): resolve the effective reserve as the largest
+      along the role's parents and `roles/org.yaml` (where `budget_share` takes the smallest), a
+      role declaring none inheriting its parent's. A child declaring a reserve below its parent's
+      is refused, naming both values and both roles, as the parser does for a raised
       `budget_share`. Tests in `test/role.test.ts`: raise accepted, lower refused naming both,
       none inherits
-- [ ] 12.2 The gate takes the role's reserve (`chooseSeat`'s and `budgetGate`'s `role` parameter,
-      `src/budget.ts:615` and `:871`) and uses `max(seat.reserve, role.reserve ?? 0)` for the line
+- [ ] 12.2 The gate takes the role's reserve (`chooseSeat`'s and `budgetGate`'s `role` parameter
+      in `src/budget.ts`) and uses `max(seat.reserve, role.reserve ?? 0)` for the line
       on every seat the role draws on
-- [ ] 12.3 `parseOrgBudget` (`src/budget.ts:1376-1416`): remove the dedicated-seat refusal
-      (`:1395-1397`), stop forcing a dedicated seat's reserve to 0 (`:1413`; it defaults to 0),
-      and accept a reserve of 1 (`:1392`, `>= 1` becomes `> 1`). The `Seat` comments
-      (`src/budget.ts:60-74`: "Fraction of the limit Igors must not consume", "its reserve is
+- [ ] 12.3 `parseOrgBudget` (`src/budget.ts`): remove the refusal "is dedicated, so nobody is there
+      to reserve capacity for", stop forcing a dedicated seat's reserve to 0 (it defaults to 0),
+      and accept a reserve of 1 (the range check's `reserveRaw >= 1` becomes `> 1`). The `Seat`
+      interface's comments ("Fraction of the limit Igors must not consume", "its reserve is
       zero", and the `capacityEstimate` comment that a reserved seat with no figure is passed
       over) are reworded. Rewrite 'rejects a reserve on a dedicated seat'
-      (`test/budget.test.ts:873`) to accept it, and add a test for a reserve of 1
+      (`test/budget.test.ts`) to accept it, and add a test for a reserve of 1
 - [ ] 12.4 Tests: `frontend` at 0.3 and `generalist` at none on one seat, with a reading between
       their lines, choose for `generalist` and not for `frontend`; a role at 0.2 on a seat at 0.5
       uses 0.5; a role reserve with a dedicated seat is valid; one out of range is refused
@@ -354,17 +373,36 @@ the stream reading, the probe, the line, a role's reserve, and no dollar bound, 
 ## 14. Removing `capacity_estimate`
 
 - [ ] 14.1 Remove the key (Adam, 2026-09-28). In `src/budget.ts`: `Seat.capacityEstimate` and its
-      comment (`:69-73`), `DeclaredEstimate` (`:76-83`), `parseDeclaredEstimate`
-      (`:1298-1330`), its call and field in `parseOrgBudget` (`:1398`, `:1412`), and the
-      declared-capacity wording in `describeWindow` (`:1050`, `:1122-1123`). In
+      comment, `DeclaredEstimate`, `parseDeclaredEstimate`, its call and field in
+      `parseOrgBudget`, and the declared-capacity wording in `describeWindow` ("or declare a
+      capacity_estimate"). In
       `src/capacity.ts`: the `declared` basis of `CapacityFigure` (`:154`) and `CapacityAndSpend`
       (`:409`), `capacityFor`'s declared argument and fallback (`:276`), and `boundsForSeats`'
       `capacityEstimate` input and rolling-window branch for a declared figure (`:504`, `:528`,
-      and the rolling-window comment around `:560-568`). `src/keys.ts:5-6`'s example
-- [ ] 14.2 Take `capacity_estimate` out of `SEAT_KEYS` (`src/budget.ts:1340`). Add no message of
+      and the rolling-window comment around `:560-568`). The `capacity_estimate` example in
+      `src/keys.ts`'s doc comment
+- [ ] 14.2 Take `capacity_estimate` out of `SEAT_KEYS` (`src/budget.ts`). Add no message of
       its own: the generic unknown-key refusal is all an old config gets (Adam, 2026-10-11)
 - [ ] 14.3 Tests: remove or rewrite the tests that
-      declare it: `test/budget.test.ts:651`, `:663`, `:711`, `:733`, `:782-785`, `:826`, the parsing
-      tests at `:878-937`, and `:1546-1558`; `test/capacity.test.ts` 'a declared capacity'
-      (`:448-490`) and `:569-571`
+      declare it: every test in `test/budget.test.ts` that sets `capacityEstimate` or
+      `capacity_estimate`, and
+      `test/capacity.test.ts` 'a declared capacity' (`:448-490`) and `:569-571`
 - [ ] 14.4 Verify that `README.md` doesn't mention `capacity_estimate`
+
+## 15. After #101 merges
+
+#101 (`condition-backoff`) is approved and about to merge. Once it has, and its stuck-conditions
+requirements are in force:
+
+- [ ] 15.1 Once the proposal's open question on a probe's 401 is answered, restate 6.7 and *A
+      probe checks the credential too* against #101's stuck-conditions text to match the answer: whether one 401 opens the seat's
+      credential condition at once or counts as one occurrence, and whether the hourly probe or
+      #101's growing cooldown and item probe clears it. The rule then belongs in a stuck-conditions
+      delta, not in seat-budget
+- [ ] 15.2 `condition-backoff/design.md` (from #101) and `concurrent-instances/design.md` link to
+      `docs/architecture.md` §6.3.4 by the anchor `#634-…specified-on-143-not-built`. This change
+      renames the heading to "— **built**", so update both links to the new anchor
+- [ ] 15.3 #101's stuck-conditions spec and its task 3.3 say "from pacing". Pacing is withdrawn
+      here; the state is "holding back at the line". Once #101's stuck-conditions spec is in
+      force, change that wording in it
+
