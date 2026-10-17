@@ -70,7 +70,8 @@ The worker's environment is written out, and carries exactly the token of the se
 (§6.3.2). So the reading is attributed to that seat, the one `recordExecution` already names as
 having paid. A seat naming no token source runs on the ambient login and is still the seat the
 gate chose, so its reading is attributed to it too — which is exactly as true as the existing
-claim that it paid.
+claim that it paid. This attribution is decided (Adam, 2026-10-17). `seat-files` (#171) refuses a
+seat file that names no token, so once `seat-files` is built no seat runs on the ambient login.
 
 ### The record: the existing shape, and a third source, `stream`
 
@@ -445,6 +446,8 @@ reserve to 0 and its range check that refuses a reserve of 1,
 since a reserve of 1 now means even pacing. The `MODIFIED` *Seats are named configuration entities
 with an owner and a reserve* says a reserve is the share of the remaining window held back, from 0
 to 1 inclusive, on any seat. The key keeps its name `reserve` (confirmed by Adam, 2026-09-28).
+With the refusal and the forced zero gone, the `dedicated` key does nothing, and `seat-files`
+(#171), which declares seat keys, drops it (Adam, 2026-10-17).
 
 ### What the dollar bound leaves behind
 
@@ -610,8 +613,22 @@ limit. The refusal, overage and line exclusions still hold it off, because a sea
 excludes could not be used even with its credential cleared, so the stop costs nothing while they
 last.
 
-**Never on a seat with no token source.** Such a seat runs on the ambient login. A probe of it would
-read that login, which is not the seat.
+**Once #101's stuck-conditions spec is in force, these credential rules move into a
+stuck-conditions delta (Adam, 2026-10-17; task 15.1).** This change's own rule opens the seat's
+credential condition on one probe 401, and clears it with a successful probe made at most once an
+hour. #101 opens a condition once its key's occurrences reach a configurable recurrence threshold,
+provisionally 3, and clears it by running an
+item after a cooldown that grows from 15 minutes to 6 hours. In the delta, a probe's 401 counts as
+one occurrence of `seat:<id>:credential`, like a run's. One probe 401 therefore no longer opens the
+condition alone; it opens at #101's threshold. A probe that succeeds counts as the check that clears the
+condition. Whether that clearing probe waits for #101's growing cooldown or keeps this change's
+hourly limit is open (proposal, *Still open*).
+
+**Never on a seat with no token source (Adam, 2026-10-17).** Such a seat's runs spend the server's
+default Claude login, and their readings are the seat's (*Whose reading it is*): the gate chose the seat,
+and the run is work the seat was set up to do on that login. A probe is a call Igor makes for itself, with no
+item behind it. On such a seat it would spend that login, which no seat names as its token, and which may be
+a pay-per-use API key or a person's own subscription.
 
 **What a probe's reading unlocks.** Under the line, a reading below the line is all a seat needs. A
 probe of an idle reserved seat that returns a reading below its line opens it for work with no
@@ -710,10 +727,10 @@ block here modifying it would fail archive once that removal lands. What a block
 said, that a seat has headroom while read below its line and that exhausting every seat is a
 handoff, is in `seat-files`' requirement on choosing a seat.
 
-Until `seat-files` archives, the in-force pool requirement still says a reserved seat is drawn on
-only once it has a capacity figure. That text is in force only between this change's archive and
-`seat-files`', and contradicts *A seat with no reading is drawn on only where its line is the
-whole window* for that interval.
+**This change and `seat-files` archive together (Adam, 2026-10-17; task 16.1).** The in-force pool
+requirement says a reserved seat is drawn on only once it has a capacity figure, and names
+`capacity_estimate`, which this change removes. Archived alone, this change would leave that text in
+force, contradicting *A seat with no reading is drawn on only where its line is the whole window*.
 
 Pools also appear as **a remedy for a greedy role**, in *A role may hold back more of a seat than
 the seat does*. The requirement and this design name the remedy as choosing which roles a seat
@@ -750,10 +767,18 @@ says the role may draw on three seats, not a pool of three.
   log's rate, which is still small. This is a known limit, to revisit before a fleet runs many
   seats.
 
-## Still open
+## Settled on 2026-10-17
 
-The proposal lists every open question with a recommendation. Those raised by the spec check of
-2026-10-17 are only there; the ones below predate it.
+- **A probe's credential rules move into a stuck-conditions delta** once #101's spec is in force
+  (*A seat probe*, above; task 15.1).
+- **A seat naming no token source** keeps its runs' readings and is never probed, and #171 refuses
+  such a seat file (*Whose reading it is*, and *A seat probe*).
+- **Issue #69, which asks how old a reading may be before the line distrusts it, is closed with this
+  change's reasoning** (*A stale reading is a lower bound until its window resets*) once task 1.3 confirms that fullness does not fall within an instance (task 1.6).
+- **This change and `seat-files` (#171) archive together** (*Pools are dropped*; task 16.1).
+- **`dedicated` is dropped in `seat-files` (#171)** (*A reserve on a dedicated seat is pacing*).
+
+## Still open
 
 - **A guaranteed per-role share.** Not specified. Add it only if a role's reserve proves too weak a
   priority in practice. Choosing which roles a seat serves, and more seats, are the remedies.

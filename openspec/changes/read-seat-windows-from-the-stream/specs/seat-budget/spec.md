@@ -237,8 +237,10 @@ config. The post-reset probe that *A window's length is measured, and so is whet
 first use* specifies is a seat probe too, and every limit and exclusion here applies to it.
 
 A seat probe SHALL run only on the server that runs the Igors, never on a person's machine, and
-nothing SHALL be installed anywhere else for it. A seat naming no token source SHALL NOT be probed:
-its call would run on whatever login is ambient, which reads that login rather than the seat.
+nothing SHALL be installed anywhere else for it. A seat naming no token source SHALL NOT be probed.
+Its runs spend the server's default Claude login because the operator set the seat up that way, but
+a probe is a call no item asked for, and would spend a login that no seat names as its token, which
+may be a pay-per-use API key or a person's own subscription.
 
 A seat probe is not free. Its cost SHALL be recorded like any other spend, against the seat it
 read, marked as a seat probe. Spend attribution, capacity and reporting SHALL count that row. Where

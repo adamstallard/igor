@@ -42,34 +42,39 @@ to merge; #171 is `seat-files`, which moves seat configuration into one file per
 11. **No overage opt-in** (Adam, 2026-09-27).
 12. **`allowed_warning` changes no gate decision; triage switches to the stream only after this is
     built, with #75 the fallback; the observation log is read whole** (Adam, 2026-10-11).
+13. **Once #101's stuck-conditions spec is in force, a probe's credential rules move into a
+    `stuck-conditions` delta** (Adam, 2026-10-17). There a probe's 401 counts as one occurrence of
+    `seat:<id>:credential`, like a run's, so one probe 401 no longer opens the condition alone: it
+    opens once its occurrences reach #101's recurrence threshold, which is
+    configurable and provisionally 3. A probe that succeeds counts as the check that clears
+    the condition (task 15.1). *Rejected:* keeping the probe's own rule, which opens the condition
+    on one 401 and clears it with a successful probe made at most once an hour, beside #101's,
+    which opens at that threshold and clears by running an item after a growing cooldown.
+14. **A seat naming no token source keeps its runs' readings, and is never probed** (Adam,
+    2026-10-17). Its runs are work the gate put on that seat, which the operator set up to spend the
+    server's default Claude login, so their readings are the seat's. A probe is a call Igor makes
+    for itself, with no item behind it, and would spend that login, which no seat names as its
+    token and which may be a pay-per-use API key or a person's own subscription. #171 refuses a
+    seat file that names no token (Adam, 2026-10-17), and archives with this change (decision 16),
+    so once #171 is built no seat names no token source and neither rule applies to any seat.
+15. **Issue #69, which asks how old a reading may be before the line distrusts it, is closed with
+    this change's reasoning once task 1.3 confirms that fullness does not
+    fall within an instance** (Adam, 2026-10-17). A reading bounds its window from below until the
+    reset, so it needs no age limit (task 1.6).
+16. **This change and #171 archive together** (Adam, 2026-10-17). The in-force pool requirement
+    names `capacity_estimate`, which this change removes, and only #171 removes that requirement,
+    so archiving this change alone would leave in-force text naming a key that no longer exists
+    (task 16.1).
+17. **The `dedicated` seat key is dropped in #171, not here** (Adam, 2026-10-17). Once this change
+    stops refusing a reserve on a dedicated seat and stops forcing its reserve to 0, the key does
+    nothing. #171 is where seat keys are declared.
 
 **Still open:**
 
-- **A probe's 401 and the credential condition of #101.** This change opens the seat's credential
-  condition on one 401 from a probe, and clears it by a probe at most hourly. #101, about to merge,
-  opens a condition only after three runs in a row record the condition's key, and clears it by
-  claiming one real item and running it on the seat, after a cooldown that grows from 15 minutes to
-  6 hours. *Recommendation:* once #101's
-  stuck-conditions spec is in force, move the probe's rules into a stuck-conditions delta, with a
-  probe's 401 counting as one occurrence and a successful probe as a clearing check (task 15.1).
-- **A seat naming no token source.** Its runs' readings are recorded as its own, yet it is never
-  probed because "its call would run on whatever login is ambient, which reads that login rather
-  than the seat". A run's reading of the ambient login cannot be the seat's while a probe's reading
-  of the same login is not. *Recommendation:* keep the attribution, since that login is
-  what the seat spends, and give the probe exclusion its real reason: a probe would spend a login no
-  seat names. Settle it with #171, whose open questions include whether a seat file may name no
-  token at all.
-- **Staleness (#69).** This change says a reading needs no staleness threshold until its window
-  resets, while #69 is open on exactly that. *Recommendation:* close #69 with this change's
-  reasoning, once task 1.3 confirms that fullness does not fall within an instance.
-- **`capacity_estimate` between two archives.** The in-force pool requirement says a reserved seat
-  starts on a `capacity_estimate`. #171 removes that requirement, and this change carries no block
-  for it. *Recommendation:* archive this change and #171 together, so no in-force text names a key
-  that no longer exists.
-- **`dedicated`.** Today a dedicated seat is refused a reserve and forced to 0, and that is all the
-  key does. Every seat already defaults to reserve 0, so once this change drops the refusal and
-  the forced zero, the key has no effect. *Recommendation:* drop the key, together with #171, which
-  declares it.
+- **Whether the probe that clears a seat's credential condition waits for #101's cooldown.** Once
+  the rules move into a stuck-conditions delta (decision 13), a successful probe is the clearing
+  check. Not decided: whether that probe is made only after #101's cooldown, which grows from 15
+  minutes to 6 hours, or keeps this change's limit of once an hour (task 15.1).
 - **A guaranteed per-role share.** Not specified; added only if a role's reserve proves too weak a
   priority.
 - **The `rejected` shape** (#57) is contributor-reported, not captured (task 1.5).

@@ -34,6 +34,11 @@
 - [ ] 1.5 Capture a `rejected` event from a real refusal (#57), worker run and triage call, and
       check *A refusal the stream reports is not recorded twice* and 3.3 against it, including
       which window a per-model refusal names
+- [ ] 1.6 Once 1.3 confirms that no later reading of an instance is lower, close issue #69, which
+      asks how old a reading may be before the line distrusts it, with this change's reasoning: a reading bounds its window from below until its reset, so it needs no
+      age limit (*A reading bounds its window from below until the window resets*; Adam,
+      2026-10-17), and remove the *Still open* line naming #69 from `docs/architecture.md` §6.3.
+      If 1.3 finds a lower reading, leave #69 open
 
 
 ## 2. Parsing, in `src/execute.ts`
@@ -394,11 +399,13 @@ the stream reading, the probe, the line, a role's reserve, and no dollar bound, 
 #101 (`condition-backoff`) is approved and about to merge. Once it has, and its stuck-conditions
 requirements are in force:
 
-- [ ] 15.1 Once the proposal's open question on a probe's 401 is answered, restate 6.7 and *A
-      probe checks the credential too* against #101's stuck-conditions text to match the answer: whether one 401 opens the seat's
-      credential condition at once or counts as one occurrence, and whether the hourly probe or
-      #101's growing cooldown and item probe clears it. The rule then belongs in a stuck-conditions
-      delta, not in seat-budget
+- [ ] 15.1 Move the credential rules of *A probe checks the credential too*, and task 6.7 (a probe's
+      401 row), out of seat-budget into a stuck-conditions delta written against #101's text (Adam,
+      2026-10-17). In it, a probe's 401 counts as one occurrence of `seat:<id>:credential`, as a
+      run's does, so one probe 401 no longer opens the condition alone: it opens once its occurrences
+      reach #101's recurrence threshold. A probe that succeeds counts as the check that clears the condition. Whether
+      that probe waits for #101's growing cooldown or keeps the hourly limit follows the answer to
+      the proposal's open question on it
 - [ ] 15.2 `condition-backoff/design.md` (from #101) and `concurrent-instances/design.md` link to
       `docs/architecture.md` §6.3.4 by the anchor `#634-…specified-on-143-not-built`. This change
       renames the heading to "— **built**", so update both links to the new anchor
@@ -406,3 +413,9 @@ requirements are in force:
       here; the state is "holding back at the line". Once #101's stuck-conditions spec is in
       force, change that wording in it
 
+## 16. Archiving
+
+- [ ] 16.1 Archive this change and `seat-files` (#171) together, in one commit (Adam, 2026-10-17).
+      Archived alone, this change would leave the in-force pool requirement naming
+      `capacity_estimate`, which it removes; only `seat-files` removes that requirement. Archive
+      this change first: `seat-files`' deltas are written against this change's text
