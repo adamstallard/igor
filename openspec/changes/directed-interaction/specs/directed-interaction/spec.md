@@ -37,7 +37,7 @@ manipulation, and one needing no permission lookup.
 
 - **WHEN** the holder of an item mentions the Igor on it
 - **THEN** the Igor investigates and answers
-- **AND** it does not assign itself, and the holder keeps the item
+- **AND** it does not claim the item, and the holder keeps the item
 
 #### Scenario: A mention cannot widen the action space
 
@@ -153,3 +153,90 @@ something unexpected — which is what distinguishes a request from an injection
 
 - **WHEN** an Igor acts on an item it discovered
 - **THEN** the record is as before, because the query is the provenance
+
+### Requirement: A person with authority can have an Igor file an issue
+
+Where someone with write access on the repository mentions an Igor and asks for an issue to be
+filed, the Igor SHALL open one — carrying what was asked, linking where it was asked, and naming
+who asked — and SHALL NOT claim it or work it. The issue then enters discovery like any other.
+
+Opening an issue is an action the role SHALL have to grant, like every other action; a mention
+cannot confer it where the role does not. That keeps this inside the rule that a mention never
+widens what a role permits, and it grants the requester nothing they could not already do
+themselves by opening the issue.
+
+**Issues stay the unit of work.** Without this, work a person suggests on a pull request lives
+only in a comment thread: a mention gets an answer, and nothing tracks what was asked for. Filing
+it turns a suggestion into something discovery can find, a role can be scoped to, and the next
+reader can see.
+
+#### Scenario: Asked to file an issue by someone with authority
+
+- **WHEN** someone with write access mentions an Igor on a pull request and asks for an issue
+- **THEN** the Igor opens one naming what was asked, where, and by whom
+- **AND** it does not claim the issue or begin the work
+
+#### Scenario: A role that may not open issues does not
+
+- **WHEN** an Igor whose role does not grant opening issues is asked to file one
+- **THEN** it declines, as it would decline any action its role does not grant
+
+#### Scenario: Someone without authority cannot have an issue filed
+
+- **WHEN** someone without write access asks an Igor to file an issue
+- **THEN** nothing is filed, as with any other mention from someone without authority
+
+### Requirement: An answer to a question the Igor asked may be acted on
+
+Where an Igor posted a question on an artifact it authored — a decision with the options it would
+take, numbered — and someone with write access answers it in a comment that mentions the Igor,
+the Igor MAY act on the option chosen. This is the one case where acting on a mention is not
+restricted to what may be said.
+
+**It is an exception to speaking only, not to widening.** Every option was proposed by the Igor
+itself, within what its role already grants, before anyone answered. Choosing one narrows the set
+of things the Igor was ready to do; it adds none. So the rule that a mention never widens what a
+role permits holds unchanged, and the argument that makes mentions safe by construction still
+applies.
+
+**The answer SHALL be matched, never interpreted.** Which questions were posted, and which options
+each offered, SHALL be read from what the posting Igor recorded when it posted them — never from
+the artifact's text, which anyone with write access can edit. A reply SHALL be read only as a
+choice among those; a reply naming a question that was not posted, or an option that was not
+offered, SHALL have no effect. A reply can answer a question an Igor asked; it cannot pose one.
+
+That record is also what lets the answer go to a different Igor than the one that asked: the
+Igor a reply mentions matches the choice against the asking Igor's record, not against anything
+it reads off the artifact.
+
+Authority SHALL be checked against the reply's author. The question itself belongs where a
+reader briefed on the artifact sees it — its description — and the answer arrives as a comment,
+because a comment is attributable and a mention is what makes it visible.
+
+#### Scenario: An answer selects an option the Igor offered
+
+- **WHEN** an Igor posted a numbered question with options on its own pull request, and someone
+  with write access replies mentioning it and choosing one
+- **THEN** the Igor acts on that option
+
+#### Scenario: A reply cannot add a question
+
+- **WHEN** a reply names a question the Igor did not post, or an option it did not offer
+- **THEN** nothing happens
+
+#### Scenario: An answer on an artifact the Igor did not author is only an ordinary mention
+
+- **WHEN** a reply chooses an option on a pull request the Igor did not author
+- **THEN** it is treated as an ordinary mention, which may only be answered
+
+#### Scenario: Mentioning a different Igor routes the answer
+
+- **WHEN** a reply answers a question but mentions a different Igor than the one that asked
+- **THEN** the mentioned Igor acts on the choice, matching it against what the asking Igor
+  recorded, and within what its own role grants
+
+#### Scenario: A question edited into the description is not a question
+
+- **WHEN** someone edits the artifact's description to add a question or an option the Igor never
+  recorded, and a reply chooses it
+- **THEN** nothing happens
