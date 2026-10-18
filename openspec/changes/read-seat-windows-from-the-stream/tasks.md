@@ -73,7 +73,7 @@
 - [ ] 3.5 Rows are appended one at a time, as `observeSeat` does, since `appendRecord` drops
       concurrent appends to one day's file
 - [ ] 3.6 Tests: a run with an event appends two rows against the charged seat with the arrival
-      instant; a run without one appends none; a seat naming no token source still gets its row;
+      instant; a run without one appends none;
       a refusal carried by both stream and envelope appends one row; an aborted run that received
       an event still records it
 
@@ -164,7 +164,7 @@
 - [ ] 6.4 Tests: a reserved seat with no reading is probed once; a seat with both windows unexpired
       is not; a refused or overage seat is not until the reset; a seat whose week reading is past
       the week's line is not though its session reading has expired, and is once the line has
-      risen past the reading; a seat with no token source is not; the hourly bound and the
+      risen past the reading; the hourly bound and the
       five-hour back-off hold; a probe's cost is recorded as a probe; a probe with no event
       records nothing and is not retried in a loop; another Igor's probe within the hour holds
       this one off; the probe's cost appears in `igor budget`'s spend; the probe runs from an
@@ -268,7 +268,7 @@
 
 ## 8. Window length and schedule
 
-- [ ] 8.1 The post-reset probe: for each seat with a token source, schedule a seat probe ten minutes
+- [ ] 8.1 The post-reset probe: for each seat, schedule a seat probe ten minutes
       after each reset a reading has stated, once per window type until measured, then again about
       weekly. It goes through 6.1's selection, so every limit and exclusion applies, and an
       excluded one waits for the next known reset

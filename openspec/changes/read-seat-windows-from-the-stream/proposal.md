@@ -52,13 +52,18 @@ to merge; #171 is `seat-files`, which moves seat configuration into one file per
     is fixed is back within the hour. *Rejected:* keeping the probe's own opening rule, a single
     401, beside #101's, which opens the same condition only at its threshold: one condition would
     open by two different rules.
-14. **A seat naming no token source keeps its runs' readings, and is never probed** (Adam,
-    2026-10-17). Its runs are work the gate put on that seat, which the operator set up to spend the
-    server's default Claude login, so their readings are the seat's. A probe is a call Igor makes
-    for itself, with no item behind it, and would spend that login, which no seat names as its
-    token and which may be a pay-per-use API key or a person's own subscription. #171 refuses a
-    seat file that names no token (Adam, 2026-10-17), and archives with this change (decision 16),
-    so once #171 is built no seat names no token source and neither rule applies to any seat.
+14. **Every seat has a token, and Igor never uses a stored Claude login** (Adam, 2026-10-18,
+    replacing his 2026-10-17 rule for a seat that names no token). A stored login is the
+    credentials `claude` keeps in a home directory. This change therefore has no rule for a seat
+    without a token: every seat may be probed with its own token, and every reading is of a seat
+    whose token paid. #171 (`seat-files`) refuses a seat file that names no token, makes no model
+    call on a stored login under `igor serve` or `igor run`, and archives with this change
+    (decision 16). This change carries no block on the in-force *A spend with no seat behind it
+    does not happen*, whose scenarios describe a seat with no token and an organization with no
+    seats; openspec will not let a `MODIFIED` block drop them. #171 removes that requirement in
+    the same commit and re-adds it without them, with the probe as its stated exception.
+    *Replaced:* the 2026-10-17 rule that such a seat keeps its runs' readings on the server's
+    default login and is never probed.
 15. **Issue #69, which asks how old a reading may be before the line distrusts it, is closed with
     this change's reasoning once task 1.3 confirms that fullness does not
     fall within an instance** (Adam, 2026-10-17). A reading bounds its window from below until the

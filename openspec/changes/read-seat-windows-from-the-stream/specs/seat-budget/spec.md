@@ -218,7 +218,7 @@ and a refusal only ever shuts a window. So if the provider drops or changes the 
 
 ### Requirement: A seat nothing has read is probed on the Igor server with its own token
 
-Where seats are declared, for a seat that names a token source and has no unexpired reading of a
+Where seats are declared, for a seat that has no unexpired reading of a
 window — no `usage` or `stream` observation of it whose reset has not passed — the server running
 the Igors SHALL make a seat probe: one minimal `claude -p` call with that seat's own configured
 token, on the cheapest model, with a trivial prompt and no tools, and with `--output-format
@@ -237,10 +237,7 @@ config. The post-reset probe that *A window's length is measured, and so is whet
 first use* specifies is a seat probe too, and every limit and exclusion here applies to it.
 
 A seat probe SHALL run only on the server that runs the Igors, never on a person's machine, and
-nothing SHALL be installed anywhere else for it. A seat naming no token source SHALL NOT be probed.
-Its runs spend the server's default Claude login because the operator set the seat up that way, but
-a probe is a call no item asked for, and would spend a login that no seat names as its token, which
-may be a pay-per-use API key or a person's own subscription.
+nothing SHALL be installed anywhere else for it.
 
 A seat probe is not free. Its cost SHALL be recorded like any other spend, against the seat it
 read, marked as a seat probe. Spend attribution, capacity and reporting SHALL count that row. Where
@@ -285,7 +282,7 @@ its credential were cleared, so it keeps its stop until it could.
 
 #### Scenario: A reserved seat with no reading is probed
 
-- **WHEN** a seat declares a reserve and a token source, and has no reading of either window
+- **WHEN** a seat declares a reserve, and has no reading of either window
 - **THEN** the server running the Igors makes one seat probe with that seat's token
 - **AND** the probe's `rate_limit_event`, if there is one, is recorded as a `stream` reading of
   that seat
@@ -384,11 +381,6 @@ its credential were cleared, so it keeps its stop until it could.
 - **THEN** it is not probed again
 - **AND** once an hour has passed it is probed again, with no five-hour back-off
 
-#### Scenario: A seat with no token source is not probed
-
-- **WHEN** a seat names none of the token mechanisms
-- **THEN** no probe is made on it
-
 #### Scenario: A probe never runs on a person's machine
 
 - **WHEN** a seat is probed
@@ -439,8 +431,8 @@ hours for the session, seven days for the week) and instances are taken to run o
 schedule. Wherever a length or a schedule is reported, it SHALL say whether it is built-in or
 measured, and how it was measured.
 
-**Just after a reset, by a probe.** Every reading states when its window resets. For each seat
-that names a token source, the server running the Igors SHALL make a seat probe ten minutes after
+**Just after a reset, by a probe.** Every reading states when its window resets. For each seat,
+the server running the Igors SHALL make a seat probe ten minutes after
 a reset it knows of, once for each window type, and again about once a week to catch a change.
 The new reading's reset, set against the old reset and the probe's own time, gives both answers.
 On a fixed schedule the new reset is the old reset plus one length. Where instances start at first
@@ -965,69 +957,6 @@ behalf; it SHALL record that it was a seat probe in place of a role.
 - **WHEN** a seat probe is made
 - **THEN** the record names the seat, the cost and the time
 - **AND** it says the spend was a seat probe rather than naming a role
-
-### Requirement: A spend with no seat behind it does not happen
-
-Where seats are declared, every model call Igor makes on its own behalf SHALL be charged to the
-seat the gate chose for the role, and SHALL be made with that seat's credential where the seat
-names one. A seat probe is the one exception to the gate choosing: it is charged to the seat it
-reads and made with that seat's own credential, and it is made only on a seat that names one. Where the gate names no seat, the call SHALL NOT be made, and no ambient credential
-SHALL be substituted for the seat the gate did not name. Where an organization declares no
-seats, budget is not enforced and this requirement places no condition on anything.
-
-The condition is whether the gate named a seat, not whether a credential was found. A seat
-naming none of the three token mechanisms is already unaffected by the rule that governs them —
-it runs on whatever login is ambient — and it is still a seat the gate chose, still bounded by
-its reserve, still named in the record as having paid. What has no seat behind it is a call the
-gate refused to choose one for.
-
-This is the spending-side counterpart of the reading rule already in force: a seat naming a
-token that is not available is reported unreadable and no other credential is used in its place.
-The same principle governs spending — a seat the gate did not name cannot be charged, and a
-credential no seat names cannot be attributed — but it was written only of readings, so the one
-spend in the cycle that does not go through a worker reached an ambient fallback with no seat
-behind it and nothing in the record naming what paid.
-
-Attributing that spend instead of refusing it was considered and rejected. A record saying an
-unnamed login paid is honest about a call that should not have been made, leaves the ceiling
-unenforced, and does nothing at all on a host where no ambient login exists: there the call
-fails with a message about not being logged in, which describes a machine whose credentials are
-configured correctly and whose seats are simply held.
-
-The exemption for an organization with no seats is not an oversight to be tightened later. A
-deployment that declares no seats has asked for no ceiling and made no promise about which
-credential pays, and the fallback is what it runs on.
-
-#### Scenario: No seat, no spend
-
-- **WHEN** the gate names no seat for a role, because every seat is spent or the pool cannot be
-  used
-- **THEN** no model call is made on that role's behalf
-- **AND** no credential is substituted for the seat's
-
-#### Scenario: A spend nothing can attribute is refused rather than recorded as ambient
-
-- **WHEN** a call could only be made on a credential no seat names
-- **THEN** it is refused
-- **AND** it is not made and recorded against the ambient login instead
-
-#### Scenario: An unenforced budget is untouched
-
-- **WHEN** an organization declares no seats
-- **THEN** calls run on whatever login is ambient, as they did before
-- **AND** nothing is refused for want of a seat
-
-#### Scenario: A call that runs names the seat that paid
-
-- **WHEN** the gate names a seat and the call is made
-- **THEN** the call uses that seat's credential where the seat names one
-- **AND** the record names that seat as having paid, whether or not it named a token
-
-#### Scenario: A seat naming no token is still a seat
-
-- **WHEN** the gate chooses a seat that names none of the token mechanisms
-- **THEN** the call is made, on the ambient login, as that configuration already permits
-- **AND** the seat is recorded as having paid
 
 ### Requirement: The reserve is untouchable
 

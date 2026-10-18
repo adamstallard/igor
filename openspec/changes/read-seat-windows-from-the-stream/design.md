@@ -68,10 +68,9 @@ excluded the same way, and err the same way.
 
 The worker's environment is written out, and carries exactly the token of the seat the gate chose
 (§6.3.2). So the reading is attributed to that seat, the one `recordExecution` already names as
-having paid. A seat naming no token source runs on the ambient login and is still the seat the
-gate chose, so its reading is attributed to it too — which is exactly as true as the existing
-claim that it paid. This attribution is decided (Adam, 2026-10-17). `seat-files` (#171) refuses a
-seat file that names no token, so once `seat-files` is built no seat runs on the ambient login.
+having paid. Every seat has a token of its own, and Igor never uses a stored Claude login (Adam,
+2026-10-18), so the token that ran is always the chosen seat's. `seat-files` (#171), which
+archives with this change, refuses a seat file that names no token.
 
 ### The record: the existing shape, and a third source, `stream`
 
@@ -407,11 +406,6 @@ dedicated seat does today, and its first run's reading or first refusal reads it
 scenarios *A dedicated seat runs uncalibrated* and *The first refusal calibrates it* are kept under
 their names as instances of that rule.
 
-A reserve-0 seat naming no token source is never probed, and runs with no reading as before. A
-seat whose line uses a non-zero reserve and names no token source can only be read by a run, and
-it is not run without a reading. It is therefore never drawn on unless a live `/usage` read
-answers for it. That is the fail-closed direction, and `igor budget` says why.
-
 ### A role's reserve
 
 Decided by Adam on 2026-09-28, and added as *A role may hold back more of a seat than the seat
@@ -555,10 +549,11 @@ is recorded against the seat it read, on a spend row. Spend attribution, capacit
 all count spend rows. #101 also records a credential check as a row of kind `check`, and its
 `loadSpend` skips those rows, so the cost must not ride on one. Where #101 records the probe as a
 credential check, the check row is a second row, and it carries no cost. A probe is made on no role's behalf, so the record says "seat probe" where
-a role would go. That needs `MODIFIED` deltas on *Every invocation records which role
-spent from which seat* and *A spend with no seat behind it does not happen*, whose in-force text
-requires a role and a seat the gate chose. A probe is the stated exception to the second, and only
-for a seat that names its own token.
+a role would go. That needs a `MODIFIED` delta on *Every invocation records which role
+spent from which seat*, whose in-force text requires a role. The in-force *A spend with no seat
+behind it does not happen* also requires a seat the gate chose. `seat-files` (#171), which
+archives with this change, removes that requirement and re-adds it with a probe as the stated
+exception, so this change carries no block for it.
 
 **When a seat needs one: no unexpired reading of a window.** A reading is a lower bound on its
 window until that window resets, so a clock threshold shorter than the reset would spend money to
@@ -624,12 +619,6 @@ condition alone; it opens at #101's threshold. A probe that succeeds clears the 
 clearing probe keeps this change's limit of once an hour; it does not wait for #101's growing
 cooldown (Adam, 2026-10-17). A seat whose token has been fixed is therefore back within the hour,
 however long the condition has been open.
-
-**Never on a seat with no token source (Adam, 2026-10-17).** Such a seat's runs spend the server's
-default Claude login, and their readings are the seat's (*Whose reading it is*): the gate chose the seat,
-and the run is work the seat was set up to do on that login. A probe is a call Igor makes for itself, with no
-item behind it. On such a seat it would spend that login, which no seat names as its token, and which may be
-a pay-per-use API key or a person's own subscription.
 
 **What a probe's reading unlocks.** Under the line, a reading below the line is all a seat needs. A
 probe of an idle reserved seat that returns a reading below its line opens it for work with no
@@ -702,8 +691,7 @@ scenarios became false are `REMOVED` and re-`ADDED` under new names.
 - ***A limit error lowers the estimate that permitted it*** — the estimate no longer permits
   anything. The refusal gates as a reading at 100%.
 
-Two more deltas are about the probe: *Every invocation records which role spent from which seat* and
-*A spend with no seat behind it does not happen*.
+One more delta is about the probe: *Every invocation records which role spent from which seat*.
 
 - ***`budget_share` is a ceiling, not a reservation*** — its text said nothing about how a share is
   measured, and the derived path measured it with a capacity figure. Now it is measured against the
@@ -773,8 +761,9 @@ says the role may draw on three seats, not a pool of three.
 - **A probe's credential rules move into a stuck-conditions delta** once #101's spec is in force
   (*A seat probe*, above; task 15.1). The probe that clears the seat's credential condition,
   `seat:<id>:credential`, keeps the hourly limit and does not wait for #101's cooldown.
-- **A seat naming no token source** keeps its runs' readings and is never probed, and #171 refuses
-  such a seat file (*Whose reading it is*, and *A seat probe*).
+- **Every seat has a token** (Adam, 2026-10-18, replacing his 2026-10-17 rule for a seat with
+  none): every seat may be probed with its own token, and Igor never uses a stored Claude login
+  (*Whose reading it is*; proposal, decision 14).
 - **Issue #69, which asks how old a reading may be before the line distrusts it, is closed with this
   change's reasoning** (*A stale reading is a lower bound until its window resets*) once task 1.3 confirms that fullness does not fall within an instance (task 1.6).
 - **This change and `seat-files` (#171) archive together** (*Pools are dropped*; task 16.1).
