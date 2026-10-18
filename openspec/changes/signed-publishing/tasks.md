@@ -39,19 +39,23 @@
 
 ## 2. The commit
 
-- [ ] 2.1 Stage the clone (`git add -A`) after the worker ends
+- [ ] 2.1 Stage the clone (`git add -A`) once, in Igor's own index, after the last model step
+      exits, and create every trailer against that tree (proposal, decision 11). Who runs the
+      signing calls waits on the proposal's open question
 - [ ] 2.2 A bug-hunter step in caller-commits mode; parse its result block
 - [ ] 2.3 A prose pass step, given the issue title and number and, under #150, the gate, that
       writes the message and runs `prose check`. The subject drops any closing keyword in the
       title; the body ends with `Closes #N` for a role not using #150 and on every gate-two commit,
       revisions included, and with `Refs #N` on gate one's commits, its revisions included
-- [ ] 2.4 Run bug-hunter once more when the prose pass changed a file after its signature
+- [x] 2.4 ~~Run bug-hunter once more when the prose pass changed a file after its signature~~
+      Dropped: the trailers are made once, after the last step (proposal, decision 11)
 - [ ] 2.5 In `produce()` and in #150's `commitOnBranch`, check that the uploaded tree equals both signed trees, that
       `prose verify-staged` accepts the trailer, and that the subject is the issue title with
       any closing keyword dropped
 - [ ] 2.6 Append the trailers; leave merge commits without them
 - [ ] 2.7 Tests: a tree mismatch, a message mismatch and a changed subject each refuse the
-      commit; a prose-pass edit triggers one more bug-hunter run; a gate-one commit ends with
+      commit; a prose-pass edit is in the tree both trailers name, with no second bug-hunter
+      run; a gate-one commit ends with
       `Refs #N`; gate two's `commitOnBranch` commit is signed and verified
 
 ## 3. The pull request description

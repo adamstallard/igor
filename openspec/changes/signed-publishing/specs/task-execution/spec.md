@@ -5,23 +5,27 @@
 Before Igor commits a worker's change, whether `produce()` opens a pull request with it or, under
 the two-gate workflow (#150), `commitOnBranch` pushes gate two's implementation or a revision onto
 an existing pull request, the model steps for the skills the role lists
-SHALL run in the working tree, with its changes staged. Each runs only where the role's
+SHALL run in the working tree. Each runs only where the role's
 `skills` lists it (signed-publishing, *Igor verifies what each skill in a role's list
 requires*); a role that lists neither commits as it does without this capability.
 
-1. **Bug-hunter**, where the role lists `bug-hunter`, in its caller-commits mode, SHALL return `Bug-hunter:` and, unless it
-   skipped at triage, `Bug-hunter-Tree:` over the tree it reviewed.
-2. **The prose pass**, where the role lists `prose`, SHALL rewrite the docs and comments the change touches, write the commit
-   message, run `prose check` over the staged tree and that message, and return the
-   `Prose: ✓ <tree>:<message>` trailer. The message's subject SHALL be the issue title, with any
+1. **Bug-hunter**, where the role lists `bug-hunter`, in its caller-commits mode, SHALL review
+   and fix the change. Its trailers, made after the last step as below, are `Bug-hunter:` and,
+   unless bug-hunter's triage finds nothing to hunt and skips, `Bug-hunter-Tree:`.
+2. **The prose pass**, where the role lists `prose`, SHALL rewrite the docs and comments the
+   change touches and write the commit message. Its trailer is `Prose: ✓ <tree>:<message>`,
+   over the staged tree and that message. The message's subject SHALL be the issue title, with any
    closing keyword in it dropped (GitHub's `close`, `fix` or `resolve` in any form, followed by an issue reference, as in a title like `Login fails (fixes #12)`), and its body SHALL explain the change. The body SHALL
    end with `Closes #N` on any commit of a role not using the two-gate workflow (#150), and
    under #150 on every gate-two commit,
    the implementation and each revision after it. Gate one's commits, its revisions included,
    SHALL end with `Refs #N`, since #150 keeps closing keywords off them.
 
-If both run and the prose pass changes a file after bug-hunter signed its tree, bug-hunter
-SHALL run once more to sign the new tree.
+Bug-hunter SHALL run before the prose pass. Neither step SHALL sign a tree while it runs. After
+the last model step exits, Igor SHALL stage the change once, in its own index, and every
+trailer, `Bug-hunter:`, `Bug-hunter-Tree:` and `Prose:`, SHALL be created against that tree,
+which is the tree Igor records and publishes. Which process creates them, and what
+`Bug-hunter-Tree:` then attests, are open in the proposal.
 
 Igor SHALL commit, through either path, only when all of these hold for the steps that ran:
 
@@ -29,7 +33,10 @@ Igor SHALL commit, through either path, only when all of these hold for the step
 - where the prose pass ran, `prose verify-staged` accepts the `Prose:` trailer against that
   tree and the message, and the subject is the issue title as above.
 
-A failure SHALL go back to the step that signed, as the signed-publishing capability requires.
+A message that differs from the one the `Prose:` trailer names, or a subject that is not the
+issue title as above, SHALL go back to the prose pass, as the signed-publishing capability
+requires. A tree mismatch refuses the commit; since no step signs a tree, which step, if any,
+it goes back to is open in the proposal.
 The commit SHALL carry the message, then the `Bug-hunter:`, `Bug-hunter-Tree:` and `Prose:`
 trailers of the steps that ran. Merge commits carry none of these trailers.
 
@@ -43,7 +50,6 @@ trailers of the steps that ran. Merge commits carry none of these trailers.
 
 - **WHEN** the tree Igor uploads differs from a signed tree
 - **THEN** nothing is committed
-- **AND** the step that signed that tree runs again
 
 #### Scenario: A message mismatch refuses the commit
 
@@ -69,10 +75,13 @@ trailers of the steps that ran. Merge commits carry none of these trailers.
 - **THEN** the commit is signed and verified as one `produce()` makes, and its body ends with
   `Closes #N`
 
-#### Scenario: Bug-hunter signs again after the prose pass edits a file
+#### Scenario: Both trailers bind to the tree staged after the last step
 
-- **WHEN** the prose pass changes a file after bug-hunter signed its tree
-- **THEN** bug-hunter runs once more and signs the new tree before anything is committed
+- **WHEN** the prose pass changes a file after bug-hunter has run
+- **THEN** Igor stages once, after the prose pass exits
+- **AND** the `Prose:` trailer names that staged tree, which holds the prose pass's change, and
+  so does `Bug-hunter-Tree:` where bug-hunter did not skip
+- **AND** bug-hunter does not run again
 
 #### Scenario: Merge commits carry no trailers
 

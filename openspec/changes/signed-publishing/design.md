@@ -22,10 +22,11 @@ Each half does what the other cannot.
 
 No model step commits, pushes or posts. No code step writes prose.
 
-### A commit is signed three ways
+### A commit is signed three ways, once, at the end
 
-- **Bug-hunter** signs the tree it reviewed (`Bug-hunter-Tree:`).
-- **The prose pass** signs the staged tree and the message together (`Prose: ✓ <tree>:<message>`).
+- **Bug-hunter's** trailer binds the tree (`Bug-hunter-Tree:`).
+- **The prose pass's** trailer binds the staged tree and the message together
+  (`Prose: ✓ <tree>:<message>`).
 - **The issue title** is the subject, because a person wrote it. The prose pass is given the
   title; the code checks it was kept.
 
@@ -33,9 +34,16 @@ The code compares both signed trees with the sha that `POST /git/trees` returns,
 before the commit exists. Igor never rebases its branches, so that hash still matches whenever
 the commit is checked later.
 
-The prose pass runs after bug-hunter, so it also rewrites bug-hunter's comments. If it changes
-a file, bug-hunter's tree no longer matches, and bug-hunter runs once more to sign the new tree.
-Bug-hunter's triage skips a comments-only change, so that round costs little.
+**Decided by Adam, 2026-10-17 (on #175): for a commit, the steps edit, and the trailers are made
+once.** This narrows *A model step signs; the code verifies*, above: for a commit, neither step
+signs while it runs. Bug-hunter runs, then the prose pass, which also rewrites the code comments
+bug-hunter's fixes added. After the last model step exits, Igor stages the change once, in its
+own index, and every trailer is created against that tree, the one Igor records and publishes.
+So the prose pass's edits are always in the tree the trailers name, and bug-hunter never runs a
+second time to sign the prose pass's tree. Under #175 (`worker-user`) the steps run as a worker
+user that cannot write the git directory, which rules out a step staging for itself. Who runs
+the calls that produce the trailers against Igor's tree, and what `Bug-hunter-Tree:` attests
+once it names edits bug-hunter never reviewed, are open (proposal, *Still open*).
 
 Merge commits carry no trailers: `resolve` and the server-side `Merge X into Y` commits are
 Igor's own mechanics, and the skills' checks skip merges.
@@ -139,9 +147,9 @@ them without this grant.
 | `prose check -F <msg> --goals …` and `--pass <token>` | model | the first call prints the rules and the prose in the change while the model rewrites it |
 | `prose sign --goals …` and `--pass <token>` | model | the same, for a post |
 | bug-hunter's run and `caller-result.sh` | model | the hunt is the model's work; the script mints over what the run staged |
-| `git add` (bug-hunter staging its fixes and tests) | model | part of the run |
+| `git add` (bug-hunter staging its fixes and tests) | model | under #175 a step cannot write the index, so whether this grant stays waits on who makes the trailers (proposal, decision 11 and *Still open*) |
 | `prose start --session <uuid>` | code | item 1 |
-| `git add -A` after the worker ends | code | task 2.1 |
+| `git add -A` once, after the last model step exits | code | only Igor's code can write its own index (task 2.1) |
 | `prose verify-post`, `prose verify-staged` | code | verifying is the code's half |
 
 So the grant, where `<skills>` stands for `<skills_dir>/skills`, the `skills/` folder of the
