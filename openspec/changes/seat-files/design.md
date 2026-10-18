@@ -67,9 +67,14 @@ operator must get right:
   picked causes no handoff, and the probe skips it, so neither path reaches it. Instead Igor
   opens the condition when it fails to decrypt the seat's file, at start and, once #176
   specifies pulling the lore checkout, on each pull, and clears it when a later read decrypts
-  the file, as when the lender re-lends. The condition stops no role: the seat counts as one at
-  its line, so a role with no other usable seat hands off each item, as a role whose seats are
-  all at their lines does, and the handoff names the condition.
+  the file, as when the lender re-lends. The condition stops no role. The seat counts as one at
+  its line, the share of each usage window Igor may spend before the reserve its lender keeps.
+  So a role with no other usable seat hands off each item, as a role whose seats have all
+  reached their lines does, and the handoff names the condition. The `stuck-conditions` delta
+  carries both rules. Its block on #101's *A condition that recurs stops the affected scope
+  from taking new work* says this condition opens on its first occurrence and clears on a good
+  read, not by a probe item (proposal, decision 32). Its block on *A condition's scope is its
+  cure's scope* says the condition stops no role.
 
 ### Why ciphertext in history no longer rules this out
 

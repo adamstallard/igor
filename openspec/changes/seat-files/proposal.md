@@ -136,6 +136,22 @@
     *Rejected:* #101's way of opening and clearing a seat condition, from recurring handoffs and
     from #143's probe, which never reach a seat that is never picked or probed.
 
+32. **This change amends #101 (`condition-backoff`) through its own delta** (Adam, 2026-10-17).
+    #101 merges as it is, and this change archives after it, in the order #101, #143, #175,
+    this change. This change's `stuck-conditions` delta therefore carries a `MODIFIED` block on
+    #101's *A condition that recurs stops the affected scope from taking new work*, written from
+    that requirement's text on #101's branch. #101 lets one condition open on its first
+    occurrence, a refused GitHub App credential. The block adds decision 31's condition as a
+    second, which clears on a good read of the seat file rather than on a probe item.
+    *Rejected:* editing #101's own branch, which already carries #101's implementation and is
+    to merge as it is.
+33. **#82 (`stopped-scope-visible`) does not count a seat Igor could not decrypt as stopped**
+    (Adam, 2026-10-17). #82, an open change, has `igor serve` exit when every seat its role can
+    spend from is stopped. Decision 31 wins over that: such a seat counts as one at its line, so
+    the process keeps polling and hands off, and picks up again when the seat file decrypts.
+    #82 is amended on its own branch, `stopped-scope`, in the same round of decisions as this
+    one.
+
 **Still open:**
 
 - **Whether a decryption failure when a worker is spawned opens the condition** (decision 31).
@@ -231,8 +247,10 @@ None. `setup-check` gains requirements here, and is created by whichever of this
   seat's"), because openspec will not apply a `MODIFIED` block that drops an in-force scenario,
   and the file-and-command scenario must go.
 - `lore-store`: `igor init` also writes the seat-notice workflow.
-- `stuck-conditions` (#101's, in force first): an unreadable seat is passed over by a role with
-  another eligible seat; a lent seat's credential is its decrypted token; the report's remedy
+- `stuck-conditions` (#101's, in force first): a seat file Igor fails to decrypt opens a
+  condition on its first occurrence, beside #101's refused GitHub App credential, and the
+  condition clears on a good read and stops no role (decisions 31 and 32); an unreadable seat
+  is passed over by a role with another eligible seat; a lent seat's credential is its decrypted token; the report's remedy
   names the seat's `IGOR_SEAT_<ID>` variable or the private key file that `seatKey` names.
 
 ## Impact
@@ -252,7 +270,7 @@ None. `setup-check` gains requirements here, and is created by whichever of this
   `igor.config.example.yaml`, `deploy/`.
 - `adamstallard/igor-lore`: `seats/adam.yaml`.
 - Build order: `condition-backoff` (#101), `read-seat-windows-from-the-stream` (#143),
-  worker-user (#175) and `check-a-lore-repository` (#113), then this. This change and #143 archive together, #143 first (Adam,
+  worker-user (#175) and `check-a-lore-repository` (#113), then this. Archiving goes #101, then #143, #175 and this change together in one commit, in that order (decision 32; Adam,
   2026-10-17), so no in-force text names `capacity_estimate` or `dedicated`, the keys the two
   changes remove. The `MODIFIED` blocks here are
   written against #143's text where #143 modifies the same requirement.

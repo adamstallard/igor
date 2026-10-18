@@ -1,5 +1,73 @@
 ## MODIFIED Requirements
 
+### Requirement: A condition that recurs stops the affected scope from taking new work
+
+Where the same cure key is recorded as the cause of a handoff repeatedly, the scope that key
+names SHALL stop taking new items until the condition clears, and SHALL say which key stopped
+it and what would cure it.
+
+An Igor stuck on its own configuration is not stuck on anything an item can fix. Nothing about
+the item produced the outcome, so nothing about the next item avoids it: the loop claims,
+spends a worker, hands back, and does it again every poll interval against the whole backlog.
+The cost is not only money. Each attempt leaves a handoff on somebody's issue saying an Igor
+could not proceed, which is a notification to a person who cannot act on it either.
+
+Recurrence is the trigger, except for the two conditions below. How many occurrences count as
+recurring is left to *No recurrence count or cooldown is fixed here*. A first occurrence is information — an unverified pull request still
+carries the diff, and a handoff naming the missing command is how the cure gets found at all.
+The twentieth is waste, whatever the cause.
+
+Two conditions open on their first occurrence. The first is a refused GitHub App credential,
+which stops the Igor itself. An Igor whose App is refused can do nothing on GitHub, so no item
+it takes could find the cure, and `app-identity` already requires that it take no new item while
+refused. The second is a seat file Igor fails to decrypt. Igor reads the seat files at start
+and, once #176 specifies pulling the lore checkout, on each pull. The first read that fails to
+decrypt a seat's file opens the condition on that seat. That condition SHALL clear when a later
+read decrypts the file, and SHALL NOT clear by a probe item: the cooldown and probe of *A
+condition clears by not recurring, and a probe is what observes that* do not apply to it. It
+takes the seat out of every role's choice and stops no role (*A condition's scope is its cure's
+scope*). Such a seat is never chosen and never probed, so no run or probe item ever uses it, and
+reading the file again is the only observation of its cure (seat-budget's *A seat's token
+travels as ciphertext in its file*).
+
+#### Scenario: A recurring condition stops the scope
+
+- **WHEN** one cure key has been recorded as the cause of a handoff enough times
+- **THEN** the scope that key names takes no new items
+
+#### Scenario: A first occurrence is not a condition
+
+- **WHEN** a cure key is recorded for the first time, other than a refused App credential or a
+  seat file Igor fails to decrypt
+- **THEN** work continues, because one occurrence is what finds the cure
+
+#### Scenario: A refused App credential stops at once
+
+- **WHEN** GitHub refuses the Igor's App credential once
+- **THEN** the Igor-scoped condition opens, and the Igor takes no new item
+
+#### Scenario: A seat file that fails to decrypt opens at once
+
+- **WHEN** a read of the seat files fails to decrypt a seat's file for the first time
+- **THEN** the condition on that seat opens, without waiting for a recurrence
+
+#### Scenario: A good read clears the decryption condition
+
+- **WHEN** a later read of the seat files decrypts that seat's file
+- **THEN** the condition on that seat clears, with no cooldown waited and no probe item taken
+
+#### Scenario: The stop names its cure
+
+- **WHEN** a scope stops on a condition
+- **THEN** it states the cure key and what changing it would take, rather than reporting itself
+  unavailable
+
+#### Scenario: The record says which kind of idle this is
+
+- **WHEN** a cycle takes no work because a condition is open
+- **THEN** the decision record names the condition and its key, distinctly from an exhausted
+  budget, from pacing, and from an empty queue
+
 ### Requirement: A condition's scope is its cure's scope
 
 A condition SHALL be keyed by what would cure it, and SHALL stop exactly what that cure governs:

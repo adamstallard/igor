@@ -441,7 +441,7 @@ leaks.
 
 ## 11. Matching condition-backoff (#101)
 
-#101 is in force before this change is built, and the `stuck-conditions` delta here restates three
+#101 is in force before this change is built, and the `stuck-conditions` delta here restates four
 of its requirements. Build each against #101's code:
 
 - [ ] 11.1 *A seat's refused credential is a condition on that seat*: the hash is of the decrypted
@@ -457,6 +457,12 @@ of its requirements. Build each against #101's code:
       seat whose file Igor could not decrypt counts as one at its line (3.9). A role with no eligible seat
       where only some seats are under conditions, and the rest are at their lines, hands off,
       naming each condition in the handoff (Adam, 2026-10-17). Test each of its seat scenarios
+
+- [ ] 11.4 *A condition that recurs stops the affected scope from taking new work*: a seat file
+      Igor fails to decrypt opens the seat's condition on its first occurrence, and a later read
+      that decrypts the file clears it, with no cooldown and no probe item (proposal, decision
+      32; task 3.9). Tests: the first failed read opens it; a good read clears it; no probe item is
+      ever taken for it
 
 ## 12. Publishing to npm as `igor-agent`
 
@@ -498,5 +504,7 @@ of its requirements. Build each against #101's code:
 
 ## 13. Archiving
 
-- [ ] 13.1 Archive this change together with `read-seat-windows-from-the-stream` (#143), in one
-      commit, #143 first
+- [ ] 13.1 Archive `condition-backoff` (#101) first. Then archive
+      `read-seat-windows-from-the-stream` (#143), `worker-user` (#175) and this change in one
+      commit, in that order, so this change's `MODIFIED` blocks apply to #101's and #143's
+      in-force text (proposal, decision 32)
