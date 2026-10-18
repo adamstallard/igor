@@ -89,9 +89,12 @@ to reply to.
   person asking is a far stronger relevance signal than a query match — which is source
   ordering rather than a priority mechanism: requests are their own source, listed first.
 
-  This composes with rank offsets without anything new. Requests are a separate list, so the
-  highest rank starts at the first request; a process already working an item is not planning
-  a cycle, so "unless they are busy" needs no concept of busy.
+  Several processes can run one Igor, each with a number from 1, its rank; the open change
+  `concurrent-instances` has rank k start at its k-th candidate. Requests need nothing new for
+  that: they are a separate list, so the process of rank 1 starts at the first request and the
+  process of rank k at the k-th. A process working an item does not read the list until it is
+  free, so a free process takes the request, and a request waits only while every process is
+  busy.
 - **Out-of-lane requests are declined with a route**, not a bare refusal — "not my lane,
   `igor-backend` covers it" — which also makes the fleet legible to people who have no idea
   which Igor does what.
