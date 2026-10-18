@@ -13,6 +13,11 @@
       `concurrent-instances`' two, `preview-persists-nothing`'s two, `structured-failure-record`'s
       two (PR #99), `triage-needs-a-seat`'s four (PR #70) and `guard-silent-reverts`' one (PR
       #103), plus every other requirement outside `openspec/changes/archive/`
+- [x] 1.5 Each rank of a role may keep its own mark per source, and discovery combines them by
+      `concurrent-instances`' (#179) rule; no mark is kept per run (Adam, 2026-10-18)
+- [ ] 1.6 `condition-backoff` (#101) also modifies this requirement and keeps the per-source
+      sentence this change replaces. Once Adam decides which sentence survives, whichever of the
+      two archives second rewrites its block to include the other's remaining text
 
 ## 2. Documentation
 
@@ -41,6 +46,8 @@
 - [ ] 4.4 Two roles' marks in one `discovery.json`: writing one leaves the other byte-identical,
       asserted after both were set so it distinguishes "unchanged" from "never written"
 - [ ] 4.5 An entry no configured source resolves to survives a cycle
-- [ ] 4.6 The existing key tests in `test/discovery.test.ts` updated rather than deleted: stable
+- [ ] 4.6 A restarted process continues the mark it wrote before the restart, and a role whose
+      model calls move to another seat, the subscription that pays for them, keeps its marks
+- [ ] 4.7 The existing key tests in `test/discovery.test.ts` updated rather than deleted: stable
       across runs, independent of declaration order, and different for a different query — each
       now also different for a different role

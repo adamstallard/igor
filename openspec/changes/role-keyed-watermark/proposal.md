@@ -1,3 +1,34 @@
+## Decisions
+
+1. **A watermark records how far one role has considered a source** (#104). It is keyed by the
+   role's name and the source, never by the seat, the Claude subscription the role's model
+   calls are paid from. Decision 3 allows one finer division, by rank.
+2. **Modified, not added** (Adam, 2026-10-11): the change modifies *Watermarks reduce
+   reconsideration without governing it*, so the in-force "per-source watermark" wording is
+   replaced rather than narrowed from elsewhere.
+3. **One mark per role, rank and source is allowed; one per run is not** (Adam, 2026-10-18).
+   Under `concurrent-instances` ([#179](https://github.com/adamstallard/igor/pull/179)) a role
+   can run as several processes, each with a *rank*, a number it keeps across restarts. Each rank
+   may save its own mark, and discovery combines a role's rank marks into one mark per source,
+   as #179 specifies. A *run*, one start of a process, gets no mark of its own: a restarted
+   process continues the mark of its rank, or of its role where it runs alone. This replaces
+   the single mark per role that two processes of one role shared.
+4. **Every role and source starts cold once when this change is first deployed**: with no mark
+   of its own, it considers only items within the look-back window, rather than seeding new
+   marks from the old per-source entry.
+5. **A stored mark whose role and source match nothing in the current configuration is left in
+   place**, such as one a deleted or renamed role left behind.
+
+**Still open:**
+
+- **Which sentence survives against #101, for Adam.** `condition-backoff` (#101) modifies the
+  same requirement and keeps the in-force "Discovery SHALL record a per-source watermark", which
+  decision 1 replaces. Once that is decided, whichever change archives second rewrites its block
+  to include the other's remaining text.
+- **Archive order against #179.** The requirement cites `work-discovery`'s *Processes saving one
+  source keep the lower watermark*, which #179 adds. If this change archives first, that citation
+  names a requirement not yet in force.
+
 ## Why
 
 Two roles that differ only by `lane` share one watermark, so whichever runs first advances the
@@ -53,12 +84,11 @@ It settles three things the implementation must not be left to decide:
   bounds the cost. Every source cold-starts once. That is acceptable — nobody but the author runs
   Igor — and it is stated rather than discovered.
 - **What identifies the role.** Its name, which `role-config`'s *A role is a file whose name is
-  its identity* already establishes. Not the seat, not the process: two processes running one role
-  consider the same items under the same lane, so they are one consideration.
-  `concurrent-instances` already says discovery may hand one candidate to several processes, and
-  nothing here narrows that. The consequence is that **a renamed role begins again** — one bounded
-  cold start — which is the same consequence editing a query already has today, since the key
-  hashes the query string as written.
+  its identity* already establishes. Not the seat, and never the run: a restarted process
+  continues its mark. The finest division allowed is one mark per role, rank and source, as
+  decision 3 says. The consequence is that **a renamed role begins again** — one
+  bounded cold start — which is the same consequence editing a query already has today, since the
+  key hashes the query string as written.
 - **Orphaned entries are left in place.** A cycle runs one role (`planCycle` takes a single
   `role: Role`) and `advance` copies the stored map and overwrites only the keys it has, so a
   cycle cannot tell another role's live mark from a dead one. A prune would delete the marks of

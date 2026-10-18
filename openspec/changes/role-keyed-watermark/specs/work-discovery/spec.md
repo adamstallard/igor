@@ -30,16 +30,22 @@ colliding configuration is the obvious one:** the natural way to add a second ro
 repository and the same query with a narrower lane, which is exactly the shape that shares a key
 today.
 
-The role SHALL be identified by its name, which is already its identity. It SHALL NOT be
-identified by the seat it spends from, by the process running it, or by any other per-instance
-identity: two processes running the same role consider the same items under the same lane, so
-they are one consideration and sharing a mark between them is correct. A renamed role therefore
-has no mark and begins again — the same consequence a role already has today when its query
-string is edited, since the key is derived from that string as written.
+The role SHALL be identified by its name, which is already its identity, and SHALL NOT be
+identified by the seat, the Claude subscription its model calls are paid from. A mark SHALL NOT be kept per run, one start of a process: a process that restarts reads and
+advances the mark of its role, or of its rank where the role runs as several. Where a role runs as several ranks, the numbered
+processes of one role that `concurrent-instances` ([#179](https://github.com/adamstallard/igor/pull/179))
+defines, each rank MAY keep its own mark for a source. Discovery SHALL then combine the ranks'
+marks into the role's one mark for that source, by the rule of `work-discovery`'s *Processes
+saving one source keep the lower watermark*, which that change adds. One mark per role,
+rank and source is the finest division this requirement allows. A renamed role has no mark and
+begins again, the same consequence a role already has when its query string is edited, since the
+key is derived from that string as written.
 
-A role and source pair with no mark of its own SHALL be treated as never having run, so *A first
-run does not face the whole backlog* governs it and the look-back window bounds what it
-considers. That is the upgrade consequence, stated rather than discovered: every source
+A role and source pair with no mark of its own SHALL consider only items updated within the
+look-back window, as a source with no watermark does, even where another role has a mark for that
+source. Where the role runs as several ranks, the combining rule above decides what a rank with
+no mark of its own reads. When this rule is first deployed, no role and source has a mark of its
+own: every source
 cold-starts once, and what it costs is bounded triage of a bounded window, once per role and
 source.
 
@@ -98,8 +104,20 @@ reading that state is a cache settles which way that trade goes.
 - **THEN** it is a first run for that role, bounded by the look-back window
 - **AND** the marks of every other role polling those sources are unaffected
 
-#### Scenario: Two processes running one role share its mark
+#### Scenario: A restarted process continues its mark
 
-- **WHEN** two processes run the same role against the same source
-- **THEN** they read and write the same mark for it
-- **AND** neither is given a mark of its own on the strength of being a separate process
+- **WHEN** a process running a role restarts
+- **THEN** it reads and advances its role's mark for each source, as before the restart
+- **AND** it is not given a new mark on the strength of being a new run
+
+#### Scenario: Ranks of one role keep a mark each
+
+- **WHEN** two ranks of one role each keep a mark for the same source
+- **THEN** discovery for the role reads one mark for that source, combined from the ranks' marks
+  by `concurrent-instances`' rule
+- **AND** neither rank's write replaces the other rank's mark
+
+#### Scenario: A role's mark does not follow its seat
+
+- **WHEN** a role's model calls start being paid from a different seat
+- **THEN** it reads and advances the same mark for each of its sources as before

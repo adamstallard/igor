@@ -46,9 +46,12 @@ all. So the block here carries the in-force text, including the preview paragrap
 
 **Two open modifications of one requirement clobber each other.** Each is written against the
 in-force text, so whichever archives second silently drops the other's wording, and `openspec
-validate` does not cross-check between open changes. Checked 2026-10-11: no other open change, on
-`main` or on an open pull request's branch, modifies this requirement. A change that comes to
-modify it before this one archives has to be written against this block, or wait.
+validate` does not cross-check between open changes. `condition-backoff`
+([#101](https://github.com/adamstallard/igor/pull/101)) modifies this requirement too. Its block
+carries the in-force sentence "Discovery SHALL record a per-source watermark", which this change
+replaces with one per role and source, so the two disagree on that sentence, not only in
+wording. Which sentence survives is for Adam to decide, and the proposal lists it as open;
+whichever change archives second then rewrites its block to include the other's other text.
 
 `openspec/specs/work-triage/spec.md:333` still says "marks advance per source". That is a
 narrowing rather than a contradiction — there is still a mark per source, and this requirement says
@@ -58,11 +61,20 @@ whose.
 
 *A role is a file whose name is its identity* already settles this; nothing new is asserted.
 
-Not the seat, and not the process. Two processes running the same role consider the same items
-under the same lane, so they are one consideration, and `concurrent-instances`' *Discovery may
-hand the same candidate to several processes* already says an overlap costs duplicated triage
-rather than duplicated work. Keying by process would multiply the marks without changing what any
-of them means.
+A mark is not keyed by the seat, the Claude subscription a role's model calls are paid from: a
+role that moves to another seat has considered the same items. Nor is it keyed by the run, one
+start of a process: a mark per run would start every restarted process from the look-back window,
+and multiply the marks without changing what any of them means.
+
+**One mark per role and rank is allowed (Adam, 2026-10-18).** Under `concurrent-instances`
+([#179](https://github.com/adamstallard/igor/pull/179)) a role can run as several processes at
+once, each with a number, its *rank*, that it keeps across restarts. Each rank saves its own mark
+for a source, as a line in the state file naming its role, and discovery combines a role's rank
+marks into one mark per source, as #179's requirement *Processes saving one source keep the lower
+watermark* specifies. A rank differs from a run in lasting across restarts, so a mark per rank
+does not start over when a process restarts. #179's rule holds over the single shared mark per
+role that this design had chosen. What #104, the issue this change answers, needs still holds:
+one role's mark never bounds another role's discovery.
 
 The consequence is that a renamed role has no mark and begins again, bounded by the look-back
 window. That is the same consequence editing a query already has today, since `sourceKey` hashes
