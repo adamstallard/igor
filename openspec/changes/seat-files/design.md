@@ -77,9 +77,9 @@ operator must get right:
   from taking new work* says this condition opens on its first occurrence and clears on a good
   read, not by a probe item (proposal, decision 32). Its block on *A condition's scope is its
   cure's scope* says the condition stops no role. Both cite the delta's definition of a
-  read-cleared condition, the kind this is. #179 (`concurrent-instances`) cites the same
-  definition for its condition on a configuration that fails the startup checks when a running
-  process rereads it (decision 38).
+  read-cleared condition, the kind this is. The delta's third block, on #101's *A condition
+  clears by not recurring, and a probe is what observes that*, exempts that kind from the probe
+  item.
 
 ### Why ciphertext in history no longer rules this out
 
@@ -126,12 +126,14 @@ A seat file naming neither key is refused (Adam, 2026-10-17). It would spend wha
 server holds, which can be a pay-per-use API key. *Rejected:* allowing such a file behind a flag
 the operator sets.
 
-Igor never uses a stored Claude login at all (Adam, 2026-10-18), so an organization that declares
-no seats is not exempt either: it has no seat, and makes no model call. An organization with no
+Igor never uses a stored Claude login at all (Adam, 2026-10-18), and no organization is exempt
+from that rule. One that declares no seats gives no role a seat, so its configuration fails
+validation and `igor serve` refuses to start. An organization with no
 lenders declares one seat from its own token, with `claude setup-token` and either `igor seat add`
 or a `token_env` seat file, and the operator guide gives those steps. A pull that removes the last
-seat file serving a role leaves the role with no usable seat; it hands off what its workers held
-and takes nothing new.
+seat file serving a role, once Igor pulls its lore checkout (#176), leaves the role with no usable
+seat. The process is already running, so it does not refuse to start: it keeps running, hands off
+what its workers held and takes nothing new, and the rest of that pull is refused.
 
 `token_env` is kept rather than requiring every seat to carry ciphertext: an operator would
 otherwise encrypt their own token to their own server only to decrypt it again, and a seat whose

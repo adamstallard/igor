@@ -190,7 +190,9 @@ measurement.
       <owner> is not a GitHub login, so no change to seats/<id>.yaml could mention you.
       ```
 - [ ] 7.2 Read `seats/recipient.txt` from the lore repository's default branch with `gh api`. Then
-      print the steps for creating a token, worded so (Adam may reword it):
+      print the steps for creating a token, worded so. Adam may reword this one text, as he chooses;
+      for every other fenced text, the rule at the top of this file holds, that it is the
+      deliverable and changes only where a measurement contradicts it:
 
       ```
       To lend your seat, create a token for it:

@@ -174,30 +174,33 @@
     guides give the steps for creating a token with `claude setup-token` (tasks 9.3 and 9.5),
     `igor seat add` prints those steps before it reads the token (task 7.2), and an
     organization with no lenders declares one seat from its own token (task 9.3). A
-    configuration with no seat files gives no role a seat, so each role is refused at load, and
-    no model call is made; before this decision such a configuration ran unenforced on the
-    server's login. When a pull removes the last seat
+    configuration with no seat files gives no role a seat, so each role is refused at load and
+    `igor serve` refuses to start. Before this decision such a configuration ran on the server's
+    login with no seat budget enforced. When a pull removes the last seat
     file serving a role, the role has no usable seat: its process hands off the items its
-    workers held, takes no new item and keeps running, and never falls back to a login. This
-    answers round six's question on removing the last seat file. It supersedes round three's
-    rule that #174 (`pinned-skills`) resets a worker's `~/.claude` but keeps
-    `~/.claude/.credentials.json` (#174's decision 17, #175's decision 14). That reset now
-    replaces `~/.claude` and `~/.claude.json` whole; #174's and #175's own branches carry the
-    change.
+    workers held, takes no new item and keeps running, and never falls back to a login. Adam
+    answers the open questions in rounds, the sixth and seventh both on 2026-10-18. This answers
+    the sixth round's question: what a running process does when a pull removes the last seat
+    file. It supersedes the rule of his third round (2026-10-17) that #174 (`pinned-skills`)
+    resets a worker's `~/.claude` but keeps `~/.claude/.credentials.json`. That reset now
+    replaces `~/.claude` and `~/.claude.json` whole, so no worker's home keeps a stored login;
+    #174 and #175 (`worker-user`) carry the change on their own branches.
     *Rejected:* exempting an organization that declares no seats, which ran on whatever login
     the server held.
 37. **Seat files are decrypted only when Igor reads its lore checkout** (Adam, 2026-10-18): at
     start, and on each pull once #176 specifies pulling. Starting a worker or a probe decrypts
-    nothing; it is given the plaintext Igor holds from its last read. Round six asked whether a
-    decryption failure when a worker is spawned opens decision 31's condition. No decryption
-    happens then, so the question is gone.
+    nothing; it is given the plaintext Igor holds from its last read. Adam's sixth round asked
+    whether a decryption failure when a worker is spawned opens decision 31's condition. No
+    decryption happens then, so the question is gone.
 38. **Decision 31's condition is the first of a kind, the read-cleared condition** (Adam,
     2026-10-18): opened by a read that fails, cleared by a later read that passes, never by a
     probe item, and stopping nothing by itself. The `stuck-conditions` delta defines the kind
     once, in *A read-cleared condition opens on a failing read and clears on a passing one*.
-    #179 (`concurrent-instances`) cites it for a configuration read at a cycle that fails the
-    startup checks, and #82 (`stopped-scope-visible`) lists a passing read among the ways a
-    condition clears. *Rejected:* each change restating how its condition opens and clears.
+    #179 (`concurrent-instances`) is to cite it for a configuration that a running process
+    rereads at a cycle and that fails the startup checks, and #82 (`stopped-scope-visible`) lists a passing read among the ways a
+    condition clears. This change's block on #101's *A condition clears by not recurring, and a
+    probe is what observes that* exempts the kind from the probe item. Decision 31's condition,
+    on a seat, has the cure key `seat:<id>:decrypt`. *Rejected:* each change restating how its condition opens and clears.
 
 **Still open:**
 
@@ -216,6 +219,23 @@
   of their own that lists the role, with its token in their shell. Open: whether that file goes
   in the shared lore repository, where every reader sees which roles it serves, or in a lore
   checkout of the developer's own.
+- **For Adam, from a consistency read on 2026-10-18:**
+  - **A condition is fleet-wide, a decrypted token is not.** Every process appends to one
+    execution log, and conditions are rebuilt from it, so one process's open condition makes the
+    seat ineligible everywhere, and one process's passing read clears it everywhere. Each process
+    holds only the plaintext from its own last read. A process whose own read failed would then
+    see the seat eligible with no token for it, and a failing read in one process takes the seat
+    from processes that hold a good token. Several processes per role (#179) make this reachable.
+  - **Ciphertext is not bound to its seat.** Anyone can copy `seats/bob.yaml`'s
+    `encrypted_token` into a new seat file with their own roles and `reserve: 0`. The notice
+    workflow mentions a seat's owner only when that owner's existing seat file changes, so Bob is
+    not told: the copy is a new file. Refuse two seats whose tokens decrypt equal, or bind the seat id
+    into the plaintext?
+  - **`igor seat add` has no default for `--reserve` or `--roles`,** and an absent reserve is 0,
+    so a lender who follows the guide's one command keeps nothing.
+  - **Whether a token in the environment takes precedence over a stored login** when both are
+    present, so that a leftover login is never what a call uses, is measured by #174's task 0.3,
+    which now also covers a login in the macOS Keychain under `igor run`.
 
 ## Why
 

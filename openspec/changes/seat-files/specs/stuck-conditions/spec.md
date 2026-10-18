@@ -8,13 +8,15 @@ first failing read, with no recurrence count. It SHALL clear only on a passing r
 probe item, and with no cooldown, since *A condition clears by not recurring, and a probe is what
 observes that* does not apply to it. It SHALL stop nothing by itself. What the failed read could
 not supply, such as a seat's token, is still missing, and the rule for that thing says what
-follows. The condition records the fault and names its cure, and it is reported like any other
+follows: for a seat, *A role draws on the seat with the most headroom*, where it counts as a seat
+at its line, so a role with no other seat hands off rather than stops. The condition records the fault and names its cure, and it is reported like any other
 condition.
 
 Every rule that opens a condition of this kind SHALL cite this requirement and SHALL state only
 what is read, what counts as failing, and what the condition is on. Two such conditions exist:
-a seat file Igor fails to decrypt (*A condition that recurs stops the affected scope from taking
-new work*), and a configuration that fails the startup checks when a running process rereads it
+a seat file Igor fails to decrypt, specified below in *A condition that recurs stops the affected
+scope from taking new work*, beside the other condition that opens on its first occurrence, and
+a configuration that fails the startup checks when a running process rereads it
 at a cycle, which `concurrent-instances` (#179) specifies in *A retired rank does not hold its
 items forever*.
 
@@ -39,6 +41,83 @@ recurs; a file that reads cleanly has already shown it.
 - **AND** only the seat whose file failed to read is out of use
 
 ## MODIFIED Requirements
+
+### Requirement: A condition clears by not recurring, and a probe is what observes that
+
+An open condition SHALL clear when it stops recurring, with nothing external required to
+announce the cure. After a cooldown the affected scope SHALL take exactly one item; where that
+item does not meet the condition it SHALL clear, and where it does the scope SHALL stop again
+for a longer cooldown. An item meets the condition when its run records the same cure key again.
+A read-cleared condition is the exception: it clears only as *A
+read-cleared condition opens on a failing read and clears on a passing one* says, by a later read
+that passes, and the scope takes no probe item for it.
+
+A condition carrying a discriminator SHALL clear by that rule and by one more: it SHALL also
+clear the moment the scope resolves a different discriminator, with no cooldown waited and no
+item spent. Both hold together. A credential condition clears on a probe that does not meet it,
+as every condition does, and it clears on the credential changing, which needs no probe to see.
+
+The probe is the general observation because for most conditions nothing else is observable
+from inside the loop: an allowlist edited on some other surface announces nothing, so running is
+the only way to find out. A discriminator is observable. A seat resolving a credential other
+than the one the condition was observed against is the cure having happened, visible before any
+item is claimed — and holding such a scope for a cooldown it no longer needs keeps an operator
+who has already fixed the thing waiting out a backoff that lengthens each time. That second
+clear is the whole reason a credential-shaped stop was worth having, and it is kept here rather
+than left to a mechanism of its own.
+
+Nobody sends a fixed signal, and nobody should have to: the cure is a configuration change made
+by whoever reads the stop, on a surface that has no channel back to the loop, and a condition
+that waits to be told is a condition somebody has to remember to close. But a stopped scope runs
+nothing and therefore observes nothing, so absence can never be established from inside the
+stop. The probe is the only way out of that: one run buys the observation, and the cooldown
+bounds what it costs to be wrong.
+
+The probe SHALL be the next item the scope would ordinarily take, not the item that was being
+worked when the condition opened. A condition is scoped to its cure and says nothing about any
+item, and the item that first met it may be legitimately unworkable for its own reasons — an
+Igor waiting for that one item to become available again is stopped on something unrelated to
+the cure it is trying to observe.
+
+#### Scenario: A cured condition clears itself
+
+- **WHEN** the cooldown passes and the probe item completes without meeting the condition
+- **THEN** the condition is closed and the scope resumes
+
+#### Scenario: A condition still present backs off further
+
+- **WHEN** the probe meets the same condition again
+- **THEN** the scope stops again and the next cooldown is longer
+
+#### Scenario: One item, not a resumption
+
+- **WHEN** a scope is probing
+- **THEN** it takes one item and stops again until that item's outcome is known
+
+#### Scenario: A changed discriminator clears without a probe
+
+- **WHEN** a seat resolves a credential other than the one an open condition on that seat was
+  observed against
+- **THEN** the condition closes at once, without waiting for the cooldown and without spending
+  an item
+
+#### Scenario: The same credential still clears by probe
+
+- **WHEN** the cooldown passes and the probe runs on the unchanged credential without meeting
+  the condition
+- **THEN** the condition closes, exactly as it would for a condition carrying no discriminator
+
+#### Scenario: The probe is not the item that tripped it
+
+- **WHEN** the item being worked when a condition opened is suppressed, closed, or claimed by
+  somebody else
+- **THEN** the probe is whichever item the scope would take next, and the condition can still
+  clear
+
+#### Scenario: A read-cleared condition takes no probe item
+
+- **WHEN** a read-cleared condition has been open past any cooldown
+- **THEN** no probe item is taken for it, and it clears only when a later read passes
 
 ### Requirement: A condition that recurs stops the affected scope from taking new work
 

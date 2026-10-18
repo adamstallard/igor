@@ -68,10 +68,10 @@ and where a reset is known it SHALL state when capacity returns.
 An Igor that goes quiet for hours without explaining itself is a second failure on top of the
 first. The distinction is the difference between a fault an operator fixes and a wait they only
 have to understand: only spend means the budget ran out, and an operator sent to look at spend
-for a role no seat serves looks in the wrong place. Saying it at all is what keeps a
-correctly configured machine from reporting that it is not logged in, which would send an
-operator to sign in on a host where Igor never uses a stored login and whose only problem is that
-every seat is held.
+for a role no seat serves looks in the wrong place. Without this report, an operator who ran
+`claude` by hand to find out why would see only its complaint that it is not logged in, since no
+seat token is in their shell. That would send them to sign in on a host where Igor never uses a stored login and
+whose only problem is that every seat is held.
 
 #### Scenario: Silence is explained
 
@@ -207,7 +207,9 @@ a `MODIFIED` block that drops or renames a scenario, so the requirement is re-ad
 name.
 
 **Migration**: *Triage's model call is made only where a seat can pay for it*, added by this
-change, with the same rules and every scenario, worded for the seats serving a role.
+change, with the same rules and every scenario but one, worded for the seats serving a role. The
+scenario *An organization with no seats declared still triages* is dropped: under decision 36
+no model call is made without a seat.
 
 ### Requirement: A cycle that triaged nothing says why, and when it can resume
 

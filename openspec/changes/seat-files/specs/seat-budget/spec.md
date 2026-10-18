@@ -24,8 +24,9 @@ that exist. An empty list is a seat that serves nothing, which a holder may want
 
 Seats SHALL be read from `seats/` and from nowhere else. Where `seats/` is absent or holds no seat
 file, no seats are declared, so no role has a seat to spend from: *A role's seats are the seats
-whose files list it* refuses each role at load, and *A spend with no seat behind it is not made*
-makes no model call. An organization with no lenders declares one seat from its own token. Files
+whose files list it* refuses each role at load, so the configuration fails validation and `igor
+serve` refuses to start. An organization with no lenders SHALL declare one seat from its own
+token, by `igor seat add` or by a `token_env` seat file, to run at all. Files
 in `seats/` other than `*.yaml`, such as `recipient.txt`, are not seats.
 
 #### Scenario: A seat file declares a seat
@@ -147,13 +148,15 @@ Igor SHALL decrypt a seat's token only when it reads the seat files: at start, a
 its lore checkout once #176 specifies one. It SHALL NOT decrypt when it starts a worker or a
 probe: each is given the plaintext Igor holds from its last read, held as *A decrypted seat token
 never touches the server's disk* requires. Where decryption fails, the seat SHALL be reported
-unreadable with the reason, and no other credential SHALL be used in its place: no `seatKey`
-declared, a key file that cannot be read, a key that does not match, or a ciphertext that does
-not decrypt. A seat whose token Igor cannot decrypt SHALL be ineligible: seat choice SHALL NOT
+unreadable with the reason, and no other credential SHALL be used in its place. Decryption fails
+where no `seatKey` is declared, the key file cannot be read, the key does not match, or the
+ciphertext does not decrypt. A seat whose token Igor cannot decrypt SHALL be ineligible: seat choice SHALL NOT
 pick it, and #143's probe SHALL skip it. It is under a condition on the seat. That condition is
 read-cleared (`stuck-conditions`' *A read-cleared condition opens on a failing read and clears on
 a passing one*): a read of the seat files that fails to decrypt the seat's file opens it, and a
-later read that decrypts the file clears it. The condition SHALL NOT stop a role: the
+later read that decrypts the file clears it. Its cure key is `seat:<id>:decrypt`. A read of the
+seat files that changes the condition's state, opening or clearing it, appends a condition row,
+so the condition is rebuilt from the execution log like any other. The condition SHALL NOT stop a role: the
 seat counts as one at its line (*A role draws on the seat with the most headroom*). Where the key is
 read but the seat's ciphertext does not decrypt with it, because it was encrypted to another key
 or is corrupt, that condition's report SHALL name the seat and its `owner`, the lender, so that
@@ -283,13 +286,14 @@ they admit. Those rules are *The reserve is untouchable* and *A seat nothing has
 the Igor server with its own token* (the line, and the probe made when the line rises past a seat's
 last reading), *A seat spending extra usage has no headroom*, *A missing reading closes a reserved
 seat and changes nothing else*, *`budget_share` is a ceiling, not a reservation*, and the
-seat-scoped conditions of `stuck-conditions` (#101): a refused credential (*A seat's refused
-credential is a condition on that seat*) and a token that cannot be read or decrypted, which
-`stuck-conditions`' *A condition's scope is its cure's scope* makes a condition on the seat. A seat
-under such a condition SHALL be passed over, and the role SHALL keep working on its other eligible
-seats. Where every seat that serves the role is under such a condition, the role SHALL stop, as
-`stuck-conditions` says. A seat whose file Igor could not decrypt counts here as a seat at its
-line, not as one under a condition, so it never makes a role stop. Where no seat that serves the role is eligible and not every one is under
+seat-scoped conditions of `stuck-conditions` (#101) that can stop a role: a refused credential
+(*A seat's refused credential is a condition on that seat*) and a token that cannot be read
+because the variable a `token_env` seat names is unset or empty. A
+seat under such a condition SHALL be passed over, and the role SHALL keep working on its other
+eligible seats. Where every seat that serves the role is under such a condition, the role SHALL
+stop, as `stuck-conditions` says. A seat whose file Igor could not decrypt is under a read-cleared
+condition instead, which stops nothing; that seat counts here as a seat at its line, so it never
+makes a role stop. Where no seat that serves the role is eligible and not every one is under
 such a condition, such as when every seat is at its line, or some are under a condition and the
 rest are at their lines, the Igor SHALL hand off the item instead of stopping the role. A handoff
 where some seats are under a condition SHALL name each such condition.
@@ -591,8 +595,8 @@ copy, and whoever replaces `recipient.txt` receives every token encrypted to it 
 
 ### Requirement: A lent seat is decrypted only where the worker has a user of its own
 
-A lent seat, here, is one whose file names `encrypted_token`. Where there is no worker user,
-so that the worker runs as the Igor's own user (#175's `igor run`, the only same-user mode),
+A lent seat, here, is one whose file names `encrypted_token`. `igor run` never uses #175's worker
+user, even on a host that has one: its worker runs as the same user as Igor. Under `igor run`,
 Igor SHALL NOT decrypt any seat's `encrypted_token`,
 and SHALL NOT draw on any such seat. Only seats naming `token_env` SHALL run there. Igor SHALL say so
 when it starts, naming each seat it leaves undecrypted. Such a seat SHALL be ineligible: seat
@@ -640,10 +644,10 @@ model stage, which would otherwise reach a stored login with nothing in the reco
 paid.
 
 Attributing that spend instead of refusing it was considered and rejected. A record saying an
-unnamed login paid is honest about a call that should not have been made, leaves the ceiling
-unenforced, and does nothing at all on a host where no stored login exists: there the call fails
-with a message about not being logged in, which describes a machine whose seats the gate is
-simply holding back.
+unnamed login paid is honest about a call that should not have been made, leaves the seat's
+`budget_share` ceiling unenforced, and does nothing at all on a host where no stored login exists. There the call fails
+with `claude`'s message about not being logged in, which misleads: the real cause is that the gate
+is holding every seat back.
 
 A deployment that declares no seats is not exempt from this rule. A stored login is whatever
 account last signed in on that host, which can be a pay-per-use API key or a person's own subscription, and nothing records
@@ -705,9 +709,10 @@ where the rest of the pull is refused for failing the startup checks, the config
 Igor makes before its first cycle, such as config validation. Until #176 specifies pulling, a
 seat file leaves a running process only when it restarts. When the removal applies, Igor SHALL
 drop the seat's decrypted token from memory, give the seat to no new worker, and kill every worker using
-it: the `claude -p` child and every process its worker user owns. Under #175 each process has its
-own worker user, `igor-worker-<role>-<rank>`, which runs only that process's worker, so this
-reaches no other process's worker. It SHALL hand off each item
+it. Under `igor serve` that is the `claude -p` child and every process its worker user owns. Under
+#175 each process has its own worker user, `igor-worker-<role>-<rank>`, which runs only that
+process's worker, so this reaches no other process's worker. Under `igor run`, where the worker
+runs as the Igor's own user, it is the worker's process group only. It SHALL hand off each item
 those workers were working. The Igor process SHALL keep running.
 
 Where the removal leaves a role with no seat file listing it, as when a pull removes the last
@@ -715,7 +720,12 @@ seat file, the role SHALL have no usable seat. Its process SHALL hand off each i
 held, SHALL take no new item, since *A spend with no seat behind it is not made* lets no model
 call run, and SHALL keep running. Igor SHALL NOT fall back to a stored Claude login. A
 configuration with no seat serving a role fails the startup checks (*A role's seats are the seats
-whose files list it*), so the rest of such a pull is refused, while the removal still applies.
+whose files list it*), so the rest of such a pull is refused. The process then runs on the last
+configuration that passed, with the removed seat file taken out. That configuration would fail
+the startup checks, and it is the one exception they allow: it differs from a configuration that
+passed only by having less to spend, which can make the process take no work but cannot make it
+spend wrongly. Unrelated changes in the refused pull are not applied, and the next pull is
+checked as usual.
 
 Igor cannot recall copies of the token. A worker that held it could have saved or sent it, and
 the encrypted file stays in the lore repository's git history. Removing the file stops only
