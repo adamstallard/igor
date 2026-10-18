@@ -27,8 +27,11 @@ The requirement states the scope and not the key format. A composite key
 naming the string would be satisfied by a key that carries the role and still shares a map
 wrongly, and would forbid a file-per-role shape that satisfies the promise perfectly well.
 
-Cost is one state entry per role per source. The entries are a `lastSeen` string each and the set
-is bounded by the configuration, so this is not a consideration.
+Cost is one mark per role and source in place of one per source, and each mark is one `lastSeen`
+string. Under `concurrent-instances` (#179), a role can run as several processes, each with a
+number it keeps across restarts, its *rank*. `discovery.json` then becomes a log of mark lines,
+each naming its role and rank, folded on read into one mark per role and source (#179's task 5.11), so the cost is
+the role's name on each line.
 
 ### It modifies the requirement it was in tension with
 
@@ -50,8 +53,13 @@ validate` does not cross-check between open changes. `condition-backoff`
 ([#101](https://github.com/adamstallard/igor/pull/101)) modifies this requirement too. Its block
 carries the in-force sentence "Discovery SHALL record a per-source watermark", which this change
 replaces with one per role and source, so the two disagree on that sentence, not only in
-wording. Which sentence survives is for Adam to decide, and the proposal lists it as open;
-whichever change archives second then rewrites its block to include the other's other text.
+wording. **Decided (Adam, 2026-10-18): this change's sentence survives:** one mark per role, rank
+and source, never one per run. #101 archives first, so at this change's archive this change's
+block is rewritten by hand to carry the rest of #101's text: the paragraphs on an item chosen and never
+taken, and on a claim the tracker refused, with their scenarios. #101's "The watermark is one
+timestamp per source" becomes one per role, rank and source in that merge. This change also archives
+after #179, because the requirement cites *Processes saving one source keep the lower watermark*,
+which #179 adds.
 
 `openspec/specs/work-triage/spec.md:333` still says "marks advance per source". That is a
 narrowing rather than a contradiction — there is still a mark per source, and this requirement says
@@ -66,7 +74,7 @@ role that moves to another seat has considered the same items. Nor is it keyed b
 start of a process: a mark per run would start every restarted process from the look-back window,
 and multiply the marks without changing what any of them means.
 
-**One mark per role and rank is allowed (Adam, 2026-10-18).** Under `concurrent-instances`
+**One mark per role, rank and source, never one per run (Adam, 2026-10-18).** Under `concurrent-instances`
 ([#179](https://github.com/adamstallard/igor/pull/179)) a role can run as several processes at
 once, each with a number, its *rank*, that it keeps across restarts. Each rank saves its own mark
 for a source, as a line in the state file naming its role, and discovery combines a role's rank
@@ -84,49 +92,38 @@ written down reads as a cost somebody accepted.
 
 ### Orphaned entries are left in place
 
-**Measured:** `planCycle` takes a single `role: Role` (`src/loop.ts:122`, `:314`, `:484`), and
+**Measured:** `planCycle` takes a single `role: Role` (`src/loop.ts:839-841`), and
 `advance` copies the stored map and overwrites only the keys of the sources in hand
-(`src/discovery.ts:177`). A cycle therefore cannot distinguish another role's live mark from a
+(`src/discovery.ts:177-179`). A cycle therefore cannot distinguish another role's live mark from a
 dead one — it has never seen another role's configuration.
 
 So a rule that removed unresolvable entries would delete the marks of every role that was not
 running, and those roles would cold-start on every cycle of any other role. Deleting a live mark
-costs candidates; keeping a dead one costs bytes in a bounded file. *State is a cache and
+costs candidates; keeping a dead one costs a little state that nothing reads. *State is a cache and
 correctness never depends on it* settles which way that goes.
 
 A sweep that could see the whole configuration — the CLI, with every role file in hand — is
-possible and is not worth building: the entries are small, bounded, and read by nothing.
+possible and is not worth building: the entries are small and read by nothing.
 
-### The requirement holds whichever way #70 and #99 merge
+### The requirement holds whatever the watermark block computes
 
-**Measured on `origin/triage-gate`:** the rewritten block builds `unexamined` per source from the
-held skips plus the untriaged newer than that source's newest verdict, calls `heldBelow([result],
-unexamined)` for each result, and passes the collected marks to `advance(stored, marks)`. On
-`main` (`src/loop.ts:656`) it is `advance(stored, heldBelow(results, unexamined))` with
-`unexamined` built from the held skips alone, inside the preview guard PR #84 added.
-
-Both shapes map `result.key` to a watermark and neither reads what the key is made of. Changing
-what `result.key` *is* therefore touches neither, which is why this requirement is worded about
-the key's scope and says nothing about how the held or untriaged sets are computed. A requirement
-that mentioned either would be false on one branch depending on merge order — the trap #99
-describes and avoided the same way.
-
-**Also measured, and worth a reader knowing:** `origin/triage-gate` predates PR #84, so its block
-carries no preview guard. That is a conflict between #70 and `main`, not between #70 and this
-change, and it is recorded here because whoever implements this will read that block.
+**Measured on `main`:** the watermark block (`src/loop.ts:1104-1119`) works out, for each
+source, which items its mark must stay below, and passes the resulting marks to
+`advance(stored, marks)`. It maps `result.key` to a watermark and never reads what the key is made
+of. Changing what `result.key` *is* therefore leaves the block alone, which is why this
+requirement is worded about the key's scope and says nothing about how the held or untriaged sets
+are computed.
 
 The wording of the two neighbouring requirements survives as well. #99's "the candidate's source
 mark" and #70's "its source's mark" both stay true under role scoping, because a cycle runs
 exactly one role: within a cycle, "that source's mark" names one mark either way. Neither needs
 rewording, and rewording them from here would be the collision this change is avoiding.
 
-### The interim workaround goes in `docs/architecture.md`, not only here
+### `docs/architecture.md` states the rule as it holds after the merge
 
-*Scope roles by query rather than by lane* is what somebody adding a second role should do until
-this lands. The discriminating question is who needs to read it: an operator configuring a role
-does not read open changes, so a rejected alternative in this file does not reach them. It goes in
-§5.0.2, beside the watermark contract it qualifies, marked with the issue — and it is written so
-that whoever implements this deletes it in the same change.
+§5.0.2 says each role keeps its own mark for a source, so one role's lane rejection leaves an
+item fresh to another. The doc merges with this change and its implementation, so it carries no
+interim workaround, such as scoping roles by query (*Roads not taken*, below).
 
 ## Roads not taken
 
@@ -149,8 +146,7 @@ The workaround available today with no code change, and it is not a fix:
   adds a group, and a group is satisfied by any member. There is no flat-string form of that, and
   flattening is the exact escape the grouping exists to prevent.
 
-So it covers label-scoped roles and nothing else. It is still the right advice **until this
-lands**, which is why it is written into `docs/architecture.md` rather than only refused here.
+So it covers label-scoped roles and nothing else.
 
 ### Seed each new role's mark from the old shared entry
 

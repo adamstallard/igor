@@ -6,7 +6,7 @@
 2. **Modified, not added** (Adam, 2026-10-11): the change modifies *Watermarks reduce
    reconsideration without governing it*, so the in-force "per-source watermark" wording is
    replaced rather than narrowed from elsewhere.
-3. **One mark per role, rank and source is allowed; one per run is not** (Adam, 2026-10-18).
+3. **One mark per role, rank and source; never one per run** (Adam, 2026-10-18).
    Under `concurrent-instances` ([#179](https://github.com/adamstallard/igor/pull/179)) a role
    can run as several processes, each with a *rank*, a number it keeps across restarts. Each rank
    may save its own mark, and discovery combines a role's rank marks into one mark per source,
@@ -19,15 +19,22 @@
 5. **A stored mark whose role and source match nothing in the current configuration is left in
    place**, such as one a deleted or renamed role left behind.
 
-**Still open:**
+6. **This change's sentence survives against #101** (Adam, 2026-10-18): one mark per role, rank
+   and source, never one per run. `condition-backoff`
+   ([#101](https://github.com/adamstallard/igor/pull/101)) modifies the same requirement and keeps
+   the in-force "Discovery SHALL record a per-source watermark". #101 archives first; at this
+   change's archive, this change's block is rewritten by hand to carry the rest of #101's text,
+   keeping this change's wording.
+7. **This change archives after #179** (Adam, 2026-10-18). The requirement cites
+   `work-discovery`'s *Processes saving one source keep the lower watermark*, which #179 adds, so
+   archiving first would cite a requirement not yet in force.
 
-- **Which sentence survives against #101, for Adam.** `condition-backoff` (#101) modifies the
-  same requirement and keeps the in-force "Discovery SHALL record a per-source watermark", which
-  decision 1 replaces. Once that is decided, whichever change archives second rewrites its block
-  to include the other's remaining text.
-- **Archive order against #179.** The requirement cites `work-discovery`'s *Processes saving one
-  source keep the lower watermark*, which #179 adds. If this change archives first, that citation
-  names a requirement not yet in force.
+8. **The requirement states the mark's scope, not its key format.** A composite key,
+   `role:tracker:repo:hash`, is how `tasks.md` builds it. *Rejected:* naming the key string in
+   the requirement, which would forbid other shapes that keep the promise, such as #179's log of
+   mark lines.
+
+**Still open:** nothing.
 
 ## Why
 
@@ -36,12 +43,13 @@ mark over items the other would have taken ([#104](https://github.com/adamstalla
 
 `sourceKey` is `${tracker}:${repo}:${sha256(query).slice(0,8)}` (`src/discovery.ts:32`) — no role,
 no seat, no Igor identity. State is one `discovery.json` per destination, and `advance` writes
-`watermarks[result.key] = result.watermark` (`src/discovery.ts:177`), so every role in a
+`watermarks[result.key] = result.watermark` (`src/discovery.ts:179`), so every role in a
 destination reads and writes the same map.
 
 The lane is not in the key, and it is applied **after** discovery. `freshCandidates` bounds by the
-mark, then `screen(role.lane, fresh, identity)` filters (`src/loop.ts:536`), and the lane skip is
-pushed at `src/loop.ts:545` with no `held` flag — correctly, for a single role, on the principle
+mark, then `screen(role.lane, fresh, …)` filters (`src/loop.ts:904`), and the lane skip is
+pushed at `src/loop.ts:912-913` with no `held` flag, the flag that keeps the mark below a skipped
+item, — correctly, for a single role, on the principle
 that deciding not to act on an item is still having considered it. So:
 
 1. Role A's cycle discovers an item.
@@ -117,7 +125,6 @@ and the collision this rules out.
   Fixing the hash means normalizing query strings, and a normalizer is tracker-specific parsing of
   the syntax *Queries are dispatched to the tracker unmodified* exists to keep Igor out of. It is
   a decision not to act, not deferred work, so it is stated here and no issue is filed for it.
-- **Anything under `src/`.** This change is specification only.
 
 ## Capabilities
 
@@ -134,12 +141,14 @@ and the collision this rules out.
   same query, narrower lane — becomes the one that works, and *scope roles by query* stops being
   the only safe shape.
 - Every source cold-starts once on the upgrade, bounded by `COLD_START_DAYS`
-  (`src/discovery.ts:37`). One destination, one author, and the bound is what makes it affordable.
-- `discovery.json` grows one entry per role per source instead of one per source, and keeps its
-  pre-upgrade entries, which nothing reads.
+  (`src/discovery.ts:46`). One destination, one author, and the bound is what makes it affordable.
+- `discovery.json` holds one mark per role and source instead of one per source, and keeps its
+  pre-upgrade entries, which nothing reads. Under #179 it is a log of mark lines, each naming its
+  role and rank.
 - `sourceKey` gains the role, so every caller of `discoverSource`/`discover` supplies it. The
-  watermark block at `src/loop.ts:656` is untouched: it maps `result.key` to a watermark and does
-  not care what the key is made of, which is why this holds whether or not
-  [#70](https://github.com/adamstallard/igor/pull/70) has rewritten that block first.
-- Interim guidance for anybody adding a second role before this lands goes in
-  `docs/architecture.md` §5.0.2, beside the watermark contract it qualifies.
+  watermark block at `src/loop.ts:1104-1119` is untouched: it maps `result.key` to a watermark and
+  does not care what the key is made of.
+- `docs/architecture.md` §5.0.2 states the rule as it holds after the merge.
+- The implementation lands on this branch once the spec is approved, as the second of the
+  repository's two review gates: `sourceKey`, `discoverSource`, `discover`
+  and their tests (`tasks.md` sections 3 and 4).

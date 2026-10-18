@@ -672,9 +672,9 @@ triage tokens, never a duplicate claim.
 **A mark records how far one role has considered a source.** Two roles polling the same source
 each keep their own, so an item one role's lane passed over is still fresh to the other. The
 lane is applied after discovery, so a mark shared across roles would advance on a narrow role's
-rejection and drop the item below every other role's floor, where nothing lifts it back. A role
-is identified by its name, so a renamed role has no mark: like a source seen for the first time,
-it considers only items updated within the 7-day look-back window, once.
+rejection and drop the item below every other role's mark. Only an edit or a comment on the item
+would bring it back. A role is identified by its name, so a renamed role has no mark: like a
+source seen for the first time, it starts from the 7-day look-back window, once.
 
 **It lives on an orphan branch of the destination**, not on `main` and not on a laptop. The
 generalisation: **machine output goes in a machine venue on every surface** — its own channel
