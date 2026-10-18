@@ -4,7 +4,7 @@
 
 **Reason**: Adam decided on 2026-10-13 to remove the absolute ceiling (`ABSOLUTE_CEILING_MS`, 6
 hours), including the worker's kill at it. Its other use, the tree sweep's threshold, is
-replaced by rank in *The startup sweep removes trees by rank, never by age*. The silence windows
+replaced by rank in *The sweep removes trees by rank, never by age*. The silence windows
 still kill a worker that goes quiet. A worker that keeps emitting events and never finishes is
 killed by no limit, which Adam accepted: a stop is honoured at the next checkpoint. Once the
 `budget-pacing` change is built, the seat's reserve line, a spend threshold per seat, also stops
@@ -50,35 +50,48 @@ them neither.
 - **WHEN** a worker is killed with no tool outstanding
 - **THEN** the reason says it produced nothing, and for how long
 
-### Requirement: The startup sweep removes trees by rank, never by age
+### Requirement: The sweep removes trees by rank, never by age
 
-A working tree's name SHALL carry the role and rank of the process that made it. At startup,
-before its first cycle, a process SHALL remove the trees of its own role and rank, and of its
-role's ranks that the roster no longer declares. With each tree it SHALL remove the tree's
-outbox, the directory beside it where the run's declarations are kept. It SHALL NOT
-remove a tree of another declared rank, or of another role, whatever its age.
+A working tree's name SHALL carry the role and rank of the process that made it. Working trees
+SHALL be kept in a directory every rank on the host shares, such as the directory systemd's
+`StateDirectory=` gives the unit, never in a temporary directory private to one process.
 
-Only one process runs at a rank, so at startup no tree of that rank is in use: each was left by
-a predecessor that died. A tree of another declared rank may belong to a live sibling, and
-deleting a live sibling's tree corrupts its run, while leaving debris costs only disk.
+At startup, before its first cycle, a process SHALL remove the trees of its own role and rank.
+At the start of each cycle, it SHALL remove the trees of each rank of its role that the roster
+does not declare and that is gone, as `work-claiming` defines. With each tree it SHALL remove
+the tree's outbox, the directory beside it where the run's declarations are kept, and the tree's
+git directory, `<tree>-git` beside it, where there is one. It SHALL NOT remove a tree of another
+declared rank, of a rank that is not gone, or of another role, whatever its age.
 
 #### Scenario: A predecessor's tree is removed
 
 - **WHEN** a process starts and finds a tree named with its own role and rank
-- **THEN** it removes the tree and its outbox before its first cycle
+- **THEN** it removes the tree, its outbox and its git directory before its first cycle
 
 #### Scenario: A sibling's tree is left
 
-- **WHEN** a process starts and finds a tree named with another declared rank of its role
+- **WHEN** a process finds a tree named with another declared rank of its role
 - **THEN** it leaves the tree, however old it is
 
 #### Scenario: Another role's tree is left
 
-- **WHEN** a process starts and finds a tree named with another role
+- **WHEN** a process finds a tree named with another role
 - **THEN** it leaves the tree, whatever its rank and however old it is
 
-#### Scenario: A retired rank's tree is removed
+#### Scenario: A retired rank's tree is removed once the rank is gone
 
-- **WHEN** a process starts and finds a tree named with a rank of its role that the roster no
-  longer declares
-- **THEN** it removes the tree and its outbox
+- **WHEN** a process finds a tree named with a rank of its role that the roster no longer
+  declares, and it has watched that rank's heartbeat fail to move forward for three poll
+  intervals
+- **THEN** it removes the tree, its outbox and its git directory
+
+#### Scenario: A retired rank's tree is left while the rank runs
+
+- **WHEN** a process finds a tree named with a rank the roster no longer declares, whose
+  heartbeat still moves forward
+- **THEN** it leaves the tree
+
+#### Scenario: Every rank on the host sees the trees
+
+- **WHEN** two ranks of one role run on one host
+- **THEN** each can see the other's trees, so a sweep finds a retired rank's trees

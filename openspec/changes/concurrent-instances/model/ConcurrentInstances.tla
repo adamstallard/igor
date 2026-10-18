@@ -5,9 +5,11 @@
 (* change `concurrent-instances` specifies them.                          *)
 (*                                                                         *)
 (* The tracker holds, per item: the role's `igor:<role>` label; the ranks *)
-(* of the claim messages posted since the item's latest release, in       *)
-(* storage order; whether a person has said stop; whether a run finished  *)
-(* it; and its update time.                                               *)
+(* of the claim messages that count since the item's latest release, in   *)
+(* storage order; whether the item reads as handed over by a person;      *)
+(* whether a person has said stop; whether a run finished it; and its     *)
+(* update time. A ghost variable also records whether a person really     *)
+(* handed it over, so HandOverStands can check that the reading matches.  *)
 (*                                                                         *)
 (* The state branch holds one heartbeat file per rank, and the replayed   *)
 (* `discovery.json` log reduced to what the replay reads: each rank's     *)
@@ -25,6 +27,12 @@
 (* Update times and marks are values of one counter, `clk`, which every   *)
 (* tracker write advances. Only their order matters.                      *)
 (*                                                                         *)
+(* The tracker reports times to the second, and a claim message is        *)
+(* ordered against the item's latest release by its time. A message in    *)
+(* the release's second does not count. The model tracks, per item,       *)
+(* whether the current second is still the latest release's (`fresh`):    *)
+(* a release starts it, and the next second, or a poll interval, ends it. *)
+(*                                                                         *)
 (* A write to the state branch that conflicts is retried until it lands,  *)
 (* and the retry re-reads and re-appends, so it lands the same line. The  *)
 (* model therefore treats a conflict as a delay between deciding a write  *)
@@ -32,15 +40,16 @@
 (* crash that loses the write. That a retry discards nothing is assumed,  *)
 (* as "A conflicted state write discards nothing" requires, not proved.   *)
 (*                                                                         *)
-(* Each amendment the change adopted after the model's first findings is  *)
-(* a constant, TRUE in the change as specified. Setting one FALSE shows   *)
-(* that amendment is needed: the configurations under negative/ do that.  *)
+(* Each rule the change adopted after the model's findings is a constant, *)
+(* TRUE in the change as specified. Setting one FALSE shows that rule is  *)
+(* needed: the configurations under negative/ do that.                    *)
 (*                                                                         *)
-(* Not modelled: the roster changing (Roster is constant), `deferred.json` *)
-(* (no requirement here reads it for safety), the settle interval's       *)
-(* length (claims are visible at once, and the rank-proportional wait is  *)
-(* not assumed to order anything), a go-ahead or cooldown after a stop (a *)
-(* stop here is permanent), and two processes at one rank (which the      *)
+(* Not modelled: `deferred.json` (no requirement here reads it for        *)
+(* safety), the settle interval's length (claims are visible at once, and *)
+(* the rank-proportional wait is not assumed to order anything), a        *)
+(* go-ahead or cooldown after a stop (a stop here is permanent), pull     *)
+(* requests and catch-ups, the triage call itself (triage always says     *)
+(* proceed), the tree sweep, and two processes at one rank (which the     *)
 (* change makes the operator's job to prevent, and declares unhandled).   *)
 (***************************************************************************)
 EXTENDS Integers, Sequences, FiniteSets, TLC
@@ -48,15 +57,22 @@ EXTENDS Integers, Sequences, FiniteSets, TLC
 CONSTANTS
     NRanks,            \* ranks 1..NRanks
     NItems,            \* items 1..NItems, in the source's search order
-    Roster,            \* the declared ranks, a subset of 1..NRanks
+    Roster,            \* the ranks declared at the start, a subset of 1..NRanks
     Bound,             \* polls without a heartbeat moving forward before a
                        \* watcher judges the rank gone: 3
+    StandDownAt,       \* missed heartbeats at which a process stands down: 2,
+                       \* or 1 where a worker may go two intervals between
+                       \* checkpoints
+    CheckpointGap,     \* poll intervals a running worker may go between
+                       \* checkpoints: 1, or 2
     MaxCrashes,        \* crashes allowed in one behaviour
     MaxLosses,         \* losses, resets or rollbacks of the state branch
     MaxStops,          \* stops people may say
     MaxMisses,         \* poll intervals in which a running process fails to
                        \* write its heartbeat, summed over processes
-    \* The amendments. Each is TRUE in the change as specified.
+    MaxHandovers,      \* items people may hand over by adding the label
+    MaxRetires,        \* ranks that may be removed from the roster
+    \* The rules. Each is TRUE in the change as specified.
     WatchAdvance,      \* a process judges a sibling gone by watching its
                        \* heartbeat fail to move forward; FALSE: by the age of
                        \* the file, which a rollback makes old
@@ -75,9 +91,17 @@ CONSTANTS
                        \* candidate; FALSE: as soon as triage ends
     LabelSweep,        \* every labelled item is a candidate, whatever the
                        \* mark; FALSE: only items updated after the mark
-    StandDownOnMisses  \* a process that has failed to write its heartbeat for
-                       \* two intervals starts nothing and halts its worker;
-                       \* FALSE: it carries on
+    StandDownOnMisses, \* a process that has failed to write its heartbeat for
+                       \* StandDownAt intervals starts nothing and halts its
+                       \* worker; FALSE: it carries on
+    HandoverContest,   \* ranks take a handed-over item by the same contest as
+                       \* found work; FALSE: each posts and works at once
+    HandoverRecorded,  \* a taker's claim message on a handed-over item records
+                       \* the hand-over; FALSE: the item then reads as found
+    WaitAfterRelease,  \* a taker waits out the second of its release before
+                       \* posting; FALSE: it posts at once
+    RosterWaits        \* a rank missing from the roster is adoptable only once
+                       \* gone; FALSE: at once
 
 Ranks == 1..NRanks
 Items == 1..NItems
@@ -91,6 +115,7 @@ VARIABLES
     seen,      \* seen[r]: the counts r read at the start of its cycle
     watch,     \* watch[r][q]: polls since r last saw q's heartbeat move forward,
                \* or since r started watching; capped at Bound
+    alive,     \* alive[r][q]: r has seen q's heartbeat move forward since r started
     cand,      \* cand[r]: the items r still means to attempt this cycle, in its order
     cur,       \* cur[r]: the item r is claiming or working, 0 for none
     polled,    \* polled[r]: a poll interval has passed since r's cycle began
@@ -98,27 +123,37 @@ VARIABLES
     markReady, \* markReady[r]: r's cycle has reached the point of appending it
     beat,      \* beat[r]: r has written its heartbeat in this interval
     missed,    \* missed[r]: intervals since r last wrote its heartbeat, capped
+    waitSec,   \* waitSec[r]: r released its item to take it over, and has not
+               \* yet posted its claim message
     \* state branch
     hbAge,     \* hbAge[q]: age of q's heartbeat file, read only when ~WatchAdvance
     mark,      \* mark[q]: rank q's latest mark in the discovery log, or NoMark
+    \* configuration
+    roster,    \* the ranks the roster declares now
     \* tracker
     label,     \* label[i]: the role's label is on item i
-    msgs,      \* msgs[i]: ranks of claim messages since i's latest release, in storage order
+    msgs,      \* msgs[i]: ranks of claim messages that count since i's latest
+               \* release, in storage order
     upd,       \* upd[i]: item i's update time
     stop,      \* stop[i]: a person has said stop on item i
     done,      \* done[i]: a run finished item i and its artifact is in place
     clk,       \* the tracker's clock, advanced by every tracker write
+    handed,    \* handed[i]: item i reads as handed over by a person
+    asked,     \* asked[i]: a person handed item i over, and no run has finished
+               \* it and no stop has ended the hand-over; read only by
+               \* HandOverStands
+    fresh,     \* fresh[i]: the current second is that of i's latest release
     \* bounds on the environment
-    crashes, losses, stops, misses,
+    crashes, losses, stops, misses, handovers, retires,
     \* ghost, read only by LiveRankNeverGone
     wrote      \* wrote[q]: q has written its heartbeat since it last started
 
-procVars    == <<up, pc, seen, watch, cand, cur, polled, markPend, markReady,
-                 beat, missed>>
+procVars    == <<up, pc, seen, watch, alive, cand, cur, polled, markPend,
+                 markReady, beat, missed, waitSec>>
 branchVars  == <<hbAge, mark>>
-trackerVars == <<label, msgs, upd, stop, done, clk>>
-envVars     == <<crashes, losses, stops, misses>>
-vars        == <<procVars, branchVars, trackerVars, envVars, wrote>>
+trackerVars == <<label, msgs, upd, stop, done, clk, handed, asked, fresh>>
+envVars     == <<crashes, losses, stops, misses, handovers, retires>>
+vars        == <<procVars, branchVars, roster, trackerVars, envVars, wrote>>
 
 -----------------------------------------------------------------------------
 (* Helpers *)
@@ -141,28 +176,42 @@ Fresh(r) == IF WatchAdvance THEN watch[r]
 \* What r decides by: a fresh read, or the read at the start of its cycle.
 View(r) == IF ReReadHeartbeats THEN Fresh(r) ELSE seen[r]
 
-\* Rank q is gone to r: undeclared, or past the bound. A process never counts
-\* itself gone.
-Gone(r, q) == q # r /\ (q \notin Roster \/ View(r)[q] >= Bound)
+\* Rank q is gone to r: past the bound, or under ~RosterWaits missing from
+\* the roster. A process never counts itself gone.
+Gone(r, q) == q # r /\ ((~RosterWaits /\ q \notin roster) \/ View(r)[q] >= Bound)
 
-\* A process that has failed to write its heartbeat for two intervals stands
-\* down.
-StoodDown(r) == StandDownOnMisses /\ missed[r] >= 2
+\* A process stands down when it has failed to write its heartbeat for
+\* StandDownAt intervals, or when its rank has left the roster.
+StoodDown(r) == (StandDownOnMisses /\ missed[r] >= StandDownAt)
+                \/ r \notin roster
+
+\* A process that stood down for missed heartbeats has stopped its worker by
+\* the end of the CheckpointGap-th interval after it stood down. Tick checks
+\* this before it advances missed, so the interval in which the process
+\* stood down is the first of the CheckpointGap, hence the - 1.
+MustHaveHalted(r) ==
+    StandDownOnMisses /\ missed[r] >= StandDownAt + CheckpointGap - 1
 
 \* The rank whose claim message holds item i in r's view: the earliest
-\* message since the latest release whose rank is not gone; 0 if none.
+\* message that counts whose rank is not gone; 0 if none.
 Holder(r, i) ==
     LET ks == {k \in 1..Len(msgs[i]) : ~Gone(r, msgs[i][k])}
     IN  IF ks = {} THEN 0 ELSE msgs[i][Min(ks)]
 
+\* Item i is held, in r's view, by a sibling whose claim message counts.
+HeldBySibling(r, i) == label[i] /\ Holder(r, i) \notin {0, r}
+
 \* The mark discovery uses for r: the lowest latest mark among ranks not
-\* gone; with none of those, the lowest of every rank's latest; with no line
-\* at all, a cold start that sees every item.
+\* gone that r has seen alive since it started, counting its own; with none
+\* of those, the lowest of every rank's latest, capped at the cold start's
+\* look-back; with no line at all, a cold start. Every item in the model is
+\* inside the cold start's look-back, so the cold start is 0, which caps
+\* nothing.
 ReplayMark(r) ==
     LET has == {q \in Ranks : mark[q] # NoMark}
-        cnt == {q \in has : ~Gone(r, q)}
+        cnt == {q \in has : ~Gone(r, q) /\ (q = r \/ alive[r][q])}
     IN  IF cnt # {} THEN Min({mark[q] : q \in cnt})
-        ELSE IF has # {} THEN Min({mark[q] : q \in has})
+        ELSE IF has # {} THEN Max({0, Min({mark[q] : q \in has})})
         ELSE 0
 
 Worked(i) == \E r \in Ranks : up[r] /\ pc[r] = "work" /\ cur[r] = i
@@ -173,15 +222,18 @@ Touch(i) == /\ clk' = clk + 1
             /\ upd' = [upd EXCEPT ![i] = clk + 1]
 
 \* Releasing a claim takes the label off, which is the item's latest
-\* release, so no earlier claim message counts any more.
+\* release, so no earlier claim message counts any more. It ends a
+\* hand-over too.
 Release(i) == /\ label' = [label EXCEPT ![i] = FALSE]
               /\ msgs' = [msgs EXCEPT ![i] = <<>>]
+              /\ handed' = [handed EXCEPT ![i] = FALSE]
+              /\ asked' = [asked EXCEPT ![i] = FALSE]
+              /\ fresh' = [fresh EXCEPT ![i] = TRUE]
               /\ Touch(i)
 
 \* A candidate r passes over without writing anything: finished, held by a
 \* rank that is not gone, or stopped with nobody's label on it.
-Passed(r, i) == done[i] \/ (label[i] /\ Holder(r, i) \notin {0, r})
-                        \/ (stop[i] /\ ~label[i])
+Passed(r, i) == done[i] \/ HeldBySibling(r, i) \/ (stop[i] /\ ~label[i])
 
 RECURSIVE SkipPassed(_, _)
 SkipPassed(r, s) == IF s = <<>> THEN s
@@ -194,6 +246,7 @@ Init ==
     /\ pc = [r \in Ranks |-> "read"]
     /\ seen = [r \in Ranks |-> [q \in Ranks |-> 0]]
     /\ watch = [r \in Ranks |-> [q \in Ranks |-> 0]]
+    /\ alive = [r \in Ranks |-> [q \in Ranks |-> FALSE]]
     /\ cand = [r \in Ranks |-> <<>>]
     /\ cur = [r \in Ranks |-> 0]
     /\ polled = [r \in Ranks |-> FALSE]
@@ -201,15 +254,21 @@ Init ==
     /\ markReady = [r \in Ranks |-> FALSE]
     /\ beat = [r \in Ranks |-> TRUE]
     /\ missed = [r \in Ranks |-> 0]
+    /\ waitSec = [r \in Ranks |-> FALSE]
     /\ hbAge = [q \in Ranks |-> 0]
     /\ mark = [q \in Ranks |-> NoMark]
+    /\ roster = Roster
     /\ label = [i \in Items |-> FALSE]
     /\ msgs = [i \in Items |-> <<>>]
     /\ upd = [i \in Items |-> i]
     /\ stop = [i \in Items |-> FALSE]
     /\ done = [i \in Items |-> FALSE]
     /\ clk = NItems
+    /\ handed = [i \in Items |-> FALSE]
+    /\ asked = [i \in Items |-> FALSE]
+    /\ fresh = [i \in Items |-> FALSE]
     /\ crashes = 0 /\ losses = 0 /\ stops = 0 /\ misses = 0
+    /\ handovers = 0 /\ retires = 0
     /\ wrote = [q \in Ranks |-> TRUE]
 
 -----------------------------------------------------------------------------
@@ -217,25 +276,27 @@ Init ==
 
 \* The cycle begins: read the heartbeat files, then discover. Every item
 \* updated after the replayed mark is a candidate, and so under LabelSweep is
-\* every labelled item; triage is taken to say proceed for each one not
+\* every labelled item, except an item a sibling holds, which is passed over
+\* before triage. Triage is taken to say proceed for each candidate not
 \* done. The cycle's mark is the newest update time among the items updated
-\* after the replayed mark.
+\* after the replayed mark. A process whose rank has left the roster starts
+\* no cycle.
 Begin(r) ==
-    /\ up[r] /\ pc[r] = "read"
+    /\ up[r] /\ pc[r] = "read" /\ r \in roster
     /\ HeartbeatFirst => wrote[r]
     /\ LET M    == ReplayMark(r)
            Seen == {i \in Items : upd[i] > M}
        IN  /\ cand' = [cand EXCEPT ![r] =
                         Order(r, {i \in Seen \cup {j \in Items : LabelSweep /\ label[j]} :
-                                     ~done[i]})]
+                                     ~done[i] /\ ~HeldBySibling(r, i)})]
            /\ IF Seen # {}
                 THEN /\ markPend' = [markPend EXCEPT ![r] = Max({upd[i] : i \in Seen})]
                      /\ markReady' = [markReady EXCEPT ![r] = ~MarkAfterAttempts]
                 ELSE UNCHANGED <<markPend, markReady>>
     /\ seen' = IF ReReadHeartbeats THEN seen ELSE [seen EXCEPT ![r] = Fresh(r)]
     /\ pc' = [pc EXCEPT ![r] = "choose"]
-    /\ UNCHANGED <<up, watch, cur, polled, beat, missed, branchVars,
-                   trackerVars, envVars, wrote>>
+    /\ UNCHANGED <<up, watch, alive, cur, polled, beat, missed, waitSec,
+                   branchVars, roster, trackerVars, envVars, wrote>>
 
 \* Pass over candidates that need no write, then act on the next one. A
 \* cycle with no candidate left is over, and its mark may be appended. A
@@ -253,13 +314,13 @@ Choose(r) ==
                                           Min({markPend[r]} \cup
                                               {upd[i] - 1 : i \in Range(cand[r])})]
                         /\ markReady' = [markReady EXCEPT ![r] = TRUE]
-              /\ UNCHANGED <<cur, trackerVars>>
+              /\ UNCHANGED <<cur, waitSec, trackerVars>>
        ELSE IF s = <<>>
          THEN /\ pc' = [pc EXCEPT ![r] = "idle"]
               /\ cand' = [cand EXCEPT ![r] = <<>>]
               /\ markReady' = IF markPend[r] # NoMark
                                 THEN [markReady EXCEPT ![r] = TRUE] ELSE markReady
-              /\ UNCHANGED <<cur, markPend, trackerVars>>
+              /\ UNCHANGED <<cur, markPend, waitSec, trackerVars>>
          ELSE
          LET i == Head(s)
              h == Holder(r, i)
@@ -272,46 +333,61 @@ Choose(r) ==
               \* that is gone: Passed has skipped every other stopped item. A
               \* stop releases the claim.
               THEN /\ Release(i) /\ UNCHANGED <<stop, done>>
-                   /\ UNCHANGED <<cur, pc>>
+                   /\ UNCHANGED <<cur, pc, waitSec>>
             ELSE IF label[i] /\ h = r /\ ~(ReleaseOnTakeover /\ overGone)
               \* Its own rank's claim: the predecessor died. Work it again.
               \* Under ReleaseOnTakeover, only when no gone rank's message is
               \* on the item; otherwise the next branch takes it over.
               THEN /\ cur' = [cur EXCEPT ![r] = i]
                    /\ pc' = [pc EXCEPT ![r] = "work"]
-                   /\ UNCHANGED trackerVars
+                   /\ UNCHANGED <<waitSec, trackerVars>>
             ELSE IF label[i]
-              \* Labelled, and held by no live rank, or held by this rank only
-              \* because a gone rank's earlier message is left out: take it over by
-              \* posting a claim message. Under ReleaseOnTakeover it first
-              \* removes the label and adds it again, modelled as one step:
-              \* the label stays on, and every earlier message falls before
-              \* the new release.
+              \* Labelled, and either held by no live rank, or held by this
+              \* rank's own message only because an earlier message, of a gone
+              \* rank, no longer counts: post a
+              \* claim message. A handed-over item with no message yet comes
+              \* here too. Where it leaves out a gone rank's message, under
+              \* ReleaseOnTakeover it first removes the label and adds it
+              \* again, modelled as one step: the label stays on, and every
+              \* earlier message falls before the new release. Under
+              \* HandoverRecorded the item still reads as handed over.
               THEN /\ cur' = [cur EXCEPT ![r] = i]
                    /\ pc' = [pc EXCEPT ![r] = "post"]
-                   /\ IF ReleaseOnTakeover
+                   /\ IF ReleaseOnTakeover /\ overGone
                         THEN /\ msgs' = [msgs EXCEPT ![i] = <<>>]
+                             /\ fresh' = [fresh EXCEPT ![i] = TRUE]
+                             /\ handed' = IF HandoverRecorded THEN handed
+                                          ELSE [handed EXCEPT ![i] = FALSE]
+                             /\ waitSec' = [waitSec EXCEPT ![r] = TRUE]
                              /\ Touch(i)
-                             /\ UNCHANGED <<label, stop, done>>
-                        ELSE UNCHANGED trackerVars
+                             /\ UNCHANGED <<label, stop, done, asked>>
+                        ELSE UNCHANGED <<waitSec, trackerVars>>
             ELSE
               \* Unclaimed: the label first, the message after.
               /\ cur' = [cur EXCEPT ![r] = i]
               /\ pc' = [pc EXCEPT ![r] = "post"]
               /\ label' = [label EXCEPT ![i] = TRUE]
               /\ Touch(i)
-              /\ UNCHANGED <<msgs, stop, done>>
-    /\ UNCHANGED <<up, seen, watch, polled, beat, missed, branchVars, envVars,
-                   wrote>>
+              /\ UNCHANGED <<msgs, stop, done, handed, asked, fresh, waitSec>>
+    /\ UNCHANGED <<up, seen, watch, alive, polled, beat, missed, branchVars,
+                   roster, envVars, wrote>>
 
-\* Post the claim message, carrying this rank.
+\* Post the claim message, carrying this rank. A taker that released the item
+\* waits, under WaitAfterRelease, until the release's second has passed. A
+\* message posted in the release's second does not count. Under
+\* ~HandoverContest a handed-over item is worked at once, unverified.
 Post(r) ==
     /\ up[r] /\ pc[r] = "post"
-    /\ msgs' = [msgs EXCEPT ![cur[r]] = Append(msgs[cur[r]], r)]
+    /\ ~(WaitAfterRelease /\ waitSec[r] /\ fresh[cur[r]])
+    /\ msgs' = IF fresh[cur[r]] THEN msgs
+               ELSE [msgs EXCEPT ![cur[r]] = Append(msgs[cur[r]], r)]
     /\ Touch(cur[r])
-    /\ pc' = [pc EXCEPT ![r] = "verify"]
-    /\ UNCHANGED <<up, seen, watch, cand, cur, polled, markPend, markReady,
-                   beat, missed, label, stop, done, branchVars, envVars, wrote>>
+    /\ waitSec' = [waitSec EXCEPT ![r] = FALSE]
+    /\ pc' = [pc EXCEPT ![r] = IF ~HandoverContest /\ handed[cur[r]]
+                                 THEN "work" ELSE "verify"]
+    /\ UNCHANGED <<up, seen, watch, alive, cand, cur, polled, markPend,
+                   markReady, beat, missed, label, stop, done, handed, asked,
+                   fresh, branchVars, roster, envVars, wrote>>
 
 \* Re-read the item after the settle interval. A process that has stood down
 \* stands down from the claim too, leaving its message.
@@ -330,8 +406,8 @@ Verify(r) ==
             /\ IF ~LoserKeepsLabel /\ label[i] /\ ~StoodDown(r)
                  THEN Release(i) /\ UNCHANGED <<stop, done>>
                  ELSE UNCHANGED trackerVars
-    /\ UNCHANGED <<up, seen, watch, cand, polled, markPend, markReady, beat,
-                   missed, branchVars, envVars, wrote>>
+    /\ UNCHANGED <<up, seen, watch, alive, cand, polled, markPend, markReady,
+                   beat, missed, waitSec, branchVars, roster, envVars, wrote>>
 
 \* A checkpoint in the worker's run sees a stop: the run halts and the claim
 \* is released.
@@ -340,8 +416,8 @@ Checkpoint(r) ==
     /\ Release(cur[r]) /\ UNCHANGED <<stop, done>>
     /\ cur' = [cur EXCEPT ![r] = 0]
     /\ pc' = [pc EXCEPT ![r] = "choose"]
-    /\ UNCHANGED <<up, seen, watch, cand, polled, markPend, markReady, beat,
-                   missed, branchVars, envVars, wrote>>
+    /\ UNCHANGED <<up, seen, watch, alive, cand, polled, markPend, markReady,
+                   beat, missed, waitSec, branchVars, roster, envVars, wrote>>
 
 \* A checkpoint in the run of a process that has stood down: the worker
 \* stops. The claim stays, since a process that cannot write its heartbeat
@@ -350,8 +426,9 @@ Halt(r) ==
     /\ up[r] /\ pc[r] = "work" /\ StoodDown(r) /\ ~stop[cur[r]]
     /\ cur' = [cur EXCEPT ![r] = 0]
     /\ pc' = [pc EXCEPT ![r] = "choose"]
-    /\ UNCHANGED <<up, seen, watch, cand, polled, markPend, markReady, beat,
-                   missed, branchVars, trackerVars, envVars, wrote>>
+    /\ UNCHANGED <<up, seen, watch, alive, cand, polled, markPend, markReady,
+                   beat, missed, waitSec, branchVars, roster, trackerVars,
+                   envVars, wrote>>
 
 \* The run finishes, after any number of poll intervals: its artifact is in
 \* place and the claim is released.
@@ -361,16 +438,30 @@ Finish(r) ==
     /\ Release(cur[r]) /\ UNCHANGED stop
     /\ cur' = [cur EXCEPT ![r] = 0]
     /\ pc' = [pc EXCEPT ![r] = "choose"]
-    /\ UNCHANGED <<up, seen, watch, cand, polled, markPend, markReady, beat,
-                   missed, branchVars, envVars, wrote>>
+    /\ UNCHANGED <<up, seen, watch, alive, cand, polled, markPend, markReady,
+                   beat, missed, waitSec, branchVars, roster, envVars, wrote>>
 
 \* The next cycle begins once a poll interval has passed.
 NextCycle(r) ==
     /\ up[r] /\ pc[r] = "idle" /\ polled[r]
     /\ pc' = [pc EXCEPT ![r] = "read"]
     /\ polled' = [polled EXCEPT ![r] = FALSE]
-    /\ UNCHANGED <<up, seen, watch, cand, cur, markPend, markReady, beat,
-                   missed, branchVars, trackerVars, envVars, wrote>>
+    /\ UNCHANGED <<up, seen, watch, alive, cand, cur, markPend, markReady, beat,
+                   missed, waitSec, branchVars, roster, trackerVars, envVars,
+                   wrote>>
+
+\* A process whose rank has left the roster exits once it has stood down
+\* and its cycle's mark has landed. The supervisor's restart is refused.
+Exit(r) ==
+    /\ up[r] /\ r \notin roster /\ ~Busy(r) /\ markPend[r] = NoMark
+    /\ up' = [up EXCEPT ![r] = FALSE]
+    /\ pc' = [pc EXCEPT ![r] = "down"]
+    /\ cand' = [cand EXCEPT ![r] = <<>>]
+    /\ seen' = [seen EXCEPT ![r] = [q \in Ranks |-> 0]]
+    /\ polled' = [polled EXCEPT ![r] = FALSE]
+    /\ wrote' = [wrote EXCEPT ![r] = FALSE]
+    /\ UNCHANGED <<watch, alive, cur, markPend, markReady, beat, missed,
+                   waitSec, branchVars, roster, trackerVars, envVars>>
 
 -----------------------------------------------------------------------------
 (* Writes to the state branch *)
@@ -381,36 +472,39 @@ AppendMark(r) ==
     /\ mark' = [mark EXCEPT ![r] = markPend[r]]
     /\ markPend' = [markPend EXCEPT ![r] = NoMark]
     /\ markReady' = [markReady EXCEPT ![r] = FALSE]
-    /\ UNCHANGED <<up, pc, seen, watch, cand, cur, polled, beat, missed, hbAge,
-                   trackerVars, envVars, wrote>>
+    /\ UNCHANGED <<up, pc, seen, watch, alive, cand, cur, polled, beat, missed,
+                   waitSec, hbAge, roster, trackerVars, envVars, wrote>>
 
 \* This rank's heartbeat lands, from a timer that runs whatever the cycle is
-\* doing. It moves forward, so every watcher's count for this rank restarts.
+\* doing. It moves forward, so every watcher's count for this rank restarts,
+\* and every watcher has now seen it alive.
 WriteHeartbeat(r) ==
     /\ up[r] /\ ~beat[r]
     /\ beat' = [beat EXCEPT ![r] = TRUE]
     /\ missed' = [missed EXCEPT ![r] = 0]
     /\ watch' = [x \in Ranks |-> [watch[x] EXCEPT ![r] = 0]]
+    /\ alive' = [x \in Ranks |-> [alive[x] EXCEPT ![r] = TRUE]]
     /\ hbAge' = IF WatchAdvance THEN hbAge ELSE [hbAge EXCEPT ![r] = 0]
     /\ wrote' = [wrote EXCEPT ![r] = TRUE]
-    /\ UNCHANGED <<up, pc, seen, cand, cur, polled, markPend, markReady, mark,
-                   trackerVars, envVars>>
+    /\ UNCHANGED <<up, pc, seen, cand, cur, polled, markPend, markReady,
+                   waitSec, mark, roster, trackerVars, envVars>>
 
 -----------------------------------------------------------------------------
 (* Time and the environment *)
 
 \* One poll interval passes. A running process whose heartbeat has not
 \* landed in the interval that is ending has missed one, which MaxMisses
-\* bounds. A process that has stood down has halted any claim or run before
-\* the interval ends: its next checkpoint comes within the interval. Under
-\* VerifyWithinPoll no claim is still between its message and its
-\* verification, which is how the model makes verification come within one
-\* poll interval of the message.
+\* bounds. A process that stood down for missed heartbeats has halted any
+\* claim or run within CheckpointGap intervals: its worker reaches a
+\* checkpoint at least that often. Under VerifyWithinPoll no claim is still
+\* between its message and its verification, which is how the model makes
+\* verification come within one poll interval of the message. Every
+\* release's second has passed.
 Tick ==
     /\ LET M == {r \in Ranks : up[r] /\ ~beat[r]}
        IN  /\ misses + Cardinality(M) <= MaxMisses
            /\ misses' = misses + Cardinality(M)
-    /\ \A r \in Ranks : (up[r] /\ StoodDown(r)) => ~Busy(r)
+    /\ \A r \in Ranks : (up[r] /\ MustHaveHalted(r)) => ~Busy(r)
     /\ VerifyWithinPoll => \A r \in Ranks : up[r] => pc[r] \notin {"post", "verify"}
     /\ watch' = [r \in Ranks |-> [q \in Ranks |->
                    IF q = r THEN 0 ELSE Older(watch[r][q])]]
@@ -419,8 +513,18 @@ Tick ==
                 ELSE [q \in Ranks |-> Older(hbAge[q])]
     /\ beat' = [r \in Ranks |-> FALSE]
     /\ polled' = [r \in Ranks |-> TRUE]
-    /\ UNCHANGED <<up, pc, seen, cand, cur, markPend, markReady, mark,
-                   trackerVars, crashes, losses, stops, wrote>>
+    /\ fresh' = [i \in Items |-> FALSE]
+    /\ UNCHANGED <<up, pc, seen, alive, cand, cur, markPend, markReady,
+                   waitSec, mark, roster, label, msgs, upd, stop, done, clk,
+                   handed, asked, crashes, losses, stops, handovers, retires,
+                   wrote>>
+
+\* The second of the latest releases passes.
+NextSecond ==
+    /\ \E i \in Items : fresh[i]
+    /\ fresh' = [i \in Items |-> FALSE]
+    /\ UNCHANGED <<procVars, branchVars, roster, label, msgs, upd, stop, done,
+                   clk, handed, asked, envVars, wrote>>
 
 \* A process crashes, at any point and between any two writes. Its worker
 \* dies with it, and so does everything it held in memory.
@@ -434,22 +538,25 @@ Crash(r) ==
     /\ markReady' = [markReady EXCEPT ![r] = FALSE]
     /\ seen' = [seen EXCEPT ![r] = [q \in Ranks |-> 0]]
     /\ polled' = [polled EXCEPT ![r] = FALSE]
+    /\ waitSec' = [waitSec EXCEPT ![r] = FALSE]
     /\ crashes' = crashes + 1
     /\ wrote' = [wrote EXCEPT ![r] = FALSE]
-    /\ UNCHANGED <<watch, beat, missed, branchVars, trackerVars, losses, stops,
-                   misses>>
+    /\ UNCHANGED <<watch, alive, beat, missed, branchVars, roster, trackerVars,
+                   losses, stops, misses, handovers, retires>>
 
-\* The supervisor restarts it. It starts watching every sibling afresh, and
-\* counts the intervals without a heartbeat of its own from its start.
+\* The supervisor restarts it, if the roster still declares its rank. It
+\* starts watching every sibling afresh, has seen none alive, and counts the
+\* intervals without a heartbeat of its own from its start.
 Restart(r) ==
-    /\ ~up[r]
+    /\ ~up[r] /\ r \in roster
     /\ up' = [up EXCEPT ![r] = TRUE]
     /\ pc' = [pc EXCEPT ![r] = "read"]
     /\ watch' = [watch EXCEPT ![r] = [q \in Ranks |-> 0]]
+    /\ alive' = [alive EXCEPT ![r] = [q \in Ranks |-> FALSE]]
     /\ beat' = [beat EXCEPT ![r] = FALSE]
     /\ missed' = [missed EXCEPT ![r] = 0]
-    /\ UNCHANGED <<seen, cand, cur, polled, markPend, markReady,
-                   branchVars, trackerVars, envVars, wrote>>
+    /\ UNCHANGED <<seen, cand, cur, polled, markPend, markReady, waitSec,
+                   branchVars, roster, trackerVars, envVars, wrote>>
 
 \* The state branch is lost, reset or rolled back to an old commit. No
 \* heartbeat moves forward, so no watch count changes; under ~WatchAdvance
@@ -463,7 +570,8 @@ LoseBranch ==
        \/ UNCHANGED mark
     /\ hbAge' = IF WatchAdvance THEN hbAge ELSE [q \in Ranks |-> Bound]
     /\ losses' = losses + 1
-    /\ UNCHANGED <<procVars, trackerVars, crashes, stops, misses, wrote>>
+    /\ UNCHANGED <<procVars, roster, trackerVars, crashes, stops, misses,
+                   handovers, retires, wrote>>
 
 \* A person says stop on an item.
 SayStop(i) ==
@@ -471,8 +579,28 @@ SayStop(i) ==
     /\ stop' = [stop EXCEPT ![i] = TRUE]
     /\ Touch(i)
     /\ stops' = stops + 1
-    /\ UNCHANGED <<procVars, branchVars, label, msgs, done, crashes, losses,
-                   misses, wrote>>
+    /\ UNCHANGED <<procVars, branchVars, roster, label, msgs, done, handed,
+                   asked, fresh, crashes, losses, misses, handovers, retires,
+                   wrote>>
+
+\* A person hands an unclaimed item over by adding the role's label.
+HandOver(i) ==
+    /\ handovers < MaxHandovers /\ ~label[i] /\ ~stop[i] /\ ~done[i]
+    /\ label' = [label EXCEPT ![i] = TRUE]
+    /\ handed' = [handed EXCEPT ![i] = TRUE]
+    /\ asked' = [asked EXCEPT ![i] = TRUE]
+    /\ Touch(i)
+    /\ handovers' = handovers + 1
+    /\ UNCHANGED <<procVars, branchVars, roster, msgs, stop, done, fresh,
+                   crashes, losses, stops, misses, retires, wrote>>
+
+\* An operator removes a rank from the roster.
+Retire(q) ==
+    /\ retires < MaxRetires /\ q \in roster
+    /\ roster' = roster \ {q}
+    /\ retires' = retires + 1
+    /\ UNCHANGED <<procVars, branchVars, trackerVars, crashes, losses, stops,
+                   misses, handovers, wrote>>
 
 -----------------------------------------------------------------------------
 Step(r) == Begin(r) \/ Choose(r) \/ Post(r) \/ Verify(r) \/ Checkpoint(r)
@@ -480,18 +608,20 @@ Step(r) == Begin(r) \/ Choose(r) \/ Post(r) \/ Verify(r) \/ Checkpoint(r)
 
 Next ==
     \/ \E r \in Ranks : Step(r) \/ AppendMark(r) \/ WriteHeartbeat(r)
-                        \/ Crash(r) \/ Restart(r)
+                        \/ Exit(r) \/ Crash(r) \/ Restart(r) \/ Retire(r)
     \/ Tick
+    \/ NextSecond
     \/ LoseBranch
-    \/ \E i \in Items : SayStop(i)
+    \/ \E i \in Items : SayStop(i) \/ HandOver(i)
 
-\* Running processes make progress, their writes land, workers finish, and
-\* time passes. Nothing obliges a crashed process to restart, or a person
-\* to say anything.
+\* Running processes make progress, their writes land, workers finish, a
+\* process whose rank left the roster exits, and time passes. Nothing obliges
+\* a crashed process to restart, or a person to say anything.
 Fairness ==
     /\ \A r \in Ranks : WF_vars(Step(r)) /\ WF_vars(AppendMark(r))
-                        /\ WF_vars(WriteHeartbeat(r))
+                        /\ WF_vars(WriteHeartbeat(r)) /\ WF_vars(Exit(r))
     /\ WF_vars(Tick)
+    /\ WF_vars(NextSecond)
 
 Spec == Init /\ [][Next]_vars /\ Fairness
 
@@ -504,13 +634,18 @@ TypeOK ==
                          "idle"}]
     /\ cur \in [Ranks -> 0..NItems]
     /\ watch \in [Ranks -> [Ranks -> 0..Bound]]
+    /\ alive \in [Ranks -> [Ranks -> BOOLEAN]]
     /\ missed \in [Ranks -> 0..Bound]
+    /\ roster \subseteq Ranks
     /\ label \in [Items -> BOOLEAN]
     /\ stop \in [Items -> BOOLEAN]
     /\ done \in [Items -> BOOLEAN]
+    /\ handed \in [Items -> BOOLEAN]
+    /\ fresh \in [Items -> BOOLEAN]
 
-\* Requirements: "A claim names the process that took it" and "Assignment
-\* expresses a claim; ordering resolves it" (work-claiming).
+\* Requirements: "A claim names the process that took it", "Assignment
+\* expresses a claim; ordering resolves it" and "A hand-over among one
+\* role's ranks is contested like found work" (work-claiming).
 \* Never two live workers on one item.
 NoTwoWorkers ==
     \A i \in Items :
@@ -544,6 +679,13 @@ MarkNeverPassesUntaken ==
         Settled    == \E r \in Ranks : up[r] /\ pc[r] # "read"
     IN  Settled => \A i \in Items : Untaken(i) => (Pending(i) \/ Below(i))
 
+\* Requirement: "A hand-over among one role's ranks is contested like found
+\* work" (work-claiming), its scenario "A taken-over hand-over still stands".
+\* An item a person handed over reads as handed over for as long as it
+\* carries the label, until a run finishes it or a stop ends the hand-over.
+HandOverStands ==
+    \A i \in Items : (asked[i] /\ label[i]) => handed[i]
+
 -----------------------------------------------------------------------------
 (* Liveness, in behaviours where some process is eventually always running *)
 
@@ -552,8 +694,8 @@ SomeUpForever == <>[](\E r \in Ranks : up[r])
 \* Requirements: "A process recovers the claims of its own predecessor" and
 \* "A retired rank does not hold its items forever" (work-claiming), and
 \* "Every cycle considers the items its role's label holds" (work-discovery).
-\* A crashed rank's claims are eventually recovered: a labelled item no
-\* running process holds is eventually worked again or released.
+\* A crashed or retired rank's claims are eventually recovered: a labelled
+\* item no running process holds is eventually worked again or released.
 OrphanRecovered ==
     SomeUpForever =>
         \A i \in Items :
