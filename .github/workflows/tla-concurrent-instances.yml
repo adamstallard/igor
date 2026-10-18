@@ -1,11 +1,15 @@
 # Runs TLC on the TLA+ model of the OpenSpec change concurrent-instances.
 #
-# - "TLC <config>": the change as specified. Each configuration beside the
-#   model must pass, so a failure is a regression in the spec or the model.
+# - "TLC <config>": the change as specified. Each configuration the matrix
+#   below lists must pass, so a failure is a regression in the spec or the
+#   model. A configuration added to model/ runs only once it is listed.
 # - "TLC negative configurations": each rule the model showed the change
 #   needs is a constant in the model, and each file in model/negative/ turns
-#   one of those rules off. TLC must find a violation there. A file that
-#   passes means that rule is no longer shown to be needed.
+#   one of those rules off. TLC must find a violation there; a file that
+#   passes means the model does not show that rule is needed.
+# - No job runs model/findings/. Each file there finds a violation the rules
+#   do not prevent, recorded for the repository's owner to decide on; it
+#   keeps finding it until the spec's rules change.
 #
 # To move to another tla2tools.jar release, change TLA_TOOLS_VERSION and
 # TLA_TOOLS_SHA256 together: the checksum step rejects any other file.
@@ -47,6 +51,7 @@ jobs:
           - ConcurrentInstancesLiveness.cfg
           - ConcurrentInstancesLivenessRoster.cfg
           - ConcurrentInstancesLivenessCatchUp.cfg
+          - ConcurrentInstancesRunByHand.cfg
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1

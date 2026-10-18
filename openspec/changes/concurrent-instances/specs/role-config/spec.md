@@ -94,6 +94,43 @@ that identity's credentials, naming any variable that is missing.
 - **THEN** it reports the identity `reviewer` and whether its environment holds that identity's
   credentials, naming any missing variable
 
+### Requirement: Timing values are configurable with stated defaults
+
+Every interval SHALL be configurable and SHALL have a default, since an unstated default is a
+value someone guesses differently each time: a **settle interval** of 10 seconds before a claim
+is verified, and a **cooldown** of 1 hour before a stopped item returns to the pool. The **poll
+interval** SHALL be configurable too.
+
+These are starting points to tune against observation, not derived values, and SHALL be
+recorded as such rather than presented as considered.
+
+Four timings are the exception: each SHALL follow the role's poll interval, with no setting of
+its own. A rank is gone after three poll intervals without its heartbeat changing, the
+*abandonment bound*. A process writes its heartbeat every half poll interval. A process that has
+failed to write its heartbeat for two poll intervals stands down. `igor run` waits half a poll
+interval, plus a fixed allowance for one heartbeat write, before deciding whether a process
+serves rank 1; the allowance is a constant in the code, set from a measurement. `work-claiming` states each rule. Changing the poll interval scales all four together.
+
+#### Scenario: Default applied when unset
+
+- **WHEN** a role does not set the settle interval
+- **THEN** the inherited or default value is used
+- **AND** the effective value is visible via `role explain`
+
+#### Scenario: The derived timings follow the poll interval
+
+- **WHEN** a role sets its poll interval to 4 minutes
+- **THEN** its abandonment bound is 12 minutes, it writes its heartbeat every 2 minutes, it stands
+  down after 8 minutes without writing one, and `igor run` for the role waits 2 minutes plus one
+  heartbeat write
+
+#### Scenario: A derived timing has no setting
+
+- **WHEN** a role file sets the abandonment bound, the heartbeat period, the stand-down threshold
+  or `igor run`'s wait
+- **THEN** the role's file under `roles/` is refused, naming the key, as for any key that file
+  does not read
+
 ## ADDED Requirements
 
 ### Requirement: The roster declares the ranks each role may run

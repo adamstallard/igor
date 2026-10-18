@@ -15,6 +15,14 @@ bring back. A claim left on the Igor's own artifact by a process that is no long
 not duplication either: the process that takes it over catches the item up rather than
 re-working it.
 
+The exception above, for a claim this process takes over, covers an item whose holding claim
+message carries this process's rank, whether this process or a predecessor posted it. Where
+that item's open pull request, the Igor's own, still merges, as after a catch-up that gave its
+claim back and kept a person's label, triaging it would only decide to carry on with a catch-up
+that changes nothing, so triage SHALL pass the item over with no triage call, unless the item or its pull request has been
+updated since this process last triaged it, or the pull request no longer merges. A process that
+has not triaged the item since it started triages it once.
+
 #### Scenario: Item with an open linked artifact skipped
 
 - **WHEN** an item already has work in flight against it
@@ -52,6 +60,14 @@ re-working it.
 - **WHEN** an item's in-flight artifact was produced by this Igor, and the role's label holds the
   item with a claim message of a rank that is gone
 - **THEN** it is not skipped, and the process that takes the claim over catches the item up
+
+#### Scenario: A held item whose pull request still merges is not triaged again until it changes
+
+- **WHEN** this process's claim message holds an item whose Igor pull request still merges, and
+  neither the item nor the pull request has been updated since this process last triaged it
+- **THEN** the item is passed over with no triage call
+- **AND** once a comment is added to the item, or the pull request stops merging, the next cycle
+  triages it
 
 ### Requirement: An item held by another party is never a candidate
 

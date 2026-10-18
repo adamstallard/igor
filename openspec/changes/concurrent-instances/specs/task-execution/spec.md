@@ -50,7 +50,9 @@ them neither.
 
 ### Requirement: The sweep removes trees by rank, never by age
 
-A working tree's name SHALL carry the role and rank of the process that made it. Working trees
+A working tree's directory name SHALL be `<role>-<rank>-<id>`, giving the role and rank of the
+process that made it and an id holding no dash, so that the name read from its end gives the id,
+then the rank, then the role, whose name may itself hold dashes. Working trees
 SHALL be kept in a directory every rank on the host shares, never in a temporary directory
 private to one process. Under the systemd unit that directory SHALL be `/var/lib/igor/trees`,
 under the `StateDirectory=` every instance of the template shares.
@@ -76,6 +78,11 @@ predecessor's trees, and a gone rank's for that rank's.
 
 - **WHEN** a process finds a tree named with another declared rank of its role
 - **THEN** it leaves the tree, however old it is
+
+#### Scenario: A role whose name ends in a number keeps its trees apart
+
+- **WHEN** the roles `web` and `web-2` both run, and rank 2 of `web` sweeps its trees
+- **THEN** it reads `web-2-1-k3x9` as rank 1 of `web-2`, and leaves it
 
 #### Scenario: Another role's tree is left
 

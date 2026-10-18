@@ -26,7 +26,20 @@
       ```
 
       The unit's header comment, which may be reworded, names the instance with its rank:
-      `igor@<role>-<rank>`, and installs one as `sudo systemctl enable --now igor@maintenance-1`
+      `igor@<role>-<rank>`, and installs one as `sudo systemctl enable --now igor@maintenance-1`.
+      Beside `Restart=always`, add these lines, as written, with the comment above them, which
+      may be reworded:
+
+      ```ini
+      # 78: Igor refused to start, or another process took this rank; the unit
+      # shows failed. 79: the roster no longer declares this rank; the unit
+      # shows inactive. Neither is restarted. The journal says why.
+      RestartPreventExitStatus=78 79
+      SuccessExitStatus=79
+      ```
+
+      `ProtectProc=invisible`, which PR #175 (`worker-user`) adds to the same unit, stays in it;
+      whichever of the two lands second keeps the other's lines
 - [ ] 1.4 Tests: a name without a rank, a role whose name has a dash, declared, undeclared, a
       role the roster does not name, a malformed roster, and the message naming what is declared
 - [ ] 1.5 Refuse `igor serve` given a name whose last dash-separated part is not a whole number
@@ -64,9 +77,12 @@
       igor@<role>-1 is serving <role>. A run by hand would take its claims and remove its trees. Stop it first, or leave the work to it.
       ```
 
-      `igor run --plan` neither waits nor refuses, and skips the startup sweep. Test: a changed
-      or newly written file refuses; one missing or unchanged at both reads runs; `--plan` beside
-      a changed file runs at once and removes no tree
+      `igor run --plan` neither waits nor refuses, and skips the startup sweep. Once a run goes
+      ahead it writes `heartbeats/<role>-1.json` with an id of its own from the timer of 4.15,
+      its first write before its first cycle, and follows 4.24. `--plan` writes no heartbeat.
+      Test: a changed or newly written file refuses; one missing or unchanged at both reads runs
+      and writes its own id before its cycle; `--plan` beside a changed file runs at once,
+      writes nothing and removes no tree
 - [ ] 1.10 Refuse, when the configuration loads, a role whose name does not match
       `[a-z][a-z0-9-]*`, or for which `igor-worker-<role>-<rank>` is longer than 32 characters for
       any rank the role may run, with these messages, as written:
@@ -78,6 +94,9 @@
 
       Test: an uppercase letter, a dot, a leading digit, and a name that fits at rank 1 but not
       at a higher rank the roster declares
+- [ ] 1.11 Measure how long one heartbeat write takes on GitHub's Contents API, including a retry
+      after the state branch rejects it because another write moved the branch, and record in
+      `design.md` the bound `igor run`'s wait (1.9) uses for it
 
 ## 2. The marker
 
@@ -128,6 +147,14 @@
       sequence key, never a timestamp*
 - [ ] 2.16 Claim messages and their trailers are read only from comments the role's bot account
       wrote. Test: a person's comment carrying `Igor-Rank:` is not a claim message
+- [ ] 2.17 A bot comment whose updated time differs from its created time is not a claim message,
+      and none of its trailers is read. Test: an edited claim message adding `Igor-Supersedes:`
+      or removing `Igor-Handed-Over-By:` changes nothing a process reads
+- [ ] 2.18 Before building 2.17, measure on GitHub whether an unedited bot comment keeps its
+      updated time equal to its created time when people react to it, when it is hidden, and
+      when its issue is transferred. Record the result in `design.md`. If any of them changes
+      the updated time, 2.17 would make that claim message stop counting, so it goes back to
+      Adam before it is built
 
 ## 3. Contention
 
@@ -156,7 +183,8 @@
       sibling's file and when, by its own clock, it last saw them change. A claim is adoptable
       once three poll intervals have passed since then, or since this process started if later.
       A missing file does not change
-- [ ] 4.5 Working trees are named by role and rank. At startup a process removes those of its own
+- [ ] 4.5 Working trees are named `<role>-<rank>-<id>`, with an id holding no dash, and read from
+      the end of the name. At startup a process removes those of its own
       role and rank. At the start of each cycle it removes those of every rank the roster does not
       declare and that is gone to it. Never by age. With each tree go its outbox and its
       `<tree>-git` directory, where there is one. Each tree is removed as the worker user of the
@@ -205,11 +233,13 @@
       (`work-triage`)
 - [ ] 4.17 A process reads the roster at the start of each cycle. When its own rank is no longer
       declared, it starts no claim, finishes its item or hands it off out loud, as shutdown
-      does, keeps writing heartbeats meanwhile, and then exits. Where the configuration read at
-      a cycle fails a check a starting process makes, the process goes on under the last
-      configuration that passed and raises a condition naming the failing file and check, which
-      a later passing read clears; it never exits for it. Test: a malformed roster at a cycle
-      keeps the last roster and raises the condition, and a fixed one clears it
+      does, keeps writing heartbeats meanwhile, and then exits as 4.25 says. Where the
+      configuration read at a cycle fails a check a starting process makes, the process goes on
+      under the last configuration that passed and raises a condition naming the failing file
+      and check, of the read-cleared kind #171 (`seat-files`) defines in `stuck-conditions`; it
+      never exits for it. Whichever of #171 and this build lands second makes the condition that
+      kind. Test: a malformed roster at a cycle keeps the last roster and raises the condition,
+      and a fixed one clears it
 - [ ] 4.18 Tests for 4.16 and 4.17: a recovered claim with the Igor's pull request open is caught
       up, whether its own predecessor's or a gone sibling's, and a person's label stays; a
       returning rank does not count its superseded message; a rank removed from the roster is
@@ -227,13 +257,39 @@
 - [ ] 4.21 Only the rank whose claim message holds an item removes the role's label: standing
       down after a failed verification, setting an item down after a repeated failure before the
       worker (#173), and answering a stop. Any other rank drops out silently, removing and
-      posting nothing
+      posting nothing. #173's spec has only the holder count its failures before the worker;
+      whichever of #173's build and this build lands second makes a rank that does not hold the
+      item count none of its failures and post no set-down
 - [ ] 4.22 A stop said on a handed-over item is answered only by the rank whose claim message
       holds it; other ranks ignore it. Where no claim message counts, the rank that reaches the
       item answers it
 - [ ] 4.23 Tests for 4.21 and 4.22: a rank that does not hold the item and fails its verification
       leaves the label; the holder sets an item down; a stop on a handed-over item a sibling
       works is ignored by the other rank; a stop on a hand-over nobody has claimed is answered
+- [ ] 4.24 Each heartbeat write names the blob the process last wrote to its file, or, before its
+      first write, the blob the file held at its start, so that a write over another process's
+      is refused. On a refusal, and when a tree read gives its own file a blob id other than the
+      one it last wrote, the process reads the file's id. An id other than its own, written
+      since it started, means another process took its rank: it stops its worker, starts and
+      posts nothing, leaves its claims, logs the line below, as written, and exits with status
+      78. The id the file held at its start is its predecessor's, and a missing file holds none.
+
+      ```text
+      Another process took rank <rank> of <role>: its id is in heartbeats/<role>-<rank>.json. Stopping for good; start this rank again only once that process has stopped.
+      ```
+
+      Test: a write over another process's id is refused and the process exits 78 with that
+      line; `igor run` stops the same way when a restarted rank 1 overwrites its id; a
+      predecessor's id and a missing file stop nobody
+- [ ] 4.25 A process exiting because the roster no longer declares its rank logs the line below,
+      as written, and exits with status 79; no other exit uses 79. Test: the status and the line
+
+      ```text
+      The roster no longer declares rank <rank> of <role>. Exiting; systemd will not restart this rank.
+      ```
+- [ ] 4.26 Measure on a Linux host that a unit listing 79 in `SuccessExitStatus=` and
+      `RestartPreventExitStatus=` is not restarted after its process exits with 79, and shows as
+      inactive in `systemctl status`. Record the result in `design.md`
 
 ## 5. State
 
@@ -249,9 +305,13 @@
       lagging rank holds the mark down until it stops counting; with every rank gone, the lowest
       latest mark still applies, and never reaches earlier than the cold start's look-back
 - [ ] 5.6 A cycle appends its mark only after it has attempted every candidate it will attempt.
-      A cycle whose process crashes first appends none. A cycle cut short because its process
-      stood down holds its mark back as #101's change to `work-discovery` holds it for a cycle
-      whose budget ran out
+      A cycle whose process crashes first appends none. A cycle cut short, by a stand-down
+      among other reasons, holds its mark back by #101's rule in `work-discovery`, *Watermarks
+      reduce reconsideration without governing it*, which lists every reason a cycle that stops
+      early does so. Build the hold-back for a stand-down as that rule holds it back for an
+      exhausted budget. Adam decided the stand-down belongs in #101's rule, whose text does not
+      name it yet; it must before this change archives (listed in the proposal, since #101 is
+      under review)
 - [ ] 5.7 Every cycle also considers each open item carrying the role's label, whatever the mark
 - [ ] 5.8 Tests: a crash between triage and the claims leaves the items above the mark; a crashed
       rank's claim below every mark is taken over
@@ -275,6 +335,11 @@
       Igor's own artifact, and #150 adds one of its own, which its delta states. Whichever of #150
       and this change archives second copies the other's exception and scenarios into its delta
       by hand before archiving, or the archive drops them
+- [ ] 5.15 Where this process's own claim message holds an item whose Igor pull request still
+      merges, triage passes the item over with no triage call, unless the item or the pull
+      request has updated since this process last triaged it, or the pull request no longer
+      merges (`work-triage`). Keep each item's last triage time in memory. Test: no triage call
+      for an unchanged item; a new comment, or a pull request that stops merging, brings one
 
 ## 6. Documentation
 
@@ -295,3 +360,8 @@
 - [ ] 6.4 Every place that starts a role by its name alone gives the rank: `README.md` and
       `docs/deployment.md` say `igor serve <role>-<rank>`, `deploy/docker-compose.yml` runs
       `igor serve maintenance-1`, and the unit's header comment installs `igor@<role>-<rank>`
+- [ ] 6.5 `docs/deployment.md` says what exit statuses 78 and 79 mean and what to do: 78, read
+      the journal, fix what it names, and start the unit again; 79, nothing, unless the rank
+      should run, when the roster must declare it first. It says the abandonment bound, the
+      heartbeat period, the stand-down threshold and `igor run`'s wait follow the poll interval
+      and have no settings of their own

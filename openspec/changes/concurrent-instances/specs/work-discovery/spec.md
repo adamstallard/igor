@@ -94,10 +94,10 @@ When no rank counts, discovery SHALL use the lowest of every rank's latest mark,
 than the look-back a source with no watermark gets.
 
 A cycle SHALL append its mark only after it has attempted every candidate it will attempt, and a
-cycle whose process crashes first appends none. A cycle that stops early holds its mark back as
-*Watermarks reduce reconsideration without governing it* says. That requirement is cited as
-`condition-backoff` (#101) words it; #101 archives before this change. A cycle whose process stands down SHALL hold
-its mark back as that requirement holds it for a cycle whose budget ran out.
+cycle whose process crashes first appends none. A cycle that stops early, a cycle whose process stood down
+included, holds its mark back as `condition-backoff`'s (#101) *Watermarks reduce reconsideration
+without governing it* says. The reasons belong in that requirement, and this one adds none of its
+own; #101's text must name a stand-down before this change archives, as task 5.6 says.
 
 #### Scenario: A lagging rank holds the mark down
 
@@ -119,7 +119,8 @@ its mark back as that requirement holds it for a cycle whose budget ran out.
 
 #### Scenario: Every rank gone
 
-- **WHEN** every rank that saved a mark for a source is gone
+- **WHEN** the deciding process's own rank has saved no mark for a source, and every rank that
+  did is gone
 - **THEN** discovery uses the lowest of those ranks' latest marks, not a cold start
 
 #### Scenario: The fallback stops at the cold start's look-back

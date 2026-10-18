@@ -7,9 +7,9 @@ failure, or any condition it detects itself — it SHALL post a handoff to the i
 releasing. Silence after a claim MUST NOT be a permitted outcome, because the claim told
 others to stand off.
 
-Where several processes run one role, a process that has stood down, or whose claim message
-does not hold the item, posts nothing, as `work-claiming`'s *A claim that cannot be kept is given
-back, out loud* says.
+Where several processes run one role, a process that has stood down for missed heartbeats, whose
+claim message does not hold the item, or that found another process's id in its heartbeat file, posts nothing, an exception that `work-claiming`'s *A claim that cannot be kept is given back, out loud*
+states.
 
 **A stop directed at the Igor is exempt.** Stop releases the claim immediately and posting a
 handoff would delay it; the rationale does not apply either, since whoever issued the stop is
@@ -40,4 +40,9 @@ it — a one-line receipt, not a handoff.
 #### Scenario: A stood-down rank posts no handoff
 
 - **WHEN** a process stands down for missed heartbeats while its worker runs
+- **THEN** its worker stops and it posts nothing on the item
+
+#### Scenario: A process that found another's id posts no handoff
+
+- **WHEN** a process finds another process's id in its own heartbeat file while its worker runs
 - **THEN** its worker stops and it posts nothing on the item
