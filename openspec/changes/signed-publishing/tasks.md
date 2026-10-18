@@ -32,6 +32,15 @@
 - [ ] 0.10 Confirm bug-hunter has an entry point that mints its trailer against a given staged
       tree, run as a separate call after its run has ended. If not, stop and bring decision 12
       back to Adam
+- [ ] 0.11 Measure where bug-hunter's own triage draws its line on a prose pass's diff: whether
+      it skips exactly a diff touching only comments or docs, as decision 12 assumes, or also
+      skips specs and tests. Record the result in `design.md`; if the line differs, bring
+      decision 12 back to Adam
+- [ ] 0.12 Measure whether `prose check --pass`, `prose verify-staged` and bug-hunter's minting
+      script, run as Igor's service user, follow `GIT_DIR`, `GIT_WORK_TREE` and `GIT_INDEX_FILE`
+      when given #175's separate git directory, rather than a `.git` the worker can replace in
+      the tree. Record the result in `design.md`; if a script does not follow them, stop and
+      bring decision 12 back to Adam
 
 ## 1. Verifying and publishing
 
@@ -62,7 +71,8 @@
       revisions included, and with `Refs #N` on gate one's commits, its revisions included
 - [ ] 2.4 After the prose pass, run bug-hunter's triage on the prose pass's diff: skip a diff
       that touches only comments or docs, and run one more bug-hunter iteration on anything
-      else, before 2.1 stages (proposal, decision 12)
+      else, before 2.1 stages (proposal, decision 12). No prose pass runs after that iteration
+      (decision 13)
 - [ ] 2.5 In `produce()` and in #150's `commitOnBranch`, check that the uploaded tree equals both signed trees, that
       `prose verify-staged` accepts the trailer, and that the subject is the issue title with
       any closing keyword dropped
@@ -70,7 +80,7 @@
 - [ ] 2.7 Tests: a tree mismatch, a message mismatch and a changed subject each refuse the
       commit, and a tree mismatch goes back to no step; a prose-pass edit is in the tree both
       trailers name; a comments-only prose diff runs no second bug-hunter iteration and a
-      prose diff that changes code runs one; the signing calls run in Igor's code, from the
+      prose diff that changes code runs one, after which no prose pass runs; the signing calls run in Igor's code, from the
       pinned skills directory; a gate-one commit ends with
       `Refs #N`; gate two's `commitOnBranch` commit is signed and verified
 

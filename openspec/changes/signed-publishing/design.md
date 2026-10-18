@@ -58,6 +58,12 @@ second call accepts only a token its first call issued. `Bug-hunter-Tree:` names
 tree, which bug-hunter reviewed in full apart from prose-pass edits its triage judged to touch
 only comments or docs.
 
+**Accepted by Adam, 2026-10-18: no second prose pass after the extra iteration.** Comments that
+iteration writes reach the tree after the prose pass, so no prose pass reads them, and the
+`Prose:` trailer Igor then makes vouches for a tree holding comments no prose pass read. The
+prose pass is not meant to change code, so a prose-pass diff that needs another hunt is an edge
+case, and Adam judged the gap not worth a second prose pass.
+
 Two mismatches can still refuse a commit, and neither goes back to a step, because Igor's code
 made both bindings. The tree the trailers name, from Igor's clone, can differ from the tree the
 Git Data API builds for the commit (item 3, task 0.4). The message Igor commits can differ from

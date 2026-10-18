@@ -106,6 +106,20 @@
     *Rejected:* the steps running the signing calls themselves, which under #175 they cannot do
     against Igor's index; and bug-hunter running again after every prose pass, which spends a
     hunt on a diff of comments.
+    Adam confirmed on 2026-10-18 that this decision holds over #139, which had the model step
+    run both of prose's calls and mint bug-hunter's trailer itself; #139's body now says so.
+13. **No second prose pass after the extra bug-hunter iteration (Adam, 2026-10-18).** Comments
+    that iteration writes reach the tree after the prose pass, and no prose pass reads them.
+    This is an accepted gap. The prose pass is not meant to change code, so a prose diff that
+    needs another hunt is an edge case, not worth a second prose pass.
+    *Rejected:* a second prose pass after that iteration, and narrowing the `task-execution`
+    rule that the prose pass rewrites the docs and comments the change touches, so that it
+    excludes those comments.
+14. **Confirmed (Adam, 2026-10-18): where each signing failure goes back.** A tree or message
+    mismatch when Igor commits goes back to no step: between the tree the trailers name and the
+    tree the Git Data API builds, or between the message committed and the one `Prose:` hashes.
+    It is Igor's own bug, so the item fails loudly. A token that prose's second call refuses
+    goes back to the prose pass, which runs its first call again and reports a new token.
 
 **Still open:**
 
@@ -119,6 +133,15 @@ session id, or 0.4 finds the two trees differ, that changes which session the st
 which tree the trailers are made against
 (`design.md`, items 1 and 3). A failure of 0.9 or 0.10 means decision 12 needs a change to the
 prose or bug-hunter skill, and comes back to Adam before building.
+
+Two more measurements, found by a consistency read on 2026-10-18: task 0.11, whether
+bug-hunter's own triage skips exactly a diff touching only comments or docs, as decision 12
+assumes; and task 0.12, whether the signing scripts, run as Igor's service user, can be pointed at
+#175's separate git directory and index. If they are not, they run in the worker's tree and follow
+a `.git` the worker can replace. That `.git` can name its own hooks and config, such as
+`core.fsmonitor`, so a git command a script runs could execute the worker's code as Igor. If
+0.11 finds a different line, or 0.12 finds a script that cannot be pointed at that directory,
+decision 12 comes back to Adam before building.
 
 ## Why
 

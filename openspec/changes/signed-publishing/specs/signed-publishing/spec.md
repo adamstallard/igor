@@ -39,6 +39,9 @@ SHALL be signed by that step. That
 covers pull request descriptions, replies, questions, and any other model-written post to
 GitHub, Discord or Linear. The step SHALL sign with the prose skill's `prose sign`, which
 appends a `prose ✓ <hash>` footer computed over the text above it. No model step SHALL post.
+A commit message is the exception: the prose pass writes it, and Igor's code signs it, as
+`task-execution`'s *A commit is signed by bug-hunter and the prose pass before it is committed*
+requires.
 
 Running the check is what puts the prose rules in front of the model while it writes, and a
 footer can only come from running it.
@@ -105,7 +108,9 @@ end of the body where there is no marker. `prose verify-post` SHALL run on exact
 ### Requirement: A failed check goes back to the model step, a bounded number of times
 
 When a check fails, the code SHALL return the text to the model step that wrote it, with the
-reason, and that step SHALL redo its check and sign again. After two failed
+reason, and that step SHALL redo its check and sign again. A commit's tree or message mismatch is
+the exception: it goes back to no step, as `task-execution` requires, because Igor's code made
+both bindings: the trailers to the tree, and the `Prose:` trailer to the message. After two failed
 attempts the code SHALL publish nothing and SHALL record the failure, with each reason, to the
 state branch.
 
@@ -114,6 +119,11 @@ state branch.
 - **WHEN** a text fails verification
 - **THEN** the model step receives it back with the reason it failed
 - **AND** returns it checked and signed again
+
+#### Scenario: A commit's tree mismatch goes back to no step
+
+- **WHEN** a commit's uploaded tree differs from the tree its trailers name
+- **THEN** no model step receives it back, and the item's failure is recorded
 
 #### Scenario: Repeated failure publishes nothing
 

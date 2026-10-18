@@ -26,7 +26,8 @@ SHALL end by reporting its pass result: bug-hunter's result block, holding its `
 value and any open decisions, and the pass token the prose pass's first `prose check` call
 printed. Where both run, bug-hunter SHALL then run its usual triage on the prose pass's diff: a
 diff touching only comments or docs SHALL be skipped, and any other diff SHALL get one more
-bug-hunter iteration. After the last model step exits, Igor SHALL stage the
+bug-hunter iteration. No prose pass SHALL run after that iteration, so comments it writes reach
+the commit unread by the prose pass. After the last model step exits, Igor SHALL stage the
 change once, in its own index. Igor's code SHALL then run the signing calls itself, with the
 scripts from the pinned skills directory: prose's second call, with the prose pass's token, and
 bug-hunter's minting script, which writes `Bug-hunter-Tree:`, both against that staged tree. So
@@ -57,6 +58,11 @@ trailers of the steps that ran. Merge commits carry none of these trailers.
 - **WHEN** a role lists `prose` and `bug-hunter`, both signed trees equal the uploaded tree,
   the trailer verifies, and the subject is the issue title
 - **THEN** the message is committed with the trailers appended
+
+#### Scenario: An extra bug-hunter iteration gets no second prose pass
+
+- **WHEN** the prose pass's diff changes code and bug-hunter's extra iteration adds a comment
+- **THEN** Igor stages and signs after that iteration without running the prose pass again
 
 #### Scenario: A tree mismatch refuses the commit
 
