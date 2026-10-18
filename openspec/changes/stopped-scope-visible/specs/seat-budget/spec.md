@@ -5,7 +5,10 @@
 Budget reporting SHALL show a seat that an open condition has stopped as stopped, on a line of the
 seat's own, naming the cure key and what would clear it. That state SHALL be distinguishable from
 a seat whose credential could not be read, from a seat whose credential the provider refused, and
-from a seat with no headroom left or with no unreset reading of its windows. A condition scoped to a role SHALL
+from a seat with no headroom left or with no unreset reading of its windows. Budget reporting
+SHALL NOT show a seat as stopped where its only open condition is that Igor could not decrypt its
+seat file (#171, `seat-files`). That seat SHALL be shown on the line for a credential that could
+not be read, with the decryption failure as the reason, and the line SHALL name the condition. A condition scoped to a role SHALL
 NOT appear in budget reporting, and reading the report SHALL NOT clear a condition.
 
 Whether a seat can be spent from is the question a budget report exists to answer, and a stopped
@@ -32,6 +35,13 @@ there files it where its reader is not.
 - **WHEN** a seat is stopped by a condition
 - **THEN** it is not reported as a credential that could not be read
 - **AND** it is not reported as a credential the provider refused
+
+#### Scenario: A seat Igor could not decrypt reads as unreadable
+
+- **WHEN** a seat is under a condition because Igor could not decrypt its seat file
+- **THEN** the report shows it on the line for a credential that could not be read, naming the
+  decryption failure and the condition
+- **AND** it does not show the seat as stopped
 
 #### Scenario: Stopped is not out of headroom
 

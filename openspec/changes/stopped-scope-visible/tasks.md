@@ -12,7 +12,10 @@
       role could spend from stopped — resolved where the gate already resolves a role's seats
 - [ ] 1.2 Only stopped scopes feed that decision. A seat with no headroom, an unreset window, a
       role held back by pacing or its own ceiling are excluded, with a comment saying why in the
-      present tense: a window reopens on its own clock, a stopped scope waits for a person
+      present tense: a window reopens on its own clock, a stopped scope waits for a person.
+      If #171 (`seat-files`) has been built, also exclude a seat whose only open condition is that
+      Igor could not decrypt its seat file, as a seat with no headroom (Adam, 2026-10-17). If it
+      has not, file an issue asking #171 to add the exclusion, and link it here
 - [ ] 1.3 `serve` reports the verdict to its caller rather than ending the process itself, so
       the loop stays testable without a process exit
 - [ ] 1.4 `igor serve` sets a non-zero exit status from it, after printing the cure keys, the
@@ -21,7 +24,8 @@
 - [ ] 1.6 Tests: the Igor's own credential; the role this process serves; a role it does not
       serve; one seat stopped with another behind it; every seat that serves the role stopped; a spent
       budget alone; one seat stopped and the rest merely out of headroom; a signalled shutdown
-      with nothing open
+      with nothing open; and, with 1.2's exclusion, every seat undecryptable, which keeps the
+      loop running and gives each item back with a comment naming the condition
 
 ## 2. The probe survives the restart the exit causes
 

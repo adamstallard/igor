@@ -114,6 +114,16 @@ question, every seat that serves the role stopped, is the same omission from the
 answers both with one rule and needs no new field: the cure key is the scope, and the seats a role
 can spend from are already resolvable where a seat is chosen.
 
+**Decided (Adam, 2026-10-17): a seat Igor could not decrypt never makes the process exit.** #171
+(`seat-files`) opens a condition on a seat whose file Igor cannot decrypt, but treats the seat
+like one with no headroom left, not like a stopped seat. So for this change's exit it counts as
+a budget wait, which never exits, rather than as a stopped scope. Where every seat a role could
+spend from is such a seat, the process keeps polling, and gives each item back to a person with
+a comment naming the condition, as #171 has a role with no usable seat do. It takes work again
+once Igor's next read of the seat files decrypts one; Igor reads them when it starts and, once
+#176 specifies pulling the lore checkout, on each pull. *Rejected:* exiting in that case, which
+would treat as stopped a seat #171 treats as out of headroom.
+
 **Left open: whether a credential the provider refused belongs in the same determination.** It
 waits for a person exactly as a stopped scope does, which is the argument for folding it in. It is
 a different mechanism with its own hold, its own cooldown and its own reporting line, and it is

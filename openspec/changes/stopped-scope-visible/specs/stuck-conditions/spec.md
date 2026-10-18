@@ -11,7 +11,13 @@ reporting the stop as the requirements below specify.
 Whether anything is left SHALL be determined rather than assumed from the cure's scope: a
 condition whose cure is the Igor's own leaves nothing; a condition stopping the role this process
 serves leaves nothing; a stopped seat leaves nothing where every seat that role could spend from
-is stopped, and leaves the process working where one is not.
+is stopped, and leaves the process working where one is not. One open condition SHALL NOT count
+as stopping a seat: that Igor could not decrypt the seat's file (#171, `seat-files`). #171
+treats such a seat like one with no headroom left, so it counts as a budget wait, as the next
+paragraph describes. Where every seat a role could spend from is such a seat, the process SHALL
+keep polling, and SHALL give each item back to a person with a comment naming the condition, as
+#171 has a role with no usable seat do. It takes work again once Igor's next read of the seat
+files decrypts one.
 
 A long-running service has exactly one state nothing watches for: up and doing nothing. It passes
 every liveness check, its logs are quiet in the way a quiet week is quiet, and the only thing that
@@ -57,6 +63,13 @@ decides to merge the two.
 
 - **WHEN** a condition has stopped each seat the role this process serves could spend from
 - **THEN** the service exits with a non-zero status, naming those cure keys
+
+#### Scenario: A seat Igor could not decrypt is not an exit
+
+- **WHEN** every seat the role this process serves could spend from is under a condition
+  because Igor could not decrypt its seat file
+- **THEN** the exit status is unaffected and the loop goes on running
+- **AND** each item is given back to a person with a comment naming the condition
 
 #### Scenario: An exhausted budget is not a reason to exit
 
@@ -173,8 +186,9 @@ anything about.
 
 Reading cannot clear, for the reason a breaker cannot be reset by being asked: an operator who
 believes they have fixed a credential and has not would clear the stop and pay for the belief on
-the next items. The probe is the only thing that closes a condition, and it closes it on an
-observation rather than on a claim.
+the next items. A condition closes only on an observation, never on a claim. For most conditions
+that observation is the probe. For a seat Igor could not decrypt it is Igor's next read of the
+seat files, at start or on a pull of the lore checkout, decrypting that seat's file (#171).
 
 #### Scenario: A role-scoped stop is visible to somebody who did not know which role
 
