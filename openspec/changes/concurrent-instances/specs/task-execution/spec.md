@@ -26,9 +26,7 @@ other two unchanged.
 was the only safe signal while a tree could belong to any live sibling. A tree named by its
 role and rank says whose it is, so the sweep no longer needs an age.
 
-**Migration**: A process started with no rank still names its trees with rank 1, so a tree name
-with no rank always predates the change. The sweep leaves such trees, and they stay until removed
-by hand or by a reboot that clears the temp directory.
+**Migration**: None. No setting named the threshold.
 
 ## ADDED Requirements
 
@@ -53,8 +51,9 @@ them neither.
 ### Requirement: The sweep removes trees by rank, never by age
 
 A working tree's name SHALL carry the role and rank of the process that made it. Working trees
-SHALL be kept in a directory every rank on the host shares, such as the directory systemd's
-`StateDirectory=` gives the unit, never in a temporary directory private to one process.
+SHALL be kept in a directory every rank on the host shares, never in a temporary directory
+private to one process. Under the systemd unit that directory SHALL be `/var/lib/igor/trees`,
+under the `StateDirectory=` every instance of the template shares.
 
 At startup, before its first cycle, a process SHALL remove the trees of its own role and rank.
 At the start of each cycle, it SHALL remove the trees of each rank of its role that the roster
@@ -81,17 +80,18 @@ declared rank, of a rank that is not gone, or of another role, whatever its age.
 #### Scenario: A retired rank's tree is removed once the rank is gone
 
 - **WHEN** a process finds a tree named with a rank of its role that the roster no longer
-  declares, and it has watched that rank's heartbeat fail to move forward for three poll
+  declares, and it has watched that rank's heartbeat fail to change for three poll
   intervals
 - **THEN** it removes the tree, its outbox and its git directory
 
 #### Scenario: A retired rank's tree is left while the rank runs
 
 - **WHEN** a process finds a tree named with a rank the roster no longer declares, whose
-  heartbeat still moves forward
+  heartbeat still changes
 - **THEN** it leaves the tree
 
 #### Scenario: Every rank on the host sees the trees
 
-- **WHEN** two ranks of one role run on one host
-- **THEN** each can see the other's trees, so a sweep finds a retired rank's trees
+- **WHEN** two ranks of one role run on one host under the systemd unit
+- **THEN** both keep their trees in `/var/lib/igor/trees`, so a sweep finds a retired rank's
+  trees

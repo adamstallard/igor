@@ -56,7 +56,7 @@ role SHALL refuse to start, naming the ranks the roster declares.
 
 #### Scenario: A declared rank starts
 
-- **WHEN** the roster lists `generalist: [1, 2]` and `igor serve generalist.2` starts
+- **WHEN** the roster lists `generalist: [1, 2]` and `igor serve generalist-2` starts
 - **THEN** it runs as rank 2 of the `generalist` role
 
 #### Scenario: A rank outside the declared roster fails validation
@@ -67,40 +67,63 @@ role SHALL refuse to start, naming the ranks the roster declares.
 #### Scenario: A role the roster does not name runs rank 1
 
 - **WHEN** the roster does not name the `reviewer` role
-- **THEN** `igor serve reviewer` starts as rank 1, and `igor serve reviewer.2` refuses to start
+- **THEN** `igor serve reviewer-1` starts as rank 1, and `igor serve reviewer-2` refuses to start
 
 #### Scenario: A malformed roster is refused
 
 - **WHEN** the roster lists rank `0`, lists one rank twice, or names a role with no role file
 - **THEN** the configuration is refused, naming the entry
 
-### Requirement: A role's name has no dot
+### Requirement: A process is named by its role and rank
 
-A role's name SHALL NOT contain a dot. A role file whose name does, such as
-`roles/front.end.yaml`, SHALL be refused, and the refusal SHALL say that a process is named
-`<role>.<rank>`, so a dot in the role would make the name ambiguous.
+Every process `igor serve` runs SHALL be named `<role>-<rank>`, with the rank always written: the systemd
+instance is `igor@<role>-<rank>`, such as `igor@generalist-2`, and it starts
+`igor serve <role>-<rank>`. The rank SHALL be the last dash-separated part of the name, so a
+role's name may itself contain dashes. `igor serve` given a name whose last dash-separated part
+is not a whole number from 1 SHALL refuse to start, saying the name is `<role>-<rank>`. The
+role's GitHub App identity SHALL be the same for every rank: no rank has an App of its own.
 
-#### Scenario: A role name with a dot is refused
+#### Scenario: Every rank acts as the role's App
 
-- **WHEN** a role file is named `roles/front.end.yaml`
-- **THEN** validation fails, saying that a dot in a role's name conflicts with `<role>.<rank>`
+- **WHEN** `igor serve generalist-1` and `igor serve generalist-2` run
+- **THEN** both act on GitHub as the `generalist` App
 
-### Requirement: The role's environment file holds single-quoted values
+#### Scenario: A role whose name has a dash
+
+- **WHEN** the roster lists `front-end: [1, 2]` and `igor serve front-end-2` starts
+- **THEN** it runs as rank 2 of the `front-end` role
+
+#### Scenario: A name without its rank is refused
+
+- **WHEN** `igor serve generalist` starts
+- **THEN** it refuses to start, saying the name is `<role>-<rank>`, such as `generalist-1`
+
+### Requirement: The role's environment file holds single-quoted or plain values
 
 Where a process starts under the systemd unit, the unit's shell reads the role's environment
-file, `/etc/igor/<role>.env`, with its dot command, so every value in it SHALL be written in
-single quotes, as `KEY='value'`. When the file exists, a starting process SHALL refuse to start
-if any value in it is in double quotes, naming the line and the key and never the value. This
-check reads the file only for its quoting; the credentials still reach the Igor only through
-its environment.
+file, `/etc/igor/<role>.env`, with its dot command, so every value in it SHALL be single-quoted
+or plain. A value is single-quoted when it is one or more strings in single quotes, joined by
+`\'` where the value itself holds a single quote, as `'it'\''s'`; a single-quoted string may
+span lines, as a private key does. A value is plain when every
+character in it is a letter, a digit, or one of `_ . / : @ -`. When the file exists, a starting
+process SHALL refuse to start if any value in it is neither, naming the line and the key and
+never the value. Every double-quoted value is refused, and so is every unquoted value holding
+`$` or a backtick. This check reads the file only for its quoting; the credentials still reach the Igor only
+through its environment.
 
 #### Scenario: A double-quoted value is refused
 
 - **WHEN** `/etc/igor/backend.env` holds the line `GITHUB_APP_ID="123"`
-- **THEN** `igor serve backend` refuses to start, naming that line and `GITHUB_APP_ID`
+- **THEN** `igor serve backend-1` refuses to start, naming that line and `GITHUB_APP_ID`
 - **AND** the refusal does not print the value
 
-#### Scenario: Single-quoted values start
+#### Scenario: An unquoted value the shell would change is refused
 
-- **WHEN** every value in `/etc/igor/backend.env` is in single quotes
+- **WHEN** `/etc/igor/backend.env` holds the line `TOKEN=ab$cd`
+- **THEN** `igor serve backend-1` refuses to start, naming that line and `TOKEN`, and not the value
+
+#### Scenario: Single-quoted and plain values start
+
+- **WHEN** every value in `/etc/igor/backend.env` is in single quotes, or plain, as
+  `GITHUB_APP_PRIVATE_KEY_FILE=/etc/igor/backend.pem`
 - **THEN** the check passes

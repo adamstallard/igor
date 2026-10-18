@@ -87,7 +87,7 @@ source SHALL count, for each rank of the saving process's role, and the mark dis
 SHALL be the lowest of them. A sibling's mark
 SHALL count only while the deciding process counts that rank as not gone, under the abandonment
 bound that `work-claiming` defines, and only once the deciding process has seen that rank's
-heartbeat move forward since it started. A process's own rank's mark always counts.
+heartbeat change since it started. A process's own rank's mark always counts.
 
 When no rank counts, discovery SHALL use the lowest of every rank's latest mark, but no earlier
 than the look-back a source with no watermark gets.
@@ -100,7 +100,7 @@ first appends none.
 #### Scenario: A lagging rank holds the mark down
 
 - **WHEN** rank 1 has saved a mark later than rank 2's for the same source, neither has missed
-  three heartbeats, and the deciding process has seen both heartbeats move forward since it
+  three heartbeats, and the deciding process has seen both heartbeats change since it
   started
 - **THEN** discovery uses rank 2's mark
 
@@ -112,7 +112,7 @@ first appends none.
 #### Scenario: A rank not yet seen alive does not hold the mark down
 
 - **WHEN** a process restarts, and a sibling rank's latest mark is lower than every other, and
-  the process has not yet seen that rank's heartbeat move forward
+  the process has not yet seen that rank's heartbeat change
 - **THEN** that rank's mark does not count
 
 #### Scenario: Every rank gone

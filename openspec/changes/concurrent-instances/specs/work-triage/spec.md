@@ -1,5 +1,58 @@
 ## MODIFIED Requirements
 
+### Requirement: Items with work already in flight are skipped
+
+Triage SHALL skip any item the adapter reports as having work already in flight, an artifact
+such as a pull request, unless that artifact is the Igor's own and cannot merge, or unless the role's label holds the item with a
+claim this process takes over: its own predecessor's, or a gone rank's, as `work-claiming`
+defines. This rule is universal and MUST NOT be configurable; only its detection is
+adapter-supplied.
+
+The exceptions preserve the reason rather than qualifying it. Work in flight is skipped because
+duplicating work in review is never an organizational preference — and an artifact of one's own
+that cannot merge is not duplication, it is the same work, unfinished, which nothing else will
+bring back. A claim left on the Igor's own artifact by a process that is no longer behind it is
+not duplication either: the process that takes it over catches the item up rather than
+re-working it.
+
+#### Scenario: Item with an open linked artifact skipped
+
+- **WHEN** an item already has work in flight against it
+- **THEN** triage skips it
+- **AND** the reason recorded identifies work in flight
+
+#### Scenario: Rediscovery after completion does not duplicate work
+
+- **WHEN** an Igor has completed an item, unassigned itself, and the item is rediscovered
+- **THEN** the open artifact is detected and the item is skipped
+- **AND** no second artifact is produced
+
+#### Scenario: Rule not overridable by configuration
+
+- **WHEN** a role or org base attempts to disable the in-flight skip
+- **THEN** validation fails, because duplicating work in review is never an organizational preference
+
+#### Scenario: An Igor's own artifact that cannot merge is a candidate
+
+- **WHEN** an item's in-flight artifact was produced by this Igor and no longer merges
+- **THEN** it is not skipped
+
+#### Scenario: A healthy artifact of one's own is still skipped
+
+- **WHEN** an item's in-flight artifact was produced by this Igor and merges cleanly
+- **THEN** it is skipped, as before
+
+#### Scenario: Somebody else's conflicting artifact is not adopted
+
+- **WHEN** an item's in-flight artifact was produced by another party and cannot merge
+- **THEN** it is skipped, because it is theirs
+
+#### Scenario: A gone rank's claim on the Igor's artifact is not skipped
+
+- **WHEN** an item's in-flight artifact was produced by this Igor, and the role's label holds the
+  item with a claim message of a rank that is gone
+- **THEN** it is not skipped, and the process that takes the claim over catches the item up
+
 ### Requirement: An item held by another party is never a candidate
 
 Triage SHALL skip any item whose holder field names a party other than the running Igor. This

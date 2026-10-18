@@ -10,100 +10,122 @@ Adam decided these on 2026-10-13 and 2026-10-17. `design.md` gives the reasoning
    depend on a cache whose loss must cost only re-examination.
 2. **Claim messages are ordered among themselves by the surface's sequence key, never by a
    timestamp.** A claim message and the item's latest release, a label event, share no sequence
-   key, so those two are compared by timestamp, and a message in the release's second does not
-   count.
+   key, so those two are compared by timestamp. A message in the release's second does not
+   count, and that item is claimed at a later cycle: nobody waits for the second to pass.
 3. **Messages from before the item's latest release, and messages of gone ranks, do not count.**
-   A rank is *gone* once the deciding process has watched its heartbeat fail to move forward for
-   three polls (decision 11).
+   A rank is *gone* once the deciding process has watched its heartbeat fail to change for three
+   polls (decision 11).
 4. **A process that loses to its own role keeps the role's label on the item,** since the label
    is the winner's too.
 5. **A claim is verified within one poll interval of its message,** or the process stands down.
 
 **Rank**
 
-6. **Rank comes from the systemd instance name,** `igor@<role>.<rank>`; `igor serve <role>` is
-   rank 1. One template unit loads the role's credentials through a shell wrapper, and the
-   role's file holds single-quoted values, which a starting process checks.
+6. **Rank comes from the systemd instance name,** `igor@<role>-<rank>`, with the rank always
+   written as the name's last dash-separated part. The role's GitHub App identity is the same
+   for every rank. One template unit loads the role's credentials from `/etc/igor/<role>.env`
+   through a shell wrapper, and a starting process refuses that file unless every value in it is
+   single-quoted or plain: made only of letters, digits and `_ . / : @ -`.
 7. **A role's processes share one identity and differ only by rank.** The roster, a list of ranks
-   per role under `roster` in `igor.config.yaml`, declares which may run. A role's name may not
-   contain a dot.
+   per role under `roster` in `igor.config.yaml`, declares which may run, and a role it does
+   not name runs rank 1 only.
 8. **Rank k starts at its k-th candidate, and contends only when it has fewer than k.** A
    contending rank waits `k − 1` settle intervals and re-reads before claiming. *Rejected:* a
    shuffled order, which makes collisions rarer but still produces claim-and-retract comments.
+   Rank 1 comes first everywhere: the open change `directed-interaction`, which adds requests
+   people make by mentioning an Igor as their own list of candidates, now has rank 1 start at the
+   first request too.
 9. **A hand-over among one role's ranks goes through the same contest.** A rank taking over a
-   handed-over item records the hand-over in its claim message, so the item still reads as
-   handed over.
+   handed-over item records the hand-over in its claim message, as `Igor-Handed-Over-By:
+   <login>`, so the item still reads as handed over.
+10. **`igor run <role>` runs as rank 1, and refuses when a process is serving rank 1,** naming
+    it. A role nobody serves runs by hand as before.
 
 **Recovery and the abandonment bound**
 
-10. **A restarted rank takes back its predecessor's claims;** where the Igor's pull request is
-    open, it does not re-work the item. It gives the claim back as the Igor does after bringing
-    its own pull request up to date (a *catch-up*), leaving the pull request open and a
-    person's label in place.
 11. **Each rank writes a heartbeat to its own file on the state branch every poll interval,** its
-    first before its first cycle. A process counts a sibling gone only once it has itself watched
-    the sibling's heartbeat fail to move forward for three polls. *Rejected:* judging by the
-    file's age, which a rolled-back state branch defeats.
+    first before its first cycle. The file holds a counter the rank increments on each write,
+    and a process counts a sibling gone only once it has itself watched that counter fail to
+    change for three of its own polls. No time in the file is compared across processes.
+    *Rejected:* judging by the file's age, which a rolled-back state branch defeats, and by the
+    times in the file, which a clock stepped back defeats.
 12. **A process reads all its role's heartbeat files in one request,** before choosing each
     candidate and before verifying.
 13. **A gone rank's claims may be taken by any process,** which first removes the label and adds
-    it again, then waits out that release's second before posting.
-14. **A rank removed from the roster has its claims adopted only once it is gone,** and a process whose own
-    rank leaves the roster stands down and exits.
-15. **A process that cannot write its heartbeat for two intervals stands down,** starting no
-    claim and stopping its worker at the next checkpoint, and keeps the claim. A worker is
-    required to reach a checkpoint at least once every two intervals; where it can go longer
-    than one, the process stands down at one missed heartbeat. Task 4.15 measures the real gap.
-16. **`ABSOLUTE_CEILING_MS` is removed.** A person's stop ends a worker that never finishes.
-    Working trees are named by role and rank, kept where every rank on the host can see them,
-    and swept by rank, never by age.
+    it again, then posts its claim message at once. Decision 14 is the one exception.
+14. **A claim left on an item with the Igor's open pull request is caught up, whoever left it.**
+    The process taking it over brings the pull request up to date rather than re-working the
+    item, and gives the claim back, keeping a person's label. Taking over a gone rank's claim
+    here, it does not remove and re-add the label as decision 13 does: its own claim message
+    supersedes the gone rank's for good.
+15. **A rank removed from the roster shuts down:** it finishes its item or hands it off out
+    loud, then exits. Siblings adopt its claims only if it dies first.
+16. **A process that cannot write its heartbeat for two intervals stands down,** starting no
+    claim and stopping its worker at the next checkpoint, and keeps the claim in silence, since
+    a sibling may already have taken the item over. A worker reaches a checkpoint at least once
+    every two intervals; where it can go longer than one, the process stands down at one
+    missed heartbeat.
+17. **`ABSOLUTE_CEILING_MS` is removed.** A person's stop ends a worker that never finishes.
+    Working trees are named by role and rank, kept in `/var/lib/igor/trees` where every rank on
+    the host sees them, and swept by rank, never by age.
 
 **Discovery and state**
 
-17. **Discovery uses the lowest of the ranks' latest marks,** counting a sibling's only once this
+18. **Discovery uses the lowest of the ranks' latest marks,** counting a sibling's only once this
     process has seen it alive. With every rank gone, it uses the lowest of every latest mark, no
     earlier than the cold start's look-back.
-18. **A cycle appends its mark only after attempting every candidate,** and considers every
+19. **A cycle appends its mark only after attempting every candidate,** and considers every
     labelled item whatever the mark, passing over before triage any item a live sibling holds.
-19. **Every state file more than one process writes is written so a retry discards nothing,**
+20. **Every state file more than one process writes is written so a retry discards nothing,**
     which for `discovery.json` and `deferred.json` means a log replayed on read.
-20. **A `condition-backoff` probe (PR #101) records its rank and lapses when that rank is gone,**
+21. **A `condition-backoff` probe (PR #101) records its rank and lapses when that rank is gone,**
     in place of the ceiling-based `SWEEP_AFTER_MS`.
 
 **Still open:**
 
-- Whether a process claiming an unlabelled item should also wait out the second of the item's
-  latest release, as a taker does. Without the wait, a claim right after a sibling finishes the
-  item can land in that second and not count, costing a cycle.
-- What a worker's checkpoint gap turns out to be (task 4.15). Standing down at one missed
-  heartbeat covers gaps of up to two poll intervals, and neither rule covers a longer gap.
-- Measurements the requirements rest on: same-second claim ids on GitHub (task 2.12), and
+- **Checkpoints on `main` wait for a worker event** (task 4.15). The claim is re-read on a
+  worker event at most every 30 seconds, and a worker may go 5 minutes without one while the
+  model writes a turn and 30 minutes while a tool runs. That breaks the rule of a checkpoint
+  every two intervals at the default 10-minute poll. A stand-down needs no tracker read, so it
+  could stop the worker on a timer instead.
+- **Whether a run by hand may wait a poll interval.** To see rank 1's counter change, `igor run`
+  waits one poll interval before running, 10 minutes at the default. The question is whether
+  that wait is acceptable, or a run by hand should start at once and risk running beside rank 1.
+  Either way, a served rank 1 that has stood down looks unserved.
+- **Whether `igor run --plan` may run beside a serving rank 1.** It claims nothing, but its
+  startup sweep would remove rank 1's trees, so the spec refuses it too. A plan that sweeps
+  nothing could be allowed.
+- **Adam to confirm: "the counter advanced" read as "the file changed".** A restarted rank cannot
+  trust its own file for where its counter stood, since a lost or rolled-back state branch puts
+  an older one back. So the spec has the file also hold an id the process picks at start, and
+  counts a heartbeat when the id and counter differ from the last read, not only when the
+  counter is higher. A rolled-back file then reads as changed once, which postpones a gone
+  verdict and never hastens one.
+- **How a superseding claim message is told from a contending one.** Decision 14 makes the gone
+  rank's message stop counting for good, but its rank, returning, cannot tell an adopter's later
+  message from a contender's unless the message says so. Task 2.14 proposes a trailer,
+  `Igor-Supersedes: <rank>`.
+- **Measurements the requirements rest on:** same-second claim ids on GitHub (task 2.12),
+  whether a label event's time and a comment's time come from one clock (task 2.15), and
   requests per cycle per rank against the App's rate limit (task 4.19).
-- **A rank whose clock goes back.** A heartbeat counts only when its time is later than any read
-  from the file before. A rank restarted on a host whose clock is behind, or a clock stepped
-  back, writes times that never count, so a live rank is counted gone and its claims are taken
-  while it works. The model assumes this never happens. A boot id or a counter in the file
-  would remove the dependence on the clock.
-- **`igor run <role>` beside a serving rank 1.** A person's run with no rank is rank 1, so it
-  reads the serving rank 1's claims as its predecessor's and re-works them, and its startup
-  sweep removes that rank's trees.
-- **A gone rank's claim with the Igor's pull request open.** A restarted rank releases such a
-  claim as a catch-up, but a sibling taking over a gone rank's claim has no such rule: triage
-  skips the item as work in flight, and its label stays.
-- **A catch-up's claim message.** A catch-up that keeps a person's label makes no release, so
-  its own claim message keeps counting after it ends, and a later claim by another rank loses to
-  it.
-- **Whether the start check should refuse an unquoted value too.** The shell expands `$`,
-  `` ` `` and `\` in an unquoted value as well.
-- **Whether a process whose rank leaves the roster should finish or hand off its item,** as
-  shutdown does, rather than leave the claim for a sibling.
-- **Whether a process that stands down should keep its claim in silence.** The spec makes this
-  an exception to *A claim that cannot be kept is given back, out loud*, since a process that
-  cannot write its heartbeat may not be able to write to the tracker either.
+- **The role's environment file is read by the shell before Igor checks it,** so a `$(...)` in
+  an unquoted or double-quoted value has already run when Igor refuses to start. A check the
+  unit runs before the dot command would refuse first.
+- **Other give-backs still remove the shared label.** A process keeps the label when it loses to
+  a sibling, but the in-force rules have a failed verification, or a failure before the worker,
+  release the claim, which removes the label a sibling's winning claim shares.
+- **A stop on a handed-over item that another rank is working.** The in-force rule has the Igor
+  remove the label and post a receipt when it sees a stop while no run of its own is active. A
+  rank cannot see a sibling's run, so a rank not working the item could remove the label and
+  post a receipt while the sibling's run carries on, until the sibling's next checkpoint.
 - **Taking over on Linear,** where removing the label and adding it again has no counterpart
   (task 2.13).
 - **Several ranks overshooting a seat's reserve line,** one run each, which `design.md` leaves to
   be settled with #143.
+- **`igor serve <role>` with no rank is refused** under decision 6, while the in-force
+  `role-config` and `surface-adapter` scenarios, `README.md` and `deploy/docker-compose.yml`
+  still start a role by its name alone. Task 6.4 updates the docs and the compose file; the
+  in-force scenarios are not changed here.
 
 ## Why
 
@@ -150,7 +172,7 @@ label event with no shared key, is compared with a message by time.
 how old a claim is, and a worker bounded by silence rather than duration has no maximum age, so
 no age is conclusive. Because only one process runs at a rank, a claim carrying a process's own
 rank was left by a predecessor that is gone, and the restarted process takes the item back and
-re-works it. A sibling leaves it alone while the rank is alive, which the rank's heartbeat
+re-works it, or catches it up where the Igor's pull request is open. A sibling leaves it alone while the rank is alive, which the rank's heartbeat
 shows, as *Retiring a rank is recorded, not detected* below says.
 
 The cooldown does not cover this. It governs when a stopped or deferred item may be reconsidered,
@@ -165,21 +187,20 @@ threshold per seat, also stops new items; this change does not wait for it.
 
 **Retiring a rank is recorded, not detected.** A crash is not retirement: the supervisor restarts
 the process and it recovers its own claim. Removing a process is a decision, and the roster — the
-ranks that exist, declared like seats — is where it is recorded. A removed rank may still be
-running, so its claims are freed by the abandonment bound, as are those of a rank left declared
-that no longer runs. Each process writes a heartbeat to its own file
-on the state branch every poll interval, including while a worker runs, and its first one before
-its first cycle. A process counts a sibling gone only after it has itself watched the sibling's
-heartbeat fail to move forward for three poll intervals, 30 minutes at the default poll; any
-process may then take the sibling's claims. A lost, reset or rolled-back state branch moves no
-heartbeat forward, so it never makes a live rank look gone, and no two hosts' clocks are
-compared. A process that cannot write its heartbeat for two intervals stands down: it starts no
-claim, and its worker stops at its next checkpoint. Task 4.15 measures how far apart checkpoints
-are; at one interval or less, the worker has stopped before a sibling could count it gone at
-three. A process taking over an item from a
-gone rank first removes the label and adds it again. Without that, the gone rank's old claim
-message would count again when the rank returned, and both would work the item. The bound governs how long an unattended claim may
-sit, never how long work may run: a working process keeps writing heartbeats.
+ranks that exist, declared like seats — is where it is recorded. A removed rank shuts down as
+when its supervisor stops the process, finishing or handing off its item, and its claims are freed by the abandonment
+bound only if it dies first, as are those of a rank left declared that no longer runs. Each
+process writes a heartbeat to its own file on the state branch every poll interval, including
+while a worker runs, and its first one before its first cycle: a counter it increments on each
+write. A process counts a sibling gone only after it has itself watched the sibling's counter
+fail to change for three of its own poll intervals, 30 minutes at the default poll; any process
+may then take the sibling's claims. No time in the file is compared, so neither a clock stepped
+back nor a lost, reset or rolled-back state branch makes a live rank look gone. A process that
+cannot write its heartbeat for two intervals stands down: it starts no claim, and its worker
+stops at its next checkpoint. A process taking over an item from a gone rank first removes the
+label and adds it again. Without that, the gone rank's old claim message would count again when
+the rank returned, and both would work the item. The bound governs how long an unattended claim
+may sit, never how long work may run: a working process keeps writing heartbeats.
 
 **Discovery may hand the same candidate to several processes**, and that is allowed to happen.
 Watermarks are a cache, so the cost is duplicated triage rather than duplicated work; the claim
@@ -275,15 +296,18 @@ Explicitly out of scope:
 
 - `work-claiming`: A claim is held by the process that took it, not by the role's identity.
   Verification distinguishes a sibling process from the Igor itself, candidates are attempted
-  in an order that differs between processes, a hand-over goes through the same contest, and the
-  claims of a rank that misses three heartbeats become adoptable.
+  in an order that differs between processes, a hand-over goes through the same contest, the
+  claims of a rank that misses three heartbeats become adoptable, and a claim left on the Igor's
+  open pull request is caught up whoever left it. `igor run` refuses beside a serving rank 1.
+- `work-triage`: An item a live sibling holds is passed over before triage, and a claim this
+  process takes over on the Igor's own pull request is not skipped as work in flight.
 - `work-discovery`: A conflicted state write is retried rather than failing the cycle, and
   processes saving one source keep the lower watermark.
 - `task-execution`: The worker's absolute ceiling is removed, and the sweep removes working
   trees by rank rather than by age.
 - `role-config`: A role's processes share one identity and differ only by rank, the roster
-  declares the ranks each role may run, a role's name has no dot, and the role's environment
-  file holds single-quoted values.
+  declares the ranks each role may run, a process is named `<role>-<rank>`, and the role's
+  environment file holds single-quoted or plain values.
 
 ## Impact
 
