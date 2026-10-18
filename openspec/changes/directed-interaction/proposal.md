@@ -89,12 +89,22 @@ to reply to.
   person asking is a far stronger relevance signal than a query match — which is source
   ordering rather than a priority mechanism: requests are their own source, listed first.
 
-  Several processes can run one Igor, each with a number from 1, its rank; the open change
-  `concurrent-instances` has rank k start at its k-th candidate. Requests need nothing new for
-  that: they are a separate list, so the process of rank 1 starts at the first request and the
-  process of rank k at the k-th. A process working an item does not read the list until it is
-  free, so a free process takes the request, and a request waits only while every process is
-  busy.
+  Several processes can run one Igor, each with a number from 1, its rank. Under the open change
+  `concurrent-instances`, every process of a role draws its candidates from the same ordered
+  list, and Adam decided on 2026-10-18 that requests go at the head of that list, ahead of found
+  work. Rank k starts at the list's k-th candidate and tries each candidate after it in turn,
+  wrapping from the end back to the start, so rank 1 starts at the first request. A rank with
+  fewer than k candidates has no k-th one to start at: its place wraps round to a candidate a
+  lower rank starts at, so it waits k − 1 settle intervals, the pause a claim needs to become
+  visible, before re-reading that candidate, and passes over it if it now carries a lower rank's
+  claim message. A process working an item reads the list again only once it is free, and then
+  starts at its own rank's place. A request therefore waits while rank 1 is busy, until a free
+  rank's turn round the list reaches it.
+
+  Answering a request claims nothing, so it leaves no claim message. A rank that reaches a request
+  a lower rank is already answering, after the wait or by wrapping round the list, finds nothing
+  to tell it so. How two ranks avoid both answering one request is open in
+  `concurrent-instances`; until it is settled, both may answer.
 - **Out-of-lane requests are declined with a route**, not a bare refusal — "not my lane,
   `igor-backend` covers it" — which also makes the fleet legible to people who have no idea
   which Igor does what.
