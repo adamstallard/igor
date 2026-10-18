@@ -34,9 +34,12 @@
    and `ReadWritePaths=/var/lib/igor-worker-%i` keeps the worker's home writable. No drop-in
    is generated per instance, and no step edits `/etc/group`. The GitHub App identity stays
    one per role; the rank appears only in names on the host, such as the unit, the worker user
-   and its group, never in a GitHub identity. This change depends on #179
-   (`concurrent-instances`) naming instances `<role>-<rank>`, which #179 is to do in its own
-   next revision. *Rejected:* a key in `igor.config.yaml`, which a lore pull request could
+   and its group, never in a GitHub identity. #179 (`concurrent-instances`) names instances
+   this way, in its requirement *A process is named by its role and rank*. That requirement
+   also refuses, at load, a role name outside `[a-z][a-z0-9-]*`, and a role whose
+   `igor-worker-<role>-<rank>` would pass Linux's 32-character limit on user names for any rank
+   the roster declares for it (Adam, 2026-10-18), so every instance's worker user can be
+   created. *Rejected:* a key in `igor.config.yaml`, which a lore pull request could
    point at the service user; setting `User=` and `Group=` to the worker user, which would run
    the Igor itself as the worker; an environment variable such as `IGOR_WORKER_USER`, which
    would be a second source for the name the argument already gives; a unit drop-in generated per instance;
@@ -75,7 +78,9 @@
     by reporting its pass result: bug-hunter its result block, and the prose pass the pass token
     from its first `prose check` call. Then bug-hunter's triage
     runs on the prose pass's diff: a diff that touches only comments or docs is skipped, and
-    anything else gets one more bug-hunter iteration. After the last model step exits, the Igor
+    anything else gets one more bug-hunter iteration. No prose pass follows it, so comments that
+    iteration writes are never read by a prose pass: a gap Adam accepted on 2026-10-18, recorded
+    on #153. After the last model step exits, the Igor
     stages the changed paths once, in its own index, which the worker cannot write. It then runs
     both signing calls itself, as the service user: the second `prose check` call, with the prose
     pass's token, and bug-hunter's minting script, against the staged tree. So each trailer that
@@ -130,12 +135,14 @@
     a record.
 19. **Worker trees live in the shared state directory, `/var/lib/igor/trees`, not in the
     instance's private `/tmp`** (Adam, 2026-10-17). #179 (`concurrent-instances`) needs a sibling
-    rank to sweep a gone rank's trees after a crash, which it cannot do in another unit's private
-    `/tmp`. The unit keeps `PrivateTmp=true` for everything else. The worker-group permissions
+    rank to sweep the trees of a rank the roster no longer declares, once that rank is gone, which
+    it cannot do in another unit's private `/tmp`. The sibling removes them as the gone rank's
+    worker user, through `sudo -n -u igor-worker-<role>-<k>`, where `<k>` is the gone rank (Adam,
+    2026-10-18). Every instance runs as the one service user, and the deployment guide keeps a
+    retired rank's sudoers line (task 8.4), so the line written for the gone rank lets the
+    sibling do this. The unit keeps `PrivateTmp=true` for everything else. The worker-group permissions
     apply under `/var/lib/igor/trees` as they did in `/tmp`: the tree `2770`, the outbox `2770`,
-    and `<tree>-git` read-only to the worker. #179's task 4.20 left open whether trees stay in
-    each instance's private `/tmp`, as this change had them, or move to the shared state
-    directory, for whichever of #179 and this change lands second to settle; this settles it.
+    and `<tree>-git` read-only to the worker. #179's task 1.8 puts trees in the same directory.
 20. **The implementation of this change adds the worker users and `sudo` to #192's container
     image** (Adam, 2026-10-17). #192 (`deploy-image`) merges as it is. This change's tasks,
     built at gate two, after this specification is approved, then add, to the
@@ -169,8 +176,8 @@ that doesn't depend on Claude Code enforcing anything.
 ## What Changes
 
 - **Under `igor serve`, the worker runs as a second Unix user**, `igor-worker-<role>-<rank>`,
-  one per Igor instance. The Igor starts it through `sudo`, under a sudoers rule that lets the service user run commands as that
-  one user and nobody else. The seat token reaches `claude` through its environment, never its
+  one per Igor instance. The Igor starts it through `sudo`, under a sudoers file with one line
+  per worker user, each letting the service user run commands as that worker user. The seat token reaches `claude` through its environment, never its
   arguments. Every later model step in the tree, such as #153's prose pass and bug hunt, runs as
   the same user.
 - **The worker gets its tree, its outbox, its seat token and its tools, and nothing else.** The
@@ -190,7 +197,8 @@ that doesn't depend on Claude Code enforcing anything.
   publishes the recorded tree.
 - **A kill, a release and the startup sweep act as the worker user** where the worker's own
   processes and files need it. Trees live under the shared `/var/lib/igor/trees`, so a sibling
-  rank can sweep a crashed rank's trees (#179).
+  rank can sweep a retired rank's trees once that rank is gone (#179), as that rank's worker
+  user.
 - **Every start of `serve` checks the isolation.** `serve` refuses to start, naming what is
   wrong, if the worker user is missing, privileged, or the Igor's own user, if `sudo` asks for a
   password, if the worker cannot run `claude`, or if the worker can read the Igor's process

@@ -316,7 +316,10 @@ user runs nothing the worker wrote.
 
 A kill SHALL reach every process in the worker's process group when the worker runs as another
 user, as it does when the worker runs as the Igor. Releasing a tree, and the startup sweep, SHALL
-remove what the worker created, including directories the Igor cannot write into.
+remove what the worker created, including directories the Igor cannot write into. Under #179
+(`concurrent-instances`), another rank of the same role sweeps the trees of a rank that #179
+counts as gone. It SHALL run that removal as the gone rank's worker user, through
+`sudo -n -u igor-worker-<role>-<k>`, where `<k>` is the gone rank.
 
 #179 (`concurrent-instances`) places working trees in the unit's shared state directory. Under
 `igor serve`, each tree's outbox and `<tree>-git`, the tree's git directory beside it, SHALL sit

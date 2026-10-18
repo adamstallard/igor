@@ -98,6 +98,12 @@ rank always written. Its worker user is `igor-worker-<role>-<rank>`, with its ow
 `/var/lib/igor-worker-<role>-<rank>`, and its own sudoers line. The deployment templates generate
 all three for each instance. The unit names the user as `igor-worker-%i` (below).
 
+Linux limits a user name to 32 characters, and `igor-worker-` takes 12 of them. #179's
+requirement *A process is named by its role and rank* refuses, when the configuration loads, a
+role name outside `[a-z][a-z0-9-]*`, and a role whose `igor-worker-<role>-<rank>` would pass 32
+characters for any rank the roster declares for it (Adam, 2026-10-18). The refusal names the role. A role that loads therefore always has worker
+users that `useradd` can create.
+
 On Linux, processes of one Unix user can normally read each other's `/proc/<pid>/environ` and
 follow each other's `/proc/<pid>/cwd`. With one worker user shared by several instances, that
 opens three routes from one worker into another's:
@@ -125,17 +131,17 @@ An instance is named `<role>-<rank>`, with the rank always written, so `%i` is a
 form and `igor-worker-%i` is the worker user's name. The unit passes `%i` to `igor serve` as its
 argument, and the Igor sudoes to `igor-worker-` followed by that argument. That is plain
 concatenation: forming the worker user's name never splits the instance name into a role and a
-rank. #179 still has to find the role and rank in the instance name for its own purposes, and
-that split is #179's rule (task 0.8). A sibling rank, another instance of the same role, can
-sweep the trees a gone rank left (*Trees live in `/var/lib/igor/trees`*, below). It builds that
+rank. #179 finds the role and rank in the instance name for its own purposes: the rank is the
+last dash-separated part, and is always written (#179's *A process is named by its role and
+rank*). A sibling rank, another instance of the same role, can sweep the trees of a retired
+rank, one the roster no longer declares, once that retired rank is gone, its heartbeat stopped (*Trees live in `/var/lib/igor/trees`*, below). It builds that
 rank's worker user the same way, as `igor-worker-<role>-<rank>` from its role and the gone
 rank's number, as #179's roster and sweep identify it.
 
 The unit's `User=` and `Group=` stay the service user: they set the account the Igor process
 itself runs as, and a worker that ran as that account could read the Igor's credentials. The
 unit uses `igor-worker-%i` directly for `SupplementaryGroups=` and `ReadWritePaths=`. No drop-in
-is generated per instance and no step edits `/etc/group`. This depends on #179 naming instances
-`<role>-<rank>`, which #179 is to do in its own next revision (task 0.8).
+is generated per instance and no step edits `/etc/group`.
 
 The dash form is kept, rather than naming the user `igor-worker-<role>.<rank>`, because a dot in
 a user name reads as `user.group` to tools such as `chown`.
@@ -238,7 +244,10 @@ in the outbox. So the steps neither stage nor sign. The order is:
 2. The prose pass runs, edits the tree and writes the message, and ends by reporting its pass
    token, from its first `prose check` call.
 3. Bug-hunter's triage runs on the prose pass's diff. A diff that touches only comments or docs
-   is skipped; anything else gets one more bug-hunter iteration.
+   is skipped; anything else gets one more bug-hunter iteration. No prose pass follows that
+   iteration, so no prose pass reads the comments it writes. Adam accepted that gap on
+   2026-10-18 (#153): the prose pass is not meant to change code, so the iteration runs only
+   in an edge case.
 4. After the last model step exits, the Igor's code stages the changed paths once, in the Igor's
    own index.
 5. The Igor runs both signing calls itself, as the service user: the second `prose check` call,
@@ -325,12 +334,19 @@ link, and reading one would follow the link.
 
 **Trees live in `/var/lib/igor/trees` (Adam, 2026-10-17).** Under `serve`, every tree, outbox and
 `<tree>-git` is created in the shared state directory, not in the instance's private `/tmp`.
-#179 (`concurrent-instances`) has a sibling rank sweep a gone rank's trees after a crash, and one
-unit cannot see another's private `/tmp`. The modes and groups in the table above hold there
-unchanged. The sibling's removal pass runs as the gone rank's worker user, which owns what that
-rank's worker wrote; the sudoers file has a line for every instance under the one service user,
-so the sibling can sudo to it. The sibling builds that user's name as `igor-worker-<role>-<rank>`
-from its role and the gone rank's number, the same concatenation the Igor uses for its own.
+#179 (`concurrent-instances`) has a sibling rank sweep the trees of a rank the roster no longer
+declares, once that rank is gone, and one unit cannot see another's private `/tmp`. A rank that
+restarts sweeps its own trees as it starts. The modes and groups in the table above hold there
+unchanged.
+
+**A sibling sweeps as the gone rank's worker user (Adam, 2026-10-18).** The sibling runs the
+release's first pass as `sudo -n -u igor-worker-<role>-<k> -- rm -rf -- <tree> <outbox>`, where
+`<k>` is the gone rank, because that user owns what the gone rank's worker wrote. Every instance
+runs as the one service user, and the deployment guide (task 8.4) keeps a retired rank's
+sudoers line, so the line written for the gone rank still lets the service user act as that
+worker user; no sudoers line is added for sweeping. The sibling reads the gone rank's number
+from the tree's name, which carries the role and rank (#179), and builds the worker user's name
+from its role and that number, the same concatenation the Igor uses for its own.
 
 ### What each start checks
 

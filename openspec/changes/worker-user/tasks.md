@@ -11,8 +11,8 @@
       one does.
 - [ ] 0.3 If #101 (`condition-backoff`) has merged, record a `sudo` spawn failure of the worker
       under a cure key scoped to the whole Igor, #101's name for the key a recurring failure is
-      grouped under. A key of that scope stops the Igor, where an item-scoped one would fail
-      every item in turn.
+      grouped under. A key of that scope stops the Igor taking new items, where an item-scoped one
+      would fail every item in turn. The Igor does not exit on it (#82).
 - [ ] 0.4 If #137 (`carry-what-a-tree-holds`) has archived, build 3.3's publishing of a changed
       link as a link, and 3.1's publishing of a changed gitlink as a pointer. If not, build both
       stops, file an issue asking whichever of #137 and this change archives second to replace
@@ -33,10 +33,11 @@
 
 - [ ] 0.8 1.1 and 8.2 need instances named `<role>-<rank>`, with the rank always written, so
       that `igor-worker-%i` is the worker user's name (Adam, 2026-10-17). #179
-      (`concurrent-instances`) is to make that naming change in its own next revision. If #179
-      has merged
-      with it, build on it. Otherwise, file an issue asking whichever of #179 and this change is
-      built second to name instances that way, and link it here.
+      (`concurrent-instances`) specifies that naming, and the load-time check on role names that
+      keeps `igor-worker-<role>-<rank>` within 32 characters (Adam, 2026-10-18), in its
+      requirement *A process is named by its role and rank*. If #179 has merged, build on it.
+      Otherwise, file an issue asking whichever of #179 and this change is built second to name
+      instances that way and check role names, and link it here.
 
 ## 1. Starting the worker as another user
 
@@ -83,8 +84,10 @@
 - [ ] 2.4 The sweep's name rule takes `<tree>-git` as it takes `<tree>-outbox`.
 - [ ] 2.4a Under `serve`, provision every tree, outbox and `<tree>-git` under
       `/var/lib/igor/trees`, never under the instance's `/tmp`, with 2.1's groups and modes
-      (Adam, 2026-10-17). A sibling rank's sweep of a gone rank's trees (#179) runs 4.2's first
-      pass as the gone rank's worker user.
+      (Adam, 2026-10-17). A sibling rank's sweep of a gone rank's trees (#179) runs the first
+      removal pass of 4.2 (release and sweep), the `rm -rf` as the worker user, as the gone
+      rank's worker user, `sudo -n -u igor-worker-<role>-<k>`, under the sudoers
+      line already written for that rank (Adam, 2026-10-18).
 - [ ] 2.5 Where a role runs #153's steps: bug-hunter runs, then the prose pass, and each edits
       the tree, neither stages nor signs, and each ends by reporting its pass result, the prose
       pass's being its pass token. Bug-hunter's triage then runs on the prose pass's diff,
@@ -395,7 +398,9 @@ file in the service user's home. Each holds a random string and nothing else. Ne
 
       List your instances, each with its rank, such as `maintenance-1`. Then create each one's
       user and home, and write its sudoers line. Run it again, listing every instance, whenever
-      you add one:
+      you add one. Keep a rank you retire in the list. Another rank of the same role removes the
+      retired rank's working trees by acting as the retired rank's worker user, and only that
+      user's sudoers line allows it:
 
       ```bash
       instances="maintenance-1 generalist-1 generalist-2"
