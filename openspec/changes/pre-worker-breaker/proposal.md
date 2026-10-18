@@ -4,8 +4,9 @@
    claim is given back and the item is tried again next cycle. On the third identical failure in
    a row, the item is instead handed back deferred, or *set down*, and that run's message says
    the Igor has stopped retrying and what brings the item back. *Rejected:* a configurable
-   threshold. Three is a constant, as in #101 (about to merge), whose stops open on the third
-   recurrence: one trips on a blip, two can be coincidence.
+   threshold. Three is a constant: one trips on a blip, two can be coincidence. This differs from
+   #101, which makes its own threshold configurable, with a provisional default of three; the
+   breaker keeps three fixed.
 2. **The count is rebuilt from `executions.ndjson`**, one `kind: "pre-worker"` row per failure.
    *Rejected:* a count in memory, which a restart loses; and a store of its own, which two Igors
    can overwrite and which can disagree with the log (`design.md`).
@@ -14,7 +15,8 @@
    temporary path that differs every run. *Accepted risk* (Adam, 2026-10-11): `HTTP 404` and
    `HTTP 500` from the same call count as identical.
 4. **Only a tracker or code-host failure counts toward the surface-failure rule**, which ends a
-   cycle on two such failures in a row (Adam, 2026-10-11). Which surface failed is known from
+   cycle on two such failures in a row and which the spec calls the *outage rule* (Adam,
+   2026-10-11). Which surface failed is known from
    which surface's call threw. *Rejected:* reading it from the
    error's wording.
 5. **Two identical failures before the worker, on different items in a row, end the cycle**
@@ -47,17 +49,48 @@
     reasons: the budget ran out, a condition stopped the cycle, or the claim got no answer. Task
     5.0 adds the two rules to those reasons, with a scenario for each.
 
+13. **Aligned to `concurrent-instances`** (Adam, 2026-10-18;
+    [#179](https://github.com/adamstallard/igor/pull/179)). Where a role runs as several ranks,
+    only the rank holding the item's claim counts a failure before the worker and posts the
+    set-down; any other rank drops out silently, by #179's *Only the rank holding a claim gives it
+    back*. The mask on the tree's path keeps working under #179's naming of trees by role and rank.
+    Decision 12's reasons for holding the watermark back go, by task 5.0, into #101's watermark
+    rule, *Watermarks reduce reconsideration without governing it*: #179 cites that rule, so it is
+    the one place every reason lives. *Rejected:* a count
+    per rank, and a set-down any rank could post.
+14. **This change's code waits for #101** (Adam, 2026-10-18). Sections 2 to 4 of `tasks.md` are
+    built only after `condition-backoff` (#101) merges. #101's watermark rule is what holds the
+    mark below the items a cycle never reached (decision 12), so without it a cycle ended early by
+    a two-in-a-row rule would let the watermark pass them. *Rejected:* building them first and
+    accepting that loss until then.
+
 **Still open:**
 
 - **The masks are unmeasured.** Nobody has checked that real repeated failures give one
   signature after masking (task 0.1). If they never match, the breaker never trips, which is
   today's behaviour.
-- **Whether this change's code waits for #101.** Decision 12's watermark rule is written against
-  #101's watermark requirement (task 5.0). Without #101, the watermark moves past every item
-  triage gave a verdict to, before the cycle works any item. So a cycle that the identical-failure
-  rule, or `igor run`'s new surface rule (decision 9), ends early leaves items that are never seen
-  again. `serve`'s surface rule already does this today. The choices are to hold sections 2 to 4
-  until #101 merges, or to build them first and accept the loss until then. Not decided.
+- **A failure in the claim window, for Adam.** #179's *Only the rank holding a claim gives it
+  back* says a process whose claim message failed to post holds nothing, and one whose
+  verification fails counts as not holding the item. Under decision 13, then, no failure in the
+  claim window counts toward the breaker, even where the role runs one rank. The scenario *A
+  repeated failure in the claim window sets the item down* says the opposite. One of the two has
+  to give.
+- **A refused App credential inside a clone is unmeasured** (task 0.1). The tree provider mints
+  its clone token from the App's credential. Whether a refusal there reaches #101's App
+  condition, and so records a cure key, or is tagged `tree` and counted per item, is not known.
+- **For Adam, choices this change makes that no decision records:**
+  - the count is per role and item, so with several roles each may post three times before
+    setting an item down;
+  - on the third identical failure in the claim window, the withdrawal is posted even where the
+    claim message never landed;
+  - each failure's message is committed to the state branch twice, as `reason` and as the masked
+    `signature`. That branch may be public, and a tracker's error can carry a private source's
+    response text;
+  - which faults #101's `work-triage` rule covers. Its words are "where the cause was a fact about
+    the Igor — a seat whose token is unset, a command its allowlist refuses, a capacity never
+    observed — the item SHALL NOT be suppressed". Decision 11 reads that as covering faults that
+    record a cure key. Read literally, it also covers a fault with no cure key, such as a full
+    disk, which this change counts toward the breaker.
 - **The set-down sentence names what lifts a deferral.** #141, which lets only someone with
   write access lift a deferral, changes that sentence if it lands first (task 3.2).
 

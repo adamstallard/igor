@@ -5,7 +5,12 @@
       Check that each pair gives one signature after `design.md`'s masks and that different
       causes give different ones, and record the captures in `design.md`. If a pair does not
       match, change the masks; a breaker whose signatures never match never trips, which is
-      today's behaviour
+      today's behaviour.
+      Also capture a clone whose token mint the code host refuses because the App's credential
+      is refused. Record whether, during that first item's run, the failure reaches #101's App
+      condition and so records a cure key
+
+- [ ] 0.2 Sections 2 to 4 wait until `condition-backoff` (#101) merges (Adam, 2026-10-18)
 
 ## 1. The agreement (gate one, this pull request)
 
@@ -29,14 +34,14 @@
 
 ## 3. The breaker
 
-- [ ] 3.1 A pure `signature(source, message)` applying the masks in `design.md` in order, and a
+- [ ] 3.1 A pure `signature(message, treePath)` applying the masks in `design.md` in order, and a
       pure `trailing(rows, item, role, source, signature)` counting as `design.md` *Counting*
       says. Tests for each mask, for each way the count stops, and for the outage exclusion
-- [ ] 3.2 A `failure` handoff's `next` gains `'set-down'`, whose tail is, exactly (the count is
-      the threshold constant):
+- [ ] 3.2 A `failure` handoff's `next` gains `'set-down'`, whose tail is, exactly, with `<N>` the
+      number of identical failures in a row, 3 or more:
 
       ```
-      It has failed the same way 3 times in a row before starting work, so it will not try again until somebody replies or edits this
+      It has failed the same way <N> times in a row before starting work, so it will not try again until somebody replies or edits this
       ```
 
       If `defer-a-closed-pull-request` (#141) has landed, `somebody` becomes `someone with write
@@ -52,7 +57,9 @@
       nothing is not counted): build the signature, ask the count reader for the
       trailing count, and on a count of 3 or more including this one, unless the failure
       records a cure key, return `handed-off` with `handoff: 'failure'` and the set-down tail. Otherwise refuse as today. A count reader that
-      throws or is absent counts as 0
+      throws or is absent counts as 0. Under #179, only the rank holding the claim does any of
+      this; a rank that another rank's claim outranks drops out silently, writing no
+      `pre-worker` row
 - [ ] 3.5 The threshold is a named constant, 3, with a comment saying why three
 - [ ] 3.6 Tests, one per scenario in *A failure before the worker that repeats sets the item
       down*, including a restart (a fresh loop reading the same rows) and a deferral lifted by
@@ -64,7 +71,8 @@
       `role`, `source`, `signature` and `reason`, wherever a run is recorded today: `serve`'s
       event handler and the single-cycle loops in `src/cli.ts`. A failure that records one of
       #101's cure keys keeps the run row it writes today, with its `cures`, so #101's conditions
-      still see it
+      still see it. Every run row records whether `execute` spawned the worker, which *Counting*
+      reads
 - [ ] 4.2 Each cycle, `serve`'s and `igor run`'s, appends a `kind: 'outage'` row when it ends on
       two surface failures, with `role`, the cycle's start as `since`, and every item whose run
       failed in that cycle, before or after the worker, as `design.md` says
@@ -87,7 +95,7 @@
 
 ## 5. After #101 merges
 
-Whether sections 2 to 4 also wait for #101 is open in the proposal.
+Sections 2 to 4 wait for #101 too (task 0.2).
 
 - [ ] 5.0 Add `specs/work-discovery/spec.md` to this change, restating #101's watermark
       requirement once it is in force. That requirement lists why a
@@ -97,7 +105,9 @@ Whether sections 2 to 4 also wait for #101 is open in the proposal.
       must not pass them either (Adam, 2026-10-17): two identical failures before the worker on
       different items, or two surface failures in a row. The file holds a `MODIFIED` block,
       copied whole from the requirement as it is in force when this task is done, including any
-      edit #106 (`role-keyed-watermark`) has made to it. The block names these two reasons and
+      edit #106 (`role-keyed-watermark`) or #179 (`concurrent-instances`) has made to it. Every
+      reason for holding the mark back lives in that one requirement, which #179 cites (Adam,
+      2026-10-18). The block names these two reasons and
       adds these two scenarios, which may be reworded to match #101's text:
 
       ```markdown

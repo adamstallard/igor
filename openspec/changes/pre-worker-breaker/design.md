@@ -48,10 +48,12 @@ A *run row* is a row without a `kind`. For one item and one role, walk the rows 
 and apply to each row the first step that fits it:
 
 1. Skip a `pre-worker` row that an `outage` row excludes (below).
-2. Skip a run row that started no worker and carries `cures`: a failure that recorded a cure key
-   (below).
+2. Skip a run row whose run started no worker. A run row records whether `execute` spawned the
+   worker (task 3.4). Two kinds have none: a failure that recorded a cure key, whose row carries
+   `cures` (below), and #101's workerless catch-up whose merge came out clean.
 3. Count a `pre-worker` row whose `source` and `signature` match the failure in hand.
-4. Stop at any other run row, or at a `pre-worker` row that does not match.
+4. Stop at any other run row, whose run started the worker, or at a `pre-worker` row that does not
+   match.
 5. Skip rows of any other `kind`, such as #101's `probe` and `check` rows.
 
 The failure in hand is one more, unless it records a cure key. At three or more, the item is set
@@ -63,8 +65,8 @@ exception is a failure that records a cure key, which keeps its run row (below).
 for a fault in the Igor's own setup, such as a seat whose token is unset. #101's `work-triage`
 delta says an item is never suppressed, that is held back as a set-down item is, for such a
 fault. Such a failure keeps the run row it writes today, carrying `cures`, instead of a
-`pre-worker` row: #101 counts conditions from run rows and skips every row with a `kind`, so a
-`pre-worker` row would hide the fault from #101. *Counting* skips that run row (step 2), as it
+`pre-worker` row: #101 builds conditions from run rows that carry a cure key and from its own
+`check` rows, never from a `pre-worker` row, so a `pre-worker` row would hide the fault from #101. *Counting* skips that run row (step 2), as it
 skips a `pre-worker` row an outage excludes: the row neither counts nor breaks the sequence.
 
 A count at or past three after a lifted deferral sets the item down on the first identical
@@ -88,7 +90,13 @@ by its own rule instead (*A failure every item meets ends the cycle*, below).
 
 **The message is masked before comparing.** In order:
 
-1. The tree's temporary directory (`igor-tree-` and its random suffix) becomes `igor-tree-*`.
+1. The run's own working-tree path becomes `<tree>`. The code knows that path, since it
+   provisioned the tree, so the mask replaces it as text wherever it appears, rather than matching
+   a pattern for tree names. A pattern written for today's `igor-tree-` prefix would stop matching
+   under `concurrent-instances` (#179), which names trees by role and rank; replacing the known
+   path keeps working whatever the name holds (Adam, 2026-10-18: the mask must keep working under
+   #179's naming). Because the count carries on across a role's ranks, trees of different ranks
+   must mask to the same text, and they do.
 2. Hexadecimal runs of seven or more characters, either case, become `<hex>`. These are SHAs and
    request ids.
 3. Remaining digit runs become `#`. These are exit codes, ports, counts and timestamps.
