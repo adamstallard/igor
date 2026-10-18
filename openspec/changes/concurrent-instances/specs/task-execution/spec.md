@@ -60,7 +60,12 @@ At the start of each cycle, it SHALL remove the trees of each rank of its role t
 does not declare and that is gone, as `work-claiming` defines. With each tree it SHALL remove
 the tree's outbox, the directory beside it where the run's declarations are kept, and the tree's
 git directory, `<tree>-git` beside it, where there is one. It SHALL NOT remove a tree of another
-declared rank, of a rank that is not gone, or of another role, whatever its age.
+declared rank, of a rank that is not gone, or of another role, whatever its age. `igor run
+--plan` SHALL remove no tree.
+
+A process SHALL remove each tree as the worker user of the rank that made it, by running the
+removal under `sudo -u igor-worker-<role>-<rank>`: its own rank's worker user for its
+predecessor's trees, and a gone rank's for that rank's.
 
 #### Scenario: A predecessor's tree is removed
 
@@ -82,7 +87,8 @@ declared rank, of a rank that is not gone, or of another role, whatever its age.
 - **WHEN** a process finds a tree named with a rank of its role that the roster no longer
   declares, and it has watched that rank's heartbeat fail to change for three poll
   intervals
-- **THEN** it removes the tree, its outbox and its git directory
+- **THEN** it removes the tree, its outbox and its git directory, running the removal as
+  `igor-worker-<role>-<rank>` for that rank
 
 #### Scenario: A retired rank's tree is left while the rank runs
 

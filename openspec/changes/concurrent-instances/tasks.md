@@ -8,25 +8,21 @@
       a roster entry naming a role with no role file, a rank that is not a whole number from 1,
       or a rank listed twice. Refuse to start on a rank outside the roster, naming the ranks it
       declares
-- [ ] 1.3 In `deploy/igor.service`, which runs as `igor@<role>-<rank>`, replace
-      `EnvironmentFile=/etc/igor/%i.env` and the `ExecStart` line with exactly this:
+- [ ] 1.3 In `deploy/igor.service`, which runs as `igor@<role>-<rank>`, remove
+      `EnvironmentFile=/etc/igor/%i.env` and make the `ExecStart` line exactly this, with no
+      shell between systemd and `igor`:
 
       ```ini
-      ExecStart=/bin/sh -c 'role="$${1%%-*}"; set -a; . "/etc/igor/$${role}.env"; set +a; exec /usr/local/bin/igor serve "$$1"' igor %i
+      ExecStart=/usr/local/bin/igor serve %i
       ```
 
-      systemd turns `$$` into `$` and `%%` into `%`, and `%i` into the instance, so `sh` runs
-      `role="${1%-*}"` with `$1` set to `generalist-2`, which strips the last dash-separated
-      part. The App's credentials reach `igor` only through its environment. `sh`'s arguments
-      are the script, the word `igor`, which `sh` takes as its `$0` and names itself by in
-      errors, and the instance. Keep `EnvironmentFile=/etc/igor/env`, the shared file of seat
-      tokens every role reads. Above the `ExecStart` line, put this comment, as written:
+      Keep `EnvironmentFile=/etc/igor/env`, the shared file of seat tokens every role reads.
+      Above the `ExecStart` line, put this comment, as written:
 
       ```ini
-      # /etc/igor/<role>.env is read by the shell's dot command, not by systemd.
+      # Igor reads /etc/igor/<role>.env itself; neither systemd nor a shell does.
       # Write each value in single quotes, KEY='value', or plain, using only
-      # letters, digits and _ . / : @ -. Outside single quotes the shell expands
-      # $, ` and \, and Igor refuses to start on any other value.
+      # letters, digits and _ . / : @ -. Igor refuses to start on any other line.
       ```
 
       The unit's header comment, which may be reworded, names the instance with its rank:
@@ -39,30 +35,49 @@
       ```text
       "<name>" names no rank. Igor serves a role as <role>-<rank>, with the rank always written, such as <name>-1.
       ```
-- [ ] 1.6 When `/etc/igor/<role>.env` exists, refuse to start if any value in it is neither
-      single-quoted nor plain, as `role-config` defines them, never printing the value, with this
-      message, as written:
+- [ ] 1.6 When `/etc/igor/<role>.env` exists, `igor serve` reads it itself, before anything
+      reads a credential, and sets each key it holds in its own environment, in place of the
+      same key it started with. It refuses to start on any line that is not blank, a `#`
+      comment, or `KEY=value` with a single-quoted or plain value, as `role-config` defines
+      them, never printing the value. The message is the first below, as written, or the
+      second, as written, for a line with no `KEY=` at its start:
 
       ```text
-      /etc/igor/<role>.env line <n>: the value of <KEY> must be in single quotes, or use only letters, digits and _ . / : @ -. The unit's shell reads this file, and outside single quotes it expands $, ` and \, so Igor may not receive the value as written. Write it as <KEY>='...'
+      /etc/igor/<role>.env line <n>: the value of <KEY> must be in single quotes, as <KEY>='...', or use only letters, digits and _ . / : @ -. Igor reads this file itself and takes no other form.
+      /etc/igor/<role>.env line <n>: each line must be blank, a # comment, or KEY=value.
       ```
 - [ ] 1.7 Tests for 1.5 and 1.6: a double-quoted value, an unquoted value holding `$` or a
-      backtick, a plain path, and `'it'\''s'` are each judged as `role-config` says, and the
-      refusal in 1.6 never holds the value
+      backtick, a plain path, a single-quoted value holding `$` taken as written, and a
+      single-quoted private key across several lines are each judged as `role-config` says, and
+      the refusal in 1.6 never holds the value
 - [ ] 1.8 `deploy/igor.service` sets `StateDirectory=igor`, and working trees are made under
       `/var/lib/igor/trees`, which every instance of the template shares, rather than under the
       temporary directory, which `PrivateTmp=true` makes private to each instance
 - [ ] 1.9 `igor run <role>`, with or without `--plan`, refuses where the roster does not declare
-      rank 1. Before anything else, it reads rank 1's heartbeat file, and reads it again after
-      one of the role's poll intervals, even where the file was missing; where the file changed
-      or appeared, it refuses with this message, as written:
+      rank 1. Without `--plan`, before anything else, it reads rank 1's heartbeat file, prints
+      what it is waiting for and for how long, waits half of the role's poll interval plus the
+      time one heartbeat write takes, and reads the file again, even where the file was missing. Where the file changed or appeared, it
+      refuses. Both messages are below; the first may be reworded, and the second is as written:
 
       ```text
+      Checking whether igor@<role>-1 is serving <role>: waiting <duration> for its heartbeat.
       igor@<role>-1 is serving <role>. A run by hand would take its claims and remove its trees. Stop it first, or leave the work to it.
       ```
 
-      Test: a changed or newly written file refuses, and one missing or unchanged at both reads
-      runs
+      `igor run --plan` neither waits nor refuses, and skips the startup sweep. Test: a changed
+      or newly written file refuses; one missing or unchanged at both reads runs; `--plan` beside
+      a changed file runs at once and removes no tree
+- [ ] 1.10 Refuse, when the configuration loads, a role whose name does not match
+      `[a-z][a-z0-9-]*`, or for which `igor-worker-<role>-<rank>` is longer than 32 characters for
+      any rank the role may run, with these messages, as written:
+
+      ```text
+      Role "<role>": a role's name must start with a lowercase letter and hold only lowercase letters, digits and -.
+      Role "<role>": its worker user igor-worker-<role>-<rank> would be longer than the 32 characters Linux allows in a user name. Give the role a shorter name.
+      ```
+
+      Test: an uppercase letter, a dot, a leading digit, and a name that fits at rank 1 but not
+      at a higher rank the roster declares
 
 ## 2. The marker
 
@@ -102,7 +117,7 @@
 - [ ] 2.14 A claim message that takes over a gone rank's claim on an item with the Igor's open
       pull request carries, after `Igor-Rank:`, a trailer naming the rank whose message it
       supersedes, exactly as below; every process then reads that rank's earlier claim messages
-      on the item as not counting. The trailer's wording is proposed, for Adam to confirm:
+      on the item as not counting. Adam confirmed the wording on 2026-10-18:
 
       ```text
       Igor-Supersedes: <rank>
@@ -134,17 +149,20 @@
 - [ ] 4.2 A claim carrying another rank that is not gone is left alone
 - [ ] 4.3 A claim carrying a rank the roster does not declare is adoptable only once that rank
       is gone
-- [ ] 4.4 Every process overwrites `heartbeats/<role>-<rank>.json` on the state branch every poll
-      interval, from a timer that keeps running while a worker runs. The file holds an id the
+- [ ] 4.4 Every process overwrites `heartbeats/<role>-<rank>.json` on the state branch every half
+      poll interval, from the timer of 4.15, which keeps running while a worker runs. The file holds an id the
       process chose at random when it started and a counter it increments on each write, and no
       time. Each process keeps in memory, per sibling, the id and counter it last read from the
       sibling's file and when, by its own clock, it last saw them change. A claim is adoptable
       once three poll intervals have passed since then, or since this process started if later.
       A missing file does not change
 - [ ] 4.5 Working trees are named by role and rank. At startup a process removes those of its own
-      rank. At the start of each cycle it removes those of every rank the roster does not
+      role and rank. At the start of each cycle it removes those of every rank the roster does not
       declare and that is gone to it. Never by age. With each tree go its outbox and its
-      `<tree>-git` directory, where there is one
+      `<tree>-git` directory, where there is one. Each tree is removed as the worker user of the
+      rank that made it, under `sudo -u igor-worker-<role>-<rank>`, which #175's sudoers lines
+      allow.
+      `igor run --plan` removes nothing
 - [ ] 4.6 Remove `ABSOLUTE_CEILING_MS`, the worker's kill at it, and the failure reason that names it
 - [ ] 4.7 `docs/architecture.md` §6.7.2 pins the sweep threshold to that ceiling; restate it to
       describe the sweep by rank
@@ -152,8 +170,8 @@
       (no live rank's claim is taken) and a restart while a file is missing (the clock starts
       again); and that the abandonment bound never shortens a run: a run longer than
       three poll intervals keeps its rank counted
-- [ ] 4.9 A `condition-backoff` probe records its rank, and lapses when that rank misses three
-      heartbeats instead of after `SWEEP_AFTER_MS`. PR #101 builds `condition-backoff` and is not
+- [ ] 4.9 A `condition-backoff` probe records its rank, and lapses when that rank is gone,
+      three poll intervals without its heartbeat changing, instead of after `SWEEP_AFTER_MS`. PR #101 builds `condition-backoff` and is not
       merged: whichever of #101 and this build lands second makes this edit
 - [ ] 4.10 A process's first heartbeat lands before its first cycle
 - [ ] 4.11 A process reads its role's heartbeat files before choosing each candidate and again
@@ -163,25 +181,21 @@
 - [ ] 4.12 Taking an item over a gone rank's claim message removes the role's label and adds it
       again, then posts the claim message at once. On an item with the Igor's open pull request
       it releases nothing, as 4.16 says
-- [ ] 4.13 A process that has failed to write its heartbeat for two poll intervals starts no claim
-      and stops its running worker at the next checkpoint, leaving the claim and saying nothing
-      on the item, since a sibling may already have taken it over; it resumes once a heartbeat
-      lands. Where 4.15 finds a worker can go longer than one poll interval between checkpoints,
-      it does so after one missed heartbeat
+- [ ] 4.13 A process that has failed to write its heartbeat for two poll intervals starts no claim,
+      and the timer of 4.15 stops its running worker at its next firing, leaving the claim and
+      saying nothing on the item, since a sibling may already have taken it over; it resumes once
+      a heartbeat lands
 - [ ] 4.14 Tests for 4.10 to 4.13: a rolled-back heartbeat file only postpones a gone verdict; a
       rank whose clock stepped back is still counted; a restart starts every sibling's count
       afresh; a returning rank leaves an item adopted from it; a process that cannot write its
       heartbeat stands down before a sibling counts it gone, and posts nothing on the item; a
       taker posts at once after its release
-- [ ] 4.15 Make a running worker reach a checkpoint at least once every two poll intervals,
-      including at a role's shortest allowed poll, and measure the real gap. On `main` a
-      checkpoint is the claim re-read in `src/execute.ts`, made on a worker event at most every
-      30 seconds, so the gap is as long as the worker's longest silence: up to
-      `MODEL_SILENCE_MS`, 5 minutes, while the model writes a turn, since `claude -p` is run
-      without partial messages, and up to `TOOL_SILENCE_MS`, 30 minutes, while a tool runs. Both
-      exceed two intervals at some allowed poll, so a checkpoint that does not wait for an event
-      is needed. Where the gap cannot be held to one interval, 4.13's stand-down after one missed
-      heartbeat applies, and the gap must never exceed two
+- [ ] 4.15 Igor's own loop runs a timer, apart from the cycle and the worker, that fires every
+      half poll interval. Each firing writes the heartbeat (4.4) and checks whether the process
+      has stood down (4.13); where it has, the timer stops the running worker itself, without
+      waiting for a worker event. A stop said by a person is still seen where `main` sees it, at
+      the claim re-read `src/execute.ts` makes on a worker event. Test: a stand-down while the
+      worker emits no event stops the worker within half a poll interval
 - [ ] 4.16 A claim left by this process's predecessor or by a gone rank on an item with the Igor's
       own open pull request is caught up: the item is not re-worked, the pull request is brought
       up to date where it no longer merges, and the claim is given back as a catch-up gives it
@@ -191,19 +205,35 @@
       (`work-triage`)
 - [ ] 4.17 A process reads the roster at the start of each cycle. When its own rank is no longer
       declared, it starts no claim, finishes its item or hands it off out loud, as shutdown
-      does, keeps writing heartbeats meanwhile, and then exits
+      does, keeps writing heartbeats meanwhile, and then exits. Where the configuration read at
+      a cycle fails a check a starting process makes, the process goes on under the last
+      configuration that passed and raises a condition naming the failing file and check, which
+      a later passing read clears; it never exits for it. Test: a malformed roster at a cycle
+      keeps the last roster and raises the condition, and a fixed one clears it
 - [ ] 4.18 Tests for 4.16 and 4.17: a recovered claim with the Igor's pull request open is caught
       up, whether its own predecessor's or a gone sibling's, and a person's label stays; a
       returning rank does not count its superseded message; a rank removed from the roster is
       not adopted while its heartbeat changes; a process whose rank leaves the roster finishes or
       hands off its item and exits
 - [ ] 4.19 Measure the requests to GitHub's `core` REST rate limit that one rank makes in one
-      cycle, with two and with three ranks running, and record in `design.md` how many ranks
-      one App's limit allows at the default poll
+      cycle, with two and with three ranks running. Measure the `core` limit an App installation
+      gets, which is not the 5,000 an hour measured on a personal account, and record in
+      `design.md` how many ranks one App's limit allows at the default poll
 - [ ] 4.20 PR #175 (`worker-user`) adds a git directory, `<tree>-git`, beside each tree. 4.5
       sweeps it already, assuming that name; check the name against #175 as merged. Trees and
       their git directories live in `/var/lib/igor/trees` (1.8). #175 keeps `PrivateTmp=true`
-      for everything else, and records its side of this itself
+      for everything else, and records its side of this itself, including the sibling's removal
+      as the gone rank's worker user (4.5)
+- [ ] 4.21 Only the rank whose claim message holds an item removes the role's label: standing
+      down after a failed verification, setting an item down after a repeated failure before the
+      worker (#173), and answering a stop. Any other rank drops out silently, removing and
+      posting nothing
+- [ ] 4.22 A stop said on a handed-over item is answered only by the rank whose claim message
+      holds it; other ranks ignore it. Where no claim message counts, the rank that reaches the
+      item answers it
+- [ ] 4.23 Tests for 4.21 and 4.22: a rank that does not hold the item and fails its verification
+      leaves the label; the holder sets an item down; a stop on a handed-over item a sibling
+      works is ignored by the other rank; a stop on a hand-over nobody has claimed is answered
 
 ## 5. State
 
@@ -219,26 +249,32 @@
       lagging rank holds the mark down until it stops counting; with every rank gone, the lowest
       latest mark still applies, and never reaches earlier than the cold start's look-back
 - [ ] 5.6 A cycle appends its mark only after it has attempted every candidate it will attempt.
-      A cycle that stops early, because its budget ran out or its process stood down, appends a
-      mark below the oldest candidate it did not attempt. A cycle whose process crashes first
-      appends none
+      A cycle whose process crashes first appends none. A cycle cut short because its process
+      stood down holds its mark back as #101's change to `work-discovery` holds it for a cycle
+      whose budget ran out
 - [ ] 5.7 Every cycle also considers each open item carrying the role's label, whatever the mark
 - [ ] 5.8 Tests: a crash between triage and the claims leaves the items above the mark; a crashed
       rank's claim below every mark is taken over
-- [ ] 5.9 A sibling rank's mark counts only once this process has seen that rank's heartbeat move
-      forward since it started; its own rank's mark always counts. Test: after a restart, a
+- [ ] 5.9 A sibling rank's mark counts only once this process has seen that rank's heartbeat change
+      since it started; its own rank's mark always counts. Test: after a restart, a
       dead rank's old mark does not hold the mark down
 - [ ] 5.10 A labelled item whose holding claim message carries a sibling's rank that is not gone
       is passed over before triage, with no triage call (`work-triage`). Test: no triage call
       for it
-- [ ] 5.11 PR #106 (`role-keyed-watermark`) keys the watermark by role. Whichever of #106 and this
-      build lands second makes the discovery log hold one line per rank, each naming its role,
-      and folds them into one mark per role and source as 5.2 says
+- [ ] 5.11 PR #106 (`role-keyed-watermark`) keys the watermark by role, and allows one mark per
+      role and rank, never one per run, as this change requires (Adam, 2026-10-18). Whichever of
+      #106 and this build lands second makes the discovery log hold one line per rank, each
+      naming its role, and folds them into one mark per role and source as 5.2 says
 - [ ] 5.12 PR #99 (`failure-record`) adds to `discovery.json` the candidate ids a cycle carries to
       the next. Whichever of #99 and this build lands second makes those ids log lines too,
       replayed per source as the union of each rank's latest
 - [ ] 5.13 A first run considers the role's labelled items whatever their update time, as well
       as the items inside the look-back window
+- [ ] 5.14 PR #150 (`two-gate`) also MODIFIES `work-triage`'s *Items with work already in flight
+      are skipped*: this change adds the exception for a claim this process takes over on the
+      Igor's own artifact, and #150 adds one of its own, which its delta states. Whichever of #150
+      and this change archives second copies the other's exception and scenarios into its delta
+      by hand before archiving, or the archive drops them
 
 ## 6. Documentation
 
@@ -246,7 +282,7 @@
       environment file. Say this about the file, as written:
 
       ```text
-      Write each value in /etc/igor/<role>.env in single quotes, as KEY='value', or plain, using only letters, digits and _ . / : @ -. The unit's shell reads the file with its dot command, and outside single quotes it expands $, ` and \, so a value holding one of them would reach Igor changed. Igor refuses to start on any other value. A value that itself holds a single quote is written as 'it'\''s'.
+      Write each value in /etc/igor/<role>.env in single quotes, as KEY='value', or plain, using only letters, digits and _ . / : @ -. Igor reads this file itself, takes a single-quoted value exactly as written, and refuses to start on any other line, naming its key but never its value. A single-quoted value may span lines, as a private key does, but cannot hold a single quote.
       ```
 - [ ] 6.2 `docs/deployment.md` already says `TimeoutStopSec` bounds how long shutdown waits and
       not whether the item finishes. Add what follows for ranks: an item that outlives it is

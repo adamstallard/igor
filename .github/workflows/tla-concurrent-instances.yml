@@ -43,6 +43,7 @@ jobs:
           - ConcurrentInstancesLongGaps.cfg
           - ConcurrentInstancesRoster.cfg
           - ConcurrentInstancesCatchUp.cfg
+          - ConcurrentInstancesGiveBacks.cfg
           - ConcurrentInstancesLiveness.cfg
           - ConcurrentInstancesLivenessRoster.cfg
           - ConcurrentInstancesLivenessCatchUp.cfg
