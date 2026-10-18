@@ -1,15 +1,50 @@
 # Design notes
 
+## `igor serve` keeps running on every condition (Adam, 2026-10-18)
+
+No open condition ends a running `igor serve`: not one on the Igor's own credential, not one on its
+role, and not every seat its role could spend from being stopped. The process keeps polling, and a
+stopped scope takes no new item. Where #171 has a role with no usable seat give each item it would
+work back to a person, with a comment naming the condition, the process does that. Each condition
+clears as `condition-backoff` and #171 clear it, and the cycle report says what is stopped. Only the
+checks before the first cycle still end the process: config validation, and under #175 the checks
+that the worker user exists and that `fs.protected_hardlinks` is `1`.
+
+**Rejected: exiting when the open conditions leave the process no item it could take.** This
+change specified that until 2026-10-18. Three facts each count against it:
+
+- **A restart reads the same state.** Conditions are rebuilt from the execution log on the state
+  branch, so a restarted process finds every condition its predecessor exited on. It exits again
+  or idles; it cannot know more than a process that stayed up.
+- **Exiting fights the probe.** A condition clears only when a probe item, let through after a
+  cooldown, does not meet it. A process that exits as soon as it sees an open condition never runs
+  long enough to reach that cooldown, so the condition could never clear. The exit rule therefore
+  had each start check for a passed cooldown and take the probe before exiting, which made how
+  often the supervisor restarts the process decide how often a probe could run.
+- **The shipped supervisors escalate nothing.** `deploy/igor.service` has `Restart=always` and
+  `RestartSec=30`, with no `StartLimit*` override and no `OnFailure=`. Restarts thirty seconds
+  apart never reach systemd's start rate limit (documented default: 5 starts in 10 s), so the unit
+  never enters `failed` and nothing hung off `failed` fires. `docker compose`'s `unless-stopped`
+  backs off but alerts nobody. Only Kubernetes' `CrashLoopBackOff` is the alertable crash loop the
+  exit assumed. Reading taken from the unit files and documented defaults, not by running them.
+
+A person who fixes a setting the process rereads while running is served faster by a process that
+stayed up: its next probe, or its next read of that setting, picks the fix up. Two kinds of fix are
+not reread. A fix in the lore repository reaches a running process only once #176, the issue that
+specifies Igor pulling its lore checkout, is built. A fix in the unit's environment file is read
+only at start, so it always needs a restart. Which cures need a restart is open in the proposal.
+
+The startup refusals that remain meet the same unit file: a process that keeps refusing to start is
+restarted every 30 seconds, and nothing alerts anyone. This change does not address that, and the
+proposal lists it as open.
+
 ## Since review: one role per Igor, and no pools (2026-10-04)
 
 Two decisions by Adam change the reasoning here, and no requirement or scenario:
 
 - **An Igor holds exactly one role** ([#156](https://github.com/adamstallard/igor/pull/156)).
-  This change argued for detecting what is left on the grounds that `serve` might one day run
-  several roles. That day will not come, so the passages saying a multi-role `serve` satisfies
-  the rule unchanged are removed. The check is still detected rather than inferred from the
-  scope, because the seat side needs it: a stopped seat leaves nothing only where every seat that
-  serves the role is stopped.
+  The passages saying a multi-role `serve` would satisfy the exit rule unchanged are removed. The
+  exit rule itself was dropped on 2026-10-18.
 - **Pools are dropped** ([#148](https://github.com/adamstallard/igor/issues/148)). A seat's own
   file lists the roles it serves, and among those under their line the Igor picks the seat with
   the most headroom, soonest reset breaking ties
@@ -40,10 +75,6 @@ built.
   reading, awaiting a probe". **Restated with Adam's approval on 2026-09-28:** the list now ends
   "…from a seat with no headroom left or with no unreset reading of its windows", and task 4.2
   says the same.
-- *Only open conditions count toward it* holds as written. "A window that has not reset" and "a
-  role held back by pacing" are both waits that end on their own. Under the line, a window shut
-  below 100% reopens when the line crosses the reading, before its reset, and pacing is that same
-  line. Both still end without anyone acting, which is the discriminator this change turns on.
 - **Headroom becomes per role.** Because the line uses the larger of the seat's and the role's
   reserve, one seat can have headroom for one role and none for another at the same moment. Task
   4.2's "a stopped seat with headroom shows both", and the scenario *Stopped is not out of
@@ -69,104 +100,19 @@ The dependency runs one way and is total: every requirement here reads the condi
 `condition-backoff` archives first, or this change's requirements land as the whole of a
 capability whose other half is still an open change. Archiving this one first was tried in a
 throwaway copy of `openspec/` and does exactly that without complaining: it creates
-`openspec/specs/stuck-conditions/spec.md` holding these four requirements alone, over a Purpose
+`openspec/specs/stuck-conditions/spec.md` holding this change's requirements alone, over a Purpose
 line naming this change as what created the capability.
-
-## The exit is keyed to what is left, and detected rather than inferred
-
-The rule is: establish whether the conditions open against this process leave it any item it could
-take. None left is an exit; any left is a report and a running loop.
-
-The alternative, written first and rejected, keys the exit to the cure's *derivation* — an
-Igor-scoped condition exits, a role- or seat-scoped one never does. It reads well and it does not
-survive the shapes this repository ships. `igor serve` takes exactly one role, and
-`deploy/igor.service` is a per-role template (`ExecStart=/usr/local/bin/igor serve %i`), so a
-role-scoped stop leaves the unit serving that role up and doing nothing: the failure mode this
-change exists to end, arriving through the door the rule left open. The issue's own open question —
-whether every seat being stopped should exit — is the same omission approached from the seat end,
-and a scope-derived rule has to answer it as a special case. Keyed to what is left, both fall out
-of one check.
-
-**Detected, not inferred from the scope.** The requirement asks what is *left*, which a process
-answers about itself: a condition naming the Igor's own credential leaves nothing; a condition on
-the role it serves leaves nothing, since an Igor holds one role; a stopped seat leaves nothing only
-where every seat that serves the role is stopped.
-
-Nothing new has to be recorded for it. A cure key *is* its scope — `role:<name>:commands` names a
-role, `seat:<id>:token` names a seat — and finding the seats that serve a role is what the budget gate
-already does before choosing one. The check belongs where that
-resolution happens.
-
-**The guard is in the requirement, not only here.** Only *stopped scopes* may count toward
-"nothing left". A seat with no headroom, a window that has not reset, a role held back by pacing
-or by its own ceiling must not. The discriminator is the one this whole change turns on — a budget
-window reopens on its own clock, a stopped scope waits for a person — and it is written into the
-requirement because the requirement is what an implementer is held to. Folded together, the check
-makes `igor serve` exit on an ordinary session limit, which is a crash loop on a state every Igor
-reaches in normal use, and it would spend the exit signal precisely where it means nothing.
-
-A credential the provider refused is the one genuinely arguable exclusion. It waits for a person
-too, so by the discriminator alone it belongs. It is left out because it is a different mechanism
-with its own hold, cooldown and reporting line, still unmerged in
-[#65](https://github.com/adamstallard/igor/pull/65), and folding it in would make this change also
-the change that decides there is one "cannot proceed until somebody acts" state rather than two.
-
-## Exit and probe are in tension, and the probe wins at startup
-
-`condition-backoff` clears a condition by letting exactly one item through after a cooldown, and
-that is the only mechanism: nothing announces a cure. Exit interacts with it badly if taken
-literally. A process that exits on sight of an open condition never reaches the cooldown, so under
-a supervisor that restarts it the probe is never run from inside a process that survives long
-enough to run it. The condition becomes permanent, and a cure made five minutes after the stop
-waits for somebody to notice and restart something by hand — which is the state this change exists
-to end, reached by the mechanism meant to end it.
-
-The cooldown is wall-clock and lives in the state branch, so it survives the restart. That is what
-makes the resolution simple: the decision to exit comes *after* the probe check, never before it.
-A start with the cooldown passed is exactly the moment the probe would have run anyway, so the
-restart cadence becomes the probe cadence, which is the second reason the retry interval matters
-below.
-
-## What the exit is worth on the recipes this repository ships
-
-Measured by reading the units rather than by running them, so it is a reading of the files and not
-an experiment:
-
-- **`deploy/igor.service`**: `Restart=always`, `RestartSec=30`, no `StartLimit*` override and no
-  `OnFailure=`. systemd's start rate limit counts starts inside `StartLimitIntervalSec`
-  (documented default 10s, burst 5); restarts thirty seconds apart never reach it, so the unit
-  never enters `failed`, and everything an operator would hang off `failed` — `OnFailure=`,
-  `systemctl is-failed`, a journal alert on the unit's state — never fires. Worth confirming
-  against `systemd.service(5)` on the target distribution when the docs task is done, since the
-  defaults are the load-bearing part.
-- **`deploy/docker-compose.yml`**: `restart: unless-stopped` backs off and never gives up, so the
-  probe keeps getting its chance — but nothing escalates either.
-- **Kubernetes**: the same loop surfaces as `CrashLoopBackOff`, which is alertable out of the box
-  and caps its backoff. This is the shape the issue's argument assumes.
-- **A bare `while true` wrapper**: neither backs off nor escalates, and is the one shape where
-  exiting is strictly worse than idling.
-
-So "every supervisor already alerts on a crash loop" is true of Kubernetes and not of what this
-repository ships. Hence the requirement has two halves — escalate, and retry no faster than the
-loop would have polled — and the second is quantified: `RestartSec=30` against a ten-minute
-default poll would restart a stopped Igor twenty times more often than the working one polled, and
-each start re-reads the configuration and the state branch.
-
-There is a real tension inside "escalate": making systemd reach `failed` means it *stops*
-restarting, and a unit that stops restarting never probes again. The two ways out are an
-`OnFailure=` unit that fires while `Restart=always` keeps running, or an external check on restart
-count — either satisfies the requirement, and the requirement deliberately states the property
-rather than the recipe, because which one an operator can have depends on what else they run.
 
 ## Where a role-scoped stop goes, and why not in a budget report
 
-The issue's answer was "role- or seat-scoped → a line in `igor budget`", following the credential
+Issue #80's answer was "role- or seat-scoped → a line in `igor budget`", following the credential
 breaker's `!  out of rotation: …` precedent exactly. Half of that survives specification and half
 does not.
 
 **Seat-scoped belongs there.** A budget report answers "can this seat be spent from", and it
 already carries two other answers to that question on a line of the seat's own: a credential that
-could not be read, and — with [#65](https://github.com/adamstallard/igor/pull/65) — one the
+could not be read, and — with `condition-backoff` (#101), which replaced the credential breaker
+proposed in #65 — one the
 provider refused. A stopped seat is the third. Nothing new is invented and the operator debugging
 a seat finds it where they already are.
 
@@ -180,15 +126,16 @@ than the consistency.
 What belongs there instead is a listing whose subject *is* the question: `igor conditions`, no
 argument, every open condition with its cure key, scope, count, cure and next probe time, and one
 line in `docs/deployment.md`'s "Checking on it" beside `igor budget` and `igor run <role> --plan`.
-The record exists by then, so this is a read and a render, and it is the same read the exit path
-and the budget line already need. The requirement states the property — no argument, no role
+Once `condition-backoff` is built, the conditions exist, so this is a read and a render, and it is the same read the cycle
+report and the budget line already need. The requirement states the property — no argument, no role
 named, that content, reading clears nothing — rather than the command's name, because the name is
 the part a reviewer may reasonably want different.
 
 **The seat line is then a deliberate duplication**, one line rendered from the same record in two
 reports. It is cheap, and the alternative is worse: an operator who has read `igor budget` and
 seen a seat that looks fine, when the reason nothing is happening is a stop on that very seat.
-Both readers must see it; only one record states it.
+Both readers must see it; one source states it, the execution log the conditions are rebuilt
+from.
 
 ## Rejected: an issue in the destination
 
@@ -202,8 +149,7 @@ work tracker is read by reviewers deciding what to work on, and an operations al
 ## Deferred: `on_condition_command`
 
 The same shape as a seat's `token_command`: a command the operator names, run when a condition
-opens, wired to whatever they page on. It assumes no stack, which is exactly what the exit does
-assume.
+opens, wired to whatever they page on. It assumes no particular monitoring or paging system.
 
 Deferred rather than taken, because it is the answer to a question pull has not yet failed. The
 condition that brings it back: an Igor found stopped on a role- or seat-scoped condition
