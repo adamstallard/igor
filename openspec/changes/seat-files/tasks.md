@@ -81,9 +81,21 @@ measurement.
       seat "<id>" is lent, and workers run as <igor-user>, which can read the key that decrypts it, so this Igor leaves it undecrypted. Lending needs a separate worker user: docs/deployment.md, "A separate user for the worker".
       ```
 
-      Build this now. How a role whose only seats are such seats behaves, stopping or handing
-      off, waits for the proposal's open question. Test: the scenario of *A lent seat is
-      decrypted only where the worker has a user of its own*
+      Such a seat is ineligible, #143's probe skips it, and it raises no condition. A role stops
+      only when every seat serving it is under a condition (5.1 and 11.3), so a role whose seats
+      are all lent hands off. Tests: the scenarios of *A lent seat is decrypted only
+      where the worker has a user of its own*
+- [ ] 3.9 Build once the proposal's open question on how this condition opens and clears is
+      answered. A lent seat whose ciphertext does not decrypt with a key Igor can read is ineligible,
+      and #143's probe skips it. The seat's condition report names the seat and its `owner`,
+      without an @-mention, since a handoff may quote it on a public issue. Worded so (may be
+      reworded; it must name both):
+
+      ```
+      seat "<id>" carries a token this Igor cannot decrypt, so no role draws on it. Its lender, <owner>, re-lends it with `igor seat add <id>`.
+      ```
+
+      Test: the scenario *A lent seat that does not decrypt is skipped, and its lender named*
 
 ## 4. Which seats a role draws on
 
@@ -130,12 +142,11 @@ measurement.
 
 ## 7. `igor seat add`
 
-- [ ] 7.1 `src/cli.ts`: `igor seat add <id> [--reserve <r>] [--roles <a,b>]`. In a clone of the
-      lore repository, or of a fork of it, the lore repository comes from the clone's `upstream`
-      remote where there is one, and otherwise
-      `origin`; the holder's login from `gh api user`. Which lore repository the command uses
-      outside a clone, and how it commits there, is an open question in the proposal: build that
-      part once it is settled, and not before
+- [ ] 7.1 `src/cli.ts`: `igor seat add <id> [--lore <owner/repo>] [--reserve <r>] [--roles <a,b>]`.
+      `--lore` names the lore repository. In a clone of the lore repository, or of a fork of it,
+      `--lore` may be left out, and the lore repository comes from the clone's `upstream` remote
+      where there is one, and otherwise `origin`. Outside a clone, a missing `--lore` is refused
+      before the token is read. The holder's login comes from `gh api user`
 - [ ] 7.1a Check `owner` with `gh api users/<owner>` before writing the seat file. A login it does
       not find is refused, worded so:
 
@@ -166,9 +177,11 @@ measurement.
       ```
       seats/<id>.yaml names token_env: its token is set on the Igor server by the operator, so `igor seat add` does not rotate it.
       ```
-- [ ] 7.5 Commit on branch `seat/<id>`. Push to the lore
-      repository where `gh api` says the holder may push, and otherwise to their fork, creating it
-      with `gh repo fork` where it does not exist. Open the pull request through `gh`. Its body:
+- [ ] 7.5 Commit on branch `seat/<id>`, in the lore repository where `gh api` says the holder
+      may push, and otherwise in their fork, creating it with `gh repo fork` where it does not
+      exist. Inside a clone, commit locally and push the branch. Outside a clone, create the
+      branch and commit the file through the GitHub API with `gh api`, cloning nothing. Open the
+      pull request through `gh`. Its body:
 
       ```
       Lends seat <id> to this team's Igors: <reserve> reserve, serving <roles>. The token is encrypted to seats/recipient.txt, so only the Igor server can read it. Revoking it at Anthropic stops the seat. After merging, the operator updates the server's lore checkout.
@@ -182,8 +195,14 @@ measurement.
 
 - [ ] 7.6 Refusals before the token is read: `gh` not installed or not signed in; no
       `seats/recipient.txt` on the default branch; an invalid id; a seat naming `token_env` (7.4).
-      After it is read: an empty token. Running outside a clone is neither refused nor built
-      here: it waits for the open question of 7.1. The `gh` refusal, worded so:
+      Outside a clone, a missing `--lore`. After it is read: an empty token. The `--lore`
+      refusal, worded so:
+
+      ```
+      igor seat add is not running in a clone of the lore repository, so it needs --lore <owner/repo> to know where to open the pull request.
+      ```
+
+      The `gh` refusal, worded so:
 
       ```
       igor seat add opens your pull request through gh, so it needs gh installed and signed in: https://cli.github.com, then `gh auth login`.
@@ -286,7 +305,7 @@ leaks.
       terminal, and why it never goes into chat, email, or a file unencrypted. A plain token
       pasted into a pull request is public as soon as it is pushed, before Igor can refuse it, and
       is to be revoked at once
-- [ ] 9.6 `docs/seats.md`, **lending it:** one path, `npx igor-agent seat add <id>`, with Node and
+- [ ] 9.6 `docs/seats.md`, **lending it:** one path, `npx igor-agent seat add <id> --lore <owner/repo>`, with Node and
       `gh`, installed and signed in, as the prerequisites: what it asks for, and that it opens the
       pull request through `gh`. A person with no GitHub account lends through the operator, whose
       login is then the seat file's `owner`. No manual `age` steps and no route through a clone
@@ -478,16 +497,29 @@ of its requirements. Build each against #101's code:
       `files` lists what the installed package reads, and `engines` is `node >= 26`
 - [ ] 12.2a A licence check, run by 12.3 before publishing: the package's own `license` field and
       every dependency's licence are each on an allowlist kept in the repository, and any that is
-      not fails the release, naming the package and its licence (Adam, 2026-10-17). Which
-      licences the allowlist holds is open in the proposal
+      not fails the release, naming the package and its licence (Adam, 2026-10-17). The
+      allowlist holds exactly these SPDX identifiers (Adam, 2026-10-17); any other, copyleft
+      included, fails until someone adds it on purpose:
+
+      ```
+      MIT
+      ISC
+      BSD-2-Clause
+      BSD-3-Clause
+      Apache-2.0
+      0BSD
+      CC0-1.0
+      Unlicense
+      BlueOak-1.0.0
+      ```
 - [ ] 12.3 A release workflow under `.github/workflows/`, triggered by pushing a version tag, on
       GitHub-hosted runners: it builds, runs the licence check, and publishes through npm trusted
       publishing (OIDC), with `id-token: write` in its permissions and no npm token stored
       anywhere (Adam, 2026-10-17). Configure `igor-agent` on npm to trust this workflow. Trusted
       publishing adds provenance to each version
 - [ ] 12.4 Test from a clean machine with only Node and a signed-in `gh` installed that
-      `npx igor-agent seat add` works, after the first release and once the proposal's open
-      question on running outside a clone is settled. Record the result in `design.md`
+      `npx igor-agent seat add <id> --lore <owner/repo>` works outside any clone, after the first
+      release. Record the result in `design.md`
 
 ## 13. Archiving
 

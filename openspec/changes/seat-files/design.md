@@ -52,8 +52,17 @@ operator must get right:
 - **Who must not read it: the worker.** A worker running as the Igor's own user could read the
   key, and with it every lent token. So where #175's worker user is not configured (`igor run`,
   and `igor serve --same-user`), Igor decrypts no lent seat and runs only seats naming
-  `token_env` (Adam, 2026-10-17). Lending needs #175's setup. How such an undecrypted seat counts
-  in seat choice is open in the proposal.
+  `token_env` (Adam, 2026-10-17). Lending needs #175's setup. In same-user mode such a seat is
+  ineligible, #143's probe skips it, and it raises no condition, since its file has no fault
+  (Adam, 2026-10-17). A role stops only when every seat serving it is under a condition
+  (decision 25), so in same-user mode a role whose seats are all lent hands off.
+- **A token Igor cannot decrypt** (Adam, 2026-10-17). Whatever the reason, no `seatKey`, a key
+  file Igor cannot read, a wrong key or a corrupt file, the seat is ineligible: seat choice never
+  picks it and #143's probe skips it, and it is under a condition on the seat. For a wrong key or
+  a corrupt file the cure is the lender's, so the condition's report names the seat and its
+  `owner`, so that someone re-lends it; for the other two the cure is the operator's, and the
+  report names the key, as task 3.4 words it. How that condition opens and clears, when the seat
+  is never picked and never probed, is open (proposal, *Still open*).
 
 ### Why ciphertext in history no longer rules this out
 
@@ -244,7 +253,12 @@ reconciliation workflow can commit, and that also lets a workflow on any pushed 
 seat-file change to the default branch with no pull request. The bypass stays; the push notice is
 meant to cover what it lets through. GitHub documents that a push made with the automatic
 `GITHUB_TOKEN` starts no workflow. If that holds for a push through the bypass, the push notice
-never fires for it; task 10.6 measures it (proposal, *Still open*). A change merged through a pull request is mentioned twice, once on the pull request and
+never fires for it; task 10.6 measures it (proposal, *Still open*).
+
+**Decided 2026-10-17 (Adam): when Igor pulls a lore change that adds or changes a seat file, Igor
+posts the notice itself.** Igor does not pull its lore checkout yet; issue #176 is where it will,
+so that is where the decision is specified. *Igor commenting*, rejected below, is the pull
+request notice, which must come before a change lands; this notice comes after. A change merged through a pull request is mentioned twice, once on the pull request and
 once on its commit. The comparison API lists at most 300 changed files, so a push changing more
 than that may leave a seat file unmentioned.
 
@@ -330,8 +344,12 @@ still needed `gh` or a clone, to find the lore repository, the holder's login (w
 `owner`) and the public key, which a private repository serves only to a signed-in client. And a
 rotation could not use it, because the new-file link cannot replace a file that already exists.
 
-Which lore repository the command uses outside a clone, and how it commits there without one, is
-open in the proposal.
+**Decided 2026-10-17 (Adam): `--lore <owner/repo>` names the lore repository**, required outside
+a clone and inferred inside one from the clone's `upstream` remote, or `origin` where there is
+no `upstream`. Outside a clone, the command creates the
+branch, commits the seat file and opens the pull request through the GitHub API with `gh`, so a
+lender with only Node and `gh` clones nothing. Inside a clone it commits on a new branch and
+opens the pull request with `gh`.
 
 ## Publishing to npm
 
@@ -348,5 +366,6 @@ writer could have published `igor-agent`, which lenders run through `npx`.
 
 **The licence check covers the package and every dependency (Adam, 2026-10-17).** The package's
 own `license` field and each dependency's licence must be on an allowlist kept in the repository,
-or the release fails, naming the package and its licence. Which licences the allowlist holds is
-open in the proposal.
+or the release fails, naming the package and its licence. The allowlist (Adam, 2026-10-17) is
+MIT, ISC, BSD-2-Clause, BSD-3-Clause, Apache-2.0, 0BSD, CC0-1.0, Unlicense and BlueOak-1.0.0.
+Any other licence, copyleft included, fails the release until someone adds it on purpose.

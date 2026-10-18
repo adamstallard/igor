@@ -103,27 +103,39 @@
     workflow is open (*Still open*).
 27. **`igor doctor` (#113, `check-a-lore-repository`) is built before this change** (Adam,
     2026-10-17). Decisions 12 and 14 and section 8 of `tasks.md` add to the command #113 builds.
+28. **`igor seat add` takes `--lore <owner/repo>`, required outside a clone and inferred inside
+    one** (Adam, 2026-10-17). Outside a clone it commits the seat file and opens the pull request
+    through the GitHub API with `gh`, with no local clone. Inside a clone it commits on a new
+    branch and opens the pull request with `gh`. Either way `gh` is required (decision 22).
+29. **A lent seat whose file the server cannot decrypt is ineligible** (Adam, 2026-10-17): seat
+    choice never picks it, and #143's probe skips it. It is under a condition on the seat, as
+    every seat whose token cannot be read is. For a wrong key or a corrupt file, that
+    condition names the seat and its lender, so someone re-lends it; for a missing `seatKey` or
+    an unreadable key file it names the key, whose cure is the operator's. How the condition
+    opens and clears is still open. A lent
+    seat that same-user mode leaves undecrypted (decision 23) is ineligible and skipped by the
+    probe the same way; there is no fault in its file, so it raises no condition.
+30. **The licence allowlist of decision 19 is MIT, ISC, BSD-2-Clause, BSD-3-Clause, Apache-2.0,
+    0BSD, CC0-1.0, Unlicense and BlueOak-1.0.0** (Adam, 2026-10-17). Any other licence, copyleft
+    included, fails the release until someone adds it to the list on purpose.
 
 **Still open:**
 
-- **Which lore repository `igor seat add` uses outside a clone, and how it commits there.**
-  Decision 22 settles that `gh` is required, but the clean-machine test (task 12.4) has Node
-  and `gh` and no clone. Inside a clone the repository comes from its remote and the command
-  commits and pushes a branch. Outside one, it needs the repository named somehow, and the
-  commit made without a local clone, through `gh`'s API or a clone it makes itself. Neither is
-  decided (tasks 7.1 and 12.4).
-- **How a lent seat refused under same-user mode counts in seat choice** (decision 23). If such
-  a seat counts as one under an open condition, a role whose seats are all lent stops. If it
-  counts as merely ineligible, the role hands off, since decision 25 has a role stop only when
-  every seat is under a condition. Nor is it said whether
-  #143's probe, which would need the seat's decrypted token, skips such a seat. Not decided.
 - **Whether decision 26's push notice fires for the case it was added for.** GitHub documents
   that a push made with a repository's automatic `GITHUB_TOKEN` starts no workflow, and the
   reconciliation workflow, the one lore setup puts on the bypass list, pushes with that token.
   If GitHub's documented behaviour holds for that push, a seat-file change committed through the
   bypass gets no notice. Unmeasured (task 10.6);
-  the guides promise no notice for that case until it is measured.
-- **Which licences the allowlist of decision 19 holds.** Not decided (task 12.2).
+  the guides promise no notice for that case until it is measured. Adam decided on 2026-10-17
+  that Igor posts the notice itself when it pulls a lore change that adds or changes a seat
+  file; pulling is #176's, which is not yet specified, so that decision is recorded on issue
+  #176. Whether the workflow's push trigger stays once Igor posts that notice is not decided.
+- **How the condition on an undecryptable seat opens and clears** (the open part of decision
+  29; the rest is decided). Under #101 a
+  condition opens when its cure key recurs as the cause of handoffs, and a seat condition clears
+  by #143's seat probe. A seat that is never picked causes no handoff, and the probe skips it, so
+  neither path reaches it. Its cure key, and how it clears once the lender re-lends, are not
+  decided.
 
 ## Why
 

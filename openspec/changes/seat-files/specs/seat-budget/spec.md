@@ -144,7 +144,14 @@ Decryption SHALL happen where the token is read, whenever it is read, and the pl
 be written to disk, to an argument list, or to any record. Where decryption fails, the seat SHALL
 be reported unreadable with the reason, and no other credential SHALL be used in its place: no
 `seatKey` declared, a key file that cannot be read, a key that does not match, or a ciphertext
-that does not decrypt.
+that does not decrypt. A seat whose token Igor cannot decrypt SHALL be ineligible: seat choice
+SHALL NOT pick it, and #143's probe SHALL skip it. It is under a condition on the seat, as
+`stuck-conditions`' *A condition's scope is its cure's scope* says for any token that cannot be
+read or decrypted; how that condition opens and clears is open in the proposal. Where the key is
+read but the seat's ciphertext does not decrypt with it, because it was encrypted to another key
+or is corrupt, that condition's report SHALL name the seat and its `owner`, the lender, so that
+someone re-lends it. Where no `seatKey` is declared or the key file cannot be read, the report
+SHALL name the key, whose cure is the operator's.
 
 A seat's credential, wherever another rule compares or hashes it, such as
 `stuck-conditions`' *A seat's refused credential is a condition on that seat* (#101), SHALL be the
@@ -182,6 +189,13 @@ can read the lore repository, which may be anyone.
   holds
 - **THEN** the seat is reported unreadable, saying its token could not be decrypted with the key
   at that path
+
+#### Scenario: A lent seat that does not decrypt is skipped, and its lender named
+
+- **WHEN** `seats/bob.yaml`, whose `owner` is `bobsmith`, carries ciphertext that is corrupt or
+  was encrypted to another key, and `seatKey` names a key Igor can read
+- **THEN** seat choice never picks `bob`, and #143's probe does not probe it
+- **AND** the seat's condition names the seat `bob` and its owner `bobsmith`
 
 #### Scenario: A key file that cannot be read is unreadable, not substituted
 
@@ -456,13 +470,20 @@ installed, and SHALL:
    replace its `encrypted_token` and change nothing else. This is how a token is rotated. Where it
    names `token_env`, refuse before reading the token, saying the seat's token is set on the
    server by its operator.
-6. Commit on a new branch, push it to the lore repository where the holder may and otherwise to
-   their fork, and open a pull request against the default branch with `gh`.
+6. Inside a clone of the lore repository, or of a fork of it, commit on a new branch, push it to
+   the lore repository where the holder may and otherwise to their fork, and open a pull request
+   against the default branch with `gh`. Outside a clone, make the same commit on a new branch
+   through the GitHub API with `gh`, in the lore repository where the holder may push and
+   otherwise in their fork, with no local clone, and open the pull request with `gh`.
+
+The lore repository SHALL be the one `--lore <owner/repo>` names. Inside a clone, `--lore` MAY be
+left out, and the lore repository SHALL be the clone's `upstream` remote, or `origin` where
+there is no `upstream`. Outside a clone,
+the command SHALL refuse without `--lore`, before reading the token.
 
 The command SHALL require `gh`, installed and signed in, and SHALL refuse before reading the token
 where it is missing or signed out. Igor SHALL NOT hold the holder's GitHub credentials: `gh` keeps
-its own login. Which lore repository the command uses outside a clone, and how it commits there,
-is an open question in the proposal.
+its own login.
 
 The token SHALL NOT be written to disk, to an argument list, or to any process's environment. The
 command SHALL refuse, before reading the token, where `seats/recipient.txt` is absent on the
@@ -487,6 +508,24 @@ copy, and whoever replaces `recipient.txt` receives every token encrypted to it 
 
 - **WHEN** `gh` is signed in and the holder cannot push to the lore repository
 - **THEN** the branch is pushed to their fork and the pull request opened from there
+
+#### Scenario: A seat is lent from outside a clone
+
+- **WHEN** a holder runs `npx igor-agent seat add bob --lore acme/igor-lore --reserve 0.5 --roles
+  generalist` in a directory that is no clone
+- **THEN** a pull request against `acme/igor-lore` adds `seats/bob.yaml`, committed through the
+  GitHub API
+- **AND** nothing is cloned to the holder's disk
+
+#### Scenario: Outside a clone, --lore is required
+
+- **WHEN** a holder runs `igor seat add bob` in a directory that is no clone, without `--lore`
+- **THEN** the command refuses before asking for the token, saying it needs `--lore <owner/repo>`
+
+#### Scenario: Inside a clone, the lore repository is inferred
+
+- **WHEN** a holder runs `igor seat add bob` without `--lore` in a clone of `acme/igor-lore`
+- **THEN** the pull request is opened against `acme/igor-lore`
 
 #### Scenario: A holder without `gh` is refused
 
@@ -536,10 +575,14 @@ copy, and whoever replaces `recipient.txt` receives every token encrypted to it 
 
 ### Requirement: A lent seat is decrypted only where the worker has a user of its own
 
-Where no worker user is configured, so that the worker runs as the Igor's own user (#175's
-`igor run`, and `igor serve --same-user`), Igor SHALL NOT decrypt any seat's `encrypted_token`,
+A lent seat, here, is one whose file names `encrypted_token`. Where no worker user is configured,
+so that the worker runs as the Igor's own user (#175's `igor run`, and
+`igor serve --same-user`), Igor SHALL NOT decrypt any seat's `encrypted_token`,
 and SHALL NOT draw on that seat. Only seats naming `token_env` SHALL run there. Igor SHALL say so
-when it starts, naming each seat it leaves undecrypted. A worker running as the Igor's own user
+when it starts, naming each seat it leaves undecrypted. Such a seat SHALL be ineligible: seat
+choice SHALL NOT pick it, and #143's probe SHALL skip it. Its file has no fault, so it SHALL raise
+no condition. *A role draws on the seat with the most headroom* stops a role only when every
+seat serving it is under a condition, so a role whose seats are all lent hands off. A worker running as the Igor's own user
 can read the key `seatKey` names, and with it every lent token.
 
 #### Scenario: Same-user mode leaves a lent seat undecrypted
@@ -550,6 +593,13 @@ can read the key `seatKey` names, and with it every lent token.
 - **AND** the seat naming `token_env` is drawn on
 - **AND** Igor says, when it starts, that it leaves the lent seat undecrypted because workers run
   as its own user
+- **AND** #143's probe does not probe the lent seat, and no condition is raised for it
+
+#### Scenario: Same-user mode with only lent seats hands off
+
+- **WHEN** `igor run` starts with no worker user configured, and every seat serving its role
+  names `encrypted_token`
+- **THEN** the Igor hands off each item it would work, and the role does not stop
 
 ### Requirement: A spend with no seat behind it is not made
 
