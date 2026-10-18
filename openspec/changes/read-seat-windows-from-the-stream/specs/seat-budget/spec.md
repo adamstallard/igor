@@ -218,8 +218,9 @@ and a refusal only ever shuts a window. So if the provider drops or changes the 
 
 ### Requirement: A seat nothing has read is probed on the Igor server with its own token
 
-Where seats are declared, for a seat that has no unexpired reading of a
-window — no `usage` or `stream` observation of it whose reset has not passed — the server running
+In a deployment that declares seats, for a seat that has no unexpired reading of a
+window — no `usage` or `stream` observation of it whose reset has not passed; a seat with an
+unexpired refusal is excluded below — the server running
 the Igors SHALL make a seat probe: one minimal `claude -p` call with that seat's own configured
 token, on the cheapest model, with a trivial prompt and no tools, and with `--output-format
 stream-json --verbose`, run from an empty temporary directory so that no project's settings, hooks
@@ -282,7 +283,7 @@ its credential were cleared, so it keeps its stop until it could.
 
 #### Scenario: A reserved seat with no reading is probed
 
-- **WHEN** a seat declares a reserve, and has no reading of either window
+- **WHEN** a seat declares a reserve, and has no reading of any window
 - **THEN** the server running the Igors makes one seat probe with that seat's token
 - **AND** the probe's `rate_limit_event`, if there is one, is recorded as a `stream` reading of
   that seat
@@ -433,7 +434,8 @@ measured, and how it was measured.
 
 **Just after a reset, by a probe.** Every reading states when its window resets. For each seat,
 the server running the Igors SHALL make a seat probe ten minutes after
-a reset it knows of, once for each window type, and again about once a week to catch a change.
+a reset it knows of, for each window type separately: once until that type's length and
+schedule are measured, and after that about once a week, to catch a change in either.
 The new reading's reset, set against the old reset and the probe's own time, gives both answers.
 On a fixed schedule the new reset is the old reset plus one length. Where instances start at first
 use, it is the probe's time plus one length.
@@ -965,7 +967,8 @@ window it SHALL start work on a seat only while that seat's most recent unreset 
 window is below the seat's line for that window:
 
     line      = 1 − r × remaining
-    r         = max(the seat's reserve, the role's reserve), a role declaring none counting as 0
+    r         = max(the seat's reserve, the role's effective reserve, as `role-config` resolves
+                it from the role and its parents), a role with none counting as 0
     remaining = (resetsAt − now) ÷ window length, clamped to [0, 1]
 
 where `resetsAt` is the reset that reading reports and the window length is the one in use for

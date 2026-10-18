@@ -25,8 +25,9 @@ What is measured and what is not, carried into every decision below:
 - **Unverified:** the `rejected` shape, contributor-reported as `status: "rejected"`,
   `utilization: 1` and a non-zero exit (#57, #15).
 - **Absent:** per-model weekly windows.
-- **Undocumented:** the event itself. Reading it is an optimisation and never a correctness
-  dependency.
+- **Undocumented:** the event itself. A seat's reserve line, which decides whether it may take
+  work, rests on the event's readings, so the event is a dependency; *Degrading*, below, says what
+  holds when it is missing.
 
 ## Decisions
 
@@ -41,7 +42,8 @@ terminal event is.
 
 ### One reading per run: the last event received
 
-A run can carry several events. Within one window instance fullness only rises, so the last event
+A run can carry several events. Within one window instance fullness is assumed to only rise; task
+1.3 has yet to measure it. On that assumption the last event
 is the freshest lower bound and the earlier ones add nothing it does not. A row per event would
 grow `capacity.ndjson` by the length of the run for no information. If a window resets mid-run,
 the last event describes the new instance, which is the one that bears on the present.
@@ -68,9 +70,12 @@ excluded the same way, and err the same way.
 
 The worker's environment is written out, and carries exactly the token of the seat the gate chose
 (§6.3.2). So the reading is attributed to that seat, the one `recordExecution` already names as
-having paid. Every seat has a token of its own, and Igor never uses a stored Claude login (Adam,
-2026-10-18), so the token that ran is always the chosen seat's. `seat-files` (#171), which
-archives with this change, refuses a seat file that names no token.
+having paid. Every seat has a token of its own, and Igor never uses a stored Claude login, the
+credentials `claude` keeps in a home directory (Adam, 2026-10-18; proposal, decision 14), so the
+token that ran is always the chosen seat's. `seat-files` (#171) refuses a seat file that names no
+token. It archives in the same commit as this change, but its code is built after this change's;
+until it is, the in-force spec still allows a seat with no token, which the proposal lists for
+Adam.
 
 ### The record: the existing shape, and a third source, `stream`
 
@@ -114,7 +119,8 @@ exhausted seat applies to the stream too.
 
 ### A stale reading is a lower bound until its window resets
 
-Fullness only rises within one window instance. So a reading taken at `at` says the window is
+Fullness is assumed to only rise within one window instance, which task 1.3 has yet to measure.
+On that assumption, a reading taken at `at` says the window is
 *at least* that full at every later moment up to `resetsAt`, and nothing at all about the instance
 after. That settles staleness without a threshold:
 
@@ -316,7 +322,8 @@ they're using more or less."
 unreset reading of that window is below
 
     line      = 1 − r × remaining
-    r         = max(seat reserve, role reserve), a role declaring none counting as 0
+    r         = max(seat reserve, role's effective reserve), a role with none, declared or
+                inherited, counting as 0
     remaining = (resetsAt − now) ÷ window length, clamped to [0, 1]
 
 Both windows must pass. It is written into the `MODIFIED` *The reserve is untouchable*. The same
@@ -551,9 +558,12 @@ all count spend rows. #101 also records a credential check as a row of kind `che
 credential check, the check row is a second row, and it carries no cost. A probe is made on no role's behalf, so the record says "seat probe" where
 a role would go. That needs a `MODIFIED` delta on *Every invocation records which role
 spent from which seat*, whose in-force text requires a role. The in-force *A spend with no seat
-behind it does not happen* also requires a seat the gate chose. `seat-files` (#171), which
+behind it does not happen* also requires a seat the gate chose. This change cannot carry a
+`MODIFIED` block for it. Every seat now has a token, so the requirement's scenarios about a seat
+with no token no longer hold, and the block would have to drop them; openspec refuses a block
+that drops scenarios. `seat-files` (#171), which
 archives with this change, removes that requirement and re-adds it with a probe as the stated
-exception, so this change carries no block for it.
+exception.
 
 **When a seat needs one: no unexpired reading of a window.** A reading is a lower bound on its
 window until that window resets, so a clock threshold shorter than the reset would spend money to
@@ -690,12 +700,12 @@ scenarios became false are `REMOVED` and re-`ADDED` under new names.
   information.
 - ***A limit error lowers the estimate that permitted it*** — the estimate no longer permits
   anything. The refusal gates as a reading at 100%.
-
-One more delta is about the probe: *Every invocation records which role spent from which seat*.
-
 - ***`budget_share` is a ceiling, not a reservation*** — its text said nothing about how a share is
   measured, and the derived path measured it with a capacity figure. Now it is measured against the
   reading, on every path.
+
+One more `MODIFIED` delta is about the probe rather than the dollar bound: *Every invocation
+records which role spent from which seat*, so that a probe's spend row may name no role.
 
 No in-force requirement specifies `igor observe`, the scheduled reading, the refusal of a seat
 credential, or anything in `budget-pacing`, since neither change was archived. So their withdrawal
@@ -761,13 +771,18 @@ says the role may draw on three seats, not a pool of three.
 - **A probe's credential rules move into a stuck-conditions delta** once #101's spec is in force
   (*A seat probe*, above; task 15.1). The probe that clears the seat's credential condition,
   `seat:<id>:credential`, keeps the hourly limit and does not wait for #101's cooldown.
-- **Every seat has a token** (Adam, 2026-10-18, replacing his 2026-10-17 rule for a seat with
-  none): every seat may be probed with its own token, and Igor never uses a stored Claude login
-  (*Whose reading it is*; proposal, decision 14).
+
 - **Issue #69, which asks how old a reading may be before the line distrusts it, is closed with this
   change's reasoning** (*A stale reading is a lower bound until its window resets*) once task 1.3 confirms that fullness does not fall within an instance (task 1.6).
 - **This change and `seat-files` (#171) archive together** (*Pools are dropped*; task 16.1).
 - **`dedicated` is dropped in `seat-files` (#171)** (*A reserve on a dedicated seat is pacing*).
+
+## Settled on 2026-10-18
+
+- **Every seat has a token** (Adam): every seat may be probed with its own token, and Igor never
+  uses a stored Claude login (*Whose reading it is*; proposal, decision 14). It replaces Adam's
+  rule of 2026-10-17, recorded then as decision 14, that a seat naming no token ran on the
+  server's stored login and was never probed.
 
 ## Still open
 

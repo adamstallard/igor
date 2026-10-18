@@ -56,14 +56,14 @@ to merge; #171 is `seat-files`, which moves seat configuration into one file per
     replacing his 2026-10-17 rule for a seat that names no token). A stored login is the
     credentials `claude` keeps in a home directory. This change therefore has no rule for a seat
     without a token: every seat may be probed with its own token, and every reading is of a seat
-    whose token paid. #171 (`seat-files`) refuses a seat file that names no token, makes no model
+    whose token paid. #171 (`seat-files`) refuses a seat file that names no token, forbids any model
     call on a stored login under `igor serve` or `igor run`, and archives with this change
     (decision 16). This change carries no block on the in-force *A spend with no seat behind it
     does not happen*, whose scenarios describe a seat with no token and an organization with no
     seats; openspec will not let a `MODIFIED` block drop them. #171 removes that requirement in
     the same commit and re-adds it without them, with the probe as its stated exception.
-    *Replaced:* the 2026-10-17 rule that such a seat keeps its runs' readings on the server's
-    default login and is never probed.
+    *Replaced:* the 2026-10-17 rule that such a seat ran on a stored login on the server, kept its
+    runs' readings, and was never probed.
 15. **Issue #69, which asks how old a reading may be before the line distrusts it, is closed with
     this change's reasoning once task 1.3 confirms that fullness does not
     fall within an instance** (Adam, 2026-10-17). A reading bounds its window from below until the
@@ -85,6 +85,17 @@ to merge; #171 is `seat-files`, which moves seat configuration into one file per
 - **Two facts the gate rests on are unmeasured:** that fullness does not fall within an instance
   (task 1.3), and what `isUsingOverage` means (task 1.4). The overage rule is not built until 1.4
   confirms it.
+- **For Adam: this change's code is built before #171's.** The two archive in one commit
+  (decision 16), but archiving a spec and building its code are separate steps, and this
+  change's code comes first. Until #171's code lands, the in-force `seat-budget` still lets a
+  seat name no token and run on a stored login, and this change says nothing of how its probe
+  treats such a seat. Delay merging this change's code until #171's merges, or have the probe
+  skip a seat with no token until #171's code lands?
+- **#171's probe exclusions.** #171 has the probe skip two seats: one whose encrypted token Igor
+  cannot decrypt, and one lent by an encrypted file under `igor run`, where #171 decrypts no
+  lent seat. #171 does not modify this change's probe requirement, which says such a seat SHALL
+  be probed. #171's own block, in the same archive commit, has to carry the exclusions into this
+  change's probe requirement.
 
 ## Why
 

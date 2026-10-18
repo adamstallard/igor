@@ -145,8 +145,7 @@
 
 ## 6. The seat probe, on the server (only if 1.1 found an event below threshold)
 
-- [ ] 6.1 In the serve loop, select the seats to probe: seats are declared; the seat names a token
-      source; some window has no unexpired `usage` or `stream` observation; no unexpired row at
+- [ ] 6.1 In the serve loop, select the seats to probe: the deployment declares seats; some window has no unexpired `usage` or `stream` observation; no unexpired row at
       100%; no unexpired overage reading for the window its `rateLimitType` names; no window whose
       newest unreset reading is at or past that window's line (7.1, with the seat's own reserve,
       since a probe is made for no role); no probe of it recorded by any Igor in the last hour; no
@@ -283,9 +282,9 @@
 - [ ] 8.4 `WINDOW_LENGTH` (`src/capacity.ts:73-76`) becomes the built-in default of a per-seat,
       per-window length and schedule. Replace the `scheduled-observation` citations on it in
       `src/capacity.ts` and `test/capacity.test.ts` with this change's requirement
-- [ ] 8.5 `resetAnchor` (`src/capacity.ts:223-258`), `instanceBounds` (`:93`) and
-      `currentInstance` (`:360`) tile only on a fixed schedule; at first use an instance is placed
-      only from its own reset. This affects the reported capacity only
+- [ ] 8.5 Change `resetAnchor` (`src/capacity.ts:223-233`), `instanceBounds` (`:93`) and
+      `currentInstance` (`:360`) so they tile instances only on a measured fixed schedule, and
+      place an instance that starts at first use only from its own reset. This affects the reported capacity only
 - [ ] 8.6 Tests: fixed schedule from a probe ten minutes after a reset; first use from the same;
       the ambiguous case asks for a second probe at another delay; a post-reset probe skipped by
       the hourly limit or the line; a longer length measured after a reset is used; a longer
