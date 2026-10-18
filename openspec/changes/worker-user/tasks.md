@@ -6,7 +6,7 @@
       and seat `token_file` paths while they exist. If #171 has not merged, file an issue asking
       #171 to add `seatKey` to this probe, and link it here.
 - [ ] 0.2 Run measurements 6.1 to 6.5 before building sections 2 to 4; 6.6 informs the docs, and
-      6.7 waits on the proposal's open question on naming the worker user. Record each result in
+      6.7 waits on the proposal's open question on the unit's group and home. Record each result in
       `design.md`, including any that contradicts it, and change the design before the code where
       one does.
 - [ ] 0.3 If #101 (`condition-backoff`) has merged, record a `sudo` spawn failure of the worker
@@ -25,14 +25,24 @@
 - [ ] 0.6 If #174 (`pinned-skills`) has merged, add `skills_dir` to the probe in 5.1. If not,
       file an issue asking #174 to add it, and link it here.
 - [ ] 0.7 If #189 (`loop-verifies-commands`) has merged, its checks go through 1.4's spawn and
-      3.2 waits for them. If not, file an issue asking #189 to run its checks before the Igor's
-      final read, as *The Igor reads no file on the worker's behalf through a link* requires,
-      and link it here.
+      run after 3.2 records the tree, and what they write is discarded. If not, file an issue
+      asking #189 to run its checks on the tree the Igor recorded and to publish that tree, as
+      *The Igor reads no file on the worker's behalf through a link* requires, and link it
+      here.
+
+- [ ] 0.8 1.1 needs the instance name `<role>.<rank>` as an argument to `igor serve`, which the
+      unit passes as `%i`. That is how #179 (`concurrent-instances`) has it in the form pushed to
+      its pull request; the form on `main` reads `IGOR_RANK` instead. If #179 has merged with the
+      argument, build 1.1 on it. Otherwise, file an issue asking whichever of #179 and this change
+      is built second to pass the instance as that argument, and link it here.
 
 ## 1. Starting the worker as another user
 
-- [ ] 1.1 Read `IGOR_WORKER_USER` from the Igor's environment in `run` and `serve`, and nowhere
-      else. An empty value is the same as unset. `igor.config.yaml` gains no key for it.
+- [ ] 1.1 Compute the worker user as `igor-worker-<role>-<rank>` from the instance name `run`
+      and `serve` are given (#179's `<role>.<rank>`, rank 1 where only the role is given).
+      `igor.config.yaml` gains no key for it. What tells the Igor it has no worker user waits for
+      the proposal's open question; until it is answered, build 1.2 and 1.3 behind one function
+      that answers it, so only that function changes.
 - [ ] 1.2 With a worker user, `claudeWorker` spawns
       `sudo --non-interactive --user=<worker> --preserve-env=<names> -- /usr/bin/env PATH=<path> <claude> …`.
       `<names>` is every variable `workerEnv` built except `PATH` and `HOME`, and `<claude>` is
@@ -44,8 +54,13 @@
       outside any tree, do not.
 - [ ] 1.5 Tests (with an injected command, no real `sudo`): the argv for each mode; the seat token
       in no argv element; `--preserve-env` naming exactly `workerEnv`'s keys less `PATH` and
-      `HOME`; an empty `IGOR_WORKER_USER` treated as unset; a model step in the tree after the
-      worker spawned through `sudo` as the worker user.
+      `HOME`; `generalist.2` and `generalist` giving `igor-worker-generalist-2` and
+      `igor-worker-generalist-1`; a model step in the tree after the worker, and #153's
+      `prose start`, spawned through `sudo` as the worker user.
+- [ ] 1.6 #153's `prose start` goes through 1.2's spawn as the worker user, after the reset of
+      the worker's home that #174 builds, so the session mark is the worker's and sits in its
+      home. If #153 has not merged, the issue 0.5 files asks for this too; if #174 has not, the
+      issue 0.6 files does.
 
 ## 2. The tree and the outbox
 
@@ -91,9 +106,11 @@
       ```
       `<path>` is a submodule whose commit changed, and this Igor publishes no submodule pointer, so nothing was published
       ```
-- [ ] 3.2 Before reading changes, the Igor waits for the last process it started as the worker
-      user for the run to exit, whether the worker, a model step or one of #189's checks, and
-      kills that process's group, which is already gone when the process exited by itself.
+- [ ] 3.2 Before reading changes, the Igor waits for the worker, and then each later model step,
+      to exit, killing each one's process group as it does; a group is already gone when its
+      process exited by itself. It then stages the changed paths in its own index, writes that
+      tree with `git write-tree` into its own git directory, runs #189's checks where they exist,
+      and publishes that tree object, discarding what the checks wrote.
 - [ ] 3.3 `changes()` refuses a path that has a link among its directories, checking each
       component with `lstat`. A changed path that is itself a link is read with `readlink` and
       published as a link where 0.4 builds that, and is refused where it does not. `changes()`
@@ -118,6 +135,12 @@
       `<path>` could not be read by this Igor, and an artifact without it would be incomplete, so nothing was published
       ```
 
+      A changed file whose link count is above 1:
+
+      ```
+      `<path>` has more than one hard link, and Igor publishes no file a worker could have linked to another, so nothing was published
+      ```
+
       For more than one path, the paths are listed separated by commas, "is" becomes "are" and
       "lies" becomes "lie", as the existing stop for a path that is not text does
       (`src/execute.ts`). Every
@@ -138,8 +161,9 @@
       model step made after the worker is seen; a file with mode `000` stops the run; a linked declaration file is not read; a nested repository
       whose configuration defines a filter stops the run and its filter does not run; a moved
       gitlink is published as a pointer where 0.4 builds that, and stops the run where it does
-      not, with no git command run inside the submodule either way; a link a check made is seen;
-      a path holding a backtick is escaped in the reason.
+      not, with no git command run inside the submodule either way; a file and a link a check
+      wrote are not in the artifact; a file with a link count of 2 stops the run; a path holding
+      a backtick is escaped in the reason.
 
 ## 4. Kill, release, sweep
 
@@ -159,11 +183,11 @@
       argv, which are not secret. The refusals, verbatim; Adam may reword at review:
 
       ```
-      IGOR_WORKER_USER names "<worker>", which is not a user on this host
+      this Igor's worker user "<worker>" is not a user on this host
       ```
 
       ```
-      IGOR_WORKER_USER names "<worker>", which is <root | the user this Igor runs as>. A worker must run as a separate unprivileged user.
+      this Igor's worker user "<worker>" is <root | the user this Igor runs as>. A worker must run as a separate unprivileged user.
       ```
 
       ```
@@ -171,7 +195,7 @@
       ```
 
       ```
-      this Igor is not in "<group>", the group of its worker user "<worker>", so it cannot read what the worker writes. Add it with SupplementaryGroups= in the unit, then restart.
+      this Igor is not in "<group>", the group of its worker user "<worker>", so it cannot read what the worker writes. Add it to that group, then restart.
       ```
 
       ```
@@ -194,11 +218,17 @@
       the worker user "<worker>" can write <path>, which <is the lore checkout | holds this Igor's installation | is the node this Igor runs on>. Make it writable only by <igor-user>.
       ```
 
-      Where `skills_dir` is set, the probe also creates a file in it as the worker and deletes
-      it. A create that succeeds refuses the start with:
+      The probe also creates a file in `skills_dir` as the worker and deletes it. A create that
+      succeeds refuses the start with:
 
       ```
       the worker user "<worker>" can write <path>, which is skills_dir, and a worker never needs to write there. Make it writable only by <igor-user>.
+      ```
+
+      Where `/proc/sys/fs/protected_hardlinks` does not read `1`, or cannot be read:
+
+      ```
+      fs.protected_hardlinks is not 1 on this host, so a worker could hard-link a file only this Igor can read into its tree. Set it with `sysctl fs.protected_hardlinks=1` and in /etc/sysctl.d, then restart.
       ```
 
 - [ ] 5.2 The check sets `safe.directory=*` in the worker user's global git configuration, as the
@@ -207,20 +237,22 @@
       (verbatim; Adam may reword):
 
       ```
-      igor serve takes work from issues anyone can file, and IGOR_WORKER_USER is not set, so a worker would run as <igor-user> and could read every credential this Igor holds. Set IGOR_WORKER_USER to a separate user (docs/deployment.md, "A separate user for the worker"), or pass --same-user to run workers as <igor-user> anyway.
+      igor serve takes work from issues anyone can file, and this Igor has no worker user, so a worker would run as <igor-user> and could read every credential this Igor holds. Create <worker> (docs/deployment.md, "A separate user for the worker"), or pass --same-user to run workers as <igor-user> anyway.
       ```
 
-      `--same-user` with `IGOR_WORKER_USER` set is refused as contradictory, the way
-      `contradictoryRunFlags` refuses `--plan` with `--claim`.
+      `--same-user` with a worker user configured is refused as contradictory, the way
+      `contradictoryRunFlags` refuses `--plan` with `--claim`. What makes a worker user
+      configured waits for the proposal's open question on it.
 - [ ] 5.4 Whenever workers will run as the Igor's own user, `run` and `serve` print this first,
       before discovery (verbatim; Adam may reword):
 
       ```
-      ! workers run as <igor-user>, the same user as this Igor, so a worker can read every credential this Igor holds. Set IGOR_WORKER_USER to a separate user: docs/deployment.md, "A separate user for the worker".
+      ! workers run as <igor-user>, the same user as this Igor, so a worker can read every credential this Igor holds. Give it a separate worker user: docs/deployment.md, "A separate user for the worker".
       ```
 
 - [ ] 5.5 Tests with an injected probe: each refusal, in order, the `claude` and `skills_dir`
-      checks among them; the file the `skills_dir` probe created is deleted; the first failure
+      checks among them; `fs.protected_hardlinks` at `0` refuses; the file the `skills_dir`
+      probe created is deleted; the first failure
       stops the check; `serve` refuses with no worker user and runs with `--same-user`; `run`
       runs and prints the notice; the notice is absent with a worker user.
 
@@ -253,8 +285,9 @@ file in the service user's home. Each holds a random string and nothing else. Ne
       worker user*, and in 8.4's section of `docs/deployment.md`, whether either worker can read
       the other's `/proc/<pid>/environ`, or list and write the other's tree through
       `/proc/<pid>/cwd`. Section 8 does not wait for it (Adam, 2026-10-17).
-- [ ] 6.7 Before 8.2 ships, once the proposal's open question on how the unit names the worker
-      user is answered: confirm the unit sets the worker user, its group and its home that way.
+- [ ] 6.7 Before 8.2 ships, once the proposal's open question on the unit's group and home is
+      answered: confirm the Igor is in the worker's group and can write its home under the unit,
+      and that it sudoes to the user it computes from `%i`.
       Sections 2 to 4 do not wait for this.
 
 ## 7. An automated end-to-end test
@@ -285,11 +318,11 @@ file in the service user's home. Each holds a random string and nothing else. Ne
       igor ALL=(igor-worker-maintenance-1) NOPASSWD: ALL
       ```
 
-- [ ] 8.2 `deploy/igor.service`: set `Environment=IGOR_WORKER_USER=`, `SupplementaryGroups=` and
-      a `ReadWritePaths=` entry for the instance's worker user `igor-worker-<role>-<rank>`, its
-      group and its home `/var/lib/igor-worker-<role>-<rank>`. `%i` is `<role>.<rank>` and
-      systemd cannot turn it into `<role>-<rank>`, so build these three settings once the
-      proposal's open question on it is answered. Put `/usr/local/bin` first on `PATH` and change the `PATH` comment to say `claude` must
+- [ ] 8.2 `deploy/igor.service`: give the Igor the group of its worker user
+      `igor-worker-<role>-<rank>` and write access to the home
+      `/var/lib/igor-worker-<role>-<rank>`, by the means the proposal's open question on the
+      unit's group and home settles. The Igor computes the worker user itself (1.1), so the unit
+      sets no variable for it. Put `/usr/local/bin` first on `PATH` and change the `PATH` comment to say `claude` must
       live where the worker can run it. Replace `NoNewPrivileges=true` with this comment (may be
       reworded):
 
@@ -299,10 +332,10 @@ file in the service user's home. Each holds a random string and nothing else. Ne
       # separate user for the worker".
       ```
 
-- [ ] 8.3 `deploy/docker-compose.yml`: `user: igor` and `IGOR_WORKER_USER: igor-worker` on the
-      service. The compose file runs one container per role, so each container's `igor-worker`
-      serves one role. The header comment says the image also needs `sudo`, the `igor-worker`
-      user, and a sudoers line letting `igor` act as `igor-worker`. A mounted key is owned by
+- [ ] 8.3 `deploy/docker-compose.yml`: `user: igor` on the service. The compose file runs one
+      container per role, as rank 1, so each container's worker user is
+      `igor-worker-<role>-1`. The header comment says the image also needs `sudo`, that user,
+      and a sudoers line letting `igor` act as it. A mounted key is owned by
       the `igor` user's uid with mode `0600`.
 - [ ] 8.4 `docs/deployment.md`: add this section after *Before it can run*, and make it the
       fourth thing in that list. May be reworded; the commands may not change without
@@ -373,7 +406,7 @@ file in the service user's home. Each holds a random string and nothing else. Ne
 
       ```markdown
       The environment is not the only barrier. A worker runs as a separate Unix user,
-      `IGOR_WORKER_USER`, which cannot read the Igor's env files, keys or `/proc/<pid>/environ`:
+      `igor-worker-<role>-<rank>`, which cannot read the Igor's env files, keys or `/proc/<pid>/environ`:
       an allowed `npm test` runs whatever the worker wrote, and Claude Code's path checks do not
       reach it (#163). The Igor reads the worker's changes without following links, and runs no
       hook in its tree.

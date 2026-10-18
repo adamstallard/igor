@@ -2,12 +2,18 @@
 
 ### Requirement: The worker runs as a separate, unprivileged user
 
-A worker user is configured where `IGOR_WORKER_USER` in the Igor's environment names one. It
-SHALL be read from nowhere else. Where a worker user is configured, execution SHALL run the
-worker as that user, and every process the worker starts SHALL run as that user too. Every
-other `claude -p` the Igor starts with the worker's tree as its working directory SHALL run as
-that user as well, such as a model step that signs the worker's pull request text, or the
-worker's commit, before publishing (#153). The worker user SHALL be neither root nor the user the Igor runs as. The
+The worker user of an Igor instance SHALL be `igor-worker-<role>-<rank>`, which the Igor
+computes from the instance name `<role>.<rank>` it is started with (#179); an instance named by
+its role alone is rank 1. The name SHALL NOT be read from `igor.config.yaml` or any other lore
+file. What tells the Igor that no worker user is configured is open in the proposal, and the
+requirements below that depend on it are tested once it is decided. Where a
+worker user is configured, execution SHALL run the worker as that user, and every process the
+worker starts SHALL run as that user too. Every other `claude -p` the Igor starts with the
+worker's tree as its working directory SHALL run as that user as well, such as a model step that
+signs the worker's pull request text, or the worker's commit, before publishing (#153). #153's
+`prose start`, which writes the session mark #153's prose steps check for, SHALL run as that user
+too, after the reset of the worker's home that #174 (`pinned-skills`) specifies, so the mark is
+the worker's and sits in the worker's home. The worker user SHALL be neither root nor the user the Igor runs as. The
 worker SHALL NOT be able to read any credential the Igor holds: the files its environment was
 loaded from, any private key or token file it reads, the private key that decrypts seat files,
 and the Igor's own process environment, which holds the App key where it is given inline as
@@ -46,10 +52,21 @@ system's file permissions are the barrier that holds whatever the worker runs.
   prose pass that runs the repository's tests
 - **THEN** that process, and every process it starts, runs as the worker user
 
-#### Scenario: The worker user is read from the environment only
+#### Scenario: The worker user's name comes from the instance
 
-- **WHEN** `igor.config.yaml` names a worker user and `IGOR_WORKER_USER` is unset
-- **THEN** no worker user is configured
+- **WHEN** `igor serve generalist.2` starts with a worker user configured
+- **THEN** its worker runs as `igor-worker-generalist-2`
+
+#### Scenario: A lore file cannot name the worker user
+
+- **WHEN** `igor.config.yaml` names a worker user
+- **THEN** loading the configuration fails, as it does for any unknown key
+
+#### Scenario: prose start writes into the worker's home
+
+- **WHEN** a step of #153's runs `prose start` for a worker running as a worker user
+- **THEN** `prose start` runs as that user, after the reset of its home
+- **AND** the session mark it writes is owned by that user and lies in that user's home
 
 ### Requirement: The worker can write its tree and outbox and nothing the Igor depends on
 
@@ -60,7 +77,7 @@ directory holding the running `igor` and the `node` executable it runs on.
 The worker user SHALL be able to create, edit and remove files in its working tree, write its
 outbox, and run the role's allowed commands, including `git rm` and `git mv`. It SHALL NOT be
 able to write the tree's git directory, the lore checkout, the Igor's installation,
-`skills_dir` where it is set (#174), the Igor user's home directory, or the Igor's credential
+`skills_dir` (#174), the Igor user's home directory, or the Igor's credential
 files. The Igor SHALL write its records, such as `executions.ndjson` on the `igor-state`
 branch, only through the code host with its own credential, never in a local file the worker
 could write.
@@ -136,14 +153,19 @@ as the Igor.
 
 ### Requirement: The Igor reads no file on the worker's behalf through a link
 
-The Igor SHALL read what a worker changed only after every process it started as the worker
-user for the run has exited, whatever that process is: the worker, a later model step, or a
-check that runs the role's commands (#189). It SHALL find the changed paths
-against its own index, never an index the worker could write. It SHALL NOT follow a symbolic
+The Igor SHALL read what a worker changed only after the worker and every later model step in
+its tree have exited, and SHALL record the tree it read as a tree object in its own git
+directory, which the worker user cannot write.
+Checks that run the role's commands as the worker user (#189) SHALL run after that record, and
+the Igor SHALL publish the recorded tree: anything a check writes SHALL be discarded. It SHALL
+find the changed paths against its own index, never an index the worker could write. It SHALL NOT follow a symbolic
 link, and SHALL NOT read a path through a directory that is a link. A changed path that lies
 beneath a link SHALL stop the run before anything is published, naming the path. A changed file
 the Igor cannot read SHALL stop the run the same way, rather than be left out of the artifact.
-The worker's declaration file in the outbox SHALL be read only if it is a regular file.
+A changed file whose link count is above 1 SHALL stop the run the same way: a hard link the worker
+made to a credential is a regular file inside the tree, which the symbolic-link rules here do not
+catch. The worker's
+declaration file in the outbox SHALL be read only if it is a regular file.
 
 Once #137 has archived its requirement *An artifact carries a changed path as the tree holds
 it* into this spec, a changed path that is itself a link SHALL be published as a link, as that
@@ -180,10 +202,18 @@ pull request.
 - **WHEN** a model step after the worker creates a link in the tree
 - **THEN** the Igor's link checks see it
 
-#### Scenario: The tree is read after the role's checks
+#### Scenario: What a check writes is not published
 
-- **WHEN** a check that runs the role's commands as the worker user creates a link in the tree
-- **THEN** the Igor's link checks run after that check exits, and see the link
+- **WHEN** a check that runs the role's commands as the worker user writes a coverage report and
+  a link into the tree
+- **THEN** the artifact is the tree the Igor recorded before the check
+- **AND** it holds neither the report nor the link
+
+#### Scenario: A hard link stops the run
+
+- **WHEN** a changed file in the tree has a link count of 2
+- **THEN** the run stops naming the file
+- **AND** nothing is published
 
 #### Scenario: An index the worker edited hides nothing
 
@@ -245,9 +275,10 @@ They SHALL check that the Igor belongs to the worker's group. And they SHALL che
 user, that it can execute the `claude` the Igor resolves; that it cannot read the Igor's process
 environment, any credential file the Igor's configuration names, or a canary file the check
 creates that only the Igor can read; and that it cannot write the lore checkout or the Igor's
-installation. Where `skills_dir` is set, they SHALL try once, as the worker user, to create and
-delete a file in it; the worker never needs to write there. Any failure, a successful create
-among them, SHALL refuse the start, naming what failed and the path involved.
+installation. They SHALL try once, as the worker user, to create and delete a file in
+`skills_dir` (#174); the worker never needs to write there. They SHALL check that
+`fs.protected_hardlinks` is `1`. Any failure, a successful create among them, SHALL refuse the
+start, naming what failed and the path or setting involved.
 
 A worker user that can read the key protects nothing, and nothing else would notice. The process
 that holds the credentials is the only one that knows where they are, so it checks.
@@ -264,7 +295,7 @@ that holds the credentials is the only one that knows where they are, so it chec
 
 #### Scenario: The worker user does not exist
 
-- **WHEN** `IGOR_WORKER_USER` names no user on the host
+- **WHEN** a worker user is configured and `igor-worker-<role>-<rank>` is no user on the host
 - **THEN** the Igor refuses to start, naming the user
 
 #### Scenario: The Igor is not in the worker's group
@@ -283,9 +314,14 @@ that holds the credentials is the only one that knows where they are, so it chec
 - **WHEN** the worker user can write the lore checkout
 - **THEN** the Igor refuses to start, naming the lore checkout
 
+#### Scenario: Hard links are not protected
+
+- **WHEN** a worker user is configured and `fs.protected_hardlinks` is not `1`
+- **THEN** the Igor refuses to start, naming `fs.protected_hardlinks`
+
 #### Scenario: The worker user can write skills_dir
 
-- **WHEN** `skills_dir` is set and the worker user can create a file in it
+- **WHEN** the worker user can create a file in `skills_dir`
 - **THEN** the Igor refuses to start, naming `skills_dir`
 - **AND** the file the check created is deleted
 
@@ -313,7 +349,8 @@ credentials. The notice keeps the trade visible in both.
 #### Scenario: serve with no worker user
 
 - **WHEN** `igor serve` starts with no worker user configured and without `--same-user`
-- **THEN** it refuses to start, naming `IGOR_WORKER_USER` and `--same-user`
+- **THEN** it refuses to start, naming the user `igor-worker-<role>-<rank>` it computed and
+  `--same-user`
 
 #### Scenario: serve accepting the same user
 
