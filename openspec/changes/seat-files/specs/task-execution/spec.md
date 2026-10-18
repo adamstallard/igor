@@ -6,9 +6,11 @@ Execution SHALL construct the worker's environment rather than inheriting the Ig
 environment SHALL carry no credential other than the token of the seat the work is charged to. The
 tokens of other seats, and the credential the Igor acts on its surfaces with (the code host and
 tracker it claims, comments and publishes on), MUST NOT be present. Where the chosen seat names a
-token source that cannot be read — a variable that is unset, a variable that is set but empty, or an
-encrypted token that cannot be decrypted — execution SHALL fail naming the seat and the reason
-rather than spawning a worker that authenticates as something else.
+token variable that cannot be read — one that is unset, or set but empty — execution SHALL fail
+naming the seat and the reason rather than spawning a worker that authenticates as something
+else. A seat carrying an encrypted token gives the worker the plaintext Igor decrypted when it
+last read the seat files, and nothing is decrypted when the worker starts (seat-budget's *A
+seat's token travels as ciphertext in its file*); a seat Igor could not decrypt is never chosen.
 
 For an Igor acting as a GitHub App, the surface credential is anything that yields an App
 token: the token itself, the `GITHUB_APP_*` variables, and a git credential helper or
@@ -58,12 +60,11 @@ the Igor. It lets
 - **THEN** execution fails naming the variable
 - **AND** no worker is spawned
 
-#### Scenario: A seat whose encrypted token cannot be decrypted fails loudly
+#### Scenario: A lent seat's worker gets the token decrypted at the last read
 
-- **WHEN** the chosen seat carries an encrypted token that the key `seatKey` names cannot decrypt,
-  or no `seatKey` is declared
-- **THEN** execution fails naming the seat and why
-- **AND** no worker is spawned
+- **WHEN** the chosen seat carries an encrypted token, decrypted when Igor last read the seat files
+- **THEN** the worker's environment holds that plaintext
+- **AND** nothing is decrypted when the worker is spawned
 
 #### Scenario: A toolchain still runs
 
@@ -85,7 +86,7 @@ variable*). openspec will not archive a `MODIFIED` block that drops an in-force 
 requirement is therefore removed and re-added under its full name: the in-force name stops at "its
 seat's", and the new one ends "its seat's token". The re-added requirement is written over
 worker-user's (#175) text, which is built first, and keeps its `GIT_INDEX_FILE` rule and scenario.
-It has a scenario for a token that cannot be decrypted in place of the dropped one.
+It has a scenario for a lent seat's decrypted token in place of the dropped one.
 
 **Migration**: *The worker is given an explicit environment holding no credential but its seat's
 token*, which keeps every other rule and scenario.

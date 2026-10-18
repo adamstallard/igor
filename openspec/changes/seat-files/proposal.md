@@ -162,28 +162,60 @@
     token could have saved or sent it, and the encrypted file stays in git history. So the
     lender guide says that revoking the token is the only real withdrawal. The decision takes
     effect once #176 specifies pulling; until then a seat file leaves a running process only
-    when it restarts. It does not cover removing the last seat file, which is open below.
+    when it restarts. Decision 36 covers removing the last seat file.
 35. **A decrypted seat token never touches the server's disk** (Adam, 2026-10-18). It is held in
     Igor's memory only, and reaches a worker only through that worker's environment; no log,
     state-branch file, condition report, error message or crash output carries it.
 
+36. **Every seat has a Claude token, and Igor never uses a stored Claude login** (Adam,
+    2026-10-18), under `igor serve` and `igor run` alike. A stored login is the credentials
+    `claude` keeps in a home directory. Adam's words: "Creating a token is trivial and clear
+    steps should be in the docs. The agent can also prompt the user through the steps." So the
+    guides give the steps for creating a token with `claude setup-token` (tasks 9.3 and 9.5),
+    `igor seat add` prints those steps before it reads the token (task 7.2), and an
+    organization with no lenders declares one seat from its own token (task 9.3). A
+    configuration with no seat files gives no role a seat, so each role is refused at load, and
+    no model call is made; before this decision such a configuration ran unenforced on the
+    server's login. When a pull removes the last seat
+    file serving a role, the role has no usable seat: its process hands off the items its
+    workers held, takes no new item and keeps running, and never falls back to a login. This
+    answers round six's question on removing the last seat file. It supersedes round three's
+    rule that #174 (`pinned-skills`) resets a worker's `~/.claude` but keeps
+    `~/.claude/.credentials.json` (#174's decision 17, #175's decision 14). That reset now
+    replaces `~/.claude` and `~/.claude.json` whole; #174's and #175's own branches carry the
+    change.
+    *Rejected:* exempting an organization that declares no seats, which ran on whatever login
+    the server held.
+37. **Seat files are decrypted only when Igor reads its lore checkout** (Adam, 2026-10-18): at
+    start, and on each pull once #176 specifies pulling. Starting a worker or a probe decrypts
+    nothing; it is given the plaintext Igor holds from its last read. Round six asked whether a
+    decryption failure when a worker is spawned opens decision 31's condition. No decryption
+    happens then, so the question is gone.
+38. **Decision 31's condition is the first of a kind, the read-cleared condition** (Adam,
+    2026-10-18): opened by a read that fails, cleared by a later read that passes, never by a
+    probe item, and stopping nothing by itself. The `stuck-conditions` delta defines the kind
+    once, in *A read-cleared condition opens on a failing read and clears on a passing one*.
+    #179 (`concurrent-instances`) cites it for a configuration read at a cycle that fails the
+    startup checks, and #82 (`stopped-scope-visible`) lists a passing read among the ways a
+    condition clears. *Rejected:* each change restating how its condition opens and clears.
+
 **Still open:**
 
-- **Removing the last seat file** (decision 34). With no seat file, `seats/` declares no seats and
-  budget is not enforced, so the org would run on whatever login the server holds. Decision 10
-  refuses a seat file that names no token for that reason: no spend on the server's ambient
-  login. What a running process does when a pull removes the last seat file is undecided;
-  decision 34 covers removing any other.
-
-- **Whether a decryption failure when a worker is spawned opens the condition** (decision 31).
-  A seat can be chosen and then fail to decrypt, for example after its key file's permissions
-  change; decision 31 ties the condition to reading seat files, at start and on a pull.
 - **Pulling the lore checkout is not yet specified** (#176). Until it is, Igor reads the seat
   files only at start, so decision 31's condition opens at start and clears only after a
   restart. Adam decided on 2026-10-18 that a pull bringing
   configuration that fails the startup checks is refused, and the process keeps the last
   configuration that passed; #176's body records it. Igor's own notice after a seat-file change
   lands is decided (decisions 6 and 26); where Igor posts it is open on #176.
+- **What `igor run` on a developer's machine spends from** (decision 36), for Adam. Under
+  `igor run` the worker runs as the developer's own user, so Igor decrypts no lent seat
+  (decision 23), and only a `token_env` seat runs: one whose `IGOR_SEAT_<ID>` variable is set in
+  the developer's shell. A lore repository whose seats are all lent, plus the operator's own
+  `token_env` seat whose token only the server holds, leaves `igor run` with no seat, so it
+  makes no model call and works no item. With no stored login to fall back on, a developer needs a `token_env` seat file
+  of their own that lists the role, with its token in their shell. Open: whether that file goes
+  in the shared lore repository, where every reader sees which roles it serves, or in a lore
+  checkout of the developer's own.
 
 ## Why
 
@@ -216,6 +248,12 @@ from [#147](https://github.com/adamstallard/igor/issues/147).
 - **Every seat is a file, `seats/<id>.yaml`, in the lore repository**, the way a role is
   `roles/<name>.yaml`. The filename is the seat's id. It declares the holder (`owner`), the
   `reserve`, the `roles` it serves, and its token, which every seat file must name.
+- **Every model call is paid by a seat's token.** Igor never uses a stored Claude login. An
+  organization with no lenders declares one seat from its own token, and a configuration with no
+  seat files refuses each role at load. Removing the last seat file serving a role leaves the
+  role with no usable seat, which hands off; nothing falls back to a login.
+- **A lent token is decrypted only when Igor reads its lore checkout**, at start and on a pull,
+  never when it starts a worker.
 - **`budget` leaves `igor.config.yaml`.** Seats are read from `seats/`, and pools are gone, so the
   mapping has nothing left in it.
 - **A lent seat's token travels as ciphertext in its file**, as `encrypted_token`, encrypted with
@@ -257,8 +295,9 @@ None. `setup-check` gains requirements here, and is created by whichever of this
 - `seat-budget`: seats come from seat files, the token from ciphertext in the file or the seat's
   own variable. Pools and the budget mapping's key checks are removed. Seat choice is by headroom.
   #143's role-reserve requirement is restated without the `dedicated` key. The spend requirement
-  is removed and re-added under a new name, without its scenario of a seat naming no token,
-  because openspec will not apply a `MODIFIED` block that drops a scenario.
+  is removed and re-added under a new name, without its scenario of a seat naming no token or
+  its exemption for an organization with no seats, because openspec will not apply a `MODIFIED`
+  block that drops a scenario. A lent token is decrypted only when the seat files are read.
 - `work-triage`: the model-stage and untriaged-reporting requirements are worded for the seats
   serving a role instead of a pool. Two are re-added under new names, because their scenario names
   said "pool".
@@ -271,10 +310,11 @@ None. `setup-check` gains requirements here, and is created by whichever of this
   seat's"), because openspec will not apply a `MODIFIED` block that drops an in-force scenario,
   and the file-and-command scenario must go.
 - `lore-store`: `igor init` also writes the seat-notice workflow.
-- `stuck-conditions` (#101's, in force first): a seat file Igor fails to decrypt opens a
-  condition on its first occurrence, beside #101's refused GitHub App credential, and the
+- `stuck-conditions` (#101's, in force first): a new requirement defines the read-cleared
+  condition, opened by a failing read and cleared by a passing one (decision 38); a seat file Igor
+  fails to decrypt opens such a condition on its first occurrence, beside #101's refused GitHub App credential, and the
   condition clears on a good read and stops no role (decisions 31 and 32); an unreadable seat
-  is passed over by a role with another eligible seat; a lent seat's credential is its decrypted token; the report's remedy
+  is passed over by a role with another eligible seat; a lent seat's credential is its decrypted token, and no credential is a stored login; the report's remedy
   names the seat's `IGOR_SEAT_<ID>` variable or the private key file that `seatKey` names.
 
 ## Impact

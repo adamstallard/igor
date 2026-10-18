@@ -32,8 +32,8 @@ measurement.
 - [ ] 2.4 `Config.budget` is filled from the seat files at load, so callers of `config.budget` keep
       working
 - [ ] 2.5 Tests in `test/config.test.ts` and `test/budget.test.ts`: each scenario of *A seat is a
-      file under `seats/`*; no `seats/` means budget is not enforced; `recipient.txt` is not read
-      as a seat
+      file under `seats/`*; no `seats/` refuses each role at load (4.1's third refusal);
+      `recipient.txt` is not read as a seat
 
 
 ## 3. The token: ciphertext in the file, or the seat's own variable
@@ -52,8 +52,10 @@ measurement.
       seats/<id>.yaml: encrypted_token is not an age ciphertext. If it is a token, it is now in this repository's history: revoke it at Anthropic, then run `igor seat add <id>` with a new one.
       ```
 
-- [ ] 3.3 Add the `age-encryption` dependency. `resolveToken` decrypts `encryptedToken` with the
-      identity at `seatKey`, read when needed and not cached beyond the process
+- [ ] 3.3 Add the `age-encryption` dependency. Decrypt each seat's `encryptedToken` with the
+      identity at `seatKey` when the seat files are read, at start and on each pull (#176), and
+      hold the plaintext in memory until the next read; `resolveToken` returns the held value and
+      never decrypts. Nothing is decrypted when a worker or a probe starts (proposal, decision 37)
 - [ ] 3.4 Decryption failures report the seat unreadable, worded so, after the existing `seat
       "<id>"` subject:
 
@@ -70,9 +72,10 @@ measurement.
       variable* and *A seat's token travels as ciphertext in its file*; the plaintext appears in
       no record, transcript or handoff; the existing `token_file` and `token_command` tests in
       `test/budget.test.ts` are removed with the code they test
-- [ ] 3.7 `src/execute.ts`'s worker environment: a seat whose token cannot be decrypted fails
-      naming the seat and the reason, per the `task-execution` delta, with a test; the file and
-      command cases and their tests go
+- [ ] 3.7 `src/execute.ts`'s worker environment: a lent seat's worker gets the plaintext held
+      from the last read of the seat files, per the `task-execution` delta. Test: with the key
+      file made unreadable after start, a worker on a seat decrypted at start still gets its
+      token, and no decryption runs at spawn. The file and command cases and their tests go
 - [ ] 3.7a A decrypted token is held in memory only and reaches a worker only through its
       environment (*A decrypted seat token never touches the server's disk*). Test: a run with a
       seat whose token is a known test value, then a search of every log, transcript, handoff,
@@ -82,8 +85,10 @@ measurement.
 - [ ] 3.7b When a pull of the lore checkout (#176) removes a seat file, apply the removal even
       where the rest of the pull is refused: drop the token from memory, give the seat to no new
       worker, kill each worker using it (the `claude -p` child and every process its worker user
-      owns), and hand off its item, with the Igor process still running. Tests: the scenarios of
-      *A removed seat file always takes effect*. Until #176 specifies pulling, this task waits
+      owns), and hand off its item, with the Igor process still running. Where no seat file then
+      lists a role, as after removing the last one, the role has no usable seat: it hands off
+      what its workers held, takes no new item, and makes no model call on a stored login. Tests:
+      the scenarios of *A removed seat file always takes effect*. Until #176 specifies pulling, this task waits
       on it. If #176 is not specified when this change archives, file an issue for this task and
       tick it with a pointer to the issue
 - [ ] 3.8 Under #175's same-user mode, `igor run`, no seat's `encrypted_token`
@@ -117,6 +122,17 @@ measurement.
       seat's condition stops no role*. Until #176 builds the pull, the condition opens and
       clears at start only
 
+- [ ] 3.10 No model call Igor makes, under `igor serve` or `igor run`, is authenticated by a
+      stored Claude login (proposal, decision 36; *A spend with no seat behind it is not made*).
+      Triage, worker runs and probes each carry the chosen seat's token, and where the gate names
+      no seat no call is made. Test: with a stored login in the home directory of the user Igor
+      runs `claude` as, and no seat serving the role, a cycle makes no model call; with a seat, every call carries
+      that seat's token. Whether a token in the environment wins over a stored login is #174's
+      task 0.3, and the reset that removes the stored login from a worker's home is #174's and
+      #175's. Triage and probes run as the service user, whose home no reset touches: if 0.3
+      finds that a stored login can win over the token in the environment, they run with `HOME`
+      set to a directory holding no login, and the test covers that case
+
 ## 4. Which seats a role draws on
 
 - [ ] 4.1 `src/role.ts` `checkSeat` (`:517`): a role's seats are the seat files listing it;
@@ -125,7 +141,7 @@ measurement.
       ```
       role "<role>" names seat "<seat>", which has no seat file. Seats: <ids>
       role "<role>" names seat "<seat>", and seats/<seat>.yaml does not list it. The seat's holder lists the roles it serves in that file.
-      role "<role>" is served by no seat. A seat serves a role when its file under seats/ lists the role in `roles`.
+      role "<role>" is served by no seat. A seat serves a role when its file under seats/ lists the role in `roles`. With no lender, declare one from your own token: docs/deployment.md, "Declaring a seat by hand".
       ```
 
 - [ ] 4.2 `poolFor` is replaced by a function returning the seats serving a role, and `budgetGate`
@@ -173,8 +189,18 @@ measurement.
       ```
       <owner> is not a GitHub login, so no change to seats/<id>.yaml could mention you.
       ```
-- [ ] 7.2 Read `seats/recipient.txt` from the lore repository's default branch with `gh api`. Read
-      the token with echo off. Encrypt with `age-encryption`, base64 on one line
+- [ ] 7.2 Read `seats/recipient.txt` from the lore repository's default branch with `gh api`. Then
+      print the steps for creating a token, worded so (Adam may reword it):
+
+      ```
+      To lend your seat, create a token for it:
+        1. In another terminal, run: claude setup-token
+        2. Sign in with the Claude account whose subscription you are lending.
+        3. Copy the token it prints. It is shown once.
+      Paste it here. It will not be shown, and it is encrypted before it leaves this command.
+      ```
+
+      Read the token with echo off. Encrypt with `age-encryption`, base64 on one line
 - [ ] 7.3 A new seat: write `seats/<id>.yaml`. The file it writes:
 
       ```yaml
@@ -297,7 +323,13 @@ leaks.
     that `recipient.txt` is untouched), that lenders need no access beyond opening it, from a fork
     if need be, and that the seat takes effect once the server's lore checkout is updated (#176)
   - **Declaring a seat by hand:** a seat file naming `token_env: IGOR_SEAT_<ID>`, and the token in
-    `/etc/igor/env`; a secret store's output goes there too
+    `/etc/igor/env`; a secret store's output goes there too. Give the steps for creating the
+    token, as 9.5 gives them: `claude setup-token`, signed in with the Claude account whose
+    subscription the seat is
+  - **The first seat, for an organization with no lenders:** Igor never uses a stored Claude
+    login, so nothing runs until a seat file lists each role. The operator creates a token from
+    the organization's own subscription and declares it by hand, as above, or lends it with
+    `igor seat add` like any lender. With no seat file, each role is refused at start
   - **What the lender keeps:** they can revoke their token at any time, which stops the seat, and
     that is how they answer an edit to their seat file they did not agree to. The
     `seat-notice.yml` workflow mentions them on any pull request changing their file; keep it
@@ -311,6 +343,9 @@ leaks.
     revokes it at Anthropic and runs `igor seat add` with a new one)
   - The *When something is wrong* table gains the refusals of tasks 2.2, 3.2, 3.4 and 4.1, and
     loses its `pool:` rows
+  - Every passage saying that a seat may name no token, or that a login on the server can answer
+    for a seat, goes, such as step 4's sentence that "an ambient login or a keychain can answer
+    for a seat that names no token source"
 - [ ] 9.4 `docs/seats.md`, the lender guide, rewritten around the file. **Before lending:** you
       choose the roles your seat serves and the reserve it keeps, in your own pull request; you
       trust the server's operator, who can use your token within your subscription and can edit
@@ -321,8 +356,11 @@ leaks.
       pull request that changes your seat file, as long as `owner` is your GitHub login; and
       **revoking the token at Anthropic is how you withdraw or object to anything: it stops the
       seat, whatever any file says**. The guide promises no speed for it
-- [ ] 9.5 `docs/seats.md`, **getting the token:** `claude setup-token`, once, in your own
-      terminal, and why it never goes into chat, email, or a file unencrypted. A plain token
+- [ ] 9.5 `docs/seats.md`, **getting the token:** the steps, numbered: run `claude setup-token`
+      once, in your own terminal; sign in with the Claude account whose subscription you lend;
+      copy the token it prints, which is shown once; and paste it when `igor seat add` asks,
+      which prints the same steps (7.2). Why it never goes into chat, email, or a file
+      unencrypted. A plain token
       pasted into a pull request is public as soon as it is pushed, before Igor can refuse it, and
       is to be revoked at once
 - [ ] 9.6 `docs/seats.md`, **lending it:** one path, `npx igor-agent seat add <id> --lore <owner/repo>`, with Node and
@@ -346,8 +384,10 @@ leaks.
       `token_file` go. *Budgets* loses `pools:` and `pool:engineering`, and its sample `igor budget`
       output loses the `pool engineering:` line, and its `dedicated: true` seat goes. The note
       "(#148 replaces `pools:` …)" goes, since it describes this change as future. The install
-      section says Igor installs from npm as `igor-agent`, in place of "Igor is not on npm yet",
-      and the README's `npm unlink -g igor-lore` becomes `npm unlink -g igor-agent`
+      section says Igor installs from npm as `igor-agent`, in place of "Igor is not on npm yet".
+      "Declare no seats at all and budget is not enforced, and roles need not name one." goes:
+      every role needs a seat, and the quick start's seat file is how an organization with no
+      lenders gets one. The README's `npm unlink -g igor-lore` becomes `npm unlink -g igor-agent`
 - [ ] 9.10 `docs/architecture.md` §6.5.1: a seat file lists the roles it serves, and the seat is
       chosen by headroom; "Order is the whole allocation mechanism today" and the `pools:`
       example go, and the heading loses its "being replaced (#148)" marker. §6.3.2's list of
@@ -479,8 +519,10 @@ of its requirements. Build each against #101's code:
 - [ ] 11.4 *A condition that recurs stops the affected scope from taking new work*: a seat file
       Igor fails to decrypt opens the seat's condition on its first occurrence, and a later read
       that decrypts the file clears it, with no cooldown and no probe item (proposal, decision
-      32; task 3.9). Tests: the first failed read opens it; a good read clears it; no probe item is
-      ever taken for it
+      32; task 3.9). It is a read-cleared condition, built once as *A read-cleared condition opens
+      on a failing read and clears on a passing one* states, so #179's refused-configuration
+      condition reuses the same code (proposal, decision 38). Tests: the first failed read opens
+      it; a good read clears it; no probe item is ever taken for it; it stops no scope by itself
 
 ## 12. Publishing to npm as `igor-agent`
 

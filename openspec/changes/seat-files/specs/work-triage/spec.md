@@ -3,7 +3,7 @@
 ### Requirement: Triage's model call is made only where a seat can pay for it
 
 Triage's model call is a spend, and SHALL be charged to the seat the budget gate chooses for the
-role, using that seat's credential where the seat names one. Where the gate names no seat —
+role, using that seat's token, which every seat names. Where the gate names no seat —
 every seat serving the role at its line, or none of them usable for any other reason — the model
 stage SHALL NOT run, and no credential SHALL be substituted for the seat the gate did not name.
 
@@ -30,10 +30,10 @@ outside every ceiling the budget exists to impose.
 - **THEN** no model call is made
 - **AND** no candidate is proposed for claiming from that cycle
 
-#### Scenario: No seat means no credential, not an ambient one
+#### Scenario: No seat means no credential, not a stored login
 
 - **WHEN** the gate names no seat for the role
-- **THEN** the model stage does not fall back to whatever login is ambient
+- **THEN** the model stage does not fall back to a stored Claude login
 - **AND** no spend is made that no seat can be named for
 
 #### Scenario: Seats that could not be used at all are refused on the same terms
@@ -42,12 +42,6 @@ outside every ceiling the budget exists to impose.
   has not been read
 - **THEN** the model stage does not run either
 - **AND** the reason recorded is that one, not exhaustion
-
-#### Scenario: An organization with no seats declared still triages
-
-- **WHEN** no seats are declared, so budget is not enforced
-- **THEN** the model stage runs as it did before
-- **AND** this requirement places no condition on it
 
 #### Scenario: Everything before the model call still runs
 
@@ -75,9 +69,9 @@ An Igor that goes quiet for hours without explaining itself is a second failure 
 first. The distinction is the difference between a fault an operator fixes and a wait they only
 have to understand: only spend means the budget ran out, and an operator sent to look at spend
 for a role no seat serves looks in the wrong place. Saying it at all is what keeps a
-correctly configured machine from reporting that it is not logged in — the message the ambient
-fallback produces where no login exists, which sends an operator to re-authenticate a host whose
-only problem is that every seat is held.
+correctly configured machine from reporting that it is not logged in, which would send an
+operator to sign in on a host where Igor never uses a stored login and whose only problem is that
+every seat is held.
 
 #### Scenario: Silence is explained
 
@@ -98,7 +92,7 @@ only problem is that every seat is held.
 
 #### Scenario: Held seats do not read as a login problem
 
-- **WHEN** every seat is held on a machine with no ambient login
+- **WHEN** every seat is held, on a machine where `claude` would report that it is not logged in
 - **THEN** the cycle reports the held seats
 - **AND** nothing reports the Igor as not logged in
 

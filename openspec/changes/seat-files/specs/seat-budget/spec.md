@@ -23,8 +23,10 @@ base. A name with no role file SHALL be refused, naming the seat file, the name,
 that exist. An empty list is a seat that serves nothing, which a holder may want while they decide.
 
 Seats SHALL be read from `seats/` and from nowhere else. Where `seats/` is absent or holds no seat
-file, no seats are declared and budget is not enforced. Files in `seats/` other than `*.yaml`,
-such as `recipient.txt`, are not seats.
+file, no seats are declared, so no role has a seat to spend from: *A role's seats are the seats
+whose files list it* refuses each role at load, and *A spend with no seat behind it is not made*
+makes no model call. An organization with no lenders declares one seat from its own token. Files
+in `seats/` other than `*.yaml`, such as `recipient.txt`, are not seats.
 
 #### Scenario: A seat file declares a seat
 
@@ -63,10 +65,11 @@ such as `recipient.txt`, are not seats.
 - **WHEN** a seat file lists a role that has no file under `roles/`
 - **THEN** it is refused, naming the seat file, the role, and the roles that exist
 
-#### Scenario: No seat files means budget is not enforced
+#### Scenario: No seat files means no role can spend
 
 - **WHEN** the lore repository has no `seats/` directory, or one holding no seat file
-- **THEN** the configuration loads and budget is not enforced
+- **THEN** each role is refused at load, saying a seat file must list it
+- **AND** nothing runs on a stored Claude login in a seat's place
 
 #### Scenario: The public key is not a seat
 
@@ -77,8 +80,8 @@ such as `recipient.txt`, are not seats.
 
 A seat file SHALL name its token with exactly one of `encrypted_token` and `token_env`. These two
 are the token mechanisms, and a seat *names a token source* where its file names one of them.
-#143's *A seat nothing has read is probed on the Igor server with its own token* uses the term
-*names a token source*: it probes only a seat that names one, which every seat file does.
+Every seat names one, so no seat runs on a stored Claude login (*A spend with no seat behind it is
+not made*).
 
 A seat file naming neither SHALL be refused, naming the file and both keys. A seat file naming both
 SHALL be refused, naming the file and both keys. A seat file naming `token_command` or `token_file`
@@ -125,7 +128,7 @@ file cannot name `GH_TOKEN`, or another seat's variable.
 
 - **WHEN** a seat file names neither `encrypted_token` nor `token_env`
 - **THEN** it is refused at load, naming the file and both keys
-- **AND** nothing is spent on whatever login is ambient on the server
+- **AND** nothing is spent on a stored Claude login in its place
 
 ### Requirement: A seat's token travels as ciphertext in its file
 
@@ -140,17 +143,18 @@ committed to the repository is to be revoked at Anthropic and replaced with ciph
 token in a seat file is a credential in git history, and the refusal is the only place anybody is
 told.
 
-Igor SHALL decrypt the token each time it reads it, including when it spawns a worker, and the
-plaintext is held
-as *A decrypted seat token never touches the server's disk* requires. Where decryption fails, the seat SHALL
-be reported unreadable with the reason, and no other credential SHALL be used in its place: no
-`seatKey` declared, a key file that cannot be read, a key that does not match, or a ciphertext
-that does not decrypt. A seat whose token Igor cannot decrypt SHALL be ineligible: seat choice
-SHALL NOT pick it, and #143's probe SHALL skip it. It is under a condition on the seat. Igor SHALL
-open that condition when it fails to decrypt the seat's file, whenever it reads the seat files:
-at start, and on each pull of its lore checkout once #176 specifies one. It SHALL clear the
-condition when a later read decrypts the file. The condition SHALL NOT stop a role: the seat
-counts as one at its line (*A role draws on the seat with the most headroom*). Where the key is
+Igor SHALL decrypt a seat's token only when it reads the seat files: at start, and on each pull of
+its lore checkout once #176 specifies one. It SHALL NOT decrypt when it starts a worker or a
+probe: each is given the plaintext Igor holds from its last read, held as *A decrypted seat token
+never touches the server's disk* requires. Where decryption fails, the seat SHALL be reported
+unreadable with the reason, and no other credential SHALL be used in its place: no `seatKey`
+declared, a key file that cannot be read, a key that does not match, or a ciphertext that does
+not decrypt. A seat whose token Igor cannot decrypt SHALL be ineligible: seat choice SHALL NOT
+pick it, and #143's probe SHALL skip it. It is under a condition on the seat. That condition is
+read-cleared (`stuck-conditions`' *A read-cleared condition opens on a failing read and clears on
+a passing one*): a read of the seat files that fails to decrypt the seat's file opens it, and a
+later read that decrypts the file clears it. The condition SHALL NOT stop a role: the
+seat counts as one at its line (*A role draws on the seat with the most headroom*). Where the key is
 read but the seat's ciphertext does not decrypt with it, because it was encrypted to another key
 or is corrupt, that condition's report SHALL name the seat and its `owner`, the lender, so that
 someone re-lends it. Where no `seatKey` is declared or the key file cannot be read, the report
@@ -193,6 +197,12 @@ can read the lore repository, which may be anyone.
 - **THEN** the seat is reported unreadable, saying its token could not be decrypted with the key
   at that path
 
+#### Scenario: A worker gets the token Igor already holds
+
+- **WHEN** Igor starts a worker on a seat whose file it decrypted when it last read the seat files
+- **THEN** the worker's token is the plaintext Igor holds from that read
+- **AND** Igor decrypts nothing when it starts the worker
+
 #### Scenario: A failed decryption opens the condition, and a good read clears it
 
 - **WHEN** Igor starts and cannot decrypt `seats/bob.yaml`
@@ -221,8 +231,7 @@ can read the lore repository, which may be anyone.
 ### Requirement: A role's seats are the seats whose files list it
 
 A role SHALL draw on the seats whose files list it in `roles`, and on no other. A role MAY name a
-single seat with `seat:`, and then SHALL draw on that seat alone. A role SHALL be refused at load,
-where seats are declared:
+single seat with `seat:`, and then SHALL draw on that seat alone. A role SHALL be refused at load:
 
 - where it names a seat with no seat file, naming the seat and the seats declared;
 - where it names a seat whose file does not list it, naming the seat file and saying its holder
@@ -251,7 +260,7 @@ and that link is what this requirement exists to remove.
 
 #### Scenario: A role no seat serves is refused
 
-- **WHEN** seats are declared and no seat file lists `docs`, and `docs` names no seat
+- **WHEN** no seat file lists `docs`, and `docs` names no seat
 - **THEN** the role is refused at load, saying a seat file must list it
 
 #### Scenario: Taking a role off a seat takes effect on the next load
@@ -458,7 +467,10 @@ installed, and SHALL:
 
 1. Read the public key from `seats/recipient.txt` on the lore repository's default branch on
    GitHub, not from the working tree.
-2. Read the token from the terminal without echoing it, and refuse an empty one.
+2. Walk the holder through creating the token: print the steps, which are to run
+   `claude setup-token` in another terminal, signed in to the subscription being lent, and paste
+   the token it prints. Then read the token from the terminal without echoing it, and refuse an
+   empty one.
 3. Encrypt it to that key, and base64-encode the result on one line.
 4. Where `seats/<id>.yaml` does not exist on the default branch, write it with the holder's GitHub
    login as `owner`, the `reserve` and `roles` given as options, and the ciphertext as
@@ -536,6 +548,12 @@ copy, and whoever replaces `recipient.txt` receives every token encrypted to it 
 - **WHEN** `gh api users/<owner>` finds no such user
 - **THEN** the command refuses before writing the seat file, naming the login
 
+#### Scenario: The holder is told how to create the token
+
+- **WHEN** `igor seat add` reaches the point of reading the token
+- **THEN** it first prints the steps for creating one with `claude setup-token`
+- **AND** only then reads the token, without echoing it
+
 #### Scenario: Running it again rotates the token
 
 - **WHEN** a holder runs `igor seat add bob` and `seats/bob.yaml` exists on the default branch
@@ -601,35 +619,36 @@ can read the key `seatKey` names, and with it every lent token.
 
 ### Requirement: A spend with no seat behind it is not made
 
-Where seats are declared, every model call Igor makes on its own behalf SHALL be charged to the
-seat the gate chose for the role, and SHALL be made with that seat's credential. A seat probe is
-the one exception to the gate choosing: it is charged to the seat it reads and made with that
-seat's own credential.
-Where the gate names no seat, the call SHALL NOT be made, and no ambient credential SHALL be
-substituted for the seat the gate did not name. Where an organization declares no seats, budget is
-not enforced and this requirement places no condition on anything.
+Every model call Igor makes on its own behalf, under `igor serve` and under `igor run`, SHALL be
+charged to the seat the gate chose for the role, and SHALL be made with that seat's token. A seat
+probe is the one exception to the gate choosing: it is charged to the seat it reads and made with
+that seat's own token. Where the gate names no seat, the call SHALL NOT be made. Igor SHALL NOT
+make a model call on a stored Claude login (the credentials `claude` keeps in a home directory),
+or on any other credential no seat names, whether in place of a seat or beside one.
 
 The condition is whether the gate named a seat. Every seat file names its token (*A seat file
 names its token only by ciphertext or its own variable*), so a seat the gate names always has a
-credential of its own. What has no seat behind it is a call the gate refused to choose one for.
+credential of its own. What has no seat behind it is a call the gate refused to choose one for,
+and in an organization that declares no seats that is every call.
 
 This is the spending-side counterpart of the rule for reading a seat's token (*A seat's token
 travels as ciphertext in its file*): a seat naming a token that is not available is reported
-unreadable, and no other credential is used in its place. The same principle
-governs spending: a seat the gate did not name cannot be charged, and a credential no seat names
-cannot be attributed. It matters most for a model call that does not go through a worker, such as
-triage's model stage, which would otherwise fall back to the ambient login with nothing in the
-record naming what paid.
+unreadable, and no other credential is used in its place. The same principle governs spending:
+a seat the gate did not name cannot be charged, and a credential no seat names cannot be
+attributed. It matters most for a model call that does not go through a worker, such as triage's
+model stage, which would otherwise reach a stored login with nothing in the record naming what
+paid.
 
 Attributing that spend instead of refusing it was considered and rejected. A record saying an
 unnamed login paid is honest about a call that should not have been made, leaves the ceiling
-unenforced, and does nothing at all on a host where no ambient login exists: there the call
-fails with a message about not being logged in, which describes a machine whose credentials are
-configured correctly and whose seats the gate is simply holding back.
+unenforced, and does nothing at all on a host where no stored login exists: there the call fails
+with a message about not being logged in, which describes a machine whose seats the gate is
+simply holding back.
 
-The exemption for an organization with no seats is not an oversight to be tightened later. A
-deployment that declares no seats has asked for no ceiling and made no promise about which
-credential pays, and the fallback is what it runs on.
+A deployment that declares no seats is not exempt from this rule. A stored login is whatever
+account last signed in on that host, which can be a pay-per-use API key or a person's own subscription, and nothing records
+whose it is. Creating a token takes one command, `claude setup-token`, so an organization with no
+lenders declares one seat from its own token instead.
 
 #### Scenario: No seat, no spend
 
@@ -638,17 +657,16 @@ credential pays, and the fallback is what it runs on.
 - **THEN** no model call is made on that role's behalf
 - **AND** no credential is substituted for the seat's
 
-#### Scenario: A spend nothing can attribute is refused rather than recorded as ambient
+#### Scenario: A spend nothing can attribute is refused rather than recorded as a stored login
 
 - **WHEN** a call could only be made on a credential no seat names
 - **THEN** it is refused
-- **AND** it is not made and recorded against the ambient login instead
+- **AND** it is not made and recorded against a stored login instead
 
-#### Scenario: An unenforced budget is untouched
+#### Scenario: A stored login is never used
 
-- **WHEN** an organization declares no seats
-- **THEN** calls run on whatever login is ambient, as they did before
-- **AND** nothing is refused for want of a seat
+- **WHEN** the host running Igor holds a stored Claude login, under `igor serve` or `igor run`
+- **THEN** no model call Igor makes is authenticated by it
 
 #### Scenario: A call that runs names the seat that paid
 
@@ -685,13 +703,19 @@ its own user; this requirement adds nothing to it there.
 When a pull of the lore checkout (#176) removes a seat file, the removal SHALL take effect even
 where the rest of the pull is refused for failing the startup checks, the configuration checks
 Igor makes before its first cycle, such as config validation. Until #176 specifies pulling, a
-seat file leaves a running process only when it restarts. This requirement does not cover a pull
-that removes the last seat file, which the proposal lists as open. Igor SHALL then drop the
-seat's decrypted token from memory, give the seat to no new worker, and kill every worker using
+seat file leaves a running process only when it restarts. When the removal applies, Igor SHALL
+drop the seat's decrypted token from memory, give the seat to no new worker, and kill every worker using
 it: the `claude -p` child and every process its worker user owns. Under #175 each process has its
 own worker user, `igor-worker-<role>-<rank>`, which runs only that process's worker, so this
 reaches no other process's worker. It SHALL hand off each item
 those workers were working. The Igor process SHALL keep running.
+
+Where the removal leaves a role with no seat file listing it, as when a pull removes the last
+seat file, the role SHALL have no usable seat. Its process SHALL hand off each item its workers
+held, SHALL take no new item, since *A spend with no seat behind it is not made* lets no model
+call run, and SHALL keep running. Igor SHALL NOT fall back to a stored Claude login. A
+configuration with no seat serving a role fails the startup checks (*A role's seats are the seats
+whose files list it*), so the rest of such a pull is refused, while the removal still applies.
 
 Igor cannot recall copies of the token. A worker that held it could have saved or sent it, and
 the encrypted file stays in the lore repository's git history. Removing the file stops only
@@ -702,6 +726,13 @@ Igor's own use of the token; revoking it at Anthropic is the only withdrawal tha
 - **WHEN** a pull removes `seats/bob.yaml` while a worker is using `bob`
 - **THEN** Igor kills that worker and every process its worker user owns, and hands off its item
 - **AND** no new worker is given `bob`, and the Igor process keeps running
+
+#### Scenario: Removing the last seat file leaves the role with no seat, not on a login
+
+- **WHEN** a pull removes `seats/bob.yaml`, the only seat file listing `generalist`, while a
+  worker is using `bob`
+- **THEN** Igor kills that worker and hands off its item
+- **AND** the process takes no new item, keeps running, and makes no model call on a stored login
 
 #### Scenario: A removal applies even when the rest of the pull is refused
 

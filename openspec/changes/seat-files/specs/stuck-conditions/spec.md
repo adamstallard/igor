@@ -1,3 +1,43 @@
+## ADDED Requirements
+
+### Requirement: A read-cleared condition opens on a failing read and clears on a passing one
+
+A read-cleared condition SHALL be a condition on something Igor reads, such as a file, that
+opens when a read of it fails and clears when a later read of it passes. It SHALL open on that
+first failing read, with no recurrence count. It SHALL clear only on a passing read: never by a
+probe item, and with no cooldown, since *A condition clears by not recurring, and a probe is what
+observes that* does not apply to it. It SHALL stop nothing by itself. What the failed read could
+not supply, such as a seat's token, is still missing, and the rule for that thing says what
+follows. The condition records the fault and names its cure, and it is reported like any other
+condition.
+
+Every rule that opens a condition of this kind SHALL cite this requirement and SHALL state only
+what is read, what counts as failing, and what the condition is on. Two such conditions exist:
+a seat file Igor fails to decrypt (*A condition that recurs stops the affected scope from taking
+new work*), and a configuration that fails the startup checks when a running process rereads it
+at a cycle, which `concurrent-instances` (#179) specifies in *A retired rank does not hold its
+items forever*.
+
+A read is its own observation of the cure. A probe item takes work to find out whether a fault
+recurs; a file that reads cleanly has already shown it.
+
+#### Scenario: A failing read opens the condition at once
+
+- **WHEN** a read of a file that a read-cleared condition watches fails for the first time
+- **THEN** the condition opens, without waiting for a recurrence
+
+#### Scenario: A passing read clears it, with no probe
+
+- **WHEN** a later read of that file passes
+- **THEN** the condition clears, with no cooldown waited and no probe item taken
+
+#### Scenario: The condition stops nothing by itself
+
+- **WHEN** a read-cleared condition on a seat file is open, and the role that seat serves has
+  another eligible seat
+- **THEN** the role keeps working on that other seat
+- **AND** only the seat whose file failed to read is out of use
+
 ## MODIFIED Requirements
 
 ### Requirement: A condition that recurs stops the affected scope from taking new work
@@ -20,15 +60,13 @@ The twentieth is waste, whatever the cause.
 Two conditions open on their first occurrence. The first is a refused GitHub App credential,
 which stops the Igor itself. An Igor whose App is refused can do nothing on GitHub, so no item
 it takes could find the cure, and `app-identity` already requires that it take no new item while
-refused. The second is a seat file Igor fails to decrypt. Igor reads the seat files at start
-and, once #176 specifies pulling the lore checkout, on each pull. The first read that fails to
-decrypt a seat's file opens the condition on that seat. That condition SHALL clear when a later
-read decrypts the file, and SHALL NOT clear by a probe item: the cooldown and probe of *A
-condition clears by not recurring, and a probe is what observes that* do not apply to it. It
-takes the seat out of every role's choice and stops no role (*A condition's scope is its cure's
-scope*). Such a seat is never chosen and never probed, so no run or probe item ever uses it, and
-reading the file again is the only observation of its cure (seat-budget's *A seat's token
-travels as ciphertext in its file*).
+refused. The second is a seat file Igor fails to decrypt, a read-cleared condition as *A
+read-cleared condition opens on a failing read and clears on a passing one* defines it: the read
+is of the seat files, and the condition is on the seat. It takes the seat
+out of every role's choice and stops no role (*A condition's scope is its cure's scope*). Such a
+seat is never chosen and never probed, so no run or probe item ever uses it, and reading the file
+again is the only observation of its cure (seat-budget's *A seat's token travels as ciphertext in
+its file*).
 
 #### Scenario: A recurring condition stops the scope
 
@@ -54,7 +92,7 @@ travels as ciphertext in its file*).
 #### Scenario: A good read clears the decryption condition
 
 - **WHEN** a later read of the seat files decrypts that seat's file
-- **THEN** the condition on that seat clears, with no cooldown waited and no probe item taken
+- **THEN** the condition on that seat clears, as a read-cleared condition does
 
 #### Scenario: The stop names its cure
 
@@ -79,7 +117,8 @@ role with no eligible seat, where some but not all of its seats are under open c
 hand off, naming those conditions, as seat-budget's requirement says. A condition on a seat whose
 file Igor could not decrypt SHALL stop no role, whatever the role's other seats are under: the
 seat counts as one at its line, as seat-budget's *A seat's token travels as ciphertext in its
-file* says, which also says when the condition opens and clears. A condition
+file* says. It is a read-cleared condition (*A read-cleared condition opens on a failing read and
+clears on a passing one*). A condition
 SHALL be rebuilt from the execution log on the state branch, with no stored record of its own:
 from the run rows that carry its cure key, and from condition rows the loop appends for what no
 run shows, such as a probe being taken. Every Igor appends to the one log, so the same cure met
@@ -194,7 +233,8 @@ committed, and a few characters of a token are credential material; a short dige
 collide, and a collision reads as "the same credential resolved", which is exactly what clears a
 credential condition. For a seat whose file carries `encrypted_token`, the credential hashed is
 the decrypted token, never the ciphertext (seat-budget's *A seat's token travels as ciphertext in
-its file*). Every seat file names a token source, so no seat's credential is an ambient one.
+its file*). Every seat file names a token source, and Igor never uses a stored Claude login, so
+every credential hashed is a seat's own token.
 
 #### Scenario: A refused credential is named where it is refused
 

@@ -28,7 +28,9 @@ a fork.
 2. The holder runs `claude setup-token`, encrypts the token to that public key, and opens a pull
    request adding `seats/<id>.yaml` with the ciphertext in it. `igor seat add` does all of it.
 3. Once the pull request merges and the server's lore checkout has it, Igor decrypts the token
-   with the private key whenever it reads the seat.
+   with the private key when it reads the seat files: at start, and on each pull once #176
+   specifies pulling. A worker or a probe gets the plaintext Igor holds from that read, and
+   starting one decrypts nothing (Adam, 2026-10-18).
 
 Rotating is the same pull request with new ciphertext: `igor seat add` again. A lender revokes by
 revoking the token at Anthropic; the operator can also remove the seat file, which takes effect
@@ -74,7 +76,10 @@ operator must get right:
   carries both rules. Its block on #101's *A condition that recurs stops the affected scope
   from taking new work* says this condition opens on its first occurrence and clears on a good
   read, not by a probe item (proposal, decision 32). Its block on *A condition's scope is its
-  cure's scope* says the condition stops no role.
+  cure's scope* says the condition stops no role. Both cite the delta's definition of a
+  read-cleared condition, the kind this is. #179 (`concurrent-instances`) cites the same
+  definition for its condition on a configuration that fails the startup checks when a running
+  process rereads it (decision 38).
 
 ### Why ciphertext in history no longer rules this out
 
@@ -120,6 +125,13 @@ the operator no encryption step for a token already on the server. Its value is 
 A seat file naming neither key is refused (Adam, 2026-10-17). It would spend whatever login the
 server holds, which can be a pay-per-use API key. *Rejected:* allowing such a file behind a flag
 the operator sets.
+
+Igor never uses a stored Claude login at all (Adam, 2026-10-18), so an organization that declares
+no seats is not exempt either: it has no seat, and makes no model call. An organization with no
+lenders declares one seat from its own token, with `claude setup-token` and either `igor seat add`
+or a `token_env` seat file, and the operator guide gives those steps. A pull that removes the last
+seat file serving a role leaves the role with no usable seat; it hands off what its workers held
+and takes nothing new.
 
 `token_env` is kept rather than requiring every seat to carry ciphertext: an operator would
 otherwise encrypt their own token to their own server only to decrypt it again, and a seat whose
