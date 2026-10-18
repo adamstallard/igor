@@ -22,8 +22,10 @@ one shell command away from a worker an item's text has steered.
 
 Only what running a toolchain requires is passed: the search path, a home directory, and the network
 settings the host is configured with. None of those is a credential, and a missing one shows as a
-toolchain error, never as the worker authenticating as something else. Where a worker user is
-configured, `GIT_INDEX_FILE` is passed too, naming the index copy in the worker's outbox, so that
+toolchain error, never as the worker authenticating as something else. Under `igor serve`,
+where the worker runs as its worker user, `GIT_INDEX_FILE` is passed too, naming the index copy: the copy of git's index that #175
+keeps in the worker's outbox, the directory beside its tree where the worker leaves files for
+the Igor. It lets
 `git rm` and `git mv` work without write access to the git directory. It is not a credential.
 
 #### Scenario: The surface credential is absent
@@ -70,7 +72,7 @@ configured, `GIT_INDEX_FILE` is passed too, naming the index copy in the worker'
 
 #### Scenario: A worker running as its own user is given its index copy
 
-- **WHEN** a worker is spawned as the configured worker user
+- **WHEN** `igor serve` spawns a worker as its worker user
 - **THEN** `GIT_INDEX_FILE` in its environment names the index copy in its outbox
 
 ## REMOVED Requirements

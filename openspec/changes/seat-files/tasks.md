@@ -73,7 +73,7 @@ measurement.
 - [ ] 3.7 `src/execute.ts`'s worker environment: a seat whose token cannot be decrypted fails
       naming the seat and the reason, per the `task-execution` delta, with a test; the file and
       command cases and their tests go
-- [ ] 3.8 Where no worker user is configured (#175's same-user mode), no seat's `encrypted_token`
+- [ ] 3.8 Under #175's same-user mode, `igor run`, no seat's `encrypted_token`
       is decrypted and no such seat is drawn on; seats naming `token_env` run. At start Igor
       prints, worded so, once per such seat:
 
@@ -85,9 +85,12 @@ measurement.
       only when every seat serving it is under a condition (5.1 and 11.3), so a role whose seats
       are all lent hands off. Tests: the scenarios of *A lent seat is decrypted only
       where the worker has a user of its own*
-- [ ] 3.9 Build once the proposal's open question on how this condition opens and clears is
-      answered. A lent seat whose ciphertext does not decrypt with a key Igor can read is ineligible,
-      and #143's probe skips it. The seat's condition report names the seat and its `owner`,
+- [ ] 3.9 A seat whose file Igor fails to decrypt, for any reason, at start or on a pull of
+      the lore checkout (#176), opens a condition on the seat, and a later read that decrypts it
+      clears the condition (Adam, 2026-10-17). The seat is ineligible, #143's probe skips it,
+      and it counts as one at its line, so its condition stops no role: a role with no other
+      usable seat hands off, naming the condition. Where the key is read but the ciphertext does
+      not decrypt with it, the seat's condition report names the seat and its `owner`,
       without an @-mention, since a handoff may quote it on a public issue. Worded so (may be
       reworded; it must name both):
 
@@ -95,7 +98,11 @@ measurement.
       seat "<id>" carries a token this Igor cannot decrypt, so no role draws on it. Its lender, <owner>, re-lends it with `igor seat add <id>`.
       ```
 
-      Test: the scenario *A lent seat that does not decrypt is skipped, and its lender named*
+      Tests: the scenarios *A lent seat that does not decrypt is skipped, and its lender named*,
+      *A failed decryption opens the condition, and a good read clears it*, *A role whose only
+      seat is undecryptable waits as at its line*, and `stuck-conditions`' *An undecryptable
+      seat's condition stops no role*. Until #176 builds the pull, the condition opens and
+      clears at start only
 
 ## 4. Which seats a role draws on
 
@@ -351,27 +358,23 @@ leaks.
 - [ ] 10.1 `templates/seat-notice.yml`, worded so. The comment's text is the deliverable too:
 
       ```yaml
-      # Tells a seat's owner about every change to their seat file, by mentioning them: on the
-      # pull request that changes it, and again on the commit that lands it on the default
-      # branch. Revoking their token is a lender's veto over how their seat is used, and this is
-      # how they hear about a change in time to use it. The push notice also runs for a change
-      # pushed with no pull request. GitHub starts no workflow for a push made with a workflow's
-      # own GITHUB_TOKEN, so a commit made that way may get no notice.
+      # Tells a seat's owner about every pull request that changes their seat file, by mentioning
+      # them on it. Revoking their token is a lender's veto over how their seat is used, and this
+      # is how they hear about a change before it lands. After a change lands, the Igor posts its
+      # own notice when it pulls the change into its lore checkout; this workflow posts nothing
+      # then.
       #
       # It runs on pull_request_target, so it also runs for pull requests from forks, with a token
       # that can comment. That trigger runs with this repository's permissions, so this job reads
       # nothing from the pull request's head: no checkout and no file contents, only the list of
       # changed paths, each matched against the seat-file pattern before use. The owner comes from
-      # the copy of the file before the change: the default branch's for a pull request, the
-      # commit before the push for a push. Keep it that way: reading or running the head here
+      # the default branch's copy of the file. Keep it that way: reading or running the head here
       # would hand a fork's code a token that can write to this repository.
       name: Notify seat owners
 
       on:
         pull_request_target:
           types: [opened, reopened, synchronize, ready_for_review]
-          paths: ['seats/**']
-        push:
           paths: ['seats/**']
 
       permissions:
@@ -380,90 +383,61 @@ leaks.
 
       jobs:
         notify:
-          if: >-
-            github.event_name == 'pull_request_target' ||
-            github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
           runs-on: ubuntu-latest
           steps:
-            - name: Mention the owner of each seat file this change touches
+            - name: Mention the owner of each seat file this pull request touches
               env:
                 GH_TOKEN: ${{ github.token }}
                 REPO: ${{ github.repository }}
-                EVENT: ${{ github.event_name }}
                 PR: ${{ github.event.pull_request.number }}
                 DEFAULT: ${{ github.event.repository.default_branch }}
                 AUTHOR: ${{ github.event.pull_request.user.login }}
-                BEFORE: ${{ github.event.before }}
-                AFTER: ${{ github.sha }}
               run: |
                 set -euo pipefail
                 marker='<!-- igor-seat-notice -->'
-                if [[ "$EVENT" == push ]]; then
-                  # An all-zero BEFORE is the push that creates the branch: nothing to compare.
-                  [[ "$BEFORE" =~ ^0+$ ]] && exit 0
-                  ref="$BEFORE"; told=''; what='this push changes'
-                  paths=$(gh api "repos/$REPO/compare/$BEFORE...$AFTER" \
-                    --jq '.files[] | .filename, (.previous_filename // empty)' | sort -u)
-                else
-                  ref="$DEFAULT"; what='this pull request changes'
-                  told=$(gh api --paginate "repos/$REPO/issues/$PR/comments" \
-                    --jq ".[] | select(.user.login == \"github-actions[bot]\") | select(.body | startswith(\"$marker\")) | .body" \
-                    | grep -oE '@[A-Za-z0-9-]+' | sort -u || true)
-                  paths=$(gh api --paginate "repos/$REPO/pulls/$PR/files" \
-                    --jq '.[] | .filename, (.previous_filename // empty)' | sort -u)
-                fi
+                told=$(gh api --paginate "repos/$REPO/issues/$PR/comments" \
+                  --jq ".[] | select(.user.login == \"github-actions[bot]\") | select(.body | startswith(\"$marker\")) | .body" \
+                  | grep -oE '@[A-Za-z0-9-]+' | sort -u || true)
+                paths=$(gh api --paginate "repos/$REPO/pulls/$PR/files" \
+                  --jq '.[] | .filename, (.previous_filename // empty)' | sort -u)
                 lines=()
                 while IFS= read -r path; do
                   [[ "$path" =~ ^seats/[a-z0-9][a-z0-9-]*\.yaml$ ]] || continue
-                  owner=$(gh api "repos/$REPO/contents/$path?ref=$ref" --jq .content 2>/dev/null \
+                  owner=$(gh api "repos/$REPO/contents/$path?ref=$DEFAULT" --jq .content 2>/dev/null \
                     | base64 -d | sed -n 's/^owner:[[:space:]]*\([A-Za-z0-9-]*\)[[:space:]]*$/\1/p' \
                     | head -n 1) || continue
                   [[ "$owner" =~ ^[A-Za-z0-9](-?[A-Za-z0-9])*$ ]] || continue
-                  if [[ "$EVENT" != push ]]; then
-                    [[ "$(tr A-Z a-z <<<"$owner")" == "$(tr A-Z a-z <<<"$AUTHOR")" ]] && continue
-                  fi
+                  [[ "$(tr A-Z a-z <<<"$owner")" == "$(tr A-Z a-z <<<"$AUTHOR")" ]] && continue
                   grep -qixF "@$owner" <<<"$told" && continue
                   told+=$'\n'"@$owner"
-                  lines+=("- @$owner: $what your seat file, \`$path\`.")
+                  lines+=("- @$owner: this pull request changes your seat file, \`$path\`.")
                 done <<<"$paths"
                 [[ ${#lines[@]} -eq 0 ]] && exit 0
                 body="$marker"$'\n'"$(printf '%s\n' "${lines[@]}")"$'\n\n'
                 body+="Your seat serves the roles and keeps the reserve its file states. "
-                if [[ "$EVENT" == push ]]; then
-                  body+="This change is already on $DEFAULT. If you don't agree to it, reply here or tell the operator. "
-                else
-                  body+="If you don't agree to this change, say so here. "
-                fi
+                body+="If you don't agree to this change, say so here. "
                 body+="To stop your seat being used at all, revoke its token at Anthropic, whatever this change does."
-                if [[ "$EVENT" == push ]]; then
-                  gh api "repos/$REPO/commits/$AFTER/comments" -f body="$body" > /dev/null
-                else
-                  gh api "repos/$REPO/issues/$PR/comments" -f body="$body" > /dev/null
-                fi
+                gh api "repos/$REPO/issues/$PR/comments" -f body="$body" > /dev/null
       ```
 
 - [ ] 10.2 `src/init.ts`: `igor init` installs `seat-notice.yml` beside `reconcile-on-merge.yml`,
       under the same rules for an existing file, and it can be named as a target, per the
       `lore-store` delta
-- [ ] 10.3 Tests in `test/template.test.ts`: the template parses; its triggers are
-      `pull_request_target` and `push`, each with `paths: ['seats/**']`, and its job runs on a push
-      only to the default branch; its permissions are exactly
+- [ ] 10.3 Tests in `test/template.test.ts`: the template parses; its only trigger is
+      `pull_request_target`, with `paths: ['seats/**']`; its permissions are exactly
       `contents: read` and `pull-requests: write`; it runs on `ubuntu-latest`; it has no
       `uses:` step and no `actions/checkout`; and no expression in it reads
       `github.event.pull_request.head`
 - [ ] 10.4 Tests of the script, run under bash with `gh` faked: each scenario of *A pull request
-      that changes a seat file mentions that seat's owner*, the push scenarios among them, with the
-      owner read at the commit before the push and the comment posted on the pushed commit; and a path such as
+      that changes a seat file mentions that seat's owner*; and a path such as
       `seats/$(touch x).yaml` or one containing a space or `*`, which is neither run nor expanded;
       and a comment carrying the marker whose author is not `github-actions[bot]`, which does not
       count as a mention already made
 - [ ] 10.5 In `adamstallard/igor-lore`, with task 6.1: add `.github/workflows/seat-notice.yml`
       from the template
-- [ ] 10.6 On a test repository with the template installed, measure and record in `design.md`:
-      whether a push to the default branch made by a workflow with `GITHUB_TOKEN`, through the
-      Actions bypass, runs `seat-notice.yml`; whether one made by a person does; and that the
-      push job's comment on the commit posts with the template's permissions. Until the first is
-      measured to work, no guide says such a commit gets a notice
+- [x] 10.6 ~~Measure whether a push through the Actions bypass runs `seat-notice.yml`~~ Moot:
+      the workflow's `push` trigger is dropped (proposal, decision 26; Adam, 2026-10-17), so no
+      push runs it
 
 ## 11. Matching condition-backoff (#101)
 
@@ -479,7 +453,8 @@ of its requirements. Build each against #101's code:
       private key file that `seatKey` names, never a token file path
 - [ ] 11.3 *A condition's scope is its cure's scope*: an unreadable seat, including one whose token
       cannot be decrypted, is taken out of every role's choice, and a role stops where every seat
-      serving it is under an open condition (Adam, 2026-10-17). A role with no eligible seat
+      serving it is under an open condition other than a decryption failure (Adam, 2026-10-17); a
+      seat whose file Igor could not decrypt counts as one at its line (3.9). A role with no eligible seat
       where only some seats are under conditions, and the rest are at their lines, hands off,
       naming each condition in the handoff (Adam, 2026-10-17). Test each of its seat scenarios
 

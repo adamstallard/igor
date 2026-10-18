@@ -145,9 +145,11 @@ be written to disk, to an argument list, or to any record. Where decryption fail
 be reported unreadable with the reason, and no other credential SHALL be used in its place: no
 `seatKey` declared, a key file that cannot be read, a key that does not match, or a ciphertext
 that does not decrypt. A seat whose token Igor cannot decrypt SHALL be ineligible: seat choice
-SHALL NOT pick it, and #143's probe SHALL skip it. It is under a condition on the seat, as
-`stuck-conditions`' *A condition's scope is its cure's scope* says for any token that cannot be
-read or decrypted; how that condition opens and clears is open in the proposal. Where the key is
+SHALL NOT pick it, and #143's probe SHALL skip it. It is under a condition on the seat. Igor SHALL
+open that condition when it fails to decrypt the seat's file, whenever it reads the seat files:
+at start, and on each pull of its lore checkout once #176 specifies one. It SHALL clear the
+condition when a later read decrypts the file. The condition SHALL NOT stop a role: the seat
+counts as one at its line (*A role draws on the seat with the most headroom*). Where the key is
 read but the seat's ciphertext does not decrypt with it, because it was encrypted to another key
 or is corrupt, that condition's report SHALL name the seat and its `owner`, the lender, so that
 someone re-lends it. Where no `seatKey` is declared or the key file cannot be read, the report
@@ -189,6 +191,13 @@ can read the lore repository, which may be anyone.
   holds
 - **THEN** the seat is reported unreadable, saying its token could not be decrypted with the key
   at that path
+
+#### Scenario: A failed decryption opens the condition, and a good read clears it
+
+- **WHEN** Igor starts and cannot decrypt `seats/bob.yaml`
+- **AND** a later read of the seat files, such as a restart after `bob` is re-lent, decrypts it
+- **THEN** the condition on `bob` opens at start, and clears on that later read
+- **AND** neither depends on a handoff or on #143's probe
 
 #### Scenario: A lent seat that does not decrypt is skipped, and its lender named
 
@@ -274,7 +283,8 @@ credential is a condition on that seat*) and a token that cannot be read or decr
 `stuck-conditions`' *A condition's scope is its cure's scope* makes a condition on the seat. A seat
 under such a condition SHALL be passed over, and the role SHALL keep working on its other eligible
 seats. Where every seat that serves the role is under such a condition, the role SHALL stop, as
-`stuck-conditions` says. Where no seat that serves the role is eligible and not every one is under
+`stuck-conditions` says. A seat whose file Igor could not decrypt counts here as a seat at its
+line, not as one under a condition, so it never makes a role stop. Where no seat that serves the role is eligible and not every one is under
 such a condition, such as when every seat is at its line, or some are under a condition and the
 rest are at their lines, the Igor SHALL hand off the item instead of stopping the role. A handoff
 where some seats are under a condition SHALL name each such condition.
@@ -329,11 +339,13 @@ at its reset, while a session refills within hours.
 - **THEN** the role draws on the other seat
 - **AND** the role does not stop for the first seat's condition
 
-#### Scenario: A role whose only seat is undecryptable stops
+#### Scenario: A role whose only seat is undecryptable waits as at its line
 
 - **WHEN** the only seat serving a role has an open condition because its token cannot be
   decrypted
-- **THEN** the role stops, as `stuck-conditions` says, and does not hand off
+- **THEN** the role does not stop
+- **AND** it hands off as a role whose seats are all at their lines does, and the handoff names
+  the condition
 
 #### Scenario: Seats under a condition and seats at their lines are a handoff
 
@@ -356,24 +368,19 @@ branch's copy of the file. An owner SHALL be mentioned at most once per pull req
 mentioned on a pull request they opened, and SHALL NOT be mentioned where `owner` is not a GitHub
 login.
 
-The same workflow SHALL also run on every push to the default branch that changes, renames or
-deletes a seat file, and SHALL comment on the pushed commit, @-mentioning each changed seat's
-owner, read from the file as it was before the push. A change merged through a pull request
-mentions them again on its commit. Whether a commit a workflow pushes with the repository's
-automatic token triggers this run is not measured (task 10.6): GitHub documents that such a push
-starts no workflow.
-
 The workflow SHALL run on GitHub-hosted runners, triggered by `pull_request_target` so that it can
-comment on pull requests from forks, and by `push`. It SHALL read nothing from a pull request's
+comment on pull requests from forks, and by no other event. Igor SHALL NOT comment on an open
+lore pull request; its own notice comes only after a seat-file change lands and Igor pulls it
+(#176). It SHALL read nothing from a pull request's
 head: no
 checkout and no file contents, only the list of changed paths, each matched against
 `^seats/[a-z0-9][a-z0-9-]*\.yaml$` before use. Its token SHALL be limited to reading contents and
-writing pull requests; a comment on a commit needs only reading contents.
+writing pull requests.
 
 A mention SHALL be recognised as already made only from a comment the workflow itself posted.
 
 The lore repository's default branch SHALL require a pull request before merging, because only
-a pull request's notice reaches the lender before the change lands; a push notice comes after. `igor doctor`
+a pull request's notice reaches the lender before the change lands. `igor doctor`
 reports a default branch that does not require one, through `check-a-lore-repository`'s check
 that direct pushes are prevented (#113).
 
@@ -436,16 +443,11 @@ the head is part of this requirement, not a detail of the template.
   request before merging
 - **THEN** `igor doctor` reports it, by `check-a-lore-repository`'s check of direct pushes
 
-#### Scenario: A push to the default branch mentions the owner on the commit
+#### Scenario: A push runs no notice workflow
 
-- **WHEN** a commit that changes `seats/bob.yaml`, whose `owner` before the push is `bob`, is
-  pushed to the default branch with no pull request
-- **THEN** a comment on that commit mentions `@bob`
-
-#### Scenario: A push to another branch mentions nobody
-
-- **WHEN** a commit changing `seats/bob.yaml` is pushed to a branch other than the default branch
-- **THEN** no comment is posted for that push
+- **WHEN** a commit that changes `seats/bob.yaml` is pushed to the default branch with no pull
+  request
+- **THEN** the notice workflow does not run, and nothing comments on the commit
 
 #### Scenario: A path that is not a seat file is ignored
 
@@ -575,10 +577,10 @@ copy, and whoever replaces `recipient.txt` receives every token encrypted to it 
 
 ### Requirement: A lent seat is decrypted only where the worker has a user of its own
 
-A lent seat, here, is one whose file names `encrypted_token`. Where no worker user is configured,
-so that the worker runs as the Igor's own user (#175's `igor run`, and
-`igor serve --same-user`), Igor SHALL NOT decrypt any seat's `encrypted_token`,
-and SHALL NOT draw on that seat. Only seats naming `token_env` SHALL run there. Igor SHALL say so
+A lent seat, here, is one whose file names `encrypted_token`. Where there is no worker user,
+so that the worker runs as the Igor's own user (#175's `igor run`, the only same-user mode),
+Igor SHALL NOT decrypt any seat's `encrypted_token`,
+and SHALL NOT draw on any such seat. Only seats naming `token_env` SHALL run there. Igor SHALL say so
 when it starts, naming each seat it leaves undecrypted. Such a seat SHALL be ineligible: seat
 choice SHALL NOT pick it, and #143's probe SHALL skip it. Its file has no fault, so it SHALL raise
 no condition. *A role draws on the seat with the most headroom* stops a role only when every

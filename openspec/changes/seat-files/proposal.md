@@ -19,10 +19,12 @@
    lists it. *Rejected:* keeping pools or an `order` key, which brings back an ordering the
    lender never stated.
 6. **A pull request changing a seat file @-mentions its owner**, through
-   `templates/seat-notice.yml`, which `igor init` installs (Adam, 2026-10-11). It runs on
-   `pull_request_target` on GitHub-hosted runners and reads nothing from the pull request's head.
-   It also runs on pushes to the default branch (decision 26). *Rejected:* a pull request template line, CODEOWNERS without review, the `pull_request`
-   trigger, a self-hosted runner, and Igor commenting (`design.md`).
+   `templates/seat-notice.yml`, which `igor init` installs (Adam, 2026-10-11). It runs only on
+   `pull_request_target` (decision 26), on GitHub-hosted runners, and reads nothing from the pull
+   request's head. *Rejected:* a pull request template line, CODEOWNERS
+   without review, the `pull_request` trigger, a self-hosted runner, and Igor commenting on open
+   lore pull requests (`design.md`). The before-merge comment is the workflow's; Igor posts its
+   own notice only after a seat-file change lands and Igor pulls it (#176).
 7. **`igor doctor` reports a missing `seat-notice.yml`, and a server private key (`seatKey`) whose
    public half does not match `seats/recipient.txt`** (Adam, 2026-10-11). A change to
    `recipient.txt` notifies no lender, because it changes no token already on the server; each
@@ -51,12 +53,16 @@
     accepted** (Adam, 2026-10-17). The notice workflow must not read the pull request's head, so
     nothing can catch it there. The lender guide says so (task 9.5).
 14. **The lore repository's default branch requires a pull request before merging** (Adam,
-    2026-10-17), so a change to a seat file made through a pull request is noticed before it
-    lands. A push that bypasses the rule is noticed only after it lands (decision 26).
+    2026-10-17), so the lender is told of a change to their seat file made through a pull
+    request before it lands. GitHub Actions can push past the rule, for the reconciliation
+    workflow; a seat-file change pushed that way reaches the lender only through Igor's notice
+    when it pulls the change (#176).
     `check-a-lore-repository` (#113) reports a branch that does not.
 15. **An undecryptable seat is passed over where the role has another usable seat** (Adam,
     2026-10-17). Under #101 it would otherwise stop every role its file lists. A role whose seats
-    are all under open conditions still stops, as #101 says (task 11.3).
+    are all under open conditions still stops, as #101 says (task 11.3), except that a seat
+    whose file Igor could not decrypt counts as one at its line, so its condition never stops a
+    role (decision 31).
 16. **The `dedicated` seat key is dropped** (Adam, 2026-10-17). After #143 any seat may keep a
     reserve, and choice by most headroom already spends a reserve-0 seat first. This change
     restates #143's *A role may hold back more of a seat than the seat does* to say "a seat at
@@ -86,8 +92,8 @@
     where `gh` is missing, which still needed `gh` or a clone to find the lore repository, the
     holder's login and the public key, and could not replace an existing file for a rotation.
 23. **Igor refuses to decrypt a lent seat where the worker runs as the Igor's own user** (Adam,
-    2026-10-17). Under #175's same-user mode (`igor run`, and `igor serve --same-user`) a worker
-    could read `seatKey` and so every lent token. There, only the operator's own `token_env`
+    2026-10-17). Under #175's same-user mode, which is `igor run` only, a worker could read
+    `seatKey` and so every lent token. There, only the operator's own `token_env`
     seats run. Lending requires the worker-user setup of #175.
 24. **A lender needs a GitHub account to lend for themselves, and that is accepted** (Adam,
     2026-10-17). Someone without one lends through the operator, whose login is then the seat
@@ -95,12 +101,13 @@
     holder's, is accepted too.
 25. **A role with no eligible seat, where some seats are under an open condition and the rest are
     at their reserve lines, hands off, naming the condition in the handoff** (Adam, 2026-10-17).
-    It stops only when every seat serving it is under a condition, as #101 says.
-26. **The notice workflow also runs on pushes to the default branch that touch `seats/**`**, and
-    @-mentions each changed seat's owner on the commit (Adam, 2026-10-17), so a lender hears of a
-    change however it landed, including one committed by a workflow through GitHub Actions'
-    bypass of the branch's protection, which lore setup keeps. Whether such a commit triggers the
-    workflow is open (*Still open*).
+    It stops only when every seat serving it is under a condition, as #101 says, and none of
+    those conditions is on a seat Igor could not decrypt (decision 31).
+26. **The notice workflow has no `push` trigger; `seat-notice.yml` runs on `pull_request_target`
+    only** (Adam, 2026-10-17, dropping that day's earlier push trigger). The only notice after a
+    change lands comes from Igor, when it pulls the lore change (#176). *Rejected:* a push trigger
+    as well, which would mention a lender twice for one change, and which GitHub does not start
+    for a push made with a workflow's own `GITHUB_TOKEN`, the commit it was meant to catch.
 27. **`igor doctor` (#113, `check-a-lore-repository`) is built before this change** (Adam,
     2026-10-17). Decisions 12 and 14 and section 8 of `tasks.md` add to the command #113 builds.
 28. **`igor seat add` takes `--lore <owner/repo>`, required outside a clone and inferred inside
@@ -111,31 +118,32 @@
     choice never picks it, and #143's probe skips it. It is under a condition on the seat, as
     every seat whose token cannot be read is. For a wrong key or a corrupt file, that
     condition names the seat and its lender, so someone re-lends it; for a missing `seatKey` or
-    an unreadable key file it names the key, whose cure is the operator's. How the condition
-    opens and clears is still open. A lent
-    seat that same-user mode leaves undecrypted (decision 23) is ineligible and skipped by the
-    probe the same way; there is no fault in its file, so it raises no condition.
+    an unreadable key file it names the key, whose cure is the operator's. Decision 31 says how
+    the condition opens and clears. A lent seat that same-user mode leaves undecrypted (decision
+    23) is ineligible and skipped by the probe the same way; there is no fault in its file, so it
+    raises no condition, and a role whose seats are all lent hands off. Adam confirmed this last
+    rule on 2026-10-17.
 30. **The licence allowlist of decision 19 is MIT, ISC, BSD-2-Clause, BSD-3-Clause, Apache-2.0,
     0BSD, CC0-1.0, Unlicense and BlueOak-1.0.0** (Adam, 2026-10-17). Any other licence, copyleft
     included, fails the release until someone adds it to the list on purpose.
+31. **An undecryptable seat's condition is tied to reading seat files** (Adam, 2026-10-17). Igor
+    opens the condition when it fails to decrypt a seat file, at start and, once #176 specifies
+    pulling the lore checkout, on each pull, and clears it when a later read decrypts the file.
+    The seat counts as one at its line, so a role with no other usable seat hands off each item
+    as a role whose seats are all at their lines does, and the handoff names the condition.
+    Adam's words were that such a role "waits like a role whose seats are all full". This
+    narrows decisions 15 and 25: such a condition never stops a role.
+    *Rejected:* #101's way of opening and clearing a seat condition, from recurring handoffs and
+    from #143's probe, which never reach a seat that is never picked or probed.
 
 **Still open:**
 
-- **Whether decision 26's push notice fires for the case it was added for.** GitHub documents
-  that a push made with a repository's automatic `GITHUB_TOKEN` starts no workflow, and the
-  reconciliation workflow, the one lore setup puts on the bypass list, pushes with that token.
-  If GitHub's documented behaviour holds for that push, a seat-file change committed through the
-  bypass gets no notice. Unmeasured (task 10.6);
-  the guides promise no notice for that case until it is measured. Adam decided on 2026-10-17
-  that Igor posts the notice itself when it pulls a lore change that adds or changes a seat
-  file; pulling is #176's, which is not yet specified, so that decision is recorded on issue
-  #176. Whether the workflow's push trigger stays once Igor posts that notice is not decided.
-- **How the condition on an undecryptable seat opens and clears** (the open part of decision
-  29; the rest is decided). Under #101 a
-  condition opens when its cure key recurs as the cause of handoffs, and a seat condition clears
-  by #143's seat probe. A seat that is never picked causes no handoff, and the probe skips it, so
-  neither path reaches it. Its cure key, and how it clears once the lender re-lends, are not
-  decided.
+- **Whether a decryption failure when a worker is spawned opens the condition** (decision 31).
+  A seat can be chosen and then fail to decrypt, for example after its key file's permissions
+  change; decision 31 ties the condition to reading seat files, at start and on a pull.
+- **Pulling the lore checkout is not yet specified** (#176), so until it is, decision 31's
+  condition opens and clears at start only. Igor's own notice after a seat-file change lands is
+  decided (decisions 6 and 26); where Igor posts it is open on #176.
 
 ## Why
 
@@ -184,8 +192,9 @@ from [#147](https://github.com/adamstallard/igor/issues/147).
   breaks a tie. A role may still name a single seat, which must list it.
 - **A pull request that changes a seat file mentions its owner**, through a workflow `igor init`
   installs, so the lender hears of a change in time to revoke. It runs on `pull_request_target`
-  on GitHub-hosted runners and reads nothing from the pull request's head. It also mentions the
-  owner on each push to the default branch that changes their file.
+  on GitHub-hosted runners and reads nothing from the pull request's head. Igor's own notice
+  after a change lands comes with #176, which builds pulling the lore checkout; this change does
+  not build it.
 - **`igor seat add`** lends a seat in one step: it reads the token without echoing it, encrypts
   it, writes the seat file, and opens the pull request through `gh`, which it requires. Run
   again, it rotates the token.

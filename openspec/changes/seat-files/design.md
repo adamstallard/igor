@@ -50,19 +50,26 @@ operator must get right:
 - **A leak:** treat every seat token as leaked. Rotate the key, and every holder revokes at
   Anthropic and re-issues.
 - **Who must not read it: the worker.** A worker running as the Igor's own user could read the
-  key, and with it every lent token. So where #175's worker user is not configured (`igor run`,
-  and `igor serve --same-user`), Igor decrypts no lent seat and runs only seats naming
+  key, and with it every lent token. So under #175's same-user mode, which is `igor run` only,
+  Igor decrypts no lent seat and runs only seats naming
   `token_env` (Adam, 2026-10-17). Lending needs #175's setup. In same-user mode such a seat is
   ineligible, #143's probe skips it, and it raises no condition, since its file has no fault
-  (Adam, 2026-10-17). A role stops only when every seat serving it is under a condition
-  (decision 25), so in same-user mode a role whose seats are all lent hands off.
-- **A token Igor cannot decrypt** (Adam, 2026-10-17). Whatever the reason, no `seatKey`, a key
-  file Igor cannot read, a wrong key or a corrupt file, the seat is ineligible: seat choice never
-  picks it and #143's probe skips it, and it is under a condition on the seat. For a wrong key or
-  a corrupt file the cure is the lender's, so the condition's report names the seat and its
-  `owner`, so that someone re-lends it; for the other two the cure is the operator's, and the
-  report names the key, as task 3.4 words it. How that condition opens and clears, when the seat
-  is never picked and never probed, is open (proposal, *Still open*).
+  (Adam confirmed this rule on 2026-10-17). A role stops only when every seat serving it is under
+  a condition (decision 25), so in same-user mode a role whose seats are all lent hands off.
+- **A token Igor cannot decrypt** (Adam, 2026-10-17). Whatever the reason (no `seatKey`, a key
+  file Igor cannot read, a wrong key, or a corrupt file), the seat is ineligible: seat choice
+  never picks it and #143's probe skips it, and it is under a condition on the seat. For a wrong
+  key or a corrupt file the cure is the lender's, so the condition's report names the seat and
+  its `owner`, so that someone re-lends it. For a missing `seatKey` or an unreadable key file the
+  cure is the operator's, and the report names the key, as task 3.4 words it.
+- **That condition is tied to reading seat files** (Adam, 2026-10-17). #101 opens a seat's
+  condition when handoffs keep naming it, and clears it with #143's probe. A seat that is never
+  picked causes no handoff, and the probe skips it, so neither path reaches it. Instead Igor
+  opens the condition when it fails to decrypt the seat's file, at start and, once #176
+  specifies pulling the lore checkout, on each pull, and clears it when a later read decrypts
+  the file, as when the lender re-lends. The condition stops no role: the seat counts as one at
+  its line, so a role with no other usable seat hands off each item, as a role whose seats are
+  all at their lines does, and the handoff names the condition.
 
 ### Why ciphertext in history no longer rules this out
 
@@ -177,7 +184,9 @@ the one with the most headroom:
    token that cannot be decrypted). Seat-budget's *A role draws on the seat with the most
    headroom* names them and restates none. A seat under
    such a condition is passed over, so a role with another eligible seat keeps working (Adam,
-   2026-10-17). A role whose seats are all under open conditions stops, as #101 says. In every
+   2026-10-17). A role stops, as #101 says, only when every seat serving it is under a condition
+   other than a decryption failure; a seat whose file Igor could not decrypt counts as one at its
+   line. In every
    other case where the role has no eligible seat, such as some seats under a condition and the
    rest at their lines, it hands off, and the handoff names each condition (Adam, 2026-10-17).
 2. **Headroom** of a window is the role's line on that seat minus the reading, in percentage
@@ -246,24 +255,18 @@ as [#176](https://github.com/adamstallard/igor/issues/176).
 **Decided 2026-10-11 (Adam): a pull request touching `seats/<id>.yaml` @-mentions that seat's
 owner on the pull request**, so their veto does not depend on watching the file's history.
 
-**Decided 2026-10-17 (Adam): it also mentions the owner on every push to the default branch that
-changes their seat file**, on the pushed commit, so a lender hears of a change however it landed.
-Lore setup puts GitHub Actions on the default branch's protection bypass list, so that the
-reconciliation workflow can commit, and that also lets a workflow on any pushed branch commit a
-seat-file change to the default branch with no pull request. The bypass stays; the push notice is
-meant to cover what it lets through. GitHub documents that a push made with the automatic
-`GITHUB_TOKEN` starts no workflow. If that holds for a push through the bypass, the push notice
-never fires for it; task 10.6 measures it (proposal, *Still open*).
+**Decided 2026-10-17 (Adam): after a seat-file change lands, the only notice is Igor's, posted
+when it pulls the lore change.** Igor does not pull its lore checkout yet; issue #176 is where it
+will, so that is where that notice is specified. Igor posts nothing on an open lore pull request:
+the comment before merging comes from the seat-notice workflow, chosen below. That workflow has
+no `push` trigger, for two reasons. A push trigger would mention a lender a second time for a
+change Igor also announces. And it would miss the case it was meant for: lore setup lets GitHub
+Actions push to the default branch past its pull-request rule, so the reconciliation workflow
+can commit merged lore, and such a push uses the workflow's own `GITHUB_TOKEN`, for which GitHub
+starts no workflow.
 
-**Decided 2026-10-17 (Adam): when Igor pulls a lore change that adds or changes a seat file, Igor
-posts the notice itself.** Igor does not pull its lore checkout yet; issue #176 is where it will,
-so that is where the decision is specified. *Igor commenting*, rejected below, is the pull
-request notice, which must come before a change lands; this notice comes after. A change merged through a pull request is mentioned twice, once on the pull request and
-once on its commit. The comparison API lists at most 300 changed files, so a push changing more
-than that may leave a seat file unmentioned.
-
-**Chosen: a workflow on GitHub-hosted runners, triggered by `pull_request_target` and `push` on
-`seats/**`.**
+**Chosen: a workflow on GitHub-hosted runners, triggered by `pull_request_target` on `seats/**`,
+and by nothing else.**
 It ships as `templates/seat-notice.yml`, and `igor init` installs it beside
 `reconcile-on-merge.yml`. On each push to a pull request that touches `seats/`, it posts one
 comment mentioning the owner of each seat file the pull request changes, renames or deletes, and
@@ -284,18 +287,11 @@ So this workflow reads nothing from the head:
 - **The owner comes from the default branch's copy** of each matching file, never from the pull
   request's. A seat file the pull request adds has no default-branch copy, so it mentions nobody:
   its author is the lender, or an operator declaring a seat by hand.
-- **The token is scoped** to `contents: read` and `pull-requests: write`. A comment on a commit
-  needs only `contents: read` (GitHub's table of the permissions each endpoint needs, checked
-  2026-10-17).
+- **The token is scoped** to `contents: read` and `pull-requests: write`.
 
-On a push, the job runs only for the default branch, and reads the list of changed paths from the
-comparison of the commits before and after the push, matched the same way. The owner comes from
-the file as it was before the push, so a seat file the push adds mentions nobody, as on a pull
-request. Each owner is mentioned once per push, in one comment on the pushed commit.
-
-On a pull request, an owner is mentioned only when the default-branch file's `owner` is a GitHub
-login and is not the pull request's author. On a push, the owner is read from the file as it was
-before the push, and nobody is left out for having pushed. A lender whose `owner` is not a GitHub login cannot be mentioned; the
+An owner is mentioned only when the default-branch file's `owner` is a GitHub login and is not the
+pull request's author. A seat file written by hand may still name an `owner` that is no GitHub
+login, since only `igor seat add` and `igor doctor` check it. Such a lender cannot be mentioned; the
 operator guide says to tell them some other way.
 
 **Rejected alternatives:**
@@ -310,12 +306,14 @@ operator guide says to tell them some other way.
   cannot comment.
 - **A self-hosted runner.** Ruled out for this repository already: a fork's pull request can bring
   its own self-hosted workflow and run code on the server.
-- **Igor commenting from the server.** Igor watches its roles' sources, not the lore repository's
-  pull requests, and a notice that waits on the server being up is no notice when it is down.
+- **Igor commenting on open lore pull requests.** Igor watches its roles' sources, not the lore
+  repository's pull requests, and a notice that waits on the server being up is no notice when it
+  is down. This rejects only the before-merge comment: Igor's notice after a change lands, when
+  it pulls it (#176), is decided above.
 
 **Decided 2026-10-17 (Adam): the lore repository's default branch requires a pull request before
-merging.** Only a pull request's notice reaches the lender before the change lands; the push
-notice comes after it. `check-a-lore-repository` (#113) already reports a default branch that
+merging.** Only a pull request's notice reaches the lender before the change lands; Igor's
+notice, when it pulls the change, comes after it. `check-a-lore-repository` (#113) already reports a default branch that
 accepts direct pushes.
 
 **Decided 2026-10-17 (Adam): a plain token pasted into a pull request is an accepted risk.** It is

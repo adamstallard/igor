@@ -8,7 +8,10 @@ the choice of every role drawing on that seat, a credential belonging to an Igor
 A role with another eligible seat SHALL keep working on it (seat-budget's *A role draws on the
 seat with the most headroom*). A role whose seats are all under open conditions SHALL stop. A
 role with no eligible seat, where some but not all of its seats are under open conditions, SHALL
-hand off, naming those conditions, as seat-budget's requirement says. A condition
+hand off, naming those conditions, as seat-budget's requirement says. A condition on a seat whose
+file Igor could not decrypt SHALL stop no role, whatever the role's other seats are under: the
+seat counts as one at its line, as seat-budget's *A seat's token travels as ciphertext in its
+file* says, which also says when the condition opens and clears. A condition
 SHALL be rebuilt from the execution log on the state branch, with no stored record of its own:
 from the run rows that carry its cure key, and from condition rows the loop appends for what no
 run shows, such as a probe being taken. Every Igor appends to the one log, so the same cure met
@@ -66,8 +69,15 @@ capacity that was never affected.
 
 #### Scenario: A seat-scoped condition stops every role on that seat
 
-- **WHEN** a seat's token cannot be read, and it is the only seat serving each role drawing on it
+- **WHEN** a seat's token cannot be read, for a reason other than a seat file Igor cannot
+  decrypt, and it is the only seat serving each role drawing on it
 - **THEN** every role drawing on that seat stops, whatever their own configuration says
+
+#### Scenario: An undecryptable seat's condition stops no role
+
+- **WHEN** the only seat serving a role is under a condition because Igor could not decrypt its
+  file
+- **THEN** the role does not stop, and hands off naming the condition
 
 #### Scenario: A seat-scoped condition passes the seat over for a role with another seat
 
