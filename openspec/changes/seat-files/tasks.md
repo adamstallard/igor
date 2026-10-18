@@ -73,6 +73,19 @@ measurement.
 - [ ] 3.7 `src/execute.ts`'s worker environment: a seat whose token cannot be decrypted fails
       naming the seat and the reason, per the `task-execution` delta, with a test; the file and
       command cases and their tests go
+- [ ] 3.7a A decrypted token is held in memory only and reaches a worker only through its
+      environment (*A decrypted seat token never touches the server's disk*). Test: a run with a
+      seat whose token is a known test value, then a search of every log, transcript, handoff,
+      condition report and file on the state branch that the run wrote, and of the argument
+      lists of processes Igor started, finds the value nowhere; a forced spawn failure and a
+      forced crash print the seat's id and not the value
+- [ ] 3.7b When a pull of the lore checkout (#176) removes a seat file, apply the removal even
+      where the rest of the pull is refused: drop the token from memory, give the seat to no new
+      worker, kill each worker using it (the `claude -p` child and every process its worker user
+      owns), and hand off its item, with the Igor process still running. Tests: the scenarios of
+      *A removed seat file always takes effect*. Until #176 specifies pulling, this task waits
+      on it. If #176 is not specified when this change archives, file an issue for this task and
+      tick it with a pointer to the issue
 - [ ] 3.8 Under #175's same-user mode, `igor run`, no seat's `encrypted_token`
       is decrypted and no such seat is drawn on; seats naming `token_env` run. At start Igor
       prints, worded so, once per such seat:
@@ -320,7 +333,12 @@ leaks.
       you are mentioned on a pull request changing your seat file (say so there if you object; revoke
       the token if it merges anyway); **changing your mind:** rotating (`npx igor-agent seat add`
       again, changing only `encrypted_token`), changing roles or reserve (a pull request to your
-      file), withdrawing or objecting (revoke at Anthropic), and the one-year expiry (#145)
+      file), withdrawing or objecting (revoke at Anthropic), and the one-year expiry (#145).
+      **Removing your seat file** gets this text, which Adam may reword:
+
+      ```text
+      Revoking your token at Anthropic is the only real withdrawal. Removing your seat file only stops Igor's own use of your token.
+      ```
 - [ ] 9.8 `docs/seats.md` *What the floor rests on* and *Several people, one fleet* describe the
       line (#143) and choice by headroom, with no pool and no listed order
 - [ ] 9.9 `README.md`: the quick start declares a seat file and puts the token in the

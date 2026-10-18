@@ -140,8 +140,9 @@ committed to the repository is to be revoked at Anthropic and replaced with ciph
 token in a seat file is a credential in git history, and the refusal is the only place anybody is
 told.
 
-Decryption SHALL happen where the token is read, whenever it is read, and the plaintext SHALL NOT
-be written to disk, to an argument list, or to any record. Where decryption fails, the seat SHALL
+Igor SHALL decrypt the token each time it reads it, including when it spawns a worker, and the
+plaintext is held
+as *A decrypted seat token never touches the server's disk* requires. Where decryption fails, the seat SHALL
 be reported unreadable with the reason, and no other credential SHALL be used in its place: no
 `seatKey` declared, a key file that cannot be read, a key that does not match, or a ciphertext
 that does not decrypt. A seat whose token Igor cannot decrypt SHALL be ineligible: seat choice
@@ -211,11 +212,6 @@ can read the lore repository, which may be anyone.
 - **WHEN** `seatKey` names a file the Igor cannot read
 - **THEN** the seat is reported unreadable, naming the path and the reason
 - **AND** no other credential is used in its place
-
-#### Scenario: The plaintext is kept nowhere
-
-- **WHEN** a seat's token has been decrypted and a run has used it
-- **THEN** the plaintext is in no file the Igor wrote, no argument list and no record
 
 #### Scenario: Re-encrypting a token is the same credential
 
@@ -659,6 +655,59 @@ credential pays, and the fallback is what it runs on.
 - **WHEN** the gate names a seat and the call is made
 - **THEN** the call uses that seat's credential
 - **AND** the record names that seat as having paid
+
+### Requirement: A decrypted seat token never touches the server's disk
+
+A seat's decrypted token SHALL be held only in the Igor process's memory, and SHALL reach a
+worker only through that worker's environment. Igor SHALL NOT write it to any file, to an
+argument list, to a log, to the state branch, to a condition's report or record, to an error
+message, or to crash output such as a stack trace or an uncaught error's message. Where Igor
+reports a seat, it names the seat, never the token.
+
+A worker that holds the token can still save or send it; this requirement covers what Igor
+itself writes. #175 (`worker-user`) states the same environment-only rule for a worker running as
+its own user; this requirement adds nothing to it there.
+
+#### Scenario: A run leaves the token in nothing Igor wrote
+
+- **WHEN** a run has used a seat whose decrypted token is a known test value
+- **THEN** that value appears in no log, transcript, handoff, condition report or file on the
+  state branch, and in no argument list of a process Igor started
+- **AND** the worker's environment held it
+
+#### Scenario: A failure that names a seat does not print its token
+
+- **WHEN** a worker spawn or a seat probe fails, or Igor crashes, while a seat's token is decrypted
+- **THEN** the error message and any crash output name the seat and not the token
+
+### Requirement: A removed seat file always takes effect
+
+When a pull of the lore checkout (#176) removes a seat file, the removal SHALL take effect even
+where the rest of the pull is refused for failing the startup checks, the configuration checks
+Igor makes before its first cycle, such as config validation. Until #176 specifies pulling, a
+seat file leaves a running process only when it restarts. This requirement does not cover a pull
+that removes the last seat file, which the proposal lists as open. Igor SHALL then drop the
+seat's decrypted token from memory, give the seat to no new worker, and kill every worker using
+it: the `claude -p` child and every process its worker user owns. Under #175 each process has its
+own worker user, `igor-worker-<role>-<rank>`, which runs only that process's worker, so this
+reaches no other process's worker. It SHALL hand off each item
+those workers were working. The Igor process SHALL keep running.
+
+Igor cannot recall copies of the token. A worker that held it could have saved or sent it, and
+the encrypted file stays in the lore repository's git history. Removing the file stops only
+Igor's own use of the token; revoking it at Anthropic is the only withdrawal that stops every use.
+
+#### Scenario: Removing a seat file stops Igor's use of the seat
+
+- **WHEN** a pull removes `seats/bob.yaml` while a worker is using `bob`
+- **THEN** Igor kills that worker and every process its worker user owns, and hands off its item
+- **AND** no new worker is given `bob`, and the Igor process keeps running
+
+#### Scenario: A removal applies even when the rest of the pull is refused
+
+- **WHEN** a pull removes `seats/bob.yaml` and also brings a role file that fails validation
+- **THEN** the role file is refused and the last configuration that passed is kept
+- **AND** the removal of `bob` still takes effect
 
 ## MODIFIED Requirements
 

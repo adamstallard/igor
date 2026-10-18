@@ -145,21 +145,45 @@
     second, which clears on a good read of the seat file rather than on a probe item.
     *Rejected:* editing #101's own branch, which already carries #101's implementation and is
     to merge as it is.
-33. **#82 (`stopped-scope-visible`) does not count a seat Igor could not decrypt as stopped**
-    (Adam, 2026-10-17). #82, an open change, has `igor serve` exit when every seat its role can
-    spend from is stopped. Decision 31 wins over that: such a seat counts as one at its line, so
-    the process keeps polling and hands off, and picks up again when the seat file decrypts.
-    #82 is amended on its own branch, `stopped-scope`, in the same round of decisions as this
-    one.
+33. **`igor serve` never exits at runtime because of a condition** (Adam, 2026-10-18), whether it
+    is on a seat, on the role (such as a command the role's `commands` refused, under #101), or
+    on the Igor's GitHub App credential. #82 (`stopped-scope-visible`) specifies this. A role
+    whose seats are all under open conditions takes no work; decisions 15 and 25 and #101 call
+    this stopping. Its process keeps polling, probes on #101's cooldown and reports what is
+    stopped. A role whose only seats are undecryptable keeps polling and hands off each item
+    (decision 31).
+
+34. **A removed seat file always takes effect** (Adam, 2026-10-18). When a lore pull removes a
+    seat file, the removal applies even if the rest of the pull is refused for failing the
+    startup checks, a refusal Adam decided the same day and #176's body records. Igor drops the
+    seat's decrypted token from memory, gives the seat to no new worker, and kills any worker
+    using it, the `claude -p` child and every process its worker user owns, handing off each
+    item. The Igor process keeps running. Igor cannot recall copies: a worker that held the
+    token could have saved or sent it, and the encrypted file stays in git history. So the
+    lender guide says that revoking the token is the only real withdrawal. The decision takes
+    effect once #176 specifies pulling; until then a seat file leaves a running process only
+    when it restarts. It does not cover removing the last seat file, which is open below.
+35. **A decrypted seat token never touches the server's disk** (Adam, 2026-10-18). It is held in
+    Igor's memory only, and reaches a worker only through that worker's environment; no log,
+    state-branch file, condition report, error message or crash output carries it.
 
 **Still open:**
+
+- **Removing the last seat file** (decision 34). With no seat file, `seats/` declares no seats and
+  budget is not enforced, so the org would run on whatever login the server holds. Decision 10
+  refuses a seat file that names no token for that reason: no spend on the server's ambient
+  login. What a running process does when a pull removes the last seat file is undecided;
+  decision 34 covers removing any other.
 
 - **Whether a decryption failure when a worker is spawned opens the condition** (decision 31).
   A seat can be chosen and then fail to decrypt, for example after its key file's permissions
   change; decision 31 ties the condition to reading seat files, at start and on a pull.
-- **Pulling the lore checkout is not yet specified** (#176), so until it is, decision 31's
-  condition opens and clears at start only. Igor's own notice after a seat-file change lands is
-  decided (decisions 6 and 26); where Igor posts it is open on #176.
+- **Pulling the lore checkout is not yet specified** (#176). Until it is, Igor reads the seat
+  files only at start, so decision 31's condition opens at start and clears only after a
+  restart. Adam decided on 2026-10-18 that a pull bringing
+  configuration that fails the startup checks is refused, and the process keeps the last
+  configuration that passed; #176's body records it. Igor's own notice after a seat-file change
+  lands is decided (decisions 6 and 26); where Igor posts it is open on #176.
 
 ## Why
 
