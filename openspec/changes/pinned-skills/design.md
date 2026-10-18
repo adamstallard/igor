@@ -139,12 +139,17 @@ with it, so behaviour would differ across the flip.
 
 ## Decisions
 
-### `skills_dir` is a key in `igor.config.yaml`, absolute
+### `skills_dir` is `/opt/igor/skills`, overridden only by the server's environment
 
-Token sources already name server paths there (`token_file`), so a server path in the team's
-file is not new. It must be absolute: relative to the configuration, it would land in the lore
-repository, which Igor writes to. The skills Igor expects are the ones installed under
-`skills/`; there is no second list to keep in step with the directory.
+**Decided by Adam, 2026-10-17.** `skills_dir` is not a key in `igor.config.yaml` or in any other
+lore file. Igor uses `/opt/igor/skills`, the path where the deployment guide installs the plugin,
+and `IGOR_SKILLS_DIR` in the environment Igor starts with overrides it. The lore repository is
+shared and changed by pull request, so a key there would let any merged pull request point every
+Igor at another directory of skills, the same reason #175 keeps its worker user out of
+`igor.config.yaml`. A lore file that names `skills_dir` is refused by the strict unknown-key
+check, with no message of its own. `IGOR_SKILLS_DIR` must be absolute, so it never depends on the
+directory Igor starts in. Which skills Igor expects is read from the directory itself: every
+entry under `<skills_dir>/skills/`.
 
 The plugin is named `igor` (decided by Adam, 2026-10-11), so skills load as `igor:prose` and `igor:bug-hunter`. The deployment
 writes the one-line `plugin.json`; the startup check fails if the name differs, because no
@@ -165,9 +170,9 @@ Without `--bare`, a call also loads the hooks, `CLAUDE.md` and home skills (`~/.
 of the user it runs as, and, unless told not to, the worked repository's own `.claude` settings,
 skills and `CLAUDE.md` (measured). Namespacing keeps every `igor:<name>` skill from being
 replaced, but the rest reaches the model. A dedicated Igor server's service user has no hooks,
-`CLAUDE.md` or home skills, and nor does the separate worker user of #175. Two decisions of
-2026-10-17, below, keep the repository's files out of every call and reset the worker user's
-`~/.claude` before each call made as that user.
+`CLAUDE.md` or home skills. Two decisions of 2026-10-17, below, keep the repository's files out
+of every call and reset the worker's `~/.claude` and `~/.claude.json` before each call in its
+home.
 
 **Decided by Adam, 2026-10-11: Igor makes no startup check of the users' hooks, `CLAUDE.md` or
 home skills.** `docs/deployment.md` tells the operator to keep the service user and the worker
@@ -183,46 +188,64 @@ configuration not passed with `--mcp-config`. The help text says only that much;
 two also keep the repository's skills and `CLAUDE.md` out is unmeasured, and task 0.3 measures
 all four.
 
-**Decided by Adam, 2026-10-17: before each worker run, Igor resets the worker user's
-`~/.claude`, and nothing else in its home.** `--setting-sources user` still loads the home
-directory, and under #175 the worker user owns and writes its home, so a worker an item steers
-could plant hooks, a `CLAUDE.md` or skills in `~/.claude` for every later worker. Task 5.3's
-note to the operator cannot stop that; recreating `~/.claude` from a clean template before each
-call can. The same decision first gave each worker a fresh, empty home, and was narrowed to
-`~/.claude` the same day, because an empty home loses what later runs need:
+**Decided by Adam, 2026-10-17: the worker runs in a home that lasts, and before each
+`claude -p` there Igor resets `~/.claude` and `~/.claude.json` from a built-in template.**
+`--setting-sources user` still loads the user's settings, skills and `CLAUDE.md` from
+`~/.claude`, and the worker writes its home, so
+without a reset a worker an item steers could plant hooks, a `CLAUDE.md`, skills or an MCP server
+for every later call. Task 5.3's note to the operator cannot stop that; the reset can.
 
-- `~/.gitconfig`, where #175's start check sets `safe.directory` so the worker's git trusts a
-  tree the service user owns;
-- #153's session mark (the file `prose start` writes under `~/.local/state`, which #153's prose steps check for);
-- tool caches such as `~/.cache`, and any configuration a repository's tests read from the
-  home.
+Which home:
+
+- **With a worker user (#175):** that user's own home, `/var/lib/igor-worker-<role>-<rank>`,
+  where `<rank>` numbers the instances of one role (#179).
+- **Without one, in #175's same-user mode,** where the worker runs as the user Igor runs as: one
+  home per role under Igor's state directory, such as `~/.local/state/igor/home/<role>`, which
+  Igor sets as the worker's `HOME`. The worker then never loads the `~/.claude` of the user Igor
+  runs as, whether that is the service user or a person running `igor run` on their own
+  machine.
+
+What the template holds. It ships with Igor, in its installation, which #175's start check
+confirms the worker user cannot write:
+
+- a `settings.json` with only what Igor needs: no hooks, no MCP servers;
+- no skills and no `CLAUDE.md`, since skills come from `--plugin-dir`;
+- a `~/.claude.json` with onboarding marked done and no MCP servers.
 
 How the reset works:
 
-- **Who owns the template:** the service user Igor runs as, or root. The worker user can read it and cannot write
-  it, so no run can change what the next run starts from. Where it lives and what it holds are
-  open (proposal, *Still open*).
-- **Who performs the reset:** Igor, as the worker user, through #175's `sudo` spawn. Under #175
-  only the worker user can remove what a worker wrote.
-- **When:** before every `claude -p` Igor starts as the worker user. That is the worker and
-  each of #153's later model steps in the worker's working tree, which under #175 also run as
-  the worker user. A
-  step after the worker therefore never loads what the worker wrote to `~/.claude`.
-- **Authentication:** a seat's token reaches `claude` through its environment, not `~/.claude`,
-  so the reset leaves it untouched (task 0.3 confirms it). A worker with no seat token runs on
-  a login stored in `~/.claude`, which the reset removes. Once #171 is built, Igor refuses a seat
-  file that names no token, so no seat is in that case. An organization that declares no seats
-  still is, and so is a seat naming no token before #171 is built; both are open (proposal,
-  *Still open*).
-- **What persists, and why that is accepted:** everything outside `~/.claude`, tool caches
-  included. A file a run leaves there, such as `~/.npmrc`, can steer later runs of the same
-  instance. Adam accepted that risk within one instance. #175 gives each Igor instance its own
-  worker user and home, so such a file reaches no other instance.
+- **When:** before every `claude -p` Igor starts in the worker's home. Those calls are the
+  worker and #153's later model steps (the prose pass and the bug hunt), which run in the same
+  home. #153's `prose start` runs after the reset, so nothing it writes is removed by it.
+- **Who:** with a worker user, Igor resets as that user, through #175's `sudo` spawn, since only
+  that user can remove what a worker wrote. In same-user mode Igor resets as itself.
+- **What it keeps:** `~/.claude/.credentials.json`, so an organization with no seats keeps
+  working on a stored login. A seat's token reaches `claude` through its environment, which the
+  reset does not touch. Task 0.3 is to confirm that a call made after the reset still
+  authenticates with the token.
+- **What persists:** everything else in the home: `~/.gitconfig`, where #175's start check sets
+  `safe.directory` so the worker's git trusts a tree the service user owns, and the files a
+  repository's tests cache in the home. A file a run leaves there, such as `~/.npmrc`, can steer
+  later runs in that home. Adam accepted that; with a worker user, #175 gives each instance its
+  own, so such a file reaches no other instance. In same-user mode every worker runs as one user
+  and can write every role's home, so such a file can reach other roles.
 
-Where the worker runs as the service user Igor runs as, under #175's same-user mode, there is no
-worker user to reset, and what home that worker gets is open (proposal, *Still open*). So are a
-worker process that escapes #175's kill of the run's process group and rewrites `~/.claude` after the reset, and what Claude Code
-reads from `~/.claude.json`, which sits outside `~/.claude`.
+The same decision first gave each worker a fresh, empty home per run, then narrowed it to a reset
+of `~/.claude` alone. An empty home lost `~/.gitconfig` and the caches a repository's tests need;
+`~/.claude` alone left `~/.claude.json` for a worker to write.
+
+**Decided by Adam, 2026-10-17: with a worker user, Igor kills every process that user owns at the
+end of each task, before the next reset**, by user or by the user's systemd slice. A process
+that leaves its process group with `setsid()` survives #175's kill of the group, and running as
+the worker user it could rewrite the home after a reset. The kill comes at the end of the task,
+so between the worker and #153's later steps in the same task such a process can still rewrite
+the home. Same-user mode has no such kill: there, an escaped process can rewrite the home after
+any reset.
+
+Still open (proposal): several ranks of one role sharing a same-user home; where that home goes
+under the unit's `ProtectHome=read-only`; the template in same-user mode; how a stored login
+reaches a home that starts without one; a worker reading or rewriting the kept credentials file;
+and what the template's `settings.json` holds.
 
 ### The startup check is a call with no token and an empty `HOME`
 
@@ -256,8 +279,7 @@ no instruction about where its skills are (task 4.1).
 ### With #153 (`signed-publishing`, branch `spec-signed-replies`)
 
 - **#153 works per skill in a role's `skills` list.** A name in the list must be installed
-  under `skills_dir`, or the role is refused at load; with `skills_dir` absent, any listed name
-  is. This change states no second refusal.
+  under `skills_dir`, or the role is refused at load. This change states no second refusal.
 - **`<skills>` in #153's design is `<skills_dir>/skills`.** A role that lists `prose` is granted
   `python3 <skills>/prose/scripts/prose.py check` and `… sign`, and Igor's code runs
   `prose start`, `verify-post` and `verify-staged` from the same place for it. A role that
@@ -270,7 +292,9 @@ no instruction about where its skills are (task 4.1).
 - **Hooks.** The install wires none, and the plugin declares none, so prose's first-write gate
   never runs in a worker. Igor's `prose start` (#153, item 1) still runs.
 - **`prose start` writes its session mark** under `$XDG_STATE_HOME`, or `~/.local/state`
-  without it, and the unit sets `ProtectHome=read-only`. That is for #153's task 0.5.
+  without it. #153's prose steps run as the worker and look for the mark in their own home. So
+  `prose start` runs as the worker, after the reset, and the mark sits in the worker's own home
+  (decided by Adam, 2026-10-17, on #175).
 
 ### With #144 (`--bare` as the default)
 

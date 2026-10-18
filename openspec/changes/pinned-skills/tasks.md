@@ -27,24 +27,29 @@
         four still loads, the means of excluding it goes back to Adam;
       - that the startup check's call still prints `system/init` before it fails to log in
         with those two flags added;
-      - that a worker whose `~/.claude` was just reset from the template authenticates with
-        its seat's token from its environment and receives a `rate_limit_event`;
-      - what a call in normal mode reads from `~/.claude.json` besides MCP servers, such as
-        per-project tool permissions, and whether a worker writing it changes a later call. **If
-        it does, the scope of the reset (decision 9) goes back to Adam;**
+      - that a worker whose `~/.claude` and `~/.claude.json` were just reset from the template,
+        with `~/.claude/.credentials.json` kept, still authenticates as its seat: with the
+        seat's token from its environment it receives a `rate_limit_event`, and the init event's
+        `apiKeySource` names the token, and that with a deliberately invalid token in the
+        environment the call fails rather than falling back to the kept login;
+      - which key in `~/.claude.json` marks onboarding done, so that a call made from the
+        template's copy starts without onboarding;
       - whether `git -C <clone> rev-parse HEAD` works as the service user on a root-owned clone,
         or stops on git's ownership check
 
-## 1. Configuration
+## 1. Where the skills are
 
-- [ ] 1.1 `skills_dir` in `src/config.ts`: add it to `CONFIG_KEYS`, parse it as an optional
-      string, and refuse a relative path at load with this message (may be reworded):
+- [ ] 1.1 `skills_dir` is `/opt/igor/skills`, or `IGOR_SKILLS_DIR` from the environment Igor
+      starts with, read in `src/wiring.ts`. It does not join `CONFIG_KEYS` in `src/config.ts`, so
+      a lore file naming it is refused as an unknown key. A relative `IGOR_SKILLS_DIR` refuses
+      the start with this message (may be reworded):
 
       ```
-      skills_dir must be an absolute path: <value>
+      IGOR_SKILLS_DIR must be an absolute path: <value>
       ```
-- [ ] 1.2 `igor.config.example.yaml`: a commented `skills_dir: /opt/igor/skills`, saying it is
-      the `igor` plugin directory and pointing at `docs/deployment.md`
+- [ ] 1.2 Tests: no `IGOR_SKILLS_DIR` gives `/opt/igor/skills`; `IGOR_SKILLS_DIR` overrides
+      it; a relative one refuses the start; `skills_dir` in `igor.config.yaml` is refused as an
+      unknown key
 
 ## 2. The flag on every call
 
@@ -52,28 +57,38 @@
       `--plugin-dir <skills_dir>` when it is set. Use it in `claudeWorker` (`src/execute.ts`),
       `runClaude` (`src/triage.ts`) and `runUsage` (`src/budget.ts`). Every call gets
       `--setting-sources user` and `--strict-mcp-config`; every call but `runUsage` gets
-      `--plugin-dir`. #143's seat probe and #153's steps, built in those changes, call it as
+      `--plugin-dir <skills_dir>`. #143's seat probe and #153's steps, built in those changes, call it as
       well
-- [ ] 2.2 Tests: the worker's and triage's arguments carry `--plugin-dir <skills_dir>` when it
-      is set, and no `--plugin-dir` when it is not; the usage read's never carry it; every
+- [ ] 2.2 Tests: the worker's and triage's arguments carry `--plugin-dir <skills_dir>`; the
+      usage read's never carry it; every
       call's arguments, the startup check's included, carry `--setting-sources user` and
       `--strict-mcp-config`; no call's arguments include `--bare`
-- [ ] 2.3 Build once the proposal's open question on the template is answered, and only where
-      #175 is built; without a worker user there is nothing to reset. Before every `claude -p`
-      Igor starts as #175's worker user (`claudeWorker` in `src/execute.ts`), replace the worker
-      user's `~/.claude` with a fresh copy of the template. #153's model steps call the same
-      reset, built in #153, as they call 2.1's argument builder. The copy runs as the worker
-      user, through #175's `sudo` spawn, because only that user can remove what a worker wrote.
-      The template is a directory owned by the service user Igor runs as, or root, readable by
-      the worker user and not writable by it. Reset nothing else in the home
-- [ ] 2.4 Tests: a hook, a `CLAUDE.md` and a skill a worker wrote under `~/.claude` are gone
-      before the next worker and before a model step after the worker; `~/.gitconfig`, a file
-      under `~/.cache` and a file at #153's session-mark path under `~/.local/state` survive; the
-      reset runs as the worker user
+- [ ] 2.3 The worker's home: with #175's worker user, that user's own home; without one, a
+      home per role under Igor's state directory, such as `~/.local/state/igor/home/<role>`,
+      created when first needed and passed as the worker's `HOME`
+- [ ] 2.4 The template, shipped in Igor's installation: a `settings.json` holding only what Igor
+      needs, with no hooks and no MCP servers, its contents written verbatim into this task
+      before it is built; no skills and no `CLAUDE.md`; and a
+      `.claude.json` with onboarding marked done, by the key task 0.3 finds, and no MCP servers
+- [ ] 2.5 Before every `claude -p` Igor starts in the worker's home (`claudeWorker` in
+      `src/execute.ts`), replace `~/.claude` and `~/.claude.json` with a fresh copy of the
+      template, keeping `~/.claude/.credentials.json`. Reset nothing else in the home. With a
+      worker user, the reset runs as that user, through #175's `sudo` spawn. Each of #153's model
+      steps calls the same reset first, built in #153, as it calls 2.1's argument builder, and
+      #153's `prose start` runs after that reset, not with one of its own
+- [ ] 2.6 With a worker user, at the end of each task and before the next reset, kill every
+      process that user owns, by user or by the user's systemd slice. Build it once #175's
+      `sudo` spawn exists
+- [ ] 2.7 Tests: a hook, a `CLAUDE.md` and a skill a worker wrote under `~/.claude`, and an MCP
+      server it wrote into `~/.claude.json`, are gone before the next worker and before a model
+      step after the worker; `~/.claude/.credentials.json`, `~/.gitconfig` and a file under
+      `~/.cache` survive; with a worker user the reset runs as that user; in same-user mode
+      `HOME` is the role's home under the state directory; the end-of-task kill names the worker
+      user
 
 ## 3. Startup check
 
-Runs in `wire` (`src/wiring.ts`), before the first model call, only when `skills_dir` is set.
+Runs in `wire` (`src/wiring.ts`), before the first model call.
 
 - [ ] 3.1 Run `claude -p --plugin-dir <skills_dir> --setting-sources user --strict-mcp-config
       --output-format stream-json --verbose`
@@ -105,7 +120,7 @@ Runs in `wire` (`src/wiring.ts`), before the first model call, only when `skills
       skill igor:<name>: commit not checked (<resolved dir>): <git's error>
       ```
 - [ ] 3.3 Tests: each refusal above with its message; a passing check starts; an unreadable
-      commit starts with the not-checked line; no check runs without `skills_dir`; the check's
+      commit starts with the not-checked line; the check's
       environment holds no `CLAUDE_CODE_OAUTH_TOKEN` and no `ANTHROPIC_API_KEY` even when the
       process has them, and its `HOME` is not the service user's
 
@@ -124,7 +139,8 @@ Runs in `wire` (`src/wiring.ts`), before the first model call, only when `skills
       - install with
         `SHARED_SKILLS_TARGET=/opt/igor/skills/skills python3 /opt/igor/shared-skills/.agents/skills/manage-skills/scripts/skills.py install --no-hook prose bug-hunter`,
         as root;
-      - set `skills_dir: /opt/igor/skills`;
+      - that Igor finds the plugin there with no setting, and that `IGOR_SKILLS_DIR` in the
+        unit's environment points it elsewhere;
       - update by checking out a new commit on purpose, then restarting. Never the manager's
         `update`, which pulls
 - [ ] 5.2 `docs/architecture.md`: a short subsection under §6 on where skills come from and why

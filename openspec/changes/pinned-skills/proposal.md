@@ -28,19 +28,23 @@
    repository it is working". The means is `--setting-sources user` and `--strict-mcp-config`
    on every call, once task 0.3 confirms that those flags keep all four out; if they do not,
    the means goes back to Adam and the rule stands.
-9. **Before each worker run, Igor resets the worker user's `~/.claude`, and only that** (Adam,
-   2026-10-17, narrowing the same day's decision of a fresh, empty home per run). Under #175
-   the worker user owns its home, so without a reset a worker an item steers could plant hooks,
-   a `CLAUDE.md` or skills in `~/.claude` for every later worker. Igor recreates `~/.claude`
-   from a clean template that Igor owns and the worker user cannot write, before every
-   `claude -p` it starts as the worker user: the worker, and each of #153's later model steps
-   in the worker's working tree. The rest of the home persists across runs, so `~/.gitconfig`
-   with #175's `safe.directory` setting, #153's session mark (the file `prose start` writes under `~/.local/state`, which #153's prose steps check for), and tool caches such
-   as `~/.cache` stay. A file a run leaves elsewhere in the home, such as `~/.npmrc`, can steer
-   later runs of the same instance. Adam accepted that risk within one instance; #175 gives each
-   Igor instance its own worker user, so such a file reaches no other instance. *Rejected:* a
-   fresh, empty home per run, which lost `~/.gitconfig`, #153's session mark and the caches a
-   repository's tests need.
+9. **The worker runs in a home that lasts, and before each `claude -p` Igor resets its
+   `~/.claude` and `~/.claude.json` from a built-in template** (Adam, 2026-10-17). With a worker
+   user (#175), the home is that user's own. With none, under #175's same-user mode, where the
+   worker runs as the user Igor runs as, Igor keeps
+   one home per role under its state directory, such as `~/.local/state/igor/home/<role>`, and
+   sets `HOME` to it. The template ships with Igor and is nearly empty: a `settings.json` holding
+   only what Igor needs, with no hooks and no MCP servers; no skills and no `CLAUDE.md`, since
+   skills come from `--plugin-dir`; and a `~/.claude.json` with onboarding marked done and no MCP
+   servers. The reset keeps `~/.claude/.credentials.json`, so an organization with no seats
+   keeps working on the stored login. Nothing else in the home is reset, so `~/.gitconfig`
+   (with #175's `safe.directory`) and the files a repository's tests cache there stay. Without
+   the reset, a worker an item steers could plant hooks, a `CLAUDE.md` or skills for every later
+   call. A file a run leaves elsewhere in the home, such as `~/.npmrc`, can steer later runs in
+   that home. Adam accepted that: with a worker user, each instance has its own (#175), so such a
+   file reaches no other instance, while in same-user mode it can reach other roles. *Rejected:*
+   a fresh, empty home per run, which loses `~/.gitconfig` and the caches a repository's tests
+   need; and resetting `~/.claude` alone, which left `~/.claude.json` for a worker to write.
 10. **The usage read passes no `--plugin-dir`** (Adam, 2026-10-17). `igor budget` runs it on a
     person's machine, where `skills_dir` names a server path, and it runs no skill.
 11. **Two facts the decisions rest on are measured before the implementation is built**
@@ -48,30 +52,47 @@
     clone, and that `--plugin-dir` gives the worker no write access to the skills. If a linked
     skill is given the clone's path, or the worker can write the skills, the choice of flag goes
     back to Adam.
+12. **`skills_dir` is not configured in lore: Igor uses `/opt/igor/skills`, and `IGOR_SKILLS_DIR`
+    in the server's environment overrides it** (Adam, 2026-10-17). `/opt/igor/skills` is where
+    the deployment guide installs the plugin. Neither `igor.config.yaml` nor any other lore file
+    has a `skills_dir` key, so a file that names one is refused by the strict unknown-key check,
+    with no message of its own. *Rejected:* a key in `igor.config.yaml`, which any pull request
+    to the lore repository could point at another directory.
+13. **With a worker user, Igor kills every process that user owns at the end of each task,
+    before the next reset** (Adam, 2026-10-17). It kills them by user, or by the user's systemd
+    slice. A process that left its process group with `setsid()` survives #175's kill of the
+    group, and could otherwise rewrite the home after a reset. Same-user mode has no such guard.
+14. **#153's later model steps, the prose pass and the bug hunt, run in the worker's home, with
+    the same reset before each `claude -p`** (Adam, 2026-10-17). #153's session mark, which
+    `prose start` writes and its prose steps check for, is written after the reset, so the reset
+    can never remove it.
+15. **The in-force scenario *No state carries between tasks* is reworded** (Adam, 2026-10-17).
+    Nothing a worker writes reaches a later task, except what lies outside decision 9's reset,
+    and the scenario names those exceptions. `specs/task-execution/spec.md` is a MODIFIED delta.
 
 **Still open:**
 
-- **The home of a worker that runs as the service user Igor runs as.** Decision 9 resets the worker
-  user's `~/.claude`. Under #175's same-user mode (`igor run`, and `igor serve --same-user`)
-  there is no worker user, and the worker's home is the person's or the service user's own.
-  Whether anything is reset there, or the worker gets another home, is not decided.
-- **A worker on a stored login.** An organization that declares no seats, and, until #171 is
-  built, a seat that names no token, run their workers on a Claude login stored in the home,
-  not on a seat token in the environment. On Linux Claude Code keeps that login in
-  `~/.claude/.credentials.json`. Decision 9's reset removes it before every run, so such a
-  worker cannot authenticate as the worker user, unless the template holds a login. Whether
-  that is accepted, or how such a worker authenticates, is not decided.
-- **The template.** Decision 9 says Igor owns it and the worker user cannot write it. Where it
-  lives, how Igor finds it, what it holds, and whether #175's start check probes that the worker
-  cannot write it are not decided (task 2.3).
-- **A worker process that outlives its run.** #175 accepts that a process which leaves its
-  process group with `setsid()` survives #175's kill of the run's process group. It runs as the worker user, so it can rewrite
-  `~/.claude` after the reset and before the next call. Whether the reset must first end every
-  process of the worker user, or decision 9's guarantee is narrowed, is not decided.
-- **`~/.claude.json`.** Claude Code keeps per-user and per-project state in `~/.claude.json`,
-  outside `~/.claude`, so the reset leaves it and a worker can write it. Whether normal mode
-  takes anything from it that steers a call, beyond the MCP servers `--strict-mcp-config`
-  ignores, is unmeasured (task 0.3).
+- **Where `/opt/igor/skills` does not exist**, as on a developer's machine running `igor run`,
+  what Igor does is not decided: pass `--plugin-dir` anyway, pass none, or refuse to start. What
+  `claude -p` does with a plugin directory that does not exist is unmeasured.
+- **Several instances (ranks) of one role in same-user mode.** Decision 9 keeps one home per role, and #179
+  (`concurrent-instances`) runs several instances of a role. One instance's reset could replace
+  `~/.claude` under another's running call. Whether the home is per instance is not decided.
+- **Same-user mode under the systemd unit.** The unit's `ProtectHome=read-only` makes the service
+  user's `~/.local/state` read-only, so `igor serve --same-user` there cannot write the per-role
+  home. Where that home goes under the unit is not decided.
+- **Where the stored login comes from.** The reset keeps `~/.claude/.credentials.json`, but a
+  worker user's home, and a per-role home under the state directory, start without one. How the
+  host's stored login reaches either is not decided.
+- **A worker can read and rewrite the kept `~/.claude/.credentials.json`.** It can send a stored
+  login out, and the next call in that home runs on whatever login it planted. Whether that is
+  accepted is not decided. Nor is it measured whether a seat's token in the environment takes
+  precedence over a kept login (task 0.3).
+- **The template in same-user mode.** There the worker runs as the user that owns Igor's
+  installation, so it can write the template, and #175's start check does not run. Whether
+  anything protects the template there is not decided.
+- **What the template's `settings.json` holds.** "Only what Igor needs" is the decision; the
+  exact contents are not written yet (task 2.4).
 
 ## Why
 
@@ -87,9 +108,11 @@ replaces it.
 
 ## What Changes
 
-- **`skills_dir` in `igor.config.yaml`**: an absolute path to a plugin directory named `igor`.
-  It holds `.claude-plugin/plugin.json` and the skills under `skills/`, installed by the
-  shared-skills manager. Igor adds no installer.
+- **`skills_dir` is `/opt/igor/skills`, or `IGOR_SKILLS_DIR` from the server's environment**
+  (decision 12): an absolute path to a plugin directory whose `plugin.json` names the plugin
+  `igor`. It holds
+  `.claude-plugin/plugin.json` and the skills under `skills/`, installed by the shared-skills
+  manager. Igor adds no installer.
 - **Every `claude -p` Igor spawns carries `--plugin-dir <skills_dir>`**: the worker, triage, and
   every later step, never with `--bare`. The usage read is the one exception (decision 10).
   Each skill loads as `igor:<name>`, and the worker invokes it through the Skill tool. A skill
@@ -98,10 +121,11 @@ replaces it.
   granting file access, and task 0.3 measures whether it does (decision 11). Every installed
   skill loads for every role; a role's `skills` list (#153) decides what its worker
   uses and what Igor verifies.
-- **No call loads the worked repository's settings** (decision 8), **and each run as the
-  worker user starts with a clean `~/.claude`** (decision 9). No call loads what a worker wrote
-  to the repository's `.claude`, and no later run loads what an earlier one wrote to its
-  `~/.claude`.
+- **No call loads the worked repository's settings** (decision 8), **and every call in the
+  worker's home starts from a reset `~/.claude` and `~/.claude.json`** (decision 9). No call
+  loads what a worker wrote to the repository's `.claude`, and no later call loads what an
+  earlier one wrote to either. With a worker user, Igor kills every process that user owns at
+  the end of each task (decision 13).
 - **Before its first model call, Igor confirms each installed skill loads.** It reads the skill
   list from the `system/init` event of a `claude -p` call with no token and an empty `HOME`.
   That call fails to authenticate, at no cost, after printing the event.
@@ -119,17 +143,16 @@ replaces it.
 
 ### Modified Capabilities
 
-None as deltas. The flags are added to calls owned by `task-execution` and `work-triage`, and
-the rules cover every call, so they live in one place, `pinned-skills`.
+- `task-execution`: the scenario *No state carries between tasks* names what a worker's home
+  keeps across tasks (decision 15).
 
-Decision 9 does not change the home directory that `task-execution`'s *The worker is given an
-explicit environment* passes: under #175 that is still the worker user's own, and only its
-`~/.claude` is reset.
+The flags are added to calls owned by `task-execution` and `work-triage`, but the rules cover
+every call, so they live in one place, `pinned-skills`.
 
 ## Impact
 
-- `src/config.ts`, `src/execute.ts` (`claudeWorker`), `src/triage.ts` (`runClaude`),
-  `src/budget.ts` (`runUsage`), and `src/wiring.ts` for the startup check.
+- `src/execute.ts` (`claudeWorker`, and the home and its reset), `src/triage.ts` (`runClaude`),
+  `src/budget.ts` (`runUsage`), and `src/wiring.ts` for `skills_dir` and the startup check.
 - **#153** depends on this change. Its `<skills>` is `<skills_dir>/skills`, where it grants its
   scripts by path and its code runs `prose verify-post` and `verify-staged`. Its role-config
   requirement refuses a role that lists a skill not installed under `skills_dir`; this change

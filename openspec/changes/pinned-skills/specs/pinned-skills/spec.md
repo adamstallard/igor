@@ -1,29 +1,41 @@
 ## ADDED Requirements
 
-### Requirement: Skills come from one configured plugin directory
+### Requirement: Skills come from one plugin directory the server names
 
-Igor SHALL load the skills its model steps run from one Claude Code plugin directory, named by
-`skills_dir` in `igor.config.yaml`. The directory holds `.claude-plugin/plugin.json` naming the
-plugin `igor`, and one entry per skill under `skills/`. A skill named `<name>` therefore has its
-files under `<skills_dir>/skills/<name>/` and loads as `igor:<name>`. Every path Igor or a grant
-names for that skill's scripts SHALL be under that directory, and a step that asks for the skill
-by name SHALL use `igor:<name>`.
+Igor SHALL load the skills its model steps run from one Claude Code plugin directory,
+`skills_dir`. `skills_dir` SHALL be `/opt/igor/skills`, unless `IGOR_SKILLS_DIR` in the
+environment Igor starts with names another directory. It SHALL be read from nowhere else:
+`igor.config.yaml` and the other lore files have no `skills_dir` key, and a lore file that names
+one SHALL be refused as an unknown key.
 
-`skills_dir` SHALL be an absolute path, and a relative one SHALL be refused at load.
+The directory holds `.claude-plugin/plugin.json` naming the plugin `igor`, and one entry per
+skill under `skills/`. A skill named `<name>` therefore has its files under
+`<skills_dir>/skills/<name>/` and loads as `igor:<name>`. Every path Igor or a grant names for
+that skill's scripts SHALL be under that directory, and a step that asks for the skill by name
+SHALL use `igor:<name>`.
 
-Where `skills_dir` is absent, Igor names no plugin directory, so no `igor:<name>` skill loads.
-This capability refuses nothing because `skills_dir` is absent. A role that lists a skill is
-refused by #153's `role-config` rule.
+`IGOR_SKILLS_DIR` SHALL be an absolute path, and a relative one SHALL refuse the start.
 
-#### Scenario: An absolute directory is accepted
+#### Scenario: The default directory is used
 
-- **WHEN** `igor.config.yaml` sets `skills_dir: /opt/igor/skills`
-- **THEN** Igor loads skills from `/opt/igor/skills/skills/`, each as `igor:<name>`
+- **WHEN** Igor starts with no `IGOR_SKILLS_DIR` in its environment
+- **THEN** `skills_dir` is `/opt/igor/skills`, and skills load from `/opt/igor/skills/skills/`,
+  each as `igor:<name>`
+
+#### Scenario: The server's environment overrides the default
+
+- **WHEN** Igor starts with `IGOR_SKILLS_DIR=/srv/igor-skills`
+- **THEN** `skills_dir` is `/srv/igor-skills`
 
 #### Scenario: A relative directory is refused
 
-- **WHEN** `igor.config.yaml` sets `skills_dir: skills`
-- **THEN** loading the configuration fails, naming `skills_dir` and saying it must be absolute
+- **WHEN** Igor starts with `IGOR_SKILLS_DIR=skills`
+- **THEN** it refuses to start, naming `IGOR_SKILLS_DIR` and saying it must be absolute
+
+#### Scenario: A lore file cannot name the directory
+
+- **WHEN** `igor.config.yaml` sets `skills_dir: /tmp/x`
+- **THEN** loading the configuration fails, as it does for any unknown key
 
 #### Scenario: A step names a skill by its plugin name
 
@@ -33,8 +45,8 @@ refused by #153's `role-config` rule.
 
 ### Requirement: Every model call names the plugin directory
 
-Every `claude -p` process Igor spawns SHALL carry `--plugin-dir <skills_dir>` when
-`skills_dir` is set: the worker, triage, and every other model step. The usage read (`runUsage`,
+Every `claude -p` process Igor spawns SHALL carry `--plugin-dir <skills_dir>`: the worker,
+triage, and every other model step. The usage read (`runUsage`,
 which `igor budget` runs) is the one exception and SHALL NOT carry it. No call SHALL pass
 `--bare`.
 
@@ -49,33 +61,28 @@ loads under its own name beside `igor:<name>` and does not replace it.
 
 #### Scenario: The worker names the directory
 
-- **WHEN** Igor spawns a worker with `skills_dir` set
+- **WHEN** Igor spawns a worker
 - **THEN** its arguments include `--plugin-dir` followed by `skills_dir`
 
 #### Scenario: Triage names the directory
 
-- **WHEN** Igor spawns a triage call with `skills_dir` set
+- **WHEN** Igor spawns a triage call
 - **THEN** its arguments include `--plugin-dir` followed by `skills_dir`
 
 #### Scenario: Every other model call names the directory
 
-- **WHEN** Igor spawns any other `claude -p` with `skills_dir` set, such as #143's seat probe
+- **WHEN** Igor spawns any other `claude -p`, such as #143's seat probe
 - **THEN** its arguments include `--plugin-dir` followed by `skills_dir`
 
 #### Scenario: The usage read names no plugin directory
 
-- **WHEN** `igor budget` runs the usage read with `skills_dir` set
+- **WHEN** `igor budget` runs the usage read
 - **THEN** its arguments do not include `--plugin-dir`
 
 #### Scenario: No call passes --bare
 
 - **WHEN** Igor spawns any `claude -p`
 - **THEN** its arguments do not include `--bare`
-
-#### Scenario: No directory, no flag
-
-- **WHEN** `skills_dir` is absent
-- **THEN** no `claude -p` call carries `--plugin-dir`
 
 ### Requirement: No call loads the worked repository's settings
 
@@ -98,43 +105,85 @@ goes back to Adam, and the rule that none loads still holds.
 - **AND** that hook does not run
 - **AND** the worker is not given that `CLAUDE.md`
 
-### Requirement: Each run as the worker user starts with a clean ~/.claude
+### Requirement: Every call in the worker's home starts from Igor's template
 
-Where the worker runs as a separate Unix user (#175), Igor SHALL replace that user's `~/.claude`
-with a fresh copy of a clean template before every `claude -p` it starts as that user: the
-worker, and each later model step in the worker's working tree (#153). The worker user SHALL NOT be able
-to write the template. Nothing else in the
-worker user's home SHALL be reset: `~/.gitconfig`, #153's session mark (the file `prose start` writes under `~/.local/state`, which #153's prose steps check for), and tool caches such as `~/.cache` persist
-across runs.
+The worker's home SHALL last across runs. With a worker user (#175), it SHALL be that user's own
+home. With none, under #175's same-user mode, Igor SHALL keep one home per role under its state
+directory, such as `~/.local/state/igor/home/<role>`, and set the worker's `HOME` to it.
 
-#### Scenario: A later run does not load what an earlier one wrote to ~/.claude
+Before every `claude -p` Igor starts in that home, Igor SHALL replace `~/.claude` and
+`~/.claude.json` with a fresh copy of a template that ships with Igor, keeping only
+`~/.claude/.credentials.json`. Those calls are the worker and each later model step in the same
+home, such as #153's prose pass and bug hunt. #153's `prose start` SHALL run after the reset. The template SHALL hold:
 
-- **WHEN** a worker writes a hook, a `CLAUDE.md` or a skill under `~/.claude`
-- **AND** Igor later starts another `claude -p` as the worker user
-- **THEN** that call's `~/.claude` holds only what the template holds
-- **AND** the hook does not run, and neither that `CLAUDE.md` nor that skill loads
+- a `settings.json` holding only what Igor needs, with no hooks and no MCP servers;
+- no skills and no `CLAUDE.md`, since skills load from `skills_dir`;
+- a `~/.claude.json` with onboarding marked done and no MCP servers.
 
-#### Scenario: A model step after the worker gets a clean ~/.claude
+The template SHALL sit in Igor's installation. With a worker user, #175's start check confirms
+that user cannot write it; in same-user mode nothing protects it, which is open in the proposal.
+
+Nothing else in the home SHALL be reset: `~/.gitconfig`, and the files a repository's tests
+cache in the home, persist across runs.
+
+With a worker user, at the end of each task and before the next reset, Igor SHALL kill every
+process that user owns, by user or by the user's systemd slice. In same-user mode nothing ends a
+process that escaped the run's process group, so such a process can rewrite the home after a
+reset.
+
+#### Scenario: A later call does not load what an earlier one wrote
+
+- **WHEN** a worker writes a hook, a `CLAUDE.md` or a skill under `~/.claude`, and an MCP server
+  into `~/.claude.json`
+- **AND** no process the worker started is still running
+- **AND** Igor later starts another `claude -p` in that home
+- **THEN** that call's `~/.claude` and `~/.claude.json` hold only what the template holds, and
+  the kept credentials file
+- **AND** the hook does not run, and neither that `CLAUDE.md`, that skill nor that MCP server
+  loads
+
+#### Scenario: A model step after the worker starts from the template
 
 - **WHEN** a worker writes a hook under `~/.claude`
+- **AND** no process the worker started is still running
 - **AND** Igor then starts a model step in the worker's working tree, such as #153's prose pass
-- **THEN** the step's `~/.claude` holds only what the template holds
+- **THEN** the step's `~/.claude` holds only what the template holds, and the kept credentials
+  file
+
+#### Scenario: The stored login survives the reset
+
+- **WHEN** the worker's home holds `~/.claude/.credentials.json` and Igor resets `~/.claude`
+- **THEN** that file is unchanged
+- **AND** a worker of an organization that declares no seats still runs on that login
 
 #### Scenario: The rest of the home persists
 
-- **WHEN** a run leaves the worker user's `~/.gitconfig`, a file under `~/.cache` and #153's
-  session mark under `~/.local/state` in its home
-- **AND** Igor starts the next run as the worker user
+- **WHEN** a run leaves `~/.gitconfig` and a file under `~/.cache` in the worker's home
+- **AND** Igor starts the next run in that home
 - **THEN** each of those files is still there
+
+#### Scenario: Same-user mode has a home per role
+
+- **WHEN** Igor runs with no worker user, for the role `generalist`
+- **THEN** each `claude -p` it starts in the worker's tree has `HOME` set to that role's home
+  under Igor's state directory
+- **AND** that home is reset as a worker user's is
 
 #### Scenario: The worker cannot change the template
 
-- **WHEN** a worker tries to write into the template Igor resets `~/.claude` from
+- **WHEN** a worker running as a worker user tries to write into the template Igor resets the
+  home from
 - **THEN** the write is refused
+
+#### Scenario: A process that escaped its group is killed before the next reset
+
+- **WHEN** a worker running as a worker user starts a process that calls `setsid()` and keeps
+  running after the task ends
+- **THEN** Igor kills it before the next reset in that user's home
 
 ### Requirement: Igor confirms its skills load before its first model call
 
-Where `skills_dir` is set, before it spawns its first `claude -p` that could spend a seat, Igor
+Before it spawns its first `claude -p` that could spend a seat, Igor
 SHALL run `claude -p --plugin-dir <skills_dir> --setting-sources user --strict-mcp-config
 --output-format stream-json --verbose` with a
 one-word prompt and stdin closed, from an empty temporary directory, with an environment holding
@@ -167,11 +216,6 @@ check still passes on the list alone.
 - **WHEN** every installed skill loads, but the commit of one skill's files cannot be read
 - **THEN** Igor starts
 - **AND** it reports that skill's commit as not checked
-
-#### Scenario: No skills_dir, no check
-
-- **WHEN** `skills_dir` is absent
-- **THEN** Igor runs no skills check
 
 #### Scenario: No init event stops the start
 
