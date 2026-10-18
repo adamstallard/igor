@@ -46,9 +46,9 @@ sudo --non-interactive --user=<worker> --preserve-env=<names> -- \
   spawn run #174's reset and kill (task 0.6).
 - **#153's `prose start` runs as the worker too** (Adam, 2026-10-17), through this same `sudo`
   and after the reset. `prose start` is the prose skill's first call; it writes a session mark,
-  a file under `~/.local/state`, which #153's prose steps check for before they sign. Those steps
-  run as the worker and look in the worker's home, so the mark must be there and be the
-  worker's. Run as the service user, `prose start` could not write the worker's `0700` home, and
+  a file under `~/.local/state`, which prose's hook checks for before a step's first file
+  write. #153's model steps after the worker, the bug hunt and the prose pass, run as the worker
+  and look in the worker's home, so the mark must be there and be the worker's. Run as the service user, `prose start` could not write the worker's `0700` home, and
   the unit's `ProtectHome=read-only` would stop it writing the service user's own
   `~/.local/state`.
 - **`claude` is resolved by the Igor** on its own `PATH` and passed as an absolute path, so the
@@ -122,19 +122,23 @@ Whether the `/proc` reach holds between two Igor units, each with its own mount 
 ### The unit names the worker user from its instance (Adam, 2026-10-17)
 
 An instance is named `<role>-<rank>`, with the rank always written, so `%i` is already the dash
-form and `igor-worker-%i` is the worker user's name. The unit uses it directly for
-`SupplementaryGroups=` and `ReadWritePaths=`. No drop-in is generated per instance, no step edits
-`/etc/group`, and the Igor computes no name. The GitHub App identity stays one per role: the rank
-appears only in names on the host. This depends on #179 naming instances `<role>-<rank>`, which
-#179 is to do in its own next revision (task 0.8).
+form and `igor-worker-%i` is the worker user's name. The unit passes `%i` to `igor serve` as its
+argument, and the Igor sudoes to `igor-worker-` followed by that argument. That is plain
+concatenation: forming the worker user's name never splits the instance name into a role and a
+rank. #179 still has to find the role and rank in the instance name for its own purposes, and
+that split is #179's rule (task 0.8). A sibling rank, another instance of the same role, can
+sweep the trees a gone rank left (*Trees live in `/var/lib/igor/trees`*, below). It builds that
+rank's worker user the same way, as `igor-worker-<role>-<rank>` from its role and the gone
+rank's number, as #179's roster and sweep identify it.
+
+The unit's `User=` and `Group=` stay the service user: they set the account the Igor process
+itself runs as, and a worker that ran as that account could read the Igor's credentials. The
+unit uses `igor-worker-%i` directly for `SupplementaryGroups=` and `ReadWritePaths=`. No drop-in
+is generated per instance and no step edits `/etc/group`. This depends on #179 naming instances
+`<role>-<rank>`, which #179 is to do in its own next revision (task 0.8).
 
 The dash form is kept, rather than naming the user `igor-worker-<role>.<rank>`, because a dot in
 a user name reads as `user.group` to tools such as `chown`.
-
-Adam's decision also names `User=` and `Group=`. In a unit those set the account the Igor process
-itself runs as, and that has to stay the service user, or the worker user could read the Igor's
-credentials. So what those two settings hold, and how the Igor learns the name it sudoes to, are
-open (proposal, *Still open*).
 
 **Not `igor.config.yaml`.** The lore repository is shared and edited by pull request, and a
 lore pull request that set the worker user to the service user would turn isolation off for
@@ -218,32 +222,43 @@ through the same `sudo` spawn as the worker.
 The kill, the link checks below and the Igor's read of the tree wait until the worker and the
 last model step have exited. The Igor then records the tree it read: it stages the changed paths
 in its own index and writes the index's tree object (`git write-tree`) into its own git
-directory, which the worker user cannot write. #153's trailers are created against that tree
-(below), and the Igor publishes from that tree object. #189 (`loop-verifies-commands`) has the Igor run the role's
+directory, which the worker user cannot write. The Igor makes #153's trailers against that tree
+(below), and publishes from that tree object. #189 (`loop-verifies-commands`) has the Igor run the role's
 checks, such as its tests, as the worker user, and they run after that record. The Igor publishes
 the recorded tree, so anything a check writes, such as a coverage report or a link, is discarded,
 and #189's rule that checks do not change what is published stands.
 
-### #153's steps are signed once, at the end (Adam, 2026-10-17)
+### #153's steps are signed once, at the end, by the Igor (Adam, 2026-10-17)
 
 #153 binds each commit's trailers to a staged tree. `git add` writes objects into the git
 directory, which is read-only to the worker user, and the index the worker can write is its copy
-in the outbox. So the steps do not stage or sign. Bug-hunter runs, then the prose pass, and each
-only edits the tree. After the last model step exits, the Igor's code stages the changed paths
-once, in the Igor's own index, and both trailers, `Bug-hunter:` and `Prose:`, are created
-against the tree of that index. That tree is the one the Igor records, runs the link checks on,
-and publishes. The trailers bind to the published tree only if the clone's tree equals the tree
-the Git Data API builds from the same files; the two can differ in file modes. #153's own task
-0.4 measures that, and where they differ #153 binds the trailers to the API's tree instead (its
-design, item 3). The worker cannot change the recorded tree object,
-and a copy the worker could change, the index copy included, is never what a trailer is bound
-to.
+in the outbox. So the steps neither stage nor sign. The order is:
+
+1. Bug-hunter runs, edits the tree, and ends by reporting its pass result.
+2. The prose pass runs, edits the tree and writes the message, and ends by reporting its pass
+   token, from its first `prose check` call.
+3. Bug-hunter's triage runs on the prose pass's diff. A diff that touches only comments or docs
+   is skipped; anything else gets one more bug-hunter iteration.
+4. After the last model step exits, the Igor's code stages the changed paths once, in the Igor's
+   own index.
+5. The Igor runs both signing calls itself, as the service user: the second `prose check` call,
+   with the token from step 2, and bug-hunter's minting script, against the staged tree.
+
+Each trailer that binds a tree, `Prose:` and #153's `Bug-hunter-Tree:`, then names the tree the
+Igor records, runs the link checks on, and publishes. The signing scripts are the ones in
+`skills_dir`, which is root-owned, so running them as the service user runs nothing the worker
+wrote. That rests on the directory's owner and modes as #174 installs them: the start check's
+write probe of `skills_dir` tries only its top level, not its subdirectories.
+
+The tree the trailers bind is the index's tree where it equals the tree the Git Data API builds
+from the same files. The two can differ in file modes; #153's task 0.4 measures that, and where
+they differ the trailers bind to the API's tree instead, as #153's design item 3 says. Either way
+the Igor publishes the tree the trailers name. The worker cannot change the recorded tree object, and a copy
+the worker could change, the index copy included, is never what a trailer is bound to.
 
 Staging before each step instead would run `git add` over the worker's files before the link
 and hard-link checks, and the prose pass's edits, made after bug-hunter's staging, would be
-missing from the tree bug-hunter's trailer named. Who runs the calls that produce the trailers
-(prose's `prose check` and bug-hunter's trailer script) against the Igor's index, which neither
-step can write, is open (proposal, *Still open*; task 0.5).
+missing from the tree bug-hunter's trailer named.
 
 ### The Igor reads changes without following links
 
@@ -314,9 +329,8 @@ link, and reading one would follow the link.
 unit cannot see another's private `/tmp`. The modes and groups in the table above hold there
 unchanged. The sibling's removal pass runs as the gone rank's worker user, which owns what that
 rank's worker wrote; the sudoers file has a line for every instance under the one service user,
-so the sibling can sudo to it. The sibling needs that user's name. Forming it from the role and
-rank would be the Igor computing a name, which the proposal's decision 5 rules out, so how the
-sibling gets it is open (proposal, *Still open*).
+so the sibling can sudo to it. The sibling builds that user's name as `igor-worker-<role>-<rank>`
+from its role and the gone rank's number, the same concatenation the Igor uses for its own.
 
 ### What each start checks
 
@@ -376,7 +390,10 @@ both, where one forgotten setting on a server would bring back the exposure #163
 
 **macOS runs `serve` only in #192's container image** (`deploy-image`), and runs `run` on the
 host. macOS has no `/proc` to probe and no `fs.protected_hardlinks`, so start check 6 would
-refuse a worker user there anyway. The deployment guide gives the Linux steps.
+refuse a worker user there anyway. The deployment guide gives the Linux steps. #192 merges as it
+is, and this change's implementation, built after this specification is approved, adds to its image `sudo`, a worker user for each instance the
+compose file runs, and their sudoers lines, and moves the compose file's trees volume to
+`/var/lib/igor/trees` (proposal, decision 20; task 8.3).
 
 ### The unit
 
@@ -385,8 +402,8 @@ refuse a worker user there anyway. The deployment guide gives the Linux steps.
 - The unit names the worker user as `igor-worker-%i` (above). `SupplementaryGroups=igor-worker-%i`
   puts the Igor in the worker's group, and `ReadWritePaths=/var/lib/igor-worker-%i` keeps the
   worker's home writable inside the unit's mount namespace, where `ProtectSystem=strict` makes
-  `/var` read-only. The proposal's decision 5 names `User=` and `Group=` too; what those two
-  hold is open (proposal, *Still open*).
+  `/var` read-only. `User=` and `Group=` stay the service user, and the unit's `ExecStart=`
+  passes `%i` to `igor serve`.
 - `PrivateTmp=true` stays for everything but the trees. Trees live in the shared
   `/var/lib/igor/trees` (above), under the unit's `StateDirectory=` (#179), so
   `ReadWritePaths=` must keep that directory writable too.

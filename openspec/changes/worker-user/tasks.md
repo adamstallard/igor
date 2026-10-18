@@ -6,7 +6,7 @@
       and seat `token_file` paths while they exist. If #171 has not merged, file an issue asking
       #171 to add `seatKey` to this probe, and link it here.
 - [ ] 0.2 Run measurements 6.1 to 6.5 before building sections 2 to 4; 6.6 informs the docs, and
-      6.7 waits on the proposal's open question on `User=` and `Group=`. Record each result in
+      6.7 runs before 8.2 ships. Record each result in
       `design.md`, including any that contradicts it, and change the design before the code where
       one does.
 - [ ] 0.3 If #101 (`condition-backoff`) has merged, record a `sudo` spawn failure of the worker
@@ -19,11 +19,10 @@
       those two stops with the publishing and drop the conditions on #137 from *The Igor reads no file on
       the worker's behalf through a link* and *Nothing the worker writes is executed by the
       Igor*, and link it here.
-- [ ] 0.5 If #153 (`signed-publishing`) has merged, its model steps go through 1.4, and its
-      trailers are created against the tree 2.5 stages. If not, file an issue asking #153 to run
-      its steps through this change's spawn, to have them edit without signing, and to create
-      both trailers against the tree 2.5 stages, and link it here. Who runs the signing calls
-      against that tree waits on the proposal's open question on it.
+- [ ] 0.5 If #153 (`signed-publishing`) has merged, its model steps go through 1.4, and the Igor
+      makes its trailers as 2.5 says. If not, file an issue asking #153 to run its steps through
+      this change's spawn, to have them edit without signing and report their pass results, and
+      to have the Igor make both trailers against the tree 2.5 stages, and link it here.
 - [ ] 0.6 If #174 (`pinned-skills`) has merged, add `skills_dir` to the probe in 5.1. If not,
       file an issue asking #174 to add it, and link it here.
 - [ ] 0.7 If #189 (`loop-verifies-commands`) has merged, its checks go through 1.4's spawn and
@@ -41,11 +40,13 @@
 
 ## 1. Starting the worker as another user
 
-- [ ] 1.1 `serve` always runs its worker as `igor-worker-%i`, the name the unit gives it, and
-      `run` never runs one as a worker user. The Igor computes no name, and `igor.config.yaml`
-      gains no key for it. How the Igor learns the name waits on the proposal's open question
-      on `User=` and `Group=`; build 1.2 behind one function that returns it, so only that
-      function changes.
+- [ ] 1.1 `serve <instance>` runs its worker as `igor-worker-<instance>`, where `<instance>` is
+      the argument the unit passes as `%i`, joined as given, without splitting it into a role
+      and a rank; `run` never runs the worker as a worker user. `igor.config.yaml` gains no key for it.
+      A sibling rank acting for a gone rank (2.4a) builds that rank's name the same way, as
+      `igor-worker-<role>-<rank>` from its role and the gone rank's number. Build the Igor's own
+      name and the sibling's behind one function. Tests: `serve generalist-2` gives `igor-worker-generalist-2`; `serve
+      code-review-1` gives `igor-worker-code-review-1`.
 - [ ] 1.2 Under `serve`, `claudeWorker` spawns
       `sudo --non-interactive --user=<worker> --preserve-env=<names> -- /usr/bin/env PATH=<path> <claude> …`.
       `<names>` is every variable `workerEnv` built except `PATH` and `HOME`, and `<claude>` is
@@ -84,18 +85,24 @@
       `/var/lib/igor/trees`, never under the instance's `/tmp`, with 2.1's groups and modes
       (Adam, 2026-10-17). A sibling rank's sweep of a gone rank's trees (#179) runs 4.2's first
       pass as the gone rank's worker user.
-- [ ] 2.5 Where a role runs #153's steps, bug-hunter runs, then the prose pass, and neither
-      stages or signs. After the last model step exits, the Igor's code stages the changed paths
-      once, in the git directory's own index, never the copy, and both trailers, `Bug-hunter:`
-      and `Prose:`, are created against that index's tree, the tree 3.2 records and
-      publishes.
+- [ ] 2.5 Where a role runs #153's steps: bug-hunter runs, then the prose pass, and each edits
+      the tree, neither stages nor signs, and each ends by reporting its pass result, the prose
+      pass's being its pass token. Bug-hunter's triage then runs on the prose pass's diff,
+      skipping a diff that touches only comments or docs and giving anything else one more
+      bug-hunter iteration. After the last model step exits, the Igor's code stages the changed
+      paths once, in the git directory's own index, never the copy. The Igor then runs, as the
+      service user and from `skills_dir`, the second `prose check` call with the prose pass's
+      token and bug-hunter's minting script, both against that index's tree, the tree 3.2
+      records and publishes.
 - [ ] 2.6 Tests on a real clone, run as one user: the modes and group after provisioning; status
       read against the git directory's index reports a `git rm` and a `git mv` made with
       `GIT_INDEX_FILE` set to the copy; a file marked skip-worktree or assume-unchanged in the
       copy is still read as changed; a `.git` file in the tree pointing elsewhere does not change what the
       Igor reads; the sweep removes a stranded `-git` directory; a file marked unchanged in the
       copy is in the tree 2.5 stages; edits by both #153 steps are in that tree, and nothing is
-      staged before the last step exits.
+      staged before the last step exits; a comments-only prose diff runs no second bug-hunter
+      iteration, and a prose diff that changes code runs one; both signing calls run as the
+      service user from `skills_dir`, never from the tree.
 
 ## 3. Nothing run, nothing followed
 
@@ -301,8 +308,8 @@ file in the service user's home. Each holds a random string and nothing else. Ne
       worker user*, and in 8.4's section of `docs/deployment.md`, whether either worker can read
       the other's `/proc/<pid>/environ`, or list and write the other's tree through
       `/proc/<pid>/cwd`. Section 8 does not wait for it (Adam, 2026-10-17).
-- [ ] 6.7 Before 8.2 ships, once the proposal's open question on `User=` and `Group=` is
-      answered: confirm that under the unit the Igor is in the worker's group through
+- [ ] 6.7 Before 8.2 ships, confirm that under the unit, with `User=` and `Group=` the service
+      user, the Igor is in the worker's group through
       `SupplementaryGroups=igor-worker-%i`, can write its home through
       `ReadWritePaths=/var/lib/igor-worker-%i`, and sudoes to `igor-worker-%i`.
       Sections 2 to 4 do not wait for this.
@@ -339,8 +346,8 @@ file in the service user's home. Each holds a random string and nothing else. Ne
       `ReadWritePaths=/var/lib/igor-worker-%i`, and
       keep `/var/lib/igor/trees`, under #179's `StateDirectory=`, writable; `PrivateTmp=true`
       stays for everything else. No
-      drop-in per instance and no `/etc/group` step. What `User=` and `Group=` hold, and how the
-      unit gives the Igor the name (1.1), wait on the proposal's open question on them. Put `/usr/local/bin` first on `PATH` and change the `PATH` comment to say `claude` must
+      drop-in per instance and no `/etc/group` step. `User=` and `Group=` stay the service user,
+      and `ExecStart=` passes `%i` to `igor serve` (1.1). Put `/usr/local/bin` first on `PATH` and change the `PATH` comment to say `claude` must
       live where the worker can run it. Replace `NoNewPrivileges=true` with this comment (may be
       reworded):
 
@@ -350,12 +357,23 @@ file in the service user's home. Each holds a random string and nothing else. Ne
       # separate user for the worker".
       ```
 
-- [ ] 8.3 `deploy/docker-compose.yml`: `user: igor` on the service. The compose file runs one
-      container per role, as rank 1, so each container's worker user is
-      `igor-worker-<role>-1`. The trees volume mounts at `/var/lib/igor/trees` instead of
-      `/tmp` (the proposal's decision 19). The header comment says the image also needs `sudo`, that user,
-      and a sudoers line letting `igor` act as it. A mounted key is owned by
-      the `igor` user's uid with mode `0600`.
+- [ ] 8.3 #192's (`deploy-image`) container image and compose file, after #192 merges as it is
+      (proposal, decision 20). This is how a Mac runs `serve`.
+      - `Dockerfile`, `runtime` stage: install `sudo` from Debian at a pinned version, as the
+        image pins its other packages. Create the worker user for each instance the compose
+        file runs, `igor-worker-<role>-1`, with its home at `/var/lib/igor-worker-<role>-1`,
+        and write each instance's sudoers line to `/etc/sudoers.d/igor` in the form 8.1 shows,
+        naming `node`, the user #192's image runs Igor as, where 8.1's line names `igor`. Create
+        `/var/lib/igor/trees`, owned by that user, and put `claude` where the worker user can
+        run it.
+      - `deploy/docker-compose.yml`: each service runs `igor serve <role>-1`, since the compose
+        file runs one container per role, as rank 1, so each container's worker user is
+        `igor-worker-<role>-1`. The trees volume mounts at `/var/lib/igor/trees` instead of
+        `/tmp` (the proposal's decision 19). The header comment says the image holds `sudo`,
+        the worker users and their sudoers lines. A mounted key is owned by the uid the image
+        runs Igor as, with mode `0600`, as #192's comment already says.
+      - Run 5.1's start check in the container, on Linux and under Docker Desktop on macOS, and
+        record the result in `design.md`.
 - [ ] 8.4 `docs/deployment.md`: add this section after *Before it can run*, and make it the
       fourth thing in that list. May be reworded; the commands may not change without
       re-measuring them. The loop that creates each instance's user, home and sudoers line is

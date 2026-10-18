@@ -4,9 +4,13 @@
 
 The worker user of an Igor instance SHALL be `igor-worker-<role>-<rank>`: `igor-worker-`
 followed by the instance name `<role>-<rank>` (#179), in which the rank is always written. The
-systemd unit SHALL name it as `igor-worker-%i`, and the Igor SHALL NOT compute it; how the unit
-hands the name to the Igor is open in the proposal. The name
-SHALL NOT be read from `igor.config.yaml` or any other lore file. Under `igor serve`, execution
+systemd unit SHALL pass the instance name, `%i`, to `igor serve`, and the Igor SHALL sudo to
+`igor-worker-` followed by that name as given: the worker user's name SHALL NOT depend on how
+#179 splits the instance name into a role and a rank. A sibling rank that sweeps the trees a
+gone rank of its role left SHALL build that rank's worker user the same way, as
+`igor-worker-<role>-<rank>` from its own role and the number of the gone rank that #179's sweep
+finds. The unit's `User=` and `Group=` SHALL remain the service
+user. The name SHALL NOT be read from `igor.config.yaml` or any other lore file. Under `igor serve`, execution
 SHALL run the worker as that user, and every process the worker starts SHALL run as that user
 too. Every other `claude -p` the Igor starts with the
 worker's tree as its working directory SHALL run as that user as well, such as #153's bug hunt
@@ -54,8 +58,19 @@ system's file permissions are the barrier that holds whatever the worker runs.
 
 #### Scenario: The worker user's name comes from the instance
 
-- **WHEN** the unit `igor@generalist-2` starts `igor serve`
+- **WHEN** the unit `igor@generalist-2` starts `igor serve generalist-2`
 - **THEN** its worker runs as `igor-worker-generalist-2`
+- **AND** the Igor itself runs as the service user the unit's `User=` names
+
+#### Scenario: A role name holding a dash is not parsed
+
+- **WHEN** the unit `igor@code-review-1` starts `igor serve code-review-1`
+- **THEN** its worker runs as `igor-worker-code-review-1`
+
+#### Scenario: A sibling sweeps a gone rank's trees as that rank's worker user
+
+- **WHEN** rank 1 of the role `generalist` sweeps the trees of its gone rank 3
+- **THEN** it removes them as `igor-worker-generalist-3`
 
 #### Scenario: A lore file cannot name the worker user
 
@@ -155,8 +170,8 @@ as the Igor.
 
 The Igor SHALL read what a worker changed only after the worker and every later model step in
 its tree have exited, and SHALL record the tree it read as a tree object in its own git
-directory, which the worker user cannot write. #153's trailers are created against that tree
-(*#153's trailers are created once, against the tree the Igor staged*).
+directory, which the worker user cannot write. The Igor makes #153's trailers against that tree
+(*#153's trailers are created once, by the Igor, against the tree it staged*).
 Checks that run the role's commands as the worker user (#189) SHALL run after that record, and
 the Igor SHALL publish the recorded tree: anything a check writes SHALL be discarded. It SHALL
 find the changed paths against its own index, never an index the worker could write. It SHALL NOT follow a symbolic
@@ -257,25 +272,45 @@ pull request.
 - **THEN** the run stops naming the file
 - **AND** no artifact is published without it
 
-### Requirement: #153's trailers are created once, against the tree the Igor staged
+### Requirement: #153's trailers are created once, by the Igor, against the tree it staged
 
 Where a role runs #153's (`signed-publishing`) model steps, bug-hunter SHALL run first and the
-prose pass after it. Each step SHALL edit the tree and SHALL NOT sign. After the last model step
-exits, the Igor's code SHALL stage the changed paths once, in the Igor's own index, which the
-worker user cannot write. Both trailers, `Bug-hunter:` and `Prose:`, SHALL be created against
-the tree of that index, which is the tree the Igor records and publishes; which process creates
-them is open in the proposal. No trailer SHALL be
-bound to the worker's index copy or to any other copy the worker user could change, and no step
-SHALL stage or sign a tree before the last model step exits.
+prose pass after it. Each step edits the tree as it needs, SHALL NOT sign, and SHALL end by reporting
+its pass result; the prose pass's result SHALL be its pass token. Bug-hunter's triage SHALL then
+run on the prose pass's diff: a diff touching only comments or docs SHALL be skipped, and any
+other diff SHALL get one more bug-hunter iteration. After the last model step exits, the Igor's
+code SHALL stage the changed paths once, in the Igor's own index, which the worker user cannot
+write. The Igor SHALL then run both signing calls itself, as the service user, with the scripts
+in `skills_dir`: the second `prose check` call, with the prose pass's token, and bug-hunter's
+minting script, against that staged tree. Each trailer that binds a tree, `Prose:` and #153's
+`Bug-hunter-Tree:`, SHALL name the tree of that index, or the tree #153 binds to instead where
+its task 0.4 finds the Git Data API's tree differs, and the Igor SHALL publish the tree the
+trailers name. No trailer SHALL be bound to the
+worker's index copy or to any other copy the worker user could change, and nothing SHALL stage or
+sign a tree before the last model step exits.
+
+The signing scripts come from `skills_dir`, which is root-owned, so running them as the service
+user runs nothing the worker wrote.
 
 #### Scenario: Both trailers bind to the tree the Igor publishes
 
 - **WHEN** bug-hunter and then the prose pass edit the tree
 - **AND** the worker had marked a changed file unchanged in its index copy
-- **THEN** the Igor stages once, after the prose pass exits
-- **AND** the `Bug-hunter:` and `Prose:` trailers are created against that staged tree, which
-  holds that file's change and both steps' edits
+- **THEN** the Igor stages once, after the last model step exits
+- **AND** the Igor runs the second `prose check` call and bug-hunter's minting script against that staged
+  tree, which holds that file's change and both steps' edits
+- **AND** both calls run as the service user, with the scripts in `skills_dir`
 - **AND** that tree is the one the Igor publishes
+
+#### Scenario: A prose pass that edits only comments needs no second hunt
+
+- **WHEN** the prose pass's diff touches only comments and docs
+- **THEN** bug-hunter's triage skips it, and no further bug-hunter iteration runs
+
+#### Scenario: A prose pass that edits code gets one more hunt
+
+- **WHEN** the prose pass's diff changes code
+- **THEN** bug-hunter runs one more iteration before the Igor stages
 
 ### Requirement: A kill, a release and a sweep reach what the worker owns
 
