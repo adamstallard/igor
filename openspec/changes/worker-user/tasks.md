@@ -38,6 +38,12 @@
       requirement *A process is named by its role and rank*. If #179 has merged, build on it.
       Otherwise, file an issue asking whichever of #179 and this change is built second to name
       instances that way and check role names, and link it here.
+- [ ] 0.9 The exit statuses in 5.1 and 8.2 come from two other changes. #82
+      (`stopped-scope-visible`) sets 78 for a refused start, in *A process that refuses to start
+      exits with status 78*. #179 sets 79 for a retired rank, in *A rank removed from the roster
+      exits with status 79*. If #82 has not merged, file an issue asking whichever of #82 and
+      this change is built second to exit 78 on a refused start, and link it here. Do the same
+      for #179 and status 79.
 
 ## 1. Starting the worker as another user
 
@@ -52,20 +58,31 @@
       `sudo --non-interactive --user=<worker> --preserve-env=<names> -- /usr/bin/env PATH=<path> <claude> …`.
       `<names>` is every variable `workerEnv` built except `PATH` and `HOME`, and `<claude>` is
       the absolute path the Igor resolves on its own `PATH`. The worker's own flags are
-      unchanged, and so are `detached` and the stdio pipes.
+      unchanged, and so are `detached` and the stdio pipes, except that the prompt and the
+      system prompt leave the arguments (1.7).
 - [ ] 1.3 Under `run`, the spawn is exactly what it is today.
 - [ ] 1.4 Every other `claude -p` the Igor starts with a tree as its working directory goes
       through 1.2's spawn, with the same environment rules. Triage and usage reads, which run
-      outside any tree, do not.
+      outside any tree, do not; they run as the Igor with a seat's token in their environment
+      (proposal, decision 21) and take their prompt as 1.7 says.
 - [ ] 1.5 Tests (with an injected command, no real `sudo`): the argv for each mode; the seat token
       in no argv element; `--preserve-env` naming exactly `workerEnv`'s keys less `PATH` and
-      `HOME`; `run` spawning without `sudo` even where a user named `igor-worker-<role>-<rank>`
+      `HOME`; no prompt text in any argv element; `run` spawning without `sudo` even where a user named `igor-worker-<role>-<rank>`
       exists; a model step in the tree after the worker, and #153's `prose start`, spawned
       through `sudo` as the worker user.
 - [ ] 1.6 #153's `prose start` goes through 1.2's spawn as the worker user, after the reset of
       the worker's home that #174 builds, so the session mark is the worker's and sits in its
       home. If #153 has not merged, the issue 0.5 files asks for this too; if #174 has not, the
       issue 0.6 files does.
+- [ ] 1.7 Every `claude -p` the Igor starts takes its prompt on stdin and its system prompt from
+      `--system-prompt-file`: `claudeWorker` (`src/execute.ts`), `runClaude` (`src/triage.ts`),
+      `runUsage` (`src/budget.ts`), #143's seat probe and #174's startup check where those are
+      built. The Igor writes the system prompt file before the spawn and removes it after the
+      process exits. For a process running as the worker user, it goes in a directory the Igor
+      owns, beside the tree, mode `2750` with the worker's group; never in the tree or the
+      outbox. For a process running as the Igor, it goes in a directory only the Igor can read. Build after 6.9. Tests: each call's argv holds no prompt and no `--system-prompt`;
+      the prompt arrives on stdin; the file exists during the call and not after it, also when
+      the call fails.
 
 ## 2. The tree and the outbox
 
@@ -241,7 +258,8 @@
 
       where `<what>` is one of: `is this Igor's process environment`, `is this Igor's GitHub App
       key`, `is the key that decrypts seat files`, `holds seat <id>'s token`, `is this Igor's
-      home directory`.
+      home directory`, `holds this Igor's App identity` (for `/etc/igor/<role>.env`, once 0.8's
+      #179 has the Igor read it itself).
 
       ```
       the worker user "<worker>" can read a file only <igor-user> should be able to read (<path>), so it can read this Igor's credentials too. Check that "<worker>" holds no capability or group that reads other users' files.
@@ -264,6 +282,9 @@
       fs.protected_hardlinks is not 1 on this host, so a worker could hard-link a file only this Igor can read into its tree. Set it with `sysctl fs.protected_hardlinks=1` and in /etc/sysctl.d, then restart.
       ```
 
+      Each refusal above exits with status 78 (0.9), which the unit's
+      `RestartPreventExitStatus=` keeps from restarting.
+
 - [ ] 5.2 The check sets `safe.directory=*` in the worker user's global git configuration, as the
       worker, where it is missing.
 - [ ] 5.3 `serve` has no `--same-user` flag, and refuses a missing worker user with 5.1's first
@@ -278,7 +299,7 @@
 - [ ] 5.5 Tests with an injected probe: each refusal, in order, the `claude` and `skills_dir`
       checks among them; `fs.protected_hardlinks` at `0` refuses; the file the `skills_dir`
       probe created is deleted; the first failure
-      stops the check; `serve` refuses with no worker user, and refuses `--same-user` as an
+      stops the check; every refusal exits with status 78; `serve` refuses with no worker user, and refuses `--same-user` as an
       unknown flag; `run` runs as the same user and prints the notice; `serve` never prints
       it.
 
@@ -303,9 +324,9 @@ file in the service user's home. Each holds a random string and nothing else. Ne
       change a file the Igor owns.
 - [ ] 6.4 Record which of `claude`'s environment variables reach a command it runs, the seat token
       above all.
-- [ ] 6.5 Record what `sudo` writes to the auth log per worker start. If it is the whole prompt,
-      add `Defaults:igor !syslog` (or what the measurement shows works) to
-      `deploy/sudoers.example`, with a comment saying why.
+- [ ] 6.5 Record what `sudo` writes to the auth log per worker start. With 1.7 built it should
+      hold no prompt text. If it holds any, add `Defaults:igor !syslog` (or what the
+      measurement shows works) to `deploy/sudoers.example`, with a comment saying why.
 - [ ] 6.6 Run two Igor units with one worker user and a worker in each, since whether the `/proc`
       reach holds between units is unmeasured. Record in `design.md`, *Each instance has its own
       worker user*, and in 8.4's section of `docs/deployment.md`, whether either worker can read
@@ -316,6 +337,15 @@ file in the service user's home. Each holds a random string and nothing else. Ne
       `SupplementaryGroups=igor-worker-%i`, can write its home through
       `ReadWritePaths=/var/lib/igor-worker-%i`, and sudoes to `igor-worker-%i`.
       Sections 2 to 4 do not wait for this.
+- [ ] 6.8 Before 8.2 ships, confirm that under the unit with `ProtectProc=invisible`, a worker
+      user listing `/proc` sees no process of the service user and none of another worker user
+      on the same host, and record the kernel version. Where the kernel lacks per-mount
+      `hidepid`, record that the setting had no effect.
+- [ ] 6.9 Before 1.7 is built, on the Claude Code version the server runs: `claude -p` with
+      `--output-format stream-json --verbose` and no prompt argument reads its prompt from
+      stdin, and `--system-prompt-file <file>` sets the system prompt, as `claude --help`
+      lists it. If either fails, the means of keeping prompts out of the arguments goes back to
+      Adam; the rule stands.
 
 ## 7. An automated end-to-end test
 
@@ -360,6 +390,19 @@ file in the service user's home. Each holds a random string and nothing else. Ne
       # separate user for the worker".
       ```
 
+      Add these lines, with this comment (may be reworded; the numbers come from 0.9):
+
+      ```
+      # A process sees only its own user's processes, so no worker can read another's command
+      # line or environment through /proc.
+      ProtectProc=invisible
+      # 78: the instance refused to start, such as on a missing worker user; fix what the
+      # journal names, then start it. 79: its rank was removed from the roster. Either way,
+      # restarting would only be refused again.
+      RestartPreventExitStatus=78 79
+      SuccessExitStatus=79
+      ```
+
 - [ ] 8.3 #192's (`deploy-image`) container image and compose file, after #192 merges as it is
       (proposal, decision 20). This is how a Mac runs `serve`.
       - `Dockerfile`, `runtime` stage: install `sudo` from Debian at a pinned version, as the
@@ -374,7 +417,12 @@ file in the service user's home. Each holds a random string and nothing else. Ne
         `igor-worker-<role>-1`. The trees volume mounts at `/var/lib/igor/trees` instead of
         `/tmp` (the proposal's decision 19). The header comment says the image holds `sudo`,
         the worker users and their sudoers lines. A mounted key is owned by the uid the image
-        runs Igor as, with mode `0600`, as #192's comment already says.
+        runs Igor as, with mode `0600`, as #192's comment already says. `ProtectProc=` is a
+        unit setting, and the container has no systemd unit, so it does not apply there. 1.7
+        leaves no prompt in any argument list, so neither the worker nor anything else in the
+        container can read the Igor's or the worker's prompt from `/proc`. Add `node` to each
+        worker user's group, which the unit's `SupplementaryGroups=` does on a host; without it
+        start check 3 refuses every start.
       - Run 5.1's start check in the container, on Linux and under Docker Desktop on macOS, and
         record the result in `design.md`.
 - [ ] 8.4 `docs/deployment.md`: add this section after *Before it can run*, and make it the
@@ -427,6 +475,10 @@ file in the service user's home. Each holds a random string and nothing else. Ne
       Then restart the Igors. Each one checks the arrangement as it starts and refuses, naming
       the path, if the worker can read a credential or write the lore checkout. To see it for
       yourself, `sudo -u igor-worker-maintenance-1 cat /etc/igor/env` must say `Permission denied`.
+
+      **Neither user logs in to Claude.** Igor never uses a stored login: every seat has a
+      token, and each worker gets its seat's token in its environment. [Lending a
+      seat to an Igor](seats.md) shows how to create a token.
 
       **On your own machine**, `igor run` runs the worker as you and says so when it starts.
       `igor serve` never does: it needs its worker user.

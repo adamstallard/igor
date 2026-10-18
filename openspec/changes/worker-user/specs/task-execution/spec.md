@@ -174,7 +174,9 @@ directory, which the worker user cannot write. The Igor makes #153's trailers ag
 (*#153's trailers are created once, by the Igor, against the tree it staged*).
 Checks that run the role's commands as the worker user (#189) SHALL run after that record, and
 the Igor SHALL publish the recorded tree: anything a check writes SHALL be discarded. It SHALL
-find the changed paths against its own index, never an index the worker could write. It SHALL NOT follow a symbolic
+find the changed paths against its own index, never an index the worker could write, under
+`igor serve`; under `igor run` there is no worker user, and the Igor's index is the one the
+worker writes. It SHALL NOT follow a symbolic
 link, and SHALL NOT read a path through a directory that is a link. A changed path that lies
 beneath a link SHALL stop the run before anything is published, naming the path. A changed file
 the Igor cannot read SHALL stop the run the same way, rather than be left out of the artifact.
@@ -357,7 +359,9 @@ creates that only the Igor can read; and that it cannot write the lore checkout 
 installation. It SHALL try once, as the worker user, to create and delete a file in
 `skills_dir` (#174); the worker never needs to write there. It SHALL check that
 `fs.protected_hardlinks` is `1`. Any failure, a successful create among them, SHALL refuse the
-start, naming what failed and the path or setting involved.
+start, naming what failed and the path or setting involved, and the process SHALL then exit with
+status 78, as #82's (`stopped-scope-visible`) *A process that refuses to start exits with status
+78* requires.
 
 A worker user that can read the key protects nothing, and nothing else would notice. The process
 that holds the credentials is the only one that knows where they are, so it checks.
@@ -413,6 +417,55 @@ that holds the credentials is the only one that knows where they are, so it chec
 
 - **WHEN** the Igor cannot start a process as the worker user without a password
 - **THEN** the Igor refuses to start, naming the sudoers file to install
+
+#### Scenario: A refused start exits with status 78
+
+- **WHEN** any check above refuses the start
+- **THEN** the process exits with status 78 before its first cycle
+
+### Requirement: A prompt reaches claude on stdin, never in its arguments
+
+Every `claude -p` the Igor starts SHALL take its prompt on stdin: the worker, every later model
+step in the worker's tree, triage, #143's seat probe (a minimal call that reads a seat no run
+has read), the usage read and #174's startup check. No
+prompt and no system prompt SHALL appear in any process's arguments. A system prompt SHALL reach
+`claude` through a file named by `--system-prompt-file`. The Igor writes that file where the
+user the process runs as can read it and no worker user can write it, and removes it once that
+process exits. Under `igor serve`, the systemd unit SHALL set `ProtectProc=invisible`.
+
+On Linux every user can read every process's `/proc/<pid>/cmdline`, and `ps` prints it. A prompt
+holds the item's text and the lore its scope allows, which can be private source content, so a
+prompt in the arguments lets a worker of one instance read what another instance's worker or
+triage was given. `ProtectProc=invisible` hides from a process every process of another user in
+the unit; stdin keeps the prompt out of the arguments where that setting does not hold, such as
+on a kernel without per-mount `hidepid`, and out of `sudo`'s log.
+
+#### Scenario: The worker's prompt is not on its command line
+
+- **WHEN** the Igor starts a worker
+- **THEN** the item's prompt reaches `claude` on stdin
+- **AND** neither it nor the system prompt is in any process's arguments
+
+#### Scenario: Triage's prompt is not on its command line
+
+- **WHEN** the Igor starts a triage call
+- **THEN** the prompt about the item being triaged reaches `claude` on stdin
+- **AND** the system prompt reaches it through `--system-prompt-file`
+
+#### Scenario: Every other call takes its prompt on stdin
+
+- **WHEN** the Igor starts #143's seat probe, the usage read or #174's startup check
+- **THEN** its prompt reaches `claude` on stdin, and no argument holds it
+
+#### Scenario: The system prompt file is gone after the call
+
+- **WHEN** a `claude -p` the Igor started exits
+- **THEN** the file its system prompt was read from no longer exists
+
+#### Scenario: A worker cannot see another user's processes
+
+- **WHEN** a worker running as its worker user under the unit lists `/proc`
+- **THEN** it sees no process of the Igor's user or of another worker user
 
 ### Requirement: serve always has a worker user, and run never does
 

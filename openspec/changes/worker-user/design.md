@@ -26,20 +26,26 @@ The Igor spawns:
 
 ```
 sudo --non-interactive --user=<worker> --preserve-env=<names> -- \
-  /usr/bin/env PATH=<path> <absolute path of claude> -p … (the worker's flags, unchanged)
+  /usr/bin/env PATH=<path> <absolute path of claude> -p --system-prompt-file <file> … (the worker's other flags) < prompt
 ```
 
 - **`--preserve-env=<names>`** carries exactly the variables `workerEnv` builds, minus `PATH`
   and `HOME`, and the seat token is one of them. A token in the argument list would be readable
   by every user on the host through `/proc/<pid>/cmdline` and `ps`.
+- **The prompt goes on stdin, and the system prompt in a file** (Adam, 2026-10-18), for the
+  same reason: a prompt holds the item's text and the lore its scope allows. Today both are
+  arguments. The file is one the Igor writes where the worker user can read it and cannot write
+  it, and removes once the process exits. Every other `claude -p` the Igor starts, triage and
+  the usage read included, does the same (*Prompts go on stdin*, below).
 - **`PATH` goes through `env`**, because Debian and Ubuntu set `secure_path` in sudoers, and
   that replaces a preserved `PATH`. `PATH` is not a secret.
 - **`HOME` is the worker's own**, which sudo sets for the target user, and it lasts across
   runs. Toolchain caches, `~/.claude` and `~/.gitconfig` are the worker's, not the Igor's.
   Before each `claude -p`, `~/.claude` and `~/.claude.json` are reset from a template built into
   Igor, so nothing a worker planted there loads in a later call, and the rest of the home stays.
-  The reset keeps `~/.claude/.credentials.json`, the stored Claude login, so an organization with
-  no seats still runs. The Igor does the reset as the worker user, through this same `sudo`.
+  The reset keeps nothing it replaces, a stored login in `~/.claude/.credentials.json`
+  included (Adam, 2026-10-18): every seat has a token, and Igor never uses a stored login, so
+  the seat's token in the environment is the worker's only credential. The Igor does the reset as the worker user, through this same `sudo`.
   #174 (`pinned-skills`, an open change) specifies the reset and its template in its decision 9,
   and the kill of every process the worker user owns before every reset in its decision 13
   (Adam, 2026-10-17). Whichever of this change and #174 is built second makes this `sudo`
@@ -361,6 +367,7 @@ Before the first cycle, `serve` checks in this order, stopping at the first fail
    which ones succeed. Every path that succeeds is a refusal, and the refusal names it.
    - not readable: `/proc/<igor pid>/environ` (Linux); the file
      `GITHUB_APP_PRIVATE_KEY_FILE` names; the path `seatKey` names; each seat's `token_file`;
+     `/etc/igor/<role>.env`, once #179 has the Igor read it itself;
      the Igor user's home, which must also not be traversable; and a canary the check
      writes, mode `0600`, in a fresh `0700` directory of the Igor's
    - not writable: the lore checkout; the directory holding the running `igor`; the `node`
@@ -376,10 +383,55 @@ The canary is what makes the check prove something on a host where every real cr
 the environment and no key file exists. It fails if the worker user is privileged in a way
 the uid check misses, such as through `CAP_DAC_READ_SEARCH`.
 
-The env files themselves are not probed: systemd reads them, so the Igor never learns their
-paths. The `/proc` probe covers what they contain, an inline `GITHUB_APP_PRIVATE_KEY`
-included, and the deployment guide puts them in a directory the worker cannot enter. On macOS,
-which has no `/proc`, nothing probes an inline key.
+`/etc/igor/env` is not probed: systemd reads it, so the Igor never learns its path. Under #179
+the Igor reads `/etc/igor/<role>.env` itself, so its values are not in the process environment;
+check 5 probes that file as not readable once #179 has landed (task 0.8). The `/proc` probe
+covers what `/etc/igor/env` holds, and the deployment guide puts both files in a directory the
+worker cannot enter. On macOS, which has no `/proc`, nothing probes `/etc/igor/env`.
+
+Under the unit's `ProtectProc=invisible` (*The unit*, below) the worker user cannot see the
+Igor's `/proc/<pid>` at all, so the `environ` probe in check 5 finds nothing to read and passes.
+It passes because the worker cannot read the Igor's environment, which is the property it
+checks. On a kernel where the setting has no effect, `environ` is readable by its owner alone,
+so the probe passes for the same reason, and fails if the worker can read it some other way.
+
+### Every seat has a token, and no call uses a stored login (Adam, 2026-10-18)
+
+Every `claude -p` the Igor starts authenticates with the token of the seat it spends, from its
+environment, under `serve` and `run` alike. The worker and the model steps after it run as the
+worker user with the seat's token; triage runs as the Igor with the token of the seat the budget
+gate chose (#171's *Triage's model call is made only where a seat can pay for it*); a usage read
+and a seat probe use the token of the seat they read. #171 refuses a seat file that names no
+token. A seat with no token would run on whatever login the calling user holds, the service
+user's for a usage read and the worker user's for the worker, so it could be read under one
+login and spent under another; with no such seat, that cannot happen. Neither the service user
+nor any worker user is logged in to Claude, and #174's reset deletes a login stored in the
+worker's home, so there is no stored login for the worker user to come by. How a person creates
+a token is in #171's guides (its task 9.5).
+
+### Prompts go on stdin (Adam, 2026-10-18)
+
+On Linux every user can read every process's `/proc/<pid>/cmdline`. Today `claudeWorker`
+(`src/execute.ts`) and `runClaude` (`src/triage.ts`) pass the prompt and `--system-prompt` as
+arguments, so a worker of one instance could read another worker's item and lore, or triage's,
+through `/proc` or `ps`. Two things close that:
+
+- **stdin and a file.** Every `claude -p` takes its prompt on stdin. The system prompt cannot
+  share stdin, so it goes in a file named by `--system-prompt-file`, which the Igor writes before
+  the spawn and removes after the process exits. For a process running as the worker user, the
+  file sits in a directory the Igor owns, beside the tree, mode `2750` with the worker's group,
+  so the worker can read it and not write it; never in the tree or the outbox, which the worker
+  writes. For a process running as the Igor, such as triage, the file sits in a directory only
+  the Igor can read.
+  `claude --help` lists `--system-prompt-file`; that it works with `-p` and stream-json output,
+  and that `-p` reads the prompt from stdin then, is task 6.9.
+- **`ProtectProc=invisible`** in the unit. systemd mounts the unit's `/proc` with
+  `hidepid=invisible`, so a process sees only its own user's processes. That needs per-mount
+  `hidepid`, in Linux 5.8 and later; on an older kernel the setting has no effect, and the
+  prompts are still out of the arguments. Task 6.8 measures it under the shipped unit.
+
+Moving the prompt to stdin and the system prompt to a file also keeps both out of `sudo`'s log,
+which records each command line (task 6.5).
 
 ### `igor doctor` gets no check (Adam, 2026-10-11)
 
@@ -425,6 +477,14 @@ compose file runs, and their sudoers lines, and moves the compose file's trees v
   `ReadWritePaths=` must keep that directory writable too.
 - `PATH` puts `/usr/local/bin` first, where `claude` now lives, because the worker cannot enter
   the service user's home and so cannot run `~igor/.local/bin/claude`.
+- `ProtectProc=invisible` hides every other user's processes from each process in the unit
+  (*Prompts go on stdin*, above).
+- `RestartPreventExitStatus=78 79` and `SuccessExitStatus=79` (Adam, 2026-10-18). A refused
+  start exits 78 (#82's *A process that refuses to start exits with status 78*), and a rank
+  removed from the roster exits 79 (#179's *A rank removed from the roster exits with status
+  79*). With `Restart=always`, either would otherwise restart every 30 seconds and be refused
+  again. systemd now leaves a refused instance failed and a retired one inactive, with Igor's
+  reason in the journal.
 
 ## Risks / Trade-offs
 
@@ -438,9 +498,9 @@ compose file runs, and their sudoers lines, and moves the compose file's trees v
   as the worker, so it can reach nothing the worker couldn't, and the link checks hold against
   it. Before every reset of the worker's home, Igor kills every process the worker user owns
   (#174's decision 13), so it cannot outlive the model step it escaped from.
-- **`sudo` logs each command line** to the auth log, and the worker's command line holds the
-  prompt. Task 6.5 measures what lands there. If it is the whole prompt, the template turns off
-  sudo's logging for the Igor's user.
+- **`sudo` logs each command line** to the auth log. With the prompt on stdin and the system
+  prompt in a file, the command line holds no prompt text. Task 6.5 confirms what lands there;
+  if any prompt text does, `deploy/sudoers.example` turns off sudo's logging for the Igor's user.
 
 ## Measurements owed
 
@@ -458,3 +518,7 @@ real secret. Results go back into this document, including where they contradict
 - Task 6.6: whether two workers running as one worker user, under two Igor units, can read each
   other's `/proc/<pid>/environ` or enter each other's tree through `/proc/<pid>/cwd`. Its result
   informs the docs; nothing waits for it.
+- Task 6.8: under the shipped unit, a worker user sees no process of the Igor's user or of
+  another worker user in `/proc`, and the kernel supports per-mount `hidepid`.
+- Task 6.9: `claude -p` with stream-json output reads its prompt from stdin, and takes its
+  system prompt from `--system-prompt-file`.
