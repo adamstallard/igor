@@ -29,14 +29,54 @@ change specified that until 2026-10-18. Three facts each count against it:
   exit assumed. Reading taken from the unit files and documented defaults, not by running them.
 
 A person who fixes a setting the process rereads while running is served faster by a process that
-stayed up: its next probe, or its next read of that setting, picks the fix up. Two kinds of fix are
-not reread. A fix in the lore repository reaches a running process only once #176, the issue that
-specifies Igor pulling its lore checkout, is built. A fix in the unit's environment file is read
-only at start, so it always needs a restart. Which cures need a restart is open in the proposal.
+stayed up: its next probe, or its next read of that setting, picks the fix up. A read-cleared
+condition, the kind #171 defines, clears on that read alone. Two kinds of fix are not reread, and
+take effect at the next restart (Adam, 2026-10-18). A fix in the unit's environment file is read
+only at start, so the operator who edited the file restarts the unit. A fix in the lore repository
+reaches a running process only once Igor pulls its lore checkout, which #176 is to specify; until
+that pulling is built, a lore fix too waits for a restart. This change goes ahead before #176. The
+requirement's clause saying a lore fix waits for a restart until then is to be removed by the
+change that builds pulling, and #176's body says so.
 
-The startup refusals that remain meet the same unit file: a process that keeps refusing to start is
-restarted every 30 seconds, and nothing alerts anyone. This change does not address that, and the
-proposal lists it as open.
+## A refusal exits with status 78, and the unit stops restarting it (Adam, 2026-10-18)
+
+A refusal exits with status 78, and the unit lists 78 in `RestartPreventExitStatus=`, which
+systemd honours whatever `Restart=` says. Without the two, a process that keeps refusing to start
+meets `Restart=always` and `RestartSec=30`, as the bullets above describe: it is restarted every
+30 seconds, never reaches `failed`, and nothing shows the refusal but the journal. With them, the unit stops, shows
+`failed` in `systemctl status`, and keeps Igor's reason in its journal. Any monitor that watches for
+failed units then sees it, with nothing Igor-specific to configure.
+
+78 is `EX_CONFIG` in `sysexits.h`, a configuration error, which every refusal here is. This change
+defines the number because it is the change that decides when `igor serve` exits: never on a
+condition, and only for good on a refusal. A refusal is any check a requirement says refuses a
+start, whenever it runs: config validation and #175's checks run before the first cycle, and #174's
+check that the pinned skills load runs before the first model call, which may come later. An error
+of the same kind raised while the process runs, by anything but such a check, is not a refusal.
+
+Under #179 (`concurrent-instances`) a role can run as several processes, each with a number it
+keeps across restarts, its *rank*, and the role's *roster* in `igor.config.yaml` lists the ranks
+it runs. 78 also ends a process that another requirement stops for good on a fault a
+person must look at: under #179, a rank that finds another process has taken its rank. #175 and
+#179 cite this requirement for the number. #179 defines a second status, 79, for a rank removed
+from the roster. The unit lists 79 in `RestartPreventExitStatus=` beside 78, and in
+`SuccessExitStatus=`, so systemd counts 79 as a clean exit and shows the unit inactive, not
+failed.
+
+**Not measured:** that `RestartPreventExitStatus=78` stops `Restart=always` from restarting and
+leaves the unit `failed`. This is read from `systemd.service(5)`, not run; task 1.6 measures it on a
+real unit.
+
+**Out of scope: the compose file** (`deploy/docker-compose.yml`). Its `restart: unless-stopped`
+restarts whatever the exit status, and compose has no setting that skips one status, so a refusal
+under compose still restarts in a loop. The proposal lists this for Adam.
+
+A crash keeps whatever status Node gives it, never 78, so the unit still restarts it. Node's own
+exit codes run from 1 to 14, and a signal gives 128 plus its number, so none collides with 78.
+
+**Rejected: a requirement that the shipped supervisors escalate a process that keeps refusing to
+start,** as this change once required for the exit on a condition. A failed unit is already what
+systemd's tools and monitors report.
 
 ## Since review: one role per Igor, and no pools (2026-10-04)
 
@@ -56,7 +96,7 @@ Two decisions by Adam change the reasoning here, and no requirement or scenario:
 ## Since review: "no capacity figure" stops being a gate state (2026-09-28)
 
 Added 2026-09-28. It records a decision made after review and the one wording change Adam approved
-because of it, applied the same day to the spec and to task 4.2. No scenario changed.
+because of it, applied the same day to the spec and to task 3.2. No scenario changed.
 
 Adam decided on 2026-09-28 that a seat's reserve is a line that moves toward the reset, checked
 against the seat's latest unreset reading of each window. It replaces the dollar bound
@@ -73,15 +113,16 @@ built.
   from, among others, "a seat with no headroom left or no capacity figure at all". After #143's
   gate two, "no capacity figure" no longer holds a seat. The state that does is "no unreset
   reading, awaiting a probe". **Restated with Adam's approval on 2026-09-28:** the list now ends
-  "…from a seat with no headroom left or with no unreset reading of its windows", and task 4.2
+  "…from a seat with no headroom left or with no unreset reading of its windows", and task 3.2
   says the same.
 - **Headroom becomes per role.** Because the line uses the larger of the seat's and the role's
   reserve, one seat can have headroom for one role and none for another at the same moment. Task
-  4.2's "a stopped seat with headroom shows both", and the scenario *Stopped is not out of
-  headroom* ("a stopped seat still has headroom in both windows"), no longer say whose headroom.
-  `igor budget` reports per seat. Whether it shows headroom against the seat's own reserve or per
-  role is for #143, whose gate two rewrites that report. This change needs only to say which,
-  once #143 has decided.
+  3.2's "a stopped seat with headroom shows both", and the scenario *Stopped is not out of
+  headroom* ("a stopped seat still has headroom in both windows"), did not say whose headroom.
+  `igor budget` reports per seat. #143 settles it, and both now say so: the report shows each window's reading
+  against the seat's reserve line, per role where a role reserves more, and a stopped seat's
+  headroom is shown against that same reserve line. #143's state of holding back at the reserve
+  line is one more state the stopped seat's report line is told apart from.
 - No code on this branch; nothing here depends on the dollar bound.
 
 ## Why this is its own change and not an extension of `condition-backoff`

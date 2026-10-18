@@ -13,11 +13,22 @@
    is picked up at its next probe or read. This supersedes Adam's
    2026-10-17 decision on the exit this change then specified, which exempted only a seat Igor
    could not decrypt from it. Decision 4, also from 2026-10-17, is about reporting and stands.
-2. **Refusing to start on a bad setup stays.** Every check a process makes before its first cycle
-   still stops it, such as a configuration that fails validation, and, under
+2. **Refusing to start on a bad setup stays, and a refusal exits with status 78** (Adam,
+   2026-10-18). A refusal is any check a requirement says refuses a start, whenever it runs: a
+   configuration that fails validation; under
    [#175](https://github.com/adamstallard/igor/pull/175), a missing worker user or
-   `fs.protected_hardlinks` not set to `1`. These are checks on the setup made once at start, not
-   conditions.
+   `fs.protected_hardlinks` not set to `1`; and #174's check, before the first model call, that
+   the pinned skills load. These are checks on the setup, not conditions. A refusal logs its
+   reason and exits with status 78, and the shipped systemd unit lists 78 in
+   `RestartPreventExitStatus=`. systemd then stops restarting the unit and shows it failed, with
+   Igor's reason in the journal. 78 is `EX_CONFIG` in `sysexits.h`; this change defines the
+   number, and other changes cite it. 78 also ends a process that another requirement stops for
+   good on a fault a person must look at. Under
+   [#179](https://github.com/adamstallard/igor/pull/179) a role can run as several processes, each
+   with a number it keeps across restarts, its *rank*, and a rank that finds another process has
+   taken its rank exits 78. *Rejected:* a requirement that the shipped supervisors escalate a
+   process that keeps refusing to start. A failed unit is what `systemctl status` and every
+   systemd monitor already show.
 3. **A seat's stop is reported where the seat is reported:** a line of the seat's own in `igor
    budget`, told apart from a credential that could not be read, one the provider refused, and no
    headroom.
@@ -28,18 +39,30 @@
 5. **A role's stop is not in the budget report.** Every open condition is listed by a command that
    takes no argument and names no role; `design.md` argues for naming it `igor conditions`.
 
+6. **A fix that is not reread takes effect at the next restart** (Adam, 2026-10-18). A fix in the
+   unit's environment file, such as the App's key, is read only at start, so it always needs a
+   restart, made by the operator who edited the file. A fix in the lore repository also takes
+   effect at the next restart, until Igor pulling its lore checkout, which
+   [#176](https://github.com/adamstallard/igor/issues/176) is to specify, is built. The change that
+   builds pulling removes that clause from this change's requirement, and #176's body says so.
+   This change goes ahead before #176. *Rejected:* holding this change until #176 is specified.
+7. **A read-cleared condition clears on a passing read** (Adam, 2026-10-18). Besides a probe and,
+   for a refused App credential, a token minted again, a condition clears by a later read that
+   passes, for the kind
+   [#171](https://github.com/adamstallard/igor/pull/171) defines once in its requirement *A
+   read-cleared condition opens on a failing read and clears on a passing one*. A seat file Igor
+   could not decrypt is one; a configuration a running process reread and refused
+   ([#179](https://github.com/adamstallard/igor/pull/179)) is another.
+
 **Still open:**
 
-- Which cures a running process can pick up. A setting kept in the lore repository reaches it
-  only once [#176](https://github.com/adamstallard/igor/issues/176) specifies pulling the lore
-  checkout, and one in the unit's environment file, such as the App's key, is read only at
-  start. After a lore fix, until #176 is built, and after any environment-file fix, a person
-  restarts the process; its probe would otherwise meet the condition again on the old setting.
-
-- Whether the supervision recipes this repository ships should escalate a process that keeps
-  refusing to start, and restart it no faster than the poll interval. This change required both
-  only so that an exit on a condition reached someone. With no such exit, the requirement is
-  dropped, and nothing specifies how the startup refusals in decision 2 reach anyone.
+- **The listing's command name.** `design.md` proposes `igor conditions`; review may prefer
+  another. The requirement fixes the behaviour, not the name.
+- **One measurement:** that `RestartPreventExitStatus=78` stops a `Restart=always` unit and
+  leaves it `failed` (task 1.6). Read from systemd's documentation, not run.
+- **The compose file, for Adam.** `deploy/docker-compose.yml` restarts on any exit status, and
+  compose cannot skip one, so under compose a refusal still restarts in a loop. Decision 2 covers
+  the systemd unit only.
 
 ## Why
 
@@ -97,9 +120,13 @@ either.
 
 ### Modified Capabilities
 
-- `stuck-conditions`: `igor serve` keeps running whatever conditions are open, and every open
-  condition is readable without naming a role. (Added to the capability `condition-backoff`
-  creates; this change alters no requirement that change states.)
+Both are `ADDED` requirements. `stuck-conditions` has no base spec until `condition-backoff`
+archives, which is why this change archives after it; this change alters none of that change's
+requirements.
+
+- `stuck-conditions`: `igor serve` keeps running whatever conditions are open, a process that
+  refuses to start exits with status 78, and every open condition is readable without naming a
+  role.
 - `seat-budget`: a seat a condition has stopped reads as stopped, distinctly from a seat whose
   credential could not be read, one whose credential the provider refused, and one with no
   headroom.
@@ -107,9 +134,11 @@ either.
 ## Impact
 
 - A stopped Igor stays up, and recovers by itself once a cure it rereads while running lands;
-  other cures need a restart, as *Still open* says. A person learns of the stop from the cycle
+  other cures need a restart, as decision 6 says. A process that refuses to start stays down,
+  and its unit reads as failed. A person learns of the stop from the cycle
   report, `igor budget` or the conditions listing.
 - A stop requires somebody to look. Nothing here pushes, deliberately; the hook that would is
   deferred above with the evidence that would bring it back.
-- Implementation lands in `src/serve.ts`, `src/cli.ts` and `src/budget.ts`. It is sequenced behind
+- Implementation lands in `src/serve.ts`, `src/cli.ts`, `src/budget.ts` and `deploy/igor.service`,
+  and `docs/deployment.md` says how to read a stop and a failed unit. It is sequenced behind
   `condition-backoff`, which produces the conditions every requirement here reads.
