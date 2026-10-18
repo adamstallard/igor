@@ -25,8 +25,9 @@
       the claim status is read; where `signed-publishing` (#153) has shipped, after its staging
       and signing, so that anything a check writes stays unstaged and is not published. Run each
       line split on spaces, as an argument list with no shell,
-      with the tree as its working directory, through the same start the worker uses (`sudo` as
-      the worker user, or directly in same-user mode), detached in its own process group.
+      with the tree as its working directory, through the code that starts the worker (under
+      `serve`, `sudo` as the worker user; under `run`, directly as the Igor's own user),
+      detached in its own process group.
 - [ ] 2.2 Give each check the worker's environment without `CLAUDE_CODE_OAUTH_TOKEN` and without
       any variable `AMBIENT_TOKENS` names.
 - [ ] 2.3 Share one deadline of `check_minutes` across the run's checks. At the deadline, kill

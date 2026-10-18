@@ -16,7 +16,7 @@ the environment the worker was given, without the seat token.
 
 #### Scenario: A check runs as the worker user
 
-- **WHEN** a worker user is configured and a check runs a test the worker wrote
+- **WHEN** under `igor serve` a check runs a test the worker wrote
 - **THEN** the test runs as the worker user
 - **AND** its environment holds no seat token and no credential of the Igor's
 

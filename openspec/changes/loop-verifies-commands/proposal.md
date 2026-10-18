@@ -10,10 +10,15 @@
    so `npm test && curl …` cannot pass as a line `npm test:*` permits. Rejected: narrowing like
    `commands`, which would let a role drop the org's tests. Also rejected: running each line
    through `sh -c`, under which the permitted-by-`commands` rule means nothing.
-3. **Checks run the way the worker runs:** as the separate Unix user that the change
-   `worker-user` (#175) gives the worker, in their own process group, with the worker's
-   environment minus its seat token. This change is built after `worker-user` merges. Rejected:
-   running checks as the Igor, which hands repository code the App's key and every seat token.
+3. **Checks run the way the worker runs:** in their own process group, with the worker's
+   environment minus its seat token, and as the worker's user. #175 (`worker-user`) gives
+   `igor serve` a separate worker user always and `igor run` never, so under `serve` checks run
+   as that worker user, and under `run` as the Igor's own user. Running as the Igor's own user
+   lets repository code read the Igor's credentials. #175 accepts that for the worker under
+   `igor run`, the one-shot command for development, and a check there can read nothing the
+   worker cannot already read. This change is built after `worker-user` merges. Rejected:
+   running checks as the Igor under `serve`, which hands repository code the Igor's GitHub App
+   key and the tokens of every seat the Igor holds.
    Also rejected: building this first, with checks running as the Igor's user. `worker-user`
    would then have two places that start repository code to move to the worker user, and its
    spec names only the worker.
@@ -94,8 +99,10 @@ None.
 
 ## Impact
 
-- **Depends on `worker-user` (#175).** The checks use its start, kill and removal as the worker
-  user, and inherit its same-user mode where no worker user is configured.
+- **Depends on `worker-user` (#175).** Under `serve`, which always has a worker user, the checks
+  use #175's code for starting a process as the worker user, killing that process, and
+  removing the files the worker user wrote. Under `run`, which never does, they run as
+  the Igor's own user, as the worker does.
 - **Built after `concurrent-instances` (#179).** That change removes the absolute ceiling and the
   age-based tree sweep, and sweeps by rank instead, so a tree held through the checks needs no
   change to the sweep.
