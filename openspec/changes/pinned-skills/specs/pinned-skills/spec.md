@@ -108,7 +108,7 @@ goes back to Adam, and the rule that none loads still holds.
 ### Requirement: Every call in the worker's home starts from Igor's template
 
 The worker's home SHALL last across runs. With a worker user (#175), it SHALL be that user's own
-home. With none, under #175's same-user mode, Igor SHALL keep one home per role under its state
+home. With none, under #175's same-user mode (`igor run`), Igor SHALL keep one home per role under its state
 directory, such as `~/.local/state/igor/home/<role>`, and set the worker's `HOME` to it.
 
 Before every `claude -p` Igor starts in that home, Igor SHALL replace `~/.claude` and
@@ -126,10 +126,10 @@ that user cannot write it; in same-user mode nothing protects it, which is open 
 Nothing else in the home SHALL be reset: `~/.gitconfig`, and the files a repository's tests
 cache in the home, persist across runs.
 
-With a worker user, at the end of each task and before the next reset, Igor SHALL kill every
-process that user owns, by user or by the user's systemd slice. In same-user mode nothing ends a
-process that escaped the run's process group, so such a process can rewrite the home after a
-reset.
+With a worker user, before every reset, Igor SHALL kill every process that user owns, either by
+user or by the user's systemd slice; either way meets this requirement. In same-user mode nothing
+ends a process that escaped the run's process group, and that is a stated limit of same-user
+mode.
 
 #### Scenario: A later call does not load what an earlier one wrote
 
@@ -178,8 +178,10 @@ reset.
 #### Scenario: A process that escaped its group is killed before the next reset
 
 - **WHEN** a worker running as a worker user starts a process that calls `setsid()` and keeps
-  running after the task ends
-- **THEN** Igor kills it before the next reset in that user's home
+  running after the worker exits
+- **THEN** Igor kills it before the next reset in that user's home: the one before #153's next
+  model step in the same task, or, where the task has none, the one before the next task's
+  worker
 
 ### Requirement: Igor confirms its skills load before its first model call
 

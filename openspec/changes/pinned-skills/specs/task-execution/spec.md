@@ -22,11 +22,13 @@ template* defines.
 
 - **WHEN** a task begins in a working tree
 - **THEN** nothing a worker wrote in an earlier task reaches it, except what lies outside the
-  reset of the worker's home: `~/.gitconfig`, files a repository's tests cache in the home, any
-  other file left in the home outside `~/.claude` and `~/.claude.json`,
-  `~/.claude/.credentials.json`, files left outside the home wherever the worker's user can
-  write, and what a process that escaped the run's process group writes: until the end of the
-  task with a worker user, and at any time in same-user mode, where nothing kills it
+  reset of the worker's home
+- **AND** that is `~/.gitconfig`, files a repository's tests cache in the home, any other file
+  left in the home outside `~/.claude` and `~/.claude.json`, `~/.claude/.credentials.json`, and
+  files left outside the home wherever the worker's user can write
+- **AND** it includes what a process that escaped the run's process group writes before it is
+  killed, which with a worker user is at the next reset of the home, and in same-user mode is
+  never
 
 #### Scenario: The tree is released on failure as well as success
 

@@ -199,9 +199,9 @@ Which home:
 
 - **With a worker user (#175):** that user's own home, `/var/lib/igor-worker-<role>-<rank>`,
   where `<rank>` numbers the instances of one role (#179).
-- **Without one, in #175's same-user mode,** where the worker runs as the user Igor runs as: one
-  home per role under Igor's state directory, such as `~/.local/state/igor/home/<role>`, which
-  Igor sets as the worker's `HOME`. The worker then never loads the `~/.claude` of the user Igor
+- **Without one:** one home per role under Igor's state directory, such as `~/.local/state/igor/home/<role>`, which
+  Igor sets as the worker's `HOME`. That is #175's same-user mode, `igor run`, where the worker
+  runs as the user Igor runs as. The worker then never loads the `~/.claude` of the user Igor
   runs as, whether that is the service user or a person running `igor run` on their own
   machine.
 
@@ -216,13 +216,20 @@ How the reset works:
 
 - **When:** before every `claude -p` Igor starts in the worker's home. Those calls are the
   worker and #153's later model steps (the prose pass and the bug hunt), which run in the same
-  home. #153's `prose start` runs after the reset, so nothing it writes is removed by it.
+  home. #153's session mark is the file `prose start` writes, which #153's prose steps check for
+  before they sign. `prose start` runs after the reset that precedes the worker's call, and the
+  mark sits under `~/.local/state`, outside what any later reset replaces.
 - **Who:** with a worker user, Igor resets as that user, through #175's `sudo` spawn, since only
   that user can remove what a worker wrote. In same-user mode Igor resets as itself.
 - **What it keeps:** `~/.claude/.credentials.json`, so an organization with no seats keeps
   working on a stored login. A seat's token reaches `claude` through its environment, which the
   reset does not touch. Task 0.3 is to confirm that a call made after the reset still
-  authenticates with the token.
+  authenticates with the token. The worker can read and overwrite the kept file, and Adam
+  accepted that (2026-10-17): with a worker user it is that user's own login, and the seat's
+  token is already in the worker's environment, so reading it gives nothing new. In same-user
+  mode it is the login of the user Igor runs as, whose files the worker can read anyway. Both
+  assume the file holds the home user's own login, which the open question on where the stored
+  login comes from may change.
 - **What persists:** everything else in the home: `~/.gitconfig`, where #175's start check sets
   `safe.directory` so the worker's git trusts a tree the service user owns, and the files a
   repository's tests cache in the home. A file a run leaves there, such as `~/.npmrc`, can steer
@@ -234,18 +241,27 @@ The same decision first gave each worker a fresh, empty home per run, then narro
 of `~/.claude` alone. An empty home lost `~/.gitconfig` and the caches a repository's tests need;
 `~/.claude` alone left `~/.claude.json` for a worker to write.
 
-**Decided by Adam, 2026-10-17: with a worker user, Igor kills every process that user owns at the
-end of each task, before the next reset**, by user or by the user's systemd slice. A process
-that leaves its process group with `setsid()` survives #175's kill of the group, and running as
-the worker user it could rewrite the home after a reset. The kill comes at the end of the task,
-so between the worker and #153's later steps in the same task such a process can still rewrite
-the home. Same-user mode has no such kill: there, an escaped process can rewrite the home after
-any reset.
+**Decided by Adam, 2026-10-17: with a worker user, Igor kills every process that user owns before
+every reset**, by user or by the user's systemd slice, as the implementer chooses. A process
+that leaves its process group
+with `setsid()` survives #175's kill of the group, and running as the worker user it could
+rewrite the home after a reset. Killing before every reset, rather than at the end of the task,
+also covers the gap between the worker and #153's later steps. Same-user mode has no such kill,
+since killing every process of the user Igor runs as would kill Igor and, under `igor run`, the
+person's own processes. There an escaped process can rewrite the home after any reset; that is a
+limit of same-user mode, which runs only on a developer's machine.
 
-Still open (proposal): several ranks of one role sharing a same-user home; where that home goes
-under the unit's `ProtectHome=read-only`; the template in same-user mode; how a stored login
-reaches a home that starts without one; a worker reading or rewriting the kept credentials file;
-and what the template's `settings.json` holds.
+**Same-user mode is `igor run` alone (Adam, 2026-10-17).** #175 dropped `igor serve --same-user`,
+so no served rank shares a per-role home. Nor does one run under the systemd unit
+(`deploy/igor.service`), whose `ProtectHome=read-only` would make a home under `~/.local/state`
+unwritable. Two `igor run`s of one role at once share the role's home, and one's reset can
+replace `~/.claude` under the other's call. That is not decided separately: running `igor run`
+while another instance of its role runs is the subject of #179's open question on `igor run`
+beside a serving rank.
+
+Still open (proposal): the template in same-user mode; how a stored login reaches a home that
+starts without one; whether a seat's token takes precedence over a kept login; and what the template's
+`settings.json` holds.
 
 ### The startup check is a call with no token and an empty `HOME`
 

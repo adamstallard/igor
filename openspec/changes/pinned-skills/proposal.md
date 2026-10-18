@@ -30,10 +30,10 @@
    the means goes back to Adam and the rule stands.
 9. **The worker runs in a home that lasts, and before each `claude -p` Igor resets its
    `~/.claude` and `~/.claude.json` from a built-in template** (Adam, 2026-10-17). With a worker
-   user (#175), the home is that user's own. With none, under #175's same-user mode, where the
-   worker runs as the user Igor runs as, Igor keeps
-   one home per role under its state directory, such as `~/.local/state/igor/home/<role>`, and
-   sets `HOME` to it. The template ships with Igor and is nearly empty: a `settings.json` holding
+   user (#175), the home is that user's own. With none, Igor keeps one home per role under its
+   state directory, such as `~/.local/state/igor/home/<role>`, and
+   sets `HOME` to it; that is #175's same-user mode, `igor run`, where the worker runs as the
+   user Igor runs as. The template ships with Igor and is nearly empty: a `settings.json` holding
    only what Igor needs, with no hooks and no MCP servers; no skills and no `CLAUDE.md`, since
    skills come from `--plugin-dir`; and a `~/.claude.json` with onboarding marked done and no MCP
    servers. The reset keeps `~/.claude/.credentials.json`, so an organization with no seats
@@ -58,36 +58,54 @@
     has a `skills_dir` key, so a file that names one is refused by the strict unknown-key check,
     with no message of its own. *Rejected:* a key in `igor.config.yaml`, which any pull request
     to the lore repository could point at another directory.
-13. **With a worker user, Igor kills every process that user owns at the end of each task,
-    before the next reset** (Adam, 2026-10-17). It kills them by user, or by the user's systemd
-    slice. A process that left its process group with `setsid()` survives #175's kill of the
-    group, and could otherwise rewrite the home after a reset. Same-user mode has no such guard.
+13. **With a worker user, Igor kills every process that user owns before every reset** (Adam,
+    2026-10-17), not only at the end of a task. Whether it kills them by user or by the user's
+    systemd slice is the implementer's choice (Adam, 2026-10-17). A process that left its
+    process group with `setsid()` survives #175's kill of the group, and could otherwise rewrite
+    the home after a reset, including between the worker and #153's later steps. Same-user mode
+    has no such guard: killing every process of the user Igor runs as would kill Igor itself
+    and, under `igor run`, the person's own processes. It is a limit of same-user mode, which
+    runs only on a developer's machine.
 14. **#153's later model steps, the prose pass and the bug hunt, run in the worker's home, with
-    the same reset before each `claude -p`** (Adam, 2026-10-17). #153's session mark, which
-    `prose start` writes and its prose steps check for, is written after the reset, so the reset
-    can never remove it.
+    the same reset before each `claude -p`** (Adam, 2026-10-17). #153's session mark is the
+    file `prose start` writes, which #153's prose steps check for before they sign. `prose
+    start` runs after the reset that precedes the worker's call, and the mark survives the
+    resets before #153's later steps because it sits under `~/.local/state`, outside `~/.claude`
+    and `~/.claude.json`.
 15. **The in-force scenario *No state carries between tasks* is reworded** (Adam, 2026-10-17).
     Nothing a worker writes reaches a later task, except what lies outside decision 9's reset,
     and the scenario names those exceptions. `specs/task-execution/spec.md` is a MODIFIED delta.
+16. **Same-user mode is `igor run` alone, so a home per role, rather than per rank, is enough**
+    (Adam, 2026-10-17). #175 dropped `igor serve --same-user`, so no served rank uses a
+    same-user home. Nor does one run under the systemd unit (`deploy/igor.service`), whose
+    `ProtectHome=read-only` would make a home under `~/.local/state` unwritable. Two `igor run`s
+    of one role at once would share that role's home, and one's reset could replace `~/.claude`
+    under the other's running call. That is not decided separately: running `igor run` while
+    another instance of its role runs is the subject of #179's open question on `igor run`
+    beside a serving rank.
+17. **The worker can read and overwrite the kept `~/.claude/.credentials.json`, and that is
+    accepted** (Adam, 2026-10-17). With a worker user, that file is the worker user's own login,
+    and the token of the seat a call spends is already in the worker's environment, so reading
+    the file gives the worker nothing it lacks. In same-user mode it is the login of the user
+    Igor runs as, whose files the worker can read anyway. This assumes the file holds the
+    worker user's own login, which the open question on where the stored login comes from may
+    change. `docs/deployment.md` says so (task 5.4).
 
 **Still open:**
 
 - **Where `/opt/igor/skills` does not exist**, as on a developer's machine running `igor run`,
   what Igor does is not decided: pass `--plugin-dir` anyway, pass none, or refuse to start. What
   `claude -p` does with a plugin directory that does not exist is unmeasured.
-- **Several instances (ranks) of one role in same-user mode.** Decision 9 keeps one home per role, and #179
-  (`concurrent-instances`) runs several instances of a role. One instance's reset could replace
-  `~/.claude` under another's running call. Whether the home is per instance is not decided.
-- **Same-user mode under the systemd unit.** The unit's `ProtectHome=read-only` makes the service
-  user's `~/.local/state` read-only, so `igor serve --same-user` there cannot write the per-role
-  home. Where that home goes under the unit is not decided.
 - **Where the stored login comes from.** The reset keeps `~/.claude/.credentials.json`, but a
   worker user's home, and a per-role home under the state directory, start without one. How the
-  host's stored login reaches either is not decided.
-- **A worker can read and rewrite the kept `~/.claude/.credentials.json`.** It can send a stored
-  login out, and the next call in that home runs on whatever login it planted. Whether that is
-  accepted is not decided. Nor is it measured whether a seat's token in the environment takes
-  precedence over a kept login (task 0.3).
+  host's stored login reaches either is not decided. Decision 17 assumes the kept file is the
+  worker user's own login. If the stored login reaches the home as a copy of the host's or an
+  operator's login, the worker could read a credential besides its seat's, and decision 17 goes
+  back to Adam.
+- **Whether a seat's token in the environment takes precedence over a kept login** is not
+  measured (task 0.3). Decision 17 accepts that a worker can rewrite the kept login. If the kept
+  login takes precedence, a worker that rewrites it could make a seat's later calls bill a login
+  it chose instead of the seat.
 - **The template in same-user mode.** There the worker runs as the user that owns Igor's
   installation, so it can write the template, and #175's start check does not run. Whether
   anything protects the template there is not decided.
@@ -124,8 +142,8 @@ replaces it.
 - **No call loads the worked repository's settings** (decision 8), **and every call in the
   worker's home starts from a reset `~/.claude` and `~/.claude.json`** (decision 9). No call
   loads what a worker wrote to the repository's `.claude`, and no later call loads what an
-  earlier one wrote to either. With a worker user, Igor kills every process that user owns at
-  the end of each task (decision 13).
+  earlier one wrote to either. With a worker user, Igor kills every process that user owns
+  before every reset (decision 13).
 - **Before its first model call, Igor confirms each installed skill loads.** It reads the skill
   list from the `system/init` event of a `claude -p` call with no token and an empty `HOME`.
   That call fails to authenticate, at no cost, after printing the event.

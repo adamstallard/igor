@@ -76,15 +76,16 @@
       worker user, the reset runs as that user, through #175's `sudo` spawn. Each of #153's model
       steps calls the same reset first, built in #153, as it calls 2.1's argument builder, and
       #153's `prose start` runs after that reset, not with one of its own
-- [ ] 2.6 With a worker user, at the end of each task and before the next reset, kill every
-      process that user owns, by user or by the user's systemd slice. Build it once #175's
+- [ ] 2.6 With a worker user, before every reset, kill every
+      process that user owns, by user or by the user's systemd slice, whichever the
+      implementer finds works (Adam left the means open). Build it once #175's
       `sudo` spawn exists
 - [ ] 2.7 Tests: a hook, a `CLAUDE.md` and a skill a worker wrote under `~/.claude`, and an MCP
       server it wrote into `~/.claude.json`, are gone before the next worker and before a model
       step after the worker; `~/.claude/.credentials.json`, `~/.gitconfig` and a file under
       `~/.cache` survive; with a worker user the reset runs as that user; in same-user mode
-      `HOME` is the role's home under the state directory; the end-of-task kill names the worker
-      user
+      `HOME` is the role's home under the state directory; the kill names the worker user and
+      runs before every reset, including the one before #153's first step after the worker
 
 ## 3. Startup check
 
@@ -150,4 +151,12 @@ Runs in `wire` (`src/wiring.ts`), before the first model call.
 
       ```
       Keep the service user and the worker user free of Claude Code hooks, a CLAUDE.md, and skills in ~/.claude/skills. Igor runs claude -p in normal mode, which loads all three into every call, so anything there reaches every worker and every model step.
+      ```
+- [ ] 5.4 `docs/deployment.md`, in the same section, this note (decision 17). It may be
+      reworded, but it must say that the worker can read and overwrite the file, and why that
+      is accepted. If the open question on where the stored login comes from puts anyone
+      else's login in that file, this note goes back to Adam before it ships:
+
+      ```
+      A worker can read and overwrite ~/.claude/.credentials.json in its home, which Igor keeps when it resets ~/.claude. With a worker user, that file is the worker user's own login, and the token of the seat a worker spends is already in its environment, so reading the file gives a worker nothing it does not already have. Under igor run, it is your own login, whose files the worker can read anyway.
       ```
