@@ -221,15 +221,15 @@ How the reset works:
   mark sits under `~/.local/state`, outside what any later reset replaces.
 - **Who:** with a worker user, Igor resets as that user, through #175's `sudo` spawn, since only
   that user can remove what a worker wrote. In same-user mode Igor resets as itself.
-- **What it keeps:** `~/.claude/.credentials.json`, so an organization with no seats keeps
-  working on a stored login. A seat's token reaches `claude` through its environment, which the
-  reset does not touch. Task 0.3 is to confirm that a call made after the reset still
-  authenticates with the token. The worker can read and overwrite the kept file, and Adam
-  accepted that (2026-10-17): with a worker user it is that user's own login, and the seat's
-  token is already in the worker's environment, so reading it gives nothing new. In same-user
-  mode it is the login of the user Igor runs as, whose files the worker can read anyway. Both
-  assume the file holds the home user's own login, which the open question on where the stored
-  login comes from may change.
+- **What it keeps: nothing it replaces** (Adam, 2026-10-18). Every seat has a token, and Igor
+  never uses a stored Claude login, under `igor serve` or `igor run`, so the reset removes
+  `~/.claude/.credentials.json` with the rest of `~/.claude`. A seat's token reaches `claude`
+  through its environment, which the reset does not touch, and it is the only credential a call
+  in the home has. From its third round to 2026-10-18 this change kept that file, so that an
+  organization with no seats could run on a stored login. That left open where a worker user's
+  login would come from, and let a worker rewrite a login that later calls might use. Task 0.3 confirms that a call in a reset home
+  authenticates with the token alone, and that an invalid token fails rather than reaching a
+  login stored elsewhere, such as the macOS Keychain under `igor run`.
 - **What persists:** everything else in the home: `~/.gitconfig`, where #175's start check sets
   `safe.directory` so the worker's git trusts a tree the service user owns, and the files a
   repository's tests cache in the home. A file a run leaves there, such as `~/.npmrc`, can steer
@@ -259,16 +259,17 @@ replace `~/.claude` under the other's call. That is not decided separately: runn
 while another instance of its role runs is the subject of #179's open question on `igor run`
 beside a serving rank.
 
-Still open (proposal): the template in same-user mode; how a stored login reaches a home that
-starts without one; whether a seat's token takes precedence over a kept login; and what the template's
-`settings.json` holds.
+Still open (proposal): whether anything protects the template in same-user mode, where the
+worker can write it; whether a seat's token is the only credential a call uses (task 0.3); two
+`igor run`s of one role sharing a home; and what the template's `settings.json` holds.
 
 ### The startup check is a call with no token and an empty `HOME`
 
 The issue suggests reading the skill list from #144's startup self-test. That self-test is not
 yet specified and runs once per seat. The check here runs once, with no seat: `claude -p
---plugin-dir <skills_dir>` from an empty temporary directory, with `PATH` and a `HOME` that is
-another empty temporary directory. With no token in the environment and no stored login under
+--plugin-dir <skills_dir>`, from an empty temporary directory, with an environment holding only
+`PATH` and a `HOME` that is another empty temporary directory. Its prompt is one word, such as
+`ok`, and goes on stdin, as #175 requires of every call's prompt. With no token in the environment and no stored login under
 `HOME`, it prints `system/init` and then fails with `Not logged in`, at no cost: measured above
 with an empty `HOME` (*Measured without a credential*). The empty `HOME` and working directory
 also keep the service user's own skills out of the list the check reads. Adam accepted keeping
@@ -324,7 +325,8 @@ The seat probe is a `claude -p` and carries the flag like any other call. #143's
 triage to `stream-json --verbose` changes the output flags, not this one. One argument builder
 for every call keeps the two from drifting (task 2.1).
 
-`runUsage` in `src/budget.ts` reads a seat's `/usage`. #143 withdraws `igor observe` but keeps
+`runUsage` in `src/budget.ts` reads a seat's `/usage`. `igor serve` runs it in the budget gate
+(`src/wiring.ts`), and `igor budget` runs it too. #143 withdraws `igor observe` but keeps
 this read. **Decided by Adam, 2026-10-17: it carries no `--plugin-dir`.** It runs no skill, so
 the flag gives it nothing. And on a person's machine, where `igor budget` runs it, `skills_dir`
 names a server path that does not exist there, and what `claude -p` does with a missing plugin

@@ -36,8 +36,8 @@
    user Igor runs as. The template ships with Igor and is nearly empty: a `settings.json` holding
    only what Igor needs, with no hooks and no MCP servers; no skills and no `CLAUDE.md`, since
    skills come from `--plugin-dir`; and a `~/.claude.json` with onboarding marked done and no MCP
-   servers. The reset keeps `~/.claude/.credentials.json`, so an organization with no seats
-   keeps working on the stored login. Nothing else in the home is reset, so `~/.gitconfig`
+   servers. The reset keeps nothing of what it replaces, a stored login included (decision 17).
+   Nothing else in the home is reset, so `~/.gitconfig`
    (with #175's `safe.directory`) and the files a repository's tests cache there stay. Without
    the reset, a worker an item steers could plant hooks, a `CLAUDE.md` or skills for every later
    call. A file a run leaves elsewhere in the home, such as `~/.npmrc`, can steer later runs in
@@ -45,8 +45,9 @@
    file reaches no other instance, while in same-user mode it can reach other roles. *Rejected:*
    a fresh, empty home per run, which loses `~/.gitconfig` and the caches a repository's tests
    need; and resetting `~/.claude` alone, which left `~/.claude.json` for a worker to write.
-10. **The usage read passes no `--plugin-dir`** (Adam, 2026-10-17). `igor budget` runs it on a
-    person's machine, where `skills_dir` names a server path, and it runs no skill.
+10. **The usage read passes no `--plugin-dir`** (Adam, 2026-10-17). It runs no skill. `igor
+    serve` runs it in the budget gate, and `igor budget` runs it too, often on a person's
+    machine, where `skills_dir` names a server path.
 11. **Two facts the decisions rest on are measured before the implementation is built**
     (Adam, 2026-10-17, task 0.3): the base directory a skill is given when the manager installed it as a link into its
     clone, and that `--plugin-dir` gives the worker no write access to the skills. If a linked
@@ -83,29 +84,46 @@
     under the other's running call. That is not decided separately: running `igor run` while
     another instance of its role runs is the subject of #179's open question on `igor run`
     beside a serving rank.
-17. **The worker can read and overwrite the kept `~/.claude/.credentials.json`, and that is
-    accepted** (Adam, 2026-10-17). With a worker user, that file is the worker user's own login,
-    and the token of the seat a call spends is already in the worker's environment, so reading
-    the file gives the worker nothing it lacks. In same-user mode it is the login of the user
-    Igor runs as, whose files the worker can read anyway. This assumes the file holds the
-    worker user's own login, which the open question on where the stored login comes from may
-    change. `docs/deployment.md` says so (task 5.4).
+17. **The reset keeps no stored login, because Igor never uses one** (Adam, 2026-10-18).
+    Every seat has a Claude token, and every call that spends a seat authenticates with that
+    seat's token, from its environment, under `igor serve` and `igor run` alike. #171 states
+    that rule for every spend, in *A spend with no seat behind it is not made*; this change
+    applies it to the worker's home. The reset replaces `~/.claude` and `~/.claude.json` whole,
+    `~/.claude/.credentials.json` with them, so a login stored in the home lasts only until the
+    next reset. How a person creates a token is in #171's guides. *Rejected:* keeping
+    `~/.claude/.credentials.json`, as this change did from its third round to 2026-10-18, so
+    that an organization with no seats could run on a stored login. Keeping it left open where
+    a worker user's login would come from, and let a worker rewrite a login that later calls
+    might use. An organization with no seats instead adds one seat, from a token of its own
+    (#171).
 
 **Still open:**
 
 - **Where `/opt/igor/skills` does not exist**, as on a developer's machine running `igor run`,
   what Igor does is not decided: pass `--plugin-dir` anyway, pass none, or refuse to start. What
   `claude -p` does with a plugin directory that does not exist is unmeasured.
-- **Where the stored login comes from.** The reset keeps `~/.claude/.credentials.json`, but a
-  worker user's home, and a per-role home under the state directory, start without one. How the
-  host's stored login reaches either is not decided. Decision 17 assumes the kept file is the
-  worker user's own login. If the stored login reaches the home as a copy of the host's or an
-  operator's login, the worker could read a credential besides its seat's, and decision 17 goes
-  back to Adam.
-- **Whether a seat's token in the environment takes precedence over a kept login** is not
-  measured (task 0.3). Decision 17 accepts that a worker can rewrite the kept login. If the kept
-  login takes precedence, a worker that rewrites it could make a seat's later calls bill a login
-  it chose instead of the seat.
+- **Whether a seat's token is the only credential a call uses** is not measured (task 0.3).
+  The measurement is that a call whose environment holds a valid token gets a
+  `rate_limit_event`, which only a call running as a seat receives (decision 2), even where a
+  stored login sits beside it in the same home, as in the service user's home, which no reset
+  touches. And it is that a call with an invalid token fails, rather than reaching a stored
+  login: one in the home, or under `igor run` on macOS the person's own login in the Keychain.
+  The same Keychain question decides whether the startup check is free under `igor run` on
+  macOS. If a call reaches a stored login, decision 17 goes back to Adam.
+- **Task 0.3's other measurements**, each of which sends its decision back to Adam if it
+  fails: a linked skill's base directory, whether the worker can write `skills_dir`, whether
+  decision 8's two flags keep the repository's settings out, and whether `git rev-parse` works
+  on a root-owned clone.
+- **What #153's session mark is for here.** Decision 14 keeps the mark across resets, but the
+  plugin installs no hooks (*How it composes*, in `design.md`), so no prose hook reads it in a
+  worker. Whether the mark matters is #153's to say.
+- **Two `igor run`s of one role at once** share the role's home, and one's reset can replace
+  `~/.claude` under the other's running call. Decision 16 pointed this at #179, but #179 now
+  only refuses `igor run` beside a serving rank 1, which does not cover two `igor run`s. Who
+  decides it is open.
+- **A process that escaped its group outlives its task.** Igor kills every process the worker
+  user owns before each reset, so an escaped process runs, holding its seat's token, until the
+  next task's first call. Whether a task's end should also kill them is open.
 - **The template in same-user mode.** There the worker runs as the user that owns Igor's
   installation, so it can write the template, and #175's start check does not run. Whether
   anything protects the template there is not decided.
@@ -175,6 +193,14 @@ every call, so they live in one place, `pinned-skills`.
   scripts by path and its code runs `prose verify-post` and `verify-staged`. Its role-config
   requirement refuses a role that lists a skill not installed under `skills_dir`; this change
   refuses nothing on that account.
+- **#171** (`seat-files`) archives first. Decision 17 rests on it: on `main`, a seat that names
+  no token reads through whatever login is ambient, and only #171 removes that.
+- **#143** withdraws `scheduled-observation`, whose `igor observe` reads usage under a stored
+  login, which decision 17 would forbid. This change assumes #143 has archived.
+- **#175** (`worker-user`) archives first: the startup check's prompt goes on stdin as #175's
+  *A prompt reaches claude on stdin, never in its arguments* requires.
+- **#82** (`stopped-scope-visible`): the startup check's refusal exits with status 78, as #82's
+  *A process that refuses to start exits with status 78* requires.
 - **#143's seat probe and #144's startup check** are `claude -p` calls, so they carry the flag.
   The skills check here uses no seat, so it neither depends on them nor duplicates them.
 - `docs/deployment.md` gains the install procedure: a root-owned plugin directory outside the

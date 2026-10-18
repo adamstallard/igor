@@ -27,11 +27,19 @@
         four still loads, the means of excluding it goes back to Adam;
       - that the startup check's call still prints `system/init` before it fails to log in
         with those two flags added;
-      - that a worker whose `~/.claude` and `~/.claude.json` were just reset from the template,
-        with `~/.claude/.credentials.json` kept, still authenticates as its seat: with the
-        seat's token from its environment it receives a `rate_limit_event`, and the init event's
-        `apiKeySource` names the token, and that with a deliberately invalid token in the
-        environment the call fails rather than falling back to the kept login;
+      - that a seat's token is the only credential a call uses, in three cases. First, a
+        worker whose `~/.claude` and `~/.claude.json` were just reset from the template, with
+        no stored login left in the home, authenticates as its seat with the token alone. It
+        receives a `rate_limit_event`, which only a call running as a seat gets, and record
+        what the init event's `apiKeySource` reads, expected to name `CLAUDE_CODE_OAUTH_TOKEN`.
+        Second, a call with a valid token whose `HOME` also holds a stored login of another
+        account, as the service user's home may for triage and #143's probe, authenticates as
+        the token's seat: its `rate_limit_event` describes that seat, not the stored login's
+        account. Third, a call with a deliberately invalid token fails rather than reaching a
+        stored login, whether that login is in its `HOME` or, under `igor run` on macOS, in the
+        person's Keychain. Also run the startup check's call under `igor run` on macOS with a
+        Keychain login present, and record whether it fails to authenticate or spends. **If a
+        call reaches a stored login, stop: decision 17 goes back to Adam;**
       - which key in `~/.claude.json` marks onboarding done, so that a call made from the
         template's copy starts without onboarding;
       - whether `git -C <clone> rev-parse HEAD` works as the service user on a root-owned clone,
@@ -54,7 +62,7 @@
 ## 2. The flag on every call
 
 - [ ] 2.1 One function that builds the arguments every `claude -p` shares, including
-      `--plugin-dir <skills_dir>` when it is set. Use it in `claudeWorker` (`src/execute.ts`),
+      `--plugin-dir <skills_dir>`. Use it in `claudeWorker` (`src/execute.ts`),
       `runClaude` (`src/triage.ts`) and `runUsage` (`src/budget.ts`). Every call gets
       `--setting-sources user` and `--strict-mcp-config`; every call but `runUsage` gets
       `--plugin-dir <skills_dir>`. #143's seat probe and #153's steps, built in those changes, call it as
@@ -72,7 +80,8 @@
       `.claude.json` with onboarding marked done, by the key task 0.3 finds, and no MCP servers
 - [ ] 2.5 Before every `claude -p` Igor starts in the worker's home (`claudeWorker` in
       `src/execute.ts`), replace `~/.claude` and `~/.claude.json` with a fresh copy of the
-      template, keeping `~/.claude/.credentials.json`. Reset nothing else in the home. With a
+      template, keeping nothing of what was there, `~/.claude/.credentials.json` included.
+      Reset nothing else in the home. With a
       worker user, the reset runs as that user, through #175's `sudo` spawn. Each of #153's model
       steps calls the same reset first, built in #153, as it calls 2.1's argument builder, and
       #153's `prose start` runs after that reset, not with one of its own
@@ -82,8 +91,8 @@
       `sudo` spawn exists
 - [ ] 2.7 Tests: a hook, a `CLAUDE.md` and a skill a worker wrote under `~/.claude`, and an MCP
       server it wrote into `~/.claude.json`, are gone before the next worker and before a model
-      step after the worker; `~/.claude/.credentials.json`, `~/.gitconfig` and a file under
-      `~/.cache` survive; with a worker user the reset runs as that user; in same-user mode
+      step after the worker; so is a `~/.claude/.credentials.json`; `~/.gitconfig` and a file
+      under `~/.cache` survive; with a worker user the reset runs as that user; in same-user mode
       `HOME` is the role's home under the state directory; the kill names the worker user and
       runs before every reset, including the one before #153's first step after the worker
 
@@ -93,11 +102,12 @@ Runs in `wire` (`src/wiring.ts`), before the first model call.
 
 - [ ] 3.1 Run `claude -p --plugin-dir <skills_dir> --setting-sources user --strict-mcp-config
       --output-format stream-json --verbose`
-      with a one-word prompt, stdin closed, from an empty temporary directory, and an
+      with the one-word prompt `ok` on stdin (#175), from an empty temporary directory, and an
       environment of `PATH` and a `HOME` that is another empty temporary directory. Read
       the `system/init` event's `skills`, then stop the process. Refuse to start when
       `igor:<name>` is missing for a skill under `<skills_dir>/skills/`, or when no init event
-      arrives. Messages (may be reworded):
+      arrives. Each refusal exits with status 78, as #82's *A process that refuses to start
+      exits with status 78* requires. Messages (may be reworded):
 
       ```
       skill <name> is installed in <skills_dir>/skills, but claude -p --plugin-dir <skills_dir> does not load it as igor:<name>
@@ -147,16 +157,16 @@ Runs in `wire` (`src/wiring.ts`), before the first model call.
 - [ ] 5.2 `docs/architecture.md`: a short subsection under §6 on where skills come from and why
       `--plugin-dir`, pointing at this change's `design.md`
 - [ ] 5.3 `docs/deployment.md`, in the skills section from 5.1, this note. It may be reworded, but it must
-      name both users, the three things, and the reason:
+      name the three things, why they reach the service user's calls, and why they do not reach
+      a worker:
 
       ```
-      Keep the service user and the worker user free of Claude Code hooks, a CLAUDE.md, and skills in ~/.claude/skills. Igor runs claude -p in normal mode, which loads all three into every call, so anything there reaches every worker and every model step.
+      Keep the service user free of Claude Code hooks, a CLAUDE.md, and skills in ~/.claude/skills. Igor runs claude -p in normal mode, which loads all three into every call, and the service user's home is not reset, so anything there reaches every triage call and seat probe. A worker user's ~/.claude is replaced from Igor's template before every call, so what is there never reaches a worker.
       ```
 - [ ] 5.4 `docs/deployment.md`, in the same section, this note (decision 17). It may be
-      reworded, but it must say that the worker can read and overwrite the file, and why that
-      is accepted. If the open question on where the stored login comes from puts anyone
-      else's login in that file, this note goes back to Adam before it ships:
+      reworded, but it must say that Igor uses no stored login, that the reset deletes one, and
+      where a person creates a token:
 
       ```
-      A worker can read and overwrite ~/.claude/.credentials.json in its home, which Igor keeps when it resets ~/.claude. With a worker user, that file is the worker user's own login, and the token of the seat a worker spends is already in its environment, so reading the file gives a worker nothing it does not already have. Under igor run, it is your own login, whose files the worker can read anyway.
+      Igor never uses a stored Claude login. Every seat has a token, and each call gets only its seat's token, in its environment; docs/seats.md, "Getting the token", shows how to create one. Before every call in a worker's home Igor replaces ~/.claude and ~/.claude.json from its template, which deletes any login stored there, so don't log the service user or a worker user in to Claude.
       ```
