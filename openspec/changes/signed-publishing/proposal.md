@@ -17,13 +17,15 @@
    pinned skills from #174's `igor` plugin. The org base may set it for every role and a role may
    add to it, never remove; an unknown name is refused at load. Igor's code checks per listed
    skill: for `prose`, a valid footer on every model-written post and a matching `Prose:` trailer
-   on every commit; for `bug-hunter`, a `Bug-hunter:` trailer bound to the staged tree. A role
+   on every commit; for `bug-hunter`, a `Bug-hunter:` trailer, with `Bug-hunter-Tree:` bound to
+   the staged tree unless bug-hunter's first triage, run on the whole change before any hunt,
+   found nothing to hunt and skipped it. A role
    that lists neither publishes as today. *Rejected:*
    a switch for "posts" and "commits", which cannot say which skill's check applies.
-5. **Every commit Igor pushes, other than a merge, goes through the model steps for the skills
+5. **Every commit Igor pushes for an item, other than a merge, goes through the model steps for the skills
    its role lists (decision 4), and carries their trailers (Adam, 2026-10-13; when the trailers
    are made, see decisions 11 and 12)**, whether
-   `produce()` opens a pull request with it or #150's `commitOnBranch` pushes gate two's
+   `produce()` opens a pull request with it or `commitOnBranch`, under #150, pushes gate two's
    implementation or a revision:
    - bug-hunter, in its caller-commits mode, reviews and fixes the change; its trailers are
      `Bug-hunter:` and `Bug-hunter-Tree:`;
@@ -31,7 +33,7 @@
      `<tree>` and `<message>` are short hashes of the staged tree and the message.
 
    Igor commits through the API only when `prose verify-staged` accepts the trailer, the staged
-   tree equals both signed trees, and the subject is the issue title as decision 6 sets out.
+   tree equals every signed tree, and the subject is the issue title as decision 6 sets out.
    *Rejected:* signing only in `produce()`, which leaves gate two's commit unsigned. Then the
    role's tests that `loop-verifies-commands` (#189) runs on the signed tree would not test what
    is committed on every push.
@@ -121,9 +123,21 @@
     It is Igor's own bug, so the item fails loudly. A token that prose's second call refuses
     goes back to the prose pass, which runs its first call again and reports a new token.
 
+15. **No prompt text goes on a command line** (Adam, 2026-10-18, decided on
+    [#175](https://github.com/adamstallard/igor/pull/175)). `/proc/<pid>/cmdline` is readable by
+    every user on the server, so a worker of one role could read another role's prompt, with
+    private source content in it. Each model step's prompt reaches `claude -p` on stdin, and the
+    prose rules reach its system prompt through `--append-system-prompt-file`, never
+    `--append-system-prompt`. The goals Igor gives `prose start` are drawn from the item, whose
+    text may be private, so they stay off `prose start`'s command line too. #175 specifies the
+    stdin rule, in its `task-execution` requirement *A prompt reaches claude on stdin, never in
+    its arguments*, and #175's systemd unit also sets `ProtectProc=invisible`. *Rejected:*
+    relying on `ProtectProc=invisible` alone, which leaves a prompt readable wherever the setting
+    does not hold, such as under `igor run`, which no systemd unit starts.
+
 **Still open:**
 
-Four measurements remain before building:
+Measurements remain before building. The first four are these:
 task 0.3, that a fresh `claude -p --session-id <uuid>` reports that id to prose's hook; task
 0.4, whether the clone's staged tree equals the tree the Git Data API builds; task 0.9, whether
 a pass token from a first call the worker user ran can be spent by Igor's service user, given
@@ -142,6 +156,39 @@ a `.git` the worker can replace. That `.git` can name its own hooks and config, 
 `core.fsmonitor`, so a git command a script runs could execute the worker's code as Igor. If
 0.11 finds a different line, or 0.12 finds a script that cannot be pointed at that directory,
 decision 12 comes back to Adam before building.
+
+Task 0.13 asks whether `prose start` can take its goals other than as an argument. Today it
+takes them only as `--goals` on its command line. If it cannot, decision 15 needs a change to
+the prose skill, and comes back to Adam before building. Task 0.14 measures whether
+bug-hunter's caller-commits mode works without staging, which a worker user cannot do, and task
+0.15 whether the tests bug-hunter writes run under the commands a role already grants. If either
+fails, decision 12 or the grants come back to Adam before building. Task 0.2 checks #139's record
+that caller-commits mode has landed against the shared-skills repository; if it has not, building
+waits for it.
+
+The choices `design.md` records as decided on 2026-10-11, under *Decided questions*, stand
+beside decisions 1 to 15: Igor runs `prose start`, the signing scripts are granted by path, and
+the tree is measured before signing.
+
+**For Adam,** found by a consistency read on 2026-10-18, each a conflict or a question this
+change cannot settle alone:
+- #190 leaves the description alone on gate two's implementation push, which it does not call a
+  revision, while this change rewrites it there; and #190 claims to be the one definition of the
+  opening block, which this change also states.
+- Bug-hunter's open decisions go into the opening block, which the code assembles and does not
+  sign, while #140 makes them the numbered questions a model writes.
+- A conflicted catch-up's resolution is a merge, so it carries model-written code with no
+  trailers.
+- #174 loads every pinned skill into every role's worker, while decision 4 has a role list the
+  skills it uses. And #174's reset template installs no hooks, so prose's first-write gate, which
+  design item 1 opens with `prose start`, would never run in a worker. Which holds, and whether
+  Igor still runs `prose start`, is for Adam.
+- Listing a skill grants its scripts outside the role's `commands`, which the in-force
+  `role-config` says is the only grant.
+- Signed text is published exactly, so model text quoting untrusted content can carry
+  @-mentions or markup the code cannot neutralise.
+- Nobody has defined the reader goals Igor passes to `prose start` for an item. Task 0.5 waits on
+  that definition as well as on task 0.13.
 
 ## Why
 
@@ -202,7 +249,8 @@ governs them. Neither change is edited here: the rule lives in one place, and th
   them only
   for the skills it lists; task 4.1 measures the cost per item.
 - **Depends on the prose and bug-hunter skills** from the shared-skills repository, which is not
-  public yet. Prose is in review there, and so is bug-hunter's caller-commits mode. Igor loads
+  public yet. Prose is in review there; bug-hunter's caller-commits mode has landed, as #139 records
+  (shared-skills#19), which task 0.2 confirms. Igor loads
   both as the `igor` plugin, with `--plugin-dir`, as `pinned-skills` (#174) builds it.
 - **Works whichever of this change and `review-evidence` (#190) lands first** (decision 9).
 - **No GitHub Action.** Igor runs the checks in its own pipeline, so a CI check would only

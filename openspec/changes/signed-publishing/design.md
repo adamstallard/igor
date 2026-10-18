@@ -138,10 +138,17 @@ session: it opens once `prose start` or a first `check` or `sign` has marked the
 `--session-id <uuid>`. So Igor opens the gate itself:
 
 1. It generates a uuid for the worker.
-2. It runs `prose.py start --session <uuid> --goals "<the item's reader goals>"`, which marks
-   the session and prints the rules.
-3. It puts those rules into the worker's system prompt.
-4. It starts the worker with `claude -p --session-id <uuid>`.
+2. It runs `prose.py start --session <uuid>` with reader goals for the item's commit and
+   description, which marks the session and prints the rules. What those goals are is not yet
+   defined; the proposal lists it for Adam.
+3. It writes those rules to a file in a directory Igor owns, which no worker user can write, and
+   passes it with `--append-system-prompt-file`.
+4. It starts the worker with `claude -p --session-id <uuid>`, its prompt on stdin.
+
+No prompt text, rule or goal goes on a command line (proposal, decision 15), since every user on
+the server can read a process's `/proc/<pid>/cmdline`. `prose start` takes its goals only as
+`--goals` today, so task 0.13 finds or adds another way to pass them, and these four steps are
+not built until it has.
 
 Nothing depends on the model running a step, and the role needs no permission to run prose.
 The mark lives under `$XDG_STATE_HOME` or `$HOME`, and the worker's environment is given
@@ -184,7 +191,9 @@ pinned directory (#174):
 - `python3 <skills>/prose/scripts/prose.py check`
 - `python3 <skills>/prose/scripts/prose.py sign`
 
-Bug-hunter's tests run under the `npm test` and `npx vitest run` entries the list already holds.
+The regression tests bug-hunter writes are expected to run under the `npm test` and `npx vitest
+run` entries the role's `commands` list already holds. Task 0.15 measures it; if they do not,
+the grants come back to Adam before building.
 
 ### 3. The clone's staged tree is measured against the API's tree before either is trusted
 

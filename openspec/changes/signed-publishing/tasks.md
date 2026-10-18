@@ -8,10 +8,12 @@
 - [ ] 0.4 Measure whether `git write-tree` after `git add -A` in a clone equals the tree sha
       the Git Data API returns for the same change, with a deletion and an executable file;
       if not, sign and verify against the API's tree (design, item 3)
-- [ ] 0.5 Before a worker starts, generate its session uuid, run
-      `prose.py start --session <uuid> --goals "<the item's reader goals>"` with the worker's
-      `HOME` and `XDG_STATE_HOME`, put the printed rules in its system prompt, and pass
-      `--session-id <uuid>` (design, item 1)
+- [ ] 0.5 After task 0.13, and once the reader goals for an item are defined (proposal, *For
+      Adam*): before a worker starts, generate its session uuid, run `prose.py start --session
+      <uuid>` with those goals and the worker's `HOME` and `XDG_STATE_HOME`, write
+      the printed rules to a file passed with `--append-system-prompt-file`, pass
+      `--session-id <uuid>`, and give the prompt on stdin. No prompt, rule or goal goes on any
+      command line (design, item 1; proposal, decision 15)
 - [ ] 0.6 Grant a role that lists `prose` or `bug-hunter` the commands its skills need:
       `prose.py check` and `prose.py sign`, by path into the pinned skills directory; run
       `start`, staging, the commit's signing calls and verifying in Igor's code instead
@@ -41,6 +43,15 @@
       when given #175's separate git directory, rather than a `.git` the worker can replace in
       the tree. Record the result in `design.md`; if a script does not follow them, stop and
       bring decision 12 back to Adam
+- [ ] 0.13 Find how `prose start` can take its goals other than on its command line, such as a
+      file or stdin; today it takes only `--goals`. If it cannot, decision 15 needs a change to
+      the prose skill and goes back to Adam before building (proposal, decision 15)
+- [ ] 0.14 Measure whether bug-hunter's caller-commits mode runs as the worker user without
+      staging, since that user cannot write the git directory or the index (#175). Record the
+      result; if it cannot, decision 12 goes back to Adam before building
+- [ ] 0.15 Measure whether bug-hunter's regression tests run under the `npm test` and `npx vitest
+      run` entries the role's `commands` already holds. Record the result; if they do not, the
+      grants go back to Adam before building
 
 ## 1. Verifying and publishing
 

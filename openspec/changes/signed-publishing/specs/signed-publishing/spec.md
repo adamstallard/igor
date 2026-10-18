@@ -7,12 +7,12 @@ check per skill:
 
 - **`prose`:** every model-written post SHALL carry a valid `prose ✓` footer, and every commit
   a `Prose:` trailer that matches its staged tree and message.
-- **`bug-hunter`:** every commit SHALL carry a `Bug-hunter:` trailer bound to its staged tree.
+- **`bug-hunter`:** every commit SHALL carry a `Bug-hunter:` trailer. It SHALL also carry a
+  `Bug-hunter-Tree:` trailer bound to its staged tree, unless bug-hunter's first triage, run on
+  the whole change before any hunt, found nothing to hunt; then `Bug-hunter:` alone is checked.
 
 A role that does not list a skill SHALL NOT be checked for it, and publishes as it does without
-this capability. Each skill's check SHALL be defined in Igor's code, not in configuration: only
-these two skills have a signing check, and a configurable table of checks would invite a row
-for a skill that no code checks.
+this capability. Each skill's check SHALL be defined in Igor's code, not in configuration.
 
 #### Scenario: A role listing prose has its posts and commits checked
 
@@ -24,8 +24,15 @@ for a skill that no code checks.
 #### Scenario: A role listing bug-hunter has its commits checked
 
 - **WHEN** a role's `skills` is `[bug-hunter]` and it publishes a commit
-- **THEN** the commit is made only with a `Bug-hunter:` trailer bound to the staged tree
+- **THEN** the commit is made only with a `Bug-hunter:` trailer, and a `Bug-hunter-Tree:`
+  trailer bound to the staged tree
 - **AND** its posts are published without a footer check
+
+#### Scenario: A change bug-hunter's triage skipped needs no tree trailer
+
+- **WHEN** a role's `skills` is `[bug-hunter]` and bug-hunter's first triage finds nothing to
+  hunt in the change
+- **THEN** the commit is made with its `Bug-hunter:` trailer and no `Bug-hunter-Tree:`
 
 #### Scenario: A role listing neither publishes as before
 
@@ -43,13 +50,13 @@ A commit message is the exception: the prose pass writes it, and Igor's code sig
 `task-execution`'s *A commit is signed by bug-hunter and the prose pass before it is committed*
 requires.
 
-Running the check is what puts the prose rules in front of the model while it writes, and a
-footer can only come from running it.
-
 Text the code assembles from recorded state is not signed: handoffs, stop receipts and claim
-messages. The code's authors wrote it, and it is reviewed as code. A handoff is needed exactly
-when a model call may be impossible, so it cannot depend on one, and `graceful-handoff` stays
-as it is.
+messages. `graceful-handoff` stays as it is.
+
+#### Scenario: No model step posts
+
+- **WHEN** a model step has a reply ready
+- **THEN** it returns the signed reply to Igor's code, which posts it, and makes no post itself
 
 #### Scenario: A reply is signed where it is written
 
@@ -111,8 +118,9 @@ When a check fails, the code SHALL return the text to the model step that wrote 
 reason, and that step SHALL redo its check and sign again. A commit's tree or message mismatch is
 the exception: it goes back to no step, as `task-execution` requires, because Igor's code made
 both bindings: the trailers to the tree, and the `Prose:` trailer to the message. After two failed
-attempts the code SHALL publish nothing and SHALL record the failure, with each reason, to the
-state branch.
+attempts the code SHALL publish none of the text and SHALL record the failure, with each reason,
+to the state branch. On a claimed item, the handoff the code assembles is still posted, as
+`graceful-handoff` requires.
 
 #### Scenario: A failure is sent back with its reason
 
@@ -127,6 +135,6 @@ state branch.
 
 #### Scenario: Repeated failure publishes nothing
 
-- **WHEN** a text fails its second attempt
-- **THEN** nothing is published
+- **WHEN** a text for a claimed item fails its second attempt
+- **THEN** none of the text is published, and the item gets the code's handoff
 - **AND** the failure and its reasons are recorded to the state branch

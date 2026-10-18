@@ -3,8 +3,8 @@
 ### Requirement: A commit is signed by bug-hunter and the prose pass before it is committed
 
 Before Igor commits a worker's change, whether `produce()` opens a pull request with it or, under
-the two-gate workflow (#150), `commitOnBranch` pushes gate two's implementation or a revision onto
-an existing pull request, the model steps for the skills the role lists
+the two-gate workflow (#150), `commitOnBranch` pushes gate two's implementation or a revision
+onto an existing pull request, the model steps for the skills the role lists
 SHALL run in the working tree. Each runs only where the role's
 `skills` lists it (signed-publishing, *Igor verifies what each skill in a role's list
 requires*); a role that lists neither commits as it does without this capability.
@@ -19,7 +19,9 @@ requires*); a role that lists neither commits as it does without this capability
    end with `Closes #N` on any commit of a role not using the two-gate workflow (#150), and
    under #150 on every gate-two commit,
    the implementation and each revision after it. Gate one's commits, its revisions included,
-   SHALL end with `Refs #N`, since #150 keeps closing keywords off them.
+   SHALL end with `Refs #N`, since #150 keeps closing keywords off them. A gate-one commit body
+   that holds a closing keyword, as defined above, SHALL go back to the prose pass, and each such
+   return counts toward the two attempts the signed-publishing capability allows.
 
 Bug-hunter SHALL run before the prose pass. Neither step SHALL sign a tree while it runs. Each
 SHALL end by reporting its pass result: bug-hunter's result block, holding its `Bug-hunter:`
@@ -52,6 +54,12 @@ it only if it is a regular file with one hard link, as #175 (`worker-user`) read
 worker wrote.
 The commit SHALL carry the message, then the `Bug-hunter:`, `Bug-hunter-Tree:` and `Prose:`
 trailers of the steps that ran. Merge commits carry none of these trailers.
+
+#### Scenario: A closing keyword in a gate-one commit body goes back
+
+- **WHEN** the prose pass writes a gate-one commit body that says `Fixes #77`
+- **THEN** the message goes back to the prose pass, and nothing is committed until it holds no
+  closing keyword
 
 #### Scenario: A signed commit is committed with its trailers
 
@@ -165,6 +173,11 @@ section to #190, which rebuilds it on the same push.
 
 - **WHEN** Igor pushes gate two's implementation or a revision to its pull request
 - **THEN** the description is rewritten, signed and verified before it is replaced
+
+#### Scenario: A closing keyword in a gate-one description goes back
+
+- **WHEN** the prose pass returns a gate-one description that holds a closing keyword
+- **THEN** it goes back to the prose pass, and no description is published until it holds none
 
 #### Scenario: A resolution leaves the description
 
