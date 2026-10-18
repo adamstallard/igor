@@ -22,7 +22,7 @@
    a switch for "posts" and "commits", which cannot say which skill's check applies.
 5. **Every commit Igor pushes, other than a merge, goes through the model steps for the skills
    its role lists (decision 4), and carries their trailers (Adam, 2026-10-13; when the trailers
-   are made, decision 11)**, whether
+   are made, see decisions 11 and 12)**, whether
    `produce()` opens a pull request with it or #150's `commitOnBranch` pushes gate two's
    implementation or a revision:
    - bug-hunter, in its caller-commits mode, reviews and fixes the change; its trailers are
@@ -78,28 +78,47 @@
     each step signing as it finishes, with Igor restaging before each signing. Under #175
     (`worker-user`) a step cannot stage for itself, since it runs as a worker user that cannot
     write the git directory. And signing in turn would leave the prose pass's edits outside the
-    tree bug-hunter signed, so bug-hunter would have to run a third time to sign again.
+    tree bug-hunter signed.
+12. **Igor's code runs the signing calls for a commit, and bug-hunter triages the prose pass's
+    diff (Adam, 2026-10-17, answering questions raised on #175).** The order is:
+    1. Bug-hunter runs, and ends by reporting its result block: the `Bug-hunter:` value, such
+       as `1 iteration, 1 bug fixed`, which becomes that trailer, and any open decisions.
+    2. The prose pass writes a draft message, runs prose's first call on it, which prints the
+       rules and a pass token, rewrites the message and the change's prose by those rules, and
+       ends by reporting that token.
+    3. Bug-hunter runs its usual triage on the prose pass's diff. A diff that touches only
+       comments or docs is skipped; anything else gets one more bug-hunter iteration.
+    4. Igor stages once, in its own index, and runs both signing calls itself: prose's second
+       call, `prose check --pass <token>`, with the prose pass's token, and bug-hunter's minting
+       script, which writes `Bug-hunter-Tree:` for the staged tree.
+
+    Both trailers then name the tree Igor publishes. The signing scripts come from the
+    root-owned skills directory (#174), so running them as Igor's service user executes nothing
+    the worker wrote. For commits this narrows decision 1: the model step still runs the call
+    that prints the rules, and the token it reports is what shows it did, since prose's second
+    call accepts only a token its first call issued. `Bug-hunter-Tree:` names the staged tree.
+    It attests that bug-hunter reviewed every change in that tree, except prose-pass edits its
+    triage judged to touch only comments or docs. #139's design already let such an edit pass
+    bug-hunter's triage and only re-mint the tree. A commit can still be refused for a
+    mismatch: between the tree the trailers name and the tree the Git Data API builds, or
+    between the message Igor commits and the one the `Prose:` trailer hashes. Since Igor's code
+    made both bindings, either is recorded as the item's failure without going back to a step.
+    *Rejected:* the steps running the signing calls themselves, which under #175 they cannot do
+    against Igor's index; and bug-hunter running again after every prose pass, which spends a
+    hunt on a diff of comments.
 
 **Still open:**
 
-- **Who runs the signing calls against Igor's staged tree** (decision 11). The steps no longer
-  sign, and under #175 they run as a user that cannot write Igor's index. Whether Igor's own
-  code runs `prose check`'s two calls and bug-hunter's trailer script after the last step, and
-  how a `Prose:` trailer minted by Igor's code can show that the model did the prose pass, is
-  not decided.
-  Design item 2's grant table and tasks 0.6 and 2.2 wait on it. The answer also decides two
-  things decision 1 took for granted for commits: that a trailer can come only from a step
-  that ran the check, and that a failed check goes back to the step that signed. A tree
-  mismatch now has no signing step to go back to.
-- **What `Bug-hunter-Tree:` attests** under decision 11. It names the tree Igor staged after
-  the prose pass, which holds edits bug-hunter never reviewed, where #139 has it name exactly
-  the tree bug-hunter reviewed.
-
-Two measurements remain before building:
-task 0.3, that a fresh `claude -p --session-id <uuid>` reports that id to prose's hook, and task
-0.4, whether the clone's staged tree equals the tree the Git Data API builds. A different result
-from either changes which session the steps run in or which tree the trailers are made
-against (`design.md`, items 1 and 3), not what is decided here.
+Four measurements remain before building:
+task 0.3, that a fresh `claude -p --session-id <uuid>` reports that id to prose's hook; task
+0.4, whether the clone's staged tree equals the tree the Git Data API builds; task 0.9, whether
+a pass token from a first call the worker user ran can be spent by Igor's service user, given
+where prose keeps its tokens; and task 0.10, whether bug-hunter can mint its trailer as a
+separate call against a tree, after its run has ended. If 0.3 finds the hook gets another
+session id, or 0.4 finds the two trees differ, that changes which session the steps run in or
+which tree the trailers are made against
+(`design.md`, items 1 and 3). A failure of 0.9 or 0.10 means decision 12 needs a change to the
+prose or bug-hunter skill, and comes back to Adam before building.
 
 ## Why
 
@@ -154,7 +173,9 @@ governs them. Neither change is edited here: the rule lives in one place, and th
 
 ## Impact
 
-- **Two more `claude -p` steps per commit Igor pushes** (bug-hunter, then the prose pass). A role pays
+- **Three or four more `claude -p` steps per commit Igor pushes**: bug-hunter, the prose pass,
+  bug-hunter's triage of the prose pass's diff, and one more bug-hunter iteration where that
+  diff changed code. A role pays
   them only
   for the skills it lists; task 4.1 measures the cost per item.
 - **Depends on the prose and bug-hunter skills** from the shared-skills repository, which is not

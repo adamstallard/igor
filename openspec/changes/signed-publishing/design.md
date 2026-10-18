@@ -39,11 +39,29 @@ once.** This narrows *A model step signs; the code verifies*, above: for a commi
 signs while it runs. Bug-hunter runs, then the prose pass, which also rewrites the code comments
 bug-hunter's fixes added. After the last model step exits, Igor stages the change once, in its
 own index, and every trailer is created against that tree, the one Igor records and publishes.
-So the prose pass's edits are always in the tree the trailers name, and bug-hunter never runs a
-second time to sign the prose pass's tree. Under #175 (`worker-user`) the steps run as a worker
-user that cannot write the git directory, which rules out a step staging for itself. Who runs
-the calls that produce the trailers against Igor's tree, and what `Bug-hunter-Tree:` attests
-once it names edits bug-hunter never reviewed, are open (proposal, *Still open*).
+So the prose pass's edits are always in the tree the trailers name. Under #175 (`worker-user`)
+the steps run as a worker user that cannot write the git directory, which rules out a step
+staging for itself.
+
+**Decided by Adam, 2026-10-17, answering questions raised on #175: Igor runs the signing
+calls, and bug-hunter triages the prose pass's diff.** Each step ends by reporting its pass
+result. Bug-hunter's is its result block: the `Bug-hunter:` value, such as `1 iteration, 1 bug
+fixed`, which becomes that trailer, and any open decisions. The prose pass's is the pass token
+its first `prose check` call printed. Bug-hunter then runs its usual triage on the prose pass's
+diff: a diff that touches only comments or docs is skipped, and anything else gets one more
+bug-hunter iteration. Igor then stages once and runs both signing calls itself: prose's second
+`prose check` call with the prose pass's token, and bug-hunter's minting script, which writes
+`Bug-hunter-Tree:` for the staged tree (task 0.10 confirms it can run as a separate call). The
+scripts come from the root-owned skills directory (#174), so Igor's service user runs nothing
+the worker wrote. The token is what shows the model ran the call that prints the rules: prose's
+second call accepts only a token its first call issued. `Bug-hunter-Tree:` names the staged
+tree, which bug-hunter reviewed in full apart from prose-pass edits its triage judged to touch
+only comments or docs.
+
+Two mismatches can still refuse a commit, and neither goes back to a step, because Igor's code
+made both bindings. The tree the trailers name, from Igor's clone, can differ from the tree the
+Git Data API builds for the commit (item 3, task 0.4). The message Igor commits can differ from
+the message the `Prose:` trailer hashes. Either is recorded as the item's failure.
 
 Merge commits carry no trailers: `resolve` and the server-side `Merge X into Y` commits are
 Igor's own mechanics, and the skills' checks skip merges.
@@ -51,8 +69,10 @@ Igor's own mechanics, and the skills' checks skip merges.
 ### A failure goes back, a bounded number of times
 
 A failed check returns the text to the step that wrote it, with the reason ("the footer does
-not verify", "the staged tree differs from the signed tree"). The step redoes its check and
-signs again.
+not verify", "prose refused the pass token"). The step redoes its check: for a post it signs
+again, and for a commit the prose pass runs its first call again and reports the new token. A
+commit's tree and message are bound by Igor's code, not by a step, so a tree or message
+mismatch goes back to no step: it refuses the commit and is recorded as the item's failure.
 
 The bound is two attempts, the same for every role. Without a bound, a step that keeps failing
 spends the seat's budget on one item. A per-role setting can be added later if a role needs one. After the last attempt the code
@@ -138,18 +158,18 @@ pinned skills directory that `pinned-skills` (#174) installs. Where Igor's own c
 1, it does, and the role needs no grant for it. *Rejected:* granting the scripts by bare
 name, which would run whatever copy is first on the worker's `PATH`.
 
-`prose check`, `prose sign` and bug-hunter's scripts in caller-commits mode are shell commands
-the model step runs, and the `commands` list in igor-lore's `roles/org.yaml` allows none of
-them without this grant.
+`prose check` and `prose sign` are shell commands the model step runs, and the `commands` list
+in `roles/org.yaml` of the `igor-lore` repository, which holds this organization's shared role
+configuration, allows neither without this grant.
 
 | Step | Run by | Why |
 | --- | --- | --- |
-| `prose check -F <msg> --goals …` and `--pass <token>` | model | the first call prints the rules and the prose in the change while the model rewrites it |
+| `prose check -F <msg> --goals …`, the first call | model | run on the step's draft message, it prints the rules and a pass token before the model rewrites; the step reports the token (proposal, decision 12) |
 | `prose sign --goals …` and `--pass <token>` | model | the same, for a post |
-| bug-hunter's run and `caller-result.sh` | model | the hunt is the model's work; the script mints over what the run staged |
-| `git add` (bug-hunter staging its fixes and tests) | model | under #175 a step cannot write the index, so whether this grant stays waits on who makes the trailers (proposal, decision 11 and *Still open*) |
+| bug-hunter's run, and its triage of the prose pass's diff | model | the hunt is the model's work; the step reports its result block |
 | `prose start --session <uuid>` | code | item 1 |
 | `git add -A` once, after the last model step exits | code | only Igor's code can write its own index (task 2.1) |
+| `prose check -F <msg> --pass <token>`, the second call, and bug-hunter's minting script | code | they mint against Igor's staged tree, which the steps cannot write (proposal, decision 12) |
 | `prose verify-post`, `prose verify-staged` | code | verifying is the code's half |
 
 So the grant, where `<skills>` stands for `<skills_dir>/skills`, the `skills/` folder of the
@@ -157,8 +177,6 @@ pinned directory (#174):
 
 - `python3 <skills>/prose/scripts/prose.py check`
 - `python3 <skills>/prose/scripts/prose.py sign`
-- `<skills>/bug-hunter/scripts/caller-result.sh`
-- `git add`
 
 Bug-hunter's tests run under the `npm test` and `npx vitest run` entries the list already holds.
 

@@ -21,11 +21,17 @@ requires*); a role that lists neither commits as it does without this capability
    the implementation and each revision after it. Gate one's commits, its revisions included,
    SHALL end with `Refs #N`, since #150 keeps closing keywords off them.
 
-Bug-hunter SHALL run before the prose pass. Neither step SHALL sign a tree while it runs. After
-the last model step exits, Igor SHALL stage the change once, in its own index, and every
-trailer, `Bug-hunter:`, `Bug-hunter-Tree:` and `Prose:`, SHALL be created against that tree,
-which is the tree Igor records and publishes. Which process creates them, and what
-`Bug-hunter-Tree:` then attests, are open in the proposal.
+Bug-hunter SHALL run before the prose pass. Neither step SHALL sign a tree while it runs. Each
+SHALL end by reporting its pass result: bug-hunter's result block, holding its `Bug-hunter:`
+value and any open decisions, and the pass token the prose pass's first `prose check` call
+printed. Where both run, bug-hunter SHALL then run its usual triage on the prose pass's diff: a
+diff touching only comments or docs SHALL be skipped, and any other diff SHALL get one more
+bug-hunter iteration. After the last model step exits, Igor SHALL stage the
+change once, in its own index. Igor's code SHALL then run the signing calls itself, with the
+scripts from the pinned skills directory: prose's second call, with the prose pass's token, and
+bug-hunter's minting script, which writes `Bug-hunter-Tree:`, both against that staged tree. So
+each trailer that binds a tree names the tree Igor records and publishes: `Prose:`, and
+`Bug-hunter-Tree:` unless bug-hunter's first triage skipped the whole change.
 
 Igor SHALL commit, through either path, only when all of these hold for the steps that ran:
 
@@ -33,10 +39,16 @@ Igor SHALL commit, through either path, only when all of these hold for the step
 - where the prose pass ran, `prose verify-staged` accepts the `Prose:` trailer against that
   tree and the message, and the subject is the issue title as above.
 
-A message that differs from the one the `Prose:` trailer names, or a subject that is not the
-issue title as above, SHALL go back to the prose pass, as the signed-publishing capability
-requires. A tree mismatch refuses the commit; since no step signs a tree, which step, if any,
-it goes back to is open in the proposal.
+A prose second call that refuses the prose pass's token, or a subject that is not the issue
+title as above, SHALL go back to the prose pass, as the signed-publishing capability requires.
+Two mismatches SHALL refuse the commit and be recorded as the item's failure: a tree Igor
+uploads that differs from the tree the trailers name, as where the Git Data API records modes
+differently from Igor's clone, and a message Igor commits that differs from the one the
+`Prose:` trailer hashes. Igor's code, not a step, made both bindings, so neither goes back to a
+step. The token is model-written text, so Igor SHALL pass it to prose as one argument, with no
+shell. Igor SHALL open the message file the prose pass wrote without following a link, and read
+it only if it is a regular file with one hard link, as #175 (`worker-user`) reads every file the
+worker wrote.
 The commit SHALL carry the message, then the `Bug-hunter:`, `Bug-hunter-Tree:` and `Prose:`
 trailers of the steps that ran. Merge commits carry none of these trailers.
 
@@ -50,10 +62,17 @@ trailers of the steps that ran. Merge commits carry none of these trailers.
 
 - **WHEN** the tree Igor uploads differs from a signed tree
 - **THEN** nothing is committed
+- **AND** the mismatch is recorded as the item's failure, and no model step is sent it
 
 #### Scenario: A message mismatch refuses the commit
 
-- **WHEN** the message differs from the one `prose check` signed
+- **WHEN** the message Igor commits differs from the one the `Prose:` trailer names
+- **THEN** nothing is committed
+- **AND** the mismatch is recorded as the item's failure, and no model step is sent it
+
+#### Scenario: A refused token goes back to the prose pass
+
+- **WHEN** prose's second call refuses the token the prose pass reported
 - **THEN** nothing is committed
 - **AND** the prose pass receives the message back with the reason
 
@@ -77,11 +96,17 @@ trailers of the steps that ran. Merge commits carry none of these trailers.
 
 #### Scenario: Both trailers bind to the tree staged after the last step
 
-- **WHEN** the prose pass changes a file after bug-hunter has run
-- **THEN** Igor stages once, after the prose pass exits
+- **WHEN** the prose pass changes a comment after bug-hunter has run
+- **THEN** bug-hunter's triage skips the prose pass's diff
+- **AND** Igor stages once, after the last step exits, and runs prose's second call with the
+  prose pass's token and bug-hunter's minting script against that tree
 - **AND** the `Prose:` trailer names that staged tree, which holds the prose pass's change, and
-  so does `Bug-hunter-Tree:` where bug-hunter did not skip
-- **AND** bug-hunter does not run again
+  so does `Bug-hunter-Tree:` unless bug-hunter's first triage skipped the whole change
+
+#### Scenario: A prose pass that changes code gets one more hunt
+
+- **WHEN** the prose pass's diff changes code
+- **THEN** bug-hunter runs one more iteration before Igor stages
 
 #### Scenario: Merge commits carry no trailers
 

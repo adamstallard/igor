@@ -13,9 +13,9 @@
       `HOME` and `XDG_STATE_HOME`, put the printed rules in its system prompt, and pass
       `--session-id <uuid>` (design, item 1)
 - [ ] 0.6 Grant a role that lists `prose` or `bug-hunter` the commands its skills need:
-      `prose.py check`, `prose.py sign`,
-      bug-hunter's `caller-result.sh` (by path into the pinned skills directory) and
-      `git add`; run `start`, staging and verifying in Igor's code instead (design, item 2)
+      `prose.py check` and `prose.py sign`, by path into the pinned skills directory; run
+      `start`, staging, the commit's signing calls and verifying in Igor's code instead
+      (design, item 2; proposal, decision 12)
 - [ ] 0.7 `skills: [<name>, …]` on a role and the org base, merged by adding (never removing),
       with an unknown name refused at load against what is installed under `skills_dir`; shown
       by `role explain`. Tests for each `role-config` scenario (design, Which roles; Adam,
@@ -24,6 +24,14 @@
       step and the `Bug-hunter:` check for `bug-hunter`; the prose pass, the footer check and
       the `Prose:` check for `prose`. Tests: a role listing only `prose`, only `bug-hunter`, and
       neither, each publishing a post and a commit
+
+- [ ] 0.9 Measure whether a pass token issued by `prose check`'s first call, run as #175's worker
+      user, can be spent by the second call run as Igor's service user against Igor's index,
+      given where prose keeps its tokens. Record the result in `design.md`; if it cannot, stop
+      and bring decision 12 back to Adam
+- [ ] 0.10 Confirm bug-hunter has an entry point that mints its trailer against a given staged
+      tree, run as a separate call after its run has ended. If not, stop and bring decision 12
+      back to Adam
 
 ## 1. Verifying and publishing
 
@@ -40,22 +48,30 @@
 ## 2. The commit
 
 - [ ] 2.1 Stage the clone (`git add -A`) once, in Igor's own index, after the last model step
-      exits, and create every trailer against that tree (proposal, decision 11). Who runs the
-      signing calls waits on the proposal's open question
-- [ ] 2.2 A bug-hunter step in caller-commits mode; parse its result block
+      exits. Then run, in Igor's code and from the pinned skills directory, prose's second call
+      (`prose check -F <msg> --pass <token>`, with the token the prose pass reported) and
+      bug-hunter's minting script for `Bug-hunter-Tree:`, both against that tree (proposal,
+      decisions 11 and 12)
+- [ ] 2.2 A bug-hunter step in caller-commits mode that edits without staging or minting and
+      reports its result block; parse from it the `Bug-hunter:` value for the trailer and any
+      open decisions
 - [ ] 2.3 A prose pass step, given the issue title and number and, under #150, the gate, that
-      writes the message and runs `prose check`. The subject drops any closing keyword in the
+      writes a draft message, runs `prose check`'s first call on it, rewrites the message and the
+      change's prose by the rules it prints, and reports the pass token. The subject drops any closing keyword in the
       title; the body ends with `Closes #N` for a role not using #150 and on every gate-two commit,
       revisions included, and with `Refs #N` on gate one's commits, its revisions included
-- [x] 2.4 ~~Run bug-hunter once more when the prose pass changed a file after its signature~~
-      Dropped: the trailers are made once, after the last step (proposal, decision 11)
+- [ ] 2.4 After the prose pass, run bug-hunter's triage on the prose pass's diff: skip a diff
+      that touches only comments or docs, and run one more bug-hunter iteration on anything
+      else, before 2.1 stages (proposal, decision 12)
 - [ ] 2.5 In `produce()` and in #150's `commitOnBranch`, check that the uploaded tree equals both signed trees, that
       `prose verify-staged` accepts the trailer, and that the subject is the issue title with
       any closing keyword dropped
 - [ ] 2.6 Append the trailers; leave merge commits without them
 - [ ] 2.7 Tests: a tree mismatch, a message mismatch and a changed subject each refuse the
-      commit; a prose-pass edit is in the tree both trailers name, with no second bug-hunter
-      run; a gate-one commit ends with
+      commit, and a tree mismatch goes back to no step; a prose-pass edit is in the tree both
+      trailers name; a comments-only prose diff runs no second bug-hunter iteration and a
+      prose diff that changes code runs one; the signing calls run in Igor's code, from the
+      pinned skills directory; a gate-one commit ends with
       `Refs #N`; gate two's `commitOnBranch` commit is signed and verified
 
 ## 3. The pull request description
