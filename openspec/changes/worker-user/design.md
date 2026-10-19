@@ -221,9 +221,17 @@ environment (the worker-environment requirement), so the start-up check sets `sa
 - Filter, merge and diff drivers are defined only in configuration. `.gitattributes`, which the
   worker can write, can name a driver but cannot define one, and the tree's configuration is
   not the worker's to write. The service user's and the system's configuration can still
-  define one, such as `filter.lfs`, which a name in `.gitattributes` would then run. How to keep
-  those two configurations out of the Igor's git calls is open in the proposal; task 3.6 builds
-  the recommended way unless Adam chooses another.
+  define one, such as `filter.lfs`, which a name in `.gitattributes` would then run. So the
+  Igor's git calls for a tree, its clone and checkout included, and the signing scripts run with
+  `GIT_CONFIG_NOSYSTEM=1` and `GIT_CONFIG_GLOBAL=/dev/null` (Adam, 2026-10-19; proposal,
+  decision 33; task 3.6). Two costs follow. A Git LFS repository is not supported until a later
+  change defines filters the Igor trusts: an LFS file is checked out, read and published as its
+  pointer. And #137 publishes a file stored through a clean filter as the filter's output; with
+  no filter defined, that output is the file as it stands, which the proposal lists as a
+  conflict. The checkout runs without the global configuration too. The code on `main` checks
+  out with it, so LFS's smudge filter writes each file's real content; a later read without
+  it, which runs no clean filter, would then see every LFS file as changed. Checking out
+  without it leaves pointers in the tree, which every later read agrees with.
 - A nested repository is the exception: its own `.git/config` is the worker's, and git running
   in the outer tree can recurse into it and run a filter that file defines. So every git command
   the Igor runs in a tree also passes `-c submodule.recurse=false` and `--ignore-submodules=all`
@@ -258,7 +266,7 @@ artifact: that is how this change meets #189's rule that what a check writes is 
 The rule, and the second worker run when a check fails, are #189's. #189's second worker run is a
 new run of the model steps, and its tree is recorded, checked and published the same way.
 
-### #153's steps run no signing script; the Igor signs once, at the end (Adam, 2026-10-17 and 2026-10-18)
+### #153's steps run no signing script; the Igor signs at the end (Adam, 2026-10-17, 2026-10-18 and 2026-10-19)
 
 #153 binds each commit's trailers to a staged tree. `git add` writes objects into the git
 directory, which is read-only to the worker user, and the index the worker can write is its copy
@@ -281,25 +289,29 @@ service user. The order is:
    the extra iteration (Adam, 2026-10-18, on #153): the prose pass is not meant to change code,
    so its diff is usually comments and docs, which the triage skips, and the iteration runs only
    in an edge case. #153 has a fresh model step read the commit's prose cold before prose signs,
-   and the prose pass answers that cold read with edits. The cold read reads the comments that
-   iteration writes; how the answers to that cold read reach the signed tree is part of
-   the proposal's open item *When #153 stages*.
-4. After the last model step exits, the Igor kills every process the worker user owns and runs
-   the link checks below. Only then does the Igor's code stage the changed paths, once, in its
-   own index. Staging first would put a hard-linked key's content into a blob in the git
+   and the prose pass answers that cold read with edits. Because the cold read comes after the
+   extra bug-hunter iteration, it also reads the comments that iteration writes, so no prose
+   pass has to follow the iteration.
+4. The Igor's code may stage more than once (Adam, 2026-10-19; proposal, decision 32); no step
+   stages. Under #153's design, the Igor stages before prose's first call, which lists what the
+   prose pass must rewrite from the staged changes, and again after the answers to its cold
+   read. Before every staging, every model step
+   started so far has exited, the Igor has killed every process the worker user owns, and the
+   link checks below have passed; only then does the Igor's code stage the changed paths, in its
+   own index. Staging before them would put a hard-linked key's content into a blob in the git
    directory, which the worker can read.
 5. The Igor runs prose's second call, with the token from step 2, and bug-hunter's minting
-   script, against the staged tree. Both run with `GIT_DIR`, `GIT_WORK_TREE` and
+   script, against the last staged tree. Both run with `GIT_DIR`, `GIT_WORK_TREE` and
    `GIT_INDEX_FILE` naming the Igor's git directory, the tree and the Igor's own index. The
    scripts' git calls follow all three (#153's measurement 0.12). Run from inside the tree
    without them, they used the worker's planted `.git` directory and ran its hook and its
    `fsmonitor` command as the service user.
 
-Each trailer that binds a tree, `Prose:` and #153's `Bug-hunter-Tree:`, then names the tree the
-Igor records, runs the link checks on, and publishes. The signing scripts are the ones in
+Each trailer that binds a tree, `Prose:` and #153's `Bug-hunter-Tree:`, then names the tree of
+the last staging, which the Igor records and publishes. The signing scripts are the ones in
 `skills_dir`, which is root-owned, so running them as the service user runs nothing the worker
-wrote. The start check's write probe of `skills_dir` tries only its top level, not its
-subdirectories, so their safety rests on the owner and modes #174 installs them with.
+wrote. The start check tries to write each script the Igor runs from there, as well as the
+directory's top level (*What each start checks*).
 
 The trailers bind the index's tree unless #153 binds them to the tree the Git Data API builds
 from the same files (#153's design item 3); #153's task 0.4 found the two differ only for a
@@ -308,9 +320,10 @@ everything this change publishes the two trees are equal. Either way the Igor pu
 tree the trailers name. The worker cannot change the recorded tree object, and a copy
 the worker could change, the index copy included, is never what a trailer is bound to.
 
-Staging before each step instead would run `git add` over the worker's files before the link
-and hard-link checks, and the prose pass's edits, made after bug-hunter's staging, would be
-missing from the tree bug-hunter's trailer named.
+A staging that did not wait for the kill and the checks would run `git add` over the worker's
+files before the checks see them. And the trailers bind the last staging because binding an
+earlier one would leave later edits, such as the answers to the cold read, out of the tree they
+name.
 
 ### The Igor reads changes without following links
 
@@ -410,30 +423,39 @@ Before the first cycle, `serve` checks in this order, stopping at the first fail
    which ones succeed. Every path that succeeds is a refusal, and the refusal names it.
    - not readable: `/proc/<igor pid>/environ` (Linux); the file
      `GITHUB_APP_PRIVATE_KEY_FILE` names; the path `seatKey` names; each seat's `token_file`;
-     `/etc/igor/<role>.env`, once #179 has the Igor read it itself;
+     each environment file the unit names in `IGOR_ENV_FILES`, which is `/etc/igor/env` on
+     the shipped unit; `/etc/igor/<role>.env`, once #179 has the Igor read it itself;
      the Igor user's home, which must also fail `test -x`, so the worker cannot enter it; and a canary the check
      writes, mode `0600`, in a fresh `0700` directory of the Igor's
    - not writable: the lore checkout, and the worktree of it this process reads its
      configuration from (#208, `lore-pull`); the directory holding the running `igor`; the `node`
-     executable
+     executable; #174's home template, each of its files and directories; and each script the
+     Igor runs from `skills_dir`, prose's and bug-hunter's among them
    - `skills_dir`, #174's directory of pinned skills: in a second `sudo` call, the worker tries
      to create a file in it and delete it, and a create that succeeds is a refusal (Adam,
      2026-10-17). The worker never needs to write there.
+   Every path given to this probe must exist: one that does not refuses the start, naming it,
+   since `test -r` and `test -w` fail on a missing file and the probe would pass it (Adam,
+   2026-10-19).
 6. `/proc/sys/fs/protected_hardlinks` reads `1` (Adam, 2026-10-17). Otherwise the worker could
    make a hard link to the App's key in its tree.
-7. As the worker, `git config --global safe.directory '*'` is set if missing.
+7. As the service user, `sudo -n -l` lists `!log_allowed` among the `Defaults` that apply to it
+   (Adam, 2026-10-19). Without it sudo writes the seat token to the journal on every worker
+   start (measurement 6.5).
+8. As the worker, `git config --global safe.directory '*'` is set if missing.
+
+A file the check has no path for is reported as not checked, never as passed (Adam,
+2026-10-19). Where `IGOR_ENV_FILES` is unset, as in #192's container, which loads no
+environment file, the report says the environment files were not checked.
 
 The canary is what makes the check prove something on a host where every real credential is in
 the environment and no key file exists. It fails if the worker user is privileged in a way
 the uid check misses, such as through `CAP_DAC_READ_SEARCH`.
 
-`/etc/igor/env` is not probed: systemd reads it, so the Igor never learns its path. Under #179
-the Igor reads `/etc/igor/<role>.env` itself and sets its keys in its own environment after
-starting; check 5 probes that file as not readable once #179 has landed (task 0.8). Whether
-those keys show in `/proc/<pid>/environ` is not measured; the worker cannot read the Igor's
-`/proc` at all under `ProtectProc=invisible`. The `/proc` probe
-covers what `/etc/igor/env` holds, and the deployment guide puts both files in a directory the
-worker cannot enter. On macOS, which has no `/proc`, nothing probes `/etc/igor/env`.
+systemd reads the unit's `EnvironmentFile=` lines before the Igor starts, so the Igor learns
+those paths only from the unit, which sets `IGOR_ENV_FILES` to them (task 8.2). The `/proc`
+probe below cannot stand in for probing the files, since it checks the Igor's process, not the
+files' own permissions.
 
 Under the unit's `ProtectProc=invisible` (*The unit*, below) the worker user cannot see the
 Igor's `/proc/<pid>` at all, so the `environ` probe in check 5 finds nothing to read and passes.
@@ -466,8 +488,8 @@ This does not wait for #171. `token_env`, `token_file` and `token_command` seats
 read by `parseOrgBudget` in `src/budget.ts`), so every seat can name a token now. What #171
 removes is the in-force allowance for a seat with no token and for an organization with no
 seats, which run on the ambient login. Until #171 archives, that allowance and the proposal's
-decision 21, that every seat has a token, disagree; the proposal lists it for Adam, and what is
-built follows decision 21.
+decision 21, that every seat has a token, disagree. Adam accepted that window on 2026-10-19
+(proposal, decision 34), since what is built follows decision 21.
 
 ### Prompts go on stdin (Adam, 2026-10-18)
 
@@ -514,9 +536,12 @@ checks worker isolation when it starts. That is a later edit to its branch, not 
 - **`run` always runs the worker as the same user**, with a notice. It is the one-shot command
   for development: a person at a terminal, usually on a laptop with their own login, where a
   second account is friction for no gain. The notice puts the choice in every log.
-- **`run` sweeps only its own trees** (Adam, 2026-10-18). Under #179 `run` is rank 0,
-  so its trees are `<role>-0-<id>`. Its release and startup sweep remove those alone, as the
-  Igor's own user with no `sudo`, which is the user its worker ran as. A tree a `serve` instance
+- **`run` sweeps only its own trees** (Adam, 2026-10-18 and 2026-10-19). Under #179 `run` is
+  rank 0, so its trees are `<role>-0-<id>`, and each run's `<id>` begins with its own run id
+  (#179), so two runs of one role at once make different trees. It removes only trees carrying
+  its run id, as the Igor's own user with no `sudo`, which is the user its worker ran
+  as. Each run also gets its own worker home, the `HOME` #174 sets for the run's `claude -p`
+  calls, apart from the developer's own home, and #174 removes it when the run ends. A tree a `serve` instance
   left belongs to that instance's worker user, which `run` cannot act as, and `run` leaves it.
 
 So the command says whether there is a worker user, and no setting does. The alternatives:
