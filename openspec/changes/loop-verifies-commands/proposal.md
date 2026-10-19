@@ -1,90 +1,161 @@
-## Decisions asked of the reviewer
+## Decisions
 
-1. **The loop runs a new role key, `checks`, not the `commands` list.** `checks` lists exact
-   command lines, such as `npm test` and `npx tsc --noEmit`. Rejected: running every `commands`
-   entry. Those entries are permission patterns, not command lines: `git log:*` is no check,
-   and `npm test:*` names no single line to run.
-2. **`checks` accumulates down the inheritance chain, and each check must be a command the
-   role's `commands` permits.** A role can add a check and cannot drop one it inherits. A check
-   runs as its words, with no shell, and a line holding a shell operator or quote is refused,
-   so `npm test && curl …` cannot pass as a line `npm test:*` permits. Rejected: narrowing like
-   `commands`, which would let a role drop the org's tests. Also rejected: running each line
-   through `sh -c`, under which the permitted-by-`commands` rule means nothing.
-3. **Checks run the way the worker runs:** in their own process group, with the worker's
-   environment minus its seat token, and as the worker's user. #175 (`worker-user`) gives
-   `igor serve` a separate worker user always and `igor run` never, so under `serve` checks run
-   as that worker user, and under `run` as the Igor's own user. Running as the Igor's own user
-   lets repository code read the Igor's credentials. #175 accepts that for the worker under
-   `igor run`, the one-shot command for development, and a check there can read nothing the
-   worker cannot already read. This change is built after `worker-user` merges. Rejected:
-   running checks as the Igor under `serve`, which hands repository code the Igor's GitHub App
-   key and the tokens of every seat the Igor holds.
-   Also rejected: building this first, with checks running as the Igor's user. `worker-user`
-   would then have two places that start repository code to move to the worker user, and its
-   spec names only the worker.
-4. **Checks run after the loop reads which paths the worker changed, and before it re-reads the
-   issue's claim to confirm it still holds it.** The artifact carries only the changes read
-   before the checks ran, so nothing a check writes reaches it. Where `signed-publishing` (#153)
-   stages and signs the tree before committing, the checks run after that staging too, so they
-   test the tree that is published. Rejected: running checks before the read, which would
-   publish snapshots and build output.
-5. **One time limit covers all of a run's checks:** `check_minutes`, default 15, at most 60. On
-   timeout the check's process group is killed, and the timeout counts as a failure that is
-   named as a timeout. Rejected: a fixed constant, which a repository with slow tests can't
-   change; and no limit, under which a hung test holds the run and its tree with no end.
-6. **A failed check still publishes, as a draft.** Reviewers are still requested, and the body
-   names the failure. *Rejected:* publishing nothing, which throws away the work and the
-   evidence of what failed.
+**Decided by Adam:**
 
-   **Decided (Adam, 2026-10-13): a draft is within `pr`.** A role whose `allow` lists `pr` and
-   not `draft-pr` still gets a draft when a check fails. `allow` says what the work may become,
-   and a draft is a pull request not yet ready. Work published after a lost claim, where the
-   Igor stopped holding its claim on the issue mid-run, already goes out as a draft wherever
-   `allow` permits a pull request at all. *Rejected:* opening the pull request ready because
-   `allow` lists only `pr`, which presents failing work as ready for review.
-7. **Checks also run before a later push onto an existing pull request, such as a conflict
-   resolution. Once the push is published, their result is reported in a comment**, whatever it
-   is, and a failure returns the pull request to draft. Rejected: leaving a ready pull request ready over failing tests. Also rejected:
-   reporting only by editing the body, which notifies nobody watching the pull request.
+1. **Checks are declared per repository, in a `repos` map in the org base, `roles/org.yaml`**
+   (Adam, 2026-10-18, on #154). `repos` maps a repository, as `owner/name`, to the list of
+   exact command lines Igor runs on every change to it, under `checks`, and to their time
+   limit, `check_minutes`. Every role with that repository in its `sources` gets the same
+   checks; a repository with no entry gets none. Only the org base may name `repos`; no role
+   key declares a check. *Rejected:* a `checks` key on each role, accumulating down inheritance.
+   Checks belong to the repository, not to whichever role touches it, and the one lore
+   repository, which holds every role file, serves many code repositories with different
+   checks.
+2. **A failed check goes back to the worker once** (Adam, 2026-10-18). A round is one pass
+   through every check of the repository. Where any check of the first round fails or times out, the loop starts the worker a second time in the same tree, giving it each such
+   check's command, result, exit code and the end of its output, and runs every check again on
+   what that run leaves. Where a check still does not pass, Igor publishes a draft pull request
+   that names each check that failed. *Rejected:* publishing a draft at once, which hands a
+   reviewer a failure the worker could often have fixed; and retrying until the checks pass,
+   which has no bound on cost.
+3. **A draft is within `pr`** (Adam, 2026-10-13). A role whose `allow` lists `pr` and not
+   `draft-pr` still gets a draft when a check still fails. `allow` says what the work may
+   become, and a draft is a pull request not yet ready. *Rejected:* opening the pull request
+   ready because `allow` lists only `pr`, which presents failing work as ready for review.
+4. **Checks run after #153's staging and signing** (Adam, 2026-10-13), so they test the tree
+   that is published. #153 (`signed-publishing`) signs every commit Igor pushes other than a
+   merge; its prose pass, a model step, may edit docs and comments before it signs. The second
+   run's changes are staged and signed again before the checks run again. A conflict resolution
+   is a merge and carries no signature: Igor stages the merged tree in the clone the worker worked in, and the checks
+   run on that. Where this change is built before #153, nothing is staged or signed, and the
+   checks run once the loop has read the changes. *Rejected:* checks before signing, which test
+   a tree the prose pass may still change.
+5. **Which account a check runs as follows the command that started the Igor** (Adam,
+   2026-10-17). Under #175 (`worker-user`), `igor serve` always runs its worker as a separate
+   worker user and `igor run` never does, so a check runs as the worker user under `serve` and as
+   the Igor's own account under `run`. Under `run` a check can read the Igor's credentials, such
+   as its GitHub App key; so can the worker that wrote the code the check runs, and #175 accepts
+   that for `igor run`, the one-shot command for development. *Rejected:* checks as the Igor's
+   own account under `serve`, which hands repository code the Igor's App key and the tokens of
+   every seat it holds; and building this change before #175, which would leave #175 two starts
+   of repository code to move to the worker user, the worker's and the checks', instead of one.
+6. **A pull request opened after a lost claim requests no reviewers**, even with a failed check
+   (Adam, 2026-10-13). *Rejected:* requesting them anyway, which asks people to review work the
+   Igor no longer holds the issue for.
+7. **Checks run before every later push of the worker's changes onto an existing pull
+   request**: a conflict resolution, gate two's push under #150, and each revision answering a
+   reviewer (Adam, 2026-10-13). Once the push is published, a comment with a fixed heading
+   reports the result, and a still-failing check returns the pull request to draft. The comment
+   is posted only on a repository that declares checks. A clean merge the code host makes with
+   no worker runs no checks. *Rejected:* checking only the opening run, which leaves gate two's
+   implementation untested; reporting only through the table #190 rebuilds in the body after
+   every push, since GitHub notifies nobody of an edited body; and a comment on every
+   push of a repository with no checks, which says nothing.
+8. **The checks' result is written only into #190's evidence table**, in #190's wording, with
+   each failed check's output in the block #190 lays out under the table (Adam, 2026-10-13). The
+   comment in decision 7 is the one exception. *Rejected:* a line of this change's own in the
+   body, which would give the same result two wordings and two places.
+9. **This change builds and archives after #188 (`keep-action-log`) and #190
+   (`review-evidence`)** (Adam, 2026-10-13). It also follows #175, under decision 5, and #179,
+   whose sweep it relies on (*Impact*). #153 may land before or after it. #204, the one list of
+   the archive order, does not list this change, #188 or #190 (*Still open*).
 
-**Also decided (Adam, 2026-10-13):**
+**Proposed, for Adam to approve:**
 
-- **Checks run after #153's staging and signing** (decision 4). #153 signs every commit Igor
-  pushes other than a merge, including, under the two-gate workflow (#150), gate two's
-  implementation and each revision answering a reviewer. Its prose pass, a model step, may edit
-  docs and comments before it signs. A conflict resolution is a merge and carries no signature:
-  Igor stages the merged tree in its clone, and the checks run on that. *Rejected:* checks before
-  signing, which test a tree the prose pass may still change.
-- **A pull request opened after a lost claim requests no reviewers**, even with a failed check,
-  an exception to decision 6. *Rejected:* requesting them anyway, which asks people to review
-  work the Igor no longer holds the issue for.
-- **Checks run before every later push of the worker's changes** (decision 7, widened from a
-  conflict resolution to gate two's push and each revision too). *Rejected:* checking only the
-  opening run, which leaves gate two's implementation untested.
-- **The comment after such a push is posted only where the role declares checks.** It is the
-  one place this change writes outside #190's table, an accepted exception to the decision
-  below that the table carries its result. *Rejected:* no comment, which leaves a
-  changed result unannounced; and a comment for a role with no checks, which says nothing on
-  every push.
+10. **A check is an exact command line, run as its words with no shell, and a role is refused
+    when its `commands` does not permit a check of a repository in its `sources`.** A line
+    holding any of ``; & | < > ( ) ' " \ $ ` * ? [ ] { } ~ # !``, a tab, a newline or two spaces
+    in a row, or beginning or ending with a space, is refused at load. So `npm test && curl …`
+    cannot pass as a line `npm test:*` permits, and `npm test src/*.ts` cannot pass a `*` its
+    author meant a shell to expand.
+    *Rejected:* running every `commands` entry, since those are permission patterns, not command
+    lines: `git log:*` is no check, and `npm test:*` names no single line to run. Also rejected:
+    running each line through `sh -c`, under which the permitted-by-`commands` rule means
+    nothing.
+11. **One time limit, `check_minutes`, covers each round of a run's checks:** a whole number from
+    1 to 60, default 15, set on the repository's entry beside its checks, since how long a
+    repository's tests take is the repository's property. 15 and 60 are starting points to tune
+    against observation, not derived values. At the limit the running check is killed and
+    recorded as timed out, and the rest as not run. *Rejected:* a fixed constant, which a
+    repository with slow tests cannot change; no limit, under which a hung test holds the run and
+    its tree with no end; and a role setting, which would let two roles give one repository's
+    checks different limits.
+12. **Checks run only on work the loop would publish:** after it reads the changed paths and
+    their contents, reads the claim, and applies every refusal that reads only the changes
+    (`allow`, path names, conflict markers, undeclared reverts). The claim is read again when the
+    checks end. A worker stopped or killed for a limit runs none. *Rejected:* checks before
+    those refusals, which spend a round of checks and a second model run on work that is then
+    refused; and checks before the read, which would publish what the checks write, such as test
+    snapshots and build output.
+13. **A check's output is redacted, then cut to its last 1,000 characters,** both where it is
+    published and where it goes back to the worker. Redacting first means a token the cut would
+    split is still found. The loop keeps only the last 64 KiB of a check's output while it runs,
+    so a check that prints without end cannot fill the Igor's memory.
+14. **Before the second run, the tree is restored to the changes read before the checks,** so
+    nothing the first round wrote, such as a coverage report, is read as the second run's work.
+15. **A lost claim, found before or during the first round, starts no second run.** The round
+    runs to its end, and the work is offered under *Work finished before a claim is lost is
+    offered, not discarded*, with that round's result. A claim found lost during the second run
+    or the second round stops neither, and the work is offered with the second round's result.
+    *Rejected:* a second run after the claim is lost, which spends the seat on an item the Igor
+    no longer holds.
+16. **A second run that cannot finish keeps the first run's work.** It passes the budget gate as
+    any run does. Where the gate refuses it, or it exits with an error or is killed for a limit,
+    the loop publishes the changes read before it, as a draft with the first round's result and
+    the first run's summary. Where the item is stopped during the second run, nothing is
+    published. *Rejected:* publishing nothing on a failed retry, which discards work the worker
+    finished.
+17. **After a conflict resolution, the second run's changes join the same merge commit,** which
+    carries no signature (decision 4). *Rejected:* a separate signed commit on top of the merge,
+    which publishes two commits for one resolution.
+18. **The pull request's summary is that of the run whose changes are published:** the second
+    run's, except under decision 16. The execution row keeps both rounds' checks.
+19. **A check gets the worker's environment without its model login,** both
+    `CLAUDE_CODE_OAUTH_TOKEN` and `ANTHROPIC_API_KEY`. A repository whose tests call Anthropic's
+    API gets no key from Igor. *Rejected:* passing `ANTHROPIC_API_KEY`, which hands repository
+    code the key the seat spends.
+20. **A `repos` key matches a source's repository ignoring case,** as GitHub's names do, and two
+    keys that differ only in case are refused. *Rejected:* an exact match, under which `Org/Web`
+    silently gives `org/web` no checks.
+
+**Still open:**
+
+- **Whether a later change should let a role add checks of its own on top of its repository's.**
+  #154 proposed it on 2026-10-01; this change lets no role add or drop a check. *Recommendation:*
+  not until a role needs one; a check every role on a repository runs is the common case, and a
+  role key added later changes nothing here.
+- **Whether a later push whose checks pass marks the pull request ready again.** This change
+  returns a pull request to draft on a failure and never undoes it. *Recommendation:* mark it
+  ready where Igor's own failed check made it a draft, the role's `allow` lists `pr`, and the
+  claim is held.
+- **#204 lists none of this change, #188 or #190** (for Adam, who keeps that list).
+  *Recommendation:* add them after #175 and #179, in the order #188, #190, then this change.
+- **Whether the GitHub App may call `convertPullRequestToDraft`** is not measured (task 0.4).
+  Where it may not, the comment after the push says Igor could not return the pull request to
+  draft, in place of the Tests row's claim that it is one.
 
 ## Why
 
-Today the loop runs no test or lint command (#186). The worker's system prompt lists the role's
+The loop runs no test or lint command (#186). The worker's system prompt lists the role's
 commands and leaves testing to the worker (`src/execute.ts:169-182`). The pull request body is
 the worker's own summary (`prBody`, `src/execute.ts:1169-1185`). So the only evidence that a
-change passes is the worker saying so.
+change passes is the worker saying so. Igor also never runs `git commit`, so a repository's
+pre-commit hooks never run on its changes (#154). This change runs no hooks: a repository gets
+what its hooks run only by declaring the same commands as checks.
 
 ## What Changes
 
-- New role keys `checks` (accumulates) and `check_minutes` (the most specific level wins).
-- After the worker exits and its changes are read, the loop runs each check in the worker's tree,
-  under the worker's user and environment, within one time limit, re-reading the claim while
-  they run.
-- The checks' result fills the Tests row of `review-evidence`'s evidence table: each check
-  passed, failed with its exit code and the output's last lines, timed out, or was not run; or
-  the role declares none. A failure opens the pull
-  request as a draft.
-- Each execution row records each check's command, result, exit code and duration.
+- A new org-base key, `repos`, mapping each repository to its `checks` and `check_minutes`.
+- After the worker exits and its changes are read, the loop runs the repository's checks in the
+  worker's tree, as the worker's user, with the worker's environment less its model login,
+  within a time limit for
+  each round, re-reading the claim while they run.
+- Where a check does not pass, the worker runs once more with the failures, and the checks run
+  again. A check that still does not pass opens the pull request as a draft.
+- The last round's result fills the Tests row of `review-evidence`'s evidence table: each check
+  passed, failed with its exit code and the end of its output, timed out, or was not run; or the
+  repository declares none.
+- Each execution row records every round's checks: command, result, exit code and duration.
 
 ## Capabilities
 
@@ -94,28 +165,31 @@ None.
 
 ### Modified Capabilities
 
-- `role-config`: the `checks` and `check_minutes` keys.
-- `task-execution`: the loop runs the checks, and how their result is published and recorded.
+- `role-config`: the org base's `repos` map, the one key only the org base may hold, and the refusal of a role whose `commands` does not permit its repositories' checks.
+- `task-execution`: the loop runs the checks, sends a failure back to the worker once, and
+  publishes and records the result.
 
 ## Impact
 
-- **Depends on `worker-user` (#175).** Under `serve`, which always has a worker user, the checks
-  use #175's code for starting a process as the worker user, killing that process, and
-  removing the files the worker user wrote. Under `run`, which never does, they run as
-  the Igor's own user, as the worker does.
-- **Built after `concurrent-instances` (#179).** That change removes the absolute ceiling and the
-  age-based tree sweep, and sweeps by rank instead, so a tree held through the checks needs no
-  change to the sweep.
-- **Overlaps `review-evidence` (#190).** Its Tests row shows this change's results, read from
-  the `checks` results on the execution row (passed, failed with its exit code, timed out, or not
-  run). **Decided (Adam, 2026-10-13):** that row is the only place in the body the result is
-  written, in the wording #190 gives it; this change writes no line of its own into the body.
-  *Rejected:* a line of this change's own in the body, outside the table, which would give the
-  same result two wordings and two places.
-- **Build order: `keep-action-log` (#188), then `review-evidence` (#190), then this change and
-  `scope-check` (#187) in either order**, since the two do not depend on each other. Archive order follows the same sequence, so the redaction rule and the
-  table this change points at exist, in code and in the in-force specs, before it lands.
+- **Depends on `worker-user` (#175).** Under `serve` the checks use #175's code for starting a
+  process as the worker user, killing it, and removing what the worker user wrote. Under `run`
+  they run as the Igor's own user, as the worker does.
+- **Built after `concurrent-instances` (#179).** Its sweep removes leftover trees by rank, not by
+  age, so a tree held through the checks and the second run needs no change to the sweep.
+- **Overlaps `review-evidence` (#190)**, which owns the table, its Tests row wording, and the
+  output block under it. #190 needs amending in three places. It words the checks as the role's
+  (`not checked: the role declares no checks`, the role's `check_minutes`, the order the role
+  declares them), where under decision 1 they are the repository's. It says this change writes
+  only into its table, while decision 7 adds a comment after a later push. And its failed Tests
+  row says the pull request is a draft, which is false where GitHub refuses the conversion
+  (task 0.4).
 - **Overlaps `keep-action-log` (#188)**, which defines *credential redaction* and builds its
-  function. Published check output is redacted by that function.
+  function.
+- **Overlaps `worker-user` (#175)**, whose task-execution delta also states that what a check
+  writes is not published, and calls the checks the role's commands. The rule that what a check
+  writes is not published belongs to this change, and #175 needs only to point to it.
+- **#153 and `read-seat-windows-from-the-stream` (#143)** plan their archive merges around a
+  `checks` addition to *Merge semantics differ by field kind*. This change does not modify that
+  requirement, so each needs that addition dropped from its plan, in its own pull request.
 - Code: `src/role.ts`, `src/execute.ts`, and the GitHub adapter (returning a pull request to
   draft). Docs: `README.md` roles section, `templates/org.yaml`.
