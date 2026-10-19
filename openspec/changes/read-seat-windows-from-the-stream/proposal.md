@@ -5,7 +5,10 @@ provider's report of how full a seat's window is, carried in each run's output a
 `rate_limit_event`. A window's **instance** is one stretch of it from one reset to the next. A
 **probe** is one minimal model call made on the server that runs the Igors, with a seat's own
 token, to get a reading. #101 is `condition-backoff`, which records stuck conditions and is about
-to merge; #171 is `seat-files`, which moves seat configuration into one file per seat.
+to merge; #171 is `seat-files`, which moves seat configuration into one file per seat and carries
+a lent seat's token as ciphertext; #179 is `concurrent-instances`, which runs several processes of
+one role, each with a number, its **rank**, and each writing a **heartbeat** file its siblings
+read.
 
 1. **The reserve is a line on the seat's reading that moves toward the reset** (Adam, 2026-09-28).
    For each window, Igor starts work on a seat only while its newest unreset reading is below
@@ -19,9 +22,10 @@ to merge; #171 is `seat-files`, which moves seat configuration into one file per
 3. **A seat with no unreset reading is drawn on only where `r` is 0** (Adam, 2026-09-28). If the
    provider stops sending the event, reserved seats go idle and `igor budget` says why.
 4. **Each Igor process may pass the line by about two runs, and processes do not coordinate.**
-   On 2026-09-28 Adam accepted one run, or two where a run's reading comes early in the run. Task
-   1.1a measured that it always comes early, right after the first call, so the figure approved
-   here is two. *Rejected for now:* a coordination marker across Igors, taken up once a reserved
+   On 2026-09-28 Adam accepted one run, or two where a run's reading comes early in the run. In
+   the two calls task 1.1a captured, the reading came right after the first call, so the figure
+   approved here is two. Task 1.1b checks ordinary worker runs, and sends the figure back to Adam
+   if a run carries a later event. *Rejected for now:* a coordination marker across Igors, taken up once a reserved
    seat is actually shared by several.
 5. **A role may declare a `reserve`**, applied to every seat it draws on, raised by inheritance and
    never lowered (Adam, 2026-09-28).
@@ -75,6 +79,29 @@ to merge; #171 is `seat-files`, which moves seat configuration into one file per
 17. **The `dedicated` seat key is dropped in #171, not here** (Adam, 2026-10-17). Once this change
     stops refusing a reserve on a dedicated seat and stops forcing its reserve to 0, the key does
     nothing. #171 is where seat keys are declared.
+18. **#171, not this change, adds two probe exclusions, by modifying this change's probe
+    requirement** (Adam, 2026-10-18). #171's `seat-budget` delta has a `MODIFIED` block on *A seat
+    nothing has read is probed on the Igor server with its own token*, copied from this change
+    with its scenarios. It adds that the probe skips a seat whose token Igor could not decrypt,
+    and that `igor run` makes no probe. #171 archives after this change, so once this requirement
+    is in force, #171's block replaces it. This change states neither exclusion itself.
+19. **Every row taken from the stream is `source: "stream"`** (Adam, 2026-09-27). *Rejected:* an
+    optional `via: "stream"` field beside an existing source.
+20. **A stream reading is timed when its event arrived, not when the run ended.** This change's
+    choice, which Adam approves with it. *Rejected:* timing at the run's end, which would count
+    the run's own spend against a fullness taken before it.
+21. **Overage shuts only the window its reading names.** This change's choice: a session past
+    its cap says nothing about the week. *Rejected:* shutting both windows, which could hold a
+    seat out for days.
+22. **A probe's exclusions use the seat's own reserve**, since a probe is made for no role; only
+    the crossing probe, made while deciding for a role, uses that role's line. This change's
+    choice.
+23. **A role *has a seat it can spend* when the gate would choose one for it now** (Adam,
+    2026-10-18, for #179). In #179 a rank's heartbeat says the rank is available only while it is
+    free and its role has a seat it can spend. A role has one when the gate would choose a seat for
+    it: when not every seat is past its reserve line, and the role is not holding back at the
+    line. This change defines the term once, in *A role has a seat it can spend when
+    the gate would choose one now*, and #179 cites it.
 
 **Still open:**
 
@@ -82,8 +109,11 @@ to merge; #171 is `seat-files`, which moves seat configuration into one file per
   priority.
 - **The `rejected` shape** (#57) is contributor-reported, not captured (task 1.5).
 - **Per-model weekly windows** have no source for a token seat (#75 task 5.1).
-- **Two facts the gate rests on are unmeasured:** that fullness does not fall within an instance
-  (task 1.3), and what `isUsingOverage` means (task 1.4). The overage rule is not built until 1.4
+- **Facts the gate rests on are unmeasured:** that fullness does not fall within an instance
+  (task 1.3); what `isUsingOverage` means (task 1.4); whether an ordinary worker run carries an
+  event after its first call (task 1.1b); and whether triage's single JSON envelope, from
+  `--output-format json`, carries the reading as `rate_limit_info` (task 11.1), which decides
+  whether a triage call yields a reading. The overage rule is not built until 1.4
   confirms it.
 - **For Adam: this change's code is built before #171's.** The two archive in one commit
   (decision 16), but archiving a spec and building its code are separate steps, and this
@@ -91,11 +121,6 @@ to merge; #171 is `seat-files`, which moves seat configuration into one file per
   seat name no token and run on a stored login, and this change says nothing of how its probe
   treats such a seat. Delay merging this change's code until #171's merges, or have the probe
   skip a seat with no token until #171's code lands?
-- **#171's probe exclusions.** #171 has the probe skip two seats: one whose encrypted token Igor
-  cannot decrypt, and one lent by an encrypted file under `igor run`, where #171 decrypts no
-  lent seat. #171 does not modify this change's probe requirement, which says such a seat SHALL
-  be probed. #171's own block, in the same archive commit, has to carry the exclusions into this
-  change's probe requirement.
 
 ## Why
 
@@ -202,6 +227,9 @@ Explicitly out of scope:
 ### Modified Capabilities
 
 - `role-config`: a role's `reserve` is raised by inheritance and never lowered.
+- `surface-adapter`: `observe` leaves the list of commands that take no role, in *On GitHub,
+  every call an Igor makes acts as its App*, since this change removes the command. #171 modifies
+  the same requirement after this change, adding `seat` to that list.
 - `graceful-handoff`: where the line shut a window whose reading is below 100%, a budget handoff
   states the line's crossing, not the reset.
 - `seat-budget`: a worker run's own output stream is a source of observations of the seat that

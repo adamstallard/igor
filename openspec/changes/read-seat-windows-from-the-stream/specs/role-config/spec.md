@@ -2,15 +2,17 @@
 
 ### Requirement: A role's reserve is raised by inheritance and never lowered
 
-A role file MAY declare `reserve`, a fraction from 0 to 1, both included; seat-budget's *A role
-may hold back more of a seat than the seat does* says what it does. A role's reserve SHALL be
+A role file MAY declare `reserve`, as seat-budget's *A role may hold back more of a seat than the
+seat does* defines it. A role's reserve SHALL be
 raised by inheritance and never lowered. A role MAY declare a larger reserve than the one it
 inherits from its parent or from `roles/org.yaml`, and SHALL NOT declare a smaller one:
 configuration declaring a child reserve below its parent's SHALL be refused, naming both values and
 the role each came from. A role declaring none SHALL take its parent's.
 
-This runs the opposite way to `budget_share`, which a child may only lower, because both inherit
-toward holding a role back.
+This runs the opposite way to `budget_share`, which a child may only lower. Each moves in the
+direction that holds a role back: a lower share, a higher reserve. A raised reserve is a restriction, so `reserve` merges as a monotonic
+field of *Merge semantics differ by field kind*; that requirement's list of fields gains it at
+archive (task 16.2).
 
 #### Scenario: A child role may raise its inherited reserve
 

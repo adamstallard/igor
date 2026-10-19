@@ -17,9 +17,13 @@
 - [x] 1.1a In the same capture, and on the next few ordinary worker runs, record **when** in a run
       each `rate_limit_event` arrives relative to the run's first and last API call. This bounds how
       far past its line one run can carry a seat (`design.md`, *How far past the line one Igor can
-      go*); record the answer there. Measured 2026-10-11: one event per run, right after the first
-      API call's response, none after later calls; so the bound is about two runs per process
-      (`design.md`)
+      go*); record the answer there. Measured 2026-10-11 on the two captured calls only, one of one
+      turn and one of three: one event per run, right after the first API call's response, none
+      after later calls; so the bound is about two runs per process (`design.md`). Ordinary worker
+      runs were not captured; 1.1b covers them
+- [ ] 1.1b On several ordinary worker runs, including one that crosses a warning threshold
+      mid-run, record how many `rate_limit_event`s arrive and when. If a run carries an event
+      after its first call, the two-run bound of decision 4 goes back to Adam
 - [ ] 1.2 Keep the capture as a test fixture beside the 2026-09-27 one from §6.3.3, so the parser
       is tested against what the provider sent rather than what was guessed
 - [ ] 1.3 Check that fullness does not fall within an instance: compare the successive readings of
@@ -97,7 +101,7 @@
       report. Test that a seat whose runs carry no events keeps its older unreset readings until
       they reset, and has none after
 - [ ] 4.5 Capacity stays, as a report only. Reword the comments that make it a bound:
-      `CapacityAndSpend` (`src/capacity.ts:395-418`, "the spend cancel out of
+      `CapacityAndSpend` (`src/capacity.ts:396-415`, "the spend cancel out of
       `spend ≥ (1 − reserve) × capacity`", "the one shared sum the reserve is a bound on"),
       `SpentWindow.estimated` (`:390-392`, "cannot overrun anybody's floor"), the `vouched` comment
       in `boundsForSeats` (`:512-516`), and the co-consumer paragraph on `capacityFor`
@@ -131,8 +135,9 @@
       spending extra usage beyond its subscription — passed over until 2026-10-02T23:00:00.000Z
       ```
 
-- [ ] 5.4 The shipped `!  seat "…" carries no subscription, so no window is reported against it`
-      line is false for a seat with stream readings. Where such a seat has an unexpired stream
+- [ ] 5.4 The shipped line saying a seat `is authenticated … but its credential carries no
+      subscription, and a window is only ever reported against one` (`src/budget.ts:289-291`) is
+      false for a seat with stream readings. Where such a seat has an unexpired stream
       row, omit the line; where it has none, keep the line but reword it to what is true. **May be
       reworded:**
 
@@ -148,6 +153,7 @@
 - [ ] 6.1 In the serve loop, select the seats to probe: the deployment declares seats; some window has no unexpired `usage` or `stream` observation; no unexpired row at
       100%; no unexpired overage reading for the window its `rateLimitType` names; no window whose
       newest unreset reading is at or past that window's line (7.1, with the seat's own reserve,
+      the overage exclusion built only once 1.4 confirms what `isUsingOverage` means,
       since a probe is made for no role); no probe of it recorded by any Igor in the last hour; no
       probe of it this process started still running; and every probe of it in the last five
       hours got an event. Where a reading expired at a reset the server knows of, the probe is the
@@ -161,7 +167,7 @@
       `loadSpend` returns. Where #101 has merged, its `check` row for the credential (6.7) is a
       second row and carries no cost. Record no observation when no event arrived
 - [ ] 6.4 Tests: a reserved seat with no reading is probed once; a seat with both windows unexpired
-      is not; a refused or overage seat is not until the reset; a seat whose week reading is past
+      is not probed to read it; a probe this process started and is still running is not doubled; a refused or overage seat is not until the reset; a seat whose week reading is past
       the week's line is not though its session reading has expired, and is once the line has
       risen past the reading; the hourly bound and the
       five-hour back-off hold; a probe's cost is recorded as a probe; a probe with no event
@@ -205,7 +211,10 @@
       the reading, its time and the line. A window with no unreset reading is blocked only where
       `r` > 0, with its own verdict and reason, not `no-figure`. A refusal (`bound.spent`) still
       blocks as it does, and its reset still reaches the handoff
-- [ ] 7.3 **Live path.** Replace the fixed line in `seatStatus` / `hasHeadroom`
+- [ ] 7.3 **Live path.** Every seat's credential is a `setup-token` (decision 14), to which the
+      live `/usage` read returns no window, so the live path is expected to be dead. Confirm in
+      `src/budget.ts` that no seat can get a window from it. If none can, remove the path and
+      its callers' live branches. Only if some seat still can, replace the fixed line in `seatStatus` / `hasHeadroom`
       (`src/budget.ts`): `headroomPercent = line × 100 − percentUsed`, with the live
       reading's reset resolved through `resolveRecentReset` and `remaining` = 1 where it does not
       resolve. Its callers: `chooseSeat`'s live path (its passed-over and chosen reasons),
@@ -408,10 +417,16 @@ requirements are in force:
       2026-10-17). The delta modifies #101's *A seat's refused credential is a condition on that
       seat*. #171 (`seat-files`) modifies the same requirement and archives after this change, in
       the same commit, so #171's block would replace this delta's. #171's block must therefore
-      carry this delta's rules too: when writing this delta, tell #171
-- [ ] 15.2 `condition-backoff/design.md` (from #101) and `concurrent-instances/design.md` link to
-      `docs/architecture.md` §6.3.4 by the anchor `#634-…specified-on-143-not-built`. This change
-      renames the heading to "— **built**", so update both links to the new anchor
+      carry this delta's rules too: when writing this delta, tell #171. #171 also carries a
+      `MODIFIED` block on *A seat nothing has read is probed on the Igor server with its own
+      token* (proposal, decision 18), so moving *A probe checks the credential too* out of that
+      requirement has to be matched in #171's block
+- [ ] 15.2 `condition-backoff/design.md` (from #101), `concurrent-instances/design.md` and
+      `archive/2026-10-10-reset-by-comparison/design.md` link to `docs/architecture.md` §6.3.4 by
+      the anchor `#634-…specified-on-143-not-built`. This change renames the heading to
+      "— **built**", so update the three links to the anchor the renamed heading generates. The
+      archived link is broken on this branch already, since the heading is renamed here; fix all
+      three in gate two
 - [ ] 15.3 #101's stuck-conditions spec and its task 3.3 say "from pacing". Pacing is withdrawn
       here; the state is "holding back at the line". Once #101's stuck-conditions spec is in
       force, change that wording in it
@@ -421,4 +436,12 @@ requirements are in force:
 - [ ] 16.1 Archive this change and `seat-files` (#171) together, in one commit (Adam, 2026-10-17).
       Archived alone, this change would leave the in-force pool requirement naming
       `capacity_estimate`, which it removes; only `seat-files` removes that requirement. Archive
-      this change first: `seat-files`' deltas are written against this change's text
+      this change first: `seat-files`' deltas are written against this change's text. Do 15.1
+      first: until it is done, one probe 401 here opens a seat condition that #101 opens only at
+      its threshold
+- [ ] 16.2 Add `reserve` to the monotonic fields of role-config's *Merge semantics differ by
+      field kind*, as this change's role-config delta says. lore-from-corrections, #189 and #153
+      each modify that requirement too; merge the field lists by hand with whichever has
+      archived
+- [ ] 16.3 If #196 (spec-trace) has merged by the time this change archives, its CI fails each new
+      scenario with no tagged test. Tag a test for each scenario this change adds

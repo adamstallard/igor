@@ -275,8 +275,9 @@ capacity this loses nothing, because `capacityFor`, `whyNoFigure` and `resetAnch
 any observation with a `model` (`src/capacity.ts`, the per-model skip around line 253). What goes
 is a display line: the `wk:<model>` rows `renderBudget` prints from observation rows for such a
 seat, which *Limits the provider reports but the loop does not enforce are still shown* asks for.
-Existing rows still print until they are superseded. A seat that reads live through an
-interactive login keeps its `wk:` rows from the live read. Where per-model caps are taken up is
+Rows already in the log keep printing as the code prints them now, and nothing writes new ones
+for a token seat. Since proposal decision 14 no seat reads through an interactive login, so no
+live read supplies them either. Where per-model caps are taken up is
 #75 task 5.1 (`triage-refusal-calibrates`), which decides whether a refusal records
 `Observation.model`.
 
@@ -384,8 +385,8 @@ was spent.
 **How far past the line one Igor can go.** Between readings an Igor does not see its own spend. The
 gate before an item sees the last reading the previous run carried, and that reading is timed when
 its event arrived. So an Igor can pass the line by the item it admits plus whatever the previous run
-spent after its last event. Measured 2026-10-11 (task 1.1a): a run gets one event, right after its
-first API call's response, so the last event is also the first, and nearly all of the previous run's
+spent after its last event. Measured 2026-10-11 on two captured calls (task 1.1a; ordinary worker
+runs are task 1.1b): a run gets one event, right after its first API call's response, so the last event is also the first, and nearly all of the previous run's
 spend comes after it. So one Igor process can overshoot by about two runs: the previous run, which
 its reading missed, and the item the gate admits. On 2026-09-28 Adam accepted an overshoot of one
 run, or two where a run's last event comes early; the measurement shows the event always comes
@@ -744,8 +745,9 @@ says the role may draw on three seats, not a pool of three.
   strict check on unknown keys (task 14.1).
 - **A role's reserve is raised by inheritance, never lowered**, and a child reserve below its
   parent's is refused, naming both (task 12.1).
-- **The overshoot is accepted:** about one run per process, up to two if a run's last event comes
-  early. Task 1.1a measured the upper end: about two runs per process.
+- **The overshoot is accepted at about two runs per process.** Adam accepted one run, or two where
+  a run's last event comes early. In task 1.1a's two captured calls it came early, so the figure
+  is two; task 1.1b checks ordinary worker runs.
 - **Losing the event:** seats whose effective reserve is 0 run without a reading, reserved seats go
   idle, and `igor budget` says why a seat is idle (task 7.6).
 - **The names:** the rename to *A seat with no reading is drawn on only where its line is the whole
@@ -783,6 +785,10 @@ says the role may draw on three seats, not a pool of three.
   uses a stored Claude login (*Whose reading it is*; proposal, decision 14). It replaces Adam's
   rule of 2026-10-17, recorded then as decision 14, that a seat naming no token ran on the
   server's stored login and was never probed.
+- **#171 adds two probe exclusions** (Adam; proposal, decision 18). #171 carries a seat's token as
+  ciphertext in its seat file. A `MODIFIED` block in #171 adds to *A seat nothing has read is
+  probed on the Igor server with its own token* that a seat whose token Igor could not decrypt is
+  not probed, and that `igor run` makes no probe.
 
 ## Still open
 

@@ -1255,8 +1255,10 @@ credential can ask asks its own seat whenever the answer matters. A seat's `setu
 credential cannot: under one, `/usage` returns a cost summary and no percentages (§6.3.3).
 
 This removes the machinery a stored reading would need. There is no cap in dollars to derive,
-because the comparison happens in percent — the unit the provider actually reports. There is no
-reading to go stale, because none is kept. And there is no way to read one seat and record it
+because the comparison happens in percent — the unit the provider actually reports. A live read
+keeps no reading to go stale. The stream readings of §6.3.3 are kept, but fullness does not fall
+within a window, so an old reading can only understate it, and it stops counting at the window's
+reset. And there is no way to read one seat and record it
 against another, because the figure comes from that seat's own credential: a seat naming a
 token that is unavailable is reported unreadable rather than falling through to whatever login
 is ambient.
