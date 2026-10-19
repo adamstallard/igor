@@ -89,6 +89,7 @@ function tracker(
       }
       log.reported.push(m)
       if (opts.reportPostsThenThrows === true) throw new Error('503 from the tracker')
+      return `comment-${log.reported.length}`
     },
     release: async (_c, as) => {
       if (opts.releaseThrows === true) throw new Error('503 from the tracker')
@@ -281,7 +282,7 @@ describe('a claim taken and not finished', () => {
     const { t } = tracker({ status: 'held' }, { verifyThrows: true })
     const spy: Tracker = {
       ...t,
-      report: async (_c, m) => { order.push(m === claimWithdrawn(role()) ? 'withdraw' : 'announce') },
+      report: async (_c, m) => { order.push(m === claimWithdrawn(role()) ? 'withdraw' : 'announce'); return 'comment-id' },
       release: async () => { order.push('release'); return true },
     }
     await takeClaim(spy, candidate(), role(), 'igor-bot', opts)
@@ -352,8 +353,9 @@ describe('standing down when the release does not take', () => {
   })
 
   it('speaks at all on a lost claim it could not give up', async () => {
-    // Standing down silently is right only while the release works: otherwise the item shows
-    // two holders and accounts for neither, and `cli.ts`'s silence warning excludes `lost`.
+    // A lost claim whose release did not take posts `stoodDownStuck`: without it the item shows
+    // two holders and accounts for neither. Standing down without a note is right only where the
+    // release works. A lost run is reported silent only where this note did not land.
     const { t, log } = tracker({ status: 'lost', by: 'bob' }, { releaseLeavesHolder: true })
     const r = await takeClaim(t, candidate(), role(), 'igor-bot', opts)
 

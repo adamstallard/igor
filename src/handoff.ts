@@ -1,4 +1,4 @@
-import { relabelSentence, stillHeld } from './claiming.js'
+import { relabelSentence, say, stillHeld } from './claiming.js'
 import type { Artifact, Candidate, Tracker } from './adapter.js'
 import type { ExecutionResult } from './execute.js'
 import type { Role } from './role.js'
@@ -343,10 +343,21 @@ export function composeHandoff(role: Role, candidate: Candidate, handoff: Handof
 
 export interface HandoffOutcome {
   posted: boolean
+  /**
+   * Whether anything this call posted landed on the item: the handoff, or the correction saying
+   * the release did not take. A correction can land where the handoff did not, so this, not
+   * `posted`, answers whether the item was left with a message.
+   */
+  said: boolean
   released: boolean
   text: string
   /** Why posting failed, when it did. The handoff exists for broken situations. */
   error?: string
+  /**
+   * Set where nothing landed and the handoff or its correction came back unconfirmed: the
+   * tracker did not say it was posted, and it may have been.
+   */
+  unconfirmed?: true
 }
 
 /**
@@ -366,15 +377,8 @@ export async function handOff(
   now: number = Date.now(),
 ): Promise<HandoffOutcome> {
   const text = composeHandoff(role, candidate, handoff, now)
-  let posted = false
-  let error: string | undefined
-
-  try {
-    await tracker.report(candidate, text)
-    posted = true
-  } catch (e) {
-    error = e instanceof Error ? e.message : String(e)
-  }
+  const handoffSaid = await say(tracker, candidate, text)
+  const { landed: posted, error } = handoffSaid
 
   let released = false
   try {
@@ -390,11 +394,15 @@ export async function handOff(
   // threw on the way home leaves the false sentence on the item with that flag false. Where
   // nothing landed the correction still stands on its own: the item is held, and saying so is
   // true whether or not anybody read a handoff first.
-  if (!released) {
-    await tracker.report(candidate, stillHeld(role)).catch(() => undefined)
-  }
+  const correction = released ? { landed: false } : await say(tracker, candidate, stillHeld(role))
+  const said = posted || correction.landed
+  const unconfirmed = !said && (handoffSaid.unconfirmed === true || correction.unconfirmed === true)
 
-  return { posted, released, text, ...(error === undefined ? {} : { error }) }
+  return {
+    posted, said, released, text,
+    ...(error === undefined ? {} : { error }),
+    ...(unconfirmed ? { unconfirmed: true as const } : {}),
+  }
 }
 
 /**

@@ -67,6 +67,9 @@ function tracker(
       if (opts.reportFailsOnce === true && reports === 1) throw new Error('503 from the surface')
       log.reported.push(m)
       if (opts.reportPostsThenThrows === true) throw new Error('timeout after the write')
+      // Every post this fake accepts answers a comment id, as a real surface does. A post
+      // answered with `undefined` would read as not confirmed.
+      return `comment-${reports}`
     },
     release: async (_c, as) => {
       if (opts.releaseThrows) throw new Error('cannot unassign')
@@ -360,7 +363,7 @@ describe('posting it', () => {
     const { t } = tracker()
     const spy: Tracker = {
       ...t,
-      report: async () => { order.push('report') },
+      report: async () => { order.push('report'); return 'comment-id' },
       release: async () => { order.push('release'); return true },
     }
     await handOffFrom(spy, candidate(), role(), 'igor-bot', { claimedAt: CLAIMED }, { kind: 'budget' }, result(), NOW)

@@ -13,6 +13,61 @@ import type { Role } from './role.js'
 
 export type Outcome = 'held' | 'lost' | 'stopped' | 'refused'
 
+/** What one post left on the item, and the tracker's error where it left nothing. */
+export interface Said {
+  landed: boolean
+  error?: string
+  /** Set where the tracker answered without confirming the post: it may be on the item. */
+  unconfirmed?: true
+}
+
+/** What every post a run or a claim made left on the item; see `spoken`. */
+export interface Spoken {
+  spoke: boolean
+  silence?: string
+  /** Set where no post landed and at least one may have: the tracker did not confirm it. */
+  answerUnconfirmed?: true
+}
+
+const UNCONFIRMED = 'the tracker did not confirm the post landed'
+
+/**
+ * Posts `text` and answers whether it landed. Where `report` answers `undefined`, the post may
+ * have landed but was not confirmed, so it counts as not landed, with `UNCONFIRMED` as its error.
+ *
+ * It never throws, even where `report` throws before returning a promise. `takeClaim` calls it
+ * inside its claim window, where any throw makes the claim refused, so a throw from a post after
+ * a lost claim would report the loss as a refusal.
+ */
+export function say(tracker: Tracker, candidate: Candidate, text: string): Promise<Said> {
+  return Promise.resolve()
+    .then(() => tracker.report(candidate, text))
+    .then(
+      (id): Said => (id === undefined ? { landed: false, error: UNCONFIRMED, unconfirmed: true } : { landed: true }),
+      // An error with no message still gets a reason, so the warning always names one.
+      (error: unknown) => ({ landed: false, error: why(error) || 'the tracker gave no reason' }),
+    )
+}
+
+/**
+ * Combines every post a run or a claim made into `spoke`, `silence` and `answerUnconfirmed`.
+ * `spoke` is true where any post landed. Otherwise `silence` holds the error of the last post
+ * passed, and callers pass posts in the order they made them. `answerUnconfirmed` is set where any
+ * post came back unconfirmed.
+ *
+ * A caller passes a post it skipped as `{ landed: false }`, so that a post made only in some cases
+ * can sit in a fixed argument list. That entry sets neither `silence` nor `answerUnconfirmed`.
+ */
+export function spoken(...said: readonly Said[]): Spoken {
+  if (said.some((s) => s.landed)) return { spoke: true }
+  const error = [...said].reverse().find((s) => s.error !== undefined)?.error
+  return {
+    spoke: false,
+    ...(error === undefined ? {} : { silence: error }),
+    ...(said.some((s) => s.unconfirmed === true) ? { answerUnconfirmed: true as const } : {}),
+  }
+}
+
 export interface ClaimResult {
   outcome: Outcome
   candidate: Candidate
@@ -34,10 +89,38 @@ export interface ClaimResult {
    */
   releaseStuck?: true
   /**
-   * Whether anything was said on the item. On a refusal, only a claim window that threw after
-   * announcing has said anything: the claim message, then its withdrawal.
+   * Set where the claim message is on the item, or may be: a surface can accept the write and
+   * still throw. Whoever reads the item has been told to stand off, so the caller owes them an
+   * answer.
+   */
+  announced?: true
+  /**
+   * Set beside `announced` where the claim message's own post threw or was not confirmed, so
+   * nobody knows whether it is on the item: a surface can accept a write and still throw. Every
+   * result `takeClaim` returns after the claim message carries it, the claim window's refusal
+   * included. `silenceWarning` in src/loop.ts words its warning from this flag.
+   */
+  unconfirmed?: true
+  /**
+   * Set on the refusal `takeClaim` returns where its claim window, the guarded span from the
+   * assignment call to the settle check, threw after the claim message. On that refusal the
+   * withdrawal `takeClaim` posts is the run's only answer to the claim message.
+   */
+  withdrew?: true
+  /**
+   * Whether the message answering the claim message landed. Set on a refusal, where the answer
+   * is the withdrawal `takeClaim` posts when its claim window threw after announcing, and on a
+   * loss, where it is the message handing the item back or saying the release did not take.
+   * Unset on a stop, whose receipt the caller posts.
    */
   spoke?: boolean
+  /** The tracker's error, where that answer was owed and did not land. */
+  silence?: string
+  /**
+   * Set where the message answering the claim message did not land, and the tracker did not
+   * confirm it either way, so it may be on the item.
+   */
+  answerUnconfirmed?: true
   /** Set where a person handed the item to this Igor; see `ClaimOptions.directed`. */
   directed?: true
   /** Set where a go-ahead lifted a stop the claim's check found; see `ClaimVerdict.liftedAt`. */
@@ -264,6 +347,7 @@ export async function takeClaim(
   // tracker 503 is enough to cause it. The whole window is guarded, not each call in it, so a
   // call added here later is covered without anyone remembering to guard it.
   let announced = false
+  let claimLanded = false
   try {
     if (tracker.nativeHolderField && options.directed !== true) {
       const recorded = await tracker.claim(candidate, identity)
@@ -286,7 +370,9 @@ export async function takeClaim(
       // and a surface that accepted the write can still throw. Set afterwards, it would answer
       // a different question: whether this process saw the write succeed.
       announced = true
-      await tracker.report(candidate, claimMessage(role, identity, options.catchUp === true))
+      // `undefined` is the tracker saying the message may have landed without confirming it.
+      const id = await tracker.report(candidate, claimMessage(role, identity, options.catchUp === true))
+      claimLanded = id !== undefined
     }
 
     // A directed item is checked at once rather than after the settle interval, which still
@@ -299,9 +385,15 @@ export async function takeClaim(
     // cancelled.
     const verdict = await tracker.verifyClaim(candidate, identity, since, { liftable: options.directed !== true })
 
+    // Every return from here on carries whether the claim message was posted or attempted, and
+    // whether its post was confirmed.
+    const told = {
+      ...(announced ? { announced: true as const } : {}),
+      ...(announced && !claimLanded ? { unconfirmed: true as const } : {}),
+    }
     if (verdict.status === 'held') {
       return {
-        outcome: 'held', candidate, claimedAt, verdict, reason: 'claim stands',
+        outcome: 'held', candidate, claimedAt, verdict, reason: 'claim stands', ...told,
         ...(options.directed === true ? { directed: true as const } : {}),
         ...(verdict.liftedAt === undefined ? {} : { liftedAt: verdict.liftedAt }),
       }
@@ -315,17 +407,22 @@ export async function takeClaim(
     // "released this", and the correction must follow it, so the caller gets `releaseStuck` and
     // posts it. Nobody posts anything on a lost claim, so its standalone message is posted here.
     const stoodDown = await standDown(tracker, candidate, identity, verdict)
-    if (verdict.status === 'lost' && tracker.holderField.holds === 'single') {
-      await tracker.report(candidate, handingBack(role)).catch(() => undefined)
-    } else if (!stoodDown && verdict.status === 'lost') {
-      await tracker.report(candidate, stoodDownStuck(role)).catch(() => undefined)
-    }
+    const note =
+      verdict.status !== 'lost'
+        ? undefined
+        : tracker.holderField.holds === 'single'
+          ? await say(tracker, candidate, handingBack(role))
+          : stoodDown
+            ? { landed: false }
+            : await say(tracker, candidate, stoodDownStuck(role))
 
     return {
       outcome: verdict.status,
       candidate,
       claimedAt,
       verdict,
+      ...told,
+      ...(note === undefined ? {} : spoken(note)),
       ...(stoodDown ? {} : { releaseStuck: true as const }),
       reason:
         verdict.status === 'stopped'
@@ -351,23 +448,25 @@ export async function takeClaim(
       (clear) => (clear ? undefined : `the ${candidate.repo} holder field is still set`),
       why,
     )
-    if (announced) {
-      await tracker
-        .report(
+    const answer = announced
+      ? spoken(await say(
+          tracker,
           candidate,
           stillHeld === undefined
             ? claimWithdrawn(role, options.directed === true)
             : claimStuck(role, options.directed === true),
-        )
-        .catch(() => undefined)
-    }
+        ))
+      : { spoke: false }
     const releaseRefused = stillHeld
     return {
       outcome: 'refused',
       candidate,
       claimedAt,
       surfaceFailed: true,
-      spoke: announced,
+      ...(announced ? { announced: true as const } : {}),
+      ...(announced && !claimLanded ? { unconfirmed: true as const } : {}),
+      ...(announced ? { withdrew: true as const } : {}),
+      ...answer,
       reason:
         releaseRefused === undefined
           ? `${identity} could not finish taking ${candidate.id}, and any claim it took ` +

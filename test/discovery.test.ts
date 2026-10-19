@@ -37,7 +37,7 @@ function fakeTracker(candidates: Candidate[], onSearch?: () => void): Tracker {
     claim: async () => true,
     commentsSince: async () => [],
     verifyClaim: async () => ({ status: 'held' }),
-    report: async () => {},
+    report: async () => 'comment-id',
     release: async () => true,
     linkage: () => 'Closes #1',
   }
