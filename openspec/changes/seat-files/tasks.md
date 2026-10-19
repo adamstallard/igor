@@ -2,15 +2,21 @@ Build after `condition-backoff` (#101), `read-seat-windows-from-the-stream` (#14
 (#175), `pinned-skills` (#174, whose startup skills check and reset tasks 3.10 relies on) and
 `check-a-lore-repository` (#113, which adds `igor doctor`). Line numbers below are main's at the
 time of writing and will have moved under those five changes; the names are
-what to find. Where a task quotes text in a fenced block, that text is the deliverable: it may be
-reworded only where a measurement in section 1 contradicts it, and then `design.md` records the
-measurement.
+what to find. Where a task quotes text in a fenced block, that text is the deliverable: unless the
+task itself says who may reword it, it may be reworded only where a measurement in section 1
+contradicts it, and then `design.md` records the measurement.
 
 ## 1. Measure what the guides depend on
 
-- [ ] 1.1 Confirm `age-encryption` decrypts what `age -r <recipient> | base64 | tr -d '\n'`
+- [x] 1.1 Confirm `age-encryption` decrypts what `age -r <recipient> | base64 | tr -d '\n'`
       produces on macOS and Linux, after `base64 -d`, and that `age-keygen -y` derives the same
-      recipient the package derives from the identity
+      recipient the package derives from the identity. Confirmed 2026-10-18, both ways and across
+      the two systems: `design.md`, *Encryption and decryption use the `age-encryption` package*
+- [ ] 1.2 Find how the holder of a `claude setup-token` token revokes it (the page or command),
+      and confirm that a call with the revoked token is then refused. Record the steps in
+      `design.md`, and give them verbatim to the lender guide (9.4, 9.7). The lender's veto
+      (decision 3) rests on this. If a holder cannot revoke such a token, stop and take decision 3
+      back to Adam before building section 7
 
 ## 2. Seats from files
 
@@ -26,6 +32,7 @@ measurement.
       seats/<file>: a seat's id is lowercase letters, digits and hyphens, starting with a letter or digit
       seats/<id>.yaml: `roles` is required: the list of roles this seat serves, which may be empty
       seats/<id>.yaml lists role "<role>", which has no file under roles/. Roles: <names>
+      seats/<id>.yaml lists "<role>", the org base, which is not a role a seat serves. Roles: <names>
       ```
 
 - [ ] 2.3 `src/config.ts`: `budget` leaves `CONFIG_KEYS`. `seatKey` joins `CONFIG_KEYS`: a string
@@ -54,8 +61,8 @@ measurement.
       ```
 
 - [ ] 3.3 Add the `age-encryption` dependency. Decrypt each seat's `encryptedToken` with the
-      identity at `seatKey` when the seat files are read, at start and on each pull (#176), and
-      hold the plaintext in memory until the next read; `resolveToken` returns the held value and
+      identity at `seatKey` on each lore read, at start and, once `lore-pull` (#208) is built, at
+      each cycle start, and hold the plaintext in memory until the next lore read; `resolveToken` returns the held value and
       never decrypts. Nothing is decrypted when a worker or a probe starts (proposal, decision 37).
       The plaintext is `<id>:<token>`: split it at the first colon, and fail decryption where
       there is no colon or the id is not the file's own; the seat's token is the part after the
@@ -95,9 +102,9 @@ measurement.
       owns), and hand off its item, with the Igor process still running. Where no seat file then
       lists a role, as after removing the last one, the role has no usable seat: it hands off
       what its workers held, takes no new item, and makes no model call on a stored login. Tests:
-      the scenarios of *A removed seat file always takes effect*. Until #176 specifies pulling, this task waits
-      on it. If #176 is not specified when this change archives, file an issue for this task and
-      tick it with a pointer to the issue
+      the scenarios of *A removed seat file always takes effect*. This task needs the pull that
+      `lore-pull` (#208) builds, and #208 archives after this change, so before this change
+      archives, file an issue for this task and tick it with a pointer to the issue
 - [ ] 3.8 Under `igor run`, the only seat is the implicit local seat `_run`, whose token is
       `IGOR_RUN_TOKEN`'s value, with reserve 0 and no role reserve applied (proposal, decision
       39; reserve 0 and the unapplied role reserve are a reading Adam has yet to confirm, in the
@@ -119,24 +126,28 @@ measurement.
 
       Tests: the scenarios of *`igor run` spends its own token as an implicit local seat* and
       *A lent seat is decrypted only where the worker has a user of its own*
-- [ ] 3.9 A seat whose file Igor fails to decrypt, for any reason, at start or on a pull of
-      the lore checkout (#176), opens a condition on the seat, and a later read that decrypts it
+- [ ] 3.9 A seat whose file Igor fails to decrypt, for any reason, on a lore read, opens a condition on the seat, and a later read that decrypts it
       clears the condition (Adam, 2026-10-17). The seat is ineligible, #143's probe skips it,
       and its condition stops no role: a role with no other
       usable seat hands off, naming the condition. Where the key is read but the ciphertext does
-      not decrypt with it, the seat's condition report names the seat and its `owner`,
-      without an @-mention, since a handoff may quote it on a public issue. Worded so (may be
-      reworded; it must name both):
+      not decrypt with it, the condition's report, which a handoff quotes, names the seat and its
+      `owner`, shown only where it has a GitHub login's form and never as an @-mention, since a
+      handoff may quote it on a public issue. This text is the condition's report, which the
+      handoff quotes; task 3.4's line is the seat's unreadable report, which `igor budget` shows. Where the plaintext names another seat's id, or none, the condition's
+      report adds task 3.4's line for that case. Worded so, one line per case (may be reworded;
+      each must name the seat and who re-lends it):
 
       ```
       seat "<id>" carries a token this Igor cannot decrypt, so no role draws on it. Its lender, `<owner>`, re-lends it with `igor seat add <id>`.
+      seat "<id>" carries a token this Igor cannot decrypt, so no role draws on it. Its seat file names no owner: the operator re-lends it with `igor seat add <id>` or removes the file.
+      seat "<id>" carries a token this Igor cannot decrypt, so no role draws on it. Its seat file's owner is not a GitHub login: whoever lent it re-lends it with `igor seat add <id>`.
       ```
 
       Tests: the scenarios *A lent seat that does not decrypt is skipped, and its lender named*,
       *A failed decryption opens the condition, and a good read clears it*, *A role whose only
       seat is undecryptable waits as at its line*, and `stuck-conditions`' *An undecryptable
-      seat's condition stops no role*. Until #176 builds the pull, the condition opens and
-      clears at start only
+      seat's condition stops no role*. Until `lore-pull` (#208) is built, the only lore read is at
+      start, so the condition opens and clears at start only
 
 - [ ] 3.10 No model call Igor makes, under `igor serve` or `igor run`, is given a stored Claude
       login in place of a seat's token (proposal, decision 36; *A spend with no seat behind it is
@@ -146,9 +157,10 @@ measurement.
       runs `claude` as, and no seat serving the role, a cycle makes no model call; with a seat, every call carries
       that seat's token, #174's startup skills check included (proposal, decision 42). The reset
       that removes a stored login from a worker's home is #174's and #175's. Under `igor serve`
-      no stored login exists. Under `igor run`, if #174's task 0.3 finds that Claude Code prefers
-      a stored login over the token in the environment, a call may spend the developer's own
-      login, which is accepted (proposal, decision 45); nothing works around it
+      no stored login exists. Under `igor run`, #174's task 0.3 found that Claude Code 2.1.303 does
+      not prefer a stored login over the token in the environment. Were a version to, a call would
+      spend the developer's own login, which is accepted (proposal, decision 45), and nothing works
+      around it
 - [ ] 3.11 #143's probe skips a seat whose condition `seat:<id>:decrypt` is open, and `igor run`
       makes no seat probe (proposal, decision 41; the `MODIFIED` block on #143's *A seat nothing
       has read is probed on the Igor server with its own token*). Tests: *An undecryptable seat
@@ -207,16 +219,16 @@ measurement.
       `--lore` may be left out, and the lore repository comes from the clone's `upstream` remote
       where there is one, and otherwise `origin`. Outside a clone, a missing `--lore` is refused
       before the token is read. The holder's login comes from `gh api user`
-- [ ] 7.1a Check `owner` with `gh api users/<owner>` before writing the seat file. A login it does
-      not find is refused, worded so:
+- [ ] 7.1a Check `owner` with `gh api users/<owner>` before writing the seat file (proposal,
+      decision 12). With the owner taken from `gh api user` the check passes in every ordinary
+      case; it is kept so that `owner` is checked the same way wherever it is written. A login it
+      does not find is refused, worded so:
 
       ```
       <owner> is not a GitHub login, so no change to seats/<id>.yaml could mention you.
       ```
 - [ ] 7.2 Read `seats/recipient.txt` from the lore repository's default branch with `gh api`. Then
-      print the steps for creating a token, worded so. Adam may reword this one text, as he chooses;
-      for every other fenced text, the rule at the top of this file holds, that it is the
-      deliverable and changes only where a measurement contradicts it:
+      print the steps for creating a token, worded so. Adam may reword this text as he chooses:
 
       ```
       To lend your seat, create a token for it:
@@ -432,7 +444,10 @@ leaks.
       chosen by headroom; "Order is the whole allocation mechanism today" and the `pools:`
       example go, and the heading loses its "being replaced (#148)" marker. §6.3.2's list of
       token mechanisms becomes `encrypted_token` and `token_env`. §6.7.1's "One secret store for
-      seat tokens, on the server" describes a lent token as ciphertext in its seat file
+      seat tokens, on the server" describes a lent token as ciphertext in its seat file. §6.6,
+      "Distribution: public repository now, npm later", loses its **planned** marker and its
+      "when a second adopter appears" rule, and says Igor is published to npm as `igor-agent`
+      (proposal, decision 19)
 - [ ] 9.11 `igor.config.example.yaml`: `budget` goes, replaced by a comment pointing at `seats/`
       and `seatKey`:
 
@@ -463,17 +478,21 @@ leaks.
       # then.
       #
       # It runs on pull_request_target, so it also runs for pull requests from forks, with a token
-      # that can comment. That trigger runs with this repository's permissions, so this job reads
-      # nothing from the pull request's head: no checkout and no file contents, only the list of
-      # changed paths, each matched against the seat-file pattern before use. The owner comes from
-      # the default branch's copy of the file. Keep it that way: reading or running the head here
-      # would hand a fork's code a token that can write to this repository.
+      # that can comment. That trigger runs with this repository's permissions, so this job takes
+      # nothing from the pull request's head but the names of the paths it changes. It fetches the
+      # head's commits and trees as git data, with no checkout and no file contents, and runs
+      # nothing from them. Each name is matched against the seat-file pattern before use. The owner
+      # comes from the default branch's copy of the file. Keep it that way: reading or running the
+      # head's files here would hand a fork's code a token that can write to this repository.
+      #
+      # The trigger has no paths filter, and must not get one: GitHub's filter misses a seat file
+      # that sorts after a pull request's first 3,000 files, so a padded pull request could hide
+      # a change from its lender. A pull request with no seat file costs one fetch and posts nothing.
       name: Notify seat owners
 
       on:
         pull_request_target:
-          types: [opened, reopened, synchronize, ready_for_review]
-          paths: ['seats/**']
+          types: [opened, reopened, synchronize, ready_for_review, edited]
 
       permissions:
         contents: read
@@ -488,27 +507,37 @@ leaks.
                 GH_TOKEN: ${{ github.token }}
                 REPO: ${{ github.repository }}
                 PR: ${{ github.event.pull_request.number }}
+                BASE: ${{ github.event.pull_request.base.sha }}
                 DEFAULT: ${{ github.event.repository.default_branch }}
                 AUTHOR: ${{ github.event.pull_request.user.login }}
+                SENDER: ${{ github.event.sender.login }}
               run: |
                 set -euo pipefail
                 marker='<!-- igor-seat-notice -->'
                 told=$(gh api --paginate "repos/$REPO/issues/$PR/comments" \
                   --jq ".[] | select(.user.login == \"github-actions[bot]\") | select(.body | startswith(\"$marker\")) | .body" \
                   | grep -oE '@[A-Za-z0-9-]+' | sort -u || true)
-                paths=$(gh api --paginate "repos/$REPO/pulls/$PR/files" \
-                  --jq '.[] | .filename, (.previous_filename // empty)' | sort -u)
+                export GIT_DIR="$RUNNER_TEMP/pr.git"
+                git init -q --bare "$GIT_DIR"
+                gh auth setup-git
+                git fetch -q --no-tags --filter=blob:none "https://github.com/$REPO" \
+                  "+$BASE:refs/igor/base" "+refs/pull/$PR/head:refs/igor/head"
+                git diff --name-only --no-renames -z refs/igor/base...refs/igor/head -- seats/ \
+                  > "$RUNNER_TEMP/paths"
                 lines=()
-                while IFS= read -r path; do
+                while IFS= read -r -d '' path; do
                   [[ "$path" =~ ^seats/[a-z0-9][a-z0-9-]*\.yaml$ ]] || continue
                   owner=$(gh api "repos/$REPO/contents/$path?ref=$DEFAULT" --jq .content 2>/dev/null \
                     | base64 -d | yq -r '.owner // ""') || continue
                   [[ "$owner" =~ ^[A-Za-z0-9](-?[A-Za-z0-9])*$ ]] || continue
-                  [[ "$(tr A-Z a-z <<<"$owner")" == "$(tr A-Z a-z <<<"$AUTHOR")" ]] && continue
+                  me=$(tr A-Z a-z <<<"$owner")
+                  # The owner's own push to their own pull request needs no notice; anyone
+                  # else's push to it does.
+                  [[ "$me" == "$(tr A-Z a-z <<<"$AUTHOR")" && "$me" == "$(tr A-Z a-z <<<"$SENDER")" ]] && continue
                   grep -qixF "@$owner" <<<"$told" && continue
                   told+=$'\n'"@$owner"
                   lines+=("- @$owner: this pull request changes your seat file, \`$path\`.")
-                done <<<"$paths"
+                done < "$RUNNER_TEMP/paths"
                 [[ ${#lines[@]} -eq 0 ]] && exit 0
                 body="$marker"$'\n'"$(printf '%s\n' "${lines[@]}")"$'\n\n'
                 body+="Your seat serves the roles and keeps the reserve its file states. "
@@ -521,13 +550,14 @@ leaks.
       under the same rules for an existing file, and it can be named as a target, per the
       `lore-store` delta
 - [ ] 10.3 Tests in `test/template.test.ts`: the template parses; its only trigger is
-      `pull_request_target`, with `paths: ['seats/**']`; its permissions are exactly
+      `pull_request_target`, with no `paths` or `paths-ignore` filter; its permissions are exactly
       `contents: read` and `pull-requests: write`; it runs on `ubuntu-latest`; it has no
       `uses:` step and no `actions/checkout`; and no expression in it reads
       `github.event.pull_request.head`
-- [ ] 10.4 Tests of the script, run under bash with `gh` faked: each scenario of *A pull request
-      that changes a seat file mentions that seat's owner*; and a path such as
-      `seats/$(touch x).yaml` or one containing a space or `*`, which is neither run nor expanded;
+- [ ] 10.4 Tests of the script, run under bash with `gh` faked and a local repository standing in
+      for GitHub's: each scenario of *A pull request that changes a seat file mentions that seat's
+      owner*; and a path such as `seats/$(touch x).yaml` or one containing a space, a newline or
+      `*`, which is neither run nor expanded;
       and a comment carrying the marker whose author is not `github-actions[bot]`, which does not
       count as a mention already made
 - [ ] 10.5 In `adamstallard/igor-lore`, with task 6.1: add `.github/workflows/seat-notice.yml`
@@ -535,9 +565,16 @@ leaks.
 - [x] 10.6 ~~Measure whether a push through the Actions bypass runs `seat-notice.yml`~~ Moot:
       the workflow's `push` trigger is dropped (proposal, decision 26; Adam, 2026-10-17), so no
       push runs it
-- [ ] 10.7 Measure whether GitHub starts a `pull_request_target` workflow filtered on
+- [x] 10.7 Measure whether GitHub starts a `pull_request_target` workflow filtered on
       `seats/**` for a pull request that changes more than 300 files, one of them a seat file.
-      Record the answer in `design.md`
+      Measured 2026-10-19: it ran at 351 files, and at 3,101 files missed a seat file sorting after
+      the first 3,000. `design.md`, *The lender hears about a change to their seat file*, records
+      it. Adam dropped the filter (decision 46)
+- [ ] 10.8 Before the template ships, run the shipped `seat-notice.yml` in a scratch repository
+      on a pull request from a fork that changes 3,101 files, with a seat file sorting after the
+      first 3,000, and confirm it mentions the seat's owner. Record the result in `design.md`,
+      *The lender hears about a change to their seat file*. Until this passes, the scenario *A
+      seat file in a very large pull request is still noticed* is not checked
 
 ## 11. Matching condition-backoff (#101)
 
@@ -570,16 +607,18 @@ of its requirements. Build each against #101's code:
       (proposal, decision 38). Test: the scenario *A read-cleared condition takes no probe item*
 ## 12. Publishing to npm as `igor-agent`
 
-- [ ] 12.1 A build step that emits JavaScript: the package runs from `dist/` with no TypeScript
-      tooling installed, and `prepack` builds it
-- [ ] 12.2 `package.json`: `name` is `igor-agent`, `bin` is `igor`, and `description` is the
-      README's opening line, verbatim and not reworded:
+- [ ] 12.1 `main` already builds to `dist/` with `tsc`, `prepack` runs the build, `bin.igor` is
+      `./dist/cli.js`, and `files` is declared. Test that a tarball from `npm pack`, installed
+      where no TypeScript tooling is, runs `igor --help`, and add to `files` whatever the installed
+      package reads that it lacks
+- [ ] 12.2 `package.json`: `name` becomes `igor-agent` (it is `igor-lore` on `main`), `bin` stays
+      `igor`, and `description` is the README's opening line, verbatim and not reworded:
 
       ```
       AI teammates that find their own work, claim it in the open, and draw on what the team has already learned.
       ```
 
-      `files` lists what the installed package reads, and `engines` is `node >= 26`
+      Add `engines`, set to `node >= 26`
 - [ ] 12.2a A licence check, run by 12.3 before publishing: the package's own `license` field and
       every dependency's licence are each on an allowlist kept in the repository, and any that is
       not fails the release, naming the package and its licence (Adam, 2026-10-17). The

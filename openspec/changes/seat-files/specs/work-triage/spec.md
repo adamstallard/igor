@@ -38,8 +38,9 @@ outside every ceiling the budget exists to impose.
 
 #### Scenario: Seats that could not be used at all are refused on the same terms
 
-- **WHEN** no seat serves the role, or every seat serving it is unreadable or, holding a reserve,
-  has not been read
+- **WHEN** one of three holds: no seat serves the role, as after a pull removes the last seat
+  file listing it; every seat serving it is unreadable; or every seat serving it holds a reserve
+  and has not been read
 - **THEN** the model stage does not run either
 - **AND** the reason recorded is that one, not exhaustion
 
@@ -61,8 +62,8 @@ outside every ceiling the budget exists to impose.
 Where a cycle makes no triage call because the gate named no seat, it SHALL report that,
 distinguishably from a cycle with nothing to triage, and SHALL say how many candidates were left
 untriaged. The report SHALL distinguish seats that are spent from seats that could not be used at
-all — a role no seat serves, a seat whose credential cannot be read, a reserved seat nothing has
-read —
+all — a role no seat serves, as after a pull removes the last seat file listing it, a seat whose
+credential cannot be read, a reserved seat nothing has read —
 and where a reset is known it SHALL state when capacity returns.
 
 An Igor that goes quiet for hours without explaining itself is a second failure on top of the
@@ -109,7 +110,7 @@ An item dropped before anything examined it holds the mark back; every other ski
 decision, and the edit or the reply that reverses one lifts the item by itself. Nothing about
 these items produced this outcome and nothing about them will change to lift them, so a mark
 allowed past them drops them for good. That would make skipping the call worse
-than the spend it prevents: today such an item at least gets a verdict.
+than the spend it prevents: a call, when made, at least gives such an item a verdict.
 
 This is the same reading as "Running out of budget is not a decision about the item", one stage
 earlier — there an item handed back for want of budget is not suppressed, here an item never
@@ -208,8 +209,9 @@ name.
 
 **Migration**: *Triage's model call is made only where a seat can pay for it*, added by this
 change, with the same rules and every scenario but one, worded for the seats serving a role. The
-scenario *An organization with no seats declared still triages* is dropped: under decision 36
-no model call is made without a seat.
+scenario *An organization with no seats declared still triages* is dropped: Igor never uses a stored Claude
+login (`seat-budget`'s *A spend with no seat behind it is not made*), so no model call is made
+without a seat.
 
 ### Requirement: A cycle that triaged nothing says why, and when it can resume
 

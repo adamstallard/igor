@@ -4,7 +4,8 @@
 
 Where `igor.config.yaml` declares `seatKey`, `igor doctor` SHALL report whether the public key
 derived from that private key equals the one committed in `seats/recipient.txt`. It SHALL report a
-finding where they differ, or where `seats/recipient.txt` is absent. Where the person running the
+finding where they differ, or where `seats/recipient.txt` is absent, naming the remedy: commit the
+public key derived from the server's key as `seats/recipient.txt`. Where the person running the
 check cannot read the key file, as an operator other than the service user usually cannot, the
 key match is unchecked, naming the path and the reason, as `check-a-lore-repository`'s *A check
 that cannot be made is skipped and said, not failed* (#113) says.
@@ -23,6 +24,8 @@ and nothing says so until each seat is reported unreadable in turn.
 - **WHEN** `seatKey` names a private key whose public key differs from `seats/recipient.txt`
 - **THEN** it is reported as a finding, saying new tokens will be encrypted to a key the server
   does not hold
+- **AND** the finding names the remedy: commit the public key `age-keygen -y` derives from the
+  server's key as `seats/recipient.txt`, by a pull request
 
 #### Scenario: A key the check cannot read is unchecked
 
@@ -33,7 +36,7 @@ and nothing says so until each seat is reported unreadable in turn.
 #### Scenario: No public key committed
 
 - **WHEN** `seatKey` is declared and `seats/recipient.txt` is absent
-- **THEN** it is reported as a finding
+- **THEN** it is reported as a finding, naming the same remedy
 
 #### Scenario: Ciphertext with no key to read it
 
@@ -52,8 +55,8 @@ Where the lore repository has at least one seat file, `igor doctor` SHALL report
 the default branch carries no `.github/workflows/seat-notice.yml`. The finding SHALL say that no
 lender is then told when a pull request changes their seat file, and SHALL name `igor init` as
 the command that writes the workflow. Where the file is present, `doctor` SHALL also report a
-finding where the workflow is disabled or Actions are off for the repository, and report the
-check as unchecked where it cannot read that state.
+finding where the workflow is disabled or Actions are off for the repository, naming enabling it
+as the remedy, and report the check as unchecked where it cannot read that state.
 
 A lender's veto over their seat is revoking its token, and the notice is how they learn of a
 change in time to use it. Without the workflow nothing fails and nothing is reported: lenders are
@@ -71,7 +74,8 @@ simply never told.
 
 - **WHEN** `.github/workflows/seat-notice.yml` is present but the workflow is disabled, or Actions
   are off for the lore repository
-- **THEN** it is reported as a finding, saying no lender is told of a change to their seat file
+- **THEN** it is reported as a finding, saying no lender is told of a change to their seat file,
+  and that enabling the workflow or Actions is the remedy
 
 #### Scenario: No seats, no finding
 
@@ -80,24 +84,35 @@ simply never told.
 
 ### Requirement: The check says whether each seat's owner is a GitHub login
 
-For each seat file naming an `owner`, `igor doctor` SHALL check with `gh api users/<owner>` that it
-is a GitHub login, and SHALL report a finding naming the seat file and the login where it is not.
-The finding SHALL say that no change to that seat file mentions anyone, and that the seat's holder,
+For each seat file naming an `owner`, `igor doctor` SHALL first check that the `owner` has a
+GitHub login's form, letters, digits and single hyphens, and only then check with `gh api
+users/<owner>` that the login exists. It SHALL report a finding naming the seat file where either
+check fails, and SHALL NOT pass an `owner` of any other form to `gh api`.
+The finding SHALL say that the notice workflow cannot reach the seat's holder about a change to
+that seat file, and that the seat's holder,
 or the operator for a holder with no GitHub account, sets `owner` to a GitHub login by a pull
 request. Where the check cannot reach
 GitHub, the owner check is unchecked, as `check-a-lore-repository`'s *A check that cannot be made is
 skipped and said, not failed* (#113) says.
 
-The notice workflow mentions only a GitHub login, so where a seat's `owner` is not one, nobody is
-told of a change to that seat's file.
+The notice workflow checks only an `owner`'s form, so where a seat's `owner` is no GitHub login,
+the holder is not told of a change to that seat's file: an `owner` of another form is mentioned
+nowhere, and for one of a login's form the workflow mentions a name nobody holds, or whoever
+later registers it.
 
 #### Scenario: An owner that is no GitHub user
 
 - **WHEN** `seats/bob.yaml` names `owner: bob-smith`, and `gh api users/bob-smith` finds no user
-- **THEN** it is reported as a finding, naming `seats/bob.yaml` and `bob-smith`, and saying no
-  change to that file mentions anyone
+- **THEN** it is reported as a finding, naming `seats/bob.yaml` and `bob-smith`, and saying the
+  notice workflow cannot reach the holder about a change to that file
 - **AND** the finding says the holder, or the operator, sets `owner` to a GitHub login by a pull
   request
+
+#### Scenario: An owner not in a login's form is not sent to GitHub
+
+- **WHEN** `seats/bob.yaml` names `owner: x/../../repos/acme/igor-lore`
+- **THEN** it is reported as a finding, naming `seats/bob.yaml`
+- **AND** no `gh api` call is made with that `owner`
 
 #### Scenario: An owner that is a GitHub user
 

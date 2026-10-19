@@ -13,10 +13,8 @@ with no other eligible seat hand off rather than stop. The condition records the
 condition.
 
 A rule that opens a condition of this kind cites this requirement and states only what is read,
-what counts as failing, and what the condition is on. This change specifies one: a seat file Igor
-fails to decrypt, below in *A condition that recurs stops the affected scope from taking new
-work*, beside #101's refused GitHub App credential, the other condition that opens on its first
-occurrence.
+what counts as failing, and what the condition is on. The condition on a seat file Igor fails to decrypt
+is a read-cleared condition, opened by such a rule in *A condition that recurs stops the affected scope from taking new work*.
 
 A read is its own observation of the cure. A probe item takes work to find out whether a fault
 recurs; a file that reads cleanly has already shown it.
@@ -129,8 +127,7 @@ spends a worker, hands back, and does it again every poll interval against the w
 The cost is not only money. Each attempt leaves a handoff on somebody's issue saying an Igor
 could not proceed, which is a notification to a person who cannot act on it either.
 
-Recurrence is the trigger, except for the two conditions below. How many occurrences count as
-recurring is left to *No recurrence count or cooldown is fixed here*. A first occurrence is information — an unverified pull request still
+Recurrence is the trigger, except for the two conditions below. A first occurrence is information — an unverified pull request still
 carries the diff, and a handoff naming the missing command is how the cure gets found at all.
 The twentieth is waste, whatever the cause.
 
@@ -188,13 +185,8 @@ its file*).
 A condition SHALL be keyed by what would cure it, and SHALL stop exactly what that cure governs:
 a refused command stops the role whose `commands` refused it, an unreadable seat is taken out of
 the choice of every role drawing on that seat, a credential belonging to an Igor stops that Igor.
-A role with another eligible seat SHALL keep working on it (seat-budget's *A role draws on the
-seat with the most headroom*). A role whose seats are all under open conditions SHALL stop, unless one of those conditions is
-read-cleared, as a seat file Igor could not decrypt is (seat-budget's *A role draws on the seat
-with the most headroom*). A
-role with no eligible seat, where some but not all of its seats are under open conditions, SHALL
-hand off, naming those conditions, as seat-budget's requirement says. A read-cleared condition is
-defined in *A read-cleared condition opens on a failing read and clears on a passing one*. A
+A role with another eligible seat SHALL keep working on it. Whether a role with no eligible seat
+stops or hands off is seat-budget's *A role draws on the seat with the most headroom*. A
 condition
 SHALL be rebuilt from the execution log on the state branch, with no stored record of its own:
 from the run rows that carry its cure key, and from condition rows the loop appends for what no
@@ -211,11 +203,11 @@ however many discriminators that seat has been observed against.
 
 For most cures the key is the identity. `role:web:commands` fully says what is stuck and what a
 person would edit, and two Igors meeting it met the same thing. A key naming a seat's credential
-names the seat and not the credential, so two different tokens on one seat produce the same key. A
-credential condition stops the seat only while it is about the credential the seat resolves now, and
-a condition rebuilt from the key alone cannot tell whether it is. A condition is an occurrence and
-not a thing: a cure key opens, clears and opens again over its life, and a condition keyed on the
-cure alone would mix the counts of every time it opened. The discriminator is the part of an
+names the seat and not the credential, so one seat's two tokens produce the identical key — and a
+condition rebuilt from that key with a count and an open state cannot answer the question its own
+stop turns on: is this about the credential resolving now? A condition is an occurrence and not a
+thing; a cure key opens, clears and reopens over its life, so a condition keyed on the cure alone
+answers for the most recent occurrence in the log when asked about the one being checked. The discriminator is the part of an
 occurrence's identity the cure key cannot express, which is why it is on every row of that
 occurrence rather than alongside it as context.
 
@@ -298,12 +290,11 @@ either, and `claude auth status` reports the same fields for a valid `setup-toke
 garbage string. The record of runs the provider refused is the only account of a refused
 credential, which is why the seat's own reading cannot overrule it.
 
-"Did not finish" is asked differently for a run that exited non-zero and one that exited zero. A
-non-zero exit already says the run did not finish, so it is a refusal even where the run's JSON
-result says nothing about erroring. A run that exited zero, and may have published a pull
-request, is a refusal only where its JSON result says it errored. The looser test Igor uses when
-it decides whether to record a run is wrong here: being loose there costs a spurious record, while
-here it costs a working seat, repeatedly.
+"Did not finish" is asked differently on the two paths into it. A non-zero exit has already said
+so, so an envelope silent about erroring is still a refusal there. A run that exited zero, and
+may have published a pull request, has to state that it errored before it can stop its own seat.
+The looser test Igor uses to decide whether a run is worth *recording*, which does not need the
+run to state that it errored, is wrong here: being permissive there costs a spurious capture, while here it costs a working seat, repeatedly.
 
 The hash is a full SHA-256, never a prefix, a suffix or a short digest. Execution records are
 committed, and a few characters of a token are credential material; a short digest is cheap to

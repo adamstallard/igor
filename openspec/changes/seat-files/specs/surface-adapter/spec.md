@@ -13,7 +13,7 @@ A token SHALL reach only the process making the call: it is set in that child's 
 nowhere else. It SHALL NOT be written to the Igor's own environment, to disk, or to any git
 config, and a working tree SHALL hold no credential after it is cloned.
 
-Commands that take no role (`propose`, `reconcile`, `init`, `promote`, `budget`, `seat`) are a
+Commands that take no role (`propose`, `reconcile`, `init`, `promote`, `budget`, `doctor`, `seat`) are a
 person's, and keep the person's own `gh` login.
 
 #### Scenario: A gh call acts as the App

@@ -97,3 +97,64 @@ runnable is how an operator finds out by watching nothing happen.
 - **THEN** it names the values only the operator can supply and the repository settings that
   are not files
 - **AND** it does not report a runnable Igor
+
+### Requirement: Initialization writes files and touches nothing outside them
+
+The `init` command SHALL confine itself to writing files inside a repository that already
+exists. It SHALL NOT create a repository, and where it is run outside one it SHALL refuse and
+say so rather than making one: a scaffolding command that creates repositories is a different
+and more dangerous tool, and creating one is already a command of the code host's.
+
+It SHALL likewise refuse where the enclosing repository is Igor's own installation. A config
+resolving inside Igor is refused whether or not a file is there, so writing one there produces
+a repository that cannot load its own configuration — and it leaves a team's files in a tool
+every team shares.
+
+It SHALL NOT change branch protection, a ruleset, or a ruleset's bypass list. Those are
+outward-facing repository settings, and a command whose job is writing files must not mutate
+who may push to the default branch. It SHALL print what remains to be set by hand instead.
+
+It SHALL NOT overwrite a file that is already there. Each existing target SHALL be skipped and
+named, every other target SHALL still be written, and the run SHALL succeed — so a second run
+after a role has been added is safe, and adds only what is missing.
+
+**Overwriting SHALL be possible only for named targets.** A force option SHALL take the targets it
+applies to, overwrite exactly those, and leave every other target untouched whether present or
+absent. It SHALL refuse when given no target, rather than overwriting all five: replacing the
+configuration, the org role, the role stub and both workflows together is starting over, which is a
+deletion followed by a plain run, and it is not what someone reaches for a flag to do. Filling in
+what is missing is what the plain run is for, so naming targets without the force option is not
+offered: it could only write targets that are missing, which the plain run already does.
+
+#### Scenario: Run where there is no repository
+
+- **WHEN** `init` is run outside any repository
+- **THEN** it refuses, and says that creating the repository is not its job
+
+#### Scenario: Run inside a clone of Igor
+
+- **WHEN** `init` is run inside Igor's own installation
+- **THEN** it refuses and writes nothing
+- **AND** it says that the configuration describes one team while Igor is shared
+
+#### Scenario: Repository settings are left alone
+
+- **WHEN** `init` runs against a repository whose default branch is unprotected and whose
+  ruleset has no Actions bypass
+- **THEN** neither the protection nor the bypass list is changed
+- **AND** both are named in what it prints as remaining
+
+#### Scenario: A second run adds only what is missing
+
+- **WHEN** `init` is re-run in a repository that already has the configuration and the org role
+  and a role stub but neither workflow
+- **THEN** the reconciliation workflow and the seat-notice workflow are written
+- **AND** the configuration, the org role and the role stub are left as they are, and each is
+  named as skipped
+- **AND** the run succeeds rather than refusing at the first file it found
+
+#### Scenario: Overwriting is explicit
+
+- **WHEN** `init` is run with the force option naming the org role and the seat-notice workflow,
+  in a repository that already holds all five files
+- **THEN** those two files are overwritten, and the other three are left as they are
