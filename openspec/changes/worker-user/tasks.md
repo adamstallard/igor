@@ -5,10 +5,11 @@
       configuration has by then: `GITHUB_APP_PRIVATE_KEY_FILE`, `seatKey` if #171 has merged,
       and seat `token_file` paths while they exist. If #171 has not merged, file an issue asking
       #171 to add `seatKey` to this probe, and link it here.
-- [ ] 0.2 Run measurements 6.1 to 6.5 before building sections 2 to 4; 6.6 informs the docs, and
+- [x] 0.2 Run measurements 6.1 to 6.5 before building sections 2 to 4; 6.6 informs the docs, and
       6.7 runs before 8.2 ships. Record each result in
       `design.md`, including any that contradicts it, and change the design before the code where
-      one does.
+      one does. Done on 2026-10-18: `design.md`, *Measurements*. 6.2 changed the kill (proposal,
+      decision 27) and 6.5 the sudoers file (decision 28).
 - [ ] 0.3 If #101 (`condition-backoff`) has merged, record a `sudo` spawn failure of the worker
       under a cure key scoped to the whole Igor, #101's name for the key a recurring failure is
       grouped under. A key of that scope stops the Igor taking new items, where an item-scoped one
@@ -20,16 +21,16 @@
       the worker's behalf through a link* and *Nothing the worker writes is executed by the
       Igor*, and link it here.
 - [ ] 0.5 If #153 (`signed-publishing`) has merged, its model steps go through 1.4, and the Igor
-      makes its trailers as 2.5 says. If not, file an issue asking #153 to run its steps through
-      this change's spawn, to have them edit without signing and report their pass results, and
-      to have the Igor make both trailers against the tree 2.5 stages, and link it here.
+      runs prose's first call and makes its trailers as 2.5 says. If not, file an issue asking
+      #153 to run its steps through this change's spawn, to have them edit and run no signing
+      script, to have the Igor run prose's first call and both signing calls, and to have the
+      trailers made against the tree 2.5 stages, and link it here.
 - [ ] 0.6 If #174 (`pinned-skills`) has merged, add `skills_dir` to the probe in 5.1. If not,
       file an issue asking #174 to add it, and link it here.
 - [ ] 0.7 If #189 (`loop-verifies-commands`) has merged, its checks go through 1.4's spawn and
       run after 3.2 records the tree, and what they write is discarded. If not, file an issue
       asking #189 to run its checks on the tree the Igor recorded and to publish that tree, as
-      *The Igor reads no file on the worker's behalf through a link* requires, and link it
-      here.
+      *The Igor publishes the tree it recorded before the checks* requires, and link it here.
 
 - [ ] 0.8 1.1 and 8.2 need instances named `<role>-<rank>`, with the rank always written, so
       that `igor-worker-%i` is the worker user's name (Adam, 2026-10-17). #179
@@ -76,12 +77,11 @@
 - [ ] 1.5 Tests (with an injected command, no real `sudo`): the argv for each mode; the seat token
       in no argv element; `--preserve-env` naming exactly `workerEnv`'s keys less `PATH` and
       `HOME`; no prompt text in any argv element; `run` spawning without `sudo` even where a user named `igor-worker-<role>-<rank>`
-      exists; a model step in the tree after the worker, and #153's `prose start`, spawned
-      through `sudo` as the worker user.
-- [ ] 1.6 #153's `prose start` goes through 1.2's spawn as the worker user, after the reset of
-      the worker's home that #174 builds, so the session mark is the worker's and sits in its
-      home. If #153 has not merged, the issue 0.5 files asks for this too; if #174 has not, the
-      issue 0.6 files does.
+      exists; a model step in the tree after the worker spawned through `sudo` as the worker
+      user.
+- [ ] 1.6 No prose or bug-hunter script goes through 1.2's spawn: the Igor runs them as the
+      service user (2.5; proposal, decision 15). If #153 has not merged, the issue 0.5 files
+      asks for this too.
 - [ ] 1.7 Every `claude -p` the Igor starts takes its prompt on stdin and its system prompt from
       `--system-prompt-file`: `claudeWorker` (`src/execute.ts`), `runClaude` (`src/triage.ts`),
       `runUsage` (`src/budget.ts`), #143's seat probe and #174's startup check where those are
@@ -91,6 +91,9 @@
       outbox. For a process running as the Igor, it goes in a directory only the Igor can read. Build after 6.9. Tests: each call's argv holds no prompt and no `--system-prompt`;
       the prompt arrives on stdin; the file exists during the call and not after it, also when
       the call fails.
+- [ ] 1.8 Every temporary file the Igor creates under `/tmp` goes in a `0700` directory only it
+      can read, never directly in `/tmp`, which the workers share with it under the unit. Test: each
+      temporary file's directory has mode `0700` and the Igor's owner.
 
 ## 2. The tree and the outbox
 
@@ -113,24 +116,30 @@
       removal pass of 4.2 (release and sweep), the `rm -rf` as the worker user, as the gone
       rank's worker user, `sudo -n -u igor-worker-<role>-<k>`, under the sudoers
       line already written for that rank (Adam, 2026-10-18).
-- [ ] 2.5 Where a role runs #153's steps: bug-hunter runs, then the prose pass, and each edits
-      the tree, neither stages nor signs, and each ends by reporting its pass result, the prose
-      pass's being its pass token. Bug-hunter's triage then runs on the prose pass's diff,
-      skipping a diff that touches only comments or docs and giving anything else one more
-      bug-hunter iteration. After the last model step exits, the Igor's code stages the changed
-      paths once, in the git directory's own index, never the copy. The Igor then runs, as the
-      service user and from `skills_dir`, the second `prose check` call with the prose pass's
-      token and bug-hunter's minting script, both against that index's tree, the tree 3.2
-      records and publishes.
+- [ ] 2.5 Where a role runs #153's steps: bug-hunter runs, edits the tree and reports its
+      `Bug-hunter:` value, without running `caller-result.sh`. The Igor then runs prose's first
+      call as the service user, from `skills_dir`, and gives the rules and the pass token it
+      prints to the prose pass in its prompt; the prose pass edits the tree and writes the
+      message. Neither step stages or signs. Bug-hunter's triage, on the model #153 pins, then
+      runs on the prose pass's diff; a diff it skips gets no further iteration, and any other
+      gets one more. Once the last model step has exited, the Igor has killed by user and 3.3's
+      checks have passed, the Igor's code stages the changed paths once, in the git directory's own index, never the
+      copy. The Igor then runs, as the service user and from `skills_dir`, prose's second call
+      with that token and bug-hunter's minting script, both against that index's tree, the tree
+      3.2 records and publishes. The Igor runs all three calls, prose's two and bug-hunter's minting script, with `GIT_DIR`,
+      `GIT_WORK_TREE` and `GIT_INDEX_FILE` naming its own git directory, the tree and its own
+      index.
 - [ ] 2.6 Tests on a real clone, run as one user: the modes and group after provisioning; status
       read against the git directory's index reports a `git rm` and a `git mv` made with
       `GIT_INDEX_FILE` set to the copy; a file marked skip-worktree or assume-unchanged in the
       copy is still read as changed; a `.git` file in the tree pointing elsewhere does not change what the
       Igor reads; the sweep removes a stranded `-git` directory; a file marked unchanged in the
       copy is in the tree 2.5 stages; edits by both #153 steps are in that tree, and nothing is
-      staged before the last step exits; a comments-only prose diff runs no second bug-hunter
-      iteration, and a prose diff that changes code runs one; both signing calls run as the
-      service user from `skills_dir`, never from the tree.
+      staged before the last step exits; a prose diff the triage skips runs no second
+      bug-hunter iteration, and one it does not skip runs one; prose's first call and both
+      signing calls run as the service user from `skills_dir`, never from the tree; with a
+      `.git` directory the worker made in the tree, holding a hook and a `core.fsmonitor`
+      setting, the signing calls run neither and write no token into it.
 
 ## 3. Nothing run, nothing followed
 
@@ -152,10 +161,10 @@
       `<path>` is a submodule whose commit changed, and this Igor publishes no submodule pointer, so nothing was published
       ```
 - [ ] 3.2 Before reading changes, the Igor waits for the worker, and then each later model step,
-      to exit, killing each one's process group as it does; a group is already gone when its
-      process exited by itself. It then stages the changed paths in its own index, writes that
-      tree with `git write-tree` into its own git directory, runs #189's checks where they exist,
-      and publishes that tree object, discarding what the checks wrote.
+      to exit, and then kills every process the worker user owns (4.1). It then runs 3.3's
+      checks, stages the changed paths in its own index, writes that tree with `git write-tree`
+      into its own git directory, runs #189's checks where they exist, kills by user again, and
+      publishes that tree object, discarding what the checks wrote.
 - [ ] 3.3 `changes()` refuses a path that has a link among its directories, checking each
       component with `lstat`. A changed path that is itself a link is read with `readlink` and
       published as a link where 0.4 builds that, and is refused where it does not. `changes()`
@@ -229,16 +238,20 @@
 ## 4. Kill, release, sweep
 
 - [ ] 4.1 Under `serve`, `killTree` and `killLiveWorkers` run
-      `sudo -n -u <worker> -- kill -KILL -- -<pgid>`, synchronously in the `exit` handler. A
-      group already gone is not an error.
+      `sudo -n -u <worker> -- pkill -KILL -u <worker>`, synchronously in the `exit` handler, and
+      the Igor runs the same kill before each reset of the worker's home, once the last model
+      step exits, after #189's checks and before a release (proposal, decision 27). No process
+      left to kill, `pkill`'s status 1, is not an error. Under `run` the kill stays a kill of the
+      worker's process group.
 - [ ] 4.2 `ClonedTree.release()` and the startup sweep first run
       `sudo -n -u <worker> -- rm -rf -- <tree> <outbox>`, then the Igor's own removal of the
-      tree, the outbox and the git directory. Both are attempted whatever the first does. Under
+      tree, the outbox and the git directory. The second runs even when the first fails. Under
       `run`, which #179 makes rank 0, the release and the startup sweep remove only trees named
       `<role>-0-<id>` for its own role, as the Igor's own user with no `sudo`, and leave a tree
       another rank or another role left (proposal, decision 25).
-- [ ] 4.3 Tests with an injected runner: `run`'s sweep leaves another rank's tree; the kill and the removal argv; a failed first removal
-      still leads to the second.
+- [ ] 4.3 Tests with an injected runner: `run`'s sweep leaves another rank's tree; the kill and
+      the removal argv; the kill by user before the tree is read and after the checks; a failed
+      first removal still leads to the second.
 
 ## 5. The start-up check, and `run` as the same user
 
@@ -276,11 +289,15 @@
       #179 has the Igor read it itself).
 
       ```
+      the worker user "<worker>" can enter <path>, which is this Igor's home directory. Make it accessible only by <igor-user>.
+      ```
+
+      ```
       the worker user "<worker>" can read a file only <igor-user> should be able to read (<path>), so it can read this Igor's credentials too. Check that "<worker>" holds no capability or group that reads other users' files.
       ```
 
       ```
-      the worker user "<worker>" can write <path>, which <is the lore checkout | holds this Igor's installation | is the node this Igor runs on>. Make it writable only by <igor-user>.
+      the worker user "<worker>" can write <path>, which <is the lore checkout | is the lore worktree this Igor reads its configuration from | holds this Igor's installation | is the node this Igor runs on>. Make it writable only by <igor-user>.
       ```
 
       The probe also creates a file in `skills_dir` as the worker and deletes it. A create that
@@ -324,47 +341,68 @@ current release and the worker's real flags. Canary files sit at the real paths 
 modes: `/etc/igor/env`, `/etc/igor/<role>.env`, `/etc/igor/<role>.pem`, the `seatKey` path, and a
 file in the service user's home. Each holds a random string and nothing else. Never a real secret.
 
-- [ ] 6.1 Repeat #163's table with the worker running as `igor-worker-<role>-<rank>`: the Read tool,
+- [x] 6.1 Repeat #163's table with the worker running as `igor-worker-<role>-<rank>`: the Read tool,
       `head`, `tail`, and a test file run by `npm test` that reads each canary and
       `/proc/<igor pid>/environ`, and writes into the lore checkout and the git directory's `hooks/`.
       Every read and write is refused, and no canary string appears in the stream, the
       transcript or the published artifact.
-- [ ] 6.2 Under `sudo` in the unit: the stream parses as it does now; `kill -KILL -- -<pgid>` as
+      Done 2026-10-18; every read and write refused, and no canary in the stream, the transcript, the tree or the journal (`design.md`, *Measurements*). The published artifact is 6.14. It also found the seat token readable at `/proc/$CLAUDE_PID/environ`.
+- [x] 6.2 Under `sudo` in the unit: the stream parses as it does now; `kill -KILL -- -<pgid>` as
       the worker ends a running `npm test`; `sudo` works with `ProtectSystem=strict`,
       `PrivateTmp=true` and no `NoNewPrivileges`; the exit status reaches the Igor.
-- [ ] 6.3 `git rm` of a top-level file, `git mv`, `git log` and `git show`, run by the worker
+      Done 2026-10-18. The stream, `sudo` under the unit and the exit status confirm; the kill of the group does not end `npm test`, so every kill is by user (proposal, decision 27; `design.md`, *Measurements*).
+- [x] 6.3 `git rm` of a top-level file, `git mv`, `git log` and `git show`, run by the worker
       with the git directory read-only and outside the tree and `GIT_INDEX_FILE` in the outbox,
       all succeed, and the Igor's `changes()` reads them back. Claude Code's Edit and Write tools
       change a file the Igor owns.
-- [ ] 6.4 Record which of `claude`'s environment variables reach a command it runs, the seat token
+      Done 2026-10-18; all succeed, and Edit replaces a file, making it the worker's (`design.md`, *Measurements*).
+- [x] 6.4 Record which of `claude`'s environment variables reach a command it runs, the seat token
       above all.
-- [ ] 6.5 Record what `sudo` writes to the auth log per worker start. With 1.7 built it should
+      Done 2026-10-18; the token is not passed, but `CLAUDE_PID` leads to it (`design.md`, *Risks* and *Measurements*).
+- [x] 6.5 Record what `sudo` writes to the auth log per worker start. With 1.7 built it should
       hold no prompt text. If it holds any, add `Defaults:igor !syslog` (or what the
       measurement shows works) to `deploy/sudoers.example`, with a comment saying why.
-- [ ] 6.6 Run two Igor units with one worker user and a worker in each, since whether the `/proc`
+      Done 2026-10-18; no prompt text, but the seat token in full, so 8.1 gains `Defaults:igor !log_allowed` (proposal, decision 28; `design.md`, *Measurements*).
+- [x] 6.6 Run two Igor units with one worker user and a worker in each, since whether the `/proc`
       reach holds between units is unmeasured. Record in `design.md`, *Each instance has its own
       worker user*, and in 8.4's section of `docs/deployment.md`, whether either worker can read
       the other's `/proc/<pid>/environ`, or list and write the other's tree through
       `/proc/<pid>/cwd`. Section 8 does not wait for it (Adam, 2026-10-17).
-- [ ] 6.7 Before 8.2 ships, confirm that under the unit, with `User=` and `Group=` the service
+      Done 2026-10-18; the reach holds between units with one user, and not with a user per instance (`design.md`, *Each instance has its own worker user*; 8.4's text).
+- [x] 6.7 Before 8.2 ships, confirm that under the unit, with `User=` and `Group=` the service
       user, the Igor is in the worker's group through
       `SupplementaryGroups=igor-worker-%i`, can write its home through
       `ReadWritePaths=/var/lib/igor-worker-%i`, and sudoes to `igor-worker-%i`.
       Sections 2 to 4 do not wait for this.
-- [ ] 6.8 Before 8.2 ships, confirm that under the unit with `ProtectProc=invisible`, a worker
+      Done 2026-10-18; confirms (`design.md`, *Measurements*).
+- [x] 6.8 Before 8.2 ships, confirm that under the unit with `ProtectProc=invisible`, a worker
       user listing `/proc` sees no process of the service user and none of another worker user
       on the same host, and record the kernel version. Where the kernel lacks per-mount
       `hidepid`, record that the setting had no effect.
-- [ ] 6.9 Before 1.7 is built, on the Claude Code version the server runs: `claude -p` with
+      Done 2026-10-18 on Linux 6.12.76-linuxkit, Docker Desktop's kernel: confirms. Task 6.11 repeats it on a server's kernel.
+- [x] 6.9 Before 1.7 is built, on the Claude Code version the server runs: `claude -p` with
       `--output-format stream-json --verbose` and no prompt argument reads its prompt from
       stdin, and `--system-prompt-file <file>` sets the system prompt, as `claude --help`
       lists it. Also: the usage read's `/usage`, passed on stdin under `--output-format json`, runs
       as it does as an argument; and triage's `claude -p` under `--output-format json` reads its prompt from stdin. If any
       fails, the means of keeping prompts out of the arguments goes back to Adam; the rule
       stands.
-- [ ] 6.10 Under the unit, as the worker user through the `sudo` spawn: the modes of a file and a
+      Done 2026-10-18; every stdin form works (`design.md`, *Measurements*).
+- [x] 6.10 Under the unit, as the worker user through the `sudo` spawn: the modes of a file and a
       directory created by the Edit and Write tools, by `npm install` and by `git`, and whether
       the Igor can read each through the group. Record the umask in effect.
+      Done 2026-10-18; umask `0022`, and the Igor reads all of it (`design.md`, the table and *Measurements*).
+- [ ] 6.11 Before 8.2 ships, repeat 6.8 on the kernel of the Linux server distribution
+      `docs/deployment.md` targets, and record the kernel version and the result in `design.md`.
+- [ ] 6.12 Before 8.4 ships, run 8.4's commands with 8.1's `Defaults` line on section 6's host:
+      `visudo -cf` accepts the file, and a worker start writes no `ENV=` line, and so no seat
+      token, to the journal. Count the matching journal lines and never print them, since a line
+      that is there holds the token. Record the result in `design.md`.
+- [ ] 6.13 Before section 1 ships, record what `CLAUDE_CODE_MESSAGING_TOKEN`, which Claude Code
+      passes to the commands it runs (6.4), lets a holder do beyond the worker's own session. If
+      it reaches anything else, the design's handling of it goes back to Adam.
+- [ ] 6.14 Once section 3 is built, repeat 6.1's attack through Igor's own code and check that
+      no canary string is in the published artifact. Record the result in `design.md`.
 
 ## 7. An automated end-to-end test
 
@@ -375,17 +413,24 @@ file in the service user's home. Each holds a random string and nothing else. Ne
       exists, and write into a directory standing in for the lore checkout. It reports each
       result as a stream event. The test asserts every attempt was refused and no canary
       appears.
-- [ ] 7.2 The same file checks that a kill ends the fake worker and a child it started, and that
-      release removes a `0700` directory the fake worker created.
+- [ ] 7.2 The same file checks that a kill ends the fake worker, a child it started, and a child
+      that started its own session with `setsid`, and that release removes a `0700` directory
+      the fake worker created.
 
 ## 8. Deployment
 
-- [ ] 8.1 New `deploy/sudoers.example`, verbatim except where 6.5 adds a line. 8.4's commands
-      copy its comment and write one line per instance in the form it shows:
+- [ ] 8.1 New `deploy/sudoers.example`, verbatim, except that the comment above the `Defaults`
+      line may be reworded. 8.4's commands copy its comments and its `Defaults` line, and write
+      one line per instance in the form it shows:
 
       ```
       # /etc/sudoers.d/igor, written by the commands in docs/deployment.md,
       # "A separate user for the worker".
+      #
+      # sudo logs every variable it passes with --preserve-env, value included, and the Igor
+      # passes the worker its seat token that way. So sudo logs no command it allows the
+      # service user, and the token stays out of the journal. A refused command is still logged.
+      Defaults:igor !log_allowed
       #
       # The Igor's service user may run commands as each instance's worker user, and as nobody
       # else: that is how a worker is started, killed and cleaned up after. It grants nothing
@@ -411,7 +456,8 @@ file in the service user's home. Each holds a random string and nothing else. Ne
       ```
 
       Add these lines, with this comment (may be reworded; the restart lines come from 0.9 and
-      replace `Restart=always`):
+      replace `Restart=always`; where #82's task 1.5 has already added them, keep its lines and
+      add only `ProtectProc=`):
 
       ```
       # A process sees only its own user's processes, so no worker can read another's command
@@ -429,9 +475,10 @@ file in the service user's home. Each holds a random string and nothing else. Ne
       - `Dockerfile`, `runtime` stage: install `sudo` from Debian at a pinned version, as the
         image pins its other packages. Create the worker user for each instance the compose
         file runs, `igor-worker-<role>-1`, with its home at `/var/lib/igor-worker-<role>-1`,
-        and write each instance's sudoers line to `/etc/sudoers.d/igor` in the form 8.1 shows,
-        naming `node`, the user #192's image runs Igor as, where 8.1's line names `igor`. Create
-        `/var/lib/igor/trees`, owned by that user, and put `claude` where the worker user can
+        and write 8.1's `Defaults` line and each instance's sudoers line to
+        `/etc/sudoers.d/igor` in the form 8.1 shows, naming `node`, the user #192's image runs
+        Igor as, where 8.1's lines name `igor`. Create
+        `/var/lib/igor/trees`, owned by `node`, and put `claude` where the worker user can
         run it.
       - `deploy/docker-compose.yml`: each service runs `igor serve <role>-1`, since the compose
         file runs one container per role, as rank 1, so each container's worker user is
@@ -445,12 +492,15 @@ file in the service user's home. Each holds a random string and nothing else. Ne
         worker user's group, which the unit's `SupplementaryGroups=` does on a host; without it
         start check 3 refuses every start.
       - Run 5.1's start check in the container, on Linux and under Docker Desktop on macOS, and
-        record the result in `design.md`.
-- [ ] 8.4 `docs/deployment.md`: add this section after *Before it can run*, and make it the
-      fourth thing in that list. May be reworded; the commands may not change without
-      re-measuring them. The loop that creates each instance's user, home and sudoers line is
-      unmeasured: run it on section 6's host before this ships, and record the result in
-      `design.md`.
+        record the result in `design.md`. On the Claude Code version the image pins, repeat 6.2's
+        kill of a running `npm test` and 6.9's stdin forms, since both were measured on
+        2.1.303.
+- [ ] 8.4 `docs/deployment.md`: add this section after *Before it can run*, add a fourth item
+      to *Before it can run*'s numbered list that points to it, and change that list's opening
+      line to say four things. May be reworded; the commands may not change without
+      re-measuring them. Section 6's host ran them as written on 2026-10-18, before they copied
+      the `Defaults` line, and they made each user, home and sudoers line (`design.md`,
+      *Measurements*); 6.12 re-runs them as they stand.
 
       ````markdown
       ## A separate user for the worker
@@ -462,8 +512,9 @@ file in the service user's home. Each holds a random string and nothing else. Ne
       user, which can read none of them, and `igor serve` refuses to start without one.
 
       Each Igor instance, `igor@<role>-<rank>`, gets its own worker user,
-      `igor-worker-<role>-<rank>`, with its own home and sudoers line. Workers sharing one user
-      could read each other's seat tokens through `/proc`.
+      `igor-worker-<role>-<rank>`, with its own home and sudoers line. Two workers sharing one
+      user can read each other's seat tokens and write into each other's trees through
+      `/proc`, even from separate units.
 
       List your instances, each with its rank, such as `maintenance-1`. Then create each one's
       user and home, and write its sudoers line. Run it again, listing every instance, whenever
@@ -473,7 +524,7 @@ file in the service user's home. Each holds a random string and nothing else. Ne
 
       ```bash
       instances="maintenance-1 generalist-1 generalist-2"
-      { grep '^#' deploy/sudoers.example
+      { grep -E '^(#|Defaults)' deploy/sudoers.example
       for i in $instances; do
         u="igor-worker-$i"
         id "$u" >/dev/null 2>&1 || sudo useradd --system --create-home \
