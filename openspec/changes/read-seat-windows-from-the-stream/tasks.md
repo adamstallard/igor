@@ -24,6 +24,10 @@
 - [ ] 1.1b On several ordinary worker runs, including one that crosses a warning threshold
       mid-run, record how many `rate_limit_event`s arrive and when. If a run carries an event
       after its first call, the two-run bound of decision 4 goes back to Adam
+- [ ] 1.1c When a never-used seat is available, before anything else runs on it, repeat 1.1's
+      capture on it and record in `design.md`, *A seat below every threshold gets an event*,
+      whether a seat with no current instance gets an event. If it does not, what starts a fresh
+      reserved seat goes back to Adam
 - [ ] 1.2 Keep the capture as a test fixture beside the 2026-09-27 one from §6.3.3, so the parser
       is tested against what the provider sent rather than what was guessed
 - [ ] 1.3 Check that fullness does not fall within an instance: compare the successive readings of
@@ -49,7 +53,7 @@
 
 - [ ] 2.1 In `claudeWorker`'s `consume`, keep the last `event.type === 'rate_limit_event'` and the
       instant it arrived, beside the terminal `result`; return both from the
-      runner without changing what `final` means
+      runner without changing `final`, the terminal `result` the runner returns now
 - [ ] 2.2 `readingFrom(event, arrivedAt)` — pure, non-throwing, in the style of `asIso`: per window,
       `utilization` × 100 and `resetsAt` from epoch seconds via `fromEpoch`; `five_hour` →
       `session`, `seven_day` → `week`, any other window name dropped; `status`,
@@ -74,8 +78,9 @@
       with `is_error: false` is written at the figure it gives, not as a refusal
 - [ ] 3.4 When the stream reading is a refusal, the envelope path in `recordExecution` writes no
       second row for the same run; when there is no event, the envelope path is unchanged
-- [ ] 3.5 Rows are appended one at a time, as `observeSeat` does, since `appendRecord` drops
-      concurrent appends to one day's file
+- [ ] 3.5 Append each row only once the previous append has finished, the pattern `observeSeat`
+      follows until 9.1 removes it:
+      `appendRecord` can lose one of two appends made at once to the same day's file
 - [ ] 3.6 Tests: a run with an event appends two rows against the charged seat with the arrival
       instant; a run without one appends none;
       a refusal carried by both stream and envelope appends one row; an aborted run that received
@@ -150,27 +155,37 @@
 
 ## 6. The seat probe, on the server (only if 1.1 found an event below threshold)
 
+- [x] 6.0 Before building 6.1-6.3, measure that a probe in the specified configuration, `HOME`
+      and working directory both empty, no tools and only the seat's token, still gets a
+      `rate_limit_event`. If it does not, the probe goes back to Adam. Confirmed 2026-10-18 on
+      Claude Code 2.1.303: `design.md`, *A seat probe*, *Measured*
 - [ ] 6.1 In the serve loop, select the seats to probe: the deployment declares seats; some window has no unexpired `usage` or `stream` observation; no unexpired row at
       100%; no unexpired overage reading for the window its `rateLimitType` names; no window whose
-      newest unreset reading is at or past that window's line (7.1, with the seat's own reserve,
-      the overage exclusion built only once 1.4 confirms what `isUsingOverage` means,
-      since a probe is made for no role); no probe of it recorded by any Igor in the last hour; no
+      newest unreset reading is at or past that window's line (7.1), computed with the seat's own
+      reserve, since a probe is made for no role (the crossing probe of 6.8 checks the role's line
+      instead); no probe of it recorded by any Igor in the last hour; no
       probe of it this process started still running; and every probe of it in the last five
-      hours got an event. Where a reading expired at a reset the server knows of, the probe is the
-      post-reset probe of 8.1, not a second one, unless that post-reset probe was excluded
+      hours got an event. Where a reading expired at a reset the server knows of and 8.1's post-reset
+      probe is due at that reset, the probe is that post-reset probe, not a second one, unless it
+      was excluded. Build
+      the overage exclusion only once 1.4 confirms what `isUsingOverage` means
 - [ ] 6.2 Spawn the probe as `claudeWorker` spawns a worker, with the environment written out
       (§6.3.2) and only that seat's token, from a fresh empty temporary directory removed after,
-      and with `HOME` set to a second empty temporary directory, not the home a worker is given.
+      made under the system's temporary directory and never under a home, and with `HOME` set to
+      a second empty temporary directory, not the home a worker is given. Fail the probe, and
+      record nothing, where any directory above the first holds a `.claude` directory or
+      `CLAUDE.md`.
       Remove both directories once the probe exits.
       Use `TRIAGE_MODEL`, a trivial prompt, tools denied and `--output-format stream-json
-      --verbose`. Reuse 2.1–2.3's parsing
+      --verbose`. Where #174 (`pinned-skills`) is built, take the arguments every call gets from
+      its shared argument builder, `--setting-sources user` and `--strict-mcp-config` among them:
+      measured on 2026-10-18, a call without `--setting-sources user` run under a home holding
+      `.claude` loads that home's skills. Where #174 is not built, pass `--setting-sources user` and
+      `--strict-mcp-config` directly. Reuse 2.1–2.3's parsing
 - [ ] 6.3 Record its event through 3.2's path as `stream` rows, timed at arrival. Record its cost
       against the seat on a spend row, marked as a seat probe in place of a role, that
       `loadSpend` returns. Where #101 has merged, its `check` row for the credential (6.7) is a
       second row and carries no cost. Record no observation when no event arrived
-- [ ] 6.0 Before building 6.1-6.3, measure that a probe in the specified configuration, `HOME`
-      and working directory both empty, no tools and only the seat's token, still gets a
-      `rate_limit_event`. If it does not, the probe goes back to Adam
 - [ ] 6.4 Tests: a reserved seat with no reading is probed once; a seat whose post-reset probe
       was excluded is probed once no exclusion applies; the probe runs with an empty `HOME`, the
       cheapest model, the trivial prompt and no tools; a seat with both windows unexpired
@@ -180,7 +195,7 @@
       five-hour back-off hold; a probe's cost is recorded as a probe; a probe with no event
       records nothing and is not retried in a loop; another Igor's probe within the hour holds
       this one off; the probe's cost appears in `igor budget`'s spend; the probe runs from an
-      empty directory
+      empty directory, and refuses one with a `.claude` directory above it
 - [ ] 6.5 `igor budget` names a figure that came from a probe, or says a seat was probed and
       returned nothing, so an operator can tell a probed seat from an unread one. **May be
       reworded**
@@ -380,7 +395,8 @@ the stream reading, the probe, the line, a role's reserve, and no dollar bound, 
 
 - [ ] 13.1 A gate that chooses nothing because every seat is at or past its line returns the
       holding verdict (7.5), distinct from `spent`, from an unread seat and from an empty queue,
-      and the cycle report and decision record name it
+      and the cycle report and decision record name it. Where the role's seats are passed over
+      for different reasons, the record names each seat with its own reason
 - [ ] 13.2 `igor budget` says a seat is holding back and names the instant its line reaches its
       reading, `resetsAt − (1 − reading) ÷ r × length`. **May be reworded**:
 
@@ -389,7 +405,9 @@ the stream reading, the probe, the line, a role's reserve, and no dollar bound, 
       ```
 
 - [ ] 13.3 Test that an operator can tell holding back, a refusal, an unread seat and an empty
-      queue apart from the record alone
+      queue apart from the record alone; that a cycle whose seats are passed over for different
+      reasons names each seat's reason; and that a seat whose readings have all reset is
+      reported as unread, not as at its line or refused
 
 ## 14. Removing `capacity_estimate`
 
@@ -428,7 +446,7 @@ requirements are in force:
       carry this delta's rules too: when writing this delta, tell #171. #171 also carries a
       `MODIFIED` block on *A seat nothing has read is probed on the Igor server with its own
       token* (proposal, decision 18), so moving *A probe checks the credential too* out of that
-      requirement has to be matched in #171's block
+      requirement has to be matched in #171's block.
       When writing that delta, also update the sentence in `docs/architecture.md` that says one
       probe 401 opens `seat:<id>:credential`
 - [ ] 15.2 `condition-backoff/design.md` (from #101), `concurrent-instances/design.md` and
@@ -447,12 +465,12 @@ requirements are in force:
       Archived alone, this change would leave the in-force pool requirement naming
       `capacity_estimate`, which it removes; only `seat-files` removes that requirement. Run the
       `openspec archive` steps in the order issue #204 holds, which runs this change's before
-      `seat-files`', since `seat-files`' deltas are written against this change's text. Do 15.1
+      `seat-files`'; every change #204 places between the two archives in that same commit too.
+      This change goes first because `seat-files`' deltas are written against this change's text. Do 15.1
       first: until it is done, one probe 401 here opens a seat condition that #101 opens only at
-      its threshold
-- [ ] 16.2 Add `reserve` to the monotonic fields of role-config's *Merge semantics differ by
-      field kind*, as this change's role-config delta says. lore-from-corrections, #189 and #153
-      each modify that requirement too; merge the field lists by hand with whichever has
-      archived
-- [ ] 16.3 If #196 (spec-trace) has merged by the time this change archives, its CI fails each new
+      its threshold. Before archiving, check that #171's `MODIFIED` blocks on *A seat nothing has
+      read is probed on the Igor server with its own token* and *A role may hold back more of a
+      seat than the seat does* carry this change's current text of both, since #171's blocks
+      replace them
+- [ ] 16.2 If #196 (spec-trace) has merged by the time this change archives, its CI fails each new
       scenario with no tagged test. Tag a test for each scenario this change adds

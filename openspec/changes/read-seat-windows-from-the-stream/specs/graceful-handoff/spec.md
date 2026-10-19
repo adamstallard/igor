@@ -4,7 +4,7 @@
 
 Where the reason for stopping is budget, the handoff SHALL state when capacity is expected to
 return rather than reporting the Igor as unavailable without qualification: the window's reset,
-or, for a window a seat's reserve line shut, the hour seat-budget's *A handoff for a window the
+or, for a window a seat's reserve line shut, the time seat-budget's *A handoff for a window the
 line shut states its crossing, marked approximate* gives.
 
 #### Scenario: Reset time included

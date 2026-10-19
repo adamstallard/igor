@@ -2,13 +2,17 @@
 
 Terms used below. A **seat** is a Claude subscription Igors spend from. A **reading** is the
 provider's report of how full a seat's window is, carried in each run's output as a
-`rate_limit_event`. A window's **instance** is one stretch of it from one reset to the next. A
+`rate_limit_event`. A window's **instance** is one stretch of it from one reset to the next. A reading is
+**unreset**, or **unexpired**, until the reset it states; one whose reset never resolved is
+unreset until one window length after it was taken. A
 **probe** is one minimal model call made on the server that runs the Igors, with a seat's own
 token, to get a reading. #101 is `condition-backoff`, which records stuck conditions and is about
 to merge; #171 is `seat-files`, which moves seat configuration into one file per seat and carries
 a lent seat's token as ciphertext; #179 is `concurrent-instances`, which runs several processes of
 one role, each with a number, its **rank**, and each writing a **heartbeat** file its siblings
-read.
+read. #75 (`triage-refusal-calibrates`) records a refused triage call as an observation of its
+seat. #174 (`pinned-skills`) gives every model call one shared set of arguments, and #175
+(`worker-user`) runs the worker as a separate Unix user.
 
 1. **The reserve is a line on the seat's reading that moves toward the reset** (Adam, 2026-09-28).
    For each window, Igor starts work on a seat only while its newest unreset reading is below
@@ -32,20 +36,24 @@ read.
 6. **A reserve on a dedicated seat is pacing**, from 0 to 1 inclusive, defaulting to 0 (Adam,
    2026-09-28).
 7. **A seat nothing has read is probed on the Igor server with its own token** (Adam, 2026-09-27):
-   at most once an hour, five hours after a probe that got no event, never on a refused seat, one
-   spending extra usage, or one at its line. A seat is probed at its crossing before it is drawn on
+   at most once an hour, and not again until five hours after a probe that got no event. It is
+   never made on a refused seat, one spending extra usage, or one at its line. A seat is probed at its crossing before it is drawn on
    again (Adam, 2026-10-10). *Rejected:* `igor observe` run on a lender's machine;
    `scheduled-observation` is withdrawn with it.
-8. **Window length and schedule are measured by a probe ten minutes after a known reset** (Adam,
-   2026-09-28). The smallest gap between observed resets is a fallback that only shortens a length.
+8. **A window's length, and its schedule (whether its instances start at fixed times or at first
+   use), are measured by a probe ten minutes after a known reset**, once per window type and then about
+weekly (Adam, 2026-09-28). The smallest gap between observed resets is a fallback that only shortens a length.
 9. **No figure in dollars gates anything** (Adam, 2026-09-28). `budget_share` is measured against
    the reading, and `capacity_estimate` is removed with no handling of an old config beyond the
    unknown-key refusal (Adam, 2026-10-11).
 10. **`budget-pacing` is withdrawn**; its one surviving requirement, holding back at the line, moves
     here (Adam, 2026-09-28).
 11. **No overage opt-in** (Adam, 2026-09-27).
-12. **`allowed_warning` changes no gate decision; triage switches to the stream only after this is
-    built, with #75 the fallback; the observation log is read whole** (Adam, 2026-10-11).
+12. **Three rules of 2026-10-11** (Adam). `allowed_warning` changes no gate decision. Triage's
+    model call switches to the stream only after this change is built; until then a triage call
+    yields no reading, and #75's row for a refused triage call is its only observation. The
+    observation log stays read whole, although this change grows it by up to two rows per worker
+    run (see *Impact*).
 13. **Once #101's stuck-conditions spec is in force, a probe's credential rules move into a
     `stuck-conditions` delta** (Adam, 2026-10-17). There a probe's 401 counts as one occurrence of
     `seat:<id>:credential`, like a run's, so one probe 401 no longer opens the condition alone: it
@@ -56,8 +64,8 @@ read.
     is fixed is back within the hour. *Rejected:* keeping the probe's own opening rule, a single
     401, beside #101's, which opens the same condition only at its threshold: one condition would
     open by two different rules.
-14. **Every seat has a token, and Igor never uses a stored Claude login** (Adam, 2026-10-18,
-    replacing his 2026-10-17 rule for a seat that names no token). A stored login is the
+14. **Every seat has a token, and Igor never uses a stored Claude login** (Adam, 2026-10-18). A
+    stored login is the
     credentials `claude` keeps in a home directory. This change therefore has no rule for a seat
     without a token: every seat may be probed with its own token, and every reading is of a seat
     whose token paid. #171 (`seat-files`) refuses a seat file that names no token, forbids any model
@@ -65,9 +73,10 @@ read.
     (decision 16). This change carries no block on the in-force *A spend with no seat behind it
     does not happen*, whose scenarios describe a seat with no token and an organization with no
     seats; openspec will not let a `MODIFIED` block drop them. #171 removes that requirement in
-    the same commit and re-adds it without them, with the probe as its stated exception.
-    *Replaced:* the 2026-10-17 rule that such a seat ran on a stored login on the server, kept its
-    runs' readings, and was never probed.
+    the same commit and re-adds it without them, naming the probe as an exception to it: a probe
+    spends from a seat the gate did not choose.
+    *Rejected:* a seat naming no token that runs on the server's stored login and is never
+    probed, Adam's rule of 2026-10-17, which this replaces.
 15. **Issue #69, which asks how old a reading may be before the line distrusts it, is closed with
     this change's reasoning once task 1.3 confirms that fullness does not
     fall within an instance** (Adam, 2026-10-17). A reading bounds its window from below until the
@@ -97,9 +106,10 @@ read.
     the crossing probe, made while deciding for a role, uses that role's line. This change's
     choice.
 23. **A role *has a seat it can spend* when the gate would choose one for it now** (Adam,
-    2026-10-18, for #179). In #179 a rank's heartbeat says the rank is available only while it is
-    free and its role has a seat it can spend: when the gate, deciding now, would choose a seat
-    for it under every rule it applies. A role whose seats are all past their reserve lines, or
+    2026-10-18, for #179): when the gate, deciding now, would choose a seat for it under every
+    rule it applies. Adam decided it for #179's heartbeat, which says a rank is available only
+    while it is free and its role has a seat it can spend. #179's branch does not carry that rule
+    or the term; adding them is #179's work. A role whose seats are all past their reserve lines, or
     passed over for any other reason, has none. This change defines the term once, in *A role has a seat it can spend when
     the gate would choose one now*, for #179 to cite.
 
@@ -112,12 +122,27 @@ read.
     refusal.** This change's choice: a limit the run retried past is not why it stopped.
 27. **Two Igors that start a probe of one seat at once may both make it.** This change's choice.
     *Rejected:* coordinating probes across Igors.
+28. **A probe checks the seat's credential too** (Adam, 2026-09-28). A probe answered 401 opens
+    the seat's credential condition, a probe that succeeds clears it, and the five-hour back-off
+    does not follow a 401, so a stopped seat is re-checked hourly. Decision 13 moves these rules
+    into a `stuck-conditions` delta once #101 is in force.
+29. **A probe whose directory has a `.claude` directory or `CLAUDE.md` above it fails and records
+    nothing.** This change's choice, from task 6.0's measurement that a probe run under a home
+    loaded that home's skills. *Rejected:* probing anyway and relying alone on `--setting-sources user`,
+    the flag that limits which settings files Claude Code loads: checking the directory costs
+    nothing, and the probe holds a seat token.
+30. **A reading whose reset never resolved takes `remaining` as 1**, so its line is `1 − r`, the
+    most the line holds back. This change's choice. *Rejected:* `remaining` as 0, which would put
+    the line at 100% and hold nothing back, and excluding the reading, which would leave a
+    reserved seat unread.
 
 **Still open:**
 
 - **A guaranteed per-role share.** Not specified; added only if a role's reserve proves too weak a
   priority.
 - **The `rejected` shape** (#57) is contributor-reported, not captured (task 1.5).
+- **A never-used seat is unmeasured.** Task 1.1 measured a seat below every threshold, at 42% and
+  11%, not one with no current instance; task 1.1c measures one when a fresh seat is available.
 - **Per-model weekly windows** have no source for a token seat (#75 task 5.1).
 - **Facts the gate rests on are unmeasured:** that fullness does not fall within an instance
   (task 1.3); what `isUsingOverage` means (task 1.4); whether an ordinary worker run carries an
@@ -126,15 +151,22 @@ read.
   whether a triage call yields a reading. The overage rule is not built until 1.4
   confirms it.
 - **For Adam, from a consistency read of 2026-10-18, each with a recommendation:**
-  - **Whether the live `/usage` read is dead.** Every seat's credential is now a `setup-token`,
-    to which `/usage` returns no window, so the live path may never return one. The design and
-    task 9.1 keep it, and task 7.3 gives it the moving reserve line. *Recommended:* keep it until
-    gate two, the implementation pushed onto this branch once the spec is approved, confirms in
-    the code that no seat can get a window from it; then remove it in a follow-up.
-  - **The probe's empty `HOME`.** The spec has the probe run with `HOME` set to an empty
-    directory, so no user-level settings or hooks of the service user load beside the seat's
-    token. Whether `claude -p` still gets a `rate_limit_event` that way is unmeasured (task 6.0).
-    *Recommended:* approve it, subject to 6.0.
+  - **Whether to remove the live `/usage` read.** Measured on 2026-10-18 (`design.md`, *What is
+    not removed*): with a token, `/usage` prints a cost summary and no window, so `readUsage`
+    reports the seat unmeasurable. Every seat holds a token, so after #171's code lands the live
+    read returns a window for no seat, and still spawns `claude` twice per seat at each gate. The
+    design and task 9.1 keep it, and task 7.3 gives it the moving reserve line.
+    *Recommended:* remove it in gate two, with `readUsage`, `runUsage`, `hasSubscription`,
+    `parseUsage` and the live paths of `chooseSeat`, `budgetGate` and `renderBudget`, if gate two
+    is built after #171's code; otherwise remove it in the change that follows #171's code. That
+    also drops `runUsage`, the function that spawns the live read, from #174's and #175's tasks,
+    which change it.
+  - **What happens if task 1.4 never captures `isUsingOverage: true`.** The only captures are of
+    seats whose overage is disabled at the organization level, so a true value may never be seen,
+    and the overage rule is not built until 1.4 confirms it. *Recommended:* if 1.4 has no capture
+    when the rest of gate two is built, move *A seat spending extra usage has no headroom* to a
+    follow-up change filed as an issue. A change archives only once every requirement is met,
+    and an unbuilt one is not, so otherwise this change and #171 could not archive.
   - **The two stream captures committed under `captures/`** for task 1.1a keep the operator's
     local setup metadata (session ids, the skill and plugin list) in a public repository.
     *Recommended:* trim each to its `rate_limit_event` lines and the stream's first `init` line
@@ -144,7 +176,8 @@ read.
   change's code comes first. Until #171's code lands, the in-force `seat-budget` still lets a
   seat name no token and run on a stored login, and this change says nothing of how its probe
   treats such a seat. Delay merging this change's code until #171's merges, or have the probe
-  skip a seat with no token until #171's code lands?
+  skip a seat with no token until #171's code lands? *Recommended:* have the probe skip such a
+  seat until #171's code lands.
 
 ## Why
 
@@ -199,7 +232,8 @@ tokens and the seat config.
   minimal call on the cheapest model, read for its `rate_limit_event` and recorded as a `stream`
   reading. The probe is not free, and its cost is recorded. It is rate-limited, never runs on a
   refused seat, and never runs on a person's machine. A seat below every threshold emits the
-  event (task 1.1), so the probe can start a fresh seat.
+  event (task 1.1), so the probe can start an idle seat; a never-used one is still to be measured
+  (task 1.1c).
 - **The reserve becomes a line on the reading that moves toward the reset** (Adam, 2026-09-28).
   For each window, Igor starts work on a seat only while its most recent unreset reading is below
   `1 − r × remaining`, where `remaining` is the fraction of the window still to come and `r` is the
@@ -272,16 +306,17 @@ Explicitly out of scope:
   fields. Capacity is still derived, for reporting only. Window lengths and the schedule come from
   post-reset probes and observed resets. `observeSeat` and `seatToObserve` are removed.
 - `src/budget.ts`: the gate compares each window's newest unreset reading with the moving line,
-  on both the live and the derived path, instead of recorded spend with the dollar bound. The
-  dedicated-seat reserve refusal and the reserve-below-1 check go. The remedies that name `igor
-  observe` are reworded.
+  instead of recorded spend with the dollar bound, whether the reading came from the live `/usage`
+  read or from recorded observations. The dedicated-seat reserve refusal and the check that
+  refuses a reserve of 1 go. The remedies that name `igor observe` are reworded.
 - Role configuration gains an optional `reserve`.
 - `src/cli.ts`: the `observe` command is removed, with `test/observe.test.ts`.
 - The serve loop gains the seat probe.
-- `capacity.ndjson` grows by up to two rows per worker run, at the execution log's rate rather
+- `capacity.ndjson` grows by up to two rows per worker run, one per window of its one reading, at the execution log's rate rather
   than a refusal's. It is still read whole, a known limit to revisit before a fleet runs many seats.
 - `igor budget` shows each window's reading against its line, per role where a role reserves more,
-  says when a seat is holding back, and can name a figure's route and show the provider's warning
+  says when a seat is holding back, and can name which source a figure came from (a run's stream,
+  a probe or a refusal) and show the provider's warning
   and overage state.
 - Every caveat in §6.3.3 carries over: the `rejected` shape is contributor-reported, not captured
   (#57, #15).

@@ -10,9 +10,9 @@ configuration declaring a child reserve below its parent's SHALL be refused, nam
 the role each came from. A role declaring none SHALL take its parent's.
 
 This runs the opposite way to `budget_share`, which a child may only lower. Each moves in the
-direction that holds a role back: a lower share, a higher reserve. A raised reserve is a restriction, so `reserve` merges as a monotonic
-field of *Merge semantics differ by field kind*; that requirement's list of fields gains it at
-archive (task 16.2).
+direction that holds a role back: a lower share, a higher reserve. This requirement is the one place that states how a role's reserve is inherited from its parents.
+How it combines with a seat's reserve is seat-budget's *A role may hold back more of a seat than
+the seat does*.
 
 #### Scenario: A child role may raise its inherited reserve
 
