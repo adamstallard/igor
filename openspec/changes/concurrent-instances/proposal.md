@@ -1,8 +1,9 @@
 ## Decisions
 
-Adam decided these on 2026-10-13, 2026-10-17 and 2026-10-18. `design.md` gives the reasoning for
-each. Decisions 29 to 37 are his latest answers, given on 2026-10-18 after the others; where they
-replace an earlier decision, the earlier one is rewritten to match.
+Adam decided these on 2026-10-13, 2026-10-17, 2026-10-18 and 2026-10-19. `design.md` gives the
+reasoning for each. Decisions 29 to 38 are his latest answers: 29 to 37 on 2026-10-18 after the
+others, and 38 on 2026-10-19. Where they replace an earlier decision, the earlier one is
+rewritten to match.
 
 **The claim**
 
@@ -51,8 +52,9 @@ replace an earlier decision, the earlier one is rewritten to match.
     <login>`, so the item still reads as handed over.
 11. **`igor run <role>` runs as rank 0, outside the roster, with its own heartbeat file**
     (decision 29), and spends the token in `IGOR_RUN_TOKEN`, as #171 records. It starts at once, beside any serving rank, and contends for items as any rank
-    does. It takes over no claim message, its own rank's included, and sweeps only rank 0's trees.
-    `igor run --plan` changes nothing and skips the startup sweep.
+    does. It takes over no claim message, its own rank's included, and removes only its own trees
+    (decision 38).
+    `igor run --plan` changes nothing and removes no tree.
 
 **Recovery and the abandonment bound**
 
@@ -88,7 +90,7 @@ replace an earlier decision, the earlier one is rewritten to match.
     Working trees are named `<role>-<rank>-<id>`, kept where #175 puts them, which every rank
     on the host sees, and swept by rank, never by age. A sibling removes the trees of a gone
     rank the roster no longer declares, as #175's release removes them. No serving rank removes rank
-    0's trees; the next `igor run` removes them at its start.
+    0's trees; each `igor run` removes only its own (decision 38).
 
 **Discovery and state**
 
@@ -131,7 +133,7 @@ replace an earlier decision, the earlier one is rewritten to match.
     that carries a gone rank's claim message, a taker adds the label, removes it and adds it
     again before posting.
 
-**Decided on 2026-10-18, Adam's latest answers**
+**Decided on 2026-10-18 and 2026-10-19, Adam's latest answers**
 
 29. **`igor run` runs as rank 0, outside the roster, with its own heartbeat file.** It contends
     for items like any rank, so `NoTwoWorkers` covers it, never takes over another rank's claims,
@@ -167,6 +169,10 @@ replace an earlier decision, the earlier one is rewritten to match.
     heartbeat can bring a second, with no hard limit, which Adam chose over a limit because a
     duplicate reply is harmless and waiting is the worse failure. `directed-interaction`'s
     proposal records it.
+38. **Two `igor run`s of one role at once share no tree and no home** (Adam, 2026-10-19). Each run
+    picks a run id at its start, every tree id it gives starts with that run id, and it removes
+    only its own trees. Each run also gets a home of its own, the `HOME` its worker runs in;
+    #174 (`pinned-skills`) is to specify it, and #174 as last pushed keeps one home per role.
 
 **Still open:**
 
@@ -187,12 +193,18 @@ replace an earlier decision, the earlier one is rewritten to match.
 - **What an adapter must supply.** The claim rules need each surface's sequence key, the time of
   an item's latest release and the times of its label events, and whether a comment was edited
   (GraphQL `lastEditedAt`), but no `surface-adapter` requirement obliges an adapter to supply them.
-- **For Adam, from TLC: two `igor run`s of one role at once.** Both run at rank 0, and a claim
-  message names only the rank, so each reads the earliest message as its own claim and both
-  work one item (`model/findings/TwoRuns.cfg`). Decision 29 makes one `igor run` safe beside
-  serving ranks; nothing stops two people running it at once. One answer: the claim message
-  also carries the id the process picked at its start, and verification compares it where the
-  rank is 0.
+- **For Adam, from TLC: two `igor run`s of one role can still both work one item.** Decision 38
+  keeps their trees and homes apart, but both run at rank 0 and a claim message names only the
+  rank, so each reads the earliest message as its own claim and works the item
+  (`model/findings/TwoRuns.cfg`). One answer: the claim message also carries the run's id, and
+  verification compares it where the rank is 0.
+- **For Adam: two `igor run`s at once still share rank 0's heartbeat file and its discovery
+  mark.** Where one run crashes holding a claim while the other goes on, the survivor's writes
+  keep rank 0 from reading as gone, so the claim waits until the survivor also stops: serving
+  ranks take over rank 0's claims only once rank 0 is gone, and a run takes over nothing. The
+  file's availability also flips between the two runs' values.
+- **For Adam: a crashed `igor run`'s trees** are removed by no process: no serving rank removes a
+  rank-0 tree, and every later run removes only its own. They stay until a person removes them.
 - **For Adam, from the consistency read:**
   - **Who can edit the bot's comment.** Decision 30 accepts the edited-message risk because only
     maintain or admin access can edit a bot's comment, but `design.md` had read GitHub as letting
@@ -217,8 +229,9 @@ replace an earlier decision, the earlier one is rewritten to match.
 - **For Adam, readings of decisions 29 and 31 this change made:** rank 0 comes after every
   serving rank in each item's order and owns no item; a rank waits one settle interval per
   available rank ahead of it before claiming an item it does not go first for, which replaces
-  the wait of `k − 1` intervals; and a serving rank never removes rank 0's trees, which the next
-  `igor run` removes.
+  the wait of `k − 1` intervals; a serving rank never removes rank 0's trees; and, for decision
+  38, a run id is eight lowercase letters and digits, so a run tells its own trees by a
+  fixed-length prefix.
 - **Conflicts with other open changes, recorded and not resolved:**
   - #101: decision 22 has a probe lapse when its rank is gone, but a condition on a seat or on
     the whole Igor is shared by every role, and a process watches only its own role's heartbeat
@@ -233,7 +246,9 @@ replace an earlier decision, the earlier one is rewritten to match.
   - #106 says a role served by one process runs it as rank 1, but a role served only by `igor
     run` saves its marks as rank 0. The marks still combine by this change's rule; only #106's
     sentence is wrong for that case, and #106 can say "rank 0 under `igor run`".
-
+  - **#175 and #174 as last pushed predate decision 38:** #175's decision 25 has `igor run` remove
+    every rank-0 tree of its role at its start, where decision 38 has it remove only its own, and
+    #174 keeps one home per role under `igor run`, where decision 38 gives each run its own.
 - **The in-force "one comment" rules meet several ranks.** On an item with work in flight, or
   held by another Igor, each rank reaching it would post the one comment the in-force rules
   allow; nothing yet restricts the comment to one rank. It predates Adam's latest answers.
@@ -421,7 +436,7 @@ Explicitly out of scope:
   processes saving one source keep the lower watermark, and #101's watermark rule names a
   stand-down.
 - `task-execution`: The worker's absolute ceiling is removed, and the sweep removes working
-  trees by rank rather than by age; `igor run` sweeps only rank 0's.
+  trees by rank rather than by age; each `igor run` removes only its own trees.
 - `role-config`: A role's processes share one identity and differ only by rank, the roster
   declares the ranks each role may run, a process is named `<role>-<rank>`, a role's name fits
   its worker users, and `igor serve` reads the role's environment file itself, which holds

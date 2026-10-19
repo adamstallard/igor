@@ -9,8 +9,9 @@ identity. Everything here follows from refusing to conflate the two.
 Adam decided in two rounds on 2026-10-17: first the answers to two reviews' questions, then a
 second set settling what those answers left open. A decision from the second set is marked
 *round two*. On 2026-10-18 he answered what round two left open, marked *round three*, and then
-what round three left open, marked *round four*. His latest answers, the same day, after round
-four, are marked *in his latest answers*; the proposal numbers them 29 to 37.
+what round three left open, marked *round four*. His latest answers, given after round four on
+2026-10-18 and, for decision 38, on 2026-10-19, are marked *in his latest answers* or dated; the
+proposal numbers them 29 to 38.
 
 ### The marker rides in the claim message
 
@@ -196,8 +197,9 @@ Decided by Adam, 2026-10-18, in his latest answers. `igor run <role>` runs as ra
 roster declares, with its own heartbeat file, `heartbeats/<role>-0.json`. It starts at once,
 beside any serving rank, and contends for items as any rank does: its claim messages carry
 `Igor-Rank: 0`, and the claim and its verification decide who works an item. So `NoTwoWorkers`
-covers it with no rule of its own. It takes over no claim message, its own rank's included, even
-a gone rank's; a claim it leaves is taken over by a serving rank once rank 0 is gone. It sweeps only rank 0's trees.
+covers it with no rule of its own. It takes over no claim message of any rank: not an earlier
+run's at rank 0, and not a gone serving rank's. A claim it leaves is taken over by a serving rank
+once rank 0 is gone. It removes only its own trees.
 
 This replaces running `igor run` as rank 1. At rank 1, beside a serving rank 1, a run would read
 that rank's claims as its predecessor's, re-work them and sweep its trees. To prevent that, round
@@ -210,11 +212,16 @@ predecessor's. With rank 0 neither can happen: `findings/RunBesideWorker.cfg` an
 removed. A rollback of the state branch, which could put back a file with another process's id
 and stop a live rank, no longer stops anyone, since no process reads its own file's id.
 
-`igor run --plan` changes nothing: it writes no heartbeat and skips the startup sweep.
+`igor run --plan` changes nothing: it writes no heartbeat and removes no tree.
 
-**What rank 0 does not cover: two `igor run`s of one role at once.** Both run at rank 0, and a
-claim message names only the rank, so each reads the earliest message as its own claim, holds the
-item in its own view, and works it (`findings/TwoRuns.cfg`). The proposal lists it for Adam.
+**Two `igor run`s of one role at once share no tree and no home** (Adam, 2026-10-19). Each run
+picks a run id at its start and makes that id the start of every tree id it gives, so a run
+removes only its own trees. Each run also gets a home of its own, the `HOME` its worker's
+`claude -p` runs in, which #174 (`pinned-skills`) is to specify; as last pushed it keeps one
+home per role. What this does not cover: both still run at rank 0, and a claim message names only
+the rank, so each reads the earliest message as its own claim, holds the item in its own view,
+and works it (`findings/TwoRuns.cfg`); and a crashed run's trees are left for a person, since no
+process removes another run's. The proposal lists both for Adam.
 
 `igor run` spends the token in `IGOR_RUN_TOKEN`, an implicit local seat, as #171 records.
 
@@ -646,8 +653,8 @@ only once it is gone, at the start of a cycle (Adam, 2026-10-17).
 
 **Rank 0's trees are `igor run`'s alone** (Adam, 2026-10-18). Rank 0 is no rank the roster
 declares, but no serving rank removes its trees: an `igor run` may be running, and no worker
-user exists for rank 0 to remove them as. The next `igor run` of the role removes them at its
-start, as itself.
+user exists for rank 0 to remove them as. Each `igor run` removes only its own, as it releases
+them (decision 38).
 
 **Trees live where every rank on the host can see them** (Adam, 2026-10-17). A sweep in each
 instance's private temporary directory would never see another rank's trees, so trees go in a

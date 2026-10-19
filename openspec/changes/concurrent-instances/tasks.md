@@ -64,9 +64,8 @@
       timer of 4.15, its first write before its first cycle, and its claim messages carry
       `Igor-Rank: 0`. It passes over every labelled item that carries any claim message posted
       since its latest release, whatever its rank and whether or not that rank is gone, posting
-      nothing. It spends only `IGOR_RUN_TOKEN`, as #171's
-      tasks build. `igor run --plan` writes no heartbeat, claims nothing and skips the startup
-      sweep. Test: a run beside a serving rank 1 starts at once and writes its heartbeat before
+      nothing. It spends only `IGOR_RUN_TOKEN`; #171's tasks build that spending. `igor run --plan` writes no heartbeat, claims nothing and removes no
+      tree. Test: a run beside a serving rank 1 starts at once and writes its heartbeat before
       its cycle; a run passes over an item held by a gone rank and one held by rank 0; `--plan`
       writes nothing and removes no tree
 - [ ] 1.10 Refuse, when the configuration loads, a role whose name does not match
@@ -193,14 +192,17 @@
       once three poll intervals have passed since then, or since this process started if later.
       A missing file does not change
 - [ ] 4.5 Working trees are named `<role>-<rank>-<id>`, with an id holding no dash, and read from
-      the end of the name. At startup a process removes those of its own
+      the end of the name. At startup a serving process removes those of its own
       role and rank. At the start of each cycle it removes those of every rank the roster does not
       declare and that is gone to it. Never by age. With each tree go its outbox and its
       `<tree>-git` directory, where there is one. Each tree and its outbox are removed as the
       worker user of the rank that made it, as #175's release removes them, and each `<tree>-git`
-      as the service user. A serving process never removes a tree of rank 0. `igor run` removes at its start the
-      trees of rank 0 of its role, as itself, and no other.
-      `igor run --plan` removes nothing
+      as the service user. A serving process never removes a tree of rank 0. Each `igor run`
+      picks a run id of eight lowercase letters and digits at its start, names every tree it
+      makes `<role>-0-<id>` with an id starting with that run id, and removes each of its own
+      trees as it releases it when the task ends, under its own user; it has no startup sweep.
+      `igor run --plan` removes nothing. Tests: two runs at once each keep and remove only their
+      own trees; `--plan` removes no tree
 - [ ] 4.6 Remove `ABSOLUTE_CEILING_MS`, the worker's kill at it, and the failure reason that names it
 - [ ] 4.7 `docs/architecture.md` §6.7.2 pins the sweep threshold to that ceiling; restate it to
       describe the sweep by rank

@@ -397,10 +397,13 @@ its own predecessor* does not apply to rank 0. A claim an `igor run` leaves, as 
 by a serving rank once rank 0 is gone, as for any gone rank's claim.
 
 `igor run` spends only the token in its environment's `IGOR_RUN_TOKEN`, as #171's (`seat-files`)
-*`igor run` spends its own token as an implicit local seat* says.
+*`igor run` spends its own token as an implicit local seat* says. Each `igor run` keeps trees of
+its own, as `task-execution`'s *The sweep removes trees by rank, never by age* says. Each also
+gets a home of its own, the `HOME` its worker runs in, which #174 (`pinned-skills`) is to
+specify (Adam, 2026-10-19); this change does not specify it.
 
 `igor run --plan` SHALL change nothing: it claims nothing, posts nothing, writes no heartbeat and
-skips the startup sweep.
+removes no tree.
 
 #### Scenario: A run beside a serving rank goes ahead
 

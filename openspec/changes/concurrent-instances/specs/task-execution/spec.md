@@ -55,16 +55,22 @@ process that made it and an id holding no dash, so that the name read from its e
 then the rank, then the role, whose name may itself hold dashes. The directory the trees are kept
 in, which every rank on the host shares, is the one `worker-user` (#175) specifies.
 
-At startup, before its first cycle, a process SHALL remove the trees of its own role and rank.
+At startup, before its first cycle, a serving process SHALL remove the trees of its own role and
+rank.
 At the start of each cycle, it SHALL remove the trees of each rank of its role that the roster
 does not declare and that is gone, as `work-claiming` defines. With each tree it SHALL remove
 the tree's outbox and the tree's git directory, `<tree>-git`, where there is one, both beside it
 as #175 lays them out. It SHALL NOT remove a tree of another
 declared rank, of a rank that is not gone, or of another role, whatever its age.
 
-Rank 0, `igor run`'s (`work-claiming`'s *A run by hand runs as rank 0*), is no rank the roster
-declares, but a serving process SHALL NOT remove its trees. `igor run` SHALL remove at its start
-the trees of rank 0 of its own role, and no other tree; it removes them as itself. `igor run
+Rank 0 is `igor run`'s (`work-claiming`'s *A run by hand runs as rank 0*). The roster declares no
+rank 0, but a serving process SHALL NOT remove a rank-0 tree. Each `igor run` SHALL pick a run id
+of eight lowercase letters and digits when it starts. The id in each tree's name,
+`<role>-0-<id>`, SHALL be that run id followed by an id of the tree's own, of any length, so two
+runs of one role at once never share a tree and a run tells its own trees by the first eight
+characters of their id. A run SHALL remove each of its own trees as it releases it when the
+task ends, under its own user, since `igor run` has no worker user, and SHALL remove no other
+tree, a rank-0 tree of another run included; it has no startup sweep. `igor run
 --plan` SHALL remove no tree.
 
 A serving process SHALL remove each tree and its outbox as the worker user of the rank that made it, as
@@ -110,11 +116,12 @@ A serving process SHALL remove each tree and its outbox as the worker user of th
 - **WHEN** a serving process of `backend` finds a tree named `backend-0-k3x9`
 - **THEN** it leaves the tree, however old it is and whether or not rank 0 is gone
 
-#### Scenario: A run sweeps only its own rank's trees
+#### Scenario: A run removes only its own trees
 
-- **WHEN** `igor run backend` starts and finds trees named `backend-0-k3x9` and `backend-1-p2q7`
-- **THEN** it removes `backend-0-k3x9`, its outbox and its git directory, and leaves
-  `backend-1-p2q7`
+- **WHEN** an `igor run backend` that picked the run id `r7k2m9x4` ends a task whose tree is
+  `backend-0-r7k2m9x4a1`, beside `backend-0-q2b4n8c6z3` from another run and `backend-1-p2q7`
+- **THEN** it removes `backend-0-r7k2m9x4a1`, its outbox and its git directory, and leaves the
+  other two
 
 #### Scenario: Every rank on the host sees the trees
 
