@@ -10,8 +10,8 @@ one SHALL be refused as an unknown key.
 
 The directory holds `.claude-plugin/plugin.json` naming the plugin `igor`, and one entry per
 skill under `skills/`. A skill named `<name>` therefore has its files under
-`<skills_dir>/skills/<name>/` and loads as `igor:<name>`. Every path Igor or a grant names for
-that skill's scripts SHALL be under that directory, and a step that asks for the skill by name
+`<skills_dir>/skills/<name>/` and loads as `igor:<name>`. Every path Igor names for that skill's
+scripts SHALL be under that directory, and a step that asks for the skill by name
 SHALL use `igor:<name>`.
 
 `IGOR_SKILLS_DIR` SHALL be an absolute path, and a relative one SHALL refuse the start.
@@ -39,25 +39,24 @@ SHALL use `igor:<name>`.
 
 #### Scenario: A step names a skill by its plugin name
 
-- **WHEN** a model step directs the worker to use the skill `prose`, and grants its scripts
+- **WHEN** a model step directs the worker to use the skill `prose`
 - **THEN** it names the skill `igor:prose`
-- **AND** every script path it grants is under `<skills_dir>/skills/prose/`
+- **AND** every path of a prose script Igor runs for that step is under
+  `<skills_dir>/skills/prose/`
 
 ### Requirement: Every model call names the plugin directory
 
-Every `claude -p` process Igor spawns SHALL carry `--plugin-dir <skills_dir>`: the worker,
-triage, and every other model step. The usage read (`runUsage`, which the budget gate and
-`igor budget` run) is the one exception and SHALL NOT carry it. No call SHALL pass
-`--bare`.
+Every `claude -p` process Igor spawns SHALL carry `--plugin-dir <skills_dir>`, with one exception:
+the usage read (`runUsage`, which the budget gate and `igor budget` run), which only reads a
+seat's usage and SHALL NOT carry it. The calls that carry it are the worker, triage and every
+other model step, as this spec calls each call in which a model does Igor's work. No call SHALL
+pass `--bare`.
 
 The worker invokes an `igor:<name>` skill itself, through the Skill tool, when its task calls
 for it.
 
 The flag loads every skill installed under `skills_dir` for every role. A role's `skills` list
 (#153) does not decide what loads.
-
-A skill with the same name as a pinned one in the home directory of the user a call runs as
-loads under its own name beside `igor:<name>` and does not replace it.
 
 #### Scenario: The worker names the directory
 
@@ -71,12 +70,13 @@ loads under its own name beside `igor:<name>` and does not replace it.
 
 #### Scenario: Every other model call names the directory
 
-- **WHEN** Igor spawns any other `claude -p`, such as #143's seat probe
+- **WHEN** Igor spawns a `claude -p` that is neither the worker, triage nor the usage read, such
+  as #143's seat probe or the startup check
 - **THEN** its arguments include `--plugin-dir` followed by `skills_dir`
 
 #### Scenario: The usage read names no plugin directory
 
-- **WHEN** `igor budget` runs the usage read
+- **WHEN** the budget gate under `igor serve`, or `igor budget`, runs the usage read
 - **THEN** its arguments do not include `--plugin-dir`
 
 #### Scenario: No call passes --bare
@@ -89,8 +89,7 @@ loads under its own name beside `igor:<name>` and does not replace it.
 No `claude -p` process Igor spawns, the startup check and the usage read included, SHALL load
 the worked repository's `.claude/settings.json`, `.mcp.json`, skills under `.claude/skills/` or
 `CLAUDE.md`. Every such process SHALL pass `--setting-sources user` and `--strict-mcp-config`
-to keep them out. If task 0.3 finds that any of the four still loads with those flags, the means
-goes back to Adam, and the rule that none loads still holds.
+to keep them out.
 
 #### Scenario: A call names only the user's settings
 
@@ -108,32 +107,33 @@ goes back to Adam, and the rule that none loads still holds.
 ### Requirement: Every call in the worker's home starts from Igor's template
 
 The worker's home SHALL last across runs. With a worker user (#175), it SHALL be that user's own
-home. With none, under #175's same-user mode (`igor run`), Igor SHALL keep one home per role under its state
-directory, such as `~/.local/state/igor/home/<role>`, and set the worker's `HOME` to it.
+home. With none, Igor SHALL keep one home per role in its state directory, the directory where
+Igor keeps its own files on the machine, such as `~/.local/state/igor/home/<role>`, and set the
+worker's `HOME` to it. Running with no worker user, so that the worker runs as the user Igor runs
+as, is same-user mode; `igor run` is the one command that runs that way (#175).
 
 Before every `claude -p` Igor starts in that home, Igor SHALL replace `~/.claude` and
 `~/.claude.json` with a fresh copy of a template that ships with Igor, keeping nothing of what
 was there, a stored login in `~/.claude/.credentials.json` included. The calls Igor starts in
-that home are the worker and each model step Igor starts after it in the same
-home, such as #153's prose pass and bug hunt. #153's `prose start` runs after the reset, as
-#175's *The worker runs as a separate, unprivileged user* requires. Under `igor run`, a login
-the developer keeps outside the home, such as in the macOS Keychain, SHALL be neither hidden nor
-refused: where `claude` prefers it to the token, the call spends it. The template SHALL hold:
+that home are the worker and each model step Igor starts after it in the same home, such as
+#153's prose pass and bug hunt. Under `igor run`, Igor SHALL neither hide nor refuse a login the
+developer keeps where setting `HOME` does not move it, such as the macOS Keychain. The template
+SHALL hold:
 
-- a `settings.json` holding only what Igor needs, with no hooks and no MCP servers;
-- no skills and no `CLAUDE.md`, since skills load from `skills_dir`;
-- a `~/.claude.json` with onboarding marked done and no MCP servers.
+- a `settings.json` holding `{}`, so no hooks and no MCP servers;
+- no skills and no `CLAUDE.md`;
+- a `~/.claude.json` holding `{"hasCompletedOnboarding": true}`, so onboarding is marked done and
+  no MCP server is configured.
 
-The template SHALL sit in Igor's installation. With a worker user, #175's start check confirms
-that user cannot write it; in same-user mode nothing protects it, which is open in the proposal.
+The template SHALL sit in Igor's installation, the directory Igor's own code is installed in.
+With a worker user, #175's start check confirms that user cannot write it.
 
 Nothing else in the home SHALL be reset: `~/.gitconfig`, and the files a repository's tests
 cache in the home, persist across runs.
 
 With a worker user, before every reset, Igor SHALL kill every process that user owns, either by
-user or by the user's systemd slice; either way meets this requirement. In same-user mode nothing
-ends a process that escaped the run's process group, and that is a stated limit of same-user
-mode.
+user or by the user's systemd slice; either way meets this requirement, and a kill of the
+worker's process group alone does not.
 
 #### Scenario: A later call does not load what an earlier one wrote
 
@@ -149,7 +149,7 @@ mode.
 
 - **WHEN** a worker writes a hook under `~/.claude`
 - **AND** no process the worker started is still running
-- **AND** Igor then starts a model step in the worker's working tree, such as #153's prose pass
+- **AND** Igor then starts a model step in the worker's home, such as #153's prose pass
 - **THEN** the step's `~/.claude` holds only what the template holds
 
 #### Scenario: A stored login does not survive the reset
@@ -158,13 +158,12 @@ mode.
 - **THEN** that file is gone
 - **AND** the next call in that home authenticates with its seat's token, from its environment
 
-#### Scenario: Under igor run, a stored login outside the home may be spent
+#### Scenario: Under igor run, a stored login outside the home is neither hidden nor refused
 
 - **WHEN** `igor run` starts a call in the worker's home with `IGOR_RUN_TOKEN` in its
   environment, and the developer's own login is stored outside the home, such as in the macOS
   Keychain
-- **THEN** Igor neither refuses nor hides the login: if `claude` prefers the stored login to the
-  token, the call spends the developer's own login, which is accepted
+- **THEN** Igor starts the call without refusing it and without hiding that login from it
 
 #### Scenario: The rest of the home persists
 
@@ -172,10 +171,17 @@ mode.
 - **AND** Igor starts the next run in that home
 - **THEN** each of those files is still there
 
+#### Scenario: A worker user's home is its own
+
+- **WHEN** Igor runs a worker as the worker user of role `generalist`, rank 1
+- **THEN** each `claude -p` it starts for that worker's task has `HOME` set to that user's own
+  home
+- **AND** that home is reset before each of those calls
+
 #### Scenario: Same-user mode has a home per role
 
 - **WHEN** Igor runs with no worker user, for the role `generalist`
-- **THEN** each `claude -p` it starts in the worker's tree has `HOME` set to that role's home
+- **THEN** each `claude -p` it starts for that worker's task has `HOME` set to that role's home
   under Igor's state directory
 - **AND** that home is reset as a worker user's is
 
@@ -195,27 +201,45 @@ mode.
 
 ### Requirement: Igor confirms its skills load before its first model call
 
-Before its first other model call, Igor SHALL run `claude -p --plugin-dir <skills_dir>
---setting-sources user --strict-mcp-config --output-format stream-json --verbose`, from an empty
-temporary directory, with an environment holding only `PATH`, the network settings the host is
-configured with, a `HOME` that is another empty temporary directory, and the token of the seat
-the budget gate chose for the role the Igor serves. The call SHALL be an ordinary spend on that seat, run to its
-end and recorded as any other call is. Where the gate names no seat, no call is made, as #171's
-*A spend with no seat behind it is not made* requires; Igor starts, and the check runs before
-the first model call whenever a seat is named. Its prompt is one word,
-such as `ok`, on stdin, as #175's (`worker-user`) *A prompt reaches claude on stdin, never in
-its arguments* requires. Igor SHALL read the `skills` list of the `system/init` event and
-confirm that `igor:<name>` is in it for every entry under `<skills_dir>/skills/`. A call that
-fails after printing the event SHALL still be judged on that list; its failure is handled as
-the same failure of any call on that seat.
+Before its first other model call, Igor SHALL run `claude -p --model haiku --plugin-dir
+<skills_dir> --setting-sources user --strict-mcp-config --output-format stream-json --verbose`.
+It runs from an empty temporary directory, with an environment holding only `PATH`, the network
+settings the host is configured with, a `HOME` that is another empty temporary directory, and
+the token of the seat the budget gate chose for Igor's first model call (under `igor run`, the
+token in `IGOR_RUN_TOKEN`). Its prompt is one
+word, such as `ok`, on stdin, as #175's (`worker-user`) *A prompt reaches claude on stdin, never
+in its arguments* requires. The call SHALL be an ordinary spend on that seat, run to its end and
+recorded as any other call is.
+
+Where the gate names no seat when Igor starts, no call is made, as #171's *A spend with no seat
+behind it is not made* requires. Igor starts, and runs the check before its first model call
+once the gate names a seat.
+
+Igor SHALL read the `skills` list of the `system/init` event and confirm that `igor:<name>` is in
+it for every entry under `<skills_dir>/skills/`. A call that fails after printing the event
+SHALL still be judged on that list, and its failure is handled as that failure would be on any
+other call on that seat.
+
+Igor SHALL refuse to start, naming the path, when `<skills_dir>/skills/` is missing or holds no
+entry, when `skills_dir` holds any entry besides `.claude-plugin/` and `skills/`, or when
+`.claude-plugin/` holds anything besides a `plugin.json` whose only keys are `name`, `version`
+and `description`. These checks run before the call, and each refusal exits with status 78.
 
 Igor SHALL refuse to start when an installed skill is missing from the list, or when no
-`system/init` event arrives, whenever the check runs, including after the first cycle where no
-seat was named at start; the refusal exits with status 78, as #82's
-(`stopped-scope-visible`) *A process that refuses to start exits with status 78* requires. It SHALL report, for each skill, the commit of the git clone that
-the skill's entry under `<skills_dir>/skills/` resolves to. Where that commit cannot be read, or
-the entry is not in a git clone, it SHALL report the skill's commit as not checked, and the
-check still passes on the list alone.
+`system/init` event arrives. That holds whenever the check runs, including a check that waited
+for the gate to name a seat.
+
+Every refusal in this requirement exits with status 78, under `igor serve` as #82's
+(`stopped-scope-visible`) *A process that refuses to start exits with status 78* requires, and
+under `igor run` too.
+
+For each skill, Igor SHALL report the commit of the git clone that the skill's entry under
+`<skills_dir>/skills/` resolves to. Where the clone is owned by root, Igor SHALL read that commit
+by trusting that clone, with git's own file-system monitor turned off, for the one command that
+reads it, and SHALL NOT change the service user's git configuration to do so. A clone owned by any
+user but root or the user Igor runs as is not trusted. Where the commit cannot be read, the entry
+is not in a git clone, or the clone is not trusted, Igor SHALL report the skill's commit as not
+checked, and the check still passes on the list alone.
 
 #### Scenario: Every installed skill loads
 
@@ -229,6 +253,21 @@ check still passes on the list alone.
 - **WHEN** a skill is installed under `skills_dir` but `igor:<name>` is missing from the
   event's `skills` list
 - **THEN** Igor refuses to start, naming the skill
+- **AND** the process exits with status 78
+
+#### Scenario: A root-owned clone's commit is read
+
+- **WHEN** every installed skill loads, and the clone a skill's entry resolves to is owned by
+  root while Igor runs as its service user
+- **THEN** Igor reports that skill with the clone's commit
+- **AND** the service user's `~/.gitconfig` is unchanged
+
+#### Scenario: A clone another user owns is not trusted
+
+- **WHEN** every installed skill loads, and the clone a skill's entry resolves to is owned by a
+  user who is neither root nor the user Igor runs as
+- **THEN** Igor starts
+- **AND** it reports that skill's commit as not checked, having run no git command in that clone
 
 #### Scenario: An unreadable commit is reported as not checked
 
@@ -236,15 +275,30 @@ check still passes on the list alone.
 - **THEN** Igor starts
 - **AND** it reports that skill's commit as not checked
 
+#### Scenario: An empty skills directory stops the start
+
+- **WHEN** `<skills_dir>/skills/` is missing or holds no entry
+- **THEN** Igor refuses to start, naming that path, and makes no call
+- **AND** the process exits with status 78
+
+#### Scenario: A plugin directory that holds more than skills stops the start
+
+- **WHEN** `skills_dir` holds a `hooks/` directory, or `plugin.json` holds a `hooks` key
+- **THEN** Igor refuses to start, naming what it found, and makes no call
+- **AND** the process exits with status 78
+
 #### Scenario: No init event stops the start
 
 - **WHEN** the call exits without a `system/init` event
 - **THEN** Igor refuses to start, saying it could not confirm its skills load
 
-#### Scenario: The check spends the seat the gate chose
+#### Scenario: The check spends the seat the gate chose, on haiku
 
 - **WHEN** Igor runs the check
-- **THEN** the call's environment holds the token of the seat the budget gate chose, and no
+- **THEN** its arguments include `--model haiku`
+- **AND** it runs from an empty temporary directory, with `HOME` set to another empty
+  temporary directory
+- **AND** the call's environment holds the token of the seat the budget gate chose, and no
   other seat's token and no API key
 - **AND** its `HOME` holds no stored login
 - **AND** the spend is recorded against that seat
@@ -261,4 +315,4 @@ check still passes on the list alone.
 - **WHEN** the check's call prints a `system/init` event listing every installed skill and then
   fails, such as on a refused token
 - **THEN** the check passes on that list
-- **AND** the failure is handled as the same failure of any call on that seat
+- **AND** the failure is handled as that failure would be on any other call on that seat

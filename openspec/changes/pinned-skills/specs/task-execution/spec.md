@@ -8,10 +8,12 @@ SHALL treat that tree as disposable, making no assumption that a checkout persis
 tasks or is shared with another task. The tree SHALL be released when the task ends, whatever
 its outcome.
 
-Nothing a worker writes SHALL reach a later task, except two kinds of file: files in the
+Nothing a worker writes SHALL reach a later task, except three kinds of file: files in the
 worker's home that the reset leaves alone, which `pinned-skills`' *Every call in the worker's
-home starts from Igor's template* defines, and files the worker's user writes outside its home,
-wherever it can write.
+home starts from Igor's template* defines; files the worker's user writes outside its home,
+wherever it can write; and, in same-user mode, where no worker user exists, files written in
+the home after a reset by a process the worker started that left the worker's process group.
+Igor does not make the third happen, and in same-user mode nothing stops it.
 
 #### Scenario: Working tree provisioned for a task that needs one
 
@@ -22,8 +24,8 @@ wherever it can write.
 #### Scenario: No state carries between tasks
 
 - **WHEN** a task begins in a working tree
-- **THEN** nothing a worker wrote in an earlier task reaches it, except the two kinds of file
-  the requirement names
+- **THEN** nothing a worker wrote in an earlier task reaches it, except the three kinds of
+  file the requirement names
 
 #### Scenario: The tree is released on failure as well as success
 

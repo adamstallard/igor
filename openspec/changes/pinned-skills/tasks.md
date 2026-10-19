@@ -1,51 +1,42 @@
 ## 0. Before building
 
-- [x] 0.1 With `ANTHROPIC_API_KEY`, run `claude -p --bare --plugin-dir <dir>` against a plugin
-      the manager filled (symlinks into a clone) and ask the model to use `igor:prose`. Record
-      in `design.md` whether the skill runs, and which directory Claude Code reports to the
-      model: the link under `<dir>/skills/` or the clone it resolves to. **If the skill does not
-      run, stop: the choice of flag goes back to Adam.** If the reported directory is the
-      clone, #153's grants name the clone's path instead. Done
-      2026-10-11 with a seat's setup-token: in normal mode the model invokes `igor:<name>`
-      through the Skill tool and the skill runs, with the plugin's base directory. Under
-      `--bare` the token runs as an API key, not as a seat, so Igor never passes `--bare`. See
-      `design.md`, *Measured with a model*
+- [x] 0.1 Run `claude -p --plugin-dir <dir>` against a plugin and ask the model to use
+      `igor:<name>`. Record in `design.md` whether the skill runs, and which directory Claude
+      Code reports to the model. **If the skill does not run, stop: the choice of flag goes back
+      to Adam.** Done 2026-10-11 with a seat's setup-token rather than an API key: in normal mode
+      the model invokes `igor:<name>` through the Skill tool and the skill runs, with the
+      plugin's base directory. Under `--bare` the token runs as an API key, not as a seat, so
+      Igor never passes `--bare`. Whether a linked skill gets the same base directory is task
+      0.3's. See `design.md`, *Measured with a model, 2026-10-11*
 - [ ] 0.2 Confirm the shared-skills commit to pin carries bug-hunter's caller-commits mode
-      (`caller-result.sh`) and prose's `start`, `check`, `sign`, `verify-staged` and
-      `verify-post`
-- [ ] 0.3 Before building, measure on the Claude Code version the server runs, and record in
-      `design.md`:
+      (`caller-result.sh`), prose's `start`, `check`, `sign`, `verify-staged` and `verify-post`,
+      and `--goals-file` on prose's `sign` as well as `check`, and on `start` if #153 keeps Igor's
+      `prose start`. #153 needs `--goals-file` on both (its task list); shared-skills does not have it yet
+- [x] 0.3 Before building, measure on the Claude Code version the server runs, and record in
+      `design.md`. Done 2026-10-18 on Claude Code 2.1.303. The version the server runs is not
+      known, so it was not measured on, and `design.md` gives the results for 2.1.303 alone.
+      Each result is in `design.md`, *Measured before building, 2026-10-18 (task 0.3)*:
       - the base directory a skill is given when its entry under `<skills_dir>/skills/` is the
-        manager's link into a clone, not a plain directory. **If it is the clone's path, stop:
-        the choice of flag goes back to Adam.** This replaces 0.1's fallback of naming the
-        clone's path in #153's grants;
+        manager's link into a clone. **If it is the clone's path, stop: the choice of flag goes
+        back to Adam.** It is the link's path under the plugin; the flag stands;
       - whether a worker started with `--plugin-dir <skills_dir>` under `acceptEdits` can write
-        a file under `skills_dir`. **If it can, stop: the choice of flag goes back to Adam;**
+        a file under `skills_dir`. **If it can, stop: the choice of flag goes back to Adam.** It
+        cannot, and cannot Read there either; the flag stands;
       - whether `--setting-sources user` and `--strict-mcp-config` keep the working directory's
         `.claude/settings.json`, `.mcp.json`, skills and `CLAUDE.md` out of a call, including
-        when the worker is also passed `--add-dir <its tree>` as it is today. If any of the
-        four still loads, the means of excluding it goes back to Adam;
-      - that the startup check's call still prints `system/init` with those two flags added;
-      - that a seat's token is the only credential a call uses, in three cases. First, a
-        worker whose `~/.claude` and `~/.claude.json` were just reset from the template, with
-        no stored login left in the home, authenticates as its seat with the token alone. It
-        receives a `rate_limit_event`, which only a call running as a seat gets, and record
-        what the init event's `apiKeySource` reads, expected to name `CLAUDE_CODE_OAUTH_TOKEN`.
-        Second, a call with a valid token whose `HOME` also holds a stored login of another
-        account, as the service user's home would if someone logged that user in by hand (triage
-        runs there, unreset), authenticates as
-        the token's seat: its `rate_limit_event` describes that seat, not the stored login's
-        account. Third, a call with a deliberately invalid token fails rather than reaching a
-        stored login, whether that login is in its `HOME` or, under `igor run` on macOS, in the
-        person's Keychain. Under `igor serve` no user is logged in, so a stored login arises only
-        if an operator puts one there; if it wins over the token, decision 17 goes back to Adam
-        for `serve`. Under
-        `igor run`, a call that reaches the developer's own stored login spends their login,
-        which is accepted (Adam, 2026-10-18): record the result, and nothing goes back to Adam;
-      - which key in `~/.claude.json` marks onboarding done, so that a call made from the
-        template's copy starts without onboarding;
-      - whether `git -C <clone> rev-parse HEAD` works as the service user on a root-owned clone,
-        or stops on git's ownership check
+        with `--add-dir <its tree>`. All four stay out, with local and nested files too;
+      - that the startup check's call still prints `system/init` with those two flags. It does;
+        with no `--model` it ran on sonnet at about twenty times haiku's cost, so Adam pinned it
+        to haiku (task 3.1);
+      - that a seat's token is the only credential a call uses: in a home just reset from the
+        template, beside another account's stored login in `HOME` or the Keychain, and with an
+        invalid token beside a stored login. It is, in all three. `apiKeySource` reads `none`
+        even when the token authenticated, not `CLAUDE_CODE_OAUTH_TOKEN` as expected; the
+        `rate_limit_event` is the sign that a call ran as a seat;
+      - which key in `~/.claude.json` marks onboarding done. `hasCompletedOnboarding: true`
+        (task 2.4);
+      - whether `git -C <clone> rev-parse HEAD` works as the service user on a root-owned clone.
+        It stops on git's ownership check; `-c safe.directory=<clone root>` fixes it (task 3.2)
 
 ## 1. Where the skills are
 
@@ -63,12 +54,11 @@
 
 ## 2. The flag on every call
 
-- [ ] 2.1 One function that builds the arguments every `claude -p` shares, including
-      `--plugin-dir <skills_dir>`. Use it in `claudeWorker` (`src/execute.ts`),
-      `runClaude` (`src/triage.ts`) and `runUsage` (`src/budget.ts`). Every call gets
-      `--setting-sources user` and `--strict-mcp-config`; every call but `runUsage` gets
-      `--plugin-dir <skills_dir>`. #143's seat probe and #153's steps, built in those changes, call it as
-      well
+- [ ] 2.1 One function that builds the arguments Igor's `claude -p` calls share: for every
+      call `--setting-sources user` and `--strict-mcp-config`, and for every call but
+      `runUsage` `--plugin-dir <skills_dir>`. Use it in `claudeWorker` (`src/execute.ts`),
+      `runClaude` (`src/triage.ts`), `runUsage` (`src/budget.ts`) and the startup check (3.1).
+      #143's seat probe and #153's steps, built in those changes, call it as well
 - [ ] 2.2 Tests: the worker's and triage's arguments carry `--plugin-dir <skills_dir>`; the
       usage read's never carry it; every
       call's arguments, the startup check's included, carry `--setting-sources user` and
@@ -76,20 +66,30 @@
 - [ ] 2.3 The worker's home: with #175's worker user, that user's own home; without one, a
       home per role under Igor's state directory, such as `~/.local/state/igor/home/<role>`,
       created when first needed and passed as the worker's `HOME`
-- [ ] 2.4 The template, shipped in Igor's installation: a `settings.json` holding only what Igor
-      needs, with no hooks and no MCP servers, its contents written verbatim into this task
-      before it is built; no skills and no `CLAUDE.md`; and a
-      `.claude.json` with onboarding marked done, by the key task 0.3 finds, and no MCP servers
+- [ ] 2.4 The template, shipped in Igor's installation, holding exactly these two files (not to
+      be reworded), and no skills and no `CLAUDE.md`. Task 0.3's measurement ran on them:
+
+      `.claude/settings.json`:
+
+      ```json
+      {}
+      ```
+
+      `.claude.json`:
+
+      ```json
+      {"hasCompletedOnboarding": true}
+      ```
 - [ ] 2.5 Before every `claude -p` Igor starts in the worker's home (`claudeWorker` in
       `src/execute.ts`), replace `~/.claude` and `~/.claude.json` with a fresh copy of the
       template, keeping nothing of what was there, `~/.claude/.credentials.json` included.
       Reset nothing else in the home. With a
       worker user, the reset runs as that user, through #175's `sudo` spawn. Each of #153's model
-      steps calls the same reset first, built in #153, as it calls 2.1's argument builder, and
-      #153's `prose start` runs after that reset, not with one of its own
+      steps calls the same reset first, built in #153, as it calls 2.1's argument builder
 - [ ] 2.6 With a worker user, before every reset, kill every
       process that user owns, by user or by the user's systemd slice, whichever the
-      implementer finds works (Adam left the means open). Build it once #175's
+      implementer finds works (Adam left the means open). Not by process group: each command a
+      worker runs starts in a session of its own (#175's measurement 6.2). Build it once #175's
       `sudo` spawn exists
 - [ ] 2.7 Tests: a hook, a `CLAUDE.md` and a skill a worker wrote under `~/.claude`, and an MCP
       server it wrote into `~/.claude.json`, are gone before the next worker and before a model
@@ -104,8 +104,8 @@ Runs before the first model call: in `wire` (`src/wiring.ts`) when the gate name
 start, otherwise just before the first model call once it does. A failing check exits 78
 wherever it runs.
 
-- [ ] 3.1 Run `claude -p --plugin-dir <skills_dir> --setting-sources user --strict-mcp-config
-      --output-format stream-json --verbose`
+- [ ] 3.1 Run `claude -p --model haiku --plugin-dir <skills_dir> --setting-sources user
+      --strict-mcp-config --output-format stream-json --verbose`
       with the one-word prompt `ok` on stdin (#175), from an empty temporary directory, and an
       environment of `PATH`, the host's network settings, a `HOME` that is another empty
       temporary directory, and the token of the seat the budget gate chose (under `igor run`,
@@ -124,9 +124,29 @@ wherever it runs.
       ```
       claude -p --plugin-dir <skills_dir> printed no system/init event, so Igor cannot confirm its skills load
       ```
+
+      Before the call, refuse to start, exiting 78, when `<skills_dir>/skills/` is missing or
+      empty, when `skills_dir` holds an entry besides `.claude-plugin/` and `skills/`, or when
+      `.claude-plugin/` holds anything but a `plugin.json` whose only keys are `name`, `version`
+      and `description`. Messages (may be reworded):
+
+      ```
+      no skills are installed in <skills_dir>/skills, so Igor has no skills to load
+      ```
+
+      ```
+      <skills_dir> holds <entry>, but Igor's plugin directory may hold only .claude-plugin/plugin.json and skills/
+      ```
 - [ ] 3.2 Report each skill and the commit its files come from, one startup line per skill.
       `<resolved dir>` is the directory the skill's entry under `<skills_dir>/skills/` resolves
-      to, and the commit is `git -C <resolved dir> rev-parse HEAD`:
+      to. `<clone root>` is the nearest directory at or above `<resolved dir>`
+      that holds `.git`. Where root owns `<clone root>`, the commit is
+      `git -c safe.directory=<clone root> -c core.fsmonitor=false -C <resolved dir> rev-parse HEAD`.
+      The clone is root-owned (5.1), and without the option git refuses it as the service user
+      with `detected dubious ownership` (task 0.3). Pass both options on this command only, and
+      never write them to the service user's `~/.gitconfig`. Where the user Igor runs as owns it,
+      run the command without them. Where any other user owns it, run no git command and report
+      the commit as not checked:
 
       ```
       skill igor:<name>: <12-hex commit> (<resolved dir>)
@@ -136,24 +156,32 @@ wherever it runs.
       so and the start goes on:
 
       ```
-      skill igor:<name>: commit not checked (<resolved dir>): <git's error>
+      skill igor:<name>: commit not checked (<resolved dir>): <git's error, or the clone's owner>
       ```
-- [ ] 3.3 Tests: each refusal above with its message; a passing check starts; an unreadable
-      commit starts with the not-checked line; the check's
+- [ ] 3.3 Tests: each refusal above with its message; a passing check starts; the check's
+      arguments carry `--model haiku`; the commit read carries `-c safe.directory=<clone root>`
+      and `-c core.fsmonitor=false` for a root-owned clone; a clone another user owns runs no
+      git command and reports not checked; a missing or empty `skills/`, and a `hooks/` in
+      `skills_dir`, each refuse the start before any call; the check runs from an empty
+      directory with an empty `HOME`; an unreadable commit starts with the not-checked
+      line; the check's
       environment holds the chosen seat's token and no other seat's, and no `ANTHROPIC_API_KEY`
       even when the process has one; its `HOME` is not the service user's; its spend is recorded
       against that seat; and with no seat from the gate it is not made
 
 ## 4. The pinned shared-skills commit
 
-- [ ] 4.1 The pinned shared-skills commit is at or after `075a73a` (shared-skills #19), where
-      every skill finds its scripts from its base directory. `docs/deployment.md` (5.1) says so
+- [ ] 4.1 Choose the shared-skills commit the deployment pins: at or after `075a73a`
+      (shared-skills #19), where every skill finds its scripts from its base directory, and
+      carrying everything 0.2 lists. 5.1 tells the operator to check out that commit
 
 ## 5. Docs
 
 - [ ] 5.1 `docs/deployment.md`, a section on skills:
-      - clone shared-skills to `/opt/igor/shared-skills` and check out a commit at or after
-        `075a73a`, owned by root;
+      - clone shared-skills to `/opt/igor/shared-skills` and check out the commit 4.1 chose,
+        owned by root. Igor reads its commit as the service user with a
+        `safe.directory` option on that one command (3.2), so the operator adds no
+        `safe.directory` entry for it;
       - write `/opt/igor/skills/.claude-plugin/plugin.json` as
         `{"name": "igor", "version": "0.0.0", "description": "Igor's pinned skills"}`;
       - install with
