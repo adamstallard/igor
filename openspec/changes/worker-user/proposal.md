@@ -160,8 +160,11 @@
     a login stored in the worker's home. A seat with no token would run on whatever login the
     calling user holds: the service user's for triage and usage reads, the worker user's for
     the worker, so it could be read under one login and spent under another. #171 refuses a seat
-    file that names no token, so no seat is. #174's startup skills check is the one call with no
-    seat: it runs with no token and spends nothing. How a person creates a token is in
+    file that names no token, so no seat runs on a login. That includes #174's startup skills
+    check, which spends a seat through the budget gate like any other call (Adam, 2026-10-18).
+    The only calls whose seat the gate does not choose are #143's seat probe and a usage read;
+    each authenticates with the token of the seat it reads, and with no stored login. How a person creates a
+    token is in
     #171's guides (its task 9.5). *Rejected:* keeping `~/.claude/.credentials.json` so an
     organization with no seats runs on a stored login; such an organization adds one seat from
     its own token instead.
@@ -210,22 +213,38 @@
     `token_command`. So a deployment can give every seat a token today, and this change builds
     decision 21 on those seats. The in-force `seat-budget` still lets a seat name no token and
     an organization with no seats run on the ambient login; #171 removes both, and archives after
-    this change (*Still open*, below).
+    this change, in the order issue [#204](https://github.com/adamstallard/igor/issues/204)
+    holds for every open change (*Still open*, below: *The ambient login in force until #171
+    archives*).
 
 **Still open:** an item marked *for Adam* waits on his decision; the rest wait on a measurement
 or on another change.
 
 - **Triage's login under `run`.** Triage runs as the developer, in the developer's own home,
   which #174 does not reset. Their own Claude login sits there, or in the macOS Keychain. #174's
-  task 0.3 measures two things: that `IGOR_RUN_TOKEN` in the environment wins over that login,
-  and that an invalid token fails rather than falling back to the login. The worker, unlike triage, does not use the
+  task 0.3 measures whether `IGOR_RUN_TOKEN` in the environment wins over that login. If Claude
+  Code prefers the stored login, `run` spends the developer's own login, on their machine and
+  their quota, and that is accepted (Adam, 2026-10-18), so neither outcome of #174's task 0.3
+  needs a decision from Adam; the item stays open only until the measurement is recorded. Under `serve` no user is logged in to Claude (decision 21). The worker, unlike triage, does not use the
   developer's home under `run`: #174 sets its `HOME` to a home per role under Igor's state
   directory, which the reset leaves with no login.
 - **The ambient login in force until #171 archives, for Adam.** The in-force `seat-budget` lets a
   seat name no token (*A seat names its token through exactly one mechanism*) and lets an
   organization with no seats run every call on the ambient login (*A spend with no seat behind it
-  does not happen*). Decision 21 forbids both. #171 removes them, and archives after this change,
-  so between the two archives the in-force spec and decision 21 disagree.
+  does not happen*). Decision 21 forbids both. #171 removes them, and archives after this change
+  (issue #204), so between the two archives the in-force spec and decision 21 disagree. The
+  choice is to accept that window, reorder #204, or carry a `MODIFIED` block on `seat-budget`
+  here. *Recommendation:* accept the window; what is built follows decision 21.
+- **Citations ahead of the archive order, for Adam.** This change archives third in issue
+  #204's order, but its requirements cite text that #174, #179, #82 and #153 add later, such as
+  `skills_dir`, *A process is named by its role and rank* and exit status 78. Archived in that
+  order, the in-force spec would cite them before they are in force. It also cites #189 and #137,
+  which #204 does not list, so nothing yet says when their requirements come into force.
+  *Recommendation:* accept the window for the changes #204 lists, and add #189 and #137 to #204.
+- **`igor observe`.** The open change `scheduled-observation`, and `igor observe` on `main`,
+  take a usage reading under a person's stored login, which decision 21 forbids. #143 withdraws
+  that change and archives first (#204); whether #143 also removes the command on `main` is
+  #143's to say, and until it does, decision 21 and `igor observe` disagree.
 - **Two `igor run`s of one role at once, for Adam.** Both are rank 0 under #179, so one's startup
   sweep removes the other's live tree. #179's model finds the two can also work one item, and
   #174 lists their shared home as open. Nothing here decides it.
@@ -244,7 +263,8 @@ or on another change.
   the Igor's group. *Recommendation:* a `MODIFIED` block on that requirement naming the index copy
   as the one file the Igor puts there, and the group's read access.
 - **The in-force scenario *No state carries between tasks*** and this change's lasting home
-  disagree until #174, which rewords it (its decision 15), archives after this change.
+  disagree until #174, which rewords it (its decision 15), archives after this change (issue
+  #204).
 - **What the start check probes.** It tries `skills_dir`'s top level only, so a script under
   `skills_dir/skills/` the worker could write passes it and is then run as the service user. And
   a named path that does not exist passes `test -r` and `test -w` as isolated. *Recommendation:*

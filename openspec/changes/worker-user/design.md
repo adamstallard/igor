@@ -172,7 +172,7 @@ does not join the Igor's group.
 | tree files from the clone | igor:igor-worker-<role>-<rank> | `0660`, directories `2770` | cloned under umask `007`, so the worker can edit and remove them |
 | git directory, `<tree>-git`, beside the tree | igor:igor-worker-<role>-<rank> | group read, no group write | the worker reads history; it cannot write hooks or config |
 | outbox, `<tree>-outbox` | igor:igor-worker-<role>-<rank> | `2770` | the worker writes declarations and its git index here |
-| files the worker creates | igor-worker-<role>-<rank>:igor-worker-<role>-<rank> | sudo's umask, at least `0027` | the Igor reads them through the group; only the worker writes them |
+| files the worker creates | igor-worker-<role>-<rank>:igor-worker-<role>-<rank> | the umask in effect under the `sudo` spawn, unmeasured (task 6.10) | the Igor reads them through the group, which needs a umask that keeps group read; task 6.10 measures it, and the proposal's open item recommends `umask 0027` should it not; only the worker writes them |
 | worker's home | igor-worker-<role>-<rank>:igor-worker-<role>-<rank> | `0700` | its caches, `~/.gitconfig` and `~/.claude`, out of the Igor's way; lasts across runs |
 | the Igor's home, lore checkout, `/etc/igor` | igor:igor | `0700`/`0750` | the worker is not in this group |
 

@@ -47,6 +47,9 @@
       #174's kill of the worker user's processes and its reset of the worker's home before each
       model step, as `design.md` (*The worker is started through `sudo`*) says. If #174 has
       not merged, file an issue saying so, and link it here.
+- [ ] 0.11 Decision 24's `IGOR_RUN_TOKEN` is #171's implicit local seat. If #171 has not merged
+      when 1.3 is built, file an issue asking whichever of the two is built second to give `run`
+      that seat, and link it here.
 
 ## 1. Starting the worker as another user
 
@@ -511,6 +514,10 @@ file in the service user's home. Each holds a random string and nothing else. Ne
       [A separate user for the worker](#a-separate-user-for-the-worker)".
 - [ ] 8.7 `docs/deployment.md`, *When something is wrong*: one row per refusal in 5.1,
       each naming its cure in a phrase, as the existing rows do.
+- [ ] 8.8 `docs/deployment.md`, *macOS*: say that `serve` under `launchd` refuses to start, since
+      the start check that `/proc/sys/fs/protected_hardlinks` reads `1` (5.1) cannot pass on
+      macOS, which has no `/proc`, and that a Mac runs `serve` in #192's
+      container image and `run` on the host.
 
 ## 9. Architecture
 
