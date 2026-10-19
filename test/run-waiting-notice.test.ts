@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 
 const posted = vi.hoisted(() => [] as string[])
+/** Settles when the waiting notice is posted, which is the last thing the cycle under test does. */
+const noticed = vi.hoisted(() => {
+  let resolve = () => {}
+  const promise = new Promise<void>((r) => (resolve = r))
+  return { promise, resolve }
+})
 const plan = vi.hoisted(() => ({ toClaim: [] as unknown[] }))
 
 vi.mock('../src/config.js', async (a) => ({ ...(await a<object>()), loadConfig: () => ({ destination: '.' }) }))
@@ -30,7 +36,11 @@ vi.mock('../src/loop.js', async (a) => ({
 vi.mock('../src/github-adapter.js', async (a) => {
   const actual = await a<typeof import('../src/github-adapter.js')>()
   class T extends actual.GitHubTracker {
-    override async report(_c: unknown, m: string) { posted.push(m); return 'u' }
+    override async report(_c: unknown, m: string) {
+      posted.push(m)
+      if (m.includes('igor:waiting')) noticed.resolve()
+      return 'u'
+    }
   }
   return { ...actual, GitHubTracker: T }
 })
@@ -40,7 +50,8 @@ describe('igor run, a cycle whose only finding is a waiting item', () => {
     process.argv = ['node', 'igor', 'run', 'frontend']
     const out = vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
     await import('../src/cli.js')
-    await new Promise((r) => setTimeout(r, 200))
+    // The command runs on import and is not awaited by it, so the test waits on the post itself.
+    await noticed.promise
     out.mockRestore()
     expect(posted.some((m) => m.includes('igor:waiting'))).toBe(true)
   })
