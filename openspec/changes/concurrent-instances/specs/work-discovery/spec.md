@@ -44,6 +44,77 @@ requirement's purpose is untouched.
   updated before the look-back window
 - **THEN** the run considers that item
 
+### Requirement: Watermarks reduce reconsideration without governing it
+
+Discovery SHALL record a per-source watermark so previously seen items are not reconsidered
+indefinitely. A watermark is an efficiency measure only.
+
+A cycle that decided nothing SHALL NOT advance the watermark. Where discovery ran to show
+somebody what a cycle would decide, nothing was decided and nothing is settled, so the items it
+examined remain exactly as unexamined as before it ran.
+
+The watermark advances on a cycle that acted, even past the items triage decided to skip,
+because deciding not to act on an item is still having considered it, and reconsidering it every
+cycle would cost the model call again for the same answer. A preview decided nothing, so it has no
+such reason. What it costs to hold the mark back is a later cycle paying for the same triage call,
+which is the efficiency this requirement already declines to treat as governing. What advancing
+costs is the items themselves: marked seen, never rediscovered, never worked.
+
+A cycle has not acted on an item triage chose to work until it takes that item. Where a cycle does
+not take one, because its budget ran out, a condition (a fault in the Igor's own configuration that
+recurs on every item) stopped it part-way through, the tracker gave no answer to its claim, or its
+process stood down for missed heartbeats (`work-claiming`'s *A retired rank does not hold its
+items forever*, `concurrent-instances`, #179), the watermark SHALL NOT advance past that item. Passed by the mark, the item would be marked seen and 
+never worked, with no decision against it to justify the loss.
+
+Where the tracker answered the claim and refused it, the watermark SHALL advance past the item as
+past one taken. Such a refusal is about the item or about what the Igor may do, such as a GitHub
+App without permission to add the claim label, and a retry would be refused the same way until the
+item or that permission changed. The watermark a cycle uses is one timestamp per source, so holding it below
+the item would also triage every item updated after it again, each cycle, while the refusal
+lasted. This accepts that the item, once passed, is reconsidered only after somebody edits or
+comments on it.
+
+#### Scenario: Seen items not re-triaged
+
+- **WHEN** discovery runs twice with no intervening tracker activity
+- **THEN** the second run performs no triage calls
+
+#### Scenario: New items picked up
+
+- **WHEN** an item is created after the last watermark
+- **THEN** it appears in the next discovery run
+
+#### Scenario: A preview leaves the mark where it found it
+
+- **WHEN** a cycle runs to show what it would claim, and claims nothing
+- **THEN** the stored watermark is unchanged
+- **AND** a later cycle that acts still finds every item the preview examined
+
+#### Scenario: An item chosen and never taken is seen again
+
+- **WHEN** a cycle decides to work two items and stops after the first, because its budget ran
+  out or a condition stopped its scope
+- **THEN** the next cycle reconsiders the second
+
+#### Scenario: An item whose claim got no answer is seen again
+
+- **WHEN** a cycle decides to work an item and its claim fails because the tracker gave no answer,
+  such as a server error or a request that never arrived, so nothing is posted on the item
+- **THEN** the next cycle reconsiders that item
+
+#### Scenario: An item whose claim the tracker refused is passed
+
+- **WHEN** a cycle decides to work an item and the tracker answers its claim with a refusal: it
+  rejects the request, or accepts it and the claim is not on the item when read back
+- **THEN** the watermark advances past that item as past one the cycle took
+
+#### Scenario: A cycle cut short by a stand-down holds its mark back
+
+- **WHEN** a cycle decides to work two items, takes the first, and its process then stands down
+  for missed heartbeats before attempting the second
+- **THEN** the mark it appends is below the second item, and the next cycle reconsiders it
+
 ## ADDED Requirements
 
 ### Requirement: A conflicted state write discards nothing
@@ -95,9 +166,8 @@ than the look-back a source with no watermark gets.
 
 A cycle SHALL append its mark only after it has attempted every candidate it will attempt, and a
 cycle whose process crashes first appends none. A cycle that stops early, a cycle whose process stood down
-included, holds its mark back as `condition-backoff`'s (#101) *Watermarks reduce reconsideration
-without governing it* says. The reasons belong in that requirement, and this one adds none of its
-own; #101's text must name a stand-down before this change archives, as task 5.6 says.
+included, holds its mark back as *Watermarks reduce reconsideration without governing it*
+(`condition-backoff`, #101, as this change modifies it) says.
 
 #### Scenario: A lagging rank holds the mark down
 
@@ -134,12 +204,6 @@ own; #101's text must name a stand-down before this change archives, as task 5.6
 - **WHEN** a process crashes after triage and before it has attempted every candidate
 - **THEN** its cycle has appended no mark, and the items it meant to take are still above the
   mark discovery uses
-
-#### Scenario: A cycle cut short holds its mark back
-
-- **WHEN** a cycle stops attempting candidates before the last one, because its process stood
-  down
-- **THEN** the mark it appends is below the oldest candidate it did not attempt
 
 #### Scenario: A rank's own later save replaces its earlier one
 

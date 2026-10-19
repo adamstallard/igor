@@ -2,7 +2,7 @@
 
 - [ ] 1.1 `igor serve <role>-<rank>` takes the rank from the last dash-separated part of its
       argument, and refuses a name without one, as `role-config` says. `igor run <role>` runs as
-      rank 1
+      rank 0
 - [ ] 1.2 Read the roster from the top-level `roster` key of `igor.config.yaml`: a map from a
       role's name to its list of ranks. A role the roster does not name runs rank 1 only. Refuse
       a roster entry naming a role with no role file, a rank that is not a whole number from 1,
@@ -27,16 +27,9 @@
 
       The unit's header comment, which may be reworded, names the instance with its rank:
       `igor@<role>-<rank>`, and installs one as `sudo systemctl enable --now igor@maintenance-1`.
-      Beside `Restart=always`, add these lines, as written, with the comment above them, which
-      may be reworded:
-
-      ```ini
-      # 78: Igor refused to start, or another process took this rank; the unit
-      # shows failed. 79: the roster no longer declares this rank; the unit
-      # shows inactive. Neither is restarted. The journal says why.
-      RestartPreventExitStatus=78 79
-      SuccessExitStatus=79
-      ```
+      The unit's restart lines are #82's (`stopped-scope-visible`): `Restart=on-failure` and
+      `RestartPreventExitStatus=78`, with no `SuccessExitStatus=`. A rank the roster no longer
+      declares exits 0 (4.25), which that policy does not restart; this change adds no line for it
 
       `ProtectProc=invisible`, which PR #175 (`worker-user`) adds to the same unit, stays in it;
       whichever of the two lands second keeps the other's lines
@@ -66,22 +59,15 @@
 - [ ] 1.8 `deploy/igor.service` sets `StateDirectory=igor`, and working trees are made under
       `/var/lib/igor/trees`, which every instance of the template shares, rather than under the
       temporary directory, which `PrivateTmp=true` makes private to each instance
-- [ ] 1.9 `igor run <role>`, with or without `--plan`, refuses where the roster does not declare
-      rank 1. Without `--plan`, before anything else, it reads rank 1's heartbeat file, prints
-      what it is waiting for and for how long, waits half of the role's poll interval plus the
-      time one heartbeat write takes, and reads the file again, even where the file was missing. Where the file changed or appeared, it
-      refuses. Both messages are below; the first may be reworded, and the second is as written:
-
-      ```text
-      Checking whether igor@<role>-1 is serving <role>: waiting <duration> for its heartbeat.
-      igor@<role>-1 is serving <role>. A run by hand would take its claims and remove its trees. Stop it first, or leave the work to it.
-      ```
-
-      `igor run --plan` neither waits nor refuses, and skips the startup sweep. Once a run goes
-      ahead it writes `heartbeats/<role>-1.json` with an id of its own from the timer of 4.15,
-      its first write before its first cycle, and follows 4.24. `--plan` writes no heartbeat.
-      Test: a changed or newly written file refuses; one missing or unchanged at both reads runs
-      and writes its own id before its cycle; `--plan` beside a changed file runs at once,
+- [ ] 1.9 `igor run <role>` runs as rank 0 whatever the roster declares, with no wait and no
+      check of any serving rank. Without `--plan` it writes `heartbeats/<role>-0.json` from the
+      timer of 4.15, its first write before its first cycle, and its claim messages carry
+      `Igor-Rank: 0`. It passes over every labelled item that carries any claim message posted
+      since its latest release, whatever its rank and whether or not that rank is gone, posting
+      nothing. It spends only `IGOR_RUN_TOKEN`, as #171's
+      tasks build. `igor run --plan` writes no heartbeat, claims nothing and skips the startup
+      sweep. Test: a run beside a serving rank 1 starts at once and writes its heartbeat before
+      its cycle; a run passes over an item held by a gone rank and one held by rank 0; `--plan`
       writes nothing and removes no tree
 - [ ] 1.10 Refuse, when the configuration loads, a role whose name does not match
       `[a-z][a-z0-9-]*`, or for which `igor-worker-<role>-<rank>` is longer than 32 characters for
@@ -94,14 +80,19 @@
 
       Test: an uppercase letter, a dot, a leading digit, and a name that fits at rank 1 but not
       at a higher rank the roster declares
-- [ ] 1.11 Measure how long one heartbeat write takes on GitHub's Contents API, including a retry
-      after the state branch rejects it because another write moved the branch, and record in
-      `design.md` the bound `igor run`'s wait (1.9) uses for it
+- [ ] 1.11 Refuse a configuration whose settle interval is not shorter than its poll interval,
+      with this message, as written:
+
+      ```text
+      Role "<role>": its settle interval (<settle>) must be shorter than its poll interval (<poll>). A claim is verified within one poll interval of its message, so with this setting the role would work nothing.
+      ```
+
+      Test: equal intervals are refused, naming both values; a shorter settle interval loads
 
 ## 2. The marker
 
 - [ ] 2.1 The claim message carries the rank as a machine-readable trailer
-- [ ] 2.2 Parse it back, tolerating a message a person has edited around
+- [ ] 2.2 Parse it back from the bot's unedited comment (2.17), tolerating text before the trailers
 - [ ] 2.3 Verification reads the claim with the lowest sequence key, not the earliest timestamp
 - [ ] 2.4 `RawComment` and the adapter's comment shape carry the surface's sequence key
 - [ ] 2.5 Tests: same-timestamp claims order; a sibling's claim is not our own
@@ -127,9 +118,11 @@
       reads as handed over, so that when the Igor later brings its own pull request for the item
       up to date and gives the claim back, the label stays, and a stop said on the item is not
       lifted by a later go-ahead, as for any handed-over item
-- [ ] 2.12 Measure on GitHub whether comment ids still ascend in the order of creation for claim
+- [x] 2.12 Measure on GitHub whether comment ids still ascend in the order of creation for claim
       comments posted on one issue within one second, by several ranks at once. Record the
-      result in `design.md`, under *Ordering is the surface's sequence key, never a timestamp*
+      result in `design.md`, under *Ordering is the surface's sequence key, never a timestamp*.
+      Measured 2026-10-19: within one second the ids never contradicted the seconds, and every
+      listing returns comments in id order; `design.md` records it
 - [ ] 2.13 Before a Linear adapter is built, define what taking over a gone rank's claim means
       on Linear, where removing the label and adding it again has no counterpart. Nothing in
       this change builds a Linear adapter, so file this as an issue before archiving the change
@@ -141,33 +134,47 @@
       ```text
       Igor-Supersedes: <rank>
       ```
-- [ ] 2.15 Measure on GitHub whether a label event's time and a comment's time on one issue come
+- [x] 2.15 Measure on GitHub whether a label event's time and a comment's time on one issue come
       from one clock, to the second, so that a comment posted after a release never shows an
       earlier second. Record the result in `design.md`, under *Ordering is the surface's
-      sequence key, never a timestamp*
+      sequence key, never a timestamp*. Measured 2026-10-19: one clock, in whole seconds;
+      `design.md` records it
 - [ ] 2.16 Claim messages and their trailers are read only from comments the role's bot account
       wrote. Test: a person's comment carrying `Igor-Rank:` is not a claim message
-- [ ] 2.17 A bot comment whose updated time differs from its created time is not a claim message,
-      and none of its trailers is read. Test: an edited claim message adding `Igor-Supersedes:`
-      or removing `Igor-Handed-Over-By:` changes nothing a process reads
-- [ ] 2.18 Before building 2.17, measure on GitHub whether an unedited bot comment keeps its
+- [ ] 2.17 A bot comment whose GraphQL `lastEditedAt` is set is not a claim message, and none of
+      its trailers is read; a hidden, unhidden or reacted-to comment still counts. Test: an
+      edited claim message adding `Igor-Supersedes:` or removing `Igor-Handed-Over-By:` changes
+      nothing a process reads, and a hidden claim message still holds the item
+- [x] 2.18 Before building 2.17, measure on GitHub whether an unedited bot comment keeps its
       updated time equal to its created time when people react to it, when it is hidden, and
       when its issue is transferred. Record the result in `design.md`. If any of them changes
       the updated time, 2.17 would make that claim message stop counting, so it goes back to
-      Adam before it is built
+      Adam before it is built. Measured 2026-10-19: hiding changes `updated_at`, and Adam
+      decided 2.17 reads `lastEditedAt` instead (`design.md`, *An edit is read from GraphQL
+      `lastEditedAt`*)
+- [ ] 2.19 Measure on GitHub which repository roles can edit or delete a comment the role's App
+      wrote: write, triage, maintain or admin. Record the result in `design.md`; if anything below
+      maintain can, decision 30's reason goes back to Adam
 
 ## 3. Contention
 
-- [ ] 3.1 Candidates are attempted from an offset derived from rank
-- [ ] 3.2 Rank k contends only when it has fewer than k candidates. A contended item is re-read
-      after `(rank - 1)` settle intervals, before claiming
-- [ ] 3.3 Tests: no wait when rank k has at least k candidates; a loser posts nothing
-- [ ] 3.4 A hand-over among one role's ranks goes through the same contest: rank k waits
-      `(k - 1)` settle intervals, re-reads, and posts only if no claim message that counts is
-      there; rank 1 posts at once. A rank whose worker is running does not contend. The rank
-      that posts verifies its claim after the settle interval
-- [ ] 3.5 Tests for 3.4: the lowest free rank posts and the others post nothing; a busy rank
-      does not contend; two ranks that both post resolve by the earliest claim message
+- [ ] 3.1 Each item's owner is the rank at place `h mod n` in the roster's declared ranks in
+      ascending order, where `h` is a hash of the item's id every process computes alike, such as
+      the first eight bytes of its SHA-256 read as an unsigned number. The item's order of ranks
+      is its owner, each declared rank after it, wrapping, then rank 0
+- [ ] 3.2 A process attempts first the candidates it goes first for: those where no rank ahead of
+      it in the item's order is available, by its own heartbeat read (4.11). Before claiming any
+      other candidate it waits one settle interval per available rank ahead of it, re-reads, and
+      posts only if no claim that counts is on it
+- [ ] 3.3 Tests: the owner goes first; an owner whose heartbeat says it is not available passes
+      the item to the next available rank; a rank behind the owner waits and posts nothing when
+      the owner has claimed; two ranks that each judge themselves first resolve by verification
+- [ ] 3.4 A hand-over among one role's ranks goes through the same contest: the rank that goes
+      first posts at once; any other free rank waits as 3.2 says. A rank whose worker is running
+      does not contend. The rank that posts verifies its claim after the settle interval
+- [ ] 3.5 Tests for 3.4: the owner posts and the others post nothing; a busy owner leaves the
+      item to the next available rank, which posts at once; two ranks that both post resolve by
+      the earliest claim message
 
 ## 4. Recovery
 
@@ -178,8 +185,10 @@
       is gone
 - [ ] 4.4 Every process overwrites `heartbeats/<role>-<rank>.json` on the state branch every half
       poll interval, from the timer of 4.15, which keeps running while a worker runs. The file holds an id the
-      process chose at random when it started and a counter it increments on each write, and no
-      time. Each process keeps in memory, per sibling, the id and counter it last read from the
+      process chose at random when it started, a counter it increments on each write, and
+      whether the process is available: free, with no claim in hand and not stood down, and with
+      a seat it can spend by #143's *A role has a seat it can spend when the gate would choose one
+      now*. It holds no time. Each process keeps in memory, per sibling, the id and counter it last read from the
       sibling's file and when, by its own clock, it last saw them change. A claim is adoptable
       once three poll intervals have passed since then, or since this process started if later.
       A missing file does not change
@@ -187,9 +196,10 @@
       the end of the name. At startup a process removes those of its own
       role and rank. At the start of each cycle it removes those of every rank the roster does not
       declare and that is gone to it. Never by age. With each tree go its outbox and its
-      `<tree>-git` directory, where there is one. Each tree is removed as the worker user of the
-      rank that made it, under `sudo -u igor-worker-<role>-<rank>`, which #175's sudoers lines
-      allow.
+      `<tree>-git` directory, where there is one. Each tree and its outbox are removed as the
+      worker user of the rank that made it, as #175's release removes them, and each `<tree>-git`
+      as the service user. A serving process never removes a tree of rank 0. `igor run` removes at its start the
+      trees of rank 0 of its role, as itself, and no other.
       `igor run --plan` removes nothing
 - [ ] 4.6 Remove `ABSOLUTE_CEILING_MS`, the worker's kill at it, and the failure reason that names it
 - [ ] 4.7 `docs/architecture.md` §6.7.2 pins the sweep threshold to that ceiling; restate it to
@@ -203,9 +213,11 @@
       merged: whichever of #101 and this build lands second makes this edit
 - [ ] 4.10 A process's first heartbeat lands before its first cycle
 - [ ] 4.11 A process reads its role's heartbeat files before choosing each candidate and again
-      before verifying a claim, all of them in one request for the state branch's tree. A
-      file has changed when the tree gives it a blob id other than the one this process last
-      read, so no file's contents are fetched
+      before verifying a claim, all of them with their contents in one request, such as one
+      GraphQL query for the `heartbeats/` tree's entries with each blob's text. A file has
+      changed when it has a blob id other than the one this process last read. Measure that the
+      request returns every file's blob id and text, and record in `design.md` which rate limit
+      it spends
 - [ ] 4.12 Taking an item over a gone rank's claim message removes the role's label and adds it
       again, then posts the claim message at once. On an item with the Igor's open pull request
       it releases nothing, as 4.16 says
@@ -248,7 +260,9 @@
 - [ ] 4.19 Measure the requests to GitHub's `core` REST rate limit that one rank makes in one
       cycle, with two and with three ranks running. Measure the `core` limit an App installation
       gets, which is not the 5,000 an hour measured on a personal account, and record in
-      `design.md` how many ranks one App's limit allows at the default poll
+      `design.md` how many ranks one App's limit allows at the default poll. Measured so far
+      (2026-10-19): a tree read and a Contents PUT cost one `core` request each; the rest waits
+      on a running multi-rank Igor and an App's key
 - [ ] 4.20 PR #175 (`worker-user`) adds a git directory, `<tree>-git`, beside each tree. 4.5
       sweeps it already, assuming that name; check the name against #175 as merged. Trees and
       their git directories live in `/var/lib/igor/trees` (1.8). #175 keeps `PrivateTmp=true`
@@ -257,39 +271,26 @@
 - [ ] 4.21 Only the rank whose claim message holds an item removes the role's label: standing
       down after a failed verification, setting an item down after a repeated failure before the
       worker (#173), and answering a stop. Any other rank drops out silently, removing and
-      posting nothing. #173's spec has only the holder count its failures before the worker;
-      whichever of #173's build and this build lands second makes a rank that does not hold the
-      item count none of its failures and post no set-down
+      posting nothing. Which failures count toward a set-down, and who posts it, are #173's
+      rules; whichever of #173's build and this build lands second wires them to the holder test
+      here
 - [ ] 4.22 A stop said on a handed-over item is answered only by the rank whose claim message
       holds it; other ranks ignore it. Where no claim message counts, the rank that reaches the
       item answers it
 - [ ] 4.23 Tests for 4.21 and 4.22: a rank that does not hold the item and fails its verification
       leaves the label; the holder sets an item down; a stop on a handed-over item a sibling
       works is ignored by the other rank; a stop on a hand-over nobody has claimed is answered
-- [ ] 4.24 Each heartbeat write names the blob the process last wrote to its file, or, before its
-      first write, the blob the file held at its start, so that a write over another process's
-      is refused. On a refusal, and when a tree read gives its own file a blob id other than the
-      one it last wrote, the process reads the file's id. An id other than its own, written
-      since it started, means another process took its rank: it stops its worker, starts and
-      posts nothing, leaves its claims, logs the line below, as written, and exits with status
-      78. The id the file held at its start is its predecessor's, and a missing file holds none.
-
-      ```text
-      Another process took rank <rank> of <role>: its id is in heartbeats/<role>-<rank>.json. Stopping for good; start this rank again only once that process has stopped.
-      ```
-
-      Test: a write over another process's id is refused and the process exits 78 with that
-      line; `igor run` stops the same way when a restarted rank 1 overwrites its id; a
-      predecessor's id and a missing file stop nobody
+- [ ] 4.24 A heartbeat read is used only to judge whether each file changed and whether its
+      rank is available. A process does not stop for anything it finds in its own file, such
+      as another process's id after a lost or rolled-back state branch: keeping one serving
+      process per rank is the operator's. Test: a lost or rolled-back state branch stops no
+      process
 - [ ] 4.25 A process exiting because the roster no longer declares its rank logs the line below,
-      as written, and exits with status 79; no other exit uses 79. Test: the status and the line
+      as written, and exits with status 0. Test: the status and the line
 
       ```text
       The roster no longer declares rank <rank> of <role>. Exiting; systemd will not restart this rank.
       ```
-- [ ] 4.26 Measure on a Linux host that a unit listing 79 in `SuccessExitStatus=` and
-      `RestartPreventExitStatus=` is not restarted after its process exits with 79, and shows as
-      inactive in `systemctl status`. Record the result in `design.md`
 
 ## 5. State
 
@@ -308,10 +309,10 @@
       A cycle whose process crashes first appends none. A cycle cut short, by a stand-down
       among other reasons, holds its mark back by #101's rule in `work-discovery`, *Watermarks
       reduce reconsideration without governing it*, which lists every reason a cycle that stops
-      early does so. Build the hold-back for a stand-down as that rule holds it back for an
-      exhausted budget. Adam decided the stand-down belongs in #101's rule, whose text does not
-      name it yet; it must before this change archives (listed in the proposal, since #101 is
-      under review)
+      early holds its mark back, a stand-down among them through this change's `MODIFIED` block on that
+      requirement. Build the hold-back for a stand-down as that rule holds it back for an
+      exhausted budget. The block is copied from #101 at `de95fa7`; before archiving, check it
+      against #101 as merged and carry over any change #101 made since
 - [ ] 5.7 Every cycle also considers each open item carrying the role's label, whatever the mark
 - [ ] 5.8 Tests: a crash between triage and the claims leaves the items above the mark; a crashed
       rank's claim below every mark is taken over
@@ -337,9 +338,11 @@
       by hand before archiving, or the archive drops them
 - [ ] 5.15 Where this process's own claim message holds an item whose Igor pull request still
       merges, triage passes the item over with no triage call, unless the item or the pull
-      request has updated since this process last triaged it, or the pull request no longer
-      merges (`work-triage`). Keep each item's last triage time in memory. Test: no triage call
-      for an unchanged item; a new comment, or a pull request that stops merging, brings one
+      request has updated since this process last triaged it, the pull request no longer
+      merges, or it carries a review to act on, #150's actionable review (`work-triage`), over
+      which the holder resumes the item with a worker as #150 builds. Keep each item's last
+      triage time in memory. Test: no triage call for an unchanged item; a new comment, or a pull
+      request that stops merging, brings one; a change request brings a worker
 
 ## 6. Documentation
 
@@ -360,8 +363,11 @@
 - [ ] 6.4 Every place that starts a role by its name alone gives the rank: `README.md` and
       `docs/deployment.md` say `igor serve <role>-<rank>`, `deploy/docker-compose.yml` runs
       `igor serve maintenance-1`, and the unit's header comment installs `igor@<role>-<rank>`
-- [ ] 6.5 `docs/deployment.md` says what exit statuses 78 and 79 mean and what to do: 78, read
-      the journal, fix what it names, and start the unit again; 79, nothing, unless the rank
-      should run, when the roster must declare it first. It says the abandonment bound, the
-      heartbeat period, the stand-down threshold and `igor run`'s wait follow the poll interval
-      and have no settings of their own
+- [ ] 6.5 `docs/deployment.md` says that a rank the roster no longer declares exits with status 0
+      and stays down, and that it runs again only once the roster declares it. It says the
+      abandonment bound, the heartbeat period and the stand-down threshold follow the poll
+      interval and have no settings of their own, and that the settle interval must be shorter
+      than the poll interval
+- [ ] 6.6 `docs/deployment.md` says `igor run` runs as rank 0 beside any serving rank, and that
+      two people running `igor run` for one role at once can both work one item (proposal,
+      *Still open*)

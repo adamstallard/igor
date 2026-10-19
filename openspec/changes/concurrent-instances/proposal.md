@@ -1,7 +1,8 @@
 ## Decisions
 
-Adam decided these on 2026-10-13, 2026-10-17 and 2026-10-18, the last day in two rounds.
-`design.md` gives the reasoning for each.
+Adam decided these on 2026-10-13, 2026-10-17 and 2026-10-18. `design.md` gives the reasoning for
+each. Decisions 29 to 37 are his latest answers, given on 2026-10-18 after the others; where they
+replace an earlier decision, the earlier one is rewritten to match.
 
 **The claim**
 
@@ -38,20 +39,20 @@ Adam decided these on 2026-10-13, 2026-10-17 and 2026-10-18, the last day in two
 8. **A role's processes share one identity and differ only by rank.** The roster, a list of ranks
    per role under `roster` in `igor.config.yaml`, declares which may run, and a role it does
    not name runs rank 1 only.
-9. **Rank k starts at its k-th candidate, and contends only when it has fewer than k.** A
-   contending rank waits `k − 1` settle intervals and re-reads before claiming. *Rejected:* a
-   shuffled order, which makes collisions rarer but still produces claim-and-retract comments.
-   Rank 1 comes first everywhere. The open change `directed-interaction` adds requests people
-   make by mentioning an Igor; they join the one candidate list, ahead of found work, so rank 1
-   takes the first request and the same contention applies to requests.
+9. **Each item has an owner, by a hash of its id over the roster's ranks, and the owner goes
+   first** (decision 31). Where the owner is not available, the next available rank after it, in
+   roster order and wrapping, goes first. A rank attempts the items it goes first for before the
+   others, and waits one settle interval per available rank ahead of it before claiming any
+   other item. *Rejected:* a shuffled order, which makes collisions rarer but still produces
+   claim-and-retract comments; and a start place per rank, rank k at its k-th candidate, which
+   the hash replaced.
 10. **A hand-over among one role's ranks goes through the same contest.** A rank taking over a
     handed-over item records the hand-over in its claim message, as `Igor-Handed-Over-By:
     <login>`, so the item still reads as handed over.
-11. **`igor run <role>` runs as rank 1, and refuses when a process is serving rank 1,** naming
-    it. It says what it is waiting for and for how long, half a poll interval plus one heartbeat
-    write, before it decides. A role nobody serves runs by hand as before. Once it goes ahead it writes rank 1's
-    heartbeat file with an id of its own, as decision 23 needs. `igor run --plan` changes
-    nothing, skips the startup sweep, and may run beside a serving rank 1.
+11. **`igor run <role>` runs as rank 0, outside the roster, with its own heartbeat file**
+    (decision 29), and spends the token in `IGOR_RUN_TOKEN`, as #171 records. It starts at once, beside any serving rank, and contends for items as any rank
+    does. It takes over no claim message, its own rank's included, and sweeps only rank 0's trees.
+    `igor run --plan` changes nothing and skips the startup sweep.
 
 **Recovery and the abandonment bound**
 
@@ -72,7 +73,7 @@ Adam decided these on 2026-10-13, 2026-10-17 and 2026-10-18, the last day in two
     here, it does not remove and re-add the label as decision 14 does: its own claim message,
     carrying `Igor-Supersedes: <rank>`, supersedes the gone rank's for good.
 16. **A rank removed from the roster shuts down:** it finishes its item or hands it off out
-    loud, then exits with status 79 (decision 24). Siblings adopt its claims only if it dies
+    loud, then exits with status 0 (decision 32). Siblings adopt its claims only if it dies
     first. A configuration read at a cycle that fails a starting process's checks is refused:
     the process goes on under the last configuration that passed and raises a condition naming
     the failing file and check. That condition is the read-cleared kind #171 defines in
@@ -84,9 +85,10 @@ Adam decided these on 2026-10-13, 2026-10-17 and 2026-10-18, the last day in two
     Igor's heartbeat timer checks for a stand-down at each firing and stops the worker itself,
     without waiting for a worker event.
 18. **`ABSOLUTE_CEILING_MS` is removed.** A person's stop ends a worker that never finishes.
-    Working trees are named `<role>-<rank>-<id>`, kept in `/var/lib/igor/trees` where every rank
-    on the host sees them, and swept by rank, never by age. A sibling removes the trees of a gone
-    rank the roster no longer declares, as that rank's worker user.
+    Working trees are named `<role>-<rank>-<id>`, kept where #175 puts them, which every rank
+    on the host sees, and swept by rank, never by age. A sibling removes the trees of a gone
+    rank the roster no longer declares, as #175's release removes them. No serving rank removes rank
+    0's trees; the next `igor run` removes them at its start.
 
 **Discovery and state**
 
@@ -95,39 +97,30 @@ Adam decided these on 2026-10-13, 2026-10-17 and 2026-10-18, the last day in two
     gone, it uses the lowest of every latest mark, no earlier than the cold start's look-back.
 20. **A cycle appends its mark only after attempting every candidate,** and considers every
     labelled item whatever the mark, passing over before triage any item a live sibling holds.
-    A cycle cut short holds its mark back as #101 has it do: the reasons a cycle that stops early
-    holds its mark back, a stand-down among them, belong in #101's watermark rule, which
-    this change cites. #101 does not name a stand-down yet; *Still open* lists that.
+    A cycle cut short holds its mark back as #101's watermark rule has it do. That rule lists
+    every reason a cycle holds its mark back, and this change adds a stand-down to the list with a `MODIFIED` block (decision 36).
 21. **Every state file more than one process writes is written so a retry discards nothing,**
     which for `discovery.json` and `deferred.json` means a log replayed on read.
 22. **A `condition-backoff` probe (PR #101) records its rank and lapses when that rank is gone,**
     in place of the ceiling-based `SWEEP_AFTER_MS`.
 
-**Decided in round four, 2026-10-18**
+**Decided on 2026-10-18, round four**
 
-23. **A process that finds another's id in its own heartbeat file stops for good.** Each
-    heartbeat write names the blob the process last wrote, so a write over another process's is
-    refused, and a process then reads the file's id. An id not its own, written since it
-    started, means another process took its rank: it stops its worker, leaves its claims, logs
-    why, and exits with status 78. `igor run` writes rank 1's file the same way, so a rank 1
-    that comes back beside it, or a run beside a restarted rank 1, stops. *Rejected:* nothing;
-    before this, two processes at one rank was the operator's to prevent, and unhandled.
-24. **A startup refusal exits with status 78, and a rank removed from the roster with 79.** The
-    unit lists both in `RestartPreventExitStatus=` and 79 in `SuccessExitStatus=`, so systemd
-    stops restarting: a refusal shows the unit failed, a retired rank inactive, each with Igor's
-    reason in the journal. #82 defines 78; this change defines 79. No requirement to alert anyone
-    comes back.
-25. **The abandonment bound, the heartbeat period, the stand-down threshold and `igor run`'s
-    wait follow the poll interval and have no settings of their own:** three intervals, half an
-    interval, two intervals, and half an interval plus a fixed allowance for one heartbeat write,
-    set from task 1.11's measurement. The poll interval stays configurable. TLC checked safety at
-    the first three ratios; it does not time the allowance.
-26. **An edited claim message counts for nothing.** A bot comment whose updated time differs
-    from its created time is no claim message, and its trailers are not read, so an edit can
-    neither fake nor erase `Igor-Supersedes:` or `Igor-Handed-Over-By:`.
+23. **Removed by decision 29.** It had a process that found another's id in its heartbeat file
+    stop for good.
+24. **A startup refusal exits with status 78** (#82). A rank removed from the roster exits with
+    status 0 (decision 32).
+25. **The abandonment bound, the heartbeat period and the stand-down threshold follow the poll
+    interval and have no settings of their own:** three intervals, half an interval and two
+    intervals. The poll interval stays configurable. TLC checked safety at these ratios.
+26. **An edited claim message counts for nothing.** A bot comment GitHub reports as edited, by
+    GraphQL `lastEditedAt`, is no claim message, and its trailers are not read, so an edit can
+    neither fake nor erase `Igor-Supersedes:` or `Igor-Handed-Over-By:`. A hidden or unhidden
+    message still counts (Adam, 2026-10-18, from task 2.18's measurement: hiding changes REST
+    `updated_at` with no edit, and `lastEditedAt` changes only on an edit).
 27. **The holder of an item whose own pull request still merges triages it again only when the
-    item or the pull request has updated since it last looked, or the pull request stops
-    merging,** not every cycle.
+    item or the pull request has updated since it last looked, the pull request stops merging,
+    or it carries a review to act on** (decision 34), not every cycle.
 28. **Readings of earlier decisions that Adam confirmed, needing no approval.** Round one's two rules on checkpoint gaps, a checkpoint at least every
     two poll intervals and a stand-down at one missed heartbeat where gaps were longer, are
     removed: the heartbeat timer of decision 17 stops a stood-down worker whatever the gap. A stop on a
@@ -138,75 +131,112 @@ Adam decided these on 2026-10-13, 2026-10-17 and 2026-10-18, the last day in two
     that carries a gone rank's claim message, a taker adds the label, removes it and adds it
     again before posting.
 
+**Decided on 2026-10-18, Adam's latest answers**
+
+29. **`igor run` runs as rank 0, outside the roster, with its own heartbeat file.** It contends
+    for items like any rank, so `NoTwoWorkers` covers it, never takes over another rank's claims,
+    and sweeps only its own trees. Fencing by start id, the requirement that stopped a process
+    for good on a foreign id, and `igor run`'s wait are removed. *Rejected:* `igor run` as rank 1
+    with a fence, which TLC showed still let both processes work one item.
+30. **The edited or deleted claim message risk is accepted.** An edit or deletion of the
+    holder's message while it works lets a sibling take the item (`model/findings/EditedMessage.cfg`).
+    Adam's reason: only a person with maintain or admin access can edit or delete the bot's
+    comment. Task 2.19 measures that; if less access is enough, this comes back to him.
+31. **Ranks choose items by a hash-assigned owner, and the claim stays.** It replaces a start
+    place per rank (decision 9). A stale heartbeat read can only cause contention, which the
+    claim settles; `negative/NoVerifyClaims.cfg` shows the claim is still needed.
+32. **A rank removed from the roster exits with status 0; a refusal exits 78.** The unit uses
+    `Restart=on-failure` with `RestartPreventExitStatus=78`, as #82 has it, so a retired rank
+    stays down. Compose restarts every exit under #82, so there a rank is retired by removing its
+    service, as #82 says. Status 79 and `SuccessExitStatus=79` are gone.
+33. **A heartbeat says whether its rank is available:** free, and with a seat it can spend, as
+    #143's *A role has a seat it can spend when the gate would choose one now* defines: some seat
+    the role may draw on is below its reserve line and not held back by pacing. Only available ranks go first
+    for an item.
+34. **A review to act on means resume.** On a held pull request that still merges, a review to
+    act on counts as something changed, and the holder runs a worker over it, as #150 says. A
+    catch-up with no such review stays worker-free.
+35. **The settle interval must be shorter than the poll interval;** a configuration that sets it
+    otherwise is refused, naming both values.
+36. **#101's watermark rule names a stand-down, through a `MODIFIED` block this change carries**
+    on *Watermarks reduce reconsideration without governing it*. This change archives after
+    #101, in the order issue #204 states for every open change.
+37. **A mention is answered by the first available rank from its hash owner, with no claim.**
+    Each rank works out the mention's order itself and answers only where it finds itself first;
+    with no rank available, the mention waits for the next cycle. Usually one reply; a stale
+    heartbeat can bring a second, with no hard limit, which Adam chose over a limit because a
+    duplicate reply is harmless and waiting is the worse failure. `directed-interaction`'s
+    proposal records it.
+
 **Still open:**
 
-- **Measurements the requirements rest on:** same-second claim ids on GitHub (task 2.12),
-  whether a label event's time and a comment's time come from one clock (task 2.15), and
-  requests per cycle per rank against the App's rate limit (task 4.19), which a heartbeat every
-  half interval raises.
+- **Measurements the requirements rest on:** requests per cycle per rank against the App's rate
+  limit, and the limit an App installation gets (task 4.19), which a heartbeat every half
+  interval raises; a request that reads every heartbeat file with its contents at once (task
+  4.11); and which roles can edit the bot's comment (task 2.19). Tasks 2.12, 2.15 and 2.18 are
+  measured, and `design.md` records them.
 - **Taking over on Linear,** where removing the label and adding it again has no counterpart
   (task 2.13).
 - **Several ranks overshooting a seat's reserve line,** about two runs each, as #143 measured,
   since a run's reading arrives only after its first model call,
   which `design.md` leaves to be settled with #143.
-- **Measurements added this round:** whether GitHub keeps an unedited bot comment's updated time
-  equal to its created time, through reactions, hiding and an issue's transfer (task 2.18); if
-  not, decision 26 makes every claim message stop counting, and comes back to Adam. And how long
-  one heartbeat write takes, a retry after a conflict included, which `igor run`'s wait adds to
-  half a poll interval (task 1.11).
 - **A roster change reaches a running rank only through its lore checkout,** which nothing
   pulls until #176 is built (the lore checkout is the host's clone of the lore repository, which
   holds `igor.config.yaml`): a process rereads `igor.config.yaml` each cycle, so a person's pull
   on the host is what brings the change. Nothing is asked of Adam; it waits on #176.
 - **What an adapter must supply.** The claim rules need each surface's sequence key, the time of
-  an item's latest release and the times of its label events, and now a comment's created and
-  updated times, but no `surface-adapter` requirement obliges an adapter to supply them.
+  an item's latest release and the times of its label events, and whether a comment was edited
+  (GraphQL `lastEditedAt`), but no `surface-adapter` requirement obliges an adapter to supply them.
+- **For Adam, from TLC: two `igor run`s of one role at once.** Both run at rank 0, and a claim
+  message names only the rank, so each reads the earliest message as its own claim and both
+  work one item (`model/findings/TwoRuns.cfg`). Decision 29 makes one `igor run` safe beside
+  serving ranks; nothing stops two people running it at once. One answer: the claim message
+  also carries the id the process picked at its start, and verification compares it where the
+  rank is 0.
+- **For Adam, from the consistency read:**
+  - **Who can edit the bot's comment.** Decision 30 accepts the edited-message risk because only
+    maintain or admin access can edit a bot's comment, but `design.md` had read GitHub as letting
+    write or triage access do it. Task 2.19 measures it; if write access is enough, the accepted
+    risk is wider than the one decided.
+  - **#82 and #173 archive after this change in #204's order,** yet this change cites #82's
+    restart policy, which keeps a retired rank down, and #173's set-down. Until #82 archives, the
+    in-force unit restarts a process that exits 0 (`Restart=always`), and each restart is then
+    refused. Either #204's order moves #82 and #173 ahead of this change, or the citations stand
+    as pointers to changes still open.
+  - **A process whose claim message failed to post removes the label it set** where no other
+    message counts. That is an exception to decision 6 that no decision lists, and the model
+    does not cover it; a sibling may have set the same label and be about to post. It predates
+    Adam's latest answers.
+  - **Which lore commit the ranks read.** Issue #176 lists this as settled in #179, this change,
+    but it does not settle it: ranks reading different checkouts can compute different owners and see
+    different rosters. A different owner costs only contention; a different roster changes who
+    retires.
+  - **#150's actionable review is defined for the Igor's own two-gate pull request only,** so
+    decision 34 applies to those; a held pull request that is not a two-gate artifact keeps the
+    catch-up's rule.
+- **For Adam, readings of decisions 29 and 31 this change made:** rank 0 comes after every
+  serving rank in each item's order and owns no item; a rank waits one settle interval per
+  available rank ahead of it before claiming an item it does not go first for, which replaces
+  the wait of `k − 1` intervals; and a serving rank never removes rank 0's trees, which the next
+  `igor run` removes.
 - **Conflicts with other open changes, recorded and not resolved:**
-  - #101 (`condition-backoff`, under review): its *Watermarks reduce reconsideration without
-    governing it* lists the reasons a cycle that stops early holds its mark back, and decision 20
-    has this change cite it for all of them, but it does not yet name a stand-down. Until it
-    does, a cycle cut short by a stand-down has no rule holding its mark back (task 5.6).
   - #101: decision 22 has a probe lapse when its rank is gone, but a condition on a seat or on
     the whole Igor is shared by every role, and a process watches only its own role's heartbeat
     files, so a process of another role cannot tell whether the probe's rank is gone. Decision 22
     is in task 4.9 only, with no requirement.
-  - `directed-interaction`: decision 9 has requests join the one candidate list, so contention
-    applies to them, but a request is answered without a claim, and contention works by a higher
-    rank finding a claim message after its wait. Two ranks can answer one mention. And with
-    requests at the head of the list, a request waits while rank 1 is busy, since every other
-    free rank starts further down, until a free rank, wrapping round from its later starting place, reaches it.
-  - #150 (`two-gate`): a pull request of the Igor's own that still merges and carries a review
-    to act on is work to resume under #150, while a catch-up here over such a pull request runs
-    no worker. Task 5.14 merges the two deltas' text at archive, but what a catch-up does over
-    such a pull request is Adam's to decide.
-  - #173 (`pre-worker-breaker`): its scenario for a repeated failure in the claim window sets the
-    item down, but a process whose verification fails counts as not holding the item here, so with several ranks a failure in the claim window, before verification shows who holds the
-    item, is never counted as the holder's, while a failure after a verification that held still
-    is. #173 lists this too.
-- **For Adam, from the consistency read:**
-  - **A settle interval as long as the poll interval** makes every verification late, so the role
-    works nothing. Nothing refuses such a setting.
-  - **A deleted claim message** vanishes as an edited one stops counting, so a person deleting
-    the holder's message while it works lets a sibling take the item, as in
-    `model/findings/EditedMessage.cfg`.
-- **For Adam, from TLC:**
-  - **Decision 23 stops one of two processes at one rank, but not before both can work one
-    item.** TLC finds two workers on one item in two ways (`model/findings/`). An `igor run`
-    may start while rank 1's worker still runs, since one failed heartbeat write during the
-    run's half-interval wait makes rank 1 look unserved; rank 1 stops only at its next write or
-    read. And a rank 1 restarted beside a running `igor run` takes the run's id for its
-    predecessor's, then takes the run's claims as its predecessor's, while the run's worker
-    goes on until the run's next write or read.
-  - **A rollback past a start stops a live rank.** A state branch rolled back to a commit from
-    before a process started can put back its predecessor's file, whose id is not its own and
-    was not in the file at its start; the process then stops for good and exits with status 78.
-    The model leaves this out.
-  - **Decision 26 against a holder already working.** An edited claim message stops counting at
-    once, so an edit to the holder's message while its worker runs makes the item look
-    unclaimed to its siblings (see `design.md`, *An edited claim message counts for nothing*).
-- **For Adam, a reading of decision 24:** one exit status cannot leave the unit failed in one
-  case and inactive in the other, so a startup refusal uses 78 and a rank removed from the
-  roster uses 79. A process that finds another's id uses 78, so its unit shows failed.
+  - #106 (`role-keyed-watermark`) also modifies *Watermarks reduce reconsideration without
+    governing it* and archives after this change, so its block must carry decision 36's
+    stand-down; #106's task 1.6 says so.
+  - #173 (`pre-worker-breaker`): a process whose verification fails counts as not holding the
+    item here, so a failure in the claim window is never the holder's; #173 lists whether such
+    failures count as an open question for Adam.
+  - #106 says a role served by one process runs it as rank 1, but a role served only by `igor
+    run` saves its marks as rank 0. The marks still combine by this change's rule; only #106's
+    sentence is wrong for that case, and #106 can say "rank 0 under `igor run`".
+
+- **The in-force "one comment" rules meet several ranks.** On an item with work in flight, or
+  held by another Igor, each rank reaching it would post the one comment the in-force rules
+  allow; nothing yet restricts the comment to one rank. It predates Adam's latest answers.
 
 ## Why
 
@@ -222,11 +252,13 @@ role's `igor:<role>` label, and verification asks whether any *other* holder's l
 item. Neither finds one, so both answer that the claim is theirs. They would work the same item
 in parallel and open two pull requests.
 
-**Depends on `core-igor-loop` and `one-claiming-surface` (#156), both archived, and on three
-open changes that archive first:** `condition-backoff` (#101), whose watermark rule the
-discovery delta cites; `worker-user` (#175), whose worker users the sweep runs as and whose user
-names the role-name check bounds; and `pre-worker-breaker` (#173), whose set-down is one of the
-give-backs only the holder makes. The disambiguating mechanism, the claim message, already exists
+**Depends on `core-igor-loop` and `one-claiming-surface` (#156), both archived, and on open
+changes:** `condition-backoff` (#101), whose watermark rule the discovery delta modifies;
+`worker-user` (#175), whose worker users the sweep runs as and whose user names the role-name
+check bounds; `read-seat-windows-from-the-stream` (#143) and `seat-files` (#171), whose seat
+rules the heartbeat's availability and `igor run`'s token cite; `pre-worker-breaker` (#173),
+whose set-down is one of the give-backs only the holder makes; and `stopped-scope-visible` (#82),
+whose restart policy keeps a retired rank down. Issue #204 orders the archives. The disambiguating mechanism, the claim message, already exists
 for a different reason.
 
 The universal skip for an item somebody else holds does not cover this. It cannot: an item only
@@ -266,7 +298,7 @@ not a claim nobody is behind.
 set the age past which the startup sweep deleted a working tree. The sweep now goes by rank, and
 Adam decided on 2026-10-13 to remove the ceiling entirely. A worker that keeps emitting events
 and never finishes is then killed by no limit, which is accepted: a person's stop is honoured at
-the next checkpoint. Once `budget-pacing` (#143) is built, the seat's reserve line, a spend
+the next checkpoint. Once #143 (`read-seat-windows-from-the-stream`) is built, the seat's reserve line, a spend
 threshold per seat, also stops new items; this change does not wait for it.
 
 **Retiring a rank is recorded, not detected.** A crash is not retirement: the supervisor restarts
@@ -301,41 +333,38 @@ A cycle appends its mark only after attempting every candidate, so a crash betwe
 the claims loses no item. Every cycle also considers each item carrying its role's label,
 whatever the mark, so a crashed rank's claim is found even below every mark.
 
-**Each process has a rank, and rank decides both where it starts and when it may act.**
+**Each process has a rank, and each item has an owner among the ranks.**
 
 Rank is a number given to a process when it is started — not discovered, not negotiated, and
-needing no registry: rank 3 waits its turn whether or not a rank 2 exists, and a gap costs only
-the wait. One process per rank is an operator invariant, in the same class as not declaring two
-seats with one id.
+needing no registry: a missing rank costs nothing, since a rank waits only for available ranks
+ahead of it. One serving process per rank is an operator invariant, in the same class as not
+declaring two seats with one id; `igor run` is rank 0, outside the roster.
 
-*Rank is a starting offset.* Given roughly the same candidate list, rank 1 begins at the first
-item, rank 2 at the second, rank 3 at the third. A rank k with at least k candidates starts at
-one no lower rank starts at, and does not wait. Its later candidates can still collide, and
-verification resolves those.
+*An item's owner goes first.* A hash of the item's id picks its owner among the ranks the roster
+declares, so every process computes the same owner without asking anyone. Where the owner is
+not available, as its heartbeat says, the next available rank after it goes first. Each process
+attempts the items it goes first for before the others, so ranks mostly work different items
+from the start, and the claim still settles any collision.
 
-*Rank is also a delay, for when it has fewer.* Rank k waits `(k-1)` settle intervals before
-acting on a contested item, and then **reads before claiming**. Seeing the item already taken,
-it moves on silently. This is the property a shuffle cannot give: a shuffle makes a collision
-less likely. Under rank, the higher rank waits, so the lower rank reads the item first and claims
-it, and the higher rank then sees the claim and moves on; a retraction is left only where two
-ranks both read the item before either has posted. The cost of a
-collision was never the wasted request — it was the claim-and-retract comment landing on
-somebody's issue.
+*A rank behind the owner waits.* Before claiming an item another available rank goes first for,
+a rank waits one settle interval per available rank ahead of it, and then **reads before
+claiming**. Seeing the item already taken, it moves on silently. This is the property a shuffle
+cannot give: a shuffle makes a collision less likely. Here the rank that goes first reads the
+item first and claims it, and the one behind it then sees the claim and moves on; a retraction
+is left only where two ranks both read the item before either has posted, as when their
+heartbeat reads differ. The cost of a collision was never the wasted request — it was the
+claim-and-retract comment landing on somebody's issue.
 
 The interval is `settleSeconds`, which already means "long enough for a claim to become visible
-to someone else". That is exactly what a lower rank is waiting for, so it is not a second number
-to keep in agreement with the first.
-
-Capacity is therefore consumed in rank order, the same shape as a seat pool taking the first
-with headroom. A persistently thin queue leaves the highest ranks idle, which is the correct
-outcome.
+to someone else". That is exactly what a rank behind the owner is waiting for, so it is not a
+second number to keep in agreement with the first.
 
 **Processes attempt candidates in different orders.** Today every process sorts its candidates
 the same way, oldest first, and keeps the first ten, so every process receives the same list and
 every process tries the first item first. N−1 lose it, then N−2 lose the
 second, and so on — quadratic wasted claims, each burning a settle interval and posting a claim
 comment that is immediately retracted. Diverging the order makes a collision incidental instead
-of guaranteed, and costs only the rank offset above.
+of guaranteed, and costs only the wait behind the owner above.
 
 **Concurrent state writes conflict, and a conflicted write is retried rather than fatal.** Today
 one throws and the cycle is reported as failed, which is recoverable but reads as a defect.
@@ -379,28 +408,30 @@ Explicitly out of scope:
 ### Modified Capabilities
 
 - `work-claiming`: A claim is held by the process that took it, not by the role's identity.
-  Verification distinguishes a sibling process from the Igor itself, candidates are attempted
-  in an order that differs between processes, a hand-over goes through the same contest, the
+  Verification distinguishes a sibling process from the Igor itself, each item's hash owner
+  goes first for it, a hand-over goes through the same contest, the
   claims of a rank whose heartbeat stops changing for three poll intervals become adoptable, and a claim left on the Igor's
-  open pull request is caught up whoever left it. `igor run` refuses beside a serving rank 1. A
-  process that finds another's id in its heartbeat file stops for good, a retired rank exits with
-  status 79, and an edited claim message counts for nothing.
+  open pull request is caught up whoever left it. `igor run` runs as rank 0, beside any serving
+  rank. A retired rank exits with status 0, and an edited claim message counts for nothing.
 - `work-triage`: An item a live sibling holds is passed over before triage, a claim this
   process takes over on the Igor's own pull request is not skipped as work in flight, and an
-  item the process holds whose pull request still merges is triaged again only once it changes.
-- `work-discovery`: A conflicted state write is retried rather than failing the cycle, and
-  processes saving one source keep the lower watermark.
+  item the process holds whose pull request still merges is triaged again only once it changes
+  or carries a review to act on.
+- `work-discovery`: A conflicted state write is retried rather than failing the cycle,
+  processes saving one source keep the lower watermark, and #101's watermark rule names a
+  stand-down.
 - `task-execution`: The worker's absolute ceiling is removed, and the sweep removes working
-  trees by rank rather than by age.
+  trees by rank rather than by age; `igor run` sweeps only rank 0's.
 - `role-config`: A role's processes share one identity and differ only by rank, the roster
   declares the ranks each role may run, a process is named `<role>-<rank>`, a role's name fits
   its worker users, and `igor serve` reads the role's environment file itself, which holds
-  single-quoted or plain values. The poll interval stays configurable, and the four timings
+  single-quoted or plain values. The poll interval stays configurable, the settle interval must
+  be shorter than it, and the three timings
   derived from it have no settings. The in-force scenarios that start `igor serve reviewer` give
   the rank.
 - `surface-adapter`: The in-force scenarios that start `igor serve reviewer` give the rank.
-- `graceful-handoff`: A rank that stood down, does not hold the item, or found another's id in
-  its heartbeat file ends its part in silence.
+- `graceful-handoff`: A rank that stood down, or does not hold the item, ends its part in
+  silence.
 
 ## Impact
 

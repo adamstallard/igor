@@ -8,10 +8,10 @@ claim sees which role took the item, and hands work to a role by naming it. Igor
 roles MAY draw on the same seat, since a seat is capacity and not an identity.
 
 Processes running the same role under the same identity are one Igor. They SHALL share the
-role's identity and differ only by rank, a whole number from 1 given to each process when it is
-started. A process takes over at once a claim that carries its own rank, left by an earlier
-process of that rank, and a claim carrying another rank only once that rank is gone: `work-claiming`'s *A process recovers the claims of its own
-predecessor* and *A retired rank does not hold its items forever* say how.
+role's identity and differ only by rank: a whole number from 1 given to each serving process
+when it is started, or 0 for `igor run`. How a rank's claims pass to another process is
+`work-claiming`'s, in *A process recovers the claims of its own predecessor*, *A retired rank
+does not hold its items forever* and *A run by hand runs as rank 0*.
 
 #### Scenario: Two roles are two Igors
 
@@ -101,15 +101,16 @@ value someone guesses differently each time: a **settle interval** of 10 seconds
 is verified, and a **cooldown** of 1 hour before a stopped item returns to the pool. The **poll
 interval** SHALL be configurable too.
 
+The settle interval SHALL be shorter than the poll interval. A configuration that sets it as long
+or longer is refused, naming both values.
+
 These are starting points to tune against observation, not derived values, and SHALL be
 recorded as such rather than presented as considered.
 
-Four timings are the exception: each SHALL follow the role's poll interval, with no setting of
-its own. A rank is gone after three poll intervals without its heartbeat changing, the
-*abandonment bound*. A process writes its heartbeat every half poll interval. A process that has
-failed to write its heartbeat for two poll intervals stands down. `igor run` waits half a poll
-interval, plus a fixed allowance for one heartbeat write, before deciding whether a process
-serves rank 1; the allowance is a constant in the code, set from a measurement. `work-claiming` states each rule. Changing the poll interval scales all four together.
+Three timings are the exception: each SHALL follow the role's poll interval, with no setting of
+its own: the *abandonment bound*, three intervals; the heartbeat period, half an interval; and
+the stand-down threshold, two intervals. `work-claiming` states the rule each belongs to.
+Changing the poll interval scales all three together.
 
 #### Scenario: Default applied when unset
 
@@ -120,14 +121,17 @@ serves rank 1; the allowance is a constant in the code, set from a measurement. 
 #### Scenario: The derived timings follow the poll interval
 
 - **WHEN** a role sets its poll interval to 4 minutes
-- **THEN** its abandonment bound is 12 minutes, it writes its heartbeat every 2 minutes, it stands
-  down after 8 minutes without writing one, and `igor run` for the role waits 2 minutes plus one
-  heartbeat write
+- **THEN** its abandonment bound is 12 minutes, it writes its heartbeat every 2 minutes, and it
+  stands down after 8 minutes without writing one
+
+#### Scenario: A settle interval as long as the poll interval is refused
+
+- **WHEN** a role sets its settle interval to 10 minutes and its poll interval to 10 minutes
+- **THEN** the configuration is refused, naming both values
 
 #### Scenario: A derived timing has no setting
 
-- **WHEN** a role file sets the abandonment bound, the heartbeat period, the stand-down threshold
-  or `igor run`'s wait
+- **WHEN** a role file sets the abandonment bound, the heartbeat period or the stand-down threshold
 - **THEN** the role's file under `roles/` is refused, naming the key, as for any key that file
   does not read
 

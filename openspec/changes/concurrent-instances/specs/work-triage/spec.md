@@ -20,8 +20,14 @@ message carries this process's rank, whether this process or a predecessor poste
 that item's open pull request, the Igor's own, still merges, as after a catch-up that gave its
 claim back and kept a person's label, triaging it would only decide to carry on with a catch-up
 that changes nothing, so triage SHALL pass the item over with no triage call, unless the item or its pull request has been
-updated since this process last triaged it, or the pull request no longer merges. A process that
-has not triaged the item since it started triages it once.
+updated since this process last triaged it, the pull request no longer merges, or the pull
+request is the Igor's own two-gate artifact carrying a review to act on. A process that has not
+triaged the item since it started triages it once.
+
+A review to act on is what `follow-the-two-gate-workflow` (#150) calls an actionable review, on
+the Igor's own two-gate artifact. Over such a pull request the holder resumes the item and runs a
+worker, as #150 says, rather than carrying on with a catch-up that changes nothing. A pull request
+that still merges and carries no such review stays worker-free.
 
 #### Scenario: Item with an open linked artifact skipped
 
@@ -68,6 +74,12 @@ has not triaged the item since it started triages it once.
 - **THEN** the item is passed over with no triage call
 - **AND** once a comment is added to the item, or the pull request stops merging, the next cycle
   triages it
+
+#### Scenario: A review to act on brings a worker
+
+- **WHEN** this process's claim message holds an item whose Igor pull request, a two-gate
+  artifact, still merges, and a reviewer requests changes on it
+- **THEN** the next cycle triages the item, and the holder resumes it with a worker, as #150 says
 
 ### Requirement: An item held by another party is never a candidate
 

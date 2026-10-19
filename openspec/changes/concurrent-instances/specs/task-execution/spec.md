@@ -7,8 +7,8 @@ hours), including the worker's kill at it. Its other use, the tree sweep's thres
 replaced by rank in *The sweep removes trees by rank, never by age*. The silence windows
 still kill a worker that goes quiet. A worker that keeps emitting events and never finishes is
 killed by no limit, which Adam accepted: a stop is honoured at the next checkpoint. Once the
-`budget-pacing` change is built, the seat's reserve line, a spend threshold per seat, also stops
-new items. The change's design says more.
+`read-seat-windows-from-the-stream` change (#143) is built, the seat's reserve line (#143) also
+stops new items. The change's design says more.
 
 **Migration**: None. No setting named the ceiling.
 
@@ -52,22 +52,24 @@ them neither.
 
 A working tree's directory name SHALL be `<role>-<rank>-<id>`, giving the role and rank of the
 process that made it and an id holding no dash, so that the name read from its end gives the id,
-then the rank, then the role, whose name may itself hold dashes. Working trees
-SHALL be kept in a directory every rank on the host shares, never in a temporary directory
-private to one process. Under the systemd unit that directory SHALL be `/var/lib/igor/trees`,
-under the `StateDirectory=` every instance of the template shares.
+then the rank, then the role, whose name may itself hold dashes. The directory the trees are kept
+in, which every rank on the host shares, is the one `worker-user` (#175) specifies.
 
 At startup, before its first cycle, a process SHALL remove the trees of its own role and rank.
 At the start of each cycle, it SHALL remove the trees of each rank of its role that the roster
 does not declare and that is gone, as `work-claiming` defines. With each tree it SHALL remove
-the tree's outbox, the directory beside it where the run's declarations are kept, and the tree's
-git directory, `<tree>-git` beside it, where there is one. It SHALL NOT remove a tree of another
-declared rank, of a rank that is not gone, or of another role, whatever its age. `igor run
+the tree's outbox and the tree's git directory, `<tree>-git`, where there is one, both beside it
+as #175 lays them out. It SHALL NOT remove a tree of another
+declared rank, of a rank that is not gone, or of another role, whatever its age.
+
+Rank 0, `igor run`'s (`work-claiming`'s *A run by hand runs as rank 0*), is no rank the roster
+declares, but a serving process SHALL NOT remove its trees. `igor run` SHALL remove at its start
+the trees of rank 0 of its own role, and no other tree; it removes them as itself. `igor run
 --plan` SHALL remove no tree.
 
-A process SHALL remove each tree as the worker user of the rank that made it, by running the
-removal under `sudo -u igor-worker-<role>-<rank>`: its own rank's worker user for its
-predecessor's trees, and a gone rank's for that rank's.
+A serving process SHALL remove each tree and its outbox as the worker user of the rank that made it, as
+#175 has a release remove them, and each `<tree>-git` as the service user, which owns it under
+#175.
 
 #### Scenario: A predecessor's tree is removed
 
@@ -94,8 +96,8 @@ predecessor's trees, and a gone rank's for that rank's.
 - **WHEN** a process finds a tree named with a rank of its role that the roster no longer
   declares, and it has watched that rank's heartbeat fail to change for three poll
   intervals
-- **THEN** it removes the tree, its outbox and its git directory, running the removal as
-  `igor-worker-<role>-<rank>` for that rank
+- **THEN** it removes the tree and its outbox as `igor-worker-<role>-<rank>` for that rank, and the
+  tree's git directory as the service user
 
 #### Scenario: A retired rank's tree is left while the rank runs
 
@@ -103,8 +105,19 @@ predecessor's trees, and a gone rank's for that rank's.
   heartbeat still changes
 - **THEN** it leaves the tree
 
+#### Scenario: A serving rank leaves a run's trees
+
+- **WHEN** a serving process of `backend` finds a tree named `backend-0-k3x9`
+- **THEN** it leaves the tree, however old it is and whether or not rank 0 is gone
+
+#### Scenario: A run sweeps only its own rank's trees
+
+- **WHEN** `igor run backend` starts and finds trees named `backend-0-k3x9` and `backend-1-p2q7`
+- **THEN** it removes `backend-0-k3x9`, its outbox and its git directory, and leaves
+  `backend-1-p2q7`
+
 #### Scenario: Every rank on the host sees the trees
 
 - **WHEN** two ranks of one role run on one host under the systemd unit
-- **THEN** both keep their trees in `/var/lib/igor/trees`, so a sweep finds a retired rank's
-  trees
+- **THEN** both keep their trees in the directory #175 shares between them, so a sweep finds a
+  retired rank's trees
