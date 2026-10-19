@@ -66,6 +66,11 @@ export function handOverNote(role: Role, by: string | undefined, url: string): s
   )
 }
 
+/** The comment posted on the item when the artifact was opened and a later step on it failed. */
+export function openedWithWarning(role: Role, artifact: Artifact): string {
+  return `**${role.name}** opened [${artifact.ref}](${artifact.url}) and ${artifact.warning ?? 'a later step failed'}.`
+}
+
 export interface ItemDeps {
   tracker: Tracker
   codeHost: CodeHost
@@ -280,7 +285,7 @@ export async function runItem(
  * the worker would be paid again every cycle to meet the same failure.
  */
 function standIn(reached: Reached, role: Role, detail: string): ExecutionResult | undefined {
-  const { output, published, changed } = reached
+  const { output, published, publishing, changed } = reached
   if (output === undefined && published === undefined) return undefined
   const cost = output?.total_cost_usd
   const denials = denialsFrom(output?.permission_denials, role.name)
@@ -293,6 +298,7 @@ function standIn(reached: Reached, role: Role, detail: string): ExecutionResult 
     ...(typeof output?.session_id === 'string' && output.session_id !== '' ? { session: output.session_id } : {}),
     ...(denials.length === 0 ? {} : { denials }),
     ...(published === undefined ? {} : { artifact: published.artifact, caughtUp: published.caughtUp }),
+    ...(published === undefined && publishing !== undefined ? { publishing } : {}),
     reason: detail,
   }
 }
@@ -310,6 +316,11 @@ interface Reached {
   changed?: ChangedFile[]
   /** What the code host accepted, a pull request or a resolution onto one. */
   published?: { artifact: Artifact; caughtUp: boolean }
+  /**
+   * The branch a publish was asked to write. Set before the host answers, so a publish that
+   * throws still names where its writes may have landed.
+   */
+  publishing?: string
   /** The last claim verdict the run read. */
   verdict?: ClaimVerdict
 }
@@ -355,6 +366,7 @@ async function runClaimedItem(
   const recording: CodeHost = {
     name: codeHost.name,
     produce: async (request) => {
+      reached.publishing = request.branch
       const artifact = await codeHost.produce(request)
       reached.published = { artifact, caughtUp: false }
       return artifact
@@ -405,6 +417,12 @@ async function runClaimedItem(
   switch (execution.outcome) {
     case 'produced': {
       step('completing')
+      // The pull request is open, so the run counts as produced. A step that failed after opening
+      // it is reported on the item: nobody reviews a pull request whose review was never requested.
+      const opened = execution.artifact
+      if (opened?.warning !== undefined) {
+        await tracker.report(candidate, openedWithWarning(role, opened)).catch(() => undefined)
+      }
       await complete(tracker, candidate, role, identity)
       return {
         outcome: 'produced',

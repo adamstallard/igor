@@ -356,6 +356,9 @@ export async function propose(
       assigned = await assign(repo, pr.number, config.reviewers)
       reassignedTo = assigned
     }
+    // GitHub refusing these reviewers is not worth failing the run over: the assignment above
+    // already puts the pull request in front of somebody. `requestReviewers` returns a refusal
+    // rather than throwing it.
     await requestReviewers(repo, pr.number, others)
 
     results.push({

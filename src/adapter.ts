@@ -258,6 +258,12 @@ export interface Artifact {
   kind: 'pull-request'
   ref: string
   url: string
+  /**
+   * Set when the artifact was opened and a later step on it failed, such as requesting its
+   * reviewers. It is a clause that completes "opened #12 and …": the loop posts it on the
+   * tracker item after those words, unchanged.
+   */
+  warning?: string
 }
 
 /** What the host did when asked to bring an artifact's base into it. */

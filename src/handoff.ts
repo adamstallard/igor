@@ -169,15 +169,20 @@ export function stepsFrom(
     // A budget stop is nobody's fault and everything is still to do, which is the same two
     // sentences: what reached the tree is gone with it, and the rest was never attempted.
     case 'budget':
-      // An artifact means the edits reached it. Telling somebody the work is gone in the same
-      // message that links to it is wrong twice, and it is the catch-up paths that get here
-      // holding one: they publish and then discover the resolution did not take.
+      // Where the run holds an artifact, the edits reached it, so the edits are not called gone:
+      // that would be false, and would contradict the link in the same message. A catch-up holds
+      // one when it publishes a resolution and then finds the resolution did not take. Where a
+      // publish threw partway, the host may already have created the branch, or opened the pull
+      // request too, so the edits are not called gone there either.
       remaining.push(
         result.artifact !== undefined
           ? `what was published is on ${result.artifact.ref}; the rest needs a person`
-          : result.changed.length > 0
-            ? 'the changes were made but never published, so they are gone with the working copy'
-            : 'all of it — nothing usable was produced',
+          : result.publishing !== undefined
+            ? `the publish to \`${result.publishing}\` failed and how far it got is not known — ` +
+              'look for that branch or a pull request on this item before starting over'
+            : result.changed.length > 0
+              ? 'the changes were made but never published, so they are gone with the working copy'
+              : 'all of it — nothing usable was produced',
       )
       break
   }

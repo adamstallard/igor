@@ -226,6 +226,43 @@ describe('creating the branch an artifact lives on', () => {
     })
   })
 
+  it('answers the pull request with a warning when GitHub refuses its reviewers', async () => {
+    // The branch and the pull request exist by the time reviewers are requested. Were `produce`
+    // to throw on a refused request, its caller would conclude nothing was published, and the
+    // loop's handoff would call the work gone.
+    reset()
+    answer = (endpoint) => {
+      if (endpoint.endsWith('/git/blobs')) return { sha: 'blobsha' }
+      if (endpoint.endsWith('/git/trees')) return { sha: 'treesha' }
+      if (endpoint.endsWith('/git/commits')) return { sha: 'commitsha' }
+      if (endpoint === 'repos/o/r') return { default_branch: 'main' }
+      if (endpoint.endsWith('/git/ref/heads/main')) return { sha: 'basesha' }
+      if (endpoint.endsWith('/pulls')) return { number: 42, html_url: 'https://example.test/42' }
+      if (endpoint.endsWith('/requested_reviewers')) {
+        throw new FakeGhError('Reviews may only be requested from collaborators (HTTP 422)', 422)
+      }
+      return null
+    }
+
+    const artifact = await new GitHubCodeHost().produce({
+      repo: 'o/r',
+      branch: 'igor/fix-7',
+      title: 't',
+      body: 'Closes #7',
+      files: [{ path: 'src/a.ts', content: 'fixed\n' }],
+      deletions: [],
+      reviewers: ['outsider'],
+      draft: true,
+    })
+
+    expect(artifact).toEqual({
+      kind: 'pull-request',
+      ref: '#42',
+      url: 'https://example.test/42',
+      warning: 'could not request review from outsider: Reviews may only be requested from collaborators (HTTP 422)',
+    })
+  })
+
   it('refuses an artifact with nothing in it at all', async () => {
     reset()
     await expect(

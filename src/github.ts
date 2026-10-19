@@ -227,20 +227,26 @@ export async function assign(
   return issue.assignees.map((a) => a.login)
 }
 
+/**
+ * Returns GitHub's reason for refusing the request, or undefined where it accepted it. GitHub
+ * refuses review from the pull request's author and from non-collaborators. A refusal is
+ * returned, not thrown, because the pull request already exists, and a throw would tell the
+ * caller that nothing was opened.
+ */
 export async function requestReviewers(
   repo: string,
   number: number,
   logins: readonly string[],
-): Promise<void> {
-  if (logins.length === 0) return
+): Promise<string | undefined> {
+  if (logins.length === 0) return undefined
   try {
     await gh(
       ['api', `repos/${repo}/pulls/${number}/requested_reviewers`, '--method', 'POST', '--input', '-'],
       JSON.stringify({ reviewers: logins }),
     )
-  } catch {
-    // GitHub refuses a review request for the PR author and for non-collaborators. Assignment
-    // already puts the PR in front of them, so this is not worth failing the run over.
+    return undefined
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error)
   }
 }
 

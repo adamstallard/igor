@@ -45,6 +45,8 @@ function deps(opts: {
   provisionThrows?: boolean
   /** A publish that fails after the worker ran — a branch left by a closed pull request. */
   produceThrows?: boolean
+  /** A pull request opened, and a step after it failed — a reviewer who is not a collaborator. */
+  produceWarning?: string
   /**
    * A tracker that will not give the claim up. A finished run ends by releasing its claim, so
    * this is what a 503 on the last call of a run that already published looks like.
@@ -92,7 +94,10 @@ function deps(opts: {
     produce: async (r): Promise<Artifact> => {
       if (opts.produceThrows === true) throw new Error('422 Reference already exists')
       produced.push(r)
-      return { kind: 'pull-request', ref: '#9', url: 'https://example.test/9' }
+      return {
+        kind: 'pull-request', ref: '#9', url: 'https://example.test/9',
+        ...(opts.produceWarning === undefined ? {} : { warning: opts.produceWarning }),
+      }
     },
     catchUp: async (r): Promise<CatchUp> => {
       asked.push(r)
@@ -2084,6 +2089,17 @@ describe('the failure handler records and reports what a paid run did', () => {
     expect(r.execution?.costUsd).toBe(0.02)
   })
 
+  it('names the branch a failed publish was writing, rather than calling the work gone', async () => {
+    // The host can create the branch and open the pull request before a later write fails, and
+    // whoever starts over then collides with that branch — #164.
+    const { d, posts } = deps({ changes: fixed, produceThrows: true })
+    await runItem(d, candidate(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+    const note = posts.at(-1) ?? ''
+    expect(note).not.toContain('never published')
+    expect(note).toContain('`igor/triage/7-a-bug`')
+    expect(note).toContain('how far it got is not known')
+  })
+
   it('does not call edits that were made and lost nothing usable', async () => {
     const { d, posts } = deps({ changes: fixed, produceThrows: true })
     await runItem(d, candidate(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
@@ -2104,5 +2120,27 @@ describe('the failure handler keeps what a paid worker reported about denied com
     // A cure cannot clear the failed publish, so the item waits for an answer rather than
     // spending the worker again on the same failure.
     expect(shouldDefer(r.outcome, r.handoff, r.cures)).toBe(true)
+  })
+})
+
+describe('a pull request opened with a step after it failed', () => {
+  const fixed: ChangedFile[] = [{ path: 'src/a.ts', content: 'fixed', kind: 'modified' }]
+  const refused = 'could not request review from alice: 422 Reviews may only be requested from collaborators'
+
+  it('counts as produced, and says on the item what failed', async () => {
+    const { d, posts, released } = deps({ changes: fixed, produceWarning: refused })
+    const r = await runItem(d, candidate(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+
+    expect(r.outcome).toBe('produced')
+    expect(r.execution?.artifact?.ref).toBe('#9')
+    expect(r.reason).toContain(refused)
+    expect(posts.at(-1)).toBe(`**triage** opened [#9](https://example.test/9) and ${refused}.`)
+    expect(released).toEqual(['igor-bot'])
+  })
+
+  it('says nothing extra where every step took', async () => {
+    const { d, posts } = deps({ changes: fixed })
+    await runItem(d, candidate(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+    expect(posts.some((p) => p.includes('opened [#9]'))).toBe(false)
   })
 })
