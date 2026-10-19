@@ -51,6 +51,16 @@
 - [ ] 1.2 Tests: no `IGOR_SKILLS_DIR` gives `/opt/igor/skills`; `IGOR_SKILLS_DIR` overrides
       it; a relative one refuses the start; `skills_dir` in `igor.config.yaml` is refused as an
       unknown key
+- [ ] 1.3 Where `skills_dir` does not exist, `igor serve` refuses to start, exiting 78, and
+      `igor run` passes no `--plugin-dir`, makes no startup check, and prints this as it starts
+      (may be reworded):
+
+      ```
+      ! <skills_dir> does not exist, so this run loads no skills
+      ```
+
+      Tests: `serve` refuses with that path named and exits 78; `run` starts, prints the line,
+      and no call's arguments carry `--plugin-dir`
 
 ## 2. The flag on every call
 
@@ -58,14 +68,19 @@
       call `--setting-sources user` and `--strict-mcp-config`, and for every call but
       `runUsage` `--plugin-dir <skills_dir>`. Use it in `claudeWorker` (`src/execute.ts`),
       `runClaude` (`src/triage.ts`), `runUsage` (`src/budget.ts`) and the startup check (3.1).
-      #143's seat probe and #153's steps, built in those changes, call it as well
+      #143's seat probe and #153's steps, built in those changes, call it as well. Under `igor
+      run` where `skills_dir` does not exist, it gives no call `--plugin-dir` (1.3). Where #143's
+      removal of the usage read (#143's decision 37) has been built, `runUsage` is gone and
+      needs no change
 - [ ] 2.2 Tests: the worker's and triage's arguments carry `--plugin-dir <skills_dir>`; the
       usage read's never carry it; every
       call's arguments, the startup check's included, carry `--setting-sources user` and
       `--strict-mcp-config`; no call's arguments include `--bare`
 - [ ] 2.3 The worker's home: with #175's worker user, that user's own home; without one, a
-      home per role under Igor's state directory, such as `~/.local/state/igor/home/<role>`,
-      created when first needed and passed as the worker's `HOME`
+      home for the `igor run`, under Igor's state directory, named by the run's id, such as
+      `~/.local/state/igor/home/<role>-<run>`. It is created when the run first needs it, passed
+      as the worker's `HOME`, and removed when the run ends, on an error too. The run's id is the
+      one #179 gives each `igor run`, which its trees also carry
 - [ ] 2.4 The template, shipped in Igor's installation, holding exactly these two files (not to
       be reworded), and no skills and no `CLAUDE.md`. Task 0.3's measurement ran on them:
 
@@ -95,8 +110,18 @@
       server it wrote into `~/.claude.json`, are gone before the next worker and before a model
       step after the worker; so is a `~/.claude/.credentials.json`; `~/.gitconfig` and a file
       under `~/.cache` survive; with a worker user the reset runs as that user; in same-user mode
-      `HOME` is the role's home under the state directory; the kill names the worker user and
-      runs before every reset, including the one before #153's first step after the worker
+      `HOME` is the run's home under the state directory, two runs of one role get different
+      homes, and a run's home is gone once it ends; the kill names the worker user and runs before
+      every reset, including the one before #153's first step after the worker
+- [ ] 2.8 When the worker exits, copy its session log, the file under `~/.claude/projects/` for
+      its session id, into Igor's state directory (`/var/lib/igor` under the unit,
+      `~/.local/state/igor` elsewhere) before any reset of that home, mode `0600`. With a worker
+      user, read it as that user through #175's spawn, opened without following a link and only
+      where `fstat` shows a regular file whose hard-link count is 1. The run's record in `executions.ndjson`
+      names the copy's path beside its session id, or says the log was not copied. Tests: after
+      the worker exits and a later call resets the home, the record names a file that still
+      exists and holds the log; a log replaced by a link to a file only Igor can read is not
+      copied, and the record says so
 
 ## 3. Startup check
 
@@ -185,7 +210,7 @@ wherever it runs.
       - write `/opt/igor/skills/.claude-plugin/plugin.json` as
         `{"name": "igor", "version": "0.0.0", "description": "Igor's pinned skills"}`;
       - install with
-        `SHARED_SKILLS_TARGET=/opt/igor/skills/skills python3 /opt/igor/shared-skills/.agents/skills/manage-skills/scripts/skills.py install --no-hook prose bug-hunter`,
+        `SHARED_SKILLS_TARGET=/opt/igor/skills/skills python3 /opt/igor/shared-skills/.agents/skills/manage-skills/scripts/skills.py install --no-hook prose bug-hunter spec-trace`,
         as root;
       - that Igor finds the plugin there with no setting, and that `IGOR_SKILLS_DIR` in the
         unit's environment points it elsewhere;

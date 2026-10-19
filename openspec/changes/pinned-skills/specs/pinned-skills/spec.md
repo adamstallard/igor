@@ -16,6 +16,23 @@ SHALL use `igor:<name>`.
 
 `IGOR_SKILLS_DIR` SHALL be an absolute path, and a relative one SHALL refuse the start.
 
+Where `skills_dir` does not exist, `igor serve` SHALL refuse to start, naming the path, and exit
+with status 78. `igor run` SHALL then load no skills: no call it makes SHALL carry
+`--plugin-dir`, it SHALL make no startup check (*Igor confirms its skills load before its first
+model call*), and it SHALL say as it starts that the skills were not loaded, naming the path.
+
+#### Scenario: serve refuses a missing skills directory
+
+- **WHEN** `igor serve` starts and `skills_dir` does not exist
+- **THEN** it refuses to start, naming `skills_dir`
+- **AND** the process exits with status 78
+
+#### Scenario: run loads no skills where the directory is missing
+
+- **WHEN** `igor run` starts on a machine where `skills_dir` does not exist
+- **THEN** it says as it starts that the skills were not loaded, naming `skills_dir`
+- **AND** no call it makes carries `--plugin-dir`, and it makes no startup check
+
 #### Scenario: The default directory is used
 
 - **WHEN** Igor starts with no `IGOR_SKILLS_DIR` in its environment
@@ -46,11 +63,12 @@ SHALL use `igor:<name>`.
 
 ### Requirement: Every model call names the plugin directory
 
-Every `claude -p` process Igor spawns SHALL carry `--plugin-dir <skills_dir>`, with one exception:
-the usage read (`runUsage`, which the budget gate and `igor budget` run), which only reads a
-seat's usage and SHALL NOT carry it. The calls that carry it are the worker, triage and every
-other model step, as this spec calls each call in which a model does Igor's work. No call SHALL
-pass `--bare`.
+Every `claude -p` process Igor spawns SHALL carry `--plugin-dir <skills_dir>`, with two
+exceptions. The usage read (`runUsage`, which the budget gate and `igor budget` run) only reads a
+seat's usage and SHALL NOT carry it. And under `igor run` where `skills_dir` does not exist, no
+call carries it (*Skills come from one plugin directory the server names*). Otherwise, the calls
+that carry it are the worker, triage and every other model step. A *model step* is any call in
+which a model does Igor's work. No call SHALL pass `--bare`.
 
 The worker invokes an `igor:<name>` skill itself, through the Skill tool, when its task calls
 for it.
@@ -60,12 +78,12 @@ The flag loads every skill installed under `skills_dir` for every role. A role's
 
 #### Scenario: The worker names the directory
 
-- **WHEN** Igor spawns a worker
+- **WHEN** Igor spawns a worker, and `skills_dir` exists
 - **THEN** its arguments include `--plugin-dir` followed by `skills_dir`
 
 #### Scenario: Triage names the directory
 
-- **WHEN** Igor spawns a triage call
+- **WHEN** Igor spawns a triage call, and `skills_dir` exists
 - **THEN** its arguments include `--plugin-dir` followed by `skills_dir`
 
 #### Scenario: Every other model call names the directory
@@ -106,11 +124,15 @@ to keep them out.
 
 ### Requirement: Every call in the worker's home starts from Igor's template
 
-The worker's home SHALL last across runs. With a worker user (#175), it SHALL be that user's own
-home. With none, Igor SHALL keep one home per role in its state directory, the directory where
-Igor keeps its own files on the machine, such as `~/.local/state/igor/home/<role>`, and set the
-worker's `HOME` to it. Running with no worker user, so that the worker runs as the user Igor runs
-as, is same-user mode; `igor run` is the one command that runs that way (#175).
+With a worker user (#175), the worker's home SHALL be that user's own home, and it SHALL last
+across runs. With none, each `igor run` SHALL have a home of its own in Igor's state directory, the
+directory where Igor keeps its own files on the machine, named by the run's id, such as
+`~/.local/state/igor/home/<role>-<run>`, where `<run>` is the run id each `igor run` picks
+under #179 (`concurrent-instances`), whose *The sweep removes trees by rank, never by age* defines
+it because the run's trees carry it too. Igor SHALL set the worker's `HOME` to it, and SHALL
+remove it when the run ends. No two runs share a home, and within one run the home lasts across
+its tasks. Running with no worker user, so that the worker runs as the user Igor runs as, is
+same-user mode; `igor run` is the one command that runs that way (#175).
 
 Before every `claude -p` Igor starts in that home, Igor SHALL replace `~/.claude` and
 `~/.claude.json` with a fresh copy of a template that ships with Igor, keeping nothing of what
@@ -128,12 +150,19 @@ SHALL hold:
 The template SHALL sit in Igor's installation, the directory Igor's own code is installed in.
 With a worker user, #175's start check confirms that user cannot write it.
 
+`igor run` has no sandbox. In same-user mode the worker can write the template and
+`skills_dir`, and it can make `~/.claude` or `~/.claude.json` a link to a file the person owns,
+which a reset may then follow, removing or overwriting that file. These are limits of `igor
+run`, a developer at their own terminal.
+
 Nothing else in the home SHALL be reset: `~/.gitconfig`, and the files a repository's tests
-cache in the home, persist across runs.
+cache in the home, persist for as long as the home does.
 
 With a worker user, before every reset, Igor SHALL kill every process that user owns, either by
 user or by the user's systemd slice; either way meets this requirement, and a kill of the
-worker's process group alone does not.
+worker's process group alone does not. #175's *A kill, a release and a sweep reach what the
+worker owns* makes the same kill before a tree is released, so no such process outlives its
+task.
 
 #### Scenario: A later call does not load what an earlier one wrote
 
@@ -167,8 +196,8 @@ worker's process group alone does not.
 
 #### Scenario: The rest of the home persists
 
-- **WHEN** a run leaves `~/.gitconfig` and a file under `~/.cache` in the worker's home
-- **AND** Igor starts the next run in that home
+- **WHEN** a task leaves `~/.gitconfig` and a file under `~/.cache` in the worker's home
+- **AND** Igor starts the next task in that home
 - **THEN** each of those files is still there
 
 #### Scenario: A worker user's home is its own
@@ -178,12 +207,13 @@ worker's process group alone does not.
   home
 - **AND** that home is reset before each of those calls
 
-#### Scenario: Same-user mode has a home per role
+#### Scenario: Each igor run has a home of its own
 
-- **WHEN** Igor runs with no worker user, for the role `generalist`
-- **THEN** each `claude -p` it starts for that worker's task has `HOME` set to that role's home
-  under Igor's state directory
+- **WHEN** two `igor run`s of the role `generalist` run at once
+- **THEN** each `claude -p` either starts has `HOME` set to its own run's home under Igor's state
+  directory, which the other run never uses
 - **AND** that home is reset as a worker user's is
+- **AND** each run's home is gone once that run ends
 
 #### Scenario: The worker cannot change the template
 
@@ -195,9 +225,34 @@ worker's process group alone does not.
 
 - **WHEN** a worker running as a worker user starts a process that calls `setsid()` and keeps
   running after the worker exits
-- **THEN** Igor kills it before the next reset in that user's home: the one before #153's next
-  model step in the same task, or, where the task has none, the one before the next task's
-  worker
+- **THEN** Igor kills it before the next reset in that user's home, the one before #153's next
+  model step in the same task
+
+### Requirement: The worker's session log outlives the reset
+
+When the worker exits, Igor SHALL copy its session log, the file Claude Code writes for the
+session under `~/.claude/projects/`, into Igor's state directory, before any reset of that home.
+The state directory is `/var/lib/igor` under the shipped unit, and `~/.local/state/igor`
+elsewhere. Only the user Igor runs as SHALL be able to read the copy. With a worker user, Igor
+SHALL read the log as that user, without following a link and only where it is a regular file
+whose hard-link count is 1, as #175's (`worker-user`) requirement *The Igor reads no file on the worker's behalf through a link* reads a
+file the worker wrote; a log that fails that is not copied, and the record says so. The run's
+record in the execution log (`executions.ndjson` on the state branch) SHALL name the copy's path
+beside the session id it already records.
+
+#### Scenario: The record points at a log the reset did not delete
+
+- **WHEN** a worker exits and Igor then resets its home for a later call
+- **THEN** a copy of the worker's session log is in Igor's state directory, readable by Igor's
+  user alone
+- **AND** the run's record names that copy, which the reset left in place
+
+#### Scenario: A session log the worker replaced with a link is not copied
+
+- **WHEN** a worker running as a worker user replaces its session log with a link to a file only
+  Igor can read
+- **THEN** Igor copies nothing through the link
+- **AND** the run's record says the log was not copied
 
 ### Requirement: Igor confirms its skills load before its first model call
 
@@ -211,7 +266,8 @@ word, such as `ok`, on stdin, as #175's (`worker-user`) *A prompt reaches claude
 in its arguments* requires. The call SHALL be an ordinary spend on that seat, run to its end and
 recorded as any other call is.
 
-Where the gate names no seat when Igor starts, no call is made, as #171's *A spend with no seat
+Under `igor run` where `skills_dir` does not exist, no check is made (*Skills come from one
+plugin directory the server names*). Where the gate names no seat when Igor starts, no call is made, as #171's *A spend with no seat
 behind it is not made* requires. Igor starts, and runs the check before its first model call
 once the gate names a seat.
 

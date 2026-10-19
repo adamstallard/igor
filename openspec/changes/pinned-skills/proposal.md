@@ -27,8 +27,8 @@
    its own name beside `igor:<name>`; one in the worked repository does not load at all
    (decision 8, measured 2026-10-18). `docs/deployment.md` tells the operator to keep the service
    user and the worker user (#175) free of hooks, a `CLAUDE.md` and home skills (task 5.3).
-7. **One plugin directory for every role.** The coordinating agent chose this on 2026-10-11, for
-   Adam to overrule. *Rejected:* a plugin directory per role, which is one directory per distinct
+7. **One plugin directory for every role.** The coordinating agent chose this on 2026-10-11, and
+   Adam let it stand on 2026-10-19. *Rejected:* a plugin directory per role, which is one directory per distinct
    `skills` list among the roles (#153), each to install, pin and check.
 8. **Every call excludes the worked repository's own settings, with `--setting-sources user` and
    `--strict-mcp-config`** (Adam, 2026-10-17). The settings are the repository's
@@ -40,22 +40,25 @@
    `CLAUDE.md` files, commands and agents too.
 9. **The worker runs in a home that lasts, and before each `claude -p` Igor resets its `~/.claude`
    and `~/.claude.json` from a built-in template** (Adam, 2026-10-17). With a worker user (#175),
-   the home is that user's own. With none, Igor keeps one home per role under its state directory,
-   such as `~/.local/state/igor/home/<role>`, and sets `HOME` to it; that is #175's same-user
-   mode, `igor run`, where the worker runs as the user Igor runs as. The template ships with Igor
+   the home is that user's own. With none, each `igor run` has a home of its own under Igor's
+   state directory, removed when the run ends (decision 23), and Igor sets `HOME` to it; that is
+   #175's same-user mode, `igor run`, where the worker runs as the user Igor runs as. The template ships with Igor
    and is nearly empty (task 2.4). The reset keeps nothing of what it replaces, a stored login
    included (decision 17). Nothing else in the home is reset, so `~/.gitconfig` (with #175's
    `safe.directory`) and the files a repository's tests cache there stay. Without the reset, a
    worker steered by an item's text could plant hooks, a `CLAUDE.md` or skills for every later
    call. A file a run leaves elsewhere in the home, such as `~/.npmrc`, can steer later runs in
    that home. Adam accepted that: with a worker user, each instance has its own home (#175), so
-   such a file reaches no other instance, while in same-user mode it can reach other roles.
-   *Rejected:* a fresh, empty home per run, which loses `~/.gitconfig` and the caches a
+   such a file reaches no other instance, and in same-user mode it reaches only the later tasks
+   of the same run.
+   *Rejected:* a fresh, empty home for every task, which loses `~/.gitconfig` and the caches a
    repository's tests need; and resetting `~/.claude` alone, which leaves `~/.claude.json` for a
    worker to write.
 10. **The usage read passes no `--plugin-dir`** (Adam, 2026-10-17). It runs no skill. `igor
     serve` runs it in the budget gate, and `igor budget` runs it too, often on a person's
-    machine, where `skills_dir` names a server path.
+    machine, where `skills_dir` names a server path. #143 removes the usage read, `runUsage`
+    with it, in the first change built after #171's code lands (#143's decision 37); until
+    then this decision applies to it.
 11. **Two facts the flag rests on were measured before anything is built** (Adam, 2026-10-17,
     task 0.3): a skill the manager installed as a link is given its path under the plugin
     directory, not the clone's, and `--plugin-dir` gives the worker no write access to the
@@ -72,7 +75,8 @@
     systemd slice is the implementer's choice (Adam, 2026-10-17). A process that left its
     process group with `setsid()` outlives a kill of the group, and could otherwise rewrite the
     home after a reset, including in the gap between the worker and the model steps of #153
-    that follow it (decision 14). #175 measured on
+    that follow it (decision 14). Under `igor serve`, #175's kill by user also runs before a
+    tree's release, so no process that left its group outlives its task (decision 24). #175 measured on
     2026-10-18 that Claude Code starts each Bash command in a new session, so every command a
     worker runs has left the group: a kill of the group did not end `npm test`, and a kill of
     every process the worker user owns did. Same-user mode has no such
@@ -87,14 +91,12 @@
 15. **The in-force scenario *No state carries between tasks* is reworded** (Adam, 2026-10-17).
     Nothing a worker writes reaches a later task, except what lies outside decision 9's reset,
     and the scenario names those exceptions. `specs/task-execution/spec.md` is a MODIFIED delta.
-16. **Same-user mode is `igor run` alone, so one home per role is enough** (Adam, 2026-10-17).
-    Under #179 a role runs as several processes, each numbered by its rank, and the home need not
-    be per rank. #175 has no `igor serve --same-user`, so no served rank uses a same-user home.
+16. **Same-user mode is `igor run` alone** (Adam, 2026-10-17). #175 has no `igor serve --same-user`, so no served rank uses a same-user home.
     Nor does same-user mode run under the systemd unit (`deploy/igor.service`), whose
     `ProtectHome=read-only` would make a home under `~/.local/state` unwritable. Under #179,
     `igor run` is rank 0, outside the roster (the list of ranks a role's serving processes run),
     and runs beside serving ranks with no refusal and no wait (Adam, 2026-10-18). A serving rank
-    never uses the per-role home, so a run beside one shares no home with it.
+    never uses a run's home, so a run beside one shares no home with it.
 17. **The reset keeps no stored login, because Igor never uses one** (Adam, 2026-10-18). Every
     seat has a Claude token, and every call that spends a seat authenticates with that seat's
     token, from its environment, under `igor serve` and `igor run` alike. Under `igor run` the
@@ -115,66 +117,99 @@
 18. **The startup check runs on haiku, with `--model haiku`** (Adam, 2026-10-18). With no
     `--model` it ran on sonnet, at $0.026 a start against about $0.001 on haiku (measured
     2026-10-18). The check reads only the skill list, which does not depend on the model.
-19. **Six smaller choices, made by the agents that wrote this change, for Adam to accept or
-    overrule:** a relative `IGOR_SKILLS_DIR` refuses the start; the skills Igor expects are every
+19. **Six smaller choices, made by the agents that wrote this change and accepted by Adam on
+    2026-10-19:** a relative `IGOR_SKILLS_DIR` refuses the start; the skills Igor expects are every
     entry under `<skills_dir>/skills/`, not a list of its own; a skill whose commit cannot be read
     is reported as not checked, and the start goes on; Igor reports each skill's commit but does
     not refuse one older than decision 4's `075a73a`; Igor trusts a skill's clone for that read
     only when root owns it, since trusting a clone turns off git's guard against running
-    configuration another user controls, and turns git's file-system monitor off for that read;
-    and the start is refused when `skills_dir` holds anything but `plugin.json` and `skills/`, so
+    configuration another user controls, and Igor also turns git's file-system monitor off for
+    that read; and the start is refused when `skills_dir` holds anything but
+    `.claude-plugin/plugin.json` and `skills/`, so
     the plugin cannot add a hook, an MCP server, a command or an agent to every call.
+
+20. **Where `skills_dir` does not exist, `igor serve` refuses to start and `igor run` loads no
+    skills** (Adam, 2026-10-19). `igor serve` refuses, naming the path, and exits with status
+    78. `igor run`, as on a developer's machine without the server's install, passes no
+    `--plugin-dir` on any call, makes no startup check, and says as it starts that the skills
+    were not loaded. *Rejected:* refusing under `igor run` too, which would stop every
+    development run on a machine without `/opt/igor/skills`; and passing `--plugin-dir` anyway,
+    to a directory whose handling by `claude -p` is unmeasured.
+21. **Citations ahead of the archive order are accepted** (Adam, 2026-10-19). This change cites
+    #171's *A spend with no seat behind it is not made*, #82's *A process that refuses to start
+    exits with status 78*, #179's ranks, and #153's `skills` list, prose pass and bug hunt, and
+    issue [#204](https://github.com/adamstallard/igor/issues/204) archives all four after this
+    one. Until they archive, the in-force text cites rules not yet in force; every cited change
+    archives in the same series.
+22. **In same-user mode the reset may follow a link** (Adam, 2026-10-19). The worker can make
+    `~/.claude` or `~/.claude.json` a link to a file the person owns, and a reset run as the
+    person may then remove or overwrite that file. `igor run` has no sandbox, and this is one of
+    its limits. *Rejected:* a reset that never follows a link, which the authoring agents
+    recommended.
+23. **Each `igor run` has a home of its own, removed when the run ends** (Adam, 2026-10-19). The
+    home is named by the run's id, such as `~/.local/state/igor/home/<role>-<run>`, under Igor's
+    state directory, so two `igor run`s of one role at once share no home and neither's reset
+    replaces `~/.claude` under the other's call. The run id is the one #179 gives each run, which its
+    trees also carry, and the run removes only its own trees (#179, #175). Within one run the home lasts across its tasks.
+    *Rejected:* one home per role, which two runs of the role at once would share; and a lock
+    that makes the second run refuse.
+24. **A process that escaped its group is killed by #175's kill, not by one of this change's**
+    (Adam, 2026-10-19). Under `igor serve`, #175's decision 27 kills every process the worker
+    user owns whenever it kills a worker, once the last model step exits, after the repository's
+    checks that #189 (`loop-verifies-commands`) runs as the worker user, and before a tree's
+    release. So no process that left its group outlives its task, and this change adds no kill
+    when a task ends.
+25. **In same-user mode the worker can write the template and `skills_dir`** (Adam, 2026-10-19).
+    There the worker runs as the user that owns Igor's installation and the skills a developer
+    installed, and #175's start check, which confirms the worker user cannot write either, does
+    not run. That is a limit of `igor run`, a developer at their own terminal.
+26. **Igor copies the worker's session log into its state directory when the worker exits, and
+    the execution record points at the copy** (Adam, 2026-10-19). The log lies under
+    `~/.claude/projects/`, which the next reset deletes, and `projects/` cannot be kept out of
+    the reset, since Claude Code's memory for a project lives there and would load into later
+    calls.
+27. **Task 5.1 installs `spec-trace` with `prose` and `bug-hunter`** (Adam, 2026-10-19). #190
+    (`review-evidence`) adds to each pull request a table of what the loop checked, and fills its
+    *Spec scenarios* row by running
+    `<skills_dir>/skills/spec-trace/scripts/spec_trace.py`, and without it that row would read
+    `not checked` on every pull request.
 
 **Still open:**
 
-- **Where `/opt/igor/skills` does not exist**, as on a developer's machine running `igor run`,
-  what Igor does is not decided: pass `--plugin-dir` anyway, pass none, or refuse to start. The
-  requirement as written refuses to start, under `igor serve` and `igor run` alike, since a
-  check with no skill to check must not pass. What `claude -p` does with a plugin directory that
-  does not exist is unmeasured.
-  *Recommendation:* `igor serve` refuses to start, naming the path; `igor run` passes none and
-  says the skills were not loaded.
-- **Citations ahead of the archive order.** This change cites #171's *A spend with no seat
-  behind it is not made*, #82's *A process that refuses to start exits with status 78*, #179's
-  ranks, and #153's `skills` list, prose pass and bug hunt, but issue
-  [#204](https://github.com/adamstallard/igor/issues/204) archives all four after this one, so
-  until they archive the in-force text cites rules not yet in force. The choice is to
-  accept that window, reorder #204, or word the citations by change rather than by requirement.
-  *Recommendation:* accept the window, since every cited change archives in the same series.
 - **The ambient login until #171 archives.** Until #171 archives, the in-force `seat-budget`
   lets a seat name no token and run on the login stored on the host, which decision 17 forbids;
   an organization with no seats runs its calls that way too. Under this change no call runs
   without a seat: the startup check waits for one the gate names, and every other call comes
   after it. Nothing is asked of Adam: what is built follows decision 17, and the item stays open
   only until #171 archives.
-- **A reset that follows a link.** In same-user mode the worker can make `~/.claude` or
-  `~/.claude.json` a link to a file the person owns, and a reset run as the person that follows
-  it would remove or overwrite that file. *Recommendation:* the reset removes and creates
-  without following links.
-- **Two `igor run`s of one role at once** share the role's home, and one's reset can replace
-  `~/.claude` under the other's running call. Both are rank 0, and #179 has no rule for two
-  processes at one rank. *Recommendation:* the second `igor run` of a role refuses while another
-  holds a lock on that role's home, naming the role.
-- **A process that escaped its group outlives its task.** Igor kills every process the worker
-  user owns before each reset, so an escaped process runs, holding its seat's token, until the
-  next call in that home. *Recommendation:* also kill them when a task ends; it is the same kill,
-  and it shortens how long an escaped process holds the token.
-- **The template and `skills_dir` in same-user mode.** There the worker runs as the user that owns
-  Igor's installation and the skills a developer installed, so it can write the template and the
-  scripts #153's verification runs, and #175's start check, which confirms the worker user cannot
-  write the template, does not run. *Recommendation:* accept both as limits of same-user mode,
-  which is a developer at their own terminal.
-- **The worker's session log does not survive the reset.** The execution record's `session`
-  points at the worker's log under `~/.claude/projects/`, and the next reset in that home
-  deletes it. Keeping `projects/` out of the reset is not an answer, since Claude Code's memory
-  for a project lives there and loads into later calls. *Recommendation:* Igor copies the log
-  into its state directory when the worker exits, before the next reset, and the record points
-  at the copy.
-- **spec-trace is not installed.** Task 5.1 installs `prose` and `bug-hunter` only, and #190,
-  which shows on a pull request what the loop checked, fills its *Spec scenarios* row by running
-  `<skills_dir>/skills/spec-trace/scripts/spec_trace.py`, so on a deployment that follows 5.1 that
-  row reads `not checked` on every pull request. *Recommendation:* add `spec-trace` to 5.1's
-  install command.
+- **A home a crashed `igor run` left.** Decision 23 removes a run's home when the run ends, and
+  a run that crashes leaves it under Igor's state directory, holding no token, since the seat's
+  token reaches a call only through its environment. Nothing removes it but the person.
+  #175 asks Adam the same of a crashed run's trees, and recommends leaving both to the person,
+  with the docs for `igor run` saying where they are.
+- **`igor run` with no `skills_dir`, against #153, for Adam.** Decision 20 has such a run load
+  no skills. #153 refuses to start a command that runs a model step for a role whose `skills`
+  lists a skill not installed under `skills_dir`, so a role listing `prose` is refused there.
+  *Recommendation:* keep #153's refusal, so a role that signs its text never runs unsigned; a
+  role with an empty `skills` list still runs without `skills_dir`. #153 also names this
+  change's *Igor confirms its skills load before its first model call* as the refusal of a
+  missing directory, but that refusal is in *Skills come from one plugin directory the server
+  names*. That citation is #153's to correct.
+- **Findings of the 2026-10-19 consistency read left for the next pass.** Task 5.3's note says
+  the service user's home reaches every seat probe, but #171 gives the probe an empty `HOME`.
+  Four rules are each stated in two or three changes, which will drift apart unless one states
+  it and the others cite it: that `igor run` accepts a login the developer keeps outside `HOME`
+  (here and #171); that the startup check is charged through the gate (here and #171); the kill
+  before a reset (here and #175); and that a role's `skills` does not decide what loads (here,
+  #153 and #190). Three refusals of the startup check have no scenario: an extra file in
+  `.claude-plugin/`, a `plugin.json` key other than the `hooks` key a scenario already covers,
+  and any refusal under `igor run`. A skill's `SKILL.md` can
+  declare `allowed-tools`, which the check does not read; no pinned skill declares one today.
+  Task 0.3 is ticked but did not run on the version the server runs, which is not known. The
+  shared-skills commit to pin, with `--goals-file` on prose's `sign`, does not exist yet. And
+  decision 19 does not list the keys `plugin.json` may hold, `name`, `version` and
+  `description`, though the spec fixes them, so a reviewer approving the decisions does not see
+  that choice.
 
 ## Why
 
@@ -241,8 +276,9 @@ every call, so they live in one place, `pinned-skills`.
   on it (*Still open*, the ambient login).
 - **#143** withdraws `scheduled-observation`, whose `igor observe` reads usage under a stored
   login, which decision 17 forbids. This change assumes #143 has archived. With a token in its
-  environment, the usage read printed no window percentages on 2026-10-18 (`design.md`); what
-  replaces it is #143's to settle, and decision 10 applies to whatever usage read remains.
+  environment, the usage read printed no window percentages on 2026-10-18 (`design.md`), and
+  #143 removes it in the first change built after #171's code lands (#143's decision 37);
+  decision 10 applies to it until then.
 - **#175** (`worker-user`) archives before this change (#204): the startup check's prompt goes on
   stdin, as #175's *A prompt reaches claude on stdin, never in its arguments* requires.
 - **#82** (`stopped-scope-visible`): the startup check's refusal exits with status 78, as #82's

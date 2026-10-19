@@ -217,11 +217,14 @@ Each line says what was measured and what it showed.
   `Current session … % used` or `Current week … % used` line, so `parseUsage` in
   `src/budget.ts` on `main` would throw `no usage figures in output`. Every call carries a
   token under decision 17, so the usage read, as `main` has it, reads no window. That is #143's
-  to settle (*How it composes*); decision 10 applies to whatever usage read remains.
+  to settle. #143 (`read-seat-windows-from-the-stream`) removes the read once #171
+  (`seat-files`), which gives every seat a token, has its code built: the first change built
+  after that removes it (#143's decision 37). Until then the proposal's decision 10 applies to
+  it, and it carries no `--plugin-dir`.
 
 **Not measured:** the real Keychain item, a real second account's stored login, and the Claude
-Code version the server runs. What `claude -p` does with a plugin directory that does not exist
-is open in the proposal.
+Code version the server runs. Nor is what `claude -p` does with a plugin directory that does not
+exist, so Igor never passes one (decision 20).
 
 ## Decisions
 
@@ -235,10 +238,16 @@ Igor at another directory of skills, the same reason #175 keeps its worker user 
 `igor.config.yaml`. A lore file that names `skills_dir` is refused by the strict unknown-key
 check, with no message of its own.
 
-Two smaller choices here are the authoring agents', for Adam to overrule (proposal, decision
-19). `IGOR_SKILLS_DIR` must be absolute, so it never depends on the directory Igor starts in.
+Two smaller choices here are the authoring agents', which Adam accepted on 2026-10-19
+(proposal, decision 19). `IGOR_SKILLS_DIR` must be absolute, so it never depends on the directory Igor starts in.
 Which skills Igor expects is read from the directory itself: every entry under
 `<skills_dir>/skills/`.
+
+**Where `skills_dir` does not exist (Adam, 2026-10-19),** `igor serve` refuses to start,
+naming the path, and exits with status 78. `igor run`, as on a developer's machine without the
+server's install, passes no `--plugin-dir`, makes no startup check, and says as it starts that
+the skills were not loaded. What `claude -p` does with a plugin directory that does not exist is
+unmeasured, so no call is given one.
 
 The plugin is named `igor` (decided by Adam, 2026-10-11), so skills load as `igor:prose` and
 `igor:bug-hunter`. The deployment writes the one-line `plugin.json`; the startup check fails if
@@ -246,7 +255,7 @@ the name differs, because no `igor:<name>` would be listed.
 
 ### One plugin directory for every role
 
-**The coordinating agent's choice (2026-10-11), not Adam's; he can overrule it.** Every call
+**The coordinating agent's choice (2026-10-11), which Adam let stand on 2026-10-19.** Every call
 carries the one `--plugin-dir <skills_dir>`, so every installed skill loads for every role. A
 role's `skills` list (#153) decides which skills its worker is directed to use and which Igor
 verifies, not what loads. A plugin directory per role would mean one directory per distinct
@@ -291,10 +300,12 @@ Which home:
 
 - **With a worker user (#175):** that user's own home, `/var/lib/igor-worker-<role>-<rank>`,
   where `<rank>` numbers the instances of one role (#179).
-- **Without one:** one home per role under Igor's state directory, the directory where Igor
-  keeps its own files on the machine, such as `~/.local/state/igor/home/<role>`. Igor sets it as
-  the worker's `HOME`. That is #175's same-user mode, `igor run`, where the worker runs as the
-  user Igor runs as. The worker then never loads the `~/.claude` of the user Igor runs as,
+- **Without one:** a home for each `igor run`, under Igor's state directory, the directory where
+  Igor keeps its own files on the machine, named by the run's id, such as
+  `~/.local/state/igor/home/<role>-<run>` (Adam, 2026-10-19). Igor sets it as the worker's
+  `HOME` and removes it when the run ends, so two runs of one role at once share no home. The
+  run id is the one #179 gives each run, which the run's trees also carry. Having no worker user
+  is #175's same-user mode, `igor run`, where the worker runs as the user Igor runs as. The worker then never loads the `~/.claude` of the user Igor runs as,
   whether that is the service user or a person running `igor run` on their own machine.
 
 What the template holds. It ships with Igor, in its installation, which #175's start check
@@ -325,19 +336,19 @@ How the reset works:
   does not move; Igor neither hides nor refuses it, and on 2.1.303 a set token wins over it.
   Should a later version prefer the login, `run` spends it, on the developer's own machine and
   quota, which Adam accepted on 2026-10-18. A developer's login in `~/.claude/.credentials.json`
-  of their own home, as on Linux, is out of the worker's reach because `HOME` is the role's home.
-- **What it deletes that Igor reads:** the worker's session log, under `~/.claude/projects/`,
-  which the execution record's `session` points at. `projects/` cannot be kept out of the reset,
-  since Claude Code's memory for a project lives there too; what Igor does about the log is open
-  in the proposal.
+  of their own home, as on Linux, is out of the worker's reach because `HOME` is the run's home.
+- **What it deletes that Igor reads:** the worker's session log, under `~/.claude/projects/`.
+  `projects/` cannot be kept out of the reset, since Claude Code's memory for a project lives
+  there too. So when the worker exits, Igor copies the log into its state directory, before any
+  reset, and the execution record points at the copy (Adam, 2026-10-19).
 - **What persists:** everything else in the home: `~/.gitconfig`, where #175's start check sets
   `safe.directory` so the worker's git trusts a tree the service user owns, and the files a
   repository's tests cache in the home. A file a run leaves there, such as `~/.npmrc`, can steer
   later runs in that home. Adam accepted that; with a worker user, #175 gives each instance its
-  own, so such a file reaches no other instance. In same-user mode every worker runs as one user
-  and can write every role's home, so such a file can reach other roles.
+  own, so such a file reaches no other instance. In same-user mode the home is removed when the
+  run ends, so such a file reaches only the later tasks of that run.
 
-*Rejected:* a fresh, empty home per run, which loses `~/.gitconfig` and the caches a
+*Rejected:* a fresh, empty home for every task, which loses `~/.gitconfig` and the caches a
 repository's tests need; resetting `~/.claude` alone, which leaves `~/.claude.json` for a worker
 to write; and keeping `~/.claude/.credentials.json` so that an organization with no seats could
 run on a stored login, which leaves open where a worker user's login comes from and lets a
@@ -353,15 +364,24 @@ Killing before every reset, rather than at the end of the task, also covers the 
 worker and #153's later steps. Same-user mode has no such kill, since killing every process of the
 user Igor runs as would kill Igor and, under `igor run`, the person's own processes. There an
 escaped process can rewrite the home after any reset; that is a limit of same-user mode, which
-runs only on a developer's machine.
+runs only on a developer's machine. Under `igor serve`, #175's kill by user also runs before a
+tree's release (#175's decision 27), so an escaped process does not outlive its task, and this
+change adds no kill of its own when a task ends (Adam, 2026-10-19).
+
+**`igor run` has no sandbox (Adam, 2026-10-19).** In same-user mode the worker runs as the user
+that owns Igor's installation and the skills a developer installed, so it can write the template
+and `skills_dir`, and #175's start check, which confirms a worker user cannot write the template
+or `skills_dir`, does not run. The worker can also make `~/.claude` or `~/.claude.json` a link to
+a file the person owns, and the reset, run as the person, may follow it and remove or overwrite
+that file. All three, a writable template, a writable `skills_dir` and a reset that follows a
+link, are accepted as limits of `igor run`, a developer at their own terminal.
 
 **Same-user mode is `igor run` alone (Adam, 2026-10-17).** #175 has no `igor serve --same-user`,
-so no served rank shares a per-role home. Nor does same-user mode run under the systemd unit
+so no served rank uses a run's home. Nor does same-user mode run under the systemd unit
 (`deploy/igor.service`), whose `ProtectHome=read-only` would make a home under `~/.local/state`
 unwritable. Under #179 `igor run` is rank 0 and runs beside serving ranks with no refusal and no
-wait (Adam, 2026-10-18). A serving rank never uses the per-role home, so a run beside serving
-ranks shares no home with them. Two `igor run`s of one role at once do share the role's home,
-and one's reset can replace `~/.claude` under the other's call; that is open in the proposal.
+wait (Adam, 2026-10-18). A serving rank never uses a run's home, so a run beside serving
+ranks shares no home with them, and two `igor run`s of one role at once each have their own.
 
 ### The startup check spends a seat through the gate
 
@@ -487,4 +507,5 @@ the flag gives it nothing. And on a person's machine, where `igor budget` runs i
 names a server path that does not exist there, and what `claude -p` does with a missing plugin
 directory is unmeasured. It still passes `--setting-sources user` and `--strict-mcp-config`,
 like every call. Under a token, `/usage` printed no window percentages (measured 2026-10-18,
-above), so what this read can still report is #143's to settle.
+above), and #143 removes this read, `runUsage` with it, in the first change built after #171's
+code lands (#143's decision 37).
