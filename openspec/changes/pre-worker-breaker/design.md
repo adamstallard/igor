@@ -16,15 +16,18 @@ The row holds no text from the failure, only an error class and a hash (Adam, 20
 and `hash` is the first twelve hexadecimal digits of the SHA-256 of the masked message (*What
 "identical" means*, below). The state branch, `igor-state`, may be public, and a tracker's error
 can carry the response text of a private repository. The same failure goes to the process's own
-log, the server's journal under systemd, as one line of JSON, so a message
+log, as one line of JSON, so a message
 holding a newline or a quote is escaped and cannot break the line or forge another:
 
 ```json
 {"kind": "pre-worker", "item": "owner/repo#12", "role": "web", "source": "tree", "hash": "3f9a0c2b71de", "masked": "git clone exited #: fatal: …", "raw": "…"}
 ```
 
-To find the masked message behind a row's hash, a person searches the journal for that
-hash. Twelve digits are 48 bits, so two different masked
+The process's own log is the journal of the server the rank runs on, under systemd, or the
+standard error of an `igor run`, which is gone once its terminal is. To find the masked message
+behind a row's hash, a person searches the journal of the server serving that row's role and
+rank for the hash; a row an `igor run` wrote has its text only where its operator kept the
+output. Twelve digits are 48 bits, so two different masked
 messages from one item and role sharing a hash is not a practical concern.
 
 A failure that records a cure key (#101's name for a fault in the Igor's own setup) writes no
@@ -41,7 +44,10 @@ Three places could hold the count. Two are rejected.
   can also disagree with it. [#101](https://github.com/adamstallard/igor/pull/101) rejected a
   separate store for its conditions for both reasons (Adam, 2026-10-11), and a per-item failure
   count is the same kind of thing, a trailing run of identical events.
-- **Chosen: rows in the log.** Appends cannot overwrite each other. The log is already where a
+- **Chosen: rows in the log.** An append never overwrites a row another process wrote:
+  `appendRecord` reads the day's file and writes it back with one line added, and the code host
+  refuses the write if the file changed since the read. The refused row is lost, though,
+  since nothing retries it, so of two appends to one file at once, one can be lost (task 0.3). The log is already where a
   run is recorded, and #101 adds rows that are not runs, carrying a `kind`, so this adds a row
   kind rather than a mechanism. In the in-force code a failure before the worker that is thrown
   writes no row: `cli.ts` records a run only where `execute` returned a result for it, and a
@@ -72,7 +78,7 @@ and apply to each row the first step that fits it:
    (below); a failure before the worker that `execute` returned, whose run row stays beside its
    `pre-worker` row (below); and #101's catch-up whose merge came out clean. A row without the
    mark started the worker, so a row written before #101 marked rows stops the count. That errs
-   toward fewer set-downs.
+   toward fewer set-downs (the proposal's decision 21).
 3. Count a `pre-worker` row whose `source` and `hash` match the failure in hand.
 4. Stop at a run row whose run started the worker, including one that recorded a cure key after
    the worker started, or at a `pre-worker` row that does not match.
@@ -134,6 +140,11 @@ by its own rule instead (*A failure every item meets ends the cycle*, below).
    the known path keeps working whatever the name holds (Adam, 2026-10-18). Because the count
    carries on across a role's ranks, trees of different ranks must mask to the same text, and
    they do.
+   The path is known only if `provision` reports it: in the in-force code it makes the
+   directory itself and, when the clone fails, removes it and rethrows, so the caller never
+   learns it. Its random suffix is six characters that mask 2 does not catch, so each failed
+   clone would give a different signature. Task 3.1 has `provision` report the path it made
+   with its failure.
 2. Hexadecimal runs of seven or more characters, either case, become `<hex>`. These are SHAs and
    request ids.
 3. Remaining digit runs become `#`. These are exit codes, ports, counts and timestamps.
@@ -171,12 +182,15 @@ same role and rank, whose `cycle` equals the outage row's `since`, does not coun
 the cycle, not on where the rows sit in the log, is deliberate: `serve` records a run without
 waiting for the write, so the row of the failure that ended the cycle can land after the outage
 row. Matching on the rank keeps one rank's outage from excusing a sibling rank's failure on the
-same item in a cycle of its own. Under #179 a role served by one process runs as rank 1, and so
-does `igor run`, which refuses to start while a serving rank 1 runs. The two never share a
-cycle, so matching on rank and cycle cannot mix their rows.
+same item in a cycle of its own. `igor run` runs as rank 0 beside any serving rank (Adam,
+2026-10-18; the proposal's decision 13), so its rows carry rank 0. A serving rank's outage row
+therefore never excuses a failure of `igor run`, and an outage row of `igor run` never excuses
+a serving rank's failure. Two `igor run`s of one role at once both write rank 0, and only their
+cycles' starts tell their rows apart. Both runs can then work the same item, a gap the next
+revision of #179 lists for Adam.
 
 An outage row that never lands lets that cycle's failures count. The cost is a set-down that a
-reply lifts, so the row gets no retry of its own beyond what every state write gets.
+reply lifts, so the row gets no retry, as no state write does.
 
 **The set-down does not wait for the outage row** (Adam, 2026-10-17). A third identical failure
 sets its item down during its own run. If the next run's failure then ends the cycle, the
@@ -209,7 +223,7 @@ So the loop applies the outage rule's test, two in a row, to failures before the
 two runs in a row, of different items, fail with the same `source` and `hash`, the cycle ends.
 Whichever cycle ended appends an `outage` row naming both items, the same row the surface rule
 writes, so *Counting* excludes both failures with no new row kind. It names only the two, not
-every failure in the cycle: the rule matched only that pair, so nothing shows any other failure
+every failure in the cycle (the proposal's decision 20): the rule matched only that pair, so nothing shows any other failure
 in the cycle to be the environment's rather than its item's. Where the two identical failures
 are also surface failures, the outage rule ended the cycle, and its row names every item that
 failed before the worker. This does not make a tree failure a surface failure: `surfaceFailed`
@@ -239,12 +253,12 @@ directed handoff, whose tail is its relabel sentence alone, gets the set-down se
 keeps the relabel sentence after it. Adding the label again is an edit that lifts the deferral,
 so the relabel sentence already says what brings the item back.
 
-**A failure in the claim window** is given back by `takeClaim`, which posts `claimWithdrawn` only
-where the claim message may have landed, or `claimStuck` where the release did not clear the
-label. On the third identical failure, the set-down sentence goes into whichever it posts. As
-drafted, the withdrawal is then posted even where the claim message never landed, because it is
-the only word the item gets about being set down; the proposal's open question 2 asks Adam to
-keep this. If the tracker is still failing, that post fails too, at no cost.
+**A failure in the claim window** is given back by `takeClaim`. On the first two failures, it
+posts `claimWithdrawn` where the claim message may have landed, or `claimStuck` there if the
+release did not clear the label, and posts nothing where the message cannot have landed. On the
+third identical failure, it always posts one of the two, with the set-down sentence in it,
+even where the claim message never landed, because that is the only word the item gets about
+being set down. The proposal's open question 2 asks Adam to keep this. If the tracker is still failing, that post fails too, at no cost.
 
 The run then returns `handed-off` with `handoff: 'failure'`. That is what `shouldDefer` already
 defers on, so `serve` and both loops of `igor run`'s cycle in `src/cli.ts`, over claimed items

@@ -55,6 +55,14 @@
     the rank holding a claim gives it back* has that rank post the set-down while any other rank
     drops out silently. How this applies in the claim window is open question 1. The mask on
     the tree's path keeps working under #179's naming of trees by role and rank.
+    `igor run <role>` runs as rank 0 (Adam, 2026-10-18): a rank no roster declares. It starts
+    without waiting for any serving rank, runs beside them, and contends for items as any rank
+    does, its claim messages carrying `Igor-Rank: 0`. So a run by hand is one of the role's ranks while it runs.
+    It counts a failure and sets an item down only where it holds the claim, its rows carry
+    rank 0, and its failures count toward the role's count for the item like any rank's.
+    #179 records this decision in a revision not yet pushed; until it is, #179's text on GitHub
+    still runs `igor run` as rank 1, refusing to start beside a serving rank 1. That text is out
+    of date, not a second choice for Adam.
     Decision 12's reasons for holding the watermark back go, by task 5.0, into #101's watermark
     rule, *Watermarks reduce reconsideration without governing it*: #179 cites that rule, so it is
     the one place every reason lives. *Rejected:* a count per rank, and a set-down any rank could
@@ -75,7 +83,7 @@
     state branch may be public, and a tracker's error can carry the response text of a private
     repository.
 16. **A count that cannot be read sets nothing down** (proposed: this decision and the next
-    three are the change's own, which Adam has not yet approved). Where the log cannot be read,
+    five are the change's own, which Adam has not yet approved). Where the log cannot be read,
     the run is refused. It still tries to write its `pre-worker` row, since an append can
     succeed where a read failed; a write that fails is lost, as any state write's failure is.
     *Rejected:* setting the item down on an unknown count, which would defer items whenever the
@@ -89,6 +97,14 @@
     *Rejected:* excluding the rows written before the outage row.
 19. **An `outage` row that never lands gets no retry of its own** (proposed). That cycle's
     failures then count, at the cost of a set-down that an answer lifts.
+20. **An `outage` row written for two identical failures names only those two items**
+    (proposed), not every failure in the cycle. The rule matched only that pair, so nothing
+    shows another failure in the cycle to be the environment's. *Rejected:* naming every item
+    that failed before the worker in the cycle, as the surface rule's row does.
+21. **A run row written before #101 starts marking rows `workerless` stops the count** (proposed), as a run
+    that started the worker does, since nothing tells the two apart. That errs toward fewer
+    set-downs. *Rejected:* skipping such rows, which could join failures from either side of a
+    run that worked.
 
 **Still open:**
 
@@ -101,23 +117,30 @@
 - **The set-down sentence names what lifts a deferral.** #141, which lets only someone with
   write access lift a deferral, changes that sentence if it lands first (task 3.2).
 
-**Open questions for Adam**, each with a recommendation; none is decided:
+**Open questions for Adam**, each with a recommendation; none is decided. The spec and tasks are
+written on each recommendation, and change where Adam answers otherwise; a task that cannot be
+built before his answer says it waits on it:
 
 1. **A failure in the claim window, where a role runs several ranks.** #179's *Only the rank
    holding a claim gives it back* says a process whose claim message failed to post holds
    nothing, and one whose verification (the re-read after posting that shows whose claim message
    holds the item) fails counts as not holding it. Every claim-window failure is one of those
-   two, so where a role runs several ranks, decision 13 lets no claim-window failure count. A
-   role served by one rank is not affected: the holder rule applies only to several ranks, and
-   the scenario *A repeated failure in the claim window sets the item down* is written for one.
-   Tasks 3.3 and 3.4 build the one-rank case and wait on this answer for several.
+   two, so where a role runs several ranks, decision 13 lets no claim-window failure count. The
+   scenario *A repeated failure in the claim window sets the item down* is written for a role
+   with one process running, where the holder rule does not apply. Because `igor run` runs as
+   rank 0 beside any serving rank (decision 13), the roster cannot say which case a role is in:
+   a role whose roster declares one rank runs two whenever someone starts `igor run` for it.
+   Tasks 3.3 and 3.4 build the claim window only once this is answered.
    *Recommendation:* count a claim-window failure, and post the set-down, only where, at the
    moment of the failure, the item carries no claim message of another rank of the role among
-   the messages #179 counts. A rank alone on the item then sets it down, and a rank that may
-   have lost to a sibling counts nothing, and, as #179 requires of a rank that does not hold
-   the item, leaves the role's label on it. Under #179 `igor run` runs as
-   rank 1 and refuses to start beside a serving rank 1, so it can share an item only with ranks
-   2 and up.
+   the messages #179 counts. A rank alone on the item then sets it down. A rank that may have
+   lost to a sibling counts nothing and, as #179 requires of a rank that does not hold the item,
+   leaves the role's label on it. The test reads the item, not the roster, so it covers an
+   `igor run` beside any serving rank: rank 0's claim message names its rank, as every rank's
+   does. It does not cover two `igor run`s of one role at once: both run as rank 0, so each
+   reads the other's message as its own rank's, sees itself alone, and may count and set the
+   item down. Both also work the item then, a gap #179's next revision lists for Adam; if #179
+   answers it with a process id in the claim message, this test compares that id too.
 2. **The withdrawal posted where no claim message landed.** As drafted, on the third identical
    failure in the claim window, the withdrawal carrying the set-down sentence is posted even
    where the claim message never landed (`design.md`, *Where the set-down is said*; task 3.3).
@@ -137,8 +160,8 @@
    *Recommendation:* keep it. Each role is a separate Igor with its own label and its own
    deferral, and a fault in one role's setup says nothing about another's.
 5. **A hash of a guessable message can be confirmed.** Decision 15's hash is unkeyed, so anyone
-   reading a public state branch who can guess a failure's masked message, such as "repository
-   not found" with a private repository's name in it, can hash the guess and confirm it.
+   reading a public state branch who can guess a failure's masked message, such as a clone's
+   "not found" naming a private branch, can hash the guess and confirm it.
    *Recommendation:* key the hash with a secret only the server holds (HMAC-SHA-256 under a key
    in the role's environment file), so a guess cannot be checked offline. Changing the key
    restarts every count, which costs at most three more failures per item.
@@ -149,6 +172,14 @@
    *Recommendation:* keep it. One rule for every failure before the worker is simpler to read
    off an item's history, and two extra retries of a cheap step cost little. The alternative is
    to keep deferring returned failures at once and count only thrown ones.
+7. **#99's failure record and the `outage` row.** #99 (`structured-failure-record`) requires a
+   cycle's record of its own faults on the state branch to carry the fault's identity and
+   origin, its descriptions included. An `outage` row records a cycle that a failing tracker or
+   code host ended, and
+   decision 15 keeps any failure's text off it.
+   *Recommendation:* the `outage` row is a marker that excludes failures from the count, not
+   the cycle's record of its fault, so have #99 say its rule does not reach rows carrying a
+   `kind`, and keep the row free of text.
 
 **Conflict with what is in force, recorded and not resolved:** decision 15 keeps a failure's
 text out of this change's rows, but the in-force run row in `executions.ndjson` carries the
@@ -157,14 +188,21 @@ it refuses a run for a spent usage window) beside it carry the worker's text, al
 state branch. Two kinds of failure before the worker keep that run row: one that records a cure
 key (decision 11), and one that `execute` returns, whose row stays beside its `pre-worker` row
 (`design.md`, *Counting*). A returned catch-up merge failure's `reason` quotes git's error. So
-their text still reaches the branch. Whether decision 15 reaches those records is for Adam;
-this change does not touch them.
+their text still reaches the branch. So does a set-down's own: the third failure's handoff goes
+through the in-force `noteHandoff`, which stores the run's `reason`, holding the failure's
+message, in `deferred.json` on the same branch. Whether decision 15 reaches those records is for
+Adam; this change does not touch them. This change's `pre-worker` and `outage` rows name the
+item, and so its repository,
+as the in-force run rows do; decision 15 keeps the failure's text off the branch, not the
+item's name. Separately, the in-force `graceful-handoff` scenario that makes budget the only
+reason to defer already disagrees with the in-force code, which defers failures; a set-down is
+one more such deferral.
 
 ## Why
 
 When a claimed run fails **before the worker starts**, the item is refused and tried again next
 cycle ([#155](https://github.com/adamstallard/igor/issues/155)). Examples are a clone that fails,
-a branch that cannot be set up, a full disk, or a tracker call during the claim. Retrying such a
+a catch-up whose merge fails, a full disk, or a tracker call during the claim. Retrying such a
 failure is cheap, so a thrown one defers nothing. (A failure `execute` returns before the worker
 is deferred at once; open question 6.)
 

@@ -58,22 +58,20 @@ The outage rule SHALL apply in every cycle, including the single cycle `igor run
 
 A run *fails before the worker* when it ends in failure after its claim began and before the
 worker started, whether the failure was thrown or returned. Examples are a failure in the claim
-window (while the claim is being taken), in provisioning the working tree, in setting up its
-branch, or in a tracker or code-host call made before the worker starts. Such a run is refused:
+window (while the claim is being taken), in provisioning the working tree, in a catch-up's
+merge, or in a tracker or code-host call made before the worker starts. Such a run is refused:
 its claim is given back, and discovery may take the item again next cycle (`work-discovery`).
 
 The Igor SHALL count an item's failures before the worker, for its own role, in a row; that count
 is the item's *breaker*. When a failure brings the count of identical ones to three or more, the
 Igor SHALL hand the item back deferred instead of refusing it, which is to *set the item down*.
 What it posts on the item on that run SHALL say that it has stopped retrying and what brings the
-item back. It SHALL say so once for each set-down: the runs before it post the refusal *A claim
-that cannot be kept is given back, out loud* requires, and a deferred item is not claimed, so
-nothing is posted while it stays deferred.
+item back. It SHALL say so only on the run that sets the item down.
 
-**Only the holder counts.** Where a role runs as several ranks, the numbered processes of one
-role that `concurrent-instances` (#179) defines, only the rank whose claim message holds the
-item, the claim that counts under #179's rules, SHALL count a failure before the worker or
-record it. A rank that does not hold the claim records nothing toward any breaker. Who posts
+**Only the holder counts.** A role's *ranks* are its numbered processes, as
+`concurrent-instances` (#179) defines them; rank 0 is an `igor run`'s, while it runs. Where a
+role runs as several ranks, only the rank whose claim message holds the item under #179's rules
+SHALL count a failure before the worker or record it. A rank that does not hold the claim records nothing toward any breaker. Who posts
 the set-down, and that every other rank drops out silently, is #179's *Only the rank holding a
 claim gives it back*. The count is kept per role and item, so it carries on when another rank
 of the role later holds the item.
@@ -86,18 +84,19 @@ than throws, SHALL carry the source of the step that failed; one that carries no
 source of the Igor's own code.
 
 **In a row** means nothing broke the sequence. A run of the item that started the worker, or a
-failure before the worker that is not identical, SHALL start the count again. An edit or a reply
+failure before the worker that counts and is not identical, SHALL start the count again. An edit or a reply
 SHALL NOT. So once the deferral lifts, an identical failure sets the item down again at once.
 
 **The count SHALL survive a restart.** It is rebuilt from the execution log
 (`executions.ndjson`), never held only in memory.
 
 **The breaker's row SHALL hold no failure's text.** A failure before the worker whose run
-records no cure key appends a row to the execution log, which lives on the state branch where
+records no cure key (*A fault in the Igor's own setup is not the item's failure*, below) appends a row to the execution log, which lives on the state branch where
 Igor keeps its records. That row SHALL hold the failure's source (`tracker`, `code-host`, `tree`
 or `igor`), which stands for its class in place of its text, and a short hash of its masked
 message. Identical failures are those whose sources and hashes match. The raw and masked
-messages SHALL go only to the process's own log, the server's journal under systemd, as one line
+messages SHALL go only to the process's own log, the server's journal under systemd or the
+standard error of an `igor run`, as one line
 with the item, role, source and hash, encoded so that no message can break the line or forge
 another.
 
@@ -129,7 +128,8 @@ row is still written.
 
 #### Scenario: The first two identical failures are retried
 
-- **WHEN** an item's working tree fails to clone the same way on two consecutive runs
+- **WHEN** an item no person handed over, whose refusal therefore asks for no new label, fails to
+  clone its working tree the same way on two consecutive runs
 - **THEN** each run hands the claim back saying it will try again next cycle
 - **AND** the item is claimed again next cycle
 
@@ -142,8 +142,9 @@ row is still written.
 
 #### Scenario: A repeated failure in the claim window sets the item down
 
-- **WHEN** a role is served by one rank, and a tracker call in the claim window gets no answer,
-  the same way, on three consecutive runs of an item, in cycles that continued to other items
+- **WHEN** one process of a role runs, with no `igor run` beside a serving rank, and a tracker
+  call in the claim window gets no answer, the same way, on three consecutive runs of an item,
+  in cycles that continued to other items
 - **THEN** the third run releases the claim and says the Igor has stopped retrying
 - **AND** the item is not claimed next cycle
 
@@ -160,6 +161,12 @@ row is still written.
 - **THEN** that rank records no failure toward the item's breaker
 - **AND** the third identical failure of a holder of the item sets it down, whichever rank held it
   each time
+
+#### Scenario: Trees of different ranks mask alike
+
+- **WHEN** two ranks of one role each hold an item in turn, and its clone fails the same way for
+  each, with messages that differ only in the path of each rank's working tree
+- **THEN** the two failures are identical, and both count toward the item's breaker
 
 #### Scenario: Each role counts its own failures
 
@@ -252,8 +259,9 @@ row is still written.
 
 #### Scenario: A count that cannot be read sets nothing down
 
-- **WHEN** a run fails before the worker and the run record cannot be read
+- **WHEN** a run fails before the worker and the execution log cannot be read
 - **THEN** the run is refused and the item is tried again next cycle
+- **AND** the run still appends its failure's row
 
 ### Requirement: Two identical failures before the worker on different items end the cycle
 

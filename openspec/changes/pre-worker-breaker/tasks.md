@@ -1,7 +1,7 @@
 ## 0. Before building
 
 - [ ] 0.1 Capture real failure messages, each twice on separate runs: a clone on a full disk, a
-      clone with an expired token, a branch set up that fails, and a tracker call answered 5xx.
+      clone with an expired token, a catch-up merge that fails, and a tracker call answered 5xx.
       Check that each pair gives one signature after `design.md`'s masks and that different
       causes give different ones, and record the captures in `design.md`. If a pair does not
       match, change the masks; a breaker whose signatures never match never trips, and every
@@ -10,6 +10,10 @@
       is refused. Record whether, during the run of the item whose clone failed, the failure
       reaches #101's App condition and so records a cure key.
 - [ ] 0.2 Sections 2 to 4 wait until `condition-backoff` (#101) merges (Adam, 2026-10-18).
+- [ ] 0.3 Measure how often two appends to `executions.ndjson` at once lose a row, with the
+      ranks a role runs appending together. Record the result in `design.md`. If rows are lost
+      often enough to matter, give the append a retry on a refused write: a lost `pre-worker`
+      row undercounts, and a lost `outage` row lets an outage's failures count
 
 ## 1. The agreement
 
@@ -40,8 +44,10 @@
 
 ## 3. The breaker
 
-- [ ] 3.1 A pure `signature(message, treePath)` applying the masks in `design.md` in order, a
-      pure `signatureHash(signature)` giving the first twelve hexadecimal digits of its SHA-256,
+- [ ] 3.1 `provision` reports the path it made with a failure it throws, so the caller can mask
+      it. A pure `signature(message, treePath)` applying the masks in `design.md` in order, a
+      pure `signatureHash(signature)` giving the first twelve hexadecimal digits of its SHA-256
+      (or its HMAC-SHA-256, if Adam takes open question 5's recommendation; the hash waits on it),
       and a pure `trailing(rows, item, role, source, hash)` counting as `design.md` *Counting*
       says. Tests for each mask, for each way the count stops, and for the outage exclusion
 - [ ] 3.2 A `failure` handoff's `next` gains `'set-down'`, whose tail is, exactly, with `<N>` the
@@ -61,8 +67,8 @@
       is nothing to clean up.", or `claimStuck`, where the release did not clear the label, right
       after "Nothing was done.". Either way it comes before a directed claim's relabel sentence.
       Post it even where the claim message never landed, unless Adam's answer to the proposal's
-      open question 2 says otherwise. Build this for a role served by one rank; where a role
-      runs several ranks, it waits on open question 1
+      open question 2 says otherwise. This waits on open question 1: an `igor run` can join any
+      role as rank 0 (Adam, 2026-10-18, #179), so no role is known to run one process
 - [ ] 3.4 In `runItem`, on a failure before the worker (a refused claim window, a throw raised
       before `execute` spawned the worker, or a failure `execute` returns before spawning it;
       #101's `workerless` mark on a run row tells that last kind apart from a worker that
@@ -74,8 +80,8 @@
       proposal's open question 6). A count reader that throws or is absent counts as 0, and the
       `pre-worker` row is still written. Where a role runs several ranks under #179, only the
       rank holding the claim does any of this; a rank that another rank's claim outranks drops
-      out silently, writing no `pre-worker` row. In the claim window this waits on open
-      question 1
+      out silently, writing no `pre-worker` row. Rank 0, `igor run`'s, is one of those ranks.
+      In the claim window this waits on open question 1
 - [ ] 3.5 The threshold is a named constant, 3, with a comment saying why three
 - [ ] 3.6 Tests, one per scenario in *A failure before the worker that repeats sets the item
       down*, including a restart (a fresh loop reading the same rows) and a deferral lifted by
