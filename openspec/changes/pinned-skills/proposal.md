@@ -14,8 +14,9 @@
 5. **The startup check is a call with no token, separate from #144's self-test** (Adam,
    2026-10-11). It runs once, with no seat.
 6. **No guard against a same-named skill, and no startup check of the service user's hooks,
-   `CLAUDE.md` or home skills** (Adam, 2026-10-11). A same-named skill loads under its own name
-   beside `igor:<name>` and replaces nothing. `docs/deployment.md` tells the operator to keep
+   `CLAUDE.md` or home skills** (Adam, 2026-10-11). A same-named skill in the home loads under
+   its own name beside `igor:<name>` and replaces nothing; one in the worked repository does not
+   load at all (decision 8). `docs/deployment.md` tells the operator to keep
    the service user and the worker user (#175) free of hooks, a `CLAUDE.md` and home skills
    (task 5.3).
 7. **One plugin directory for every role.** The coordinating agent chose this on 2026-10-11, for
@@ -69,7 +70,8 @@
     runs only on a developer's machine.
 14. **#153's later model steps, the prose pass and the bug hunt, run in the worker's home, with
     the same reset before each `claude -p`** (Adam, 2026-10-17). #153's session mark is the
-    file `prose start` writes, which #153's prose steps check for before they sign. `prose
+    file `prose start` writes. Prose's first-write gate, a hook, checks for it, but no hook
+    runs in a worker, so whether the mark matters here is open (*Still open*). `prose
     start` runs after the reset that precedes the worker's call, and the mark survives the
     resets before #153's later steps because it sits under `~/.local/state`, outside `~/.claude`
     and `~/.claude.json`.
@@ -81,14 +83,19 @@
     same-user home. Nor does one run under the systemd unit (`deploy/igor.service`), whose
     `ProtectHome=read-only` would make a home under `~/.local/state` unwritable. Two `igor run`s
     of one role at once would share that role's home, and one's reset could replace `~/.claude`
-    under the other's running call. That is not decided separately: running `igor run` while
-    another instance of its role runs is the subject of #179's open question on `igor run`
-    beside a serving rank.
+    under the other's running call (*Still open*). Under #179, where a role runs as several
+    processes, each with a number called its rank, `igor run` is rank 0, outside the roster
+    (the list of ranks a role's serving processes run), and runs beside serving ranks with no
+    refusal and no wait (Adam, 2026-10-18). A serving rank never uses the per-role home, so a
+    run beside one shares no home with it.
 17. **The reset keeps no stored login, because Igor never uses one** (Adam, 2026-10-18).
     Every seat has a Claude token, and every call that spends a seat authenticates with that
-    seat's token, from its environment, under `igor serve` and `igor run` alike. #171 states
-    that rule for every spend, in *A spend with no seat behind it is not made*; this change
-    applies it to the worker's home. The reset replaces `~/.claude` and `~/.claude.json` whole,
+    seat's token, from its environment, under `igor serve` and `igor run` alike. Under `igor
+    run` the seat is an implicit local seat that needs no seat file, and its token is the one in
+    `IGOR_RUN_TOKEN` (Adam, 2026-10-18; #171 and #175 record it). #171 states the rule that a
+    spend authenticates with its seat's token, in *A spend with no seat behind it is not made*,
+    and the local seat in *`igor run` spends its own token as an implicit local seat*; this
+    change applies them to the worker's home. The reset replaces `~/.claude` and `~/.claude.json` whole,
     `~/.claude/.credentials.json` with them, so a login stored in the home lasts only until the
     next reset. How a person creates a token is in #171's guides. *Rejected:* keeping
     `~/.claude/.credentials.json`, as this change did from its third round to 2026-10-18, so
@@ -100,26 +107,40 @@
 **Still open:**
 
 - **Where `/opt/igor/skills` does not exist**, as on a developer's machine running `igor run`,
-  what Igor does is not decided: pass `--plugin-dir` anyway, pass none, or refuse to start. What
+  what Igor does is not decided: pass `--plugin-dir` anyway, pass none, or refuse to start. The
+  requirement as written passes it anyway, and the startup check then has no skill to check and
+  passes. *Recommendation:* `igor serve` refuses to start, naming the path; `igor run` passes
+  none and says the skills were not loaded. What
   `claude -p` does with a plugin directory that does not exist is unmeasured.
 - **Whether a seat's token is the only credential a call uses** is not measured (task 0.3).
   The measurement is that a call whose environment holds a valid token gets a
   `rate_limit_event`, which only a call running as a seat receives (decision 2), even where a
   stored login sits beside it in the same home, as in the service user's home, which no reset
   touches. And it is that a call with an invalid token fails, rather than reaching a stored
-  login: one in the home, or under `igor run` on macOS the person's own login in the Keychain.
+  login: one in the home, or the person's own login in the Keychain under `igor run` on macOS,
+  where the call's token is the one in `IGOR_RUN_TOKEN`.
   The same Keychain question decides whether the startup check is free under `igor run` on
   macOS. If a call reaches a stored login, decision 17 goes back to Adam.
+- **If the startup check authenticates.** It is meant to fail to authenticate at no cost. If a
+  Keychain login under `igor run`, or something else, lets it authenticate, it spends that login
+  on the prompt `ok`, against #171's *A spend with no seat behind it is not made*. *Recommendation:* Igor then reports the skills as not
+  checked and makes no further call without a seat.
+- **A reset that follows a link.** In same-user mode the worker can make `~/.claude` or
+  `~/.claude.json` a link to a file the person owns, and a reset run as the person that follows
+  it would remove or overwrite that file. *Recommendation:* the reset removes and creates
+  without following links.
 - **Task 0.3's other measurements**, each of which sends its decision back to Adam if it
   fails: a linked skill's base directory, whether the worker can write `skills_dir`, whether
-  decision 8's two flags keep the repository's settings out, and whether `git rev-parse` works
-  on a root-owned clone.
+  decision 8's two flags keep the repository's settings out, whether `git rev-parse` works
+  on a root-owned clone (which the startup check's commit reading needs), whether the startup check still prints `system/init` with those two
+  flags, and which `~/.claude.json` key marks onboarding done.
 - **What #153's session mark is for here.** Decision 14 keeps the mark across resets, but the
   plugin installs no hooks (*How it composes*, in `design.md`), so no prose hook reads it in a
   worker. Whether the mark matters is #153's to say.
 - **Two `igor run`s of one role at once** share the role's home, and one's reset can replace
-  `~/.claude` under the other's running call. Decision 16 pointed this at #179, but #179 now
-  only refuses `igor run` beside a serving rank 1, which does not cover two `igor run`s. Who
+  `~/.claude` under the other's running call. Under #179 both are rank 0, and #179 has no rule
+  for two processes at one rank: it neither refuses nor waits, and nothing stops one of two
+  processes at a rank once the other is running. Who
   decides it is open.
 - **A process that escaped its group outlives its task.** Igor kills every process the worker
   user owns before each reset, so an escaped process runs, holding its seat's token, until the
@@ -152,8 +173,8 @@ replaces it.
 - **Every `claude -p` Igor spawns carries `--plugin-dir <skills_dir>`**: the worker, triage, and
   every later step, never with `--bare`. The usage read is the one exception (decision 10).
   Each skill loads as `igor:<name>`, and the worker invokes it through the Skill tool. A skill
-  named the same in the home directory or the worked repository loads under its own name beside
-  it and cannot replace it (measured). Unlike `--add-dir`, the flag is not documented as
+  named the same in the home directory loads under its own name beside it and cannot replace it
+  (measured); one in the worked repository does not load (decision 8). Unlike `--add-dir`, the flag is not documented as
   granting file access, and task 0.3 measures whether it does (decision 11). Every installed
   skill loads for every role; a role's `skills` list (#153) decides what its worker
   uses and what Igor verifies.

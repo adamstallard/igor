@@ -8,9 +8,10 @@ SHALL treat that tree as disposable, making no assumption that a checkout persis
 tasks or is shared with another task. The tree SHALL be released when the task ends, whatever
 its outcome.
 
-Nothing a worker writes SHALL reach a later task, except what lies outside the reset of the
-worker's home, which `pinned-skills`' *Every call in the worker's home starts from Igor's
-template* defines.
+Nothing a worker writes SHALL reach a later task, except two kinds of file: files in the
+worker's home that the reset leaves alone, which `pinned-skills`' *Every call in the worker's
+home starts from Igor's template* defines, and files the worker's user writes outside its home,
+wherever it can write.
 
 #### Scenario: Working tree provisioned for a task that needs one
 
@@ -21,14 +22,8 @@ template* defines.
 #### Scenario: No state carries between tasks
 
 - **WHEN** a task begins in a working tree
-- **THEN** nothing a worker wrote in an earlier task reaches it, except what lies outside the
-  reset of the worker's home
-- **AND** that is `~/.gitconfig`, files a repository's tests cache in the home, any other file
-  left in the home outside `~/.claude` and `~/.claude.json`, and files left outside the home
-  wherever the worker's user can write
-- **AND** it includes what a process that escaped the run's process group writes before it is
-  killed, which with a worker user is at the next reset of the home, and in same-user mode is
-  never
+- **THEN** nothing a worker wrote in an earlier task reaches it, except the two kinds of file
+  the requirement names
 
 #### Scenario: The tree is released on failure as well as success
 

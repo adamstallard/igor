@@ -216,8 +216,10 @@ How the reset works:
 
 - **When:** before every `claude -p` Igor starts in the worker's home. Those calls are the
   worker and #153's later model steps (the prose pass and the bug hunt), which run in the same
-  home. #153's session mark is the file `prose start` writes, which #153's prose steps check for
-  before they sign. `prose start` runs after the reset that precedes the worker's call, and the
+  home. #153's session mark is the file `prose start` writes. Prose's first-write gate, a hook,
+  checks for it, but no hook runs in a worker (*Hooks*, below), so whether the mark matters
+  here is open in the proposal. `prose start` runs after the reset that precedes
+  the worker's call, and the
   mark sits under `~/.local/state`, outside what any later reset replaces.
 - **Who:** with a worker user, Igor resets as that user, through #175's `sudo` spawn, since only
   that user can remove what a worker wrote. In same-user mode Igor resets as itself.
@@ -254,10 +256,11 @@ limit of same-user mode, which runs only on a developer's machine.
 **Same-user mode is `igor run` alone (Adam, 2026-10-17).** #175 dropped `igor serve --same-user`,
 so no served rank shares a per-role home. Nor does one run under the systemd unit
 (`deploy/igor.service`), whose `ProtectHome=read-only` would make a home under `~/.local/state`
-unwritable. Two `igor run`s of one role at once share the role's home, and one's reset can
-replace `~/.claude` under the other's call. That is not decided separately: running `igor run`
-while another instance of its role runs is the subject of #179's open question on `igor run`
-beside a serving rank.
+unwritable. Under #179 `igor run` is rank 0 and runs beside serving ranks with no refusal and no
+wait (Adam, 2026-10-18). A serving rank never uses the per-role home, so a run beside serving
+ranks shares no home with them. Two `igor run`s of one role at once do share the role's home, and one's reset can
+replace `~/.claude` under the other's call. Both are rank 0, and #179 has no rule for two
+processes at one rank, so this is still open.
 
 Still open (proposal): whether anything protects the template in same-user mode, where the
 worker can write it; whether a seat's token is the only credential a call uses (task 0.3); two
@@ -278,10 +281,10 @@ the check separate from #144's.
 ### No guard against a same-named skill
 
 Adam accepted stopping an item whose repository ships a same-named skill, if that still applied
-under `--plugin-dir`. It does not. The repository's `prose` loads as `prose`, beside
-`igor:prose`, and replaces nothing. A step that needs the pinned skill asks for `igor:prose`, and
-#153 grants its scripts by path under `<skills_dir>/skills`, so the repository's copy cannot run
-its own scripts either. The same holds for a copy in the home directory.
+under `--plugin-dir`. It does not. The repository's `prose` does not load at all (decision 8),
+and a home copy loads as `prose`, beside `igor:prose`, and replaces nothing. A step that needs
+the pinned skill asks for `igor:prose`, and #153 grants the pinned skill's scripts by path under
+`<skills_dir>/skills`, so a home copy's scripts are not granted.
 
 ### The pinned shared-skills commit is at or after `075a73a`
 
@@ -299,9 +302,9 @@ no instruction about where its skills are (task 4.1).
   under `skills_dir`, or the role is refused at load. This change states no second refusal.
 - **`<skills>` in #153's design is `<skills_dir>/skills`.** A role that lists `prose` is granted
   `python3 <skills>/prose/scripts/prose.py check` and `… sign`, and Igor's code runs
-  `prose start`, `verify-post` and `verify-staged` from the same place for it. A role that
-  lists `bug-hunter` is granted `<skills>/bug-hunter/scripts/caller-result.sh` and `git add`. A
-  step that names a skill names `igor:prose` or `igor:bug-hunter`.
+  `prose start`, `verify-post` and `verify-staged` from the same place for it. For a role that
+  lists `bug-hunter`, Igor's code runs `git add` and the script that mints bug-hunter's commit
+  trailer; the role is granted neither, since the model never runs them. A step that names a skill names `igor:prose` or `igor:bug-hunter`.
 - **A grant by path needs the model to use that path.** Task 0.1 found that a plugin skill is
   given `<skills_dir>/skills/<name>` as its base directory, the path the grants name.
 - **Each step invokes its skills through the Skill tool**, as `igor:prose` or `igor:bug-hunter`,
