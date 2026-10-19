@@ -42,9 +42,9 @@
       instances that way and check role names, and link it here.
 - [ ] 0.9 The exit status in 5.1 and the restart lines in 8.2 come from #82
       (`stopped-scope-visible`): 78 for a refused start, in *A process that refuses to start
-      exits with status 78*, with `Restart=on-failure` and `RestartPreventExitStatus=78`. If #82
-      has not merged, file an issue asking whichever of #82 and this change is built second to
-      exit 78 on a refused start and set those lines, and link it here.
+      exits with status 78*, with `Restart=on-failure`, `RestartPreventExitStatus=78` and
+      `RestartSec=30s`. If #82 has not merged, file an issue asking whichever of #82 and this
+      change is built second to exit 78 on a refused start and set those lines, and link it here.
 - [ ] 0.10 Whichever of this change and #174 is built second makes the `sudo` spawn of 1.1 run
       #174's kill of the worker user's processes and its reset of the worker's home before each
       model step, as `design.md` (*The worker is started through `sudo`*) says. If #174 has
@@ -525,8 +525,9 @@ file in the service user's home. Each holds a random string and nothing else. Ne
       ```
 
       Add these lines, with this comment (may be reworded; the restart lines come from 0.9 and
-      replace `Restart=always`; where #82's task 1.5 has already added them, keep its lines and
-      add only `ProtectProc=`):
+      replace `Restart=always`, and `RestartSec=30` becomes `RestartSec=30s`, the same interval as
+      #82 writes it; where #82's task 1.5 has already added the three restart lines, keep #82's
+      lines as they are and add only `ProtectProc=`):
 
       ```
       # A process sees only its own user's processes, so no worker can read another's command
@@ -534,8 +535,11 @@ file in the service user's home. Each holds a random string and nothing else. Ne
       ProtectProc=invisible
       # A crash is restarted; a clean exit (status 0) is not. A process that refuses to start,
       # such as on a missing worker user, exits 78 (EX_CONFIG) and is not restarted: fix what
-      # the journal names, then start it again.
+      # the journal names, then start it again. A start GitHub or the model provider did not
+      # answer, or where GitHub refused the App's credential, exits 1 and is retried every 30
+      # seconds, slowly enough that systemd's start-rate limit does not trip.
       Restart=on-failure
+      RestartSec=30s
       RestartPreventExitStatus=78
       ```
 

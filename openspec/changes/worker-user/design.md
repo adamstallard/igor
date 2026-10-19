@@ -576,10 +576,15 @@ compose file runs, and their sudoers lines, and moves the compose file's trees v
   the service user's home and so cannot run `~igor/.local/bin/claude`.
 - `ProtectProc=invisible` hides every other user's processes from each process in the unit
   (*Prompts go on stdin*, above).
-- `Restart=on-failure` and `RestartPreventExitStatus=78` (Adam, 2026-10-18), as
-  #82 requires. A refused start exits 78 (#82's *A process that refuses to start exits with
+- `Restart=on-failure`, `RestartPreventExitStatus=78` and `RestartSec=30s`, all three #82's
+  lines: Adam decided the first two on 2026-10-18 and the third on 2026-10-19. A refused start exits 78 (#82's *A process that refuses to start exits with
   status 78*), and systemd leaves the instance failed, with Igor's reason in the journal,
-  instead of restarting it 30 seconds later (the unit's `RestartSec=30`) to be refused again. A rank #179 removed from the
+  instead of restarting it 30 seconds later to be refused again. A start that exits 1 is
+  restarted 30 seconds later. Such a start is one GitHub or the model provider did not answer,
+  or one where GitHub refused the App's credential, which exits 1 rather than 78 because its
+  cure, such as a key replaced at the same path, is read by the next start (#82's decision 13).
+  systemd's default start-rate limit is five starts in ten seconds, so a start every 30 seconds
+  never reaches it; reaching it would leave the instance failed and no longer restarted. A rank #179 removed from the
   roster exits 0, which `Restart=on-failure` does not restart, so the unit shows it inactive. A
   crash is still restarted.
 

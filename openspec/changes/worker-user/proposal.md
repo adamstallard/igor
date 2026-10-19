@@ -227,7 +227,12 @@
     requires. systemd then shows a refused instance as failed, with Igor's reason in the
     journal, and leaves an instance that exits 0, such as a rank #179 removed from the roster,
     inactive. The number is defined in #82, not here. *Rejected:* a status 79 for a retired
-    rank, with `SuccessExitStatus=79`; `Restart=on-failure` never restarts a clean exit.
+    rank, with `SuccessExitStatus=79`; `Restart=on-failure` never restarts a clean exit. The unit
+    also sets `RestartSec=30s`, which Adam decided on 2026-10-19 for #82's unit lines, and this
+    change carries them. A start that exits 1, one GitHub or the model provider did not answer
+    or one where GitHub refused the App's credential, is then retried every 30 seconds. That
+    stays under systemd's default start-rate limit of five starts in ten seconds, which, once
+    reached, would leave the instance failed and no longer restarted.
 24. **`igor run` spends the token in its own environment, `IGOR_RUN_TOKEN`, as an implicit local
     seat** (Adam, 2026-10-18). Triage and the worker under `run` both authenticate
     with it. Nothing goes in the lore repository and no seat file is needed; `run` never
