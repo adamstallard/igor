@@ -75,7 +75,8 @@ SHALL NOT exit with status 78 for any other reason.
 
 The systemd unit this repository ships SHALL set `Restart=on-failure` and SHALL list 78, and no
 other status, in `RestartPreventExitStatus=`, so that systemd restarts a crash, leaves a refusal
-down with the unit failed, and leaves a clean exit down with the unit inactive.
+down with the unit failed, and leaves a clean exit down with the unit inactive. It SHALL set
+`RestartSec=30s`, so that systemd waits 30 seconds before it restarts a start that exited 1.
 
 The compose file this repository ships SHALL set `restart: unless-stopped` on each Igor's
 service, and SHALL mark the process as running under compose. A process so marked that refuses
@@ -123,6 +124,13 @@ it does on that signal at any other time.
   the App can act on the lore repository
 - **THEN** it exits with status 1, and systemd restarts it
 
+#### Scenario: systemd retries an exit 1 slowly
+
+- **WHEN** `igor serve`, run by the shipped unit, exits with status 1 at each start because GitHub
+  refuses the App's credential
+- **THEN** systemd starts it again 30 seconds after each exit, and its start-rate limit does not
+  stop the unit
+
 #### Scenario: systemd does not wait on a refusal
 
 - **WHEN** `igor serve`, run by the shipped unit, refuses to start
@@ -160,7 +168,7 @@ it does on that signal at any other time.
 
 ### Requirement: Every open condition is readable without naming a role
 
-Every open condition SHALL be readable from a command that takes no argument and names no role,
+Every open condition SHALL be readable from `igor conditions`, a command run with no argument, so that its reader need not know which role to ask about,
 stating for each one: the cure key, the scope it stops, how many times it has recurred, what would
 cure it, and when its probe is due. Some conditions clear without a probe: a read-cleared
 condition clears on a passing read and keeps no recurrence count, and one on a refused GitHub

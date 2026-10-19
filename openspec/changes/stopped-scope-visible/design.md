@@ -66,8 +66,9 @@ Without that, every process that restarted after a bad commit landed, through a 
 or a reboot, would exit 78 and stay down.
 
 A start check that fails because GitHub or the model provider did not answer, or because GitHub
-refused the App's credential, exits 1 instead (decision 13, proposed): the supervisor restarts
-it, so an outage that passes, or the App's key file replaced at the same path, is picked up at the
+refused the App's credential, exits 1 instead (the proposal's decision 13, Adam, 2026-10-19).
+systemd restarts it 30 seconds later, and compose at once; whether compose should wait too is open
+for Adam (proposal, *Still open*). Either way an outage that passes, or the App's key file replaced at the same path, is picked up at the
 next start. A crash
 keeps whatever status Node gives it, never 78. Node's own exit codes run from 1 to 14,
 and a signal gives 128 plus its number, so none collides with 78. #175 cites the requirement *A
@@ -84,6 +85,13 @@ honours whatever `Restart=` says. The unit then leaves a refusal down, shows `fa
 `systemctl status`, and keeps Igor's reason in its journal. Any monitor that watches for failed
 units sees it, with nothing Igor-specific to configure. A crash exits non-zero and is restarted.
 A clean exit, status 0, is not restarted, and the unit shows inactive.
+
+The unit also sets `RestartSec=30s` (Adam, 2026-10-19). A start that exits 1, such as one where
+GitHub refused the App's credential (decision 13), is then retried every 30 seconds. That is
+slow enough that a credential still refused does not hammer GitHub, and slow enough that
+systemd's start-rate limit, by default five starts in ten seconds, never trips and leaves the
+unit failed. Compose has no such setting, so under compose this slow retry does not hold; the
+proposal's *Still open* asks Adam about it.
 
 Under #179 (`concurrent-instances`) a role can run as several processes, each with a number it
 keeps across restarts, its *rank*, and the role's *roster* in `igor.config.yaml` lists the ranks
@@ -119,8 +127,9 @@ The compose file marks the process as running under compose with `IGOR_REFUSAL_W
 `environment:`. The systemd unit does not set it, because systemd does not restart a refusal: a
 wait there would only keep a refusing unit showing active instead of failed.
 
-The count of refusals in a row lives in a file in the container's own filesystem, outside every
-volume. A restart by compose keeps the same container, and so the count. A start that passes
+The wait is 30 seconds after the first refusal in a row, doubling with each further one, at most
+30 minutes (Adam, 2026-10-19). The count of refusals in a row lives in a file in the container's
+own filesystem, outside every volume (Adam, 2026-10-19). A restart by compose keeps the same container, and so the count. A start that passes
 every check that refuses a start removes the file. The file must not be on a volume: the
 `igor-trees` volume at `/tmp` is shared by every Igor's container, which would share one count.
 
@@ -225,13 +234,12 @@ of a budget report is not asking whether anything is stuck — they are asking w
 spend. Filing the line there puts it where its reader is not, which is the failure mode worth more
 than the consistency.
 
-What belongs there instead is a listing whose subject *is* the question: `igor conditions`, no
-argument, every open condition with its cure key, scope, count, cure and next probe time, and one
+What belongs in place of a budget line for a role's stop is a listing whose subject is the
+question its reader asks, whether anything is stuck: `igor conditions` (Adam, 2026-10-19), no argument, every open condition with its cure key, scope, count, cure and next probe time, and one
 line in `docs/deployment.md`'s "Checking on it" beside `igor budget` and `igor run <role> --plan`.
 Once `condition-backoff` is built, the conditions exist, so this is a read and a render, and it is the same read the cycle
-report and the budget line already need. The requirement states the property — no argument, no role
-named, that content, reading clears nothing — rather than the command's name, because the name is
-the part a reviewer may reasonably want different.
+report and the budget line already need. The requirement names the command and what it must do:
+take no argument, show every open condition with the fields above, and clear nothing by being read.
 
 **The seat line is then a deliberate duplication**, one line rendered from the same read in two
 reports, `igor budget` and the conditions listing. It is cheap, and the alternative is worse: an operator who has read `igor budget` and

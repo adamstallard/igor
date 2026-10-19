@@ -33,8 +33,8 @@
       its reason, then waits 30 seconds after the first refusal in a row, doubling with each
       further one, at most 30 minutes, then exits 78. The count lives in a file in the
       container's own filesystem, outside every volume, and a start that passes every check
-      that refuses a start removes it. A stop signal ends the wait. The numbers are the
-      proposal's recommendation, still open for Adam
+      that refuses a start removes it. A stop signal ends the wait. The numbers and the place
+      of the count are Adam's (2026-10-19; proposal, decisions 15 to 17)
 - [ ] 1.4 Tests: the Igor's own credential, the role this process serves, and every seat that
       serves the role each leave the loop running; a cure made while it runs is picked up by
       the probe without a restart; a read-cleared condition clears on a passing read with no
@@ -43,12 +43,16 @@
       in a row wait 30 s, 60 s, 120 s and so on up to 30 minutes, a passing start resets the
       count, a stop signal ends the wait at once, and a crash does not wait; without it, a
       refusal exits at once
-- [ ] 1.5 In `deploy/igor.service`, `Restart=always` becomes `Restart=on-failure`, and the unit
-      gains `RestartPreventExitStatus=78`, with this comment above the two, which may be reworded:
+- [ ] 1.5 In `deploy/igor.service`, `Restart=always` becomes `Restart=on-failure`,
+      `RestartSec=30` becomes `RestartSec=30s`, and the unit gains `RestartPreventExitStatus=78`,
+      with this comment above the three, which may be reworded:
 
       ```text
       # A crash is restarted; a clean exit (status 0) is not. A process that refuses to start
       # exits 78 (EX_CONFIG) and is not restarted: fix what the journal names, then start it again.
+      # A start GitHub or the model provider did not answer, or where GitHub refused the App's
+      # credential, exits 1 and is retried every 30 seconds, slowly enough that systemd's
+      # start-rate limit does not trip.
       ```
 
       The unit lists no other status there and sets no `SuccessExitStatus=`, since a clean exit
@@ -83,7 +87,7 @@
 
 - [ ] 2.1 One read of the conditions rebuilt from the execution log, shared by the cycle report, the listing and the
       budget line, so the three cannot disagree
-- [ ] 2.2 An argument-free command (`igor conditions` unless review prefers otherwise) printing
+- [ ] 2.2 `igor conditions`, which takes no argument (Adam, 2026-10-19), printing
       cure key, scope, count, cure and next probe time, one line per condition; a condition with no
       count or no probe says what clears it instead
 - [ ] 2.3 One condition met by several Igors prints once

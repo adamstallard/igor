@@ -1,7 +1,7 @@
 ## Decisions
 
-Decisions 1, 2, 4, 6, 7, 8, 9, 12 and 14 are Adam's, each dated. Decisions 3, 5, 10, 11 and 13 are
-this change's proposals, for Adam's review.
+Every decision is Adam's, each dated. Decisions 3, 5, 10, 11 and 13 were this change's proposals,
+which he approved on 2026-10-19.
 
 1. **`igor serve` never exits at runtime because of a condition** (Adam, 2026-10-18). A
    *condition* is `condition-backoff`'s ([#101](https://github.com/adamstallard/igor/pull/101))
@@ -37,7 +37,7 @@ this change's proposals, for Adam's review.
    #174's checks refuse a start whether or not the process has applied a commit before. *Rejected:* a requirement that the shipped supervisors
    escalate a process that keeps refusing to start. A failed unit is what `systemctl status` and
    every systemd monitor already show.
-3. **A seat's stop is reported where the seat is reported** (proposed): on a line of the seat's
+3. **A seat's stop is reported where the seat is reported** (Adam, 2026-10-19): on a line of the seat's
    own in `igor budget`, told apart from every other state that keeps a seat unspent, as *A seat a
    condition has stopped reads as stopped* lists them: a credential that could not be read, one
    the provider refused, no headroom, and the rest. A seat with two open conditions, a refused credential among them,
@@ -46,9 +46,8 @@ this change's proposals, for Adam's review.
    2026-10-17), with the decryption failure as the reason and the condition named, where that is
    the seat's only open condition. Where the person running `igor budget` cannot read the key
    file that decrypts seat files, #171 shows the seat as not checked, and that line names the condition. #171 (`seat-files`) opens that condition.
-5. **A role's stop is not in the budget report** (proposed). Every open condition is listed by a
-   command that takes no argument and names no role. `design.md` argues for naming it
-   `igor conditions`.
+5. **A role's stop is not in the budget report** (Adam, 2026-10-19). Every open condition is
+   listed by `igor conditions`, which takes no argument and names no role.
 6. **A fix the process does not reread takes effect at the next restart** (Adam, 2026-10-18).
    A fix in the supervisor's environment for the process, such as the App's key path in the
    unit's environment file, is read only at start, so the operator who made it restarts the unit
@@ -83,20 +82,24 @@ this change's proposals, for Adam's review.
    `restart: on-failure:3`. Task 1.8 measured that its count of three never resets while the
    container exists, so a container that had run for weeks would stay down after its fourth
    crash.
-10. **No issue is filed in the destination for a stop** (proposed). *Rejected:*
+10. **No issue is filed in the destination for a stop** (Adam, 2026-10-19). *Rejected:*
     [#77](https://github.com/adamstallard/igor/pull/77)'s Igor-authored issue, as *Rejected: an
     issue in the destination* below argues.
-11. **A configured command hook, `on_condition_command`, is deferred, not rejected** (proposed),
+11. **A configured command hook, `on_condition_command`, is deferred, not rejected** (Adam,
+    2026-10-19),
     until an Igor is found stopped long after the fact where the listing and the budget line
     existed and nobody read either (*Deferred, not rejected*, below).
 12. **This change archives after `condition-backoff`, which gives `stuck-conditions` its base
     spec, and before #208** (Adam, 2026-10-18). Issue
     [#204](https://github.com/adamstallard/igor/issues/204) holds the order of every open change.
 13. **A start check that fails because GitHub or the model provider did not answer, or because
-    GitHub refused the App's credential, is not a refusal** (proposed). The process exits with
-    status 1, which the shipped supervisors restart, so a passing outage or a key fixed in place
-    is picked up at the next start. Exiting 78 there would leave the unit failed until a person
-    acted. A crash while the App's credential condition is open restarts the process, its start
+    GitHub refused the App's credential, is not a refusal** (Adam, 2026-10-19). The process
+    exits with status 1, which the shipped supervisors restart, so a passing outage or a key fixed
+    in place is picked up at the next start. The systemd unit sets `RestartSec=30s`, so a refused
+    credential is retried slowly and systemd's start-rate limit does not trip. Exiting 78 on these
+    faults would leave the unit failed until a person acted, though a restart can cure them: an
+    outage ends, and a key a person replaces at the same path is read at the next start. Exit 78
+    stays for a setup that only a person can fix and a restart never changes. A crash while the App's credential condition is open restarts the process, its start
     check then finds the credential refused, and an exit 78 there would leave the unit down for
     good: the permanent stop decision 1 rejects.
 14. **Under compose, a rank is retired by removing its service and running `docker compose up -d
@@ -107,29 +110,36 @@ this change's proposals, for Adam's review.
     and the deployment guide (task 4.2) say so. An operator who forgets sees that slow loop, with
     each refusal's reason in `docker compose logs`. systemd needs nothing extra: `Restart=on-failure`
     leaves a retired rank down (decision 8).
+15. **A refusal under compose waits 30 seconds after the first refusal in a row, doubling with
+    each further one, at most 30 minutes** (Adam, 2026-10-19). A start that passes every check
+    that refuses a start resets the count of refusals in a row, and with it the wait. Tasks 1.3 and 1.4 hold the numbers.
+16. **The wait applies only where the compose file sets `IGOR_REFUSAL_WAIT=1`** (Adam,
+    2026-10-19). The systemd unit does not set it: systemd does not restart a refusal, so a wait
+    there would only keep a refusing unit showing active instead of failed.
+17. **The count of refusals in a row lives in the container's own filesystem, outside every
+    volume** (Adam, 2026-10-19), so a restart by compose keeps it and no two containers share
+    it; `design.md`, *Compose*, gives the reason.
+18. **#204's order stands, though changes citing the status-78 requirement archive before this
+    change** (Adam, 2026-10-19). #175, #174 and #179 cite *A process that refuses to start exits
+    with status 78* and come before this change in #204's order. This change cannot move ahead of
+    them: it cites requirements of #171 and #179, which archive after #175 and #174. So between
+    those archives and this one, `openspec/specs/` cites a requirement it does not yet hold, until
+    the run of archives in #204's order reaches this change. Adam accepted that window.
 
-**Still open.** The requirements are written to each recommendation, and the tasks and the
-comment task 1.7 adds to the compose file carry each recommendation, so an answer that differs
-changes the requirement or task named. Each item says who answers it.
+**Still open.** Each item says who answers it.
 
-- **The listing's command name.** `design.md` proposes `igor conditions`; review may prefer
-  another. The requirement fixes the behaviour, not the name.
-- **The refusal wait's numbers, for Adam.** *Recommendation:* 30 seconds after the first
-  refusal, doubling with each refusal in a row, at most 30 minutes. A start that passes every
-  check resets it. Decision 9 fixes only that the wait grows; tasks 1.3 and 1.4 hold these
-  numbers.
-- **The wait applies under compose only, for Adam to confirm.** systemd does not restart a
-  refusal, so a wait there would only keep a refusing unit showing active, not failed.
-  *Recommendation:* compose only, as *A process that refuses to start exits with status 78*
-  says. The compose file sets `IGOR_REFUSAL_WAIT=1`, and the unit does not.
-- **The wait counts refusals per container, for Adam.** *Recommendation:* the count lives in a
-  file in the container's own filesystem, outside every volume, so a restart by compose keeps it
-  and no two containers share it; `design.md`, *Compose*, gives the reason.
-- **Changes citing this change's status-78 requirement archive before this change, for Adam.**
-  #175, #174 and #179 cite *A process that refuses to start exits with status 78* and come
-  before this change in #204's order. Moving this change ahead of them is not possible: it in
-  turn cites requirements of #143, #171 and #179. *Recommendation:* keep the order. Between those archives and this one the specs name a
-  requirement they do not yet hold, which the run of archives in #204's order closes.
+- **Under compose, a start that exits 1 is retried at once, for Adam.** Decision 13's slow retry
+  of a refused App credential or a GitHub outage at start comes from the systemd unit's
+  `RestartSec=30s`. Compose has no such setting, and a crash does not wait (decision 9), so under
+  compose such a start is retried within seconds, in a loop, for as long as the fault lasts.
+  *Recommendation:* the wait of decisions 15 to 17 also applies, under `IGOR_REFUSAL_WAIT=1`,
+  to a start check that exits 1, while the exit status stays 1.
+- **A crash on a refused reread leaves the unit down, for Adam.** #179 keeps a process running on
+  its last good configuration when a reread fails. If that process crashes before #208 lands,
+  its restart reads the failing configuration, refuses with 78, and the unit stays down: the
+  permanent stop decision 1 rejects. *Recommendation:* accept it until #208 lands, since #208's
+  restart starts on the last commit that passed.
+
 - **#174's check on a model call that fails, for #174.** #174 refuses a start when no
   `system/init` event arrives, the model run's first event, which lists the skills that loaded, whenever its check runs. Decision 13 makes a provider that did
   not answer exit 1, not 78. *Recommendation:* #174 refuses only where the model answered and
@@ -152,14 +162,25 @@ changes the requirement or task named. Each item says who answers it.
     start, which this change exits 1 on, and this change has no delta on it.
   - Decision 7 lists the ways a condition clears, and the list has fallen behind #101, which
     also clears a seat's credential condition when the credential changes.
-  - Under compose, the App's variables are in `.env`, not in the compose file's
-    `environment:`. A changed `.env` takes effect when the container is recreated (`docker
-    compose up -d`), not when it is restarted; nobody has measured it.
+  - Under compose, a changed `.env` or `environment:` may take effect only when `docker compose
+    up -d` recreates the container, not when compose restarts it. Nobody has measured it, and
+    *An open condition never ends a running service* says a fix in `environment:` takes effect
+    at the next start.
   - Whether a provider that did not answer can reach #174's check at all is unmeasured.
-  - #179 keeps a process running on its last good configuration when a reread fails. If that
-    process crashes before #208 lands, its restart reads the failing configuration, refuses with
-    78, and the unit stays down.
-  - Several requirements lack scenarios, and *cycle report* is used without a definition.
+  - Several requirements lack scenarios: clearing by a token minted again, by a passing read,
+    or by a lore fix at the next cycle; a model provider that did not answer; a start that falls
+    back to a commit that passed; and the listing's line for a refused App credential. *Cycle
+    report* is used without a definition.
+  - #174's check can run after the first cycle has begun, and nothing says when such a start
+    counts as passing every check, which is when the count of refusals in a row is removed.
+  - A seat with a refused credential and a failed decryption is shown as stopped here, and as
+    unreadable or not checked under #171.
+  - After #179, which archives first, Igor reads the App's key path from `/etc/igor/<role>.env`
+    itself, so it is no longer in the environment the supervisor gives it, as *An open condition
+    never ends a running service* and its scenario assume. After #175 the trees volume is at
+    `/var/lib/igor/trees`, not `/tmp`, so `design.md`'s reason for keeping the count off a volume
+    names a mount that will be gone.
+  - Issue #80's body still shows `on-failure:3` as this change's open recommendation.
 
 ## Why
 
