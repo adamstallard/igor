@@ -64,35 +64,73 @@
     a two-in-a-row rule would let the watermark pass them. *Rejected:* building them first and
     accepting that loss until then.
 
+15. **The state branch never gets a failure's text** (Adam, 2026-10-18). A `pre-worker` row
+    holds the failure's source, which surface's call threw, as the error class Adam asked for in
+    place of its text, and a hash of its masked message, the first twelve hexadecimal digits of its SHA-256. Two failures are
+    identical when their sources and hashes match. The raw and masked messages go only to the
+    process's own log, the server's journal under systemd, as one line of JSON with the item,
+    role, source and hash, so a person can find a row's text by its hash. *Rejected:* the masked
+    message as text in the row, and the raw message beside it. The state branch may be public,
+    and a tracker's error can carry the response text of a private repository.
+
 **Still open:**
 
 - **The masks are unmeasured.** Nobody has checked that real repeated failures give one
   signature after masking (task 0.1). If they never match, the breaker never trips, which is
   today's behaviour.
-- **A failure in the claim window, for Adam.** #179's *Only the rank holding a claim gives it
-  back* says a process whose claim message failed to post holds nothing, and one whose
-  verification fails counts as not holding the item. Under decision 13, then, no failure in the
-  claim window counts toward the breaker, even where the role runs one rank. The scenario *A
-  repeated failure in the claim window sets the item down* says the opposite. One of the two has
-  to give.
 - **A refused App credential inside a clone is unmeasured** (task 0.1). The tree provider mints
   its clone token from the App's credential. Whether a refusal there reaches #101's App
   condition, and so records a cure key, or is tagged `tree` and counted per item, is not known.
-- **For Adam, choices this change makes that no decision records:**
-  - the count is per role and item, so with several roles each may post three times before
-    setting an item down;
-  - on the third identical failure in the claim window, the withdrawal is posted even where the
-    claim message never landed;
-  - each failure's message is committed to the state branch twice, as `reason` and as the masked
-    `signature`. That branch may be public, and a tracker's error can carry a private source's
-    response text;
-  - which faults #101's `work-triage` rule covers. Its words are "where the cause was a fact about
-    the Igor — a seat whose token is unset, a command its allowlist refuses, a capacity never
-    observed — the item SHALL NOT be suppressed". Decision 11 reads that as covering faults that
-    record a cure key. Read literally, it also covers a fault with no cure key, such as a full
-    disk, which this change counts toward the breaker.
 - **The set-down sentence names what lifts a deferral.** #141, which lets only someone with
   write access lift a deferral, changes that sentence if it lands first (task 3.2).
+
+**Open questions for Adam**, each with a recommendation; none is decided:
+
+1. **A failure in the claim window.** #179's *Only the rank holding a claim gives it back* says
+   a process whose claim message failed to post holds nothing, and one whose verification (the
+   re-read after posting that shows whose claim message holds the item) fails counts as not
+   holding it. Every claim-window failure is one of those two, so under decision 13 no failure
+   in the claim window counts toward the breaker, even where the role runs one rank. The scenario *A
+   repeated failure in the claim window sets the item down* says the opposite, so one of the
+   two has to give.
+   *Recommendation:* count a claim-window failure, and post the set-down, only where, at the
+   moment of the failure, the item carries no claim message of another rank of the role among
+   the messages #179 counts. A rank alone on the item then sets it down as the scenario says,
+   and a rank that may have lost to a sibling counts nothing and removes no label. Under #179
+   `igor run` runs as rank 0, a rank of its own, so a run beside a serving rank is one of those
+   other ranks.
+2. **The withdrawal posted where no claim message landed.** On the third identical failure in
+   the claim window, the withdrawal carrying the set-down sentence is posted even where the
+   claim message never landed (`design.md`, *Where the set-down is said*).
+   *Recommendation:* keep it. It is the only word the item gets about being set down, and if the
+   tracker is still failing the post fails too, at no cost. Under recommendation 1 it is posted
+   only where no sibling's claim counts.
+3. **Which faults #101's no-suppression rule covers.** #101's `work-triage` rule says "where the
+   cause was a fact about the Igor — a seat whose token is unset, a command its allowlist
+   refuses, a capacity never observed — the item SHALL NOT be suppressed". Decision 11 reads
+   that as covering faults that record a cure key. Read literally, it also covers a fault with
+   no cure key, such as a full disk, which this change counts toward the breaker.
+   *Recommendation:* keep decision 11's reading, and have #101's rule say "a fault that records
+   a cure key". A full disk then still sets items down, but only an item alone in its cycle,
+   once per cycle: two items failing alike end the cycle uncounted.
+4. **The count is per role and item**, so with several roles each may post three times before
+   setting an item down.
+   *Recommendation:* keep it. Each role is a separate Igor with its own label and its own
+   deferral, and a fault in one role's setup says nothing about another's.
+5. **A hash of a guessable message can be confirmed.** Decision 15's hash is unkeyed, so anyone
+   reading a public state branch who can guess a failure's masked message, such as "repository
+   not found" with a private repository's name in it, can hash the guess and confirm it.
+   *Recommendation:* key the hash with a secret only the server holds (HMAC-SHA-256 under a key
+   in the role's environment file), so a guess cannot be checked offline. Changing the key
+   restarts every count, which costs at most three more failures per item.
+
+**Conflict with what is in force, recorded and not resolved:** decision 15 keeps a failure's
+text out of this change's rows, but the in-force run row in `executions.ndjson` carries the
+run's `reason`, and the transcript and the refusal envelope (the provider's response, kept when
+it refuses a run for a spent usage window) beside it carry the worker's text, all on
+the same state branch. A failure that records a cure key keeps that run row (decision 11), so
+its text still reaches the branch. Whether decision 15 reaches those records is for Adam;
+this change does not touch them.
 
 ## Why
 

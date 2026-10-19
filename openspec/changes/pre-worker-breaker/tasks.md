@@ -25,17 +25,21 @@
 - [ ] 2.1 In `runItem`, pass `execute` the tracker, code host and tree provider through wrappers
       that tag an error thrown out of any call with `tracker`, `code-host` or `tree`. An untagged
       error is `igor`
-- [ ] 2.2 Set `surfaceFailed` on a run only where the tag is `tracker` or `code-host`, in the
+- [ ] 2.2 `execute` reports, with a failure it returns rather than throws, the source of the step
+      that failed: `tracker`, `code-host`, `tree` or `igor`. A returned failure with no source is
+      `igor`
+- [ ] 2.3 Set `surfaceFailed` on a run only where the tag is `tracker` or `code-host`, in the
       claimed-run handler and in `takeClaim`'s claim window (whose calls are all the tracker's).
       Update the `surfaceFailed` doc comment in `ItemRun` and the comment above `abandon` in
       `src/serve.ts`, which say every throw counts
-- [ ] 2.3 Tests: two items in a row failing to clone in different ways do not end the cycle; two
+- [ ] 2.4 Tests: two items in a row failing to clone in different ways do not end the cycle; two
       failing on a tracker call do; a code-host failure after the worker ran counts
 
 ## 3. The breaker
 
-- [ ] 3.1 A pure `signature(message, treePath)` applying the masks in `design.md` in order, and a
-      pure `trailing(rows, item, role, source, signature)` counting as `design.md` *Counting*
+- [ ] 3.1 A pure `signature(message, treePath)` applying the masks in `design.md` in order, a
+      pure `signatureHash(signature)` giving the first twelve hexadecimal digits of its SHA-256,
+      and a pure `trailing(rows, item, role, source, hash)` counting as `design.md` *Counting*
       says. Tests for each mask, for each way the count stops, and for the outage exclusion
 - [ ] 3.2 A `failure` handoff's `next` gains `'set-down'`, whose tail is, exactly, with `<N>` the
       number of identical failures in a row, 3 or more:
@@ -48,13 +52,15 @@
       access`, so the sentence names what lifts a deferral as `work-triage` then states it. It
       may otherwise be reworded only to keep it true of that rule. A directed handoff keeps its
       relabel sentence
-- [ ] 3.3 `claimWithdrawn` takes the same sentence, appended after "Nothing was done, so there is
-      nothing to clean up." On the third identical failure in the claim window, post it even
-      where the claim message never landed
+- [ ] 3.3 On the third identical failure in the claim window, whichever message `takeClaim`
+      posts carries the same sentence: `claimWithdrawn`, right after "Nothing was done, so there
+      is nothing to clean up.", or `claimStuck`, where the release did not clear the label, right
+      after "Nothing was done.". Either way it comes before a directed claim's relabel sentence.
+      Post it even where the claim message never landed
 - [ ] 3.4 In `runItem`, on a failure before the worker (a refused claim window, a throw raised
       before `execute` spawned the worker, or a failure `execute` returns before spawning it;
-      `execute` reports whether it spawned the worker, so a worker that started and produced
-      nothing is not counted): build the signature, ask the count reader for the
+      #101's `workerless` mark on a run row tells that last kind apart from a worker that
+      started and produced nothing): build the signature, ask the count reader for the
       trailing count, and on a count of 3 or more including this one, unless the failure
       records a cure key, return `handed-off` with `handoff: 'failure'` and the set-down tail. Otherwise refuse as today. A count reader that
       throws or is absent counts as 0. Under #179, only the rank holding the claim does any of
@@ -68,13 +74,18 @@
 ## 4. The record
 
 - [ ] 4.1 Append a `kind: 'pre-worker'` row for each failure before the worker, with `item`,
-      `role`, `source`, `signature` and `reason`, wherever a run is recorded today: `serve`'s
-      event handler and the single-cycle loops in `src/cli.ts`. A failure that records one of
+      `role`, `rank`, the cycle's start as `cycle`, `source` and `hash`, and no text from the
+      failure, wherever a run is recorded today:
+      `serve`'s event handler and the single-cycle loops in `src/cli.ts`. Write the failure to
+      the process's own log as one line, in the form `design.md` gives, with its masked and raw
+      messages. A test checks that no part of the raw or masked message reaches the row. A failure that records one of
       #101's cure keys keeps the run row it writes today, with its `cures`, so #101's conditions
-      still see it. Every run row records whether `execute` spawned the worker, which *Counting*
-      reads
+      still see it, and writes no `pre-worker` row. A failure `execute` returns keeps its run
+      row too, marked `workerless`, so #101's probe, the one item it lets through to test whether a fault has cleared, still ends
+      on it. *Counting* reads #101's
+      `workerless` mark; no second marker is added
 - [ ] 4.2 Each cycle, `serve`'s and `igor run`'s, appends a `kind: 'outage'` row when it ends on
-      two surface failures, with `role`, the cycle's start as `since`, and every item whose run
+      two surface failures, with `role`, `rank`, the cycle's start as `since`, and every item whose run
       failed in that cycle, before or after the worker, as `design.md` says
 - [ ] 4.3 Supply the count reader through `wiring.ts`: it reads `executions.ndjson` with `readLog`
 - [ ] 4.4 Check that every reader of `executions.ndjson` that counts runs skips `pre-worker` and
@@ -83,7 +94,7 @@
 - [ ] 4.5 One function, which `serve`'s cycle and the single cycle `igor run` runs in
       `src/cli.ts` both call, applies both two-in-a-row rules: it ends the cycle on two surface
       failures in a row, and on two runs in a row, of different items, that fail before the worker
-      with the same source and signature. It keeps the previous run's item, source, signature and
+      with the same source and hash. It keeps the previous run's item, source, hash and
       whether it was a surface failure, for the cycle only. Move `serve`'s surface-failure count
       into it, so `igor run` gains the surface rule. A cycle that ends on two surface failures
       appends the `outage` row of 4.2; one that ends on two identical failures appends an
