@@ -96,6 +96,81 @@ export async function readState<T>(
   }
 }
 
+/** A state file as read for a change, with the blob sha that pins the version read. */
+export interface StateRead<T> {
+  value: T | undefined
+  /** Undefined where nothing is there. */
+  sha?: string
+}
+
+/**
+ * Reads a state file that is about to be changed and written back.
+ *
+ * Unlike `readState`, a failure throws: only a 404 means nothing is there. A reader that took
+ * any failure for an empty file would hand the writer an empty record to save over the real one.
+ */
+export async function readStateForUpdate<T>(
+  repo: string,
+  path: string,
+  branch = STATE_BRANCH,
+): Promise<StateRead<T>> {
+  let file: { content: string; sha: string }
+  try {
+    file = (await ghJson([
+      'api',
+      `repos/${repo}/contents/${path}?ref=${branch}`,
+      '--jq',
+      '{content, sha}',
+    ])) as { content: string; sha: string }
+  } catch (error) {
+    if (error instanceof GhError && error.status === 404) return { value: undefined }
+    throw new StateError(
+      `could not read ${path} from ${repo}: ${error instanceof Error ? error.message : String(error)}`,
+      error instanceof GhError ? error.status : undefined,
+    )
+  }
+  try {
+    return { value: JSON.parse(Buffer.from(file.content, 'base64').toString('utf8')) as T, sha: file.sha }
+  } catch (error) {
+    throw new StateError(`${path} in ${repo} is not JSON: ${error instanceof Error ? error.message : String(error)}`)
+  }
+}
+
+/**
+ * Writes over the version `readStateForUpdate` returned, and answers false where the file
+ * changed since, so the caller reads it again and re-applies its change.
+ *
+ * The sha is what makes the write safe: GitHub answers 409 to a write naming a sha other than the
+ * file's current one, and 422 to a write naming none over a file that exists. Don't have this
+ * function look the sha up itself just before the PUT: that sha would pass both checks and save
+ * over whatever changed between the caller's read and the write.
+ */
+export async function writeStateOver(
+  repo: string,
+  path: string,
+  value: unknown,
+  message: string,
+  sha: string | undefined,
+  branch = STATE_BRANCH,
+): Promise<boolean> {
+  await ensureStateBranch(repo, branch)
+  try {
+    await ghJson(
+      ['api', `repos/${repo}/contents/${path}`, '--method', 'PUT', '--input', '-'],
+      JSON.stringify({
+        message,
+        branch,
+        content: Buffer.from(`${JSON.stringify(value, null, 2)}\n`, 'utf8').toString('base64'),
+        ...(sha === undefined ? {} : { sha }),
+      }),
+    )
+    return true
+  } catch (error) {
+    if (error instanceof GhError && (error.status === 409 || (sha === undefined && error.status === 422))) return false
+    throw error
+  }
+}
+
 async function currentSha(repo: string, path: string, branch: string): Promise<string | undefined> {
   try {
     const file = (await ghJson([
