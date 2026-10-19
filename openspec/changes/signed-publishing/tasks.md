@@ -102,12 +102,16 @@
 
 ## 2. The commit
 
-- [ ] 2.1 After bug-hunter, make #175's link and hard-link checks, stage the change in Igor's
+- [ ] 2.1 Before every staging, in this task and in 1.2 and 2.5, kill every process the worker
+      user owns and check the changed paths for symbolic links, submodules and hard links, as
+      #175's *The Igor stages only after its checks, and #153's trailers bind the last staging* requires (proposal, decision 19). After bug-hunter, do that, then stage
+      the change in Igor's
       own index and run prose's first `prose check` call as the service user, on a draft message
       holding the issue title, with the goals Igor's code fixes for the message, a changed doc
       and a changed spec; give the prose pass the rules and the token on stdin (proposal,
-      decisions 12 and 16). Make the same checks before every later staging, and check for a
-      stop and the claim before every model step after the worker
+      decisions 12 and 16). Before every model step after the worker, check for a stop and the
+      claim: on a stop, publish nothing; on a lost claim, publish no signed text, and what else
+      is published waits on *For Adam* 19
 - [ ] 2.2 A bug-hunter step in caller-commits mode that edits without staging or minting and
       reports its `Bug-hunter:` value and any open decisions; parse both
 - [ ] 2.3 A prose pass step, given the rules, the token, the issue title and number and, under
@@ -124,8 +128,9 @@
 - [ ] 2.5 After the last model step, stage once more in Igor's own index, then run prose's
       second call with the token and the cold read of task 1.2, and bug-hunter's
       `mint-trailer.sh`, both from the pinned skills directory, with `GIT_DIR`, `GIT_WORK_TREE`
-      and `GIT_INDEX_FILE` set to Igor's git directory, the tree and Igor's index (proposal,
-      decisions 11 and 12; design, *Measurements*, 0.12)
+      and `GIT_INDEX_FILE` set to Igor's git directory, the tree and Igor's index, and with
+      `GIT_CONFIG_NOSYSTEM=1` and `GIT_CONFIG_GLOBAL=/dev/null`, which #175 sets for every git
+      call in a tree so that no filter the worker names is defined (proposal, decisions 11 and 12; design, *Measurements*, 0.12)
 - [ ] 2.6 In `produce()` and in #150's head push, check that the uploaded tree equals both
       signed trees, that `prose verify-staged` accepts the trailer, and that the subject is the
       issue title with any closing keyword dropped

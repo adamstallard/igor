@@ -157,6 +157,16 @@ whole change before any hunt. The *state branch* is where Igor records each item
     run and skip the next. Which model is *For Adam* 2.
 18. **No GitHub Action** (Adam, 2026-09-30, #139). Igor runs the checks in its own pipeline, so
     a CI check would only re-verify its work (#139, section 4).
+19. **Igor stages more than once, and every staging follows #175's kill and checks (Adam,
+    2026-10-19, on #175).** Igor stages three times: before prose's first call, since the token
+    records the goals of the docs that first call sees staged (task 0.9); after the prose pass
+    and bug-hunter's extra iteration where it runs, before the second call prints the cold-read
+    brief; and after the model steps that answer the cold read. Before every staging, Igor kills
+    every process the worker user owns and checks the changed paths for symbolic links,
+    submodules and hard links. #175 (`worker-user`) requires both in its requirement *The Igor stages only after its checks, and #153's trailers bind the last staging*,
+    whose "#153" is this change; this change cites it and does not restate the checks. Both trailers, `Prose:` and `Bug-hunter-Tree:`, bind the last
+    staging, the tree Igor publishes. *Rejected:* a single staging after the last model step,
+    under which prose's first call could not see the change's docs.
 
 **Still open:**
 
@@ -174,6 +184,35 @@ whole change before any hunt. The *state branch* is where Igor records each item
     than the token, and whether goals given by path pattern cover a doc first changed after the
     first call. A token prose refuses always gets a new first call.
 - Every other measurement has run; `design.md`, *Measurements*, records what each showed.
+- **Findings of the 2026-10-19 consistency read left for the next pass.** Each is the
+  author's to fix unless it names another change or *For Adam*, and none is built:
+  - `design.md` item 1 and task 0.5 still run `prose start` as the worker user and cite #175's
+    decision 15, which now forbids any prose script as the worker user (*For Adam* 6).
+  - #174 still says a role naming a skill not installed is refused when the role loads, where
+    this change refuses it only in a command that runs a model step. #174 also has its pinned
+    shared-skills commit carry `--goals-file` for `sign` only, not for `check`'s message goals,
+    which task 0.16 needs. Both are #174's to fix.
+  - The pull request body's opening block, the lines Igor's code writes before the
+    description, is defined both here and in #190; the signing order both here and in #175.
+    One side of each should cite the other.
+  - #188 names each logged model call `worker`, `bug-hunter` or `prose`, so the cold reader's
+    and the triage's calls, which this change adds, carry no name.
+  - For a role listing only `bug-hunter`, no staging or minting step is defined, and whether
+    the minting script runs when nothing hunted is not stated (*For Adam* 7).
+  - A second bug-hunter iteration's `Bug-hunter:` value replaces the first's, so a commit whose
+    first run fixed a bug can read "no bugs found", and no decision covers that.
+  - Two choices are not among the decisions: that the cold reader gets only Read, and that
+    under `igor run`, where the worker is Igor's own user and can write prose's token store, a
+    `Prose:` trailer shows the steps ran but not that none forged a token. Whether a reader with
+    only Read can do a commit's brief is unmeasured.
+  - *For Adam* 17 names commit paths, lore entries and discussion records, that have no issue,
+    so decision 6's subject, the issue title, cannot apply to them.
+  - Whether an issue Igor opens from chat is model-written and signed is not said.
+  - *Understood line* and *answers file* are defined only in `design.md`. Three SHALLs lack a
+    scenario: a second call refusing a doc as a failed attempt, the claim check before each
+    model step, and a post's cold reader having no tool. Two rationale sentences sit in
+    `task-execution`'s requirement text: that every trailer binds the last staging, and that
+    prose keeps its token store in the git directory.
 
 **For Adam,** each a question this change cannot settle alone, with a recommendation. Where the
 spec deltas already state an item's answer, they follow its recommendation; if Adam decides
@@ -258,8 +297,8 @@ otherwise, the requirement that states it changes.
 16. **Signing against Igor's index, building on #137.** Design item 3 decided to sign against
     the API's tree where the two trees can differ. They differ today only for a symbolic link or
     a submodule, which `main` uploads wrongly, and are equal once #137 carries both (task 0.4).
-    This change signs against `git write-tree` of Igor's index and builds on #137, so until #137
-    is built a change holding a link or a submodule is refused as a tree mismatch.
+    This change signs against `git write-tree` of Igor's index and builds on #137. Until #137 is
+    built, #175's checks stop a change holding a link or a submodule before it is staged.
     *Recommendation:* reverse design item 3's decision and sign against Igor's index: today's API
     tree carries a link or a submodule wrongly, so signing it would sign a wrong upload.
 17. **Commit paths other than `produce()` and #150's head push.** `lore-from-corrections`
@@ -272,19 +311,16 @@ otherwise, the requirement that states it changes.
     unrelated issue on merge. This change refuses any closing keyword other than the closing
     linkage decision 6 sets for the item itself, at every gate, and sends the text back to the
     step that wrote it. *Recommendation:* as written.
-19. **Staging before the prose pass.** Under #175, Igor reads none of the worker's changes and
-    stages nothing before the last model step exits. #175 lists when this change (#153) stages
-    as its own question for Adam. This change stages before prose's first call, since the token
-    records the goals of the docs the first call sees staged (task 0.9), and makes #175's link
-    and hard-link checks before every staging. *Recommendation:* as written; #175's authors
-    change it to allow reading and staging after its checks.
-20. **A claim lost during the signing steps.** Igor checks for a stop and its claim before each
-    model step after the worker, as at any checkpoint; a stop publishes nothing.
+19. **A claim lost during the signing steps.** Igor checks for a stop and its claim before each
+    model step after the worker, as at the checkpoints `surface-adapter` defines during a long
+    execution; a stop publishes nothing, since a stop is a person's word to drop the work. A lost
+    claim is different: another Igor now holds the item, and the work done so far may be worth
+    keeping.
     `task-execution` on `main` publishes what exists as a draft on a lost claim, but at that
     point no text is signed. *Recommendation:* run no further model step and publish the
     worker's change as that draft, with a body the code assembles and no signed text; the next
     Igor to claim the item redoes it, signed, before it can merge.
-21. **A second worker round after signing.** `loop-verifies-commands` (#189) runs the
+20. **A second worker round after signing.** `loop-verifies-commands` (#189) runs the
     repository's checks on the signed tree and, where one fails, runs the worker a second time,
     then stages and signs again. Signing again without the steps would mint `Bug-hunter-Tree:`
     over code no hunt saw. *Recommendation:* the second run's changes go through every step this

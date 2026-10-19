@@ -94,9 +94,12 @@ The order, from proposal decisions 11, 12, 13 and 16:
    call, which then sees the changed docs and records their goals. Whether goals given by
    pattern also cover a doc changed later, by the extra bug-hunter iteration of step 4 or by the
    answers to the cold read in step 5, is task 0.19. Before this staging, as before every
-   staging, Igor runs #175's link and hard-link checks on the changed paths; otherwise `git add`
-   would turn a hard link the worker made to a credential, such as the App's private key, into a
-   blob in a git directory the worker can read.
+   staging, Igor kills every process the worker user owns and checks the changed paths for
+   symbolic links, submodules and hard links. #175 (`worker-user`) requires both, in its
+   requirement *The Igor stages only after its checks, and #153's trailers bind the last staging*, whose "#153" is this change (proposal, decision 19). The kill
+   is there because a process still running could change the tree after the checks. The checks
+   are there because `git add` could otherwise turn a hard link the worker made to a credential,
+   such as the App's private key, into a blob in a git directory the worker can read.
 3. **The prose pass** gets the rules and the token in its prompt. It rewrites the message and
    the change's docs and comments by those rules, including the comments bug-hunter's fixes
    added.
@@ -113,7 +116,13 @@ as at any checkpoint of a long execution (`surface-adapter`); a stop publishes n
 Every trailer that binds a tree then names the tree Igor records and publishes. The scripts
 come from the root-owned skills directory (#174), and Igor runs them with `GIT_DIR`,
 `GIT_WORK_TREE` and `GIT_INDEX_FILE` set to its own git directory, the tree and its own index,
-so they read none of a `.git` the worker can replace (task 0.12).
+so they read none of a `.git` the worker can replace (task 0.12). They also run with
+`GIT_CONFIG_NOSYSTEM=1` and `GIT_CONFIG_GLOBAL=/dev/null`, as #175 runs every git call Igor
+makes in a tree (Adam, 2026-10-19, on #175). A filter that a worker's `.gitattributes` names
+runs only where some git configuration defines it, and with those two set the only
+configuration left is Igor's own git directory's, which defines none. A repository using Git LFS is therefore not supported until a later change defines filters Igor
+trusts. Igor does not refuse one: #175 checks each LFS file out as its pointer, and Igor stages,
+signs and publishes the pointer, which is what the repository stores.
 
 `Bug-hunter-Tree:` names the staged tree. It attests that bug-hunter's triage saw every change
 in that tree, and that bug-hunter hunted each change its triage did not skip. The prose pass's
@@ -278,8 +287,10 @@ out as a `100644` blob of its target's content, and a submodule's change reads a
 is skipped. Built with each path as the tree holds it (a link as a `120000` blob of its target,
 a submodule as a `160000` commit), which is what `carry-what-a-tree-holds` (#137) specifies, the
 trees are equal for every measured case. So this change signs against `git write-tree` of Igor's
-own index and builds on #137 (*For Adam* 16). Until #137 is built, a change holding a link or a
-submodule is refused as a tree mismatch, recorded as the item's failure. A binary file and a
+own index and builds on #137 (*For Adam* 16). Until #137 is built, #175's checks stop a run
+whose change holds a symbolic link or a submodule before anything is staged, so such a change
+never reaches the tree comparison. The comparison's refusal, a tree mismatch, remains for a
+difference those checks do not foresee. A binary file and a
 clean-filtered file, which #137 also carries, are not measured yet (task 0.17).
 
 ### 4. Igor's posting code refuses an unsigned post

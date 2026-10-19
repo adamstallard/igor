@@ -50,11 +50,13 @@ cold read.
 Where the role lists `bug-hunter`, Igor SHALL run the same triage on the diff the prose pass's
 answers to the cold read make, and a diff it does not skip SHALL fail the attempt.
 
-Every time Igor stages, it SHALL first make the checks #175's *The Igor reads no file on the
-worker's behalf through a link* requires on the changed paths, so that no link or hard link the
-worker made is staged. Before each model step after the worker, Igor SHALL check for a stop and
+Every time Igor stages, it SHALL first kill every process the worker user owns and check the
+changed paths for symbolic links, submodules and hard links, as #175's (`worker-user`) *The Igor stages only after its checks, and #153's trailers bind the last staging*
+requires, where "#153" is this change, so that no process is still writing the tree and no link or
+hard link the worker made is staged. Before each model step after the worker, Igor SHALL check for a stop and
 that it still holds the claim, as at any checkpoint (`surface-adapter`, *Claim verification also
-reports a stop*); a stop publishes nothing, and what a lost claim publishes is *For Adam* 20.
+reports a stop*); a stop publishes nothing. A lost claim publishes what *For Adam* 19 settles;
+until then it publishes no signed text.
 
 After the prose pass, and bug-hunter's extra iteration where it runs, Igor SHALL stage the
 change once more, in its own index, and run prose's second call, which prints the cold-read
@@ -66,8 +68,10 @@ directory: prose's second call, with the token, the cold-read report and the ans
 bug-hunter's minting script. Igor SHALL pass prose the message as a file (`-F`), never as an
 argument. Igor SHALL run every prose and bug-hunter script with `GIT_DIR`, `GIT_WORK_TREE` and
 `GIT_INDEX_FILE` set to its own git directory, the working tree and its own index, so that no
-script reads a `.git` the worker can write. Because every trailer binds that last staging, each
-trailer that binds a tree names the tree Igor records and publishes: `Prose:`, and
+script reads a `.git` the worker can write, and with `GIT_CONFIG_NOSYSTEM=1` and
+`GIT_CONFIG_GLOBAL=/dev/null`, as #175's *Nothing the worker writes is executed by the Igor*
+sets for every git call Igor makes in a tree. The last staging is also the tree Igor records
+and publishes, so each trailer that binds a tree names it: `Prose:`, and
 `Bug-hunter-Tree:` wherever any bug-hunter run hunted, the first or the extra iteration. Igor
 SHALL write the `Bug-hunter:` trailer itself, from the step's reported value, on every commit
 bug-hunter ran on, a change its first triage skipped included. A value holding a line break or a
@@ -270,6 +274,13 @@ these trailers.
 - **WHEN** the worker's tree holds a changed file with more than one hard link when Igor is
   about to stage for prose's first call
 - **THEN** Igor stages nothing, and the run stops as #175 requires
+
+#### Scenario: A command the worker left running is killed before any staging
+
+- **WHEN** a command the worker started is still running when Igor is about to stage, at any
+  of its stagings: before prose's first call, after the prose pass, or after the answers to the
+  cold read
+- **THEN** Igor kills every process the worker user owns, as #175 requires, before it stages
 
 #### Scenario: A stop during the signing steps publishes nothing
 
