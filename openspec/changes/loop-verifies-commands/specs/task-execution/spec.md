@@ -3,12 +3,14 @@
 ### Requirement: The loop runs the repository's checks in the worker's tree
 
 A round is one pass through every check the org base declares for the tree's repository, in the
-order declared. Where the worker's run settles with a result, having exited on its own or
+order declared. An execution row is the line that execution appends to `executions.ndjson` for
+each run. Where the worker's run settles with a result, having exited on its own or
 reported its result before a kill, and changed the tree, execution SHALL run a round. It SHALL run
 after execution has read which paths the worker changed and their contents, has read the item's
 claim, and has applied every refusal that reads only those changes: `allow`, path names,
 conflict markers, undeclared reverts, and at gate one under `two-gate-workflow` (#150) the drop
-of every change outside the specification. A run any of those refusals refuses runs no check. A
+of every change outside the specification. A run any of those refusals refuses runs no check, and
+so does a run whose claim, read before the checks, reports a stop. A
 path gate one drops SHALL be restored in the tree to the base before the round runs. Where
 `signed-publishing` (#153) stages and signs the tree before the commit, the round SHALL also run
 after that staging and signing. Every check SHALL run, even after one fails. Execution SHALL read
@@ -49,6 +51,11 @@ defines. Under `igor run` it is the Igor's own account, as it is for the worker.
 - **WHEN** the worker leaves the tree unchanged
 - **THEN** no check runs
 
+#### Scenario: A stop found before the checks runs none
+
+- **WHEN** the claim read before the checks reports that the item was stopped
+- **THEN** no check runs and nothing is published
+
 #### Scenario: A killed or refused run runs no checks
 
 - **WHEN** the worker is killed for a limit after editing files without reporting a result, or the
@@ -77,8 +84,10 @@ defines. Under `igor run` it is the Igor's own account, as it is for the worker.
 Where any check failed or timed out, execution SHALL first restore every path git does not
 ignore to the changes it read before the checks, removing any other untracked file; ignored
 files stay. It SHALL empty the outbox, the directory beside the tree where the worker writes its
-declarations, so nothing a check wrote there is read as the second run's. Where `seat-files`
-(#171) keeps the worker's git index copy in the outbox, execution SHALL make that copy afresh. It SHALL then start the worker once more, in that tree, with
+declarations, and write back into it the declarations it read from the first run, so the second
+run starts from them and nothing a check wrote there is read. Under `igor serve`,
+`worker-user` (#175) keeps the worker's git index copy in the outbox; emptying the outbox removes
+it, so execution SHALL make it afresh, as #175 makes it for a run. It SHALL then start the worker once more, in that tree, with
 the same instructions and item, and with each check that did not pass: its command, its result,
 its exit code, and its output as *The checks' result is published and recorded* redacts and cuts
 it. That output SHALL be delimited as untrusted content, as an item's text is, with every
@@ -91,8 +100,9 @@ Where the budget gate refuses the second run, the second run exits with an error
 for a limit, or a refusal refuses its changes, execution SHALL publish the first run's changes, as
 read before the second run, as a draft with the first round's result and the first run's summary.
 Nothing of the second run is published. *A limit does not destroy what the worker already
-produced* still governs the second run's own record: its changes are recorded, not published. Where the item is stopped during the second run,
-execution SHALL publish nothing.
+produced* still governs the second run's own record: its changes are recorded in its execution row, not
+published.
+Where the item is stopped during the second run, execution SHALL publish nothing.
 
 Where the claim is lost when execution reads it before the checks, or while the first round runs,
 the round SHALL run to its end and no second run SHALL start: the work is offered with that
@@ -126,6 +136,18 @@ as for any run that changes nothing.
 - **WHEN** a failing check's output contains the closing delimiter, followed by text phrased as an
   instruction to the agent
 - **THEN** the second run receives it delimited as untrusted content, with that delimiter escaped
+
+#### Scenario: What the first round wrote is gone before the second run
+
+- **WHEN** a failing check rewrites a file the worker changed and writes a new untracked file
+- **THEN** before the second run starts, the rewritten file holds the worker's content again and
+  the new file is gone
+
+#### Scenario: A resolution's declared revert survives the second run
+
+- **WHEN** a conflict resolution declared a revert, and a check fails
+- **THEN** the second run starts with that declaration in the outbox, and its changes are not
+  refused for an undeclared revert
 
 #### Scenario: A declaration a check writes is not read
 
@@ -180,17 +202,23 @@ as for any run that changes nothing.
 ### Requirement: A run's checks are bounded and killed with the run
 
 Each round of a run's checks SHALL be bounded by its repository's `check_minutes`. At the limit,
-execution SHALL kill the running check's process group, record that check as timed out, and
-record every check of that round not yet started as not run.
+execution SHALL kill the running check, record that check as timed out, and record every check of
+that round not yet started as not run.
 
 While checks run, execution SHALL re-read the claim on a timer, once per checkpoint interval. A
 stop found then, the process standing down under `concurrent-instances` (#179), or a termination
-during the checks SHALL kill the running check as it kills a worker.
+during the checks SHALL kill the running check.
+
+Every kill of a check SHALL be made as *A kill, a release and a sweep reach what the worker owns*
+(`worker-user`, #175) makes a kill of a worker: under `igor serve`, of every process the worker
+user owns; under `igor run`, of the check's process group.
 
 #### Scenario: A hung test is killed at the limit
 
 - **WHEN** a check is still running when `check_minutes` runs out
-- **THEN** it and its subprocesses are killed
+- **THEN** under `igor serve`, it and every process it started are killed, including one in a
+  new session
+- **AND** under `igor run`, its process group is killed
 - **AND** it is recorded as timed out at the `check_minutes` limit
 - **AND** every later check of that round is recorded as not run
 
@@ -203,18 +231,23 @@ during the checks SHALL kill the running check as it kills a worker.
 #### Scenario: A termination kills the running check
 
 - **WHEN** the Igor is terminated, or stands down, while a check runs
-- **THEN** the check's process group is killed
+- **THEN** the check is killed: under `igor serve`, every process the worker user owns; under
+  `igor run`, the check's process group
 
 ### Requirement: The checks' result is published and recorded
 
-An execution row is the line that execution appends to `executions.ndjson` for each run. It SHALL
-record, for every round, each check's command line and result: passed, failed, timed out or not run, with
+An execution row SHALL record, for every round, each check's command line and result: passed, failed, timed out or not run, with
 its exit code where it exited and how long it ran where it started. A check that could not start,
-or that a signal ended other than at the time limit, is failed with no exit code. The row SHALL
+or that a signal ended other than at the time limit, is failed with no exit code. Under `igor
+serve`, a check starts through #175's wrapper, which runs it as the worker user. Where the wrapper
+reports that it could not find the check's program, in a way execution can tell from the
+program's own exit code (task 0.6), the check counts as one that could not start. The row SHALL
 NOT hold a check's output.
 
 A pull request opened after checks SHALL be a draft where any check of the last round did not
-pass, whether or not `allow` lists `draft-pr`. It SHALL still request the role's reviewers,
+pass, whether or not `allow` lists `draft-pr`. Where the code host's call to create a draft
+fails because it does not offer drafts there, execution SHALL create the pull request again,
+ready, with its Tests row saying Igor could not open it as a draft. It SHALL still request the role's reviewers,
 unless the claim was lost. A lost claim falls under *Work finished before a claim is
 lost is offered, not discarded*, which requests none.
 
@@ -235,8 +268,8 @@ and the worker did not report them, then the Tests row's value, as #190 words it
 of each check that failed or timed out. Where a check failed, #190's wording of that value says
 the pull request is a draft because of it. A push whose checks still fail is published. Where a
 check of the last round did not pass, execution SHALL return the pull request to draft; where the
-code host refuses that, the comment SHALL drop that clause and say Igor could not return the pull
-request to draft.
+code host refuses that, the comment and the body's Tests row SHALL drop #190's clause saying the
+pull request is a draft, and say Igor could not return the pull request to draft.
 
 #### Scenario: A failing test makes the pull request a draft
 
@@ -250,9 +283,9 @@ request to draft.
 - **WHEN** a role allows `pr` and not `draft-pr`, and a check fails in both rounds
 - **THEN** the pull request is opened as a draft
 
-#### Scenario: A missing program is failed with no exit code
+#### Scenario: A missing program is failed with no exit code under igor run
 
-- **WHEN** a check names a program the worker's user cannot find
+- **WHEN** under `igor run` a check names a program the Igor's account cannot find
 - **THEN** the row records it as failed with no exit code
 
 #### Scenario: Output is held to its last 64 KiB
@@ -283,6 +316,17 @@ request to draft.
   published to a ready pull request, and a check fails in both rounds
 - **THEN** the pull request is returned to draft
 - **AND** a comment on it, under the fixed heading, names the failed check
+
+#### Scenario: A refused draft opens the pull request ready
+
+- **WHEN** a check fails in both rounds, and the code host refuses to open a draft
+- **THEN** the pull request is opened ready, and its Tests row says Igor could not open it as a
+  draft
+
+#### Scenario: A program not found is failed with no exit code under serve
+
+- **WHEN** under `igor serve` a check names a program the worker user cannot find
+- **THEN** the row records it as failed with no exit code, not with the wrapper's exit code
 
 #### Scenario: A refused conversion to draft is reported
 

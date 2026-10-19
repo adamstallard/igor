@@ -65,10 +65,19 @@
 10. **A check is an exact command line, run as its words with no shell, and a role that may open
     a pull request is refused when its `commands` does not permit a check of a repository in its
     `sources`.** The reason: without it, the loop would run on the role's behalf a command the
-    role may not run. The cost, for Adam to accept: granting a check's command also lets the
-    worker run it itself, with the seat's token in its environment, which a check never gets
-    (decision 19). A role whose `allow` lists neither `pr` nor `draft-pr` runs no check and needs no such
-    permission. A line
+    role may not run. A role whose `allow` lists neither `pr` nor `draft-pr` runs no check and
+    needs no such permission.
+
+    Two costs, for Adam to accept. First, a command granted for a check is one the worker may
+    also run while it works, and a command the worker runs can read the seat's token through
+    the worker's `claude` process (#175's measurement 6.4). A check the loop runs after the
+    worker exits cannot. Second, comparing a check line with a `commands` entry is a prefix
+    test on whole words. `docs/architecture.md` rules out any such test between two `commands`
+    entries, where a role narrows what it inherits only by repeating an entry verbatim, because
+    a test that lets one wider pattern through lets `*` through. A check line is no pattern: it
+    can hold no `*` and no shell character, so the test cannot widen anything.
+
+    A line
     holding any of ``; & | < > ( ) ' " \ $ ` * ? [ ] { } ~ # !``, a tab, a newline or two spaces
     in a row, or beginning or ending with a space, is refused at load. So `npm test && curl …`
     cannot pass as a line `npm test:*` permits, and `npm test src/*.ts` cannot pass a `*` its
@@ -94,15 +103,20 @@
     those refusals, which spend a round of checks and a second model run on work that is then
     refused; and checks before the read, which would publish what the checks write, such as test
     snapshots and build output.
-13. **A check's output is redacted, then cut to its last 1,000 characters,** both where it is
-    published and where it goes back to the worker. Redacting first means a token the cut would
+13. **A check's output is redacted, cut to its last 1,000 characters, and escaped,** both where it
+    is published and where it goes back to the worker. The worker's prompt marks an item's
+    untrusted text with an opening and a closing delimiter; the failed output is placed between
+    them in the same way, with every occurrence of the closing delimiter in it escaped, so a
+    check cannot end the untrusted span and write instructions after it. Redacting first means a token the cut would
     split is still found. The loop keeps only the last 64 KiB of a check's output while it runs,
     so a check that prints without end cannot fill the Igor's memory.
 14. **Before the second run, the tree is restored to the changes read before the checks, and the
-    outbox is emptied,** so nothing the first round wrote, such as a coverage report or a
-    declarations file, is read as the second run's work. In the failed output given to the second
-    run, every occurrence of the closing delimiter is escaped, so a check cannot end the
-    untrusted span.
+    outbox is emptied and given back the first run's declarations,** so nothing the first round
+    wrote, such as a rewritten snapshot or a declarations file, is read as the second run's work,
+    and a resolution's declared revert survives. Files git ignores, such as installed
+    dependencies or a coverage report, stay: execution never reads them as changes, and the
+    second run may need the dependencies. *Rejected:* removing ignored files too, which would
+    make the second run reinstall dependencies.
 15. **A lost claim, found before or during the first round, starts no second run.** The round
     runs to its end, and the work is offered under *Work finished before a claim is lost is
     offered, not discarded*, with that round's result. A claim found lost during the second run
@@ -133,13 +147,35 @@
 22. **A second run that leaves no change publishes nothing,** as any run that changes nothing,
     even where the first run's work failed a check. On a later push, publishing nothing means the
     reviewer's requested revision is not pushed; the reviewer learns of it only from the run's
-    outcome, as for any run that changes nothing. *Rejected:* publishing the first run's failing work, which the worker has just undone.
+    outcome, as for any run that changes nothing. *Rejected:* publishing the first run's failing
+    work, which the worker has just undone.
 23. **The execution row keeps, per round, each check's command, result (`passed`, `failed`,
     `timed-out`, `not-run`), exit code and seconds,** never its output. A check that could not
     start, or that a signal ended other than at the time limit, is `failed` with no exit code.
 
+24. **The second run goes through #153's steps as any run does:** its bug-hunter step (a model
+    review of the change), prose pass and cold read (a fresh model reading the prose) run again before its changes are signed, at the cost of their model
+    spend. *Rejected:* signing the second run's changes without those steps, which #153's
+    signature would then misrepresent.
+25. **Where the code host refuses a draft, the pull request is opened ready,** and its Tests row says
+    Igor could not open it as a draft (task 0.5). *Rejected:* publishing nothing, which loses
+    the work for a host setting.
+
 **Still open:**
 
+- **What the Tests row says after a clean merge the code host makes with no worker** (for Adam).
+  No check runs on that merge, so a `pass` in the body describes the head before it.
+  *Recommendation:* amend #190 so its Tests row names the commit its checks ran on, and a
+  reviewer sees when the head has moved past it.
+- **Which account restores the tree before the second run, and restores gate one's dropped
+  paths** (for Adam). This change says what the tree is restored to, not who restores it. Under
+  `igor serve` the Igor cannot remove what a check wrote inside a directory the worker user
+  made, so a restore run as the Igor would leave it (#175). *Recommendation:* run the restore
+  as the worker user, as #175's release of a tree (its cleanup after a run) is, from the tree
+  object #175 records before the checks, which the worker user can read and cannot change.
+- **How #175's wrapper reports a check whose program is missing under `igor serve`** is not
+  measured (task 0.6). Until it is, such a check is recorded as failed with whatever exit code
+  the wrapper gives.
 - **Whether a later change should let a role add checks of its own on top of its repository's.**
   #154 proposed it on 2026-10-01; this change lets no role add or drop a check. *Recommendation:*
   not until a role needs one; a check every role on a repository runs is the common case, and a
@@ -202,14 +238,8 @@ None.
   declares them), where under decision 1 they are the repository's. It says this change writes
   only into its table, while decision 7 adds a comment after a later push. And its failed Tests
   row says the pull request is a draft, which is false where GitHub refuses the conversion
-  (task 0.4).
+  (task 0.4) or the draft (task 0.5); it needs a wording for that case.
 - **Overlaps `keep-action-log` (#188)**, which defines *credential redaction* and builds its
   function.
-- **Overlaps `worker-user` (#175)**, whose task-execution delta also states that what a check
-  writes is not published, under a scenario of the same name as this change's. That rule belongs
-  to this change, and #175 needs only to point to it.
-- **#153** plans its archive merge around a `checks` addition to *Merge semantics differ by field
-  kind*. This change does not modify that requirement, so #153 needs that addition dropped from
-  its plan, in #153's own pull request.
 - Code: `src/role.ts`, `src/execute.ts`, and the GitHub adapter (returning a pull request to
   draft). Docs: `README.md` roles section, `templates/org.yaml`.

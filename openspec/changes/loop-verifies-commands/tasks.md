@@ -17,6 +17,21 @@
       Igor could not return this pull request to draft.
       ```
 
+- [ ] 0.5 Measure whether the code host opens a draft pull request on each kind of repository
+      Igor works, including a private repository on a plan that offers no drafts, and how a
+      refusal shows. Where the code host refuses, open the pull request ready, with this
+      clause in the Tests row in place of #190's draft clause, verbatim:
+
+      ```
+      Igor could not open this pull request as a draft.
+      ```
+
+- [ ] 0.6 Measure what a check naming a missing program reports under `serve`, started through
+      #175's `sudo` and `env` wrapper, and whether it can be told from a program that runs and
+      exits with the same code. Record the result in this change's proposal, replacing its
+      *Still open* item on it. Where it can be told apart, count that report as a check that
+      could not start; where it cannot, record the check as failed with that exit code.
+
 ## 1. The `repos` map
 
 - [ ] 1.1 In `src/role.ts`, read `repos` from the org base only, as a mapping from `owner/name`
@@ -39,23 +54,26 @@
 
 ## 2. Running the checks
 
-- [ ] 2.1 In `src/execute.ts`, run the checks where the worker's run settled with a result
-      (it exited on its own, or reported its result before a kill) and `changed` (each changed
-      path with its contents) is non-empty: after the claim status is read and after every
-      refusal that reads only `changed` (`allow`, path names, conflict markers, undeclared
-      reverts, and at gate one the drop of everything outside the specification, restoring each
-      dropped path to the base in the tree); where `signed-publishing` (#153) is built, also
-      after its staging and signing. Read the claim status again when the checks end. Run each
-      line split on spaces, as an argument list with no shell, with the tree as its working
-      directory, through the code that starts the worker (under `serve`, `sudo` as the worker
-      user; under `run`, directly as the Igor's own user), detached in its own process group.
+- [ ] 2.1 In `src/execute.ts`, run the checks where the worker's run settled with a result (it
+      exited on its own, or reported its result before a kill) and `changed` (each changed
+      path with its contents) is non-empty: after the claim status is read and is not
+      `stopped`, and after every refusal that reads only `changed` (`allow`, path names,
+      conflict markers, undeclared reverts, and at gate one the drop of everything outside the
+      specification, restoring each dropped path to the base in the tree); where
+      `signed-publishing` (#153) is built, also after its staging and signing. Read the claim status
+      again when the checks end. Run each line split on spaces, as an argument list with no
+      shell, with the tree as its working directory, through the code that starts the worker
+      (under `serve`, `sudo` as the worker user; under `run`, directly as the Igor's own
+      user), detached in its own process group.
 - [ ] 2.2 Give each check the worker's environment with `CLAUDE_CODE_OAUTH_TOKEN` and
       `ANTHROPIC_API_KEY` always removed. The worker's login, including a lent seat's decrypted
       token under `seat-files` (#171), is passed in one of those two variables, so removing both
       removes it.
 - [ ] 2.3 Give each round its own deadline of `check_minutes`. At the deadline, kill the running
-      check's group, mark it `timed-out` and the rest of the round `not-run`. Register each
-      check's group with the code that kills workers on a stop, a stand-down or a termination.
+      check, mark it `timed-out` and the rest of the round `not-run`. Kill a check through
+      #175's kill of a worker: under `serve`, every process the worker user owns; under `run`,
+      the check's process group. Register each check with the code that kills workers on a stop,
+      a stand-down or a termination.
 - [ ] 2.4 While checks run, call `claimStatus` on a timer every `checkpointMs`, never two calls at
       once, and on `stopped` kill the running check and return the stop outcome. On a lost
       claim, finish the round, start no second run, and offer the work with that round's result.
@@ -63,10 +81,11 @@
       stderr as it runs. Redact that with credential redaction, the function `keep-action-log`
       (#188) task 3.1 builds; then keep its last 1,000 characters and discard the rest. Write
       none of the output to disk or to the execution row.
-- [ ] 2.6 Where any check did not pass, restore every path git does not ignore to the changes read
-      before the checks, remove any other untracked file, and empty the outbox; where #171
-      keeps the worker's git index copy there, make that copy afresh. Then start the worker
-      once more through the budget gate, with the run's prompt followed by each such check's
+- [ ] 2.6 Where any check did not pass, restore every path git does not ignore to the changes
+      read before the checks, remove any other untracked file, empty the outbox and write back
+      the first run's declarations; under `serve`, emptying the outbox removes #175's git
+      index copy, so make it afresh as #175 makes it for a run. Then start the worker once
+      more through the budget gate, with the run's prompt followed by each such check's
       command, result, exit code and kept output, inside the delimiters an item's untrusted
       text uses, escaping every occurrence of the closing delimiter in the output. Then read
       `changed` and the declarations again, apply task 2.1's refusals to them, stage and sign
