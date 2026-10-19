@@ -32,8 +32,8 @@ a fork.
 2. The holder runs `claude setup-token`, encrypts the token to that public key, and opens a pull
    request adding `seats/<id>.yaml` with the ciphertext in it. `igor seat add` does all of it.
 3. Once the pull request merges and the server's lore checkout has it, Igor decrypts the token
-   with the private key on each lore read: at start, and at each cycle start once `lore-pull`
-   (#208) is built. A worker or a probe gets the plaintext Igor holds from that read, and
+   with the private key on each lore read: at start, and at each cycle start (#179's reread, and
+   `lore-pull`'s, #208). A worker or a probe gets the plaintext Igor holds from that read, and
    starting one decrypts nothing (Adam, 2026-10-18).
 
 Rotating is the same pull request with new ciphertext: `igor seat add` again. A lender revokes by
@@ -71,8 +71,7 @@ operator must get right:
 - **That condition is tied to reading seat files** (Adam, 2026-10-17). #101 opens a seat's
   condition when handoffs keep naming it, and clears it with #143's probe. A seat that is never
   picked causes no handoff, and the probe skips it, so neither path reaches it. Instead Igor
-  opens the condition when a lore read fails to decrypt the seat's file, at start and, once
-  `lore-pull` (#208) is built, at each cycle start, and clears it when a later lore read decrypts
+  opens the condition when a lore read fails to decrypt the seat's file, at start and at each cycle start, and clears it when a later lore read decrypts
   the file, as when the lender re-lends. The condition stops no role: the role treats the seat as
   it treats a seat that has reached its line. So a role with no other usable seat hands off each item, as a role whose seats have all
   reached their lines does, and the handoff names the condition. The `stuck-conditions` delta
@@ -137,8 +136,8 @@ Igor never uses a stored Claude login at all (Adam, 2026-10-18), and no organiza
 from that rule. One that declares no seats gives no role a seat, so its configuration fails
 validation and `igor serve` refuses to start. An organization with no
 lenders declares one seat from its own token, with `claude setup-token` and either `igor seat add`
-or a `token_env` seat file, and the operator guide gives those steps. A pull that removes the last
-seat file serving a role, once `lore-pull` (#208) is built, leaves the role with no usable
+or a `token_env` seat file, and the operator guide gives those steps. When Igor pulls its lore checkout
+(`lore-pull`, #208) and the pull removes the last seat file serving a role, it leaves the role with no usable
 seat. The process is already running, so it does not refuse to start: it keeps running, hands off
 what its workers held and takes nothing new. The removal always applies, but the configuration
 it leaves serves the role with no seat, which fails the startup checks, so the rest of that pull
@@ -414,10 +413,14 @@ So this workflow takes only the names of changed paths from the head, and runs n
   the seat id bound inside the ciphertext does, and Igor refuses the copy.
 - **The token is scoped** to `contents: read` and `pull-requests: write`.
 - **A mention counts as made only from the workflow's own comments:** one posted by
-  `github-actions[bot]` that starts with the marker `<!-- igor-seat-notice -->`. Every workflow
-  of the lore repository posts as that login, but only workflows on the default branch can post
-  on a fork's pull request, so whoever could forge such a comment could already change this
-  workflow. A comment the pull request's author posts, shaped the same, does not count.
+  `github-actions[bot]` that starts with the marker `<!-- igor-seat-notice -->`. A comment the
+  pull request's author posts, shaped the same, does not count. Every workflow of the lore
+  repository posts as that login. On a fork's pull request only workflows on the default branch
+  can post, but a writer's pull request from a branch of the lore repository can bring its own
+  `pull_request` workflow and forge such a comment, so that a later change to a seat file is
+  never announced, because the workflow skips an owner an earlier marker comment already names.
+  Whether to drop that skip, and mention an owner on every push that changes their file, is open
+  for Adam in the proposal's *Still open*.
 - **The owner's own change needs no notice; anyone else's does.** An owner is skipped only for
   an event they caused on a pull request they opened. A maintainer's push to a lender's pull
   request mentions the lender.

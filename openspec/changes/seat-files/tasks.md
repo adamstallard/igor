@@ -36,7 +36,12 @@ contradicts it, and then `design.md` records the measurement.
       ```
 
 - [ ] 2.3 `src/config.ts`: `budget` leaves `CONFIG_KEYS`. `seatKey` joins `CONFIG_KEYS`: a string
-      path, resolved against the config file's directory
+      path, resolved against the config file's directory. A `seatKey` that resolves inside the
+      lore checkout is refused at load, worded so:
+
+      ```
+      seatKey <path> is inside the lore repository. The private key must live outside it: committed, it is public, and uncommitted, it is discarded when the checkout is reset.
+      ```
 - [ ] 2.4 `Config.budget` is filled from the seat files at load, so callers of `config.budget` keep
       working
 - [ ] 2.5 Tests in `test/config.test.ts` and `test/budget.test.ts`: each scenario of *A seat is a
@@ -61,8 +66,8 @@ contradicts it, and then `design.md` records the measurement.
       ```
 
 - [ ] 3.3 Add the `age-encryption` dependency. Decrypt each seat's `encryptedToken` with the
-      identity at `seatKey` on each lore read, at start and, once `lore-pull` (#208) is built, at
-      each cycle start, and hold the plaintext in memory until the next lore read; `resolveToken` returns the held value and
+      identity at `seatKey` on each lore read, at start and at each cycle start (#179's reread,
+      and #208's once built), and hold the plaintext in memory until the next lore read; `resolveToken` returns the held value and
       never decrypts. Nothing is decrypted when a worker or a probe starts (proposal, decision 37).
       The plaintext is `<id>:<token>`: split it at the first colon, and fail decryption where
       there is no colon or the id is not the file's own; the seat's token is the part after the
@@ -146,8 +151,8 @@ contradicts it, and then `design.md` records the measurement.
       Tests: the scenarios *A lent seat that does not decrypt is skipped, and its lender named*,
       *A failed decryption opens the condition, and a good read clears it*, *A role whose only
       seat is undecryptable waits as at its line*, and `stuck-conditions`' *An undecryptable
-      seat's condition stops no role*. Until `lore-pull` (#208) is built, the only lore read is at
-      start, so the condition opens and clears at start only
+      seat's condition stops no role*. Until `lore-pull` (#208) pulls the checkout, the test of a
+      good read updates the seat file in the checkout by hand, then waits for the next cycle start
 
 - [ ] 3.10 No model call Igor makes, under `igor serve` or `igor run`, is given a stored Claude
       login in place of a seat's token (proposal, decision 36; *A spend with no seat behind it is
@@ -218,7 +223,14 @@ contradicts it, and then `design.md` records the measurement.
       `--lore` names the lore repository. In a clone of the lore repository, or of a fork of it,
       `--lore` may be left out, and the lore repository comes from the clone's `upstream` remote
       where there is one, and otherwise `origin`. Outside a clone, a missing `--lore` is refused
-      before the token is read. The holder's login comes from `gh api user`
+      before the token is read. Before reading the token, print the lore repository, and the
+      remote it came from where it was inferred, worded so:
+
+      ```
+      Lending to <owner/repo> (from the clone's <remote> remote).
+      ```
+
+      The holder's login comes from `gh api user`
 - [ ] 7.1a Check `owner` with `gh api users/<owner>` before writing the seat file (proposal,
       decision 12). With the owner taken from `gh api user` the check passes in every ordinary
       case; it is kept so that `owner` is checked the same way wherever it is written. A login it
@@ -316,7 +328,9 @@ first (Adam, 2026-10-17).
 
       Where the file is present, read the workflow's state and whether Actions are enabled for
       the repository; a disabled workflow, or Actions off, is a finding, and an unreadable state
-      is unchecked. Test: *A disabled notice workflow*
+      is unchecked. Read the workflow's most recent run; a failed run is a finding naming it.
+      Tests: *A disabled notice workflow*, *A failing notice workflow is reported* and *The
+      workflow's state cannot be read*
 - [ ] 8.3 The configuration's validation, which reads no secret, reports a seat file carrying
       `encrypted_token` while `igor.config.yaml` declares no `seatKey` (proposal, decision 43).
       `igor doctor` shows it because #113 has `doctor` invoke that validation; `doctor` has no
@@ -333,8 +347,11 @@ first (Adam, 2026-10-17).
       test for each of its scenarios. The finding, worded so:
 
       ```
-      seats/<id>.yaml names owner <owner>, which is not a GitHub login, so no change to that file mentions anyone. The seat's holder, or the operator for a holder with no GitHub account, sets owner to a GitHub login in a pull request.
+      seats/<id>.yaml names owner <owner>, which is not a GitHub user's login, so the notice workflow cannot reach the seat's holder about a change to that file. The seat's holder, or the operator for a holder with no GitHub account, sets owner to a GitHub login in a pull request.
       ```
+
+      An `owner` not in a login's form is reported without calling `gh api`; an `owner`
+      that `gh api users/<owner>` reports as an organization gets the same finding
 
 ## 9. Docs and templates
 

@@ -56,11 +56,22 @@ the default branch carries no `.github/workflows/seat-notice.yml`. The finding S
 lender is then told when a pull request changes their seat file, and SHALL name `igor init` as
 the command that writes the workflow. Where the file is present, `doctor` SHALL also report a
 finding where the workflow is disabled or Actions are off for the repository, naming enabling it
-as the remedy, and report the check as unchecked where it cannot read that state.
+as the remedy, and a finding where the workflow's most recent run failed, naming that run. It
+SHALL report the check as unchecked where it cannot read that state.
 
 A lender's veto over their seat is revoking its token, and the notice is how they learn of a
 change in time to use it. Without the workflow nothing fails and nothing is reported: lenders are
 simply never told.
+
+#### Scenario: A failing notice workflow is reported
+
+- **WHEN** the lore repository has seat files, and the most recent run of `seat-notice.yml` failed
+- **THEN** it is reported as a finding, naming that run
+
+#### Scenario: The workflow's state cannot be read
+
+- **WHEN** `igor doctor` cannot read whether the notice workflow is enabled, or its runs
+- **THEN** the check is reported as unchecked, with the reason, and not as passing
 
 #### Scenario: The notice workflow is absent
 
@@ -86,7 +97,8 @@ simply never told.
 
 For each seat file naming an `owner`, `igor doctor` SHALL first check that the `owner` has a
 GitHub login's form, letters, digits and single hyphens, and only then check with `gh api
-users/<owner>` that the login exists. It SHALL report a finding naming the seat file where either
+users/<owner>` that the login exists and belongs to a user, not an organization, whose mention
+notifies nobody. It SHALL report a finding naming the seat file where either
 check fails, and SHALL NOT pass an `owner` of any other form to `gh api`.
 The finding SHALL say that the notice workflow cannot reach the seat's holder about a change to
 that seat file, and that the seat's holder,
@@ -113,6 +125,11 @@ later registers it.
 - **WHEN** `seats/bob.yaml` names `owner: x/../../repos/acme/igor-lore`
 - **THEN** it is reported as a finding, naming `seats/bob.yaml`
 - **AND** no `gh api` call is made with that `owner`
+
+#### Scenario: An owner that is an organization
+
+- **WHEN** `seats/bob.yaml` names `owner: acme`, and `gh api users/acme` reports an organization
+- **THEN** it is reported as a finding, naming `seats/bob.yaml` and `acme`
 
 #### Scenario: An owner that is a GitHub user
 

@@ -10,11 +10,12 @@ observes that* does not apply to it. It SHALL stop nothing by itself. What the f
 not supply, such as a seat's token, is still missing, and the rule for that thing says what
 follows: for a seat, seat-budget's *A role draws on the seat with the most headroom* has a role
 with no other eligible seat hand off rather than stop. The condition records the fault and names its cure, and it is reported like any other
-condition.
+condition. A read SHALL append a condition row only where it opens or clears the condition, not on
+every read.
 
 A rule that opens a condition of this kind cites this requirement and states only what is read,
-what counts as failing, and what the condition is on. The condition on a seat file Igor fails to decrypt
-is a read-cleared condition, opened by such a rule in *A condition that recurs stops the affected scope from taking new work*.
+what counts as failing, and what the condition is on. Seat-budget's *A seat's token travels as
+ciphertext in its file* is one such rule, for a seat file Igor fails to decrypt.
 
 A read is its own observation of the cure. A probe item takes work to find out whether a fault
 recurs; a file that reads cleanly has already shown it.
@@ -134,13 +135,11 @@ The twentieth is waste, whatever the cause.
 Two conditions open on their first occurrence. The first is a refused GitHub App credential,
 which stops the Igor itself. An Igor whose App is refused can do nothing on GitHub, so no item
 it takes could find the cure, and `app-identity` already requires that it take no new item while
-refused. The second is a seat file Igor fails to decrypt, a read-cleared condition as *A
-read-cleared condition opens on a failing read and clears on a passing one* defines it: the read
-is of the seat files, and the condition is on the seat. It takes the seat
-out of every role's choice and stops no role (*A condition's scope is its cure's scope*). Such a
-seat is never chosen and never probed, so no run or probe item ever uses it, and reading the file
-again is the only observation of its cure (seat-budget's *A seat's token travels as ciphertext in
-its file*).
+refused. The second is the read-cleared condition on a seat file Igor fails to decrypt, which
+seat-budget's *A seat's token travels as ciphertext in its file* opens. Unlike the first, it
+stops nothing (*A read-cleared condition opens on a failing read and clears on a passing one*). Such a seat is never
+chosen and never probed, so no run or probe item ever uses it, and reading the file again is the
+only observation of its cure.
 
 #### Scenario: A recurring condition stops the scope
 

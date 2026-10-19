@@ -66,6 +66,11 @@ in `seats/` other than `*.yaml`, such as `recipient.txt`, are not seats.
 - **WHEN** a seat file omits `roles`
 - **THEN** it is refused, naming the file and the missing key
 
+#### Scenario: Roles that are not a list are refused
+
+- **WHEN** a seat file declares `roles: generalist`
+- **THEN** it is refused, naming the file and saying `roles` is a list of role names
+
 #### Scenario: A role nobody defined is refused
 
 - **WHEN** a seat file lists a role that has no file under `roles/`
@@ -148,7 +153,9 @@ file cannot name `GH_TOKEN`, or another seat's variable.
 A seat file's `encrypted_token` SHALL be an age ciphertext, encrypted to the public key committed
 as `seats/recipient.txt` and base64-encoded on one line. Igor SHALL decrypt it with the age
 identity at the path `igor.config.yaml` names as `seatKey`, resolved against the config file's
-directory.
+directory. A `seatKey` that resolves inside the lore checkout SHALL be refused at load, naming the
+path and saying the private key must live outside the repository: a key there is either
+committed, and so public, or discarded when the checkout is reset to a commit.
 
 The plaintext SHALL be the seat's id, a colon, and the token: `<id>:<token>`. Igor SHALL split it
 at the first colon, which no seat id can contain, and SHALL use the part after the colon as the
@@ -162,9 +169,12 @@ committed to the repository is to be revoked at Anthropic and replaced with ciph
 token in a seat file is a credential in git history, and the refusal is the only place anybody is
 told.
 
-Igor SHALL decrypt a seat's token only on a lore read, `lore-pull`'s (#208) term for a process
-loading its configuration, role files and seat files from one commit: at start, and at each cycle
-start once #208 is built. It SHALL NOT decrypt when it starts a worker or a
+`igor serve` SHALL decrypt a seat's token only on a lore read, `lore-pull`'s (#208) term for an
+Igor process loading its configuration, role files and seat files
+from one commit: at start, and at each cycle start, where #179 rereads the configuration and,
+once built, #208 makes its lore read. Until #208 pulls the checkout, the seat files change only
+when someone updates the checkout by hand. `igor run` decrypts nothing (*A lent seat is decrypted
+only where the worker has a user of its own*). It SHALL NOT decrypt when it starts a worker or a
 probe: each is given the plaintext Igor holds from its last read, held as *A decrypted seat token
 never touches the server's disk* requires. Where decryption fails, the seat SHALL be reported
 unreadable with the reason, and no other credential SHALL be used in its place. Decryption fails
@@ -173,12 +183,12 @@ ciphertext does not decrypt, or the plaintext does not name the file's own seat 
 pick it, and #143's probe SHALL skip it. It is under a read-cleared condition
 (`stuck-conditions`' *A read-cleared condition opens on a failing read and clears on a passing
 one*): what is read is the seat's file, on a lore read; failing is any of the decryption failures
-above; the condition is on the seat, with cure key `seat:<id>:decrypt`. A lore read appends a
-condition row only where it opens or clears the condition. What a role does when this leaves it
+above; the condition is on the seat, with cure key `seat:<id>:decrypt`. What a role does when this leaves it
 no eligible seat is *A role draws on the seat with the most headroom*.
 
 Where the key is read but the seat's ciphertext does not decrypt with it, because it was
-encrypted to another key or is corrupt, that condition's report SHALL name the seat and its
+encrypted to another key or is corrupt, or decrypts to a plaintext naming another seat's id or
+none, that condition's report SHALL name the seat and its
 `owner`, the lender, so that someone re-lends it; where the file names no `owner`, the report
 SHALL say so, and that the operator re-lends the seat or removes its file. The report SHALL show
 the `owner` only where it has a GitHub login's form, letters, digits and single hyphens, and
@@ -192,12 +202,15 @@ declared or the key file cannot be read, the report SHALL name the key, whose cu
 operator's.
 
 A command a person runs, such as `igor budget`, makes no lore read: it opens and clears no
-condition and appends no condition row. Where it cannot read the key file, as an operator other
-than the service user usually cannot, it SHALL show a lent seat as not checked, naming the path,
-and never as unreadable on the strength of its own failed read; a `seat:<id>:decrypt` condition
-open in the execution log is shown as stuck-conditions' reporting shows any open condition.
-Where such a command would show that seat's credential hash, it SHALL say the hash was not
-computed.
+condition and appends no condition row. It MAY decrypt the seat files in its own process, to
+report them, where it can read the key file. Where it cannot, as an operator other than the
+service user usually cannot, it SHALL show a lent seat as not checked, naming the path, and never
+as unreadable on the strength of its own failed read. Where the execution log holds an open
+`seat:<id>:decrypt`, the seat's line SHALL also name that condition, as #82
+(`stopped-scope-visible`) specifies. Such a command shows each seat's credential hash where it
+reports which credential a seat resolves (`stuck-conditions`' *Reporting tells a refused credential
+from an unreadable one, and clears nothing*); where it cannot decrypt the seat, it SHALL say the
+hash was not computed.
 
 A seat's credential, wherever another rule compares or hashes it, such as
 `stuck-conditions`' *A seat's refused credential is a condition on that seat* (#101), SHALL be the
@@ -242,10 +255,22 @@ can read the lore repository, which may be anyone.
 - **THEN** it is refused at load, naming the file
 - **AND** the refusal says to revoke that token at Anthropic and replace it with ciphertext
 
-#### Scenario: A relative key path is read from the config file's directory
+#### Scenario: A key path outside the lore checkout is read
+
+- **WHEN** `igor.config.yaml` in `/srv/lore` names `seatKey: /etc/igor/seat.key`
+- **THEN** Igor reads the private key from `/etc/igor/seat.key`
+
+#### Scenario: A key path inside the lore checkout is refused
 
 - **WHEN** `igor.config.yaml` in `/srv/lore` names `seatKey: keys/seat.key`
-- **THEN** Igor reads the private key from `/srv/lore/keys/seat.key`
+- **THEN** the configuration is refused at load, naming `/srv/lore/keys/seat.key` and saying the
+  private key must live outside the repository
+
+#### Scenario: Text before the colon that is not a seat id is not shown
+
+- **WHEN** a seat file's `encrypted_token` decrypts to `@everyone [x](https://example.com):<token>`
+- **THEN** the condition's report says the plaintext names another seat or none, and shows none
+  of the text before the colon
 
 #### Scenario: A report shows an owner only in a login's form
 
@@ -307,8 +332,8 @@ can read the lore repository, which may be anyone.
 
 - **WHEN** `seats/bob.yaml`, whose `owner` is ``@team [x](https://example.com)``, carries
   ciphertext that does not decrypt
-- **THEN** the condition's report shows the owner in a code span, so it mentions nobody and links
-  nowhere
+- **THEN** the condition's report says the seat's `owner` is not a GitHub login, and shows none of
+  its text, so it mentions nobody and links nowhere
 
 #### Scenario: A lent seat that does not decrypt is skipped, and its lender named
 
@@ -389,7 +414,8 @@ passed over, and the role SHALL keep working on its other eligible seats.
 
 Where no seat serving the role is eligible, exactly one of two things SHALL happen:
 
-- **The role stops,** as `stuck-conditions` says, where every seat serving it is under an open
+- **The role stops** (`stuck-conditions`' *A condition that recurs stops the affected scope from
+  taking new work*), where every seat serving it is under an open
   condition and none of those conditions is read-cleared, such as a refused credential or an unset
   `token_env` variable on every seat.
 - **Otherwise the Igor hands off the item** and the role does not stop. This covers every seat at
@@ -496,8 +522,8 @@ The workflow SHALL run on GitHub-hosted runners, triggered by `pull_request_targ
 comment on pull requests from forks, and by no other event. It SHALL run when a pull request is
 opened, reopened, pushed to, marked ready for review, or edited, which includes a change of base
 branch. The trigger SHALL have no `paths`
-filter, so that it runs on every pull request: GitHub's path filter misses a seat file that sorts
-after a pull request's first 3,000 files. The workflow SHALL find the seat files a pull request
+filter, so that it runs on every pull request: GitHub's path filter misses seat files on large
+pull requests (`design.md`, *The lender hears about a change to their seat file*). The workflow SHALL find the seat files a pull request
 changes by fetching the pull request's commits as git data, with no checkout and no file
 contents, and comparing the trees of its base and head under `seats/`. It SHALL take nothing from
 the head but those paths' names, SHALL match each against `^seats/[a-z0-9][a-z0-9-]*\.yaml$`
@@ -653,7 +679,9 @@ installed, and SHALL:
 The lore repository SHALL be the one `--lore <owner/repo>` names. Inside a clone, `--lore` MAY be
 left out, and the lore repository SHALL be the clone's `upstream` remote, or `origin` where
 there is no `upstream`. Outside a clone,
-the command SHALL refuse without `--lore`, before reading the token.
+the command SHALL refuse without `--lore`, before reading the token. Before reading the token, the
+command SHALL print the lore repository the token will be encrypted for and the pull request
+opened against, and where it took that repository from a remote, which remote.
 
 The command SHALL require `gh`, installed and signed in, and SHALL refuse before reading the token
 where it is missing or signed out. Igor SHALL NOT hold the holder's GitHub credentials: `gh` keeps
@@ -706,6 +734,8 @@ copy, and whoever replaces `recipient.txt` receives every token encrypted to it 
 - **WHEN** a holder runs `igor seat add bob` without `--lore` in a clone whose `origin` is
   `bob/igor-lore` and whose `upstream` is `acme/igor-lore`
 - **THEN** the pull request is opened against `acme/igor-lore`
+- **AND** before the token is read, the command prints `acme/igor-lore` and that it came from the
+  `upstream` remote
 
 #### Scenario: A holder without `gh` is refused
 
@@ -789,8 +819,8 @@ SHALL NOT apply to it, because `igor run` makes no probe: a reserve would hold t
 a reading arrived, and none would. Wherever another rule uses the larger of a seat's reserve and a
 role's, such as *A role may hold back more of a seat than the seat does* or #143's *A seat with no
 reading is drawn on only where its line is the whole window*, it SHALL use 0 for this seat. Every
-other rule of the gate SHALL apply to it as to any seat. `igor run` SHALL
-make no seat probe, of the implicit seat or of any other.
+other rule of the gate SHALL apply to it as to any seat. `igor run` makes no seat probe (*A seat
+nothing has read is probed on the Igor server with its own token*).
 
 When `igor run` starts, Igor SHALL say that it spends the token in `IGOR_RUN_TOKEN`.
 
@@ -826,17 +856,18 @@ When `igor run` starts, Igor SHALL say that it spends the token in `IGOR_RUN_TOK
 Every model call Igor makes on its own behalf, under `igor serve` and under `igor run`, SHALL be
 charged to the seat the gate chose for the role, and SHALL be made with that seat's token. Under
 `igor run` the only seat the gate can choose is the implicit local seat (*`igor run` spends its
-own token as an implicit local seat*). A seat
-probe is the one exception to the gate choosing: it is charged to the seat it reads and made with
-that seat's own token. Every other call goes through the gate, #174's startup skills check
+own token as an implicit local seat*). Two calls are
+exceptions to the gate choosing, each charged to the seat it reads and made with that seat's own
+token: a seat probe, and #143's live `/usage` read, made only for a seat whose credential the
+`/usage` endpoint reports windows for, which a `setup-token` does not. Every other call goes through the gate, #174's startup skills check
 included. Where the gate names no seat, the call SHALL NOT be made. Igor SHALL NOT make a model
 call on a stored Claude login (the credentials `claude` keeps in a home directory), or on any
 other credential no seat names, whether in place of a seat or beside one.
 
-Under `igor serve` no stored login exists: the operator guide signs no `claude` in as the
-service user. Under `igor run`, on a developer's own machine, Claude
-Code could itself prefer a stored login there over the token Igor passes it; #174's task 0.3
-found that Claude Code 2.1.303 does not. Where a version does, the call spends the developer's own login and quota, and that is
+Under `igor serve` the operator guide signs no `claude` in as the service user, so no stored login
+is there to prefer (task 3.12 confirms it). Under `igor run`,
+on a developer's own machine, Claude Code could itself prefer a stored login there over the token
+Igor passes it. Where it does, the call spends the developer's own login and quota, and that is
 accepted: Igor neither works around it nor refuses.
 
 What this requirement tests is whether the gate named a seat. Every seat file names its token
@@ -925,8 +956,9 @@ itself writes.
 
 When a pull of the lore checkout (`lore-pull`, #208) removes a seat file, the removal SHALL take
 effect even where the rest of the pull is refused for failing the startup checks, the
-configuration checks Igor makes before its first cycle, such as config validation. Until #208 is
-built, a running process keeps using a removed seat file's token until it restarts. When the removal applies, Igor SHALL
+configuration checks Igor makes before its first cycle, such as config validation. The removal applies at
+the next cycle start's lore read. Until #208 pulls the lore checkout, a seat file leaves the
+checkout only when someone updates the checkout by hand. When the removal applies, Igor SHALL
 drop the seat's decrypted token from memory, give the seat to no new worker, and kill every worker using
 it. Under `igor serve` that is the `claude -p` child and every process its worker user owns. Under
 #175 each process has its own worker user, `igor-worker-<role>-<rank>`, which runs only that
@@ -1021,12 +1053,12 @@ than the seat does, never less (*A role may hold back more of a seat than the se
 ### Requirement: A role may hold back more of a seat than the seat does
 
 A role MAY declare a `reserve`, a fraction from 0 to 1, both included. It SHALL apply to every seat
-the role draws on except `igor run`'s implicit seat, and it is not set per seat. The line that role's Igor checks on a seat SHALL use
+the role draws on, and it is not set per seat. The line that role's Igor checks on a seat SHALL use
 the larger of the seat's reserve and the role's (*The reserve is untouchable*). So a role can hold
 back more than a seat does and never less: a lender's reserve stays in force whatever a role
 declares. On a seat declaring reserve 0, the role's reserve alone sets that role's line. A role
-reserve is valid whatever seats the role draws on, a seat at reserve 0 included. The role's
-reserve does not apply to `igor run`'s implicit seat (*`igor run` spends its own token as an
+reserve is valid whatever seats the role draws on, a seat at reserve 0 included. The role's reserve
+applies to every seat but `igor run`'s implicit seat (*`igor run` spends its own token as an
 implicit local seat*).
 
 How a role's reserve is inherited is role-config's *A role's reserve is raised by inheritance and
@@ -1146,10 +1178,14 @@ first use* specifies is a seat probe too, and every limit and exclusion here app
 A seat probe SHALL run only on the server that runs the Igors, never on a person's machine, and
 nothing SHALL be installed anywhere else for it.
 
-A seat probe is not free. Its cost SHALL be recorded like any other spend, against the seat it
-read, marked as a seat probe. Spend attribution, capacity and reporting SHALL count that row. Where
-the probe is also recorded as a check of the seat's credential (*A probe checks the credential
-too*, below), that is a second row, and the cost stays on the spend row. Its consumption reaches the seat's next reading like any other.
+A seat probe is not free. Every probe SHALL be recorded on a spend row against the seat it read,
+marked as a seat probe, with its cost (0 where it reported none, as after an error exit) and with
+whether a `rate_limit_event` arrived. Spend attribution, capacity and reporting SHALL count that
+row, and the hourly limit and the five-hour back-off below are computed from these rows, by any
+Igor and after a restart. The spend row SHALL NOT count toward opening or clearing any condition on
+the seat, such as its credential condition; only the check row below does. Where the probe is also recorded as a check of the seat's credential (*A probe checks the
+credential too*, below), that is a second row, and the cost stays on the spend row. Its
+consumption reaches the seat's next reading like any other.
 
 A seat SHALL NOT be probed more than once an hour, counted from the most recent probe of it that
 any Igor recorded, nor while a probe this process started on it is still running. Two Igors that
@@ -1181,15 +1217,17 @@ for, and that line has since risen past
 the reading, the gate SHALL NOT start work on the seat on that reading alone. A seat probe SHALL be
 made first, and the gate SHALL decide on the reading it records. The old reading is only a lower
 bound, and the owner may have used the seat since, so starting work on it can spend the margin the
-line keeps for them. A probe that records no observation SHALL leave the decision to the reading the
-gate already has, so a failed probe cannot shut a seat out. The hourly limit still applies: a seat
-probed less than an hour before its crossing stays held until a probe is allowed.
+line keeps for them. Once a probe made after the crossing has recorded no observation, the gate
+SHALL decide on the reading it already has, so a failed probe cannot shut a seat out. Until a probe
+has been made after the crossing, the seat stays held, and that is recorded as holding back at the
+line: a seat probed less than an hour before its crossing waits until the hourly limit allows the
+next probe.
 
 **A probe checks the credential too.** A probe the provider answers with an authentication failure
 (HTTP 401) SHALL be recorded as a row in the execution log carrying the seat's credential key,
 `seat:<id>:credential`, and a full hash of the credential it used, which opens the seat's credential
-condition. A probe that succeeds SHALL be recorded without that key, and SHALL count as the check
-that clears that condition. An authentication failure is not a probe that received no event, so the
+condition. A probe that succeeds SHALL be recorded as a check of that key that found the
+condition not holding, which clears it. An authentication failure is not a probe that received no event, so the
 five-hour back-off SHALL NOT follow it. A seat whose credential condition is open SHALL be probed only as
 that clearing check, even when it holds an unexpired reading of every window, and never more than
 once an hour. Every other exclusion
@@ -1232,6 +1270,18 @@ its credential were cleared, so it stays unprobed until it could be used.
 
 - **WHEN** a seat is probed
 - **THEN** the call uses the cheapest model, a trivial prompt and no tools
+
+#### Scenario: A probe's environment holds only the seat's token
+
+- **WHEN** a seat is probed
+- **THEN** the call's environment holds that seat's token and no other credential
+
+#### Scenario: A probe that exits with an error is not retried at once
+
+- **WHEN** a seat probe exits with an error
+- **THEN** it is recorded on a spend row against the seat, with a cost of 0
+- **AND** no `rate_limit_event` arrived, so the seat is probed again only once both the hourly
+  limit and the five-hour back-off allow
 
 #### Scenario: An excluded post-reset probe does not leave the seat unread
 
