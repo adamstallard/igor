@@ -17,6 +17,16 @@ export type Outcome = 'held' | 'lost' | 'stopped' | 'refused'
 export interface Said {
   landed: boolean
   error?: string
+  /** Set where the tracker answered without confirming the post: it may be on the item. */
+  unconfirmed?: true
+}
+
+/** What every post a run or a claim made left on the item; see `spoken`. */
+export interface Spoken {
+  spoke: boolean
+  silence?: string
+  /** Set where no post landed and at least one may have: the tracker did not confirm it. */
+  answerUnconfirmed?: true
 }
 
 const UNCONFIRMED = 'the tracker did not confirm the post landed'
@@ -33,21 +43,29 @@ export function say(tracker: Tracker, candidate: Candidate, text: string): Promi
   return Promise.resolve()
     .then(() => tracker.report(candidate, text))
     .then(
-      (id): Said => (id === undefined ? { landed: false, error: UNCONFIRMED } : { landed: true }),
+      (id): Said => (id === undefined ? { landed: false, error: UNCONFIRMED, unconfirmed: true } : { landed: true }),
       // An error with no message still gets a reason, so the warning always names one.
       (error: unknown) => ({ landed: false, error: why(error) || 'the tracker gave no reason' }),
     )
 }
 
 /**
- * Combines every post a run or a claim made into `spoke` and `silence`. `spoke` is true where any
- * post landed; otherwise `silence` holds the last error. A caller passes a post it skipped as
- * `{ landed: false }`, which has no error and so never sets `silence`.
+ * Combines every post a run or a claim made into `spoke`, `silence` and `answerUnconfirmed`.
+ * `spoke` is true where any post landed. Otherwise `silence` holds the error of the last post
+ * passed, and callers pass posts in the order they made them. `answerUnconfirmed` is set where any
+ * post came back unconfirmed.
+ *
+ * A caller passes a post it skipped as `{ landed: false }`, so that a post made only in some cases
+ * can sit in a fixed argument list. That entry sets neither `silence` nor `answerUnconfirmed`.
  */
-export function spoken(...said: readonly Said[]): { spoke: boolean; silence?: string } {
+export function spoken(...said: readonly Said[]): Spoken {
   if (said.some((s) => s.landed)) return { spoke: true }
   const error = [...said].reverse().find((s) => s.error !== undefined)?.error
-  return error === undefined ? { spoke: false } : { spoke: false, silence: error }
+  return {
+    spoke: false,
+    ...(error === undefined ? {} : { silence: error }),
+    ...(said.some((s) => s.unconfirmed === true) ? { answerUnconfirmed: true as const } : {}),
+  }
 }
 
 export interface ClaimResult {
@@ -92,6 +110,11 @@ export interface ClaimResult {
   spoke?: boolean
   /** The tracker's error, where that answer was owed and did not land. */
   silence?: string
+  /**
+   * Set where the message answering the claim message did not land, and the tracker did not
+   * confirm it either way, so it may be on the item.
+   */
+  answerUnconfirmed?: true
   /** Set where a person handed the item to this Igor; see `ClaimOptions.directed`. */
   directed?: true
   /** Set where a go-ahead lifted a stop the claim's check found; see `ClaimVerdict.liftedAt`. */

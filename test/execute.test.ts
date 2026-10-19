@@ -176,6 +176,7 @@ function fakeTracker(opts: { releaseLeavesHolder?: boolean } = {}) {
     verifyClaim: async () => ({ status: 'held' }),
     report: async (_c, m) => {
       reported.push(m)
+      return `comment-${reported.length}`
     },
     release: async (_c, as) => {
       released.push(as)

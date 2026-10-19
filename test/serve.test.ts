@@ -83,7 +83,7 @@ function deps(found: Candidate[], opts: { searchThrows?: boolean; verdict?: Clai
     claim: async () => true,
     commentsSince: async () => [],
     verifyClaim: async () => opts.verdict ?? { status: 'held' },
-    report: async () => {},
+    report: async () => 'comment-id',
     release: async () => true,
     linkage: () => 'Closes #1',
   }
@@ -637,6 +637,7 @@ describe('items a person hands to this Igor by label', () => {
       },
       report: async (_c: Candidate, m: string) => {
         reported.push(m)
+        return 'comment-id'
       },
     })
     const s = await serve(d, role({ settleSeconds: 3600 }), 'igor-bot', {
@@ -663,6 +664,7 @@ describe('items a person hands to this Igor by label', () => {
       holderSetBy: async () => ({ self: false, by: 'adam', at: ago(120) }),
       report: async (_c: Candidate, m: string) => {
         reported.push(m)
+        return 'comment-id'
       },
     })
     const s = await serve(d, role(), 'igor-bot', { ...base, maxCycles: 1 })
@@ -685,6 +687,7 @@ describe('an item handed over while a pull request is open for it', () => {
       holderSetBy: async () => ({ self: false, by: 'adam', at: ago(120) }),
       report: async (_c: Candidate, m: string) => {
         reported.push(m)
+        return 'comment-id'
       },
     })
     const s = await serve(d, role(), 'igor-bot', { ...base, maxCycles: 1 })
@@ -704,6 +707,7 @@ describe('an item handed over whose own artifact the cycle is catching up', () =
       holderSetBy: async () => ({ self: false, by: 'adam', at: ago(120) }),
       report: async (_c: Candidate, m: string) => {
         reported.push(m)
+        return 'comment-id'
       },
     })
     await serve(d, role(), 'igor-bot', { ...base, maxCycles: 1 })
@@ -724,7 +728,7 @@ describe('a handed-over item whose own pull request the cycle catches up', () =>
       directed: async () => [item],
       holderSetBy: async () => ({ self: false, by: 'adam', at: iso(5) }),
       commentsSince: async (_c: Candidate, since: string) => comments.filter((c) => Date.parse(c.at) >= Date.parse(since)),
-      report: async (_c: Candidate, m: string) => { reported.push(m) },
+      report: async (_c: Candidate, m: string) => { reported.push(m); return 'comment-id' },
     })
     const { events, onEvent } = collect()
     await serve(d, role(), 'igor-bot', { ...base, maxCycles: 1, onEvent })
@@ -745,7 +749,7 @@ describe('a handed-over item whose own pull request the cycle catches up', () =>
       directed: async () => [cur()],
       holderSetBy: async () => ({ self: false, by: 'adam', at: ago(120) }),
       commentsSince: async () => said,
-      report: async (_c: Candidate, m: string) => { reported.push(`cycle${cycle}: ${m.slice(0, 120)}`); said.push({ author: 'igor-bot', at: new Date().toISOString(), body: m }) },
+      report: async (_c: Candidate, m: string) => { reported.push(`cycle${cycle}: ${m.slice(0, 120)}`); said.push({ author: 'igor-bot', at: new Date().toISOString(), body: m }); return 'comment-id' },
       release: async () => { released.push(`cycle${cycle}`); return true },
     })
     await serve(d, role(), 'igor-bot', { ...base, maxCycles: 2 })
@@ -766,7 +770,7 @@ describe('a handed-over item stopped while nothing ran', () => {
       holderSetBy: async () => ({ self: false, by: 'adam', at: ago(120) }),
       commentsSince: async () => [{ author: 'bob', at: ago(60), body: 'stop' }],
       release: async (_c: Candidate, _as: string, how?: { stop?: boolean }) => { released.push(how?.stop === true); return true },
-      report: async (_c: Candidate, m: string) => { reported.push(m) },
+      report: async (_c: Candidate, m: string) => { reported.push(m); return 'comment-id' },
     })
     const s = await serve(d, role(), 'igor-bot', { ...base, maxCycles: 1 })
     expect(s.worked).toBe(0)
@@ -791,7 +795,7 @@ describe('a stop said while the cycle works another item', () => {
       verifyClaim: async (c: Candidate, as: string, since: string) =>
         labelVerdictFrom({ login: as, accountId: 1, holder: 'igor:triage' }, ['igor:triage'], undefined,
           (comments[c.id] ?? []).filter((m) => Date.parse(m.updated_at) >= Date.parse(since)), since, IGORS),
-      report: async (c: Candidate, m: string) => { say(c.id, 'igor-bot', m) },
+      report: async (c: Candidate, m: string) => { say(c.id, 'igor-bot', m); return 'comment-id' },
     })
     const { events, onEvent } = collect()
     await serve(d, role({ settleSeconds: 0 }), 'igor-bot', {

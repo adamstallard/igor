@@ -363,7 +363,7 @@ describe('posting it', () => {
     const { t } = tracker()
     const spy: Tracker = {
       ...t,
-      report: async () => { order.push('report') },
+      report: async () => { order.push('report'); return 'comment-id' },
       release: async () => { order.push('release'); return true },
     }
     await handOffFrom(spy, candidate(), role(), 'igor-bot', { claimedAt: CLAIMED }, { kind: 'budget' }, result(), NOW)

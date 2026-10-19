@@ -89,6 +89,7 @@ function tracker(
       }
       log.reported.push(m)
       if (opts.reportPostsThenThrows === true) throw new Error('503 from the tracker')
+      return `comment-${log.reported.length}`
     },
     release: async (_c, as) => {
       if (opts.releaseThrows === true) throw new Error('503 from the tracker')
@@ -281,7 +282,7 @@ describe('a claim taken and not finished', () => {
     const { t } = tracker({ status: 'held' }, { verifyThrows: true })
     const spy: Tracker = {
       ...t,
-      report: async (_c, m) => { order.push(m === claimWithdrawn(role()) ? 'withdraw' : 'announce') },
+      report: async (_c, m) => { order.push(m === claimWithdrawn(role()) ? 'withdraw' : 'announce'); return 'comment-id' },
       release: async () => { order.push('release'); return true },
     }
     await takeClaim(spy, candidate(), role(), 'igor-bot', opts)

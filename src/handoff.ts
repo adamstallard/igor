@@ -353,6 +353,11 @@ export interface HandoffOutcome {
   text: string
   /** Why posting failed, when it did. The handoff exists for broken situations. */
   error?: string
+  /**
+   * Set where nothing landed and the handoff or its correction came back unconfirmed: the
+   * tracker did not say it was posted, and it may have been.
+   */
+  unconfirmed?: true
 }
 
 /**
@@ -372,7 +377,8 @@ export async function handOff(
   now: number = Date.now(),
 ): Promise<HandoffOutcome> {
   const text = composeHandoff(role, candidate, handoff, now)
-  const { landed: posted, error } = await say(tracker, candidate, text)
+  const handoffSaid = await say(tracker, candidate, text)
+  const { landed: posted, error } = handoffSaid
 
   let released = false
   try {
@@ -388,9 +394,15 @@ export async function handOff(
   // threw on the way home leaves the false sentence on the item with that flag false. Where
   // nothing landed the correction still stands on its own: the item is held, and saying so is
   // true whether or not anybody read a handoff first.
-  const corrected = !released && (await say(tracker, candidate, stillHeld(role))).landed
+  const correction = released ? { landed: false } : await say(tracker, candidate, stillHeld(role))
+  const said = posted || correction.landed
+  const unconfirmed = !said && (handoffSaid.unconfirmed === true || correction.unconfirmed === true)
 
-  return { posted, said: posted || corrected, released, text, ...(error === undefined ? {} : { error }) }
+  return {
+    posted, said, released, text,
+    ...(error === undefined ? {} : { error }),
+    ...(unconfirmed ? { unconfirmed: true as const } : {}),
+  }
 }
 
 /**

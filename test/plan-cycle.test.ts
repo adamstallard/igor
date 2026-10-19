@@ -395,6 +395,7 @@ describe('a cycle with no seat to pay for triage', () => {
         (spoken[c.id] ?? []).filter((m) => Date.parse(m.at) >= Date.parse(since)),
       report: async () => {
         calls.posted += 1
+        return 'comment-id'
       },
       holder: 'igor:triage',
       holderField: { holds: 'list', distinctFromAssignee: true },

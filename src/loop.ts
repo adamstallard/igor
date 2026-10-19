@@ -4,7 +4,7 @@ import {
   checkpoint, CLAIM_MARKER, eligibleAfterStop, inFlightNotice, RECEIPT_MARKER, say, spoken, standDown, stillHeld, stopReceipt, STOPPED_MARKER,
   takeClaim,
   waitingMarker, waitingNotice,
-  type ClaimOptions, type ClaimResult,
+  type ClaimOptions, type ClaimResult, type Said, type Spoken,
 } from './claiming.js'
 import {
   complete, denialsFrom, execute, headlessClaude, workerEnv, type ExecuteOptions, type ExecutionResult, type WorkerOutput,
@@ -112,6 +112,11 @@ export interface ItemRun {
    * the item either, and travels out to whoever watches the run instead.
    */
   silence?: string
+  /**
+   * Set beside `spoke: false` where at least one post after the claim message came back
+   * unconfirmed, so it may be on the item.
+   */
+  answerUnconfirmed?: true
   /** Why it was handed back, where it was — a budget handoff says nothing about the item. */
   handoff?: HandoffReason['kind']
   /**
@@ -165,19 +170,28 @@ export function wentSilent(run: ItemRun): boolean {
 }
 
 /**
- * The line every report of a run prints where it went silent. The tracker's reason follows, where
- * there is one, so whoever reads the line can tell whether the tracker was down. Undefined where
- * the run did not go silent.
+ * The line every report of a run prints where it went silent. Undefined where the run did not go
+ * silent. Every line but one ends with the tracker's reason, where there is one, so whoever reads
+ * it can tell whether the tracker was down.
  *
- * Where the claim message's own post threw or was not confirmed, nobody knows whether it is on the
- * item, and so whether anybody was told to stand off. The line then says only that the claim
- * message may have been posted and could not be withdrawn, and does not call it a bug.
+ * Only a run whose every post failed outright is called a bug. Where a post came back unconfirmed
+ * it may be on the item, so the line says it is not confirmed:
+ * - The claim message's own post threw or was not confirmed, so nobody knows whether anybody was
+ *   told to stand off. The line says the claim message may have been posted. Where the withdrawal
+ *   came back unconfirmed, the line adds that it was not confirmed, and gives no reason, which
+ *   would only repeat that. Otherwise it adds that the claim message could not be withdrawn.
+ * - A later post came back unconfirmed. The line says no message on the item is confirmed.
  */
 export function silenceWarning(run: ItemRun): string | undefined {
   if (!wentSilent(run)) return undefined
   const reason = run.silence === undefined ? '' : `: ${run.silence}`
-  return run.unconfirmed === true
-    ? `WARNING: a claim message may have been posted and could not be withdrawn${reason}`
+  if (run.unconfirmed === true) {
+    return run.answerUnconfirmed === true
+      ? 'WARNING: a claim message may have been posted, and its withdrawal was not confirmed'
+      : `WARNING: a claim message may have been posted and could not be withdrawn${reason}`
+  }
+  return run.answerUnconfirmed === true
+    ? `WARNING: held a claim and no message on the item is confirmed${reason}`
     : `WARNING: held a claim and left no message — that is a bug${reason}`
 }
 
@@ -190,7 +204,7 @@ async function sayAll(
   tracker: Tracker,
   candidate: Candidate,
   messages: readonly (string | undefined)[],
-): Promise<{ spoke: boolean; silence?: string }> {
+): Promise<Spoken> {
   const said = []
   for (const message of messages) {
     if (message !== undefined) said.push(await say(tracker, candidate, message))
@@ -199,10 +213,14 @@ async function sayAll(
 }
 
 /** What a handoff left on the item, as a run reports it. */
-function saidBy(out: Pick<HandoffOutcome, 'said' | 'error'>): { spoke: boolean; silence?: string } {
+function saidBy(out: Pick<HandoffOutcome, 'said' | 'error' | 'unconfirmed'>): Spoken {
   if (out.said) return { spoke: true }
-  // A blank reason still has to read as a failure.
-  return { spoke: false, silence: out.error === undefined || out.error === '' ? 'the tracker gave no reason' : out.error }
+  return {
+    spoke: false,
+    // A blank reason still has to read as a failure.
+    silence: out.error === undefined || out.error === '' ? 'the tracker gave no reason' : out.error,
+    ...(out.unconfirmed === true ? { answerUnconfirmed: true as const } : {}),
+  }
 }
 
 export async function runItem(
@@ -250,6 +268,7 @@ export async function runItem(
       costUsd: 0,
       spoke: claim.spoke ?? false,
       ...(claim.silence === undefined ? {} : { silence: claim.silence }),
+      ...(claim.answerUnconfirmed === true ? { answerUnconfirmed: true as const } : {}),
       ...told,
       ...(claim.unconfirmed === true ? { unconfirmed: true as const } : {}),
       cures: [],
@@ -697,10 +716,18 @@ export async function catchUpItem(
         : broughtCurrentNote(role, artifact.ref, artifact.url, artifact.base)) +
         undoneNote(run.execution?.reverts),
     )
-    // `run.silence` is the correction's error. It is taken out of the run and passed to `spoken`
-    // with the note, so it survives only where the note failed too.
-    const { silence, ...ran } = run
-    return { ...ran, ...spoken({ landed: run.spoke, ...(silence === undefined ? {} : { error: silence }) }, note) }
+    // `run.silence` and `run.answerUnconfirmed` come from the still-held correction alone, the
+    // run's only post so far, made where the release did not take. They are taken out of the run
+    // and combined with the note by `spoken`. Where the note lands, both are dropped. Where it
+    // fails, `silence` becomes the note's error, and `answerUnconfirmed` stays set where either
+    // post came back unconfirmed.
+    const { silence, answerUnconfirmed, ...ran } = run
+    const correction: Said = {
+      landed: run.spoke,
+      ...(silence === undefined ? {} : { error: silence }),
+      ...(answerUnconfirmed === true ? { unconfirmed: true as const } : {}),
+    }
+    return { ...ran, ...spoken(correction, note) }
   }
   return run
 }

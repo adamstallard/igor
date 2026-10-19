@@ -802,6 +802,24 @@ describe('a run reports what landed on the item, not what it tried to say', () =
     expect(wentSilent(r)).toBe(true)
   })
 
+  it('says no message is confirmed where the only post after the claim came back unconfirmed', async () => {
+    const { d } = deps({ verdicts: [{ status: 'stopped', by: 'bob' }], unconfirms: afterClaim })
+    const r = await runItem(d, candidate(), role(), 'igor-bot', noWait)
+
+    expect(silenceWarning(r)).toBe(
+      'WARNING: held a claim and no message on the item is confirmed: the tracker did not confirm the post landed',
+    )
+  })
+
+  it('says the withdrawal was not confirmed where it came back unconfirmed after an unsure claim message', async () => {
+    const { d } = deps({ unconfirms: () => true })
+    d.tracker.verifyClaim = async () => { throw new Error('503 reading') }
+    const r = await runItem(d, candidate(), role(), 'igor-bot', noWait)
+
+    expect(r.outcome).toBe('refused')
+    expect(silenceWarning(r)).toBe('WARNING: a claim message may have been posted, and its withdrawal was not confirmed')
+  })
+
   it('never reports a loss that tried no post as silent', async () => {
     // The release took, and the holder field lists several names, so nothing needs handing back.
     // The run posts nothing and owes nothing, because somebody else is visibly on the item.
