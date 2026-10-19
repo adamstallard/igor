@@ -28,7 +28,7 @@
 - [ ] 0.6 If #174 (`pinned-skills`) has merged, add `skills_dir` to the probe in 5.1. If not,
       file an issue asking #174 to add it, and link it here.
 - [ ] 0.7 If #189 (`loop-verifies-commands`) has merged, its checks go through 1.4's spawn and
-      run after 3.2 records the tree, and what they write is discarded. If not, file an issue
+      run after 3.2 records the tree, and the Igor publishes that recorded tree. If not, file an issue
       asking #189 to run its checks on the tree the Igor recorded and to publish that tree, as
       *The Igor publishes the tree it recorded before the checks* requires, and link it here.
 
@@ -82,13 +82,14 @@
 - [ ] 1.6 No prose or bug-hunter script goes through 1.2's spawn: the Igor runs them as the
       service user (2.5; proposal, decision 15). If #153 has not merged, the issue 0.5 files
       asks for this too.
-- [ ] 1.7 Every `claude -p` the Igor starts takes its prompt on stdin and its system prompt from
-      `--system-prompt-file`: `claudeWorker` (`src/execute.ts`), `runClaude` (`src/triage.ts`),
+- [ ] 1.7 Every `claude -p` the Igor starts takes its prompt on stdin, its system prompt from
+      `--system-prompt-file`, and any text appended to it from `--append-system-prompt-file`: `claudeWorker` (`src/execute.ts`), `runClaude` (`src/triage.ts`),
       `runUsage` (`src/budget.ts`), #143's seat probe and #174's startup check where those are
       built. The Igor writes the system prompt file before the spawn and removes it after the
       process exits. For a process running as the worker user, it goes in a directory the Igor
       owns, beside the tree, mode `2750` with the worker's group; never in the tree or the
-      outbox. For a process running as the Igor, it goes in a directory only the Igor can read. Build after 6.9. Tests: each call's argv holds no prompt and no `--system-prompt`;
+      outbox. For a process running as the Igor, it goes in a directory only the Igor can read. Build after 6.9. Tests: each call's argv holds no prompt, no `--system-prompt` and
+      no `--append-system-prompt`;
       the prompt arrives on stdin; the file exists during the call and not after it, also when
       the call fails.
 - [ ] 1.8 Every temporary file the Igor creates under `/tmp` goes in a `0700` directory only it
@@ -109,7 +110,9 @@
       the tree with `--git-dir` and `--work-tree`, so a `.git` the worker replaced is never read
       by the Igor. Under `run`, the git directory stays inside the tree and the
       index is not copied.
-- [ ] 2.4 The sweep's name rule takes `<tree>-git` as it takes `<tree>-outbox`.
+- [ ] 2.4 The sweep's name rule takes `<tree>-git` as it takes `<tree>-outbox`, and the startup
+      sweep removes every system prompt file 1.7 left, beside a tree or in the Igor's own
+      directory. Test: a system prompt file left by a crash is gone after the next start.
 - [ ] 2.4a Under `serve`, provision every tree, outbox and `<tree>-git` under
       `/var/lib/igor/trees`, never under the instance's `/tmp`, with 2.1's groups and modes
       (Adam, 2026-10-17). A sibling rank's sweep of a gone rank's trees (#179) runs the first
@@ -163,8 +166,8 @@
 - [ ] 3.2 Before reading changes, the Igor waits for the worker, and then each later model step,
       to exit, and then kills every process the worker user owns (4.1). It then runs 3.3's
       checks, stages the changed paths in its own index, writes that tree with `git write-tree`
-      into its own git directory, runs #189's checks where they exist, kills by user again, and
-      publishes that tree object, discarding what the checks wrote.
+      into its own git directory, makes 2.5's trailers against it, runs #189's checks where they exist, kills by user again, and
+      publishes that tree object.
 - [ ] 3.3 `changes()` refuses a path that has a link among its directories, checking each
       component with `lstat`. A changed path that is itself a link is read with `readlink` and
       published as a link where 0.4 builds that, and is refused where it does not. `changes()`
@@ -203,8 +206,8 @@
       otherwise end the span.
 - [ ] 3.4 Every file the Igor reads from the tree or the outbox, the declaration file
       `reverts.json` included, is checked with `lstat` first, never opened if it is a FIFO or
-      other special file, then opened with `O_NOFOLLOW` and read only if it is a regular file
-      whose link count is 1. For the declaration file, the run otherwise stops with one of these
+      other special file, then opened with `O_NOFOLLOW | O_NONBLOCK` and read only if `fstat` on
+      the opened descriptor shows a regular file whose link count is 1. For the declaration file, the run otherwise stops with one of these
       (verbatim; Adam may reword):
 
       ```
@@ -225,10 +228,12 @@
       model step made after the worker is seen; a file with mode `000` stops the run; a linked declaration file is not read; a nested repository
       whose configuration defines a filter stops the run and its filter does not run; a moved
       gitlink is published as a pointer where 0.4 builds that, and stops the run where it does
-      not, with no git command run inside the submodule either way; a file and a link a check
-      wrote are not in the artifact; a file with a link count of 2 stops the run; a declaration
+      not, with no git command run inside the submodule either way; a check that rewrites a changed
+      file and tries to write the git directory leaves the recorded tree object unchanged, and
+      that tree is published; a file with a link count of 2 stops the run; a declaration
       file with a link count of 2 is not read and stops the run; a declaration file that is a
-      FIFO is never opened and stops the run; a declaration file that does not
+      FIFO is never opened and stops the run; one swapped for a FIFO between the `lstat` and the
+      open does not block and stops the run; a declaration file that does not
       parse appears in no reason, record or log; a path holding a backtick is escaped in the
       reason.
 - [ ] 3.6 The Igor's git calls in a tree run with `GIT_CONFIG_NOSYSTEM=1` and
@@ -344,9 +349,9 @@ file in the service user's home. Each holds a random string and nothing else. Ne
 - [x] 6.1 Repeat #163's table with the worker running as `igor-worker-<role>-<rank>`: the Read tool,
       `head`, `tail`, and a test file run by `npm test` that reads each canary and
       `/proc/<igor pid>/environ`, and writes into the lore checkout and the git directory's `hooks/`.
-      Every read and write is refused, and no canary string appears in the stream, the
-      transcript or the published artifact.
-      Done 2026-10-18; every read and write refused, and no canary in the stream, the transcript, the tree or the journal (`design.md`, *Measurements*). The published artifact is 6.14. It also found the seat token readable at `/proc/$CLAUDE_PID/environ`.
+      Every read and write is refused, and no canary string appears in the stream or the
+      transcript. The published artifact is 6.14's, since nothing publishes before section 3.
+      Done 2026-10-18; every read and write refused, and no canary in the stream, the transcript, the tree or the journal (`design.md`, *Measurements*). It also found that a command the worker runs can read the seat token from the environment of its own `claude` process, at `/proc/$CLAUDE_PID/environ` (6.4), so whatever the worker runs can spend or leak its seat.
 - [x] 6.2 Under `sudo` in the unit: the stream parses as it does now; `kill -KILL -- -<pgid>` as
       the worker ends a running `npm test`; `sudo` works with `ProtectSystem=strict`,
       `PrivateTmp=true` and no `NoNewPrivileges`; the exit status reaches the Igor.
@@ -396,8 +401,9 @@ file in the service user's home. Each holds a random string and nothing else. Ne
       `docs/deployment.md` targets, and record the kernel version and the result in `design.md`.
 - [ ] 6.12 Before 8.4 ships, run 8.4's commands with 8.1's `Defaults` line on section 6's host:
       `visudo -cf` accepts the file, and a worker start writes no `ENV=` line, and so no seat
-      token, to the journal. Count the matching journal lines and never print them, since a line
-      that is there holds the token. Record the result in `design.md`.
+      token, to the journal. Count the `ENV=` lines and never print them, since such a line
+      holds the token. Then check that a command sudo refuses the service user still writes a
+      journal line, counting those lines the same way. Record the result in `design.md`.
 - [ ] 6.13 Before section 1 ships, record what `CLAUDE_CODE_MESSAGING_TOKEN`, which Claude Code
       passes to the commands it runs (6.4), lets a holder do beyond the worker's own session. If
       it reaches anything else, the design's handling of it goes back to Adam.

@@ -75,7 +75,8 @@ igor ALL=(igor-worker-maintenance-1) NOPASSWD: ALL
 `Defaults:igor !log_allowed` stops sudo logging the commands it allows the service user. Without
 it, each worker start wrote the seat token into the journal, because sudo logs every preserved
 variable with its value (measurement 6.5); root, the `adm` and `systemd-journal` groups and the
-service user itself can read the journal. sudo still logs a command it refuses.
+service user itself can read the journal. sudo's documentation says it still logs a command it
+refuses; task 6.12 measures that.
 `Defaults:igor !syslog` also stopped the line, but turns off every sudo log line for the service
 user, refusals included.
 
@@ -248,14 +249,13 @@ step have exited, and the Igor has killed every process the worker user owns (*K
 sweep*). The Igor then records the tree it read: it stages the changed paths in its own index
 and writes the index's tree object (`git write-tree`) into its own git directory, which the
 worker user cannot write. The Igor makes #153's trailers against that tree (below), and
-publishes from that tree object. #189 (`loop-verifies-commands`) has the Igor run the worked
-repository's checks, such as its tests, declared in #154's organization-level map keyed by
-repository. They run as the worker user, after that record. The Igor publishes the recorded
-tree, so anything a check writes, such as a coverage report or a link, is discarded, and #189's
-rule that checks do not change what is published stands. When the checks fail, the work goes
-back to the worker once, with the failure output, and a second failure publishes a draft pull
-request naming the failed check (Adam, 2026-10-18, on #154 and #189). The second attempt is a
-new run of the model steps, recorded, checked and published the same way.
+publishes from that tree object. #189 (`loop-verifies-commands`) then runs the worked
+repository's checks, such as its tests, which the `repos` map in `roles/org.yaml` declares for
+that repository. They run as the worker user, after that record. Because the Igor publishes the
+recorded tree, nothing a check writes, such as a coverage report or a link, reaches the
+artifact: that is how this change meets #189's rule that what a check writes is not published.
+The rule, and the second worker run when a check fails, are #189's. #189's second worker run is a
+new run of the model steps, and its tree is recorded, checked and published the same way.
 
 ### #153's steps run no signing script; the Igor signs once, at the end (Adam, 2026-10-17 and 2026-10-18)
 
@@ -277,9 +277,10 @@ service user. The order is:
    triage skips tests, specs, lockfiles, generated files, formatting and renames as well as
    comments and docs, and two models disagreed on whether to skip a spec-only diff (#153's measurement 0.11);
    #153 decides whether that is the line it wants and pins the model. No prose pass follows
-   the extra iteration, so no prose pass reads the comments it writes. Adam accepted that gap
-   on 2026-10-18 (#153): the prose pass is not meant to change code, so the iteration runs only
-   in an edge case.
+   the extra iteration (Adam, 2026-10-18, on #153): the prose pass is not meant to change code,
+   so the iteration runs only in an edge case. The comments that iteration writes still get a
+   reader: #153's cold read of the commit reads them, and the prose pass, answering that cold
+   read, fixes what the cold read names.
 4. After the last model step exits, the Igor kills every process the worker user owns and runs
    the link checks below. Only then does the Igor's code stage the changed paths, once, in its
    own index. Staging first would put a hard-linked key's content into a blob in the git
@@ -297,10 +298,11 @@ Igor records, runs the link checks on, and publishes. The signing scripts are th
 wrote. The start check's write probe of `skills_dir` tries only its top level, not its
 subdirectories, so their safety rests on the owner and modes #174 installs them with.
 
-The tree the trailers bind is the index's tree where it equals the tree the Git Data API builds
-from the same files. The two can differ in file modes; #153's task 0.4 measures that, and where
-they differ the trailers bind to the API's tree instead, as #153's design item 3 says. Either way
-the Igor publishes the tree the trailers name. The worker cannot change the recorded tree object, and a copy
+The trailers bind the index's tree unless #153 binds them to the tree the Git Data API builds
+from the same files (#153's design item 3); #153's task 0.4 found the two differ only for a
+link or a submodule. A changed link or submodule stops the run until #137 lands, so for
+everything this change publishes the two trees are equal. Either way the Igor publishes the
+tree the trailers name. The worker cannot change the recorded tree object, and a copy
 the worker could change, the index copy included, is never what a trailer is bound to.
 
 Staging before each step instead would run `git add` over the worker's files before the link
@@ -423,8 +425,10 @@ the environment and no key file exists. It fails if the worker user is privilege
 the uid check misses, such as through `CAP_DAC_READ_SEARCH`.
 
 `/etc/igor/env` is not probed: systemd reads it, so the Igor never learns its path. Under #179
-the Igor reads `/etc/igor/<role>.env` itself, so its values are not in the process environment;
-check 5 probes that file as not readable once #179 has landed (task 0.8). The `/proc` probe
+the Igor reads `/etc/igor/<role>.env` itself and sets its keys in its own environment after
+starting; check 5 probes that file as not readable once #179 has landed (task 0.8). Whether
+those keys show in `/proc/<pid>/environ` is not measured; the worker cannot read the Igor's
+`/proc` at all under `ProtectProc=invisible`. The `/proc` probe
 covers what `/etc/igor/env` holds, and the deployment guide puts both files in a directory the
 worker cannot enter. On macOS, which has no `/proc`, nothing probes `/etc/igor/env`.
 
@@ -474,7 +478,8 @@ through `/proc` or `ps`. Two things close that:
   the spawn and removes after the process exits. For a process running as the worker user, the
   file sits in a directory the Igor owns, beside the tree, mode `2750` with the worker's group,
   so the worker can read it and not write it; never in the tree or the outbox, which the worker
-  writes. For a process running as the Igor, such as triage, the file sits in a directory only
+  writes. When the Igor starts again after a crash, its startup sweep removes a file the crash left, here
+  or in the Igor's own directory. For a process running as the Igor, such as triage, the file sits in a directory only
   the Igor can read.
   Measurement 6.9 confirmed, on Claude Code 2.1.303, that `-p` with stream-json output reads
   its prompt from stdin and takes its system prompt from `--system-prompt-file`, and that the
@@ -483,7 +488,7 @@ through `/proc` or `ps`. Two things close that:
   `hidepid=invisible`, so a process sees only its own user's processes. That needs per-mount
   `hidepid`, in Linux 5.8 and later; on an older kernel the setting has no effect, and the
   prompts are still out of the arguments. Measurement 6.8 confirmed it on Linux 6.12 under the
-  shipped unit; task 6.11 repeats it on a Linux server's kernel.
+  unit as task 8.2 changes it, with `ProtectProc=invisible` set; task 6.11 repeats it on a Linux server's kernel.
 
 Moving the prompt to stdin and the system prompt to a file also keeps both out of `sudo`'s log,
 which records each command line: measurement 6.5 found no prompt text there, only the paths of `claude` and of

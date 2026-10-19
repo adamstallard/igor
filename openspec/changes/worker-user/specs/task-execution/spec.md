@@ -177,16 +177,15 @@ the *index copy*: the copy of the git directory's index the Igor puts in the wor
 worker writes. It SHALL NOT follow a symbolic
 link, and SHALL NOT read a path through a directory that is a link. A changed path that lies
 beneath a link SHALL stop the run before anything is published, naming the path. A changed file
-the Igor cannot read SHALL stop the run the same way, rather than be left out of the artifact.
-A changed file whose link count is above 1 SHALL stop the run the same way: a hard link the worker
-made to a credential is a regular file inside the tree, which the symbolic-link rules here do not
-catch. Every path a refusal under this requirement or *Nothing the worker writes is executed by
+the Igor cannot read stops the run under #120's *A path execution cannot read is never silently
+omitted*. A changed file whose link count is above 1 SHALL stop the run the same way. Every path a refusal under this requirement or *Nothing the worker writes is executed by
 the Igor* names SHALL be escaped for the markdown code span it is written in.
 
 Every file the Igor reads from the worker's tree or outbox, the declaration file `reverts.json`
-in the outbox included, SHALL be checked with `lstat` before it is opened, and opened without
-following a symbolic link, and SHALL be read only if it is a regular file whose link count
-is 1. A FIFO or any other special file SHALL never be opened. Otherwise the run SHALL stop before anything
+in the outbox included, SHALL be checked with `lstat` before it is opened, so that a FIFO or any other special file
+found there is never opened. It SHALL be opened without following a symbolic link and without
+blocking, and SHALL be read only if `fstat` on the opened file shows a regular file whose link
+count is 1, so a file swapped after the `lstat` is caught too. Otherwise the run SHALL stop before anything
 is published, naming the file. An error parsing a file read from the worker SHALL NOT quote the
 file's content, in a refusal, a comment, a record or a log.
 
@@ -197,7 +196,8 @@ link SHALL stop the run before anything is published, naming the path.
 
 The Igor can read its own credentials and the worker cannot. A link the worker makes to the
 App's key, read by the Igor and published as the content of a file, would publish the key in a
-pull request.
+pull request. A hard link the worker made to a credential is a regular file inside the tree,
+which the symbolic-link rules here do not catch.
 
 #### Scenario: A link to a credential is published as a link
 
@@ -256,6 +256,13 @@ pull request.
 - **THEN** the Igor does not open it, and does not wait on it
 - **AND** the run stops, saying the declaration is not a regular file
 
+#### Scenario: A declaration swapped for a FIFO after the check does not hang the Igor
+
+- **WHEN** `reverts.json` is a regular file when the Igor checks it, and a process the worker
+  started replaces it with a FIFO before the Igor opens it
+- **THEN** the open does not wait on the FIFO
+- **AND** the run stops, saying the declaration is not a regular file
+
 #### Scenario: A declaration that does not parse is not quoted
 
 - **WHEN** the declaration file is a regular file with one link whose content is not valid JSON
@@ -277,18 +284,19 @@ pull request.
 Once the Igor has read a worker's tree (*The Igor reads no file on the worker's behalf through a
 link*), it SHALL record that tree as a tree object in its own git directory, which the worker
 user cannot write. The Igor makes #153's trailers against that tree (*#153's trailers are created
-once, by the Igor, against the tree it staged*). Checks that run the worked repository's commands
-as the worker user (#189) SHALL run after that record. The Igor SHALL publish the tree the
-trailers name: the recorded tree, or, where #153's task 0.4 finds the Git Data API's tree built
-from the same files differs from it, the API's tree. Anything a check writes SHALL be
-discarded.
+once, by the Igor, against the tree it staged*). The worked repository's checks (#189), which run
+as the worker user, SHALL run after that record. The Igor SHALL publish the recorded tree, or,
+where #153's steps make trailers, the tree the trailers name. That recorded tree is how the Igor meets #189's rule
+that what a check writes is not published (#189's *The loop runs the repository's checks in the
+worker's tree*).
 
-#### Scenario: What a check writes is not published
+#### Scenario: A check cannot change the recorded tree
 
-- **WHEN** a check that runs the worked repository's commands as the worker user writes a
-  coverage report and a link into the tree
-- **THEN** the artifact is the tree the Igor recorded before the check
-- **AND** it holds neither the report nor the link
+- **WHEN** a check running as the worker user rewrites a file the worker changed, and tries to
+  write the Igor's git directory
+- **THEN** the check starts only after the Igor has recorded the tree
+- **AND** the write to the git directory fails
+- **AND** the Igor publishes the tree object it recorded
 
 ### Requirement: #153's trailers are created once, by the Igor, against the tree it staged
 
@@ -301,13 +309,14 @@ pass's diff, on the model #153 pins: a diff it skips SHALL get no further iterat
 other diff SHALL get one more bug-hunter iteration. After the last model step exits, the Igor's
 code SHALL stage the changed paths once, in the Igor's own index, which the worker user cannot
 write. The Igor SHALL then run prose's second call, with that token, and bug-hunter's minting
-script, against that staged tree. The Igor SHALL run all three calls, prose's two and bug-hunter's minting script, as the service user, with
+script, against that staged tree. The Igor SHALL run all three calls as the service user (prose's first call before the prose pass, and
+its second call and bug-hunter's minting script after that staging), with
 the scripts in `skills_dir`, and with `GIT_DIR`, `GIT_WORK_TREE` and `GIT_INDEX_FILE` naming its
 own git directory, the tree and its own index. Each trailer that binds a tree, `Prose:` and
-#153's `Bug-hunter-Tree:`, SHALL name the tree of that index, or the tree #153 binds to instead
-where its task 0.4 finds the Git Data API's tree differs from the index's, and the Igor SHALL publish the tree the
-trailers name. No trailer SHALL be bound to the worker's index copy or to any other copy the
-worker user could change, and nothing SHALL stage or sign a tree before the last model step
+#153's `Bug-hunter-Tree:`, SHALL name the tree of that index, unless #153 binds them to the Git Data API's tree instead
+(#153's design item 3), and the Igor SHALL publish the tree the trailers name. Under `igor serve`,
+no trailer SHALL be bound to the worker's index copy or to any other copy the worker user could
+change. Nothing SHALL stage or sign a tree before the last model step
 exits.
 
 The signing scripts come from `skills_dir`, which is root-owned, and the three variables keep
@@ -493,7 +502,8 @@ prompt and no system prompt SHALL appear in any process's arguments. A system pr
 appended to one, SHALL reach `claude` through a file, named by `--system-prompt-file` or
 `--append-system-prompt-file`. The Igor writes that file where the
 user the process runs as can read it and no worker user can write it, and removes it once that
-process exits. Under `igor serve`, the systemd unit SHALL set `ProtectProc=invisible`.
+process exits. When the Igor starts again after a crash, it SHALL remove every system prompt
+file the crash left, beside a tree or in its own directory. Under `igor serve`, the systemd unit SHALL set `ProtectProc=invisible`.
 
 On Linux every user can read every process's `/proc/<pid>/cmdline`, and `ps` prints it. A prompt
 holds the item's text and the lore its scope allows, which can be private source content, so a
@@ -519,6 +529,12 @@ on a kernel without per-mount `hidepid`, and out of `sudo`'s log.
 - **WHEN** the Igor starts #143's seat probe, the usage read or #174's startup skills check
 - **THEN** its prompt reaches `claude` on stdin, and no argument holds it
 
+#### Scenario: Text appended to a system prompt goes through a file
+
+- **WHEN** the Igor appends text to a `claude -p`'s system prompt
+- **THEN** the text reaches `claude` through `--append-system-prompt-file`
+- **AND** no argument holds it
+
 #### Scenario: No worker user can write the system prompt file
 
 - **WHEN** the Igor writes the system prompt file for a `claude -p`
@@ -528,6 +544,11 @@ on a kernel without per-mount `hidepid`, and out of `sudo`'s log.
 
 - **WHEN** a `claude -p` the Igor started exits
 - **THEN** the file its system prompt was read from no longer exists
+
+#### Scenario: A system prompt file a crash left is swept
+
+- **WHEN** the Igor crashes while a `claude -p` it started is running, and starts again
+- **THEN** it removes that call's system prompt file as it starts
 
 #### Scenario: A worker cannot see another user's processes
 
