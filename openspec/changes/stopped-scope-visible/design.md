@@ -4,9 +4,10 @@
 
 No open condition ends a running `igor serve`: not one on the Igor's own credential, not one on its
 role, and not every seat its role could spend from being stopped. The process keeps polling, and a
-stopped scope takes no new item. Where a role has no usable seat, #171 has the process give each
-item it would work back to a person, with a comment naming the condition; that requirement is
-#171's. Each condition clears as `condition-backoff` and #171 clear it, and the cycle report says
+stopped scope takes no new item. Where a role has no usable seat, #171 stops the role when every
+seat serving it is under a condition that does not clear on its own when a later read of a file
+passes (#171's *read-cleared* kind). Otherwise it hands the item back to a person, with a comment
+naming the condition. That requirement is #171's. Each condition clears as `condition-backoff` and #171 clear it, and the cycle report says
 what is stopped. Only the checks that a requirement names as refusing a start end the process, and only when
 they run as the process starts: config validation and #175's start checks, for a worker user
 and `fs.protected_hardlinks`, before the first cycle, and #174's check that the pinned skills
@@ -56,8 +57,11 @@ anything but such a check, is not a refusal.
 A start that falls back to a configuration that passed before is not a refusal either. Under
 #208 (`lore-pull`, Adam, 2026-10-18), each process keeps a ref to the last lore commit whose
 read passed. A process that restarts after a commit failing validation landed starts on the last
-commit that passed, with #208's condition on the refused commit open. A failing lore commit refuses a start only for a process that
-has never applied a commit.
+commit that passed, with #208's condition on the refused commit open. A failing lore commit
+refuses a start only where #208 has no passing commit to fall back to: a process that has never
+applied one, one whose applied commit fails too, or one whose rank the roster in the fetched lore
+commit no longer declares (#179 runs each role as numbered processes, its *ranks*, which
+`igor.config.yaml` in the lore repository lists as its *roster*).
 Without that, every process that restarted after a bad commit landed, through a crash, a deploy
 or a reboot, would exit 78 and stay down.
 
@@ -125,6 +129,17 @@ A stop signal ends the wait at once, so `docker compose stop` and `down` are not
 **Rejected: `restart: on-failure:3`.** Its
 count of three never resets while the container exists, so a container that had run for weeks
 would stay down after its fourth crash.
+
+**A retired rank is removed from the compose file (Adam, 2026-10-19).** A rank is retired when
+the roster no longer declares it, and it then exits 0 (#179). Compose restarts every exit, a
+retired rank's included, and #179 has the restarted process refuse, since the roster does not
+declare its rank. That refusal is one more check that refuses a start, so it exits 78 and waits
+as the others do. Each refusal in a row waits longer, up to the ceiling of 30 minutes (task 1.3),
+so the container would refuse every 30 minutes for as long as its service stays in the compose
+file. Retiring a rank under compose therefore means removing its service and running
+`docker compose up -d --remove-orphans`, which the compose file's comment (task 1.7) and the
+deployment guide (task 4.2) say. systemd needs nothing extra: `Restart=on-failure` does not
+restart an exit 0.
 
 **Measured (task 1.8, 2026-10-18).** On Docker Engine 29.6.2 with Compose 5.3.1, with a stand-in
 command that counts its starts and exits with a chosen status:

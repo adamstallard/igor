@@ -18,8 +18,8 @@
 - [ ] 1.1 Nothing in `igor serve`'s loop ends the process because a condition is open, whatever
       its scope: the Igor's own credential, its role, or every seat its role could spend from
       (Adam, 2026-10-18). The loop goes on polling, a stopped scope takes no new item, and each
-      condition clears as `condition-backoff` clears it. Giving a role's items back to a person
-      where it has no usable seat is #171's to build
+      condition clears as `condition-backoff` clears it. What a role with no usable seat does,
+      stopping or handing the item back to a person, is #171's to build
 - [ ] 1.2 Each cycle's report names every stopped scope with its cure key and what would cure it
 - [ ] 1.3 In `igor serve`, every check a requirement says refuses a start logs which check
       failed and exits with status 78, when it runs as the process starts. Before the first
@@ -100,8 +100,8 @@
       from no headroom or no unreset reading; a stopped seat with headroom shows both its headroom
       and its stop, against the seat's reserve line as #143's `igor budget` reports it: per role where a role reserves more. A seat
       whose only open condition is that Igor could not decrypt its file (#171) goes on the
-      unreadable-credential line, naming the decryption failure and the condition (Adam,
-      2026-10-17)
+      unreadable-credential line, or, where the command cannot read the key file that decrypts
+      seat files (#171's `seatKey`), as not checked; either line names the decryption failure and the condition (Adam, 2026-10-17)
 - [ ] 3.3 A condition on a role or on the Igor's own App credential puts nothing in the report
 - [ ] 3.4 Tests: each of the states above rendered side by side in one report, so the wordings
       are compared rather than asserted one at a time
@@ -114,9 +114,20 @@
       takes effect when the operator restarts the unit. It says that a change merged to the lore
       repository reaches the server once a person pulls it into the server's lore checkout, and
       a file read only at start then needs a restart. Under compose it says that a container restarting at a growing interval is refusing
-      to start, that `docker compose logs` gives the reason, and that retiring a rank means
-      removing its service from the compose file and running
-      `docker compose up -d --remove-orphans`
+      to start, and that `docker compose logs` gives the reason. It says how to retire a rank, one of the
+      numbered processes #179 runs for a role, under compose, with this text, which may be
+      reworded (decision 14):
+
+      ```markdown
+      A role runs as one or more numbered processes, its ranks, and the roster in
+      `igor.config.yaml` lists them. To retire a rank under compose, remove it from the roster,
+      remove its service from `deploy/docker-compose.yml` and
+      run `docker compose up -d --remove-orphans`. Compose restarts every exit, so a retired
+      rank whose service is still in the file starts again and refuses, because the roster no
+      longer declares it, and then refuses again every 30 minutes for as long as the service
+      stays. Under systemd nothing more is needed: a retired rank exits 0, and the unit
+      leaves it down.
+      ```
 
 ## 5. Closing out
 

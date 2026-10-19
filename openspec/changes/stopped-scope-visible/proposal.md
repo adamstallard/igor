@@ -1,6 +1,6 @@
 ## Decisions
 
-Decisions 1, 2, 4, 6, 7, 8, 9 and 12 are Adam's, each dated. Decisions 3, 5, 10, 11 and 13 are
+Decisions 1, 2, 4, 6, 7, 8, 9, 12 and 14 are Adam's, each dated. Decisions 3, 5, 10, 11 and 13 are
 this change's proposals, for Adam's review.
 
 1. **`igor serve` never exits at runtime because of a condition** (Adam, 2026-10-18). A
@@ -9,9 +9,11 @@ this change's proposals, for Adam's review.
    role, or a seat. A *probe* is the one item #101 lets through after a cooldown, to see whether
    the fault recurs. Whatever conditions are open, the process keeps polling. A stopped scope
    takes no new item, as #101 requires. Where a role has no usable seat,
-   [#171](https://github.com/adamstallard/igor/pull/171) has the process give each item back to
-   a person with a comment naming the condition; that is #171's requirement, and this change
-   adds nothing to it. Each condition clears as the change that defines it says, and the cycle
+   [#171](https://github.com/adamstallard/igor/pull/171) stops the role when every seat serving
+   it is under a condition that does not clear on its own when a later read of a file passes
+   (#171's *read-cleared* kind, decision 7). Otherwise it hands the item back to a person, with a
+   comment naming the condition; that is
+   #171's requirement, and this change adds nothing to it. Each condition clears as the change that defines it says, and the cycle
    report says what is stopped. *Rejected:* exiting when the open conditions leave the process
    no item it could take. An exited process comes back only through a supervisor's restart or a
    person, and a restart reads the same conditions from the same state branch. A process that
@@ -28,7 +30,10 @@ this change's proposals, for Adam's review.
    a configuration that passed before. [#208](https://github.com/adamstallard/igor/pull/208)
    (`lore-pull`) does that, by its decision Adam accepted on 2026-10-18: a process restarting
    after a lore commit that fails validation starts on the last commit that passed. So a failing
-   lore commit refuses a start only for a process that has never applied a commit. #175's and
+   lore commit refuses a start only where #208 has no passing commit to fall back to: a process
+   that has never applied one, one whose applied commit fails too, or one whose rank the roster
+   in the fetched lore commit no longer declares (#179 runs each role as numbered processes, its
+   *ranks*, which `igor.config.yaml` in the lore repository lists as its *roster*). #175's and
    #174's checks refuse a start whether or not the process has applied a commit before. *Rejected:* a requirement that the shipped supervisors
    escalate a process that keeps refusing to start. A failed unit is what `systemctl status` and
    every systemd monitor already show.
@@ -94,6 +99,14 @@ this change's proposals, for Adam's review.
     acted. A crash while the App's credential condition is open restarts the process, its start
     check then finds the credential refused, and an exit 78 there would leave the unit down for
     good: the permanent stop decision 1 rejects.
+14. **Under compose, a rank is retired by removing its service and running `docker compose up -d
+    --remove-orphans`** (Adam, 2026-10-19). A rank that the roster no longer declares exits 0
+    under #179, and `unless-stopped` starts it again. That start refuses, since the roster does
+    not declare its rank, so the container would refuse every 30 minutes, the wait's ceiling,
+    for as long as its service stays in the compose file. The compose file's comment (task 1.7)
+    and the deployment guide (task 4.2) say so. An operator who forgets sees that slow loop, with
+    each refusal's reason in `docker compose logs`. systemd needs nothing extra: `Restart=on-failure`
+    leaves a retired rank down (decision 8).
 
 **Still open.** The requirements are written to each recommendation, and the tasks and the
 comment task 1.7 adds to the compose file carry each recommendation, so an answer that differs
@@ -112,21 +125,6 @@ changes the requirement or task named. Each item says who answers it.
 - **The wait counts refusals per container, for Adam.** *Recommendation:* the count lives in a
   file in the container's own filesystem, outside every volume, so a restart by compose keeps it
   and no two containers share it; `design.md`, *Compose*, gives the reason.
-- **A retired rank under compose, for Adam.** A rank #179 retires exits 0, and under
-  `unless-stopped` compose starts it again. #179 has a retired rank refuse that new start with
-  78, so its container would cycle through refusals, at the longest wait, for as long as its
-  service stays in the compose file. *Recommendation:* the deployment guide and the compose
-  file's comment say that retiring a rank under compose means removing its service from the
-  compose file and running `docker compose up -d --remove-orphans` (tasks 1.7 and 4.2). An
-  operator who forgets sees the slow loop of refusals, each naming the ranks the roster
-  declares.
-- **#179's exit statuses, for #179.** #179's branch has a retired rank exit 79, with 79 in the
-  unit's `RestartPreventExitStatus=` and `SuccessExitStatus=`, and has a process that finds a
-  second process at its own rank stop for good with 78 while running. Both contradict this
-  change: the unit lists only 78, and only a refusal exits 78. Under compose, which restarts
-  every exit, a process stopped for good would be started again. *Recommendation:* #179 has a
-  retired rank and a stopped duplicate exit 0, which `Restart=on-failure` leaves down, and
-  decides what its duplicate does when compose starts it again.
 - **Changes citing this change's status-78 requirement archive before this change, for Adam.**
   #175, #174 and #179 cite *A process that refuses to start exits with status 78* and come
   before this change in #204's order. Moving this change ahead of them is not possible: it in
@@ -140,6 +138,28 @@ changes the requirement or task named. Each item says who answers it.
   stopped on its credential* calls the refused-credential line a stopped seat, while this change
   shows such a seat on that line and not as stopped. *Recommendation:* #101 renames its
   scenario; nothing here changes.
+- **Findings of the 2026-10-19 consistency read left for the next pass.** Each is the
+  author's to fix, and none is built:
+  - A seat lent by pull request (#171) whose token the operator running `igor budget` cannot
+    decrypt, because they cannot read the key file that decrypts seat files, shows as not
+    checked under #171. If the seat is also stopped, this change shows it as stopped, so the
+    budget line needs a form for both.
+  - Decision 2 and `design.md` list the checks that refuse a start as if the list were whole.
+    It leaves out three in-force ones, in the `lore-store`, `role-config` and `surface-adapter`
+    specs, and two that open changes add: #179's refusal of a rank its roster dropped, and
+    #208's checks of the lore checkout.
+  - The `surface-adapter` spec still calls GitHub refusing the App's credential a refused
+    start, which this change exits 1 on, and this change has no delta on it.
+  - Decision 7 lists the ways a condition clears, and the list has fallen behind #101, which
+    also clears a seat's credential condition when the credential changes.
+  - Under compose, the App's variables are in `.env`, not in the compose file's
+    `environment:`. A changed `.env` takes effect when the container is recreated (`docker
+    compose up -d`), not when it is restarted; nobody has measured it.
+  - Whether a provider that did not answer can reach #174's check at all is unmeasured.
+  - #179 keeps a process running on its last good configuration when a reread fails. If that
+    process crashes before #208 lands, its restart reads the failing configuration, refuses with
+    78, and the unit stays down.
+  - Several requirements lack scenarios, and *cycle report* is used without a definition.
 
 ## Why
 
