@@ -55,7 +55,11 @@ measurement.
 - [ ] 3.3 Add the `age-encryption` dependency. Decrypt each seat's `encryptedToken` with the
       identity at `seatKey` when the seat files are read, at start and on each pull (#176), and
       hold the plaintext in memory until the next read; `resolveToken` returns the held value and
-      never decrypts. Nothing is decrypted when a worker or a probe starts (proposal, decision 37)
+      never decrypts. Nothing is decrypted when a worker or a probe starts (proposal, decision 37).
+      The plaintext is `<id>:<token>`: split it at the first colon, and fail decryption where
+      there is no colon or the id is not the file's own; the seat's token is the part after the
+      colon (proposal, decision 40). Tests: *Ciphertext copied into another seat file is refused*
+      and *A plaintext with no seat id is refused*
 - [ ] 3.4 Decryption failures report the seat unreadable, worded so, after the existing `seat
       "<id>"` subject:
 
@@ -64,10 +68,12 @@ measurement.
       carries an encrypted token, and the key at <path> could not be read: <reason>
       carries a token encrypted to a different key from the one at <path>. Its holder re-encrypts it to seats/recipient.txt with `igor seat add <id>`.
       carries an encrypted token that could not be decrypted: <reason>
+      carries a token encrypted for seat "<found>", not for this seat. Only a token encrypted for this seat by `igor seat add <id>` is used.
+      carries an encrypted token with no seat id before it. Its holder re-encrypts it with `igor seat add <id>`.
       ```
 
-- [ ] 3.5 #101's credential digest is taken of the decrypted token. Test: the same token encrypted
-      twice yields one digest
+- [ ] 3.5 #101's credential digest is taken of the decrypted token, without the seat id before it.
+      Test: the same token encrypted twice yields one digest
 - [ ] 3.6 Tests: each scenario of *A seat file names its token only by ciphertext or its own
       variable* and *A seat's token travels as ciphertext in its file*; the plaintext appears in
       no record, transcript or handoff; the existing `token_file` and `token_command` tests in
@@ -91,22 +97,31 @@ measurement.
       the scenarios of *A removed seat file always takes effect*. Until #176 specifies pulling, this task waits
       on it. If #176 is not specified when this change archives, file an issue for this task and
       tick it with a pointer to the issue
-- [ ] 3.8 Under #175's same-user mode, `igor run`, no seat's `encrypted_token`
-      is decrypted and no such seat is drawn on; seats naming `token_env` run. At start Igor
-      prints, worded so, once per such seat:
+- [ ] 3.8 Under `igor run`, the only seat is the implicit local seat `_run`, whose token is
+      `IGOR_RUN_TOKEN`'s value, with reserve 0 and no role reserve applied (proposal, decision
+      39; reserve 0 and the unapplied role reserve are a reading Adam has yet to confirm, in the
+      proposal's *Still open*). No seat file's seat is drawn on, and no `encrypted_token` is decrypted. No seat file
+      needs to list the role. At start Igor prints, worded so:
 
       ```
-      seat "<id>" is lent, and workers run as <igor-user>, which can read the key that decrypts it, so this Igor leaves it undecrypted. Lending needs a separate worker user: docs/deployment.md, "A separate user for the worker".
+      igor run spends the token in IGOR_RUN_TOKEN, as seat "_run". It draws on no seat under seats/.
       ```
 
-      Such a seat is ineligible, #143's probe skips it, and it raises no condition. A role stops
-      only when every seat serving it is under a condition (5.1 and 11.3), so a role whose seats
-      are all lent hands off. Tests: the scenarios of *A lent seat is decrypted only
-      where the worker has a user of its own*
+      Where the variable is unset or empty, `igor run` refuses before any model call, worded so:
+
+      ```
+      igor run needs a Claude token in IGOR_RUN_TOKEN. It spends that token and no other. To create one:
+        1. In another terminal, run: claude setup-token
+        2. Sign in with the Claude account whose subscription igor run should spend.
+        3. Copy the token it prints, set IGOR_RUN_TOKEN to it, and run igor run again.
+      ```
+
+      Tests: the scenarios of *`igor run` spends its own token as an implicit local seat* and
+      *A lent seat is decrypted only where the worker has a user of its own*
 - [ ] 3.9 A seat whose file Igor fails to decrypt, for any reason, at start or on a pull of
       the lore checkout (#176), opens a condition on the seat, and a later read that decrypts it
       clears the condition (Adam, 2026-10-17). The seat is ineligible, #143's probe skips it,
-      and it counts as one at its line, so its condition stops no role: a role with no other
+      and its condition stops no role: a role with no other
       usable seat hands off, naming the condition. Where the key is read but the ciphertext does
       not decrypt with it, the seat's condition report names the seat and its `owner`,
       without an @-mention, since a handoff may quote it on a public issue. Worded so (may be
@@ -132,6 +147,10 @@ measurement.
       #175's. Triage and probes run as the service user, whose home no reset touches: if 0.3
       finds that a stored login can win over the token in the environment, they run with `HOME`
       set to a directory holding no login, and the test covers that case
+- [ ] 3.11 #143's probe skips a seat whose condition `seat:<id>:decrypt` is open, and `igor run`
+      makes no seat probe (proposal, decision 41; the `MODIFIED` block on #143's *A seat nothing
+      has read is probed on the Igor server with its own token*). Tests: *An undecryptable seat
+      is not probed* and *`igor run` probes no seat*
 
 ## 4. Which seats a role draws on
 
@@ -202,7 +221,9 @@ measurement.
       Paste it here. It will not be shown, and it is encrypted before it leaves this command.
       ```
 
-      Read the token with echo off. Encrypt with `age-encryption`, base64 on one line
+      Read the token with echo off. Encrypt `<id>:<token>` with `age-encryption`, base64 on one
+      line (proposal, decision 40). Test: the ciphertext decrypts to the seat id, a colon and the
+      token
 - [ ] 7.3 A new seat: write `seats/<id>.yaml`. The file it writes:
 
       ```yaml
@@ -283,12 +304,13 @@ first (Adam, 2026-10-17).
       ```
 - [ ] 8.4 Add `seatKey` to worker-user's (#175) start-up probe, which is built first: the worker
       user cannot read the file `seatKey` names, and a start where it can is refused, naming the
-      path. Test it with the probe's other paths
+      path. Test it with the probe's other paths. #175's task 0.1 lists the same path; where #175
+      already added it, this task is the test alone
 - [ ] 8.5 The owner check, per *The check says whether each seat's owner is a GitHub login*, with a
       test for each of its scenarios. The finding, worded so:
 
       ```
-      seats/<id>.yaml names owner <owner>, which is not a GitHub login, so no change to that file mentions anyone.
+      seats/<id>.yaml names owner <owner>, which is not a GitHub login, so no change to that file mentions anyone. The seat's holder, or the operator for a holder with no GitHub account, sets owner to a GitHub login in a pull request.
       ```
 
 ## 9. Docs and templates
@@ -389,7 +411,10 @@ leaks.
       section says Igor installs from npm as `igor-agent`, in place of "Igor is not on npm yet".
       "Declare no seats at all and budget is not enforced, and roles need not name one." goes:
       every role needs a seat, and the quick start's seat file is how an organization with no
-      lenders gets one. The README's `npm unlink -g igor-lore` becomes `npm unlink -g igor-agent`
+      lenders gets one. The README's `npm unlink -g igor-lore` becomes `npm unlink -g igor-agent`.
+      Where the README runs `igor run`, it first sets `IGOR_RUN_TOKEN` to a token from `claude
+      setup-token`, and says `igor run` spends that token and no seat under `seats/` (proposal,
+      decision 39)
 - [ ] 9.10 `docs/architecture.md` §6.5.1: a seat file lists the roles it serves, and the seat is
       chosen by headroom; "Order is the whole allocation mechanism today" and the `pools:`
       example go, and the heading loses its "being replaced (#148)" marker. §6.3.2's list of
@@ -514,7 +539,7 @@ of its requirements. Build each against #101's code:
 - [ ] 11.3 *A condition's scope is its cure's scope*: an unreadable seat, including one whose token
       cannot be decrypted, is taken out of every role's choice, and a role stops where every seat
       serving it is under an open condition other than a decryption failure (Adam, 2026-10-17); a
-      seat whose file Igor could not decrypt counts as one at its line (3.9). A role with no eligible seat
+      seat whose file Igor could not decrypt stops no role (3.9). A role with no eligible seat
       where only some seats are under conditions, and the rest are at their lines, hands off,
       naming each condition in the handoff (Adam, 2026-10-17). Test each of its seat scenarios
 
@@ -569,4 +594,14 @@ of its requirements. Build each against #101's code:
 - [ ] 13.1 Archive `condition-backoff` (#101) first. Then archive
       `read-seat-windows-from-the-stream` (#143), `worker-user` (#175) and this change in one
       commit, in that order, so this change's `MODIFIED` blocks apply to #101's and #143's
-      in-force text (proposal, decision 32)
+      in-force text (proposal, decision 32). Whether #174 archives between #175 and this change
+      is open, in the proposal's *Still open*. `check-a-lore-repository` (#113) archives before
+      this change, since the `setup-check` delta cites #113's requirements
+- [ ] 13.2 #99 (`structured-failure-record`, its task 8.1) rewrites the same pointer in
+      `work-triage`'s *A candidate left untriaged is not a candidate triage decided about*,
+      "what becomes of it is #78". Whichever of the two archives second merges the two texts by
+      hand
+- [ ] 13.3 If #196 (spec-trace) has merged by the time this change archives, its CI fails each new
+      scenario with no tagged test. Tag a test for each scenario this change adds. For a scenario
+      no test in this repository can run, such as *A pull request from a fork is noticed too*,
+      do what #196 provides for such a scenario, or ask Adam if it provides nothing

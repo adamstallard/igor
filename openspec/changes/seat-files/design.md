@@ -52,12 +52,10 @@ operator must get right:
 - **A leak:** treat every seat token as leaked. Rotate the key, and every holder revokes at
   Anthropic and re-issues.
 - **Who must not read it: the worker.** A worker running as the Igor's own user could read the
-  key, and with it every lent token. So under #175's same-user mode, which is `igor run` only,
-  Igor decrypts no lent seat and runs only seats naming
-  `token_env` (Adam, 2026-10-17). Lending needs #175's setup. In same-user mode such a seat is
-  ineligible, #143's probe skips it, and it raises no condition, since its file has no fault
-  (Adam confirmed this rule on 2026-10-17). A role stops only when every seat serving it is under
-  a condition (decision 25), so in same-user mode a role whose seats are all lent hands off.
+  key, and with it every lent token. The worker runs as the Igor's own user only under `igor run`
+  (#175's same-user mode), and there Igor decrypts no lent seat (Adam, 2026-10-17). Lending needs #175's setup. `igor run` spends
+  only its own token in any case (*`igor run` spends its own token*, below), so it draws on no
+  seat file's seat, lent or not.
 - **A token Igor cannot decrypt** (Adam, 2026-10-17). Whatever the reason (no `seatKey`, a key
   file Igor cannot read, a wrong key, or a corrupt file), the seat is ineligible: seat choice
   never picks it and #143's probe skips it, and it is under a condition on the seat. For a wrong
@@ -162,6 +160,23 @@ seat file is a credential committed to git.
 Rejected: ASCII-armored age (`age -a`). It is multi-line and its parser rejects re-wrapped lines,
 which a YAML block scalar indented wrongly produces.
 
+### The ciphertext names its seat
+
+`igor seat add` encrypts `<id>:<token>`, not the bare token (Adam, 2026-10-18). On decrypting,
+Igor splits at the first colon, which no seat id can contain, and refuses the seat unless the id
+is its file's own.
+
+The id stops one attack. Ciphertext is public, so anyone could copy `seats/bob.yaml`'s
+`encrypted_token` into `seats/eve.yaml`, list other roles and set `reserve: 0`, and spend Bob's
+subscription on terms Bob never set. Bob would not be told: the notice workflow, which mentions a
+seat's owner on a pull request that changes their seat file, reads the owner from the default
+branch, and `eve.yaml` is not there yet. With the id inside, `eve.yaml`'s plaintext says `bob`,
+and Igor refuses it. The refused seat is under `seat:<id>:decrypt`, the read-cleared condition for
+any seat Igor cannot decrypt, so no new rule is needed for what follows.
+
+*Rejected:* refusing two seats whose tokens decrypt equal. That catches a copy only while the
+original file is still there, and says nothing about which file is the copy.
+
 ### Encryption and decryption use the `age-encryption` package
 
 Igor shells out to `git`, `gh` and `claude` rather than reimplementing them, so shelling out to
@@ -182,6 +197,29 @@ SHA-256 hash of the credential the seat resolved. For a lent seat that is the de
 *A seat's token travels as ciphertext in its file* requires. age encryption is randomized, so a
 holder who re-encrypts the same token produces a different ciphertext, and a hash of that would
 read as a new credential and clear a condition the provider would only refuse again.
+
+### `igor run` spends its own token
+
+`igor run` takes its token from `IGOR_RUN_TOKEN` in its own environment, as an implicit local seat
+with no file (Adam, 2026-10-18). Nothing about it goes in the lore repository, and lent seats are
+never used. Without the variable it refuses to start, naming it.
+
+A developer running `igor run` on their own machine has no other seat Igor may spend. Igor decrypts
+no lent seat there, because the worker runs as the developer's own user and could read the key.
+The operator's `token_env` seats name variables only the server sets. A seat file of the
+developer's own would show their seat, and the roles it serves, to every reader of the lore
+repository.
+
+Three details follow from the decision. They are this change's interpretation, not Adam's words,
+and wait for him to confirm them (proposal, *Still open*):
+- `igor run` draws on no seat file's seat, `token_env` seats included, so one rule says what it
+  spends.
+- The implicit seat's id is `_run`. A seat file's id holds only lowercase letters, digits and
+  hyphens, so no seat file can be `_run`. A condition is recorded under its cure key, such as
+  `seat:<id>:decrypt`, so a condition on the implicit seat can never be taken for, or clear, a
+  seat file's.
+- Its reserve is 0, and the role's own `reserve` does not apply to it. `igor run` makes no probe,
+  so a reserve would hold the seat back until a reading arrived, and no reading would arrive.
 
 ## How a seat is chosen without pools
 

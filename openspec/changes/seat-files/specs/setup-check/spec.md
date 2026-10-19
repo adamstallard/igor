@@ -5,8 +5,9 @@
 Where `igor.config.yaml` declares `seatKey`, `igor doctor` SHALL report whether the public key
 derived from that private key equals the one committed in `seats/recipient.txt`. It SHALL report a
 finding where they differ, or where `seats/recipient.txt` is absent. Where the person running the
-check cannot read the key file, as an operator other than the service user usually cannot, it
-SHALL report the key match as unchecked, naming the path and the reason, and never as passing.
+check cannot read the key file, as an operator other than the service user usually cannot, the
+key match is unchecked, naming the path and the reason, as `check-a-lore-repository`'s *A check
+that cannot be made is skipped and said, not failed* (#113) says.
 
 Where a seat file carries `encrypted_token` and `igor.config.yaml` declares no `seatKey`, it SHALL
 report a finding naming those seat files.
@@ -69,7 +70,9 @@ simply never told.
 
 For each seat file naming an `owner`, `igor doctor` SHALL check with `gh api users/<owner>` that it
 is a GitHub login, and SHALL report a finding naming the seat file and the login where it is not.
-The finding SHALL say that no change to that seat file mentions anyone. Where the check cannot reach
+The finding SHALL say that no change to that seat file mentions anyone, and that the seat's holder,
+or the operator for a holder with no GitHub account, sets `owner` to a GitHub login by a pull
+request. Where the check cannot reach
 GitHub, the owner check is unchecked, as `check-a-lore-repository`'s *A check that cannot be made is
 skipped and said, not failed* (#113) says.
 
@@ -81,6 +84,8 @@ told of a change to that seat's file.
 - **WHEN** `seats/bob.yaml` names `owner: bob-smith`, and `gh api users/bob-smith` finds no user
 - **THEN** it is reported as a finding, naming `seats/bob.yaml` and `bob-smith`, and saying no
   change to that file mentions anyone
+- **AND** the finding says the holder, or the operator, sets `owner` to a GitHub login by a pull
+  request
 
 #### Scenario: An owner that is a GitHub user
 

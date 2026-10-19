@@ -8,8 +8,8 @@ first failing read, with no recurrence count. It SHALL clear only on a passing r
 probe item, and with no cooldown, since *A condition clears by not recurring, and a probe is what
 observes that* does not apply to it. It SHALL stop nothing by itself. What the failed read could
 not supply, such as a seat's token, is still missing, and the rule for that thing says what
-follows: for a seat, *A role draws on the seat with the most headroom*, where it counts as a seat
-at its line, so a role with no other seat hands off rather than stops. The condition records the fault and names its cure, and it is reported like any other
+follows: for a seat, seat-budget's *A role draws on the seat with the most headroom* has a role
+with no other eligible seat hand off rather than stop. The condition records the fault and names its cure, and it is reported like any other
 condition.
 
 Every rule that opens a condition of this kind SHALL cite this requirement and SHALL state only
@@ -191,13 +191,13 @@ A condition SHALL be keyed by what would cure it, and SHALL stop exactly what th
 a refused command stops the role whose `commands` refused it, an unreadable seat is taken out of
 the choice of every role drawing on that seat, a credential belonging to an Igor stops that Igor.
 A role with another eligible seat SHALL keep working on it (seat-budget's *A role draws on the
-seat with the most headroom*). A role whose seats are all under open conditions SHALL stop. A
+seat with the most headroom*). A role whose seats are all under open conditions SHALL stop, unless one of those conditions is
+read-cleared, as a seat file Igor could not decrypt is (seat-budget's *A role draws on the seat
+with the most headroom*). A
 role with no eligible seat, where some but not all of its seats are under open conditions, SHALL
-hand off, naming those conditions, as seat-budget's requirement says. A condition on a seat whose
-file Igor could not decrypt SHALL stop no role, whatever the role's other seats are under: the
-seat counts as one at its line, as seat-budget's *A seat's token travels as ciphertext in its
-file* says. It is a read-cleared condition (*A read-cleared condition opens on a failing read and
-clears on a passing one*). A condition
+hand off, naming those conditions, as seat-budget's requirement says. A read-cleared condition is
+defined in *A read-cleared condition opens on a failing read and clears on a passing one*. A
+condition
 SHALL be rebuilt from the execution log on the state branch, with no stored record of its own:
 from the run rows that carry its cure key, and from condition rows the loop appends for what no
 run shows, such as a probe being taken. Every Igor appends to the one log, so the same cure met
@@ -311,8 +311,8 @@ The hash is a full SHA-256, never a prefix, a suffix or a short digest. Executio
 committed, and a few characters of a token are credential material; a short digest is cheap to
 collide, and a collision reads as "the same credential resolved", which is exactly what clears a
 credential condition. For a seat whose file carries `encrypted_token`, the credential hashed is
-the decrypted token, never the ciphertext (seat-budget's *A seat's token travels as ciphertext in
-its file*). Every seat file names a token source, and Igor never uses a stored Claude login, so
+the one seat-budget's *A seat's token travels as ciphertext in its file* defines: the decrypted
+token, never the ciphertext. Every seat file names a token source, and Igor never uses a stored Claude login, so
 every credential hashed is a seat's own token.
 
 #### Scenario: A refused credential is named where it is refused
@@ -330,11 +330,6 @@ every credential hashed is a seat's own token.
 
 - **WHEN** a seat with an open credential condition reports headroom, or reports nothing at all
 - **THEN** it is passed over, and the reason is the refused credential
-
-#### Scenario: Re-encrypting a lent token is the same credential
-
-- **WHEN** a lender encrypts the same token again, and the new ciphertext merges
-- **THEN** the hash is unchanged, and an open credential condition stays open
 
 #### Scenario: The published record discloses no credential
 

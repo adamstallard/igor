@@ -11,6 +11,8 @@ naming the seat and the reason rather than spawning a worker that authenticates 
 else. A seat carrying an encrypted token gives the worker the plaintext Igor decrypted when it
 last read the seat files, and nothing is decrypted when the worker starts (seat-budget's *A
 seat's token travels as ciphertext in its file*); a seat Igor could not decrypt is never chosen.
+Under `igor run` the chosen seat is always the implicit local seat, whose token is the value of
+`IGOR_RUN_TOKEN` (seat-budget's *`igor run` spends its own token as an implicit local seat*).
 
 For an Igor acting as a GitHub App, the surface credential is anything that yields an App
 token: the token itself, the `GITHUB_APP_*` variables, and a git credential helper or
@@ -51,13 +53,13 @@ the Igor. It lets
 #### Scenario: A seat whose token variable is unset fails loudly
 
 - **WHEN** the chosen seat names a token variable that is not set
-- **THEN** execution fails naming the variable
+- **THEN** execution fails naming the seat and the variable, and saying the variable is not set
 - **AND** no worker is spawned
 
 #### Scenario: A seat whose token variable is empty fails loudly
 
 - **WHEN** the chosen seat names a token variable that is set but empty
-- **THEN** execution fails naming the variable
+- **THEN** execution fails naming the seat and the variable, and saying the variable is empty
 - **AND** no worker is spawned
 
 #### Scenario: A lent seat's worker gets the token decrypted at the last read
