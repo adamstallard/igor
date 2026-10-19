@@ -1,6 +1,5 @@
-**Depends on [#156](https://github.com/adamstallard/igor/pull/156)'s implementation.** Build
-this change after App support has landed: 3.7 checks Apps only, with no interim check of a
-claiming account's write access.
+**[#156](https://github.com/adamstallard/igor/pull/156)'s implementation, App support, has
+merged:** 3.7 checks Apps only, with no check of a claiming account's write access.
 
 ## 1. The agreement (gate one — this pull request)
 
@@ -20,15 +19,20 @@ claiming account's write access.
       naming a GitHub repository. Reuse the failures `repoFromCheckout` already words rather
       than wording them twice
 - [ ] 2.2 Every role under the destination resolves: call the same resolution `loadRole` makes,
-      catch per role, report the role that failed and keep going. This is what covers the two
-      seat rows of the deployment table for roles nobody ran
+      catch per role, report the role that failed and keep going. This covers the deployment
+      table's undeclared-seat row for roles nobody ran, and a role with no seat where seats are
+      declared, since resolving it fails
 - [ ] 2.3 At least one role names at least one source, since nothing else refuses a role with
       none
-- [ ] 2.4 The org-level `commands` list permits removing a tracked file. Gate the check on
-      removals being publishable at all — until [#88](https://github.com/adamstallard/igor/pull/88)
-      lands there is nothing for the permission to enable, and a finding before then is noise
+- [ ] 2.4 The org-level `commands` list permits removing a tracked file. Igor publishes a change
+      made only of removals ([#88](https://github.com/adamstallard/igor/pull/88)), so an Igor that
+      cannot run `git rm` fails work it would otherwise publish
 - [ ] 2.5 The report renders with no credential present: every credentialled check unchecked
       with its reason, the local half run, exit zero
+- [ ] 2.6 Every role has a seat to spend from, whether or not any seat is declared (proposal,
+      decision 3). A role with none is a finding naming the role, once: where seats are declared
+      it is 2.2's role that does not resolve, and where none are, 2.6 reports it. Test: the
+      scenario *A role with no seat*, with seats declared and with none
 
 ## 3. The credentialled half
 
@@ -47,11 +51,11 @@ claiming account's write access.
 - [ ] 3.6 The state branch is reachable, and the credential holds the write permission pushing
       to it needs — read from the permission, never by writing
 - [ ] 3.7 Each role's GitHub identity is an App installed on the repository it claims on,
-      with the permissions its `igor:<role>` label and claim comment need. This replaces the
-      deployment table's
-      `the tracker did not record <account> as holding <item>` row, checkable before a claim.
-      Confirm against the live API where an installation's permissions can be read, and record
-      it in `design.md`. Requires #156's implementation; there is no machine-user path
+      with the permissions its `igor:<role>` label and claim comment need, for every role, read
+      before any claim. A role whose App key is not in the environment is unchecked; a role that
+      claims only on Linear is not applicable. Confirm against the live API where an
+      installation's permissions can be read, and record it in `design.md`. Since #156 every
+      role's identity on GitHub is its App, so 3.7 has no branch for any other kind
 - [ ] 3.8 Every credentialled check degrades individually: one unreadable endpoint skips one
       check, not the run
 
@@ -71,8 +75,8 @@ claiming account's write access.
 ## 5. Documentation
 
 - [ ] 5.1 `README.md`, "Setting up a lore repository": a final step running the command and
-      confirming. If [#112](https://github.com/adamstallard/igor/pull/112) has landed, the step
-      goes at the end of the section as `init` rewrote it
+      confirming, at the end of the section as [#112](https://github.com/adamstallard/igor/pull/112)'s
+      `init` rewrote it
 - [ ] 5.2 `README.md`, the two manual GitHub steps — branch protection and the Actions actor on
       the bypass list — point at the command instead of relying on being remembered. The
       warnings stay; what changes is that they end with a way to confirm

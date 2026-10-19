@@ -1,6 +1,6 @@
 # Design
 
-Four decisions with live alternatives. The requirements state what must be true; these state
+Five decisions with live alternatives. The requirements state what must be true; these state
 how, and each was a choice rather than the only way.
 
 ## The command is `doctor`, not `check` or `verify`

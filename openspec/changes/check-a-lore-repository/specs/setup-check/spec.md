@@ -3,22 +3,29 @@
 ### Requirement: Setup is reported by one command, over what configuration alone cannot show
 
 A single command SHALL report whether a configured lore repository is wired to work, covering
-what neither the configuration nor an entry can show on its own. It SHALL inspect at least:
+what neither the configuration nor an entry can show on its own. *The credential* below is the
+code-host credential the command runs with, such as the person's own `gh` login or a CI token;
+a role's App is read with that App's own key, where the command's environment holds it. It SHALL
+inspect at least:
 
 - **The destination.** That it resolves, is inside a git repository, and has an `origin` remote
   naming a repository on the code host.
 - **Roles.** That every role file under the destination resolves, and that at least one role
-  names at least one source. A role naming no source discovers nothing, and nothing else
-  refuses it.
+  names at least one source.
+- **Every role has a seat.** A role has a seat to spend from where the `seat:` or `pool:` it
+  names, or inherits from a parent role file such as `roles/org.yaml`, resolves to at least one
+  declared seat, whether or not that seat has budget left. A role with none
+  SHALL be a finding, whether or not any seat is declared. Where seats are declared, resolving
+  the role already fails, and the role is reported once, as a role that does not resolve.
 - **A removal is permitted.** That the org-level `commands` list permits removing a tracked
-  file, reported from the point at which a removal can be published at all. Until then it is
-  not a finding.
-- **Direct pushes to the default branch are prevented.** Promotion reconciles pull requests, so
-  an entry pushed straight to the default branch has nothing to promote it, stays provisional,
-  never fires, and is reported nowhere.
-- **Approval is not required on a pull request.** No account may approve its own pull request,
-  and an Igor's approval never counts for a person's, so where the store has no second person
-  able to approve, requiring approvals blocks promotion outright.
+  file.
+- **Direct pushes to the default branch are prevented.** An entry pushed straight to the default
+  branch is never promoted, as lore-review's *Lore reaches the default branch by pull request*
+  says.
+- **Approval is not required on a pull request.** Where the lore repository has no second person able to
+  approve, requiring approvals blocks promotion outright, for the reasons lore-review's *Lore
+  reaches the default branch by pull request* and task-execution's *A person approves every Igor
+  pull request* give.
 - **The merge-triggered reconciliation workflow is present on the default branch.** Without it
   promotion depends on someone having Igor installed and remembering to run it.
 - **The workflow's own push is not blocked.** Where the default branch is protected and the
@@ -26,14 +33,18 @@ what neither the configuration nor an entry can show on its own. It SHALL inspec
 - **The state branch.** That it is reachable, and that the credential holds the write permission
   pushing to it requires.
 - **Each role's GitHub identity can claim.** On GitHub every Igor is a GitHub App, one per
-  role, claiming an issue with its `igor:<role>` label and a claim comment. For each role, the
-  report SHALL say whether its identity is an App installed on the repository it claims on, with
-  the permissions the label and the comment need. These SHALL be read before anything is
-  claimed, rather than inferred from a claim that did not stick.
+  role, claiming an issue with its `igor:<role>` label and a claim comment. For each role that
+  claims on GitHub, the report SHALL say whether its identity is an App installed on the
+  repository it claims on, with the permissions the label and the comment need. These SHALL be
+  read from the App's installation, so the check works on a repository where nothing has been
+  claimed yet. A role that claims only on Linear has no such App, and the
+  report SHALL say the check does not apply to it.
 
 A condition another command already reports, or that the configuration loader already refuses,
 SHALL NOT be re-implemented here; where the report would otherwise be silent about it, the
-report SHALL name the command that covers it.
+report SHALL name the command that covers it. A per-role condition, such as a role that does not
+resolve or an App that cannot claim, is refused at start by `igor run` or `igor serve` only for
+the role that command runs, so the report SHALL check it for every role.
 
 #### Scenario: Direct pushes to the default branch are possible
 
@@ -82,15 +93,57 @@ report SHALL name the command that covers it.
 
 #### Scenario: A role that does not resolve
 
-- **WHEN** a role file fails to resolve — naming a seat nobody declared, or naming none where
-  seats are declared
+- **WHEN** a role file fails to resolve, such as by naming a seat nobody declared
 - **THEN** it is reported as a finding naming that role
+- **AND** the remaining roles are still checked
+
+#### Scenario: A destination that is not a git repository
+
+- **WHEN** the destination is not inside a git repository, or has no `origin` remote naming a
+  repository on the code host
+- **THEN** it is reported as a finding naming what is missing
+
+#### Scenario: An unreachable state branch
+
+- **WHEN** the state branch cannot be read
+- **THEN** it is reported as a finding
+
+#### Scenario: A credential that cannot push to the state branch
+
+- **WHEN** the credential's permission on the repository does not allow pushing to the state
+  branch
+- **THEN** it is reported as a finding naming the permission it lacks
+
+#### Scenario: A role's App is read before any claim
+
+- **WHEN** the command runs before any item has been claimed
+- **THEN** each role's App installation and permissions are still reported
+
+#### Scenario: A role whose App key is not available
+
+- **WHEN** the command's environment does not hold a role's App key
+- **THEN** that role's App check is reported as unchecked, naming what is missing
+
+#### Scenario: A role that claims only on Linear
+
+- **WHEN** a role claims only on Linear
+- **THEN** the report says the App check does not apply to it
+
+#### Scenario: Approvals that cannot be graded
+
+- **WHEN** the destination requires an approving review, and the list of people who could
+  approve cannot be read
+- **THEN** the approval check is reported as unchecked, with the reason
+
+#### Scenario: A role with no seat
+
+- **WHEN** a role has no seat to spend from, whether or not the configuration declares any seat
+- **THEN** it is reported as a finding naming that role, once
 - **AND** the remaining roles are still checked
 
 #### Scenario: Removals are not permitted
 
-- **WHEN** removals can be published, and the org-level `commands` list permits no removal of a
-  tracked file
+- **WHEN** the org-level `commands` list permits no removal of a tracked file
 - **THEN** it is reported as a finding
 - **AND** the finding states that the worker cannot delete a file and that the refusal would
   otherwise arrive after the work is paid for
@@ -109,8 +162,7 @@ report SHALL name the command that covers it.
 
 The command SHALL make no change to the destination, to its repository's settings, or to
 anything on the code host. It SHALL offer no option to repair what it finds. Reading is the
-whole of its contract: a diagnostic that can change branch protection is one an operator
-hesitates to run, and hesitating to run it is the failure this exists to remove.
+whole of its contract.
 
 Where a property cannot be read without writing — whether a branch can actually be pushed to —
 the command SHALL report the permission that governs it rather than performing the write.
@@ -135,9 +187,7 @@ the command SHALL report the permission that governs it rather than performing t
 ### Requirement: Every finding names its remedy and who performs it
 
 Every finding SHALL state what to do about it and who can do it, distinguishing a remedy the
-operator performs on the code host from one a command performs. Several remedies are settings
-changes no command may make, and a report that names a problem without naming who can act on it
-leaves the reader exactly where the prose left them.
+operator performs on the code host from one a command performs.
 
 #### Scenario: A remedy only a person can perform
 

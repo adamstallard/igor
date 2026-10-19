@@ -1,10 +1,45 @@
+## Decisions
+
+1. **`igor doctor` is built after App support (#156's implementation, now merged)** (Adam,
+   2026-10-04). Its only identity check is that each role's App is installed on the repository
+   where it claims issues, with the permissions its `igor:<role>` label and claim comment need. *Rejected:* an interim check of the
+   claiming account's write access.
+2. **An identity that is not an App is not a finding** (Adam, 2026-10-11). Since #156 every
+   role's identity on GitHub is its App, so `doctor` never meets another kind and has nothing to
+   report for one. Igor reports no old configuration, since nobody runs Igor yet.
+3. **A role with no seat is a finding, whether or not any seat is declared** (Adam,
+   2026-10-18). Where seats are declared the loader refuses such a role, but only the role being
+   run; where none are, nothing refuses it. Task 2.6.
+
+**Still open, for Adam, each with a recommendation:**
+
+- **Decision 3 against the in-force exemption.** The in-force `seat-budget` spec lets a
+  deployment that declares no seats run with no budget, and calls that a decision. Until #171
+  removes the exemption, `igor doctor` would exit non-zero on every such deployment. Such a
+  deployment spends through a stored login, the credentials `claude` keeps in a home directory,
+  since no seat names a token for it. *Recommended:* let decision 3 stand from the day `doctor`
+  ships, since #171 and #175 already decided that Igor never runs on a stored login.
+- **How `doctor` reads every role's App.** Reading an installation's permissions takes that App's
+  own key, and a role's key is read only from its own environment, so one `doctor` process
+  holds at most one role's key. *Recommended:* on the server, run `doctor` once per role with
+  that role's environment file; elsewhere each App check is unchecked, naming the missing key.
+- **App keys in CI.** Running the App check in CI would put every role's private key in the lore
+  repository's Actions secrets, where repository code can reach them. *Recommended:* place no
+  App key in CI; there the App checks are reported unchecked.
+- **Which principal the state-branch check reads.** An Igor pushes to the state branch with its
+  App's installation token, so the permission of the person's own `gh` login, which the spec
+  calls the credential, says little. *Recommended:* the state-branch check (spec, and task 3.6)
+  reads each role's App's permission on the repository instead, with the App check.
+
 ## Why
 
 Every way a lore repository can be set up wrong is **silent**. Nothing refuses, nothing warns,
 and the symptom arrives later as absence — lore that never fires, a promotion that never lands,
 a workflow that ran and failed while the Actions tab looked green.
 
-Four of them are repository settings, each a `GET` away with the credential Igor already has:
+Four of them are repository settings. Three are a `GET` away with the credential Igor already
+has; the fourth, the bypass list, needs administrative read, so it is the check most often
+reported unchecked (`design.md`):
 
 1. **Branch protection off.** Promotion works by reconciling pull requests, so an entry
    committed straight to the default branch **has nothing to promote it**. It stays
@@ -46,10 +81,9 @@ inspects the destination and its repository:
 - Every role file resolves, and at least one role names at least one `sources` entry. A role
   with none discovers nothing, forever, quietly: `role.ts` prints `sources: (none)` and no
   path refuses it.
-- `roles/org.yaml` permits a removal, once removals can be published: a `commands` list with
-  no `git rm` matcher is an Igor that cannot delete a file, and the refusal arrives after the
-  worker has been paid. Stated as a condition rather than a reference to a pull request, the
-  way [#112](https://github.com/adamstallard/igor/pull/112) states the same dependency.
+- Every role has a seat to spend from, whether or not any seat is declared (decision 3).
+- `roles/org.yaml` permits a removal: a `commands` list with no `git rm` matcher is an Igor that
+  cannot delete a file, and the refusal arrives after the worker has been paid.
 - The four repository settings above.
 - The state branch is reachable, and the credential holds the write permission pushing to it
   needs. Reachability is read; **writability is inferred from the permission, never tested by
@@ -58,8 +92,8 @@ inspects the destination and its repository:
   permissions its `igor:<role>` label and claim comment need. On GitHub every Igor is a GitHub
   App (#156); see `design.md`.
 
-**Depends on #156's implementation.** `doctor` is built after App support lands, so it checks
-Apps only. It has no interim check of a claiming account's write access.
+**App support (#156) has merged**, so `doctor` checks Apps only. It has no check of a claiming
+account's write access.
 
 *The check reports and never repairs.* Changing branch protection is exactly the outward-facing
 mutation a diagnostic must not make, and a doctor that mutates is one people are afraid to run.
@@ -90,8 +124,9 @@ made it impossible rather than because it stopped mattering.
 |---|---|
 | `seat "x" reads its token from Y, which is not set` | already `igor budget`, which reports a credential that will not resolve. The report names that command rather than reading tokens itself |
 | `role "x" names seat "y", which is not declared` | already a load-time refusal (`role.ts` `checkSeat`), for the role you run. `doctor` resolves **every** role, so the roles you did not run are covered by the resolution check rather than by a check of their own |
-| `role "x" names no seat` | the same refusal, the same coverage |
-| `the tracker did not record <account> as holding <item>` | **a check** of each role's App (#156). What the App may do is readable before anything is claimed, and this is the row whose cause is invisible at the moment it bites |
+| `role "x" names no seat` | **a check** of its own, for every role, whether or not any seat is declared (decision 3). The load-time refusal covers only the role you run, and only where seats are declared |
+| the App rows, from `the GitHub App "x" is missing GITHUB_APP_ID …` to `taking no new work, GitHub would not mint a token …` | already refusals at start, or messages while serving, for the role being run. `doctor`'s App check covers every role, the ones nobody ran included |
+| `the tracker did not record <account> as holding <item>` | **prose.** The label was not there when read back after a claim, which happens at runtime. The App check reads beforehand whether the App may add the label, which is the cause least visible when this bites, but it cannot rule the row out |
 | nothing is ever claimed | **prose.** The remedy is already *"run `igor run <role> --plan`"* — a funnel over live candidates, not a fact about setup |
 | `9 left untriaged — the budget is used up …` | **prose.** A runtime state of a correctly configured system; `igor budget` shows it |
 | `9 left untriaged — no seat's usage could be read …` | **prose**, for the same reason |
@@ -144,8 +179,8 @@ restates one of theirs, and the two added requirements in #112 are in a differen
 - `docs/deployment.md`'s table names the command for the rows it evaluates, and keeps the rows
   that need human judgement as prose.
 - The README's setup section gains a final step, so the operator has a way to know whether any
-  of it took. If #112 lands first that section is already being rewritten around `igor init` and
-  this adds one line to the end of it; either order works.
+  of it took. #112 rewrote that section around `igor init`, and this adds one line to the end
+  of it.
 - `docs/architecture.md` §5.0.3 is **not** amended to name this as a third command. Its two —
   `role explain` and `role dry-run` — are both about a role's effective behaviour, inside a
   section titled *What a role actually looks like*. A repository-wiring check is the same
