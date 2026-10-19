@@ -11,21 +11,21 @@ failure happens.
  "cycle": "<cycle start>", "source": "tree", "hash": "3f9a0c2b71de"}
 ```
 
-The row holds no text from the failure (Adam, 2026-10-18). Adam asked for an error class plus a
-hash in place of the text. `source`, which surface's call threw (`tracker`, `code-host`, `tree`
-or `igor`), is that class, and `hash` is the first twelve hexadecimal digits of the SHA-256 of the
-masked message (*What "identical" means*, below). The state branch, `igor-state`, may be public,
-and a tracker's error can carry the response text of a private repository. The same failure goes to the
-process's own log, the server's journal under systemd, as one line of JSON, so a message
+The row holds no text from the failure, only an error class and a hash (Adam, 2026-10-18).
+`source`, which surface's call threw (`tracker`, `code-host`, `tree` or `igor`), is the class,
+and `hash` is the first twelve hexadecimal digits of the SHA-256 of the masked message (*What
+"identical" means*, below). The state branch, `igor-state`, may be public, and a tracker's error
+can carry the response text of a private repository. The same failure goes to the process's own
+log, the server's journal under systemd, as one line of JSON, so a message
 holding a newline or a quote is escaped and cannot break the line or forge another:
 
 ```json
 {"kind": "pre-worker", "item": "owner/repo#12", "role": "web", "source": "tree", "hash": "3f9a0c2b71de", "masked": "git clone exited #: fatal: …", "raw": "…"}
 ```
 
-A person reading the log on the state branch finds the masked message a row's hash was taken
-from by searching the journal for that hash. Twelve digits are 48 bits, so two different masked messages from one
-item and role sharing a hash is not a practical concern.
+To find the masked message behind a row's hash, a person searches the journal for that
+hash. Twelve digits are 48 bits, so two different masked
+messages from one item and role sharing a hash is not a practical concern.
 
 A failure that records a cure key (#101's name for a fault in the Igor's own setup) writes no
 `pre-worker` row. It keeps the ordinary run row, the row without a `kind` that the log holds for
@@ -43,9 +43,9 @@ Three places could hold the count. Two are rejected.
   count is the same kind of thing, a trailing run of identical events.
 - **Chosen: rows in the log.** Appends cannot overwrite each other. The log is already where a
   run is recorded, and #101 adds rows that are not runs, carrying a `kind`, so this adds a row
-  kind rather than a mechanism. A failure before the worker that is thrown writes no row today:
-  `cli.ts` records a run only where `execute` returned a result for it, and a throw returns
-  none. This row fills that gap in the record too.
+  kind rather than a mechanism. In the in-force code a failure before the worker that is thrown
+  writes no row: `cli.ts` records a run only where `execute` returned a result for it, and a
+  throw returns none. This row fills that gap in the record too.
 
 The log is read only on a failure before the worker, never on a healthy run, so the breaker costs
 nothing until it is needed. The log is kept on the `igor-state` branch, one file per day.
@@ -64,7 +64,9 @@ the item down again.
 A *run row* is a row without a `kind`. For one item and one role, walk the rows newest first,
 and apply to each row the first step that fits it:
 
-1. Skip a `pre-worker` row that an `outage` row excludes (below).
+1. Skip a `pre-worker` row that an `outage` row excludes (below). The `outage` row is looked up
+   by role, rank, cycle and item wherever it sits in the log, not met in the walk, since it can
+   land after the rows it excludes.
 2. Skip a run row that #101 marks `workerless`: its run started no worker. Three kinds have
    none: a failure before the worker that recorded a cure key, whose row carries `cures`
    (below); a failure before the worker that `execute` returned, whose run row stays beside its
@@ -76,28 +78,35 @@ and apply to each row the first step that fits it:
    the worker started, or at a `pre-worker` row that does not match.
 5. Skip rows of any other `kind`, such as #101's `probe` and `check` rows.
 
-The failure in hand is one more, unless it records a cure key. At three or more, the item is set
-down. A failure before the worker writes a `pre-worker` row, whether `execute` threw it or
-returned it (a catch-up merge that fails is one it returns). A thrown one writes no other row. A
-returned one also keeps the run row it writes today, marked `workerless`. #101's *probe* is the
-one item #101 lets through, after a fault in the Igor's setup, to test whether the fault has
-cleared. The probe ends when that item's run row lands, and is voided only where the run wrote
-no run row. Without the run row, the probe would stay open, and what the fault stopped would
-stay stopped, until the probe lapsed. A failure that
-records a cure key writes only its run row (below).
+The walk runs before the failure in hand writes its own row, so that failure is one more,
+unless it records a cure key. At three or more, the item is set
+down.
+
+Which rows a failure before the worker writes:
+
+- **Thrown:** a `pre-worker` row only.
+- **Returned by `execute`**, such as a merge that fails in a catch-up (which holds a claim): a
+  `pre-worker` row, and the ordinary run row `execute`'s result already produces, marked
+  `workerless`. The run row stays because of #101's *probe*, the one item #101 lets through
+  after a fault in the Igor's setup to test whether the fault has cleared. #101 ends a probe on
+  the probed item's run row, and voids the probe where the run wrote none. Keeping the row lets
+  a returned failure end its probe, as it does under #101, instead of voiding it. A thrown
+  failure on a probe writes no run row, so #101 voids its probe.
+- **Recording a cure key:** its run row only (below).
 
 **A failure that records a cure key never counts** (Adam, 2026-10-17). #101 records a cure key
 for a fault in the Igor's own setup, such as a seat whose token is unset. #101's `work-triage`
-delta says an item is never suppressed, that is held back as a set-down item is, for such a
-fault. Such a failure keeps the run row it writes today, carrying `cures`, instead of a
-`pre-worker` row: #101 builds conditions from run rows that carry a cure key and from its own
-`check` rows, never from a `pre-worker` row, so a `pre-worker` row would hide the fault from #101. *Counting* skips that run row (step 2), as it
-skips a `pre-worker` row an outage excludes: the row neither counts nor breaks the sequence.
+delta says that for such a fault an item is never suppressed, that is, never held back as a
+set-down item is. Such a failure keeps its ordinary run row, carrying `cures`, instead of a
+`pre-worker` row. #101 builds conditions from run rows that carry a cure key and from its own
+`check` rows, never from a `pre-worker` row, so a `pre-worker` row would hide the fault from
+#101. *Counting* skips that run row (step 2), as it skips a `pre-worker` row an outage excludes:
+the row neither counts nor breaks the sequence.
 
 A count at or past three after a lifted deferral sets the item down on the first identical
 failure. That is deliberate (spec, *In a row*; accepted by Adam, 2026-10-11): the answer that
-lifted the deferral did not cure the failure, and the alternative posts three more times. An edit or a reply leaves no row here, so the
-sequence carries on through it.
+lifted the deferral did not cure the failure, and the alternative posts three more times. An
+edit or a reply leaves no row here, so the sequence carries on through it.
 
 ## What "identical" means: source and masked message
 
@@ -112,19 +121,19 @@ since only `tracker` and `code-host` set `surfaceFailed`.
 
 The tree provider mints its git token through the code host's credential. A mint that fails
 inside a clone is still tagged `tree`, because the tag follows the interface the loop called.
-That is the right answer for the cycle rule: an expired clone token fails every item, and the
-cycle rule is about the tracker or code host not answering. A failure every item meets is caught
+That is the right answer for the outage rule: an expired clone token fails every item, and the
+outage rule is about the tracker or code host not answering. A failure every item meets is caught
 by its own rule instead (*A failure every item meets ends the cycle*, below).
 
 **The message is masked before comparing.** In order:
 
 1. The run's own working-tree path becomes `<tree>`. The code knows that path, since it
    provisioned the tree, so the mask replaces it as text wherever it appears, rather than matching
-   a pattern for tree names. A pattern written for today's `igor-tree-` prefix would stop matching
-   under `concurrent-instances` (#179), which names trees by role and rank; replacing the known
-   path keeps working whatever the name holds (Adam, 2026-10-18: the mask must keep working under
-   #179's naming). Because the count carries on across a role's ranks, trees of different ranks
-   must mask to the same text, and they do.
+   a pattern for tree names. A pattern written for the in-force `igor-tree-` prefix would stop
+   matching under `concurrent-instances` (#179), which names trees by role and rank; replacing
+   the known path keeps working whatever the name holds (Adam, 2026-10-18). Because the count
+   carries on across a role's ranks, trees of different ranks must mask to the same text, and
+   they do.
 2. Hexadecimal runs of seven or more characters, either case, become `<hex>`. These are SHAs and
    request ids.
 3. Remaining digit runs become `#`. These are exit codes, ports, counts and timestamps.
@@ -135,15 +144,15 @@ itself goes to the journal.
 - **Rejected: the signature as text in the row** (Adam, 2026-10-18), which would let a person
   reading the state branch see what was compared without the journal. The branch may be
   public, and the masks leave a private repository's response text in place.
-
 - **Rejected: the source alone.** A clone that fails on a full disk and then on an expired token
   is two failures, and a person fixing the first should not find the item set down by the
   second.
-- **Rejected: the raw message.** A clone's message names its temporary directory, which differs
-  every run, so no two would ever match and the breaker would never trip.
+- **Rejected: the raw message.** A clone's message names its working tree's path, which differs
+  between ranks and, for a temporary tree, between runs, so two failures would rarely match and
+  the breaker would rarely trip.
 - **Accepted risk (Adam, 2026-10-11).** Two failures whose messages differ only in a number, such
-  as `HTTP 404` and `HTTP 500`, count as identical. Both are the same call failing on the same item, and either way
-  the item is set down after three and comes back when answered.
+  as `HTTP 404` and `HTTP 500`, count as identical. Both are the same call failing on the same
+  item, and either way the item is set down after three and comes back when answered.
 
 ## Outages: an `outage` row excludes the cycle's failures
 
@@ -154,15 +163,17 @@ does, it appends:
 {"at": "…", "kind": "outage", "role": "web", "rank": 1, "since": "<cycle start>", "items": ["…", "…"]}
 ```
 
-`items` names every item whose run failed in that cycle, before or after the worker, including
-the two whose surface failures ended it, because the spec excludes every failure in a cycle the
-outage rule ended. Only `pre-worker` rows are affected, since only they count. A `pre-worker`
-row for a named item, of the same role and rank, whose `cycle` equals the outage row's `since`,
-does not count. Matching on the cycle, not on where the rows sit in the log, is deliberate:
-`serve` records a run without waiting for the write, so the row of the failure that ended the
-cycle can land after the outage row. Matching on the rank keeps one rank's outage from excusing
-a sibling rank's failure on the same item in a cycle of its own. Under #179 a role served by one
-process runs it as rank 1, and an `igor run` is rank 0, so its rows carry rank 0.
+`items` names every item whose run failed before the worker in that cycle, because the spec
+excludes every failure in a cycle the outage rule ended. Where one of the two surface failures
+that ended the cycle came before the worker, its item is named too. Failures after the worker
+are left out because only `pre-worker` rows count. A `pre-worker` row for a named item, of the
+same role and rank, whose `cycle` equals the outage row's `since`, does not count. Matching on
+the cycle, not on where the rows sit in the log, is deliberate: `serve` records a run without
+waiting for the write, so the row of the failure that ended the cycle can land after the outage
+row. Matching on the rank keeps one rank's outage from excusing a sibling rank's failure on the
+same item in a cycle of its own. Under #179 a role served by one process runs as rank 1, and so
+does `igor run`, which refuses to start while a serving rank 1 runs. The two never share a
+cycle, so matching on rank and cycle cannot mix their rows.
 
 An outage row that never lands lets that cycle's failures count. The cost is a set-down that a
 reply lifts, so the row gets no retry of its own beyond what every state write gets.
@@ -178,7 +189,9 @@ Two other ways to keep an outage from setting an item down were rejected:
   continued.** That means holding the decision in memory across items, and losing it on a crash
   or a shutdown between items.
 - **Rejected: count no tracker or code-host failure at all.** Adam named a tracker or code-host
-  call during the claim as a failure the breaker counts.
+  call during the claim as a failure the breaker counts. Where a role runs several ranks, the
+  rule that only the holder counts would, as drafted, count no claim-window failure either; the
+  proposal asks Adam about that case (open question 1).
 
 A single item that meets an outage, or a failure every item meets, alone in its cycle has no
 second run to end the cycle, so its failure counts. That costs it one place in its count per
@@ -193,40 +206,46 @@ item for three cycles and then set down the whole backlog, which would stay defe
 cause was fixed until someone answered each item.
 
 So the loop applies the outage rule's test, two in a row, to failures before the worker: when
-two runs in a row, of different items, fail with the same `source` and `hash`, the cycle
-ends. Whichever cycle ended appends an `outage` row naming both items, the same row the surface
-rule writes, so *Counting* excludes both failures with no new row kind. This does not make a
-tree failure a surface failure: `surfaceFailed` still follows only the tracker and code-host
-tags.
+two runs in a row, of different items, fail with the same `source` and `hash`, the cycle ends.
+Whichever cycle ended appends an `outage` row naming both items, the same row the surface rule
+writes, so *Counting* excludes both failures with no new row kind. It names only the two, not
+every failure in the cycle: the rule matched only that pair, so nothing shows any other failure
+in the cycle to be the environment's rather than its item's. Where the two identical failures
+are also surface failures, the outage rule ended the cycle, and its row names every item that
+failed before the worker. This does not make a tree failure a surface failure: `surfaceFailed`
+still follows only the tracker and code-host tags.
 
 **Both cycles apply both rules: `serve`'s and the single cycle `igor run` runs** (Adam,
-2026-10-17). Today the two share no cycle code: `serve` keeps its surface-failure count in
-`src/serve.ts`, and `src/cli.ts` runs its own loop over the items it claims, with no surface
-rule. A rule in only one of them would let the other set down the whole backlog. Without the
-identical-failure rule, a full disk fails every item the same way in every cycle. Without the
-surface rule, an outage fails every item's tracker call, and where the messages differ the
-identical-failure rule does not end the cycle either; each failure counts, and three such
-cycles set every item down. So this change adds one function, which both loops call, that
-applies both two-in-a-row tests.
+2026-10-17). In the in-force code the two share no cycle code: `serve` keeps its surface-failure
+count in `src/serve.ts`, and `src/cli.ts` runs its own loop over the items it claims, with no
+surface rule. A rule in only one of them would let the other set down the whole backlog. Without
+the identical-failure rule, a full disk fails every item the same way in every cycle. Without
+the surface rule, an outage fails every item's tracker call, and where the messages differ the
+identical-failure rule does not end the cycle either; each failure counts, and three such cycles
+set every item down. So this change adds one function, which both loops call, that applies both
+two-in-a-row tests.
 
 The comparison needs nothing from the log. The function keeps the previous run's item, source,
-hash and whether it was a surface failure for the length of one cycle, which a crash loses
-at no cost: the next cycle starts comparing afresh.
+hash and whether it was a surface failure for the length of one cycle, which a crash loses at no
+cost: the next cycle starts comparing afresh. A rank that drops out because another rank holds
+the item has no failure of its own, so it leaves the previous run in place.
 
 ## Where the set-down is said
 
-**A failure after the claim** is given back through `handOffFrom`, as today. On the third
-identical failure, its `failure` reason carries `next: 'set-down'`, which replaces "It will try
-again next cycle" with the set-down sentence (`tasks.md` 3.2). A directed claim keeps its
-relabel sentence. Adding the label again is an edit that lifts the deferral, so that sentence is
-already what brings the item back.
+**A failure after the claim** is given back through `handOffFrom`, as in the in-force code. On
+the third identical failure, its `failure` reason carries `next: 'set-down'`. An undirected
+handoff's "It will try again next cycle" becomes the set-down sentence (`tasks.md` 3.2). A
+directed handoff, whose tail is its relabel sentence alone, gets the set-down sentence first and
+keeps the relabel sentence after it. Adding the label again is an edit that lifts the deferral,
+so the relabel sentence already says what brings the item back.
 
 **A failure in the claim window** is given back by `takeClaim`, which posts `claimWithdrawn` only
-where the claim message may have landed. On the third identical failure, the set-down sentence
-is appended to the withdrawal. The withdrawal is then posted even where the claim message never
-landed, because it is the only word the item gets about being set down. If the tracker is still
-failing, that post fails too, at no cost.
+where the claim message may have landed, or `claimStuck` where the release did not clear the
+label. On the third identical failure, the set-down sentence goes into whichever it posts. As
+drafted, the withdrawal is then posted even where the claim message never landed, because it is
+the only word the item gets about being set down; the proposal's open question 2 asks Adam to
+keep this. If the tracker is still failing, that post fails too, at no cost.
 
 The run then returns `handed-off` with `handoff: 'failure'`. That is what `shouldDefer` already
-defers on, so `serve`, `cli.ts`'s single-cycle command and the catch-up loop defer it with no
-change to them.
+defers on, so `serve` and both loops of `igor run`'s cycle in `src/cli.ts`, over claimed items
+and over catch-ups, defer it with no change to their deferral path.

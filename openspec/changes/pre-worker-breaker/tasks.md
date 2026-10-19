@@ -4,15 +4,14 @@
       clone with an expired token, a branch set up that fails, and a tracker call answered 5xx.
       Check that each pair gives one signature after `design.md`'s masks and that different
       causes give different ones, and record the captures in `design.md`. If a pair does not
-      match, change the masks; a breaker whose signatures never match never trips, which is
-      today's behaviour.
+      match, change the masks; a breaker whose signatures never match never trips, and every
+      failure is retried as in the in-force code.
       Also capture a clone whose token mint the code host refuses because the App's credential
-      is refused. Record whether, during that first item's run, the failure reaches #101's App
-      condition and so records a cure key
+      is refused. Record whether, during the run of the item whose clone failed, the failure
+      reaches #101's App condition and so records a cure key.
+- [ ] 0.2 Sections 2 to 4 wait until `condition-backoff` (#101) merges (Adam, 2026-10-18).
 
-- [ ] 0.2 Sections 2 to 4 wait until `condition-backoff` (#101) merges (Adam, 2026-10-18)
-
-## 1. The agreement (gate one, this pull request)
+## 1. The agreement
 
 - [x] 1.1 `work-claiming`: only a tracker or code host failing counts as the surface failing; a
       failure before the worker that repeats three times sets the item down; two identical ones
@@ -32,8 +31,12 @@
       claimed-run handler and in `takeClaim`'s claim window (whose calls are all the tracker's).
       Update the `surfaceFailed` doc comment in `ItemRun` and the comment above `abandon` in
       `src/serve.ts`, which say every throw counts
-- [ ] 2.4 Tests: two items in a row failing to clone in different ways do not end the cycle; two
-      failing on a tracker call do; a code-host failure after the worker ran counts
+- [ ] 2.4 Tests, one per scenario in *Only a tracker or code host failing counts as the surface
+      failing*: two items in a row failing to clone in different ways do not end the cycle; two
+      failing on a tracker call do; two working-tree failures after the worker ran do not; two
+      failures in the Igor's own code do not; a working-tree failure whose message names a
+      GitHub API error is not a surface failure; a code-host failure after the worker ran
+      counts; `igor run` stops on two tracker failures with different messages
 
 ## 3. The breaker
 
@@ -50,22 +53,29 @@
 
       If `defer-a-closed-pull-request` (#141) has landed, `somebody` becomes `someone with write
       access`, so the sentence names what lifts a deferral as `work-triage` then states it. It
-      may otherwise be reworded only to keep it true of that rule. A directed handoff keeps its
-      relabel sentence
+      may otherwise be reworded only to keep it true of that rule. An undirected handoff's "It
+      will try again next cycle" becomes this sentence. A directed handoff, whose tail is its
+      relabel sentence alone, gets this sentence first and keeps the relabel sentence after it
 - [ ] 3.3 On the third identical failure in the claim window, whichever message `takeClaim`
       posts carries the same sentence: `claimWithdrawn`, right after "Nothing was done, so there
       is nothing to clean up.", or `claimStuck`, where the release did not clear the label, right
       after "Nothing was done.". Either way it comes before a directed claim's relabel sentence.
-      Post it even where the claim message never landed
+      Post it even where the claim message never landed, unless Adam's answer to the proposal's
+      open question 2 says otherwise. Build this for a role served by one rank; where a role
+      runs several ranks, it waits on open question 1
 - [ ] 3.4 In `runItem`, on a failure before the worker (a refused claim window, a throw raised
       before `execute` spawned the worker, or a failure `execute` returns before spawning it;
       #101's `workerless` mark on a run row tells that last kind apart from a worker that
       started and produced nothing): build the signature, ask the count reader for the
       trailing count, and on a count of 3 or more including this one, unless the failure
-      records a cure key, return `handed-off` with `handoff: 'failure'` and the set-down tail. Otherwise refuse as today. A count reader that
-      throws or is absent counts as 0. Under #179, only the rank holding the claim does any of
-      this; a rank that another rank's claim outranks drops out silently, writing no
-      `pre-worker` row
+      records a cure key, return `handed-off` with `handoff: 'failure'` and the set-down tail.
+      Otherwise refuse: give the claim back with the refusal. This turns a failure `execute`
+      returns, which the in-force code hands off and defers at once, into a refusal (the
+      proposal's open question 6). A count reader that throws or is absent counts as 0, and the
+      `pre-worker` row is still written. Where a role runs several ranks under #179, only the
+      rank holding the claim does any of this; a rank that another rank's claim outranks drops
+      out silently, writing no `pre-worker` row. In the claim window this waits on open
+      question 1
 - [ ] 3.5 The threshold is a named constant, 3, with a comment saying why three
 - [ ] 3.6 Tests, one per scenario in *A failure before the worker that repeats sets the item
       down*, including a restart (a fresh loop reading the same rows) and a deferral lifted by
@@ -75,18 +85,19 @@
 
 - [ ] 4.1 Append a `kind: 'pre-worker'` row for each failure before the worker, with `item`,
       `role`, `rank`, the cycle's start as `cycle`, `source` and `hash`, and no text from the
-      failure, wherever a run is recorded today:
-      `serve`'s event handler and the single-cycle loops in `src/cli.ts`. Write the failure to
-      the process's own log as one line, in the form `design.md` gives, with its masked and raw
-      messages. A test checks that no part of the raw or masked message reaches the row. A failure that records one of
-      #101's cure keys keeps the run row it writes today, with its `cures`, so #101's conditions
-      still see it, and writes no `pre-worker` row. A failure `execute` returns keeps its run
-      row too, marked `workerless`, so #101's probe, the one item it lets through to test whether a fault has cleared, still ends
-      on it. *Counting* reads #101's
-      `workerless` mark; no second marker is added
+      failure, wherever a run is recorded: `serve`'s event handler, and the two loops of `igor
+      run`'s cycle in `src/cli.ts`, over the items it claims and over its catch-ups. Write the
+      failure to the process's own log as one line, in the form `design.md` gives, with its
+      masked and raw messages. Tests check that no part of the raw or masked message reaches
+      the row, and that a message holding a newline and a quote stays on one escaped line. A
+      failure that records one of #101's cure keys keeps its ordinary run row, with its
+      `cures`, so #101's conditions still see it, and writes no `pre-worker` row. A failure
+      `execute` returns keeps its run row too, which #101's code marks `workerless`, so #101's
+      probe, the one item it lets through to test whether a fault has cleared, still ends on
+      it. *Counting* reads #101's `workerless` mark; no second marker is added
 - [ ] 4.2 Each cycle, `serve`'s and `igor run`'s, appends a `kind: 'outage'` row when it ends on
-      two surface failures, with `role`, `rank`, the cycle's start as `since`, and every item whose run
-      failed in that cycle, before or after the worker, as `design.md` says
+      two surface failures, with `role`, `rank`, the cycle's start as `since`, and every item
+      whose run failed before the worker in that cycle, as `design.md` says
 - [ ] 4.3 Supply the count reader through `wiring.ts`: it reads `executions.ndjson` with `readLog`
 - [ ] 4.4 Check that every reader of `executions.ndjson` that counts runs skips `pre-worker` and
       `outage` rows. #101's `stuck-conditions` requires readers to skip rows carrying a `kind`,
@@ -98,7 +109,9 @@
       whether it was a surface failure, for the cycle only. Move `serve`'s surface-failure count
       into it, so `igor run` gains the surface rule. A cycle that ends on two surface failures
       appends the `outage` row of 4.2; one that ends on two identical failures appends an
-      `outage` row naming only those two items
+      `outage` row naming only those two items. Where the two identical failures are also
+      surface failures, the cycle ends on the surface rule and writes 4.2's row. A rank that
+      drops out because another rank holds the item leaves the previous run in place
 - [ ] 4.6 Tests through both `serve` and `igor run`: one per scenario in *Two identical failures
       before the worker on different items end the cycle* (the cycle ends and neither count
       moves; different failures continue and both count; an item alone in its cycle counts once),
@@ -106,20 +119,19 @@
 
 ## 5. After #101 merges
 
-Sections 2 to 4 wait for #101 too (task 0.2).
-
 - [ ] 5.0 Add `specs/work-discovery/spec.md` to this change, restating #101's watermark
-      requirement once it is in force. That requirement lists why a
+      requirement, *Watermarks reduce reconsideration without governing it*, once it is in
+      force. That requirement lists why a
       cycle does not take an item (budget, a condition, no answer to the claim), and the
       watermark does not advance past an item left untaken for one of those reasons. A cycle
       ended by either two-in-a-row rule leaves its remaining items untaken too, and the watermark
       must not pass them either (Adam, 2026-10-17): two identical failures before the worker on
       different items, or two surface failures in a row. The file holds a `MODIFIED` block,
       copied whole from the requirement as it is in force when this task is done, including any
-      edit #106 (`role-keyed-watermark`) or #179 (`concurrent-instances`) has made to it. Every
-      reason for holding the mark back lives in that one requirement, which #179 cites (Adam,
-      2026-10-18). The block names these two reasons and
-      adds these two scenarios, which may be reworded to match #101's text:
+      edit #106 (`role-keyed-watermark`, which keys the watermark by role) or #179
+      (`concurrent-instances`) has made to it. Every reason for holding the mark back lives in
+      that one requirement, which #179 cites (Adam, 2026-10-18). The block names these two
+      reasons and adds these two scenarios, which may be reworded to match #101's text:
 
       ```markdown
       #### Scenario: An item a cycle never reached after two identical failures is seen again
