@@ -5,7 +5,8 @@
 Budget reporting SHALL show a seat that an open condition has stopped as stopped, on a line of the
 seat's own, naming the cure key and what would clear it. That line SHALL be distinguishable from
 every other state that keeps a seat unspent: a credential that could not be read, a credential
-the provider refused, no headroom left, no unreset reading of its windows, and holding back at
+the provider refused, no headroom left, no unreset reading of its windows where its reserve is
+above 0 (#143 admits a seat whose reserve is 0 with no reading), and holding back at
 its reserve line, the fullness above which #143 starts no new work on the seat (#143's *Holding
 back at the line is distinguishable from having nothing to do*). A stopped seat that has headroom
 SHALL show that headroom too, against the reserve line #143's report uses.
@@ -15,7 +16,8 @@ refused credential SHALL be shown on the line `condition-backoff`'s *Reporting t
 credential from an unreadable one, and clears nothing* gives it. A seat whose only open condition
 is that Igor could not decrypt its seat file SHALL be shown as #171 (`seat-files`) reports an
 undecryptable seat, on the line for a credential that could not be read, and that line SHALL name
-the condition.
+the condition. A seat with any other open condition, alone or beside one of those two, SHALL be
+shown as stopped, its line naming every open condition on the seat.
 
 A condition scoped to a role SHALL NOT appear in budget reporting. Reading the report clears
 nothing, as `condition-backoff`'s same requirement says of every report.
@@ -42,6 +44,11 @@ nothing, as `condition-backoff`'s same requirement says of every report.
 
 - **WHEN** a seat's only open condition is its refused credential
 - **THEN** the report shows it on the refused-credential line, not as stopped
+
+#### Scenario: A refused credential beside another condition is a stop
+
+- **WHEN** a seat has its refused-credential condition open and a second condition on the seat
+- **THEN** the report shows the seat as stopped, naming both conditions
 
 #### Scenario: Stopped is not out of headroom
 

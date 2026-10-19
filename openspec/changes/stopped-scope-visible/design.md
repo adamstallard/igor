@@ -7,8 +7,10 @@ role, and not every seat its role could spend from being stopped. The process ke
 stopped scope takes no new item. Where #171 has a role with no usable seat give each item it would
 work back to a person, with a comment naming the condition, the process does that. Each condition
 clears as `condition-backoff` and #171 clear it, and the cycle report says what is stopped. Only the
-checks before the first cycle still end the process: config validation, and under #175 the checks
-that the worker user exists and that `fs.protected_hardlinks` is `1`.
+checks a requirement says refuse a start still end the process, and only when they run as the
+process starts: config validation and #175's start checks before the first cycle, and #174's
+check that the pinned skills load before the first model call. The same check run again later,
+such as #179's reread of the configuration at each cycle, ends nothing.
 
 **Rejected: exiting when the open conditions leave the process no item it could take.** This
 change specified that until 2026-10-18. Three facts each count against it:
@@ -21,12 +23,13 @@ change specified that until 2026-10-18. Three facts each count against it:
   long enough to reach that cooldown, so the condition could never clear. The exit rule therefore
   had each start check for a passed cooldown and take the probe before exiting, which made how
   often the supervisor restarts the process decide how often a probe could run.
-- **The shipped supervisors escalate nothing.** `deploy/igor.service` has `Restart=always` and
-  `RestartSec=30`, with no `StartLimit*` override and no `OnFailure=`. Restarts thirty seconds
-  apart never reach systemd's start rate limit (documented default: 5 starts in 10 s), so the unit
-  never enters `failed` and nothing hung off `failed` fires. `docker compose`'s `unless-stopped`
-  backs off but alerts nobody. Only Kubernetes' `CrashLoopBackOff` is the alertable crash loop the
-  exit assumed. Reading taken from the unit files and documented defaults, not by running them.
+- **Restarts escalate nothing.** A systemd unit that restarts the process thirty seconds after
+  each exit, with no `StartLimit*` override and no `OnFailure=`, never reaches systemd's start
+  rate limit (documented default: 5 starts in 10 s), so the unit never enters `failed` and nothing
+  hung off `failed` fires. `docker compose`'s `unless-stopped` backs off but alerts nobody. Only
+  Kubernetes' `CrashLoopBackOff` is the alertable crash loop the exit assumed. This is read from
+  `deploy/igor.service`, `deploy/docker-compose.yml` and the documented defaults, not measured by
+  running them.
 
 A person who fixes a setting the process rereads while running is served faster by a process that
 stayed up: its next probe, or its next read of that setting, picks the fix up. A read-cleared
@@ -40,12 +43,13 @@ change that builds pulling, and #176's body says so.
 
 ## A refusal exits with status 78, and the unit stops restarting it (Adam, 2026-10-18)
 
-A refusal exits with status 78, and the unit lists 78 in `RestartPreventExitStatus=`, which
-systemd honours whatever `Restart=` says. Without the two, a process that keeps refusing to start
-meets `Restart=always` and `RestartSec=30`, as the bullets above describe: it is restarted every
-30 seconds, never reaches `failed`, and nothing shows the refusal but the journal. With them, the unit stops, shows
-`failed` in `systemctl status`, and keeps Igor's reason in its journal. Any monitor that watches for
-failed units then sees it, with nothing Igor-specific to configure.
+A refusal exits with status 78. The unit sets `Restart=on-failure` and lists 78 in
+`RestartPreventExitStatus=`, which systemd honours whatever `Restart=` says (Adam, 2026-10-18). Without them, a unit that restarts every exit 30 seconds later keeps restarting
+a process that refuses to start, never reaches `failed`, and shows the refusal nowhere but the
+journal. With them, the unit stops, shows `failed` in `systemctl status`, and keeps Igor's
+reason in its journal. Any monitor that watches for failed units then sees it, with nothing
+Igor-specific to configure. A crash exits non-zero and is still restarted. A clean exit, status
+0, is not restarted, and the unit shows inactive.
 
 78 is `EX_CONFIG` in `sysexits.h`, a configuration error, which every refusal here is. This change
 defines the number because it is the change that decides when `igor serve` exits: never on a
@@ -56,20 +60,25 @@ of the same kind raised while the process runs, by anything but such a check, is
 
 Under #179 (`concurrent-instances`) a role can run as several processes, each with a number it
 keeps across restarts, its *rank*, and the role's *roster* in `igor.config.yaml` lists the ranks
-it runs. 78 also ends a process that another requirement stops for good on a fault a
-person must look at: under #179, a rank that finds another process has taken its rank. #175 and
-#179 cite this requirement for the number. #179 defines a second status, 79, for a rank removed
-from the roster. The unit lists 79 in `RestartPreventExitStatus=` beside 78, and in
-`SuccessExitStatus=`, so systemd counts 79 as a clean exit and shows the unit inactive, not
-failed.
+it runs. A rank removed from the roster exits 0, which `Restart=on-failure` leaves down, so no
+second status is needed. *Rejected:* a status 79 for a retired rank, listed in
+`RestartPreventExitStatus=` and in `SuccessExitStatus=` so that systemd would show the unit
+inactive. `Restart=on-failure` gives the same result with status 0. #175 cites the requirement *A process
+that refuses to start exits with status 78* for the number.
 
-**Not measured:** that `RestartPreventExitStatus=78` stops `Restart=always` from restarting and
-leaves the unit `failed`. This is read from `systemd.service(5)`, not run; task 1.6 measures it on a
-real unit.
+**Not measured:** that `Restart=on-failure` with `RestartPreventExitStatus=78` leaves a refusal
+down and the unit `failed`, and leaves a clean exit down and the unit inactive. This is read from
+`systemd.service(5)`, not run; task 1.6 measures it on a real unit.
 
-**Out of scope: the compose file** (`deploy/docker-compose.yml`). Its `restart: unless-stopped`
-restarts whatever the exit status, and compose has no setting that skips one status, so a refusal
-under compose still restarts in a loop. The proposal lists this for Adam.
+**Compose retries a refusal three times** (Adam, 2026-10-18). The compose file
+(`deploy/docker-compose.yml`) sets `restart: on-failure:3`. Compose has no setting that skips one
+exit status, so a refusal is retried three times like any failure; after that the container
+stays down, and `docker compose logs` holds Igor's reason. A clean exit is not restarted. A crash
+is restarted, at most three times. *Rejected:* leaving compose out of scope with
+`restart: unless-stopped`, which restarts a refusal in a loop forever. **Not measured** (task
+1.8): whether compose's count of three starts again once a container has run for a while. If it
+does not, a long-running container that crashes a fourth time in its life stays down, and the
+compose policy goes back to Adam.
 
 A crash keeps whatever status Node gives it, never 78, so the unit still restarts it. Node's own
 exit codes run from 1 to 14, and a signal gives 128 plus its number, so none collides with 78.
@@ -102,9 +111,11 @@ Adam decided on 2026-09-28 that a seat's reserve is a line that moves toward the
 against the seat's latest unreset reading of each window. It replaces the dollar bound
 `(1 − reserve) × capacity` as the gate
 ([`docs/architecture.md` §6.3.4](../../../docs/architecture.md#634-a-seats-reserve-is-a-line-that-moves-toward-the-reset--decided-2026-09-28-specified-on-143-not-built)).
-Capacity figures stay only as a display, and a seat with no unreset reading is not admitted until a
-probe has read it. The line is `1 − r × remaining` with `r = max(seat reserve, role reserve)`, since a role file
-may also set its own reserve (§6.3.4). It is specified on [#143](https://github.com/adamstallard/igor/pull/143) and not
+Capacity figures stay only as a display, and a seat whose reserve is above 0 and that has no
+unreset reading is not admitted until a probe has read it; #143 admits a seat whose reserve is 0
+with no reading. The line is `1 − r × remaining`, where `remaining` is the fraction of the window
+left before its reset and `r = max(seat reserve, role reserve)`, since a role file may also set
+its own reserve (§6.3.4). It is specified on [#143](https://github.com/adamstallard/igor/pull/143) and not
 built.
 
 **For this change:**
@@ -134,8 +145,8 @@ that change's delta would quietly reverse it while the change is part-implemente
 archive behind a second body of work with a different reader, different code (`src/serve.ts`,
 `src/cli.ts`, `src/budget.ts`, `docs/deployment.md`) and a different way of being wrong.
 
-The dependency runs one way and is total: every requirement here reads the condition record
-`condition-backoff` writes, and none of them alters a requirement it states. Both deltas here are
+The dependency runs one way and is total: every requirement here reads the conditions
+`condition-backoff` rebuilds from the execution log, and none of them alters a requirement it states. Both deltas here are
 `ADDED`, including the ones on `stuck-conditions` — a capability that has no base spec in
 `openspec/specs/` until `condition-backoff` archives. That is also the sequencing constraint:
 `condition-backoff` archives first, or this change's requirements land as the whole of a
@@ -172,11 +183,28 @@ report and the budget line already need. The requirement states the property —
 named, that content, reading clears nothing — rather than the command's name, because the name is
 the part a reviewer may reasonably want different.
 
-**The seat line is then a deliberate duplication**, one line rendered from the same record in two
-reports. It is cheap, and the alternative is worse: an operator who has read `igor budget` and
+**The seat line is then a deliberate duplication**, one line rendered from the same read in two
+reports, `igor budget` and the conditions listing. It is cheap, and the alternative is worse: an operator who has read `igor budget` and
 seen a seat that looks fine, when the reason nothing is happening is a stop on that very seat.
 Both readers must see it; one source states it, the execution log the conditions are rebuilt
 from.
+
+## Why the listing names no role, shows a probe time, and clears nothing
+
+An operator asking whether anything is stuck does not know which role to ask about; that is the
+question. A surface that takes a role answers only for somebody who already suspects the right
+one, and the fleet-wide reading, several Igors stopped on one cure key, is the strongest signal
+available here and the one a per-role surface cannot produce at all.
+
+It states the probe time because the operator's next question, having read a stop, is whether
+their cure took. A stop with no time on it cannot be told from a stop nothing is going to do
+anything about. A condition with no probe states what clears it instead.
+
+Reading cannot clear, for the reason a breaker cannot be reset by being asked: an operator who
+believes they have fixed a credential and has not would clear the stop and pay for the belief on
+the next items. A condition closes only on an observation, never on a claim. For most conditions
+that observation is the probe. For a read-cleared condition, such as a seat file Igor could not
+decrypt, it is a later read that passes.
 
 ## Rejected: an issue in the destination
 

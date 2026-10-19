@@ -19,14 +19,9 @@
    [#175](https://github.com/adamstallard/igor/pull/175), a missing worker user or
    `fs.protected_hardlinks` not set to `1`; and #174's check, before the first model call, that
    the pinned skills load. These are checks on the setup, not conditions. A refusal logs its
-   reason and exits with status 78, and the shipped systemd unit lists 78 in
-   `RestartPreventExitStatus=`. systemd then stops restarting the unit and shows it failed, with
-   Igor's reason in the journal. 78 is `EX_CONFIG` in `sysexits.h`; this change defines the
-   number, and other changes cite it. 78 also ends a process that another requirement stops for
-   good on a fault a person must look at. Under
-   [#179](https://github.com/adamstallard/igor/pull/179) a role can run as several processes, each
-   with a number it keeps across restarts, its *rank*, and a rank that finds another process has
-   taken its rank exits 78. *Rejected:* a requirement that the shipped supervisors escalate a
+   reason and exits with status 78, and the shipped supervisors do not restart it (decision 8).
+   78 is `EX_CONFIG` in `sysexits.h`; this change defines the number, and other changes cite it.
+   Nothing else exits 78. *Rejected:* a requirement that the shipped supervisors escalate a
    process that keeps refusing to start. A failed unit is what `systemctl status` and every
    systemd monitor already show.
 3. **A seat's stop is reported where the seat is reported:** a line of the seat's own in `igor
@@ -53,16 +48,50 @@
    read-cleared condition opens on a failing read and clears on a passing one*. A seat file Igor
    could not decrypt is one; a configuration a running process reread and refused
    ([#179](https://github.com/adamstallard/igor/pull/179)) is another.
+8. **The shipped supervisors restart a failure, never a refusal or a clean exit** (Adam,
+   2026-10-18). The systemd unit sets `Restart=on-failure` and lists 78, and only
+   78, in `RestartPreventExitStatus=`: a crash is restarted; a refusal is not, and the unit shows
+   failed; a process that exits 0 stays down, and the unit shows inactive. Under
+   [#179](https://github.com/adamstallard/igor/pull/179) a role runs as several processes, each
+   with a number called its rank, and `igor.config.yaml`'s roster lists the ranks it runs; a
+   rank removed from the roster exits 0.
+   The compose file sets `restart: on-failure:3`, so compose retries a refusal three times and
+   then leaves the container down, with Igor's reason in its log. No change defines another exit
+   status, and the unit sets no `SuccessExitStatus=`. *Rejected:* a status 79 for a retired rank,
+   listed in `RestartPreventExitStatus=` and `SuccessExitStatus=`, which `Restart=on-failure` makes
+   unnecessary, since it never restarts a clean exit. *Rejected:* leaving compose out of scope,
+   where `restart: unless-stopped` restarts a refusal in a loop forever.
+
+9. **No issue is filed in the destination for a stop.** *Rejected:*
+   [#77](https://github.com/adamstallard/igor/pull/77)'s Igor-authored issue, as *Rejected: an
+   issue in the destination* below argues.
+10. **A configured command hook, `on_condition_command`, is deferred, not rejected,** until a
+    stop is found long after the fact where the listing and the budget line existed and nobody
+    read either (*Deferred, not rejected*, below).
+11. **This change archives after `condition-backoff`,** which gives `stuck-conditions` its base
+    spec; both deltas here are `ADDED`.
 
 **Still open:**
 
 - **The listing's command name.** `design.md` proposes `igor conditions`; review may prefer
   another. The requirement fixes the behaviour, not the name.
-- **One measurement:** that `RestartPreventExitStatus=78` stops a `Restart=always` unit and
-  leaves it `failed` (task 1.6). Read from systemd's documentation, not run.
-- **The compose file, for Adam.** `deploy/docker-compose.yml` restarts on any exit status, and
-  compose cannot skip one, so under compose a refusal still restarts in a loop. Decision 2 covers
-  the systemd unit only.
+- **Two measurements.** That the unit's `Restart=on-failure` with `RestartPreventExitStatus=78`
+  leaves a refusal down and `failed` and a clean exit down and inactive, and restarts a crash
+  (task 1.6). And whether compose's count of three retries starts again once a container has run
+  for a while (task 1.8). If it does not, a long-running container that crashes a fourth time in
+  its life stays down, and the compose policy goes back to Adam. Task 1.8 also measures whether
+  compose restarts a refusal at all: Docker documents that a restart policy takes effect only
+  once a container has run for 10 seconds, and a refusal exits sooner, so it might never be
+  retried.
+- **Compose after a reboot, for Adam.** Docker documents that a container under `on-failure`
+  is not started again when the Docker daemon or the host restarts, where `unless-stopped` is.
+  If task 1.8 confirms it, every Igor container stays down after a reboot until someone runs
+  `docker compose up -d`. *Recommendation:* keep `on-failure:3`, and have the deployment guide
+  start compose at boot, for example from a systemd unit that runs `docker compose up -d`.
+- **#101's wording of a refused credential.** #101's scenario *A stopped seat reads as stopped on
+  its credential* calls the refused-credential line a stopped seat, while this change shows such
+  a seat on that line and not as stopped. *Recommendation:* #101 renames its scenario; nothing
+  here changes.
 
 ## Why
 
@@ -135,10 +164,11 @@ requirements.
 
 - A stopped Igor stays up, and recovers by itself once a cure it rereads while running lands;
   other cures need a restart, as decision 6 says. A process that refuses to start stays down,
-  and its unit reads as failed. A person learns of the stop from the cycle
+  and its unit reads as failed; under compose, after three retries. A person learns of the stop from the cycle
   report, `igor budget` or the conditions listing.
 - A stop requires somebody to look. Nothing here pushes, deliberately; the hook that would is
   deferred above with the evidence that would bring it back.
-- Implementation lands in `src/serve.ts`, `src/cli.ts`, `src/budget.ts` and `deploy/igor.service`,
-  and `docs/deployment.md` says how to read a stop and a failed unit. It is sequenced behind
+- Implementation lands in `src/serve.ts`, `src/cli.ts`, `src/budget.ts`, `deploy/igor.service`
+  and `deploy/docker-compose.yml`, and `docs/deployment.md` says how to read a stop, a failed
+  unit and a container compose left down. It is sequenced behind
   `condition-backoff`, which produces the conditions every requirement here reads.

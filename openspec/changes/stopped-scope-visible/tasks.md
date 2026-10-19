@@ -9,6 +9,9 @@
       in the lore repository takes effect at the next restart, as the requirement says. The change
       that builds pulling removes that clause, and #176's body lists removing that
       wording
+- [ ] 0.4 The budget lines wait for what they read: #143's reserve line and holding-back state,
+      and #171's undecryptable-seat line and read-cleared condition. Build section 3 after both
+      are built
 
 ## 1. Running on through every condition
 
@@ -18,41 +21,60 @@
       condition clears as `condition-backoff` clears it
 - [ ] 1.2 Each cycle's report names every stopped scope with its cure key and what would cure it
 - [ ] 1.3 Every check a requirement says refuses a start logs which check failed and exits with
-      status 78, whenever it runs: config validation and #175's checks, which `igor serve` alone
-      makes, that the worker user exists and that `fs.protected_hardlinks` is `1`, all before the
-      first cycle; and #174's check, before the first model call, that the pinned skills load. Besides a refusal, only a stop another requirement names, such as
-      #179's rank whose rank another process took, exits with 78
+      status 78, when it runs as the process starts: config validation and #175's start checks,
+      before the first cycle (`igor run` makes none of #175's checks); and #174's check, before the first model call, that the
+      pinned skills load. The same check failing on a later reread is not a refusal. Nothing but a refusal exits with 78
 - [ ] 1.4 Tests: the Igor's own credential, the role this process serves, and every seat that
       serves the role each leave the loop running; a cure made while it runs is picked up by
       the probe without a restart; a read-cleared condition clears on a passing read with no
       probe; a config that fails validation exits with status 78 before the first cycle; an
       uncaught error exits with a status other than 78
-- [ ] 1.5 `deploy/igor.service` gains `RestartPreventExitStatus=78`, with this comment, which may
-      be reworded:
+- [ ] 1.5 In `deploy/igor.service`, `Restart=always` becomes `Restart=on-failure`, and the unit
+      gains `RestartPreventExitStatus=78`, with this comment above the two, which may be reworded:
 
       ```text
-      # A process that refuses to start exits 78 (EX_CONFIG): fix what the journal names, then start it again.
+      # A crash is restarted; a clean exit (status 0) is not. A process that refuses to start
+      # exits 78 (EX_CONFIG) and is not restarted: fix what the journal names, then start it again.
       ```
 
-      #179 adds its status 79 to the same line, and `SuccessExitStatus=79`; #175 carries the
-      same lines in its unit tasks. Of this change, #175 and #179, each one built after another
-      keeps every line the earlier ones added: the statuses, `SuccessExitStatus=79` and the
-      comment
+      The unit lists no other status there and sets no `SuccessExitStatus=`, since a clean exit
+      is not restarted under `Restart=on-failure`. #175 carries the
+      same lines in its unit tasks; of this change and #175, the one built second keeps the
+      lines the first added
 - [ ] 1.6 Measure on a Linux host, with the shipped unit: a process that exits 78 is not
-      restarted and the unit shows `failed`, and one that exits 1 is restarted. Record the result
-      in `design.md`
+      restarted and the unit shows `failed`; one that exits 0 is not restarted and the unit shows
+      inactive; one that exits 1 is restarted. Record the result in `design.md`
+- [ ] 1.7 In `deploy/docker-compose.yml`, `restart: unless-stopped` becomes
+      `restart: on-failure:3`, with this comment above it, which may be reworded:
+
+      ```text
+      # A crash is restarted, at most three times. A process that refuses to start exits 78
+      # (EX_CONFIG) and is retried three times, then left down: fix what
+      # `docker compose logs` names, then start it again.
+      ```
+- [ ] 1.8 Measure with the shipped compose file, and record the results in `design.md`:
+      - a container that exits 78 at every start is restarted three times and then left down,
+        with Igor's reason in `docker compose logs`, and one that exits 0 is not restarted;
+      - whether a refusal is restarted at all: Docker documents that a restart policy takes effect
+        only once a container has run for 10 seconds, and a refusal exits sooner;
+      - whether the count of three starts again once a container has run for a while. If it
+        never does, a long-running container that crashes a fourth time in its life stays down,
+        and the compose policy goes back to Adam;
+      - whether a container under `on-failure` comes back after the Docker daemon or the host
+        restarts (the proposal's open question on compose after a reboot)
 
 ## 2. Listing every open condition
 
 - [ ] 2.1 One read of the conditions rebuilt from the execution log, shared by the cycle report, the listing and the
       budget line, so the three cannot disagree
 - [ ] 2.2 An argument-free command (`igor conditions` unless review prefers otherwise) printing
-      cure key, scope, count, cure and next probe time, one line per condition
+      cure key, scope, count, cure and next probe time, one line per condition; a condition with no
+      count or no probe says what clears it instead
 - [ ] 2.3 One condition met by several Igors prints once
-- [ ] 2.4 Nothing open prints as nothing open, distinctly from a record that could not be read
+- [ ] 2.4 Nothing open prints as nothing open, distinctly from an execution log that could not be read
 - [ ] 2.5 The command is read-only: no clear, no reset, no cooldown change
-- [ ] 2.6 Tests: role-scoped listed without a role given, five Igors on one key, empty, record
-      unreadable, and that reading twice changes nothing
+- [ ] 2.6 Tests: role-scoped listed without a role given, five Igors on one key, empty, execution
+      log unreadable, a read-cleared condition, and that reading twice changes nothing
 
 ## 3. The seat's line in `igor budget`
 
