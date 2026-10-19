@@ -48,6 +48,8 @@ system's file permissions are the barrier that holds whatever the worker runs.
 - **THEN** the seat token is in the worker's environment
 - **AND** it is in no process's arguments
 - **AND** the Igor writes it to no file
+- **AND** under the sudoers file task 8.1 ships, no journal line `sudo` writes for that start
+  holds it
 
 #### Scenario: A model step after the worker runs as the worker user
 
@@ -125,8 +127,10 @@ then the separate user protects nothing.
 ### Requirement: Nothing the worker writes is executed by the Igor
 
 The Igor SHALL run git in a worker's tree with hooks, the filesystem monitor and submodule
-recursion turned off. It SHALL NOT run any program that the worker could have written or
-named, as the Igor's user. A changed path that holds a nested repository with working content
+recursion turned off. Under `igor serve`, it SHALL NOT run any program that the worker could
+have written or named, as the Igor's user. Under `igor run` the worker already runs as the
+Igor's user and can write the tree's git configuration, so that rule holds only under `serve`;
+the rest of this requirement holds in both modes. A changed path that holds a nested repository with working content
 SHALL stop the run before anything is published, naming the path.
 
 Once #137 has archived its requirement *An artifact carries a changed path as the tree holds
@@ -300,7 +304,12 @@ worker's tree*).
 
 ### Requirement: #153's trailers are created once, by the Igor, against the tree it staged
 
-Where a role runs #153's (`signed-publishing`) model steps, bug-hunter SHALL run first and the
+The terms here are #153's (`signed-publishing`): prose's *first call* prints prose's rules and
+a one-use *pass token*, which its *second call* needs to sign; bug-hunter's *minting script*
+writes `Bug-hunter-Tree:`; its *triage* decides whether a diff gets a bug hunt. Each rule below
+applies to one run of the model steps; #189's second worker run starts another.
+
+Where a role runs #153's model steps, bug-hunter SHALL run first and the
 prose pass after it. Each step edits the tree as it needs and SHALL run no prose or bug-hunter
 signing script; bug-hunter SHALL end by reporting its `Bug-hunter:` value. Before the prose pass
 starts, the Igor SHALL run prose's first call itself and give the rules and the pass token it
@@ -321,8 +330,7 @@ exits.
 
 The signing scripts come from `skills_dir`, which is root-owned, and the three variables keep
 their git calls out of any `.git` the worker made in the tree, so running them as the service
-user runs nothing the worker wrote. Under `igor serve`, prose keeps its pass tokens in the git
-directory, which the worker cannot write, so the worker cannot forge one.
+user runs nothing the worker wrote.
 
 #### Scenario: Both trailers bind to the tree the Igor publishes
 
@@ -339,7 +347,7 @@ directory, which the worker cannot write, so the worker cannot forge one.
 - **WHEN** the prose pass is about to start
 - **THEN** the Igor runs prose's first call as the service user
 - **AND** the prose pass's prompt holds the rules and the pass token that call printed
-- **AND** no prose or bug-hunter signing script runs as the worker user
+- **AND** no prose or bug-hunter script, `prose start` (the call that marks a session as having read prose's rules) included, runs as the worker user
 
 #### Scenario: A .git the worker made does not reach the signing calls
 
@@ -378,9 +386,7 @@ tree and the outbox SHALL have the worker's group and mode `2770` there, and `<t
 be read-only to the worker.
 
 The Igor cannot signal another user's processes or unlink entries in another user's directory,
-so a kill or a removal that runs only as the Igor leaves both behind. Claude Code starts each
-command a worker runs in a new session, outside the worker's process group, so a kill of that
-group leaves the command running.
+so a kill or a removal that runs only as the Igor leaves both behind.
 
 #### Scenario: A killed worker's subprocess dies with it
 
@@ -503,7 +509,7 @@ appended to one, SHALL reach `claude` through a file, named by `--system-prompt-
 `--append-system-prompt-file`. The Igor writes that file where the
 user the process runs as can read it and no worker user can write it, and removes it once that
 process exits. When the Igor starts again after a crash, it SHALL remove every system prompt
-file the crash left, beside a tree or in its own directory. Under `igor serve`, the systemd unit SHALL set `ProtectProc=invisible`.
+file the crash left, beside a tree or in the directory only the Igor can read. Under `igor serve`, the systemd unit SHALL set `ProtectProc=invisible`.
 
 On Linux every user can read every process's `/proc/<pid>/cmdline`, and `ps` prints it. A prompt
 holds the item's text and the lore its scope allows, which can be private source content, so a

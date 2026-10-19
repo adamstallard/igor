@@ -93,9 +93,10 @@
        skips gets no further iteration; any other gets one more bug-hunter iteration. That
        triage skips more than comments and docs, such as tests and specs (#153's measurement
        0.11), and #153 says whether that is the line it wants. No prose pass follows the extra
-       iteration (Adam, 2026-10-18, on #153); The comments that iteration writes still get
-       a reader: #153's cold read of the commit reads them, and the prose pass, answering that
-       cold read, fixes what the cold read names.
+       iteration (Adam, 2026-10-18, on #153). #153 has a fresh model step read the commit's prose
+       cold before prose signs, and the prose pass answers that cold read with edits. The cold
+       read reads the comments that iteration writes; how the answers to that cold read reach the signed tree is part
+       of *When #153 stages* (*Still open*).
     4. After the last model step exits and the link checks pass, the Igor stages the changed
        paths once, in its own index, which the worker cannot write.
     5. The Igor runs prose's second call with the token from step 2, and bug-hunter's minting
@@ -205,7 +206,7 @@
     its prompt on stdin. Its system prompt cannot share stdin, so it reaches `claude` through a
     file named by `--system-prompt-file`, which the Igor writes where no worker user can write it
     and removes when the process exits. For a process running as the worker user, that is a
-    directory the Igor owns beside the tree, mode `2750` with the worker's group, never the tree
+    directory the Igor owns beside the tree, `<tree>-prompt`, mode `2750` with the worker's group, never the tree
     or the outbox, which the worker writes; when the Igor starts again after a crash, it removes
     any such file the crash left. Measurement 6.9 confirmed both work with `-p` and
     stream-json output on Claude Code 2.1.303. `ProtectProc=invisible` hides every other user's
@@ -293,6 +294,13 @@
 **Still open:** an item marked *for Adam* waits on his decision; the rest wait on a measurement
 or on another change.
 
+- **The proposed decisions, for Adam.** Decisions 8, 28, 29 and 30, decision 27's extension of the
+  kill by worker user, which #174 makes only before each reset of the worker's home, to every
+  kill, and task 0.3's choice of a cure key scoped to the whole Igor for a
+  failed `sudo` spawn (#101's key a recurring failure is recorded under; one scoped to the whole
+  Igor stops it taking new items, where one scoped to an item would fail every item in turn), each with its reasoning where it is written. *Recommendation:* approve
+  all of them.
+
 - **The ambient login in force until #171 archives, for Adam.** The in-force `seat-budget` lets a
   seat name no token (*A seat names its token through exactly one mechanism*) and lets an
   organization with no seats run every call on the ambient login (*A spend with no seat behind it
@@ -319,14 +327,24 @@ or on another change.
   script under `skills_dir/skills/` the worker could write passes it and is then run as the
   service user. And a named path that does not exist passes `test -r` and `test -w` as
   isolated. *Recommendation:* refuse on a named path that does not exist, naming it, and probe
-  each script the Igor runs from `skills_dir`.
+  each script the Igor runs from `skills_dir`. Two files are not probed at all: `/etc/igor/env`,
+  whose path the Igor never learns, and `/etc/igor/<role>.env` until #179 lands, since #179 is
+  what has the Igor read that file. Under `ProtectProc=invisible` the `/proc` probe of the
+  Igor's environment passes because the Igor's process is hidden from the worker user, so it
+  says nothing about those files' permissions. *Recommendation:* the unit names its environment
+  files to the Igor in an environment variable, so the check
+  probes them, and the check reports a file it cannot name as not checked rather than passing.
 - **Filters named by a worker's `.gitattributes`, for Adam.** The Igor's `git add` and status
   read honour `.gitattributes` in the tree, which can name a filter defined in the service
   user's or the system's git config, such as `filter.lfs`. Nothing yet keeps those calls from
   running one, which *The Igor runs nothing the worker wrote* forbids. *Recommendation:* run the
   Igor's git calls in a tree, and the signing scripts, with `GIT_CONFIG_NOSYSTEM=1` and
   `GIT_CONFIG_GLOBAL=/dev/null`, so the only configuration is the Igor's own git directory,
-  which defines no filter (task 3.6).
+  which defines no filter (task 3.6). That recommendation has two costs: #137 requires a
+  file stored through a clean filter, such as Git LFS's, to be published as the filter's output,
+  which an undefined filter cannot give; and `main` checks the tree out under the global
+  configuration so LFS's smudge runs (`src/worktree.ts`), after which a call without that
+  configuration reads every LFS file as changed. Adam weighs those against the filter risk.
 - **`igor observe`.** The open change `scheduled-observation`, and `igor observe` on `main`,
   take a usage reading under a person's stored login, which decision 21 forbids. #143 withdraws
   that change, archives first (#204), and removes `igor observe` when it is built; nothing here
@@ -341,7 +359,9 @@ or on another change.
   #204).
 - **When #153 stages, for Adam.** This change stages once, after the last model step and the
   link checks, so that no `git add` runs over a file the worker could have hard-linked to a key
-  before the checks see it. #153's pushed head also stages before prose's first call, because
+  before the checks see it. The answers to #153's cold read already break that "once": they
+  are a model step after the staging they answer. #189's second worker run does not break it, since each run of
+  the model steps stages once. #153's pushed head also stages before prose's first call, because
   that call lists what the prose pass must rewrite from the staged changes, and stages again
   after the model steps that answer its cold read; it runs this change's kill and link checks
   before every staging. So #153's checks are the ones this change asks for, but its
@@ -354,19 +374,18 @@ or on another change.
   writes the seat token to the journal on every worker start, and no start check notices.
   *Recommendation:* the start check reads `sudo -n -l` and refuses to start unless it lists
   `!log_allowed` for the service user.
-- **Who restores the tree before #189's second run, for Adam and #189.** #189 restores every
-  path git does not ignore to the changes read before the checks. The Igor cannot remove what a
-  check wrote inside a directory the worker user made, so a restore run as the Igor leaves it.
-  *Recommendation:* run the restore as the worker user, as a release's first pass is, from
-  the tree the Igor recorded, which the worker user can read and cannot change.
+- **Who restores the tree before #189's second run, decided on #189.** #189 lists it as its
+  own open item for Adam, *Which account restores the tree before the second run*, with the
+  recommendation this change would make: run the restore as the worker user, as a release's first pass is, from
+  the tree the Igor recorded. The Igor cannot remove what a check wrote inside a directory the
+  worker user made, so a restore run as the Igor would leave it. Nothing is decided here.
 - **Other changes' pushed heads that disagree with this one.** #179 runs `igor run` as rank 1,
   sweeps it through `sudo` as that rank's worker user, and has a retired rank exit 79; this
-  change and #174 have `run` as rank 0 with no worker user, and only status 78. #189 kills a
-  check by its process group, which decision 27 says misses what a check starts in its own
-  session. #174 lets the kill go by the worker user's systemd slice, which a process started
+  change and #174 have `run` as rank 0 with no worker user, and only status 78, a refused start. #174 lets the kill go by the worker user's systemd slice, which a process started
   through `sudo` in the unit is not in. #174 relies on this change's start check to probe its
   home template, which the check does not probe. #190 runs `spec_trace.py` over the worker's
-  files without saying as which user, or whether it follows links. Each is that change's to
+  files without saying as which user, or whether it follows links. #171 sends the usage read
+  through the budget gate, where this change, with #174, exempts it. Each is that change's to
   fix, except the template probe, which this change can add.
 - **`CLAUDE_CODE_MESSAGING_TOKEN`.** Claude Code passes it to every command the worker runs
   (measurement 6.4), and what it authorizes is not measured (task 6.13). Until it is, the design

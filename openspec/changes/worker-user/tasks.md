@@ -87,7 +87,7 @@
       `runUsage` (`src/budget.ts`), #143's seat probe and #174's startup check where those are
       built. The Igor writes the system prompt file before the spawn and removes it after the
       process exits. For a process running as the worker user, it goes in a directory the Igor
-      owns, beside the tree, mode `2750` with the worker's group; never in the tree or the
+      owns beside the tree, `<tree>-prompt`, mode `2750` with the worker's group; never in the tree or the
       outbox. For a process running as the Igor, it goes in a directory only the Igor can read. Build after 6.9. Tests: each call's argv holds no prompt, no `--system-prompt` and
       no `--append-system-prompt`;
       the prompt arrives on stdin; the file exists during the call and not after it, also when
@@ -110,9 +110,9 @@
       the tree with `--git-dir` and `--work-tree`, so a `.git` the worker replaced is never read
       by the Igor. Under `run`, the git directory stays inside the tree and the
       index is not copied.
-- [ ] 2.4 The sweep's name rule takes `<tree>-git` as it takes `<tree>-outbox`, and the startup
-      sweep removes every system prompt file 1.7 left, beside a tree or in the Igor's own
-      directory. Test: a system prompt file left by a crash is gone after the next start.
+- [ ] 2.4 The sweep's name rule, which decides which sibling paths belong to a tree, takes `<tree>-git` and `<tree>-prompt` as it takes `<tree>-outbox`, and the startup
+      sweep removes every system prompt file 1.7 left, beside a tree or in 1.7's directory only the Igor can
+      read. Test: a system prompt file left by a crash is gone after the next start.
 - [ ] 2.4a Under `serve`, provision every tree, outbox and `<tree>-git` under
       `/var/lib/igor/trees`, never under the instance's `/tmp`, with 2.1's groups and modes
       (Adam, 2026-10-17). A sibling rank's sweep of a gone rank's trees (#179) runs the first
@@ -403,7 +403,8 @@ file in the service user's home. Each holds a random string and nothing else. Ne
       `visudo -cf` accepts the file, and a worker start writes no `ENV=` line, and so no seat
       token, to the journal. Count the `ENV=` lines and never print them, since such a line
       holds the token. Then check that a command sudo refuses the service user still writes a
-      journal line, counting those lines the same way. Record the result in `design.md`.
+      journal line, counting those lines the same way, and count the refused lines that hold
+      `ENV=` too, never printing them. Record the result in `design.md`.
 - [ ] 6.13 Before section 1 ships, record what `CLAUDE_CODE_MESSAGING_TOKEN`, which Claude Code
       passes to the commands it runs (6.4), lets a holder do beyond the worker's own session. If
       it reaches anything else, the design's handling of it goes back to Adam.

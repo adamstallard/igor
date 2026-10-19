@@ -76,7 +76,8 @@ igor ALL=(igor-worker-maintenance-1) NOPASSWD: ALL
 it, each worker start wrote the seat token into the journal, because sudo logs every preserved
 variable with its value (measurement 6.5); root, the `adm` and `systemd-journal` groups and the
 service user itself can read the journal. sudo's documentation says it still logs a command it
-refuses; task 6.12 measures that.
+refuses; task 6.12 measures that, and whether such a line also lists the preserved variables,
+the seat token among them.
 `Defaults:igor !syslog` also stopped the line, but turns off every sudo log line for the service
 user, refusals included.
 
@@ -278,9 +279,11 @@ service user. The order is:
    comments and docs, and two models disagreed on whether to skip a spec-only diff (#153's measurement 0.11);
    #153 decides whether that is the line it wants and pins the model. No prose pass follows
    the extra iteration (Adam, 2026-10-18, on #153): the prose pass is not meant to change code,
-   so the iteration runs only in an edge case. The comments that iteration writes still get a
-   reader: #153's cold read of the commit reads them, and the prose pass, answering that cold
-   read, fixes what the cold read names.
+   so its diff is usually comments and docs, which the triage skips, and the iteration runs only
+   in an edge case. #153 has a fresh model step read the commit's prose cold before prose signs,
+   and the prose pass answers that cold read with edits. The cold read reads the comments that
+   iteration writes; how the answers to that cold read reach the signed tree is part of
+   the proposal's open item *When #153 stages*.
 4. After the last model step exits, the Igor kills every process the worker user owns and runs
    the link checks below. Only then does the Igor's code stage the changed paths, once, in its
    own index. Staging first would put a hard-linked key's content into a blob in the git
@@ -476,7 +479,7 @@ through `/proc` or `ps`. Two things close that:
 - **stdin and a file.** Every `claude -p` takes its prompt on stdin. The system prompt cannot
   share stdin, so it goes in a file named by `--system-prompt-file`, which the Igor writes before
   the spawn and removes after the process exits. For a process running as the worker user, the
-  file sits in a directory the Igor owns, beside the tree, mode `2750` with the worker's group,
+  file sits in `<tree>-prompt`, a directory the Igor owns beside the tree, mode `2750` with the worker's group,
   so the worker can read it and not write it; never in the tree or the outbox, which the worker
   writes. When the Igor starts again after a crash, its startup sweep removes a file the crash left, here
   or in the Igor's own directory. For a process running as the Igor, such as triage, the file sits in a directory only
