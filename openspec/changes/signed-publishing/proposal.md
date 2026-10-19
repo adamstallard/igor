@@ -6,17 +6,17 @@ Each decision names who made it and when. Adam decided 1 to 3, 7, 8 and 18 on 20
 
 Terms. An *Igor* is one role of the agent, acting under its own GitHub App; the *item* is the
 issue or pull request it works on. Under the two-gate workflow (#150), *gate one* publishes a
-change's specification and *gate two* its implementation, on the same pull request; a
-*revision* is a push at either gate answering a reviewer's change request. `produce()` opens a
-pull request; #150's *head push*, built on the `commitOnBranch` primitive already on `main`,
-pushes onto an existing one. Prose signs in two calls: the
-first prints the rules and a one-use *pass token*; the model writes by the rules; the second,
-given the token, signs, after a *cold read*, a fresh model step reading the text with none of
-the conversation behind it. The *prose pass* is the model step that writes between the two
-calls. *Reader goals* are what prose is told each text's reader came for. Bug-hunter's
-*caller-commits mode* reviews and fixes a change and reports its result without committing; its
-*triage* decides whether a diff needs a hunt, and its *first triage* runs on the whole change
-before any hunt. The *state branch* is where Igor records each item's outcome.
+change's specification and *gate two* its implementation, on the same pull request; a *revision*
+is a push at either gate answering a reviewer's change request. `produce()` opens a pull
+request; the *head push*, this change's name for the push #150 adds, which puts a commit onto an
+existing pull request, is built on the `commitOnBranch` primitive already on `main`. Prose signs
+in two calls: the first prints the rules and a one-use *pass token*; the model writes by the
+rules; the second, given the token, signs, after a *cold read*, a fresh model step reading the
+text with none of the conversation behind it. The *prose pass* is the model step that writes
+between the two calls. *Reader goals* are what prose is told each text's reader came for.
+Bug-hunter's *caller-commits mode* reviews and fixes a change and reports its result without
+committing; its *triage* decides whether a diff needs a hunt, and its *first triage* runs on the
+whole change before any hunt. The *state branch* is where Igor records each item's outcome.
 
 1. **A model writes; Igor's deterministic code signs, verifies and publishes** (Adam,
    2026-09-30, #139; decision 16 sets which calls the code runs). Prose's first call prints the
@@ -77,8 +77,8 @@ before any hunt. The *state branch* is where Igor records each item's outcome.
    `graceful-handoff` exists for.
 9. **A pull request body is the opening block, then the signed description, then the code's
    evidence section (Adam, 2026-10-13).** Until `review-evidence` (#190) is built, the opening
-   block is the line linking the pull request to its item, preceded under #150 by the bug-hunter
-   open decisions #150 places first; once #190 is built, #190 defines it. Every line the code
+   block is the line linking the pull request to its item, preceded under #150 by every line
+   #150's code writes into the body; once #190 is built, #190 defines it. Every line the code
    adds after the description starts at the marker `<!-- igor:evidence -->`, which #190 defines;
    before #190 is built there is no marker, and the description runs to the end of the body.
    `prose verify-post` runs on exactly the span between the opening block and the marker.
@@ -137,13 +137,13 @@ before any hunt. The *state branch* is where Igor records each item's outcome.
     every user on the server, so a worker of one role could read another role's prompt, with
     private source content in it. Each model step's prompt, which holds prose's rules and pass
     token where the step writes, reaches `claude -p` on stdin, and any system prompt reaches it
-    through a file, as #175 sets out. The reader goals Igor gives prose are drawn from the item,
-    whose text may be private, so they stay off every prose command line too; prose has no way
-    to take all of them from a file yet (task 0.16). #175 specifies the stdin rule, in its
-    `task-execution` requirement *A prompt reaches claude on stdin, never in its arguments*, and
-    #175's systemd unit also sets `ProtectProc=invisible`. *Rejected:* relying on
-    `ProtectProc=invisible` alone, which leaves a prompt readable wherever the setting does not
-    hold, such as under `igor run`, which no systemd unit starts.
+    through a file, as #175 sets out. Reader goals drawn from the item could hold private text,
+    so they stay off every prose command line too (*For Adam* 13 recommends goals that hold no
+    item text); prose has no way to take all of them from a file yet (task 0.16). #175 specifies
+    the stdin rule, in its `task-execution` requirement *A prompt reaches claude on stdin, never
+    in its arguments*, and #175's systemd unit also sets `ProtectProc=invisible`. *Rejected:*
+    relying on `ProtectProc=invisible` alone, which leaves a prompt readable wherever the
+    setting does not hold, such as under `igor run`, which no systemd unit starts.
 16. **Igor runs prose's first call itself, as its service user, and gives the rules and the
     pass token to the step in its prompt (Adam, 2026-10-18).** The model does the pass, and Igor
     runs the second call. The worker user never writes prose's token store, so it cannot forge a
@@ -160,7 +160,7 @@ before any hunt. The *state branch* is where Igor records each item's outcome.
 
 **Still open:**
 
-- **Before building**, three tasks:
+- **Before building**, five tasks:
   - Task 0.15: whether bug-hunter's regression tests run under the commands a role already
     grants.
   - Task 0.16: prose taking every call's reader goals from a file, a change to the shared-skills
@@ -169,6 +169,10 @@ before any hunt. The *state branch* is where Igor records each item's outcome.
   - Task 0.17: whether a binary file and a clean-filtered file give equal trees.
   - Task 0.18: whether bug-hunter's triage runs as its own step on a given diff and model, and
     reports skip or hunt in a form Igor can read.
+  - Task 0.19: whether the steps between prose's first and second calls fit in a pass token's
+    two-hour life, and whether a token survives a second call that refuses for a reason other
+    than the token, and whether goals given by path pattern cover a doc first changed after the
+    first call. A token prose refuses always gets a new first call.
 - Every other measurement has run; `design.md`, *Measurements*, records what each showed.
 
 **For Adam,** each a question this change cannot settle alone, with a recommendation. Where the
@@ -207,7 +211,9 @@ otherwise, the requirement that states it changes.
    under decision 16 the prose pass gets its rules from the first call Igor runs.
    *Recommendation:* drop it. That also drops `prose start` from task 0.16 and removes the
    reason #174's decision 14 and #175's decision 15 give for keeping the session mark (the file
-   `prose start` writes to open the gate) in the worker's home.
+   `prose start` writes to open the gate) in the worker's home. Keeping `prose start` would also
+   break #175's rule that no prose script runs as the worker user, since `prose start` must run
+   as that user to mark its session.
 7. **A triage skip is the step's own word.** Whether a commit needs `Bug-hunter-Tree:` rests on
    bug-hunter's report that its first triage found nothing to hunt, and nothing checks that
    report. *Recommendation:* mint `Bug-hunter-Tree:` on every commit, against the tree Igor
@@ -222,10 +228,10 @@ otherwise, the requirement that states it changes.
    *Recommendation:* #150 cites this change's rule.
 10. **Where `skills_dir` does not exist, every skill is unknown.** `skills_dir` names a server
     path (#174), so where it does not exist every role whose org base lists `prose` is refused
-    at load, which breaks `igor role explain`, the dry run and same-user `igor run`.
-    *Recommendation:* check names only in a command that runs a model step, and only where the
-    directory exists, naming it when it does not. The `role-config` delta is written to this
-    recommendation, which narrows decision 4's "refused at load".
+    at load, which breaks `igor role explain` on a developer's machine. *Recommendation:* check
+    names only in a command that runs a model step, and only where the directory exists, naming
+    it when it does not. The `role-config` delta is written to this recommendation, which
+    narrows decision 4's "refused at load".
 11. **A conflicted catch-up's resolution is a merge**, so model-written code reaches the branch
     with no trailers. *Recommendation:* accept the gap for now; signing a merge needs a design of
     its own.
@@ -266,18 +272,23 @@ otherwise, the requirement that states it changes.
     unrelated issue on merge. This change refuses any closing keyword other than the closing
     linkage decision 6 sets for the item itself, at every gate, and sends the text back to the
     step that wrote it. *Recommendation:* as written.
-19. **Staging before the prose pass.** #175 says nothing stages before the last model step
-    exits, and lists when this change (#153) stages as its own question for Adam. This change
-    stages before prose's first call, since the token records the goals of the docs the first
-    call sees staged (task 0.9), and makes #175's link and hard-link checks before every
-    staging. *Recommendation:* as written, and #175 is changed to allow staging after its
-    checks.
+19. **Staging before the prose pass.** Under #175, Igor reads none of the worker's changes and
+    stages nothing before the last model step exits. #175 lists when this change (#153) stages
+    as its own question for Adam. This change stages before prose's first call, since the token
+    records the goals of the docs the first call sees staged (task 0.9), and makes #175's link
+    and hard-link checks before every staging. *Recommendation:* as written; #175's authors
+    change it to allow reading and staging after its checks.
 20. **A claim lost during the signing steps.** Igor checks for a stop and its claim before each
     model step after the worker, as at any checkpoint; a stop publishes nothing.
     `task-execution` on `main` publishes what exists as a draft on a lost claim, but at that
     point no text is signed. *Recommendation:* run no further model step and publish the
     worker's change as that draft, with a body the code assembles and no signed text; the next
     Igor to claim the item redoes it, signed, before it can merge.
+21. **A second worker round after signing.** `loop-verifies-commands` (#189) runs the
+    repository's checks on the signed tree and, where one fails, runs the worker a second time,
+    then stages and signs again. Signing again without the steps would mint `Bug-hunter-Tree:`
+    over code no hunt saw. *Recommendation:* the second run's changes go through every step this
+    change sets out, from bug-hunter on, before they are signed; #189 cites this change.
 
 ## Why
 
@@ -331,11 +342,11 @@ governs them. Neither change is edited here: the rule lives in one place, and th
 
 ## Impact
 
-- **Five or six more `claude -p` steps per commit Igor pushes**: bug-hunter, the prose pass,
-  the cold read and the prose pass's answers to it, bug-hunter's triage of the prose pass's
-  diff, and one more bug-hunter iteration where that triage does not skip. A post adds the
-  cold read and the answers. A role pays them only for the skills it lists; task 4.1 measures
-  the cost per item.
+- **Six or seven more `claude -p` steps per commit Igor pushes**: bug-hunter, the prose pass,
+  the cold read and the prose pass's answers to it, bug-hunter's triage of the prose pass's diff
+  and of the answers' diff, and one more bug-hunter iteration where that triage does not skip. A
+  post adds two: the cold read and the answers. A role pays them only for the skills it lists;
+  task 4.1 measures the cost per item.
 - **Depends on the prose and bug-hunter skills** from the shared-skills repository, which is
   not public yet. Bug-hunter's caller-commits mode is on its `main` (task 0.2). Prose needs a
   file form for every call's reader goals before decision 16 is built (task 0.16). Igor loads

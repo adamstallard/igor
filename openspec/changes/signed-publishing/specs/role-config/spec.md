@@ -12,10 +12,9 @@ loads: #174 loads every installed skill, as `igor:<name>`, for every role. The o
 field kind* sets out.
 
 A command that runs a model step SHALL refuse to start when a role it runs lists a name that is
-not a skill installed under `skills_dir`, naming it and the installed skills, and SHALL refuse,
-naming the directory, when `skills_dir` does not exist. A command that runs no model step, such
-as `igor role explain` or a dry run, SHALL NOT check the names. This follows the recommendation
-of the proposal's *For Adam* 10, which is open.
+not a skill installed under `skills_dir`, naming it and the installed skills. Where `skills_dir`
+is missing, #174's *Igor confirms its skills load before its first model call* refuses first. A
+command that runs no model step, such as `igor role explain`, SHALL NOT check the names.
 
 Listing a skill grants the worker nothing: it adds nothing to `commands`, and Igor's code runs
 every script of a listed skill itself, as `signed-publishing` requires.
@@ -45,6 +44,12 @@ worker may still invoke any skill #174 loads.
   `bughunter` is installed under `skills_dir`
 - **THEN** it refuses to start, naming `bughunter` and the installed skills
 
+#### Scenario: A dry run checks the names
+
+- **WHEN** a person dry-runs a role whose `skills` lists `bughunter`, which is not installed
+- **THEN** the dry run, whose triage of recent items makes a model call (*A role can be dry-run
+  without acting*), refuses to start, naming `bughunter`
+
 #### Scenario: A machine without the skills directory can still explain a role
 
 - **WHEN** `skills_dir` does not exist and a person runs `igor role explain` on a role whose
@@ -56,8 +61,8 @@ worker may still invoke any skill #174 loads.
 ### Requirement: A role declares its sources, lane, behaviour, permissions, and reviewers
 
 A role file SHALL support: `extends`, `seat`, `sources`, `lane`, `instructions`, `allow`,
-`commands`, `budget_share`, `reviewers` and `skills`. Each `sources` entry MUST name a
-`tracker` and carry that tracker's own query verbatim. Entries failing validation SHALL be
+`commands`, `budget_share`, `reserve`, `reviewers` and `skills`. Each `sources` entry MUST name
+a `tracker` and carry that tracker's own query verbatim. Entries failing validation SHALL be
 rejected rather than loaded.
 
 `commands` names the shell commands a worker may run, and is the only thing that lets one
@@ -91,18 +96,18 @@ there is one the worker can widen for itself.
 
 Inheritance SHALL apply three merge semantics, selected per field:
 
-The `allow` vocabulary is a **closed set**, so a typo fails validation rather than silently
-granting nothing: `comment`, `review-comment`, `draft-pr`, `pr`, `label`, `merge`, `send`. A role
-that lists any other word is refused at load, naming the valid actions. The safe default an org
-base should ship with is `[draft-pr, comment]` — everything reversible, nothing final.
-
-- **Monotonic** for permission-shaped fields (`allow`, `commands`, `budget_share`,
+- **Monotonic** for permission-shaped fields (`allow`, `commands`, `budget_share`, `reserve`,
   repositories and surfaces in reach): a role MAY restrict what it inherits and MUST NOT
-  widen it.
+  widen it. For `reserve` the restriction is a higher value.
 - **Override** for settings (`seat`, poll interval, settle interval, cooldown): the most specific
   level wins.
 - **Append** for `instructions`, `lane` and `skills`: levels accumulate, with lane constraints
   conjoined.
+
+The `allow` vocabulary is a **closed set**, so a typo fails validation rather than silently
+granting nothing: `comment`, `review-comment`, `draft-pr`, `pr`, `label`, `merge`, `send`. A role
+that lists any other word is refused at load, naming the valid actions. The safe default an org
+base should ship with is `[draft-pr, comment]` — everything reversible, nothing final.
 
 #### Scenario: Role narrows a permission
 

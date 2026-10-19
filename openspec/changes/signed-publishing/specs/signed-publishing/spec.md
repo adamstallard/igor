@@ -46,13 +46,15 @@ capability.
 ### Requirement: Igor runs prose's calls around the model step that writes
 
 For a role whose `skills` lists `prose`, every text a model step writes for an Igor to publish
-SHALL go through prose's pass. That covers pull request descriptions, replies, questions, and
-any other model-written post to GitHub, Discord or Linear. The *prose pass* is the model step
-that writes the text between prose's two calls. The *pass token* is the one-use value prose's
-first call prints, which its second call requires.
+SHALL go through prose's pass. That covers pull request descriptions, replies, questions a model
+step writes, and any other model-written post to GitHub, Discord or Linear. The *prose pass* is
+the model step that writes the text between prose's two calls. The *pass token* is the one-use
+value prose's first call prints, which its second call requires.
 
 Igor's code SHALL run both of prose's calls itself, as Igor's service user, from the pinned
-skills directory (#174):
+skills directory (#174), with `GIT_DIR`, `GIT_WORK_TREE` and `GIT_INDEX_FILE` set to its own git
+directory, tree and index, for a post as for a commit, since prose keeps its token store in the
+git directory:
 
 1. **The first call**, `prose sign` for a post, SHALL run before the step writes. Igor SHALL
    give the step the rules and the pass token it prints, in the step's prompt on stdin.
@@ -65,19 +67,27 @@ whose whole prompt is the cold-read brief the second call prints, exactly as pri
 give its report to the step that wrote the text, which fixes what the report names and answers
 each line. The cold reader SHALL run as the worker user, with no tool but Read on the tree for a
 commit, and no tool at all for a post. Igor SHALL then run the second call with that report and
-those answers. A step SHALL fix every finding, and prose's refusal of a kept one SHALL count as
-a failed check.
+those answers. A step SHALL fix every finding. Igor SHALL count as a failed check an answers
+file that keeps any finding or understood line, that is, answers it with anything but `fixed` or
+`matches`, whatever reason it gives, without passing it to prose, and SHALL count prose's own
+refusal the same way.
 
 No model step SHALL run a prose script, and no worker user SHALL be able to write prose's token
-store, so no step can issue a token or sign. No model step SHALL post. A commit message is
-signed the same way, through `prose check`, as `task-execution`'s *A commit is signed by
-bug-hunter and the prose pass before it is committed* requires.
+store, so no step can issue a token or sign. Under `igor run`, where #175 runs every step as
+Igor's own user, the steps can write the store and the cold reader runs as that user; a
+signature made there shows the steps ran, not that no step forged a token. No model step SHALL
+post. A commit message is signed the same way, through `prose check`, as `task-execution`'s *A
+commit is signed by bug-hunter and the prose pass before it is committed* requires.
 
 Text the code assembles from recorded state is not signed: handoffs, stop receipts and claim
 messages. `graceful-handoff` stays as it is. Nor are someone's words that code-assembled text
-quotes: bug-hunter's open decisions in the opening block the code assembles for a pull request
-body, the worker's reason for declining in a handoff, and a person's request in an issue Igor
-opens for them, from chat or from a mention under `directed-interaction` (#140).
+quotes:
+
+- bug-hunter's open decisions, in the opening block the code assembles for a pull request body;
+- the worker's reason for declining, quoted in a handoff, also where `directed-interaction`
+  publishes that handoff as its question;
+- a person's request, in an issue Igor opens for them from chat, or from a mention under
+  `directed-interaction` (#140).
 
 #### Scenario: No model step posts
 
@@ -102,6 +112,12 @@ opens for them, from chat or from a mention under `directed-interaction` (#140).
 - **THEN** it runs as the worker user, can read the tree, and can run no command and edit no
   file
 
+#### Scenario: A kept finding is refused before prose sees it
+
+- **WHEN** the answers file answers finding 3 with `3. kept (asked): the wording is clear`, the
+  form prose's dispositions file gives a finding a person chose to keep
+- **THEN** Igor counts a failed check and does not run the second call with it
+
 #### Scenario: A signature waits for a cold read
 
 - **WHEN** Igor runs the second call on a reply and it prints a cold-read brief
@@ -113,8 +129,9 @@ opens for them, from chat or from a mention under `directed-interaction` (#140).
 #### Scenario: A kept cold-read finding is a failed check
 
 - **WHEN** the step that wrote a reply answers a cold-read finding by keeping it
-- **THEN** prose's second call refuses to sign, and the reply goes back to the step as a failed
-  attempt
+- **THEN** Igor does not run the second call with those answers, and the reply goes back to the
+  step as a failed attempt
+
 
 #### Scenario: The rule holds on every surface
 

@@ -88,13 +88,15 @@ The order, from proposal decisions 11, 12, 13 and 16:
    stages nor runs `caller-result.sh`: the worker user cannot write the git directory, so that
    script would mint the wrong tree or fail (task 0.14).
 2. **Igor stages** the change in its own index and runs prose's first `prose check` call on a
-   draft message holding the issue title, with reader goals for the message and for each
-   changed doc and spec. A token records the per-file goals its first call saw, and the second
-   call refuses a doc that had none (task 0.9). So the change is staged before the first call,
-   which then sees the changed docs and records their goals. Before this staging, as before
-   every staging, Igor runs #175's link and hard-link checks on the changed paths; otherwise
-   `git add` would turn a hard link the worker made to a credential, such as the App's private
-   key, into a blob in a git directory the worker can read.
+   draft message holding the issue title, with reader goals for the message and, by path
+   pattern, for docs and specs. A token records the per-file goals its first call saw, and the
+   second call refuses a doc that had none (task 0.9). So the change is staged before the first
+   call, which then sees the changed docs and records their goals. Whether goals given by
+   pattern also cover a doc changed later, by the extra bug-hunter iteration of step 4 or by the
+   answers to the cold read in step 5, is task 0.19. Before this staging, as before every
+   staging, Igor runs #175's link and hard-link checks on the changed paths; otherwise `git add`
+   would turn a hard link the worker made to a credential, such as the App's private key, into a
+   blob in a git directory the worker can read.
 3. **The prose pass** gets the rules and the token in its prompt. It rewrites the message and
    the change's docs and comments by those rules, including the comments bug-hunter's fixes
    added.
@@ -346,7 +348,10 @@ design.
   The same day, staging again after the answers left `prose check`'s token valid, and the second
   call signed the tree staged when it ran. **Confirms** the three-part flow of *Every signature
   needs a cold read*.
-- **Not measured:** 0.18, whether bug-hunter's triage runs as its own step on a given diff and
-  model and reports skip or hunt in a form Igor can read; 0.15, whether bug-hunter's regression
-  tests run under the role's existing `commands`; and 0.17, whether a binary file and a
-  clean-filtered file give equal trees.
+- **Not measured:** 0.19, whether the steps between the two calls fit in a pass token's two-hour
+  life, whether a token survives a second call refused for a reason other than the token, and
+  whether goals given by path pattern cover a doc changed after the first call; 0.18, whether
+  bug-hunter's triage runs as its own step on a given diff and model and reports skip or hunt in
+  a form Igor can read; 0.15, whether bug-hunter's regression tests run under the `commands` the
+  role being worked already grants; and 0.17, whether a binary file and a clean-filtered file
+  give the same tree in Igor's index as through the Git Data API.
