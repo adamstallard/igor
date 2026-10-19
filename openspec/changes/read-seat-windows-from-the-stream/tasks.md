@@ -157,16 +157,23 @@
       since a probe is made for no role); no probe of it recorded by any Igor in the last hour; no
       probe of it this process started still running; and every probe of it in the last five
       hours got an event. Where a reading expired at a reset the server knows of, the probe is the
-      post-reset probe of 8.1, not a second one
+      post-reset probe of 8.1, not a second one, unless that post-reset probe was excluded
 - [ ] 6.2 Spawn the probe as `claudeWorker` spawns a worker, with the environment written out
-      (§6.3.2) and only that seat's token, from a fresh empty temporary directory removed after.
+      (§6.3.2) and only that seat's token, from a fresh empty temporary directory removed after,
+      and with `HOME` set to a second empty temporary directory, not the home a worker is given.
+      Remove both directories once the probe exits.
       Use `TRIAGE_MODEL`, a trivial prompt, tools denied and `--output-format stream-json
       --verbose`. Reuse 2.1–2.3's parsing
 - [ ] 6.3 Record its event through 3.2's path as `stream` rows, timed at arrival. Record its cost
       against the seat on a spend row, marked as a seat probe in place of a role, that
       `loadSpend` returns. Where #101 has merged, its `check` row for the credential (6.7) is a
       second row and carries no cost. Record no observation when no event arrived
-- [ ] 6.4 Tests: a reserved seat with no reading is probed once; a seat with both windows unexpired
+- [ ] 6.0 Before building 6.1-6.3, measure that a probe in the specified configuration, `HOME`
+      and working directory both empty, no tools and only the seat's token, still gets a
+      `rate_limit_event`. If it does not, the probe goes back to Adam
+- [ ] 6.4 Tests: a reserved seat with no reading is probed once; a seat whose post-reset probe
+      was excluded is probed once no exclusion applies; the probe runs with an empty `HOME`, the
+      cheapest model, the trivial prompt and no tools; a seat with both windows unexpired
       is not probed to read it; a probe this process started and is still running is not doubled; a refused or overage seat is not until the reset; a seat whose week reading is past
       the week's line is not though its session reading has expired, and is once the line has
       risen past the reading; the hourly bound and the
@@ -211,10 +218,10 @@
       the reading, its time and the line. A window with no unreset reading is blocked only where
       `r` > 0, with its own verdict and reason, not `no-figure`. A refusal (`bound.spent`) still
       blocks as it does, and its reset still reaches the handoff
-- [ ] 7.3 **Live path.** Every seat's credential is a `setup-token` (decision 14), to which the
-      live `/usage` read returns no window, so the live path is expected to be dead. Confirm in
-      `src/budget.ts` that no seat can get a window from it. If none can, remove the path and
-      its callers' live branches. Only if some seat still can, replace the fixed line in `seatStatus` / `hasHeadroom`
+- [ ] 7.3 **Live path.** The live `/usage` read stays (`design.md`, *What is not removed*; task
+      9.1). Whether any seat can still get a window from it, now that every seat's credential is a
+      `setup-token` (decision 14), is open in the proposal. Replace the reserve line that does not
+      move toward the reset, in `seatStatus` / `hasHeadroom`
       (`src/budget.ts`): `headroomPercent = line × 100 − percentUsed`, with the live
       reading's reset resolved through `resolveRecentReset` and `remaining` = 1 where it does not
       resolve. Its callers: `chooseSeat`'s live path (its passed-over and chosen reasons),
@@ -278,8 +285,9 @@
 
 - [ ] 8.1 The post-reset probe: for each seat, schedule a seat probe ten minutes
       after each reset a reading has stated, once per window type until measured, then again about
-      weekly. It goes through 6.1's selection, so every limit and exclusion applies, and an
-      excluded one waits for the next known reset
+      weekly. It goes through 6.1's selection, so every limit and exclusion applies. Where one is
+      excluded, its measurement waits for the next known reset, but the seat is still read: it
+      falls to 6.1's ordinary probe as soon as no exclusion applies
 - [ ] 8.2 From the probe's reading: new reset less old reset, and new reset less the probe's
       arrival time. Whichever equals the built-in (or last measured) length names the schedule and
       the length; where neither does, the next post-reset probe for that window uses a different
@@ -421,6 +429,8 @@ requirements are in force:
       `MODIFIED` block on *A seat nothing has read is probed on the Igor server with its own
       token* (proposal, decision 18), so moving *A probe checks the credential too* out of that
       requirement has to be matched in #171's block
+      When writing that delta, also update the sentence in `docs/architecture.md` that says one
+      probe 401 opens `seat:<id>:credential`
 - [ ] 15.2 `condition-backoff/design.md` (from #101), `concurrent-instances/design.md` and
       `archive/2026-10-10-reset-by-comparison/design.md` link to `docs/architecture.md` §6.3.4 by
       the anchor `#634-…specified-on-143-not-built`. This change renames the heading to
@@ -435,8 +445,9 @@ requirements are in force:
 
 - [ ] 16.1 Archive this change and `seat-files` (#171) together, in one commit (Adam, 2026-10-17).
       Archived alone, this change would leave the in-force pool requirement naming
-      `capacity_estimate`, which it removes; only `seat-files` removes that requirement. Archive
-      this change first: `seat-files`' deltas are written against this change's text. Do 15.1
+      `capacity_estimate`, which it removes; only `seat-files` removes that requirement. Run the
+      `openspec archive` steps in the order issue #204 holds, which runs this change's before
+      `seat-files`', since `seat-files`' deltas are written against this change's text. Do 15.1
       first: until it is done, one probe 401 here opens a seat condition that #101 opens only at
       its threshold
 - [ ] 16.2 Add `reserve` to the monotonic fields of role-config's *Merge semantics differ by

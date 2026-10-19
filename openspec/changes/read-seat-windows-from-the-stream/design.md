@@ -708,6 +708,11 @@ scenarios became false are `REMOVED` and re-`ADDED` under new names.
 One more `MODIFIED` delta is about the probe rather than the dollar bound: *Every invocation
 records which role spent from which seat*, so that a probe's spend row may name no role.
 
+Two in-force `work-triage` passages still treat a seat with no capacity figure as one that cannot
+be used: the model stage's scenario where every seat "has no capacity figure", and "a seat never
+observed" in the untriaged report. This change carries no delta on them. #171 (`seat-files`)
+removes and rewrites both, and archives in the same commit as this change (decision 16).
+
 No in-force requirement specifies `igor observe`, the scheduled reading, the refusal of a seat
 credential, or anything in `budget-pacing`, since neither change was archived. So their withdrawal
 needs no `REMOVED` delta.

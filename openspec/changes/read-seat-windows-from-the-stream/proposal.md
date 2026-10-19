@@ -75,7 +75,7 @@ read.
 16. **This change and #171 archive together** (Adam, 2026-10-17). The in-force pool requirement
     names `capacity_estimate`, which this change removes, and only #171 removes that requirement,
     so archiving this change alone would leave in-force text naming a key that no longer exists
-    (task 16.1).
+    (task 16.1). The order of every open change's archive is in issue #204.
 17. **The `dedicated` seat key is dropped in #171, not here** (Adam, 2026-10-17). Once this change
     stops refusing a reserve on a dedicated seat and stops forcing its reserve to 0, the key does
     nothing. #171 is where seat keys are declared.
@@ -98,10 +98,20 @@ read.
     choice.
 23. **A role *has a seat it can spend* when the gate would choose one for it now** (Adam,
     2026-10-18, for #179). In #179 a rank's heartbeat says the rank is available only while it is
-    free and its role has a seat it can spend. A role has one when the gate would choose a seat for
-    it: when not every seat is past its reserve line, and the role is not holding back at the
-    line. This change defines the term once, in *A role has a seat it can spend when
-    the gate would choose one now*, and #179 cites it.
+    free and its role has a seat it can spend: when the gate, deciding now, would choose a seat
+    for it under every rule it applies. A role whose seats are all past their reserve lines, or
+    passed over for any other reason, has none. This change defines the term once, in *A role has a seat it can spend when
+    the gate would choose one now*, for #179 to cite.
+
+24. **One run contributes one reading, the last event it received.** This change's choice.
+    *Rejected:* a row per event, which grows the log by the run's length for no new information.
+25. **A refusal is recorded once, from the stream where the stream names its window.** This
+    change's choice. *Rejected:* a row from the stream and another from the envelope, the run's
+    final result message, which also reports a usage limit.
+26. **A `rejected` event on a run that succeeded is recorded at the figures it gives, not as a
+    refusal.** This change's choice: a limit the run retried past is not why it stopped.
+27. **Two Igors that start a probe of one seat at once may both make it.** This change's choice.
+    *Rejected:* coordinating probes across Igors.
 
 **Still open:**
 
@@ -115,6 +125,20 @@ read.
   `--output-format json`, carries the reading as `rate_limit_info` (task 11.1), which decides
   whether a triage call yields a reading. The overage rule is not built until 1.4
   confirms it.
+- **For Adam, from a consistency read of 2026-10-18, each with a recommendation:**
+  - **Whether the live `/usage` read is dead.** Every seat's credential is now a `setup-token`,
+    to which `/usage` returns no window, so the live path may never return one. The design and
+    task 9.1 keep it, and task 7.3 gives it the moving reserve line. *Recommended:* keep it until
+    gate two, the implementation pushed onto this branch once the spec is approved, confirms in
+    the code that no seat can get a window from it; then remove it in a follow-up.
+  - **The probe's empty `HOME`.** The spec has the probe run with `HOME` set to an empty
+    directory, so no user-level settings or hooks of the service user load beside the seat's
+    token. Whether `claude -p` still gets a `rate_limit_event` that way is unmeasured (task 6.0).
+    *Recommended:* approve it, subject to 6.0.
+  - **The two stream captures committed under `captures/`** for task 1.1a keep the operator's
+    local setup metadata (session ids, the skill and plugin list) in a public repository.
+    *Recommended:* trim each to its `rate_limit_event` lines and the stream's first `init` line
+    with its fields emptied, before merge.
 - **For Adam: this change's code is built before #171's.** The two archive in one commit
   (decision 16), but archiving a spec and building its code are separate steps, and this
   change's code comes first. Until #171's code lands, the in-force `seat-budget` still lets a

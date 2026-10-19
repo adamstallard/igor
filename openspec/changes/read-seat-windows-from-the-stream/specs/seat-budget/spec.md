@@ -9,12 +9,6 @@ window consumed and the instant the window resets; and it SHALL record the event
 `allowed`, `allowed_warning` with the threshold it crossed, or `rejected` — and whether extra
 usage is being spent.
 
-The worker already runs under the seat's own `setup-token` credential with the stream flags that
-produce this event, and the event reports the whole seat's windows, owner's use included. Nothing
-else available to that credential reports them: `/usage` returns a cost summary and the usage
-endpoint refuses it. Discarding the event discards the only reading of the seat that needs no
-person signed in anywhere.
-
 A stream reading SHALL be recorded in the observation shape already in force, with source
 `stream`, so that it is distinguishable in the record and in reporting from a reading taken
 through `/usage` and from a limit error read off the envelope. Where the event's status is
@@ -78,16 +72,6 @@ newest unreset reading (*The reserve is untouchable*).
 An observation taken from a worker's stream SHALL carry the instant the event was received as the
 instant it was taken.
 
-A capacity is spend within the window up to the observation, divided by the fullness it reports.
-A run's own spend is recorded when the run ends. Timed at the end, the reading would count the
-whole run's spend against a fullness measured before most of it, and the capacity would come out
-high — a figure that overstates what the window holds. Timed at arrival, the run's spend is
-excluded while the reading may already reflect some of it, so the capacity comes out slightly low,
-the direction already accepted from a co-consumer. A capacity is reported and decides nothing
-(*The reserve is untouchable*), so this is about the report being honest. What the gate uses is
-the reading itself, and the time it arrived is also what bounds how far one run can carry a seat
-past its line before the next reading shows it.
-
 #### Scenario: The run's own spend is not in the numerator
 
 - **WHEN** a capacity is derived from a stream reading
@@ -100,10 +84,11 @@ it was taken until the reset it reports, and SHALL NOT be taken to describe any 
 the window. Reporting SHALL present an unexpired reading as a lower bound, with the instant it was
 taken.
 
-Fullness does not fall within an instance, the stretch of a window from one reset to the next, so
-an old reading understates the present rather than misstating it, and needs no staleness threshold
-until its window turns over. Should it fall, so that a newer reading of an instance is lower than
-an older one, the newer one governs, since the gate reads the newest unreset reading.
+This assumes fullness does not fall within an instance, the stretch of a window from one reset to
+the next, which is unmeasured; on that assumption an old reading understates the present rather
+than misstating it, and needs no staleness threshold until its window turns over. If the
+assumption fails, so that a newer reading of an instance is lower than an older one, the newer one
+governs: the gate reads the newest unreset reading, and the older one stops being a bound.
 
 #### Scenario: An old reading still bounds the present
 
@@ -130,14 +115,14 @@ subscription; no reserve anybody declared contemplates spending its owner's mone
 
 #### Scenario: Overage stops the seat
 
-- **WHEN** a seat's newest unexpired reading reports `isUsingOverage` true
+- **WHEN** a seat's newest unexpired reading reports extra usage being spent
 - **THEN** that seat is passed over for the window the event's `rateLimitType` names, with that as
   the reason
 - **AND** it is usable again once that window resets, without intervention
 
 #### Scenario: Overage in one window does not shut the other
 
-- **WHEN** a reading reports `isUsingOverage` true with `rateLimitType` `five_hour`
+- **WHEN** a reading reports extra usage being spent, with `rateLimitType` `five_hour`
 - **THEN** the session window has no headroom until its reset
 - **AND** the week window is bounded as it would otherwise be
 
@@ -179,12 +164,13 @@ The event is undocumented, and the gate rests on it for reserved seats. For a se
 credential is a `setup-token` one the stream is the only source of a reading other than a refusal,
 and a refusal only ever shuts a window. So if the provider drops or changes the event:
 
-- **What fails closed:** every seat whose effective reserve is above 0 goes idle for that role once
+- **What fails closed:** every seat whose line, for a role, uses a reserve above 0 (the larger of
+  the seat's and the role's) goes idle for that role once
   its last reading resets, and stays idle until readings return. Nobody's reserve is spent on a
   guess.
-- **What keeps running:** every seat whose effective reserve is 0, stopped by the provider's
-  refusal as it is without this change. A refusal is still recorded from the envelope, and still
-  shuts its window until its reset.
+- **What keeps running:** every seat whose line, for a role, uses a reserve of 0, stopped by the
+  provider's refusal as it is without this change. A refusal is still recorded from the envelope,
+  and still shuts its window until its reset.
 
 #### Scenario: No event, no observation
 
@@ -317,7 +303,19 @@ its credential were cleared, so it stays unprobed until it could be used.
 #### Scenario: A probe loads no project's settings
 
 - **WHEN** a seat is probed
-- **THEN** the call runs from an empty temporary directory
+- **THEN** the call runs from an empty temporary directory, with `HOME` set to a second empty
+  temporary directory
+
+#### Scenario: A probe is minimal
+
+- **WHEN** a seat is probed
+- **THEN** the call uses the cheapest model, a trivial prompt and no tools
+
+#### Scenario: An excluded post-reset probe does not leave the seat unread
+
+- **WHEN** a seat's session reading expires at a known reset, its post-reset probe is excluded by
+  the hourly limit, and no run is made on the seat
+- **THEN** the seat is probed once the hourly limit allows, without waiting for another reset
 
 #### Scenario: An expiry at a known reset waits for the post-reset probe
 
@@ -411,9 +409,7 @@ spending extra usage, and not passed over for want of a reading. A role whose ev
 past its line, or passed over for any other reason, has none.
 
 Another change that needs to know whether a role could spend now SHALL cite this requirement
-rather than restate the gate. `concurrent-instances` (#179) does. It runs several processes of one
-role, and each says in the heartbeat file it writes for the others whether it is available: free,
-and with a seat it can spend. #179 says when that is checked.
+rather than restate the gate.
 
 #### Scenario: Seats at their lines leave none to spend
 
@@ -670,7 +666,8 @@ a seat with no ceiling at all.
 #### Scenario: Capacity established without a person
 
 - **WHEN** an Igor needs to know whether it may spend
-- **THEN** the seat's usage is read directly where its credential yields a reading
+- **THEN** the seat's usage comes from readings taken with its own credential, in a run's or a
+  probe's stream
 - **AND** otherwise how full it is comes from recorded observations of that seat
 - **AND** no human supplies how full the window is, in either case
 
@@ -691,8 +688,8 @@ a seat with no ceiling at all.
 - **WHEN** a seat's usage cannot be read
 - **THEN** it is judged on its recorded observations against its line rather than passed over on
   that ground alone
-- **AND** where its effective reserve is above 0 and it has no unreset observation, it is passed
-  over, with the reason
+- **AND** where it has no unreset observation, it is judged as *A seat with no reading is drawn on
+  only where its line is the whole window* says
 
 #### Scenario: A configured capacity is refused
 
@@ -741,8 +738,8 @@ the role draws on, and it is not set per seat. The line that role's Igor checks 
 the role's (*The reserve is untouchable*). So a role can hold back more than a seat does and never
 less: a lender's reserve holds whatever a role declares. On a seat declaring reserve 0, the role's
 reserve alone sets that role's line. A role reserve is valid whatever seats the role draws on,
-including a seat declared `dedicated: true`: the in-force key for a seat no person uses, on which
-the in-force spec allowed no reserve.
+including a seat declared `dedicated: true`. The code before this change reads that key for a seat
+no person uses and allows it no reserve; under this change such a seat may declare one.
 
 How a role's reserve is inherited is role-config's *A role's reserve is raised by inheritance and
 never lowered*.

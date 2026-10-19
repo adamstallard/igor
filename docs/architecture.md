@@ -1256,9 +1256,10 @@ credential cannot: under one, `/usage` returns a cost summary and no percentages
 
 This removes the machinery a stored reading would need. There is no cap in dollars to derive,
 because the comparison happens in percent — the unit the provider actually reports. A live read
-keeps no reading to go stale. The stream readings of §6.3.3 are kept, but fullness does not fall
-within a window, so an old reading can only understate it, and it stops counting at the window's
-reset. And there is no way to read one seat and record it
+keeps no reading that could go stale. The stream readings of §6.3.3 are stored, and the gate
+trusts an old one until its window resets, with no age limit: assuming a window's usage never
+goes down before its reset, which is not yet measured, an old reading can only understate how
+full the window is now. And there is no way to read one seat and record it
 against another, because the figure comes from that seat's own credential: a seat naming a
 token that is unavailable is reported unreadable rather than falling through to whatever login
 is ambient.
@@ -1463,9 +1464,9 @@ can be back later than the crossing, never earlier (#74).
 window's length. It also shows whether windows run on a fixed schedule or start at first use.
 Until that is measured, the built-in 5 hours and 7 days stand.
 
-**What losing the stream costs.** A seat whose effective reserve is 0 is admitted with no reading,
-so if the event stops arriving, or a seat below every threshold turns out to emit no numbers
-(§6.3.3, *Still open*), only reserved seats stop. A refusal still reads a reserved seat as full.
+**What losing the stream costs.** A seat whose reserve is 0 is admitted with no reading, so if
+the `rate_limit_event` stops arriving, only reserved seats stop. A refusal is still recorded from
+the run's final result without the stream, so a refused seat still stops until its reset.
 
 **Still open.** How old an unreset reading can be before the line distrusts it (#69).
 
