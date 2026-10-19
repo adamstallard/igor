@@ -9,9 +9,10 @@ merged:** 3.7 checks Apps only, with no check of a claiming account's write acce
       checks and which stay prose, and why each one that dissolves does
 - [x] 1.3 Say that the nested-store check is dissolved by
       [#111](https://github.com/adamstallard/igor/pull/111) rather than omitted
-- [x] 1.4 `design.md` for the four choices with live alternatives: the name, the refusal of
-      `--fix` and its consequence for writability, the three-outcome exit semantics, and
-      protection read across two API surfaces
+- [x] 1.4 `design.md` for the five choices with live alternatives: the name; the refusal of
+      `--fix` and its consequence for writability; the three-outcome exit semantics, with
+      approvals graded on who could approve; protection read across two API surfaces; and the
+      App check
 
 ## 2. The local half — no credential needed
 
@@ -22,8 +23,8 @@ merged:** 3.7 checks Apps only, with no check of a claiming account's write acce
       catch per role, report the role that failed and keep going. This covers the deployment
       table's undeclared-seat row for roles nobody ran, and a role with no seat where seats are
       declared, since resolving it fails
-- [ ] 2.3 At least one role names at least one source, since nothing else refuses a role with
-      none
+- [ ] 2.3 Every role names at least one source, since nothing else refuses a role with none;
+      each role naming none is a finding
 - [ ] 2.4 The org-level `commands` list permits removing a tracked file. Igor publishes a change
       made only of removals ([#88](https://github.com/adamstallard/igor/pull/88)), so an Igor that
       cannot run `git rm` fails work it would otherwise publish
@@ -33,6 +34,15 @@ merged:** 3.7 checks Apps only, with no check of a claiming account's write acce
       decision 3). A role with none is a finding naming the role, once: where seats are declared
       it is 2.2's role that does not resolve, and where none are, 2.6 reports it. Test: the
       scenario *A role with no seat*, with seats declared and with none
+- [ ] 2.7 Invoke the configuration loader's validation in a mode that reads no secret, no private
+      key file and no token, and report each finding it makes, named with its source (proposal,
+      decision 4). Where the validation has no such mode, add one rather than re-implementing a
+      check. A configuration that fails to load is a finding, and the checks that do not need it
+      still run. Test: the scenarios *The loader's validation is invoked, not re-implemented*
+      and *A configuration that fails to load*
+- [ ] 2.8 Print text taken from repository files so that no report line begins with `::`, which
+      GitHub Actions reads as a workflow command. Test: *A file name cannot inject a workflow
+      command*
 
 ## 3. The credentialled half
 
@@ -50,9 +60,10 @@ merged:** 3.7 checks Apps only, with no check of a claiming account's write acce
       administrative and the credential is not
 - [ ] 3.6 The state branch is reachable, and the credential holds the write permission pushing
       to it needs — read from the permission, never by writing
-- [ ] 3.7 Each role's GitHub identity is an App installed on the repository it claims on,
-      with the permissions its `igor:<role>` label and claim comment need, for every role, read
-      before any claim. A role whose App key is not in the environment is unchecked; a role that
+- [ ] 3.7 Invoke, for each GitHub role, the check `igor run` and `igor serve` make before
+      discovery (surface-adapter's *An Igor that cannot act as its App does not start*). That
+      check verifies the role's App is installed where the role works, with the permissions it
+      needs; `doctor` runs it on a repository where nothing has been claimed yet. A role whose App key is not in the environment is unchecked; a role that
       claims only on Linear is not applicable. Confirm against the live API where an
       installation's permissions can be read, and record it in `design.md`. Since #156 every
       role's identity on GitHub is its App, so 3.7 has no branch for any other kind

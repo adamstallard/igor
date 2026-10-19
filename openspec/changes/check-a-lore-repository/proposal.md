@@ -2,27 +2,55 @@
 
 1. **`igor doctor` is built after App support (#156's implementation, now merged)** (Adam,
    2026-10-04). Its only identity check is that each role's App is installed on the repository
-   where it claims issues, with the permissions its `igor:<role>` label and claim comment need. *Rejected:* an interim check of the
-   claiming account's write access.
+   where it claims issues, with the permissions its `igor:<role>` label and claim comment need.
+   Under decision 4 that check is the one `igor run` and `igor serve` make before discovery,
+   invoked rather than re-implemented. *Rejected:* an interim check of the claiming account's
+   write access.
 2. **An identity that is not an App is not a finding** (Adam, 2026-10-11). Since #156 every
    role's identity on GitHub is its App, so `doctor` never meets another kind and has nothing to
    report for one. Igor reports no old configuration, since nobody runs Igor yet.
 3. **A role with no seat is a finding, whether or not any seat is declared** (Adam,
    2026-10-18). Where seats are declared the loader refuses such a role, but only the role being
-   run; where none are, nothing refuses it. Task 2.6.
+   run; where none are, nothing refuses it. When this takes effect is open (*Still open*).
+   Task 2.6.
+4. **`igor doctor` may invoke an existing check, and never re-implements one** (Adam,
+   2026-10-18). It invokes the configuration loader's validation in a mode that reads no secret
+   and reports each of its findings, named with its source. One of them will be a seat file
+   carrying an encrypted token where no key is declared: #171 (`seat-files`), an open pull
+   request built after this change, adds that finding to the validation, and `doctor` shows it
+   once #171 lands. Task 2.7.
+
+Choices this change makes, which Adam approves with it:
+
+5. **The command is `doctor`**, not `check`, `verify` or `setup check` (`design.md`).
+6. **It reads and never repairs: no `--fix`**, so writability is read from a permission, never
+   tested by writing (`design.md`).
+7. **A skipped check is not a finding**, so a run of skips exits zero and says it checked
+   nothing (`design.md`). *Rejected:* a third exit status.
+8. **Required approvals are a finding only where fewer than two people with write access could
+   approve** (`design.md`).
+9. **`setup-check` is a new capability**, not part of `lore-store` (*Capabilities*, below).
+10. **`docs/architecture.md` §5.0.3 keeps its two commands**, with one sentence on the setup
+    check (*Impact*, below).
+11. **Every role must name a source**, since each role naming none discovers nothing.
+    *Rejected:* requiring only that at least one role names one, which lets a role with none
+    pass silently.
 
 **Still open, for Adam, each with a recommendation:**
 
-- **Decision 3 against the in-force exemption.** The in-force `seat-budget` spec lets a
-  deployment that declares no seats run with no budget, and calls that a decision. Until #171
-  removes the exemption, `igor doctor` would exit non-zero on every such deployment. Such a
+- **When decision 3 takes effect.** The in-force `seat-budget` spec lets a deployment that
+  declares no seats run with no budget, and calls that a decision. #171 removes that exemption,
+  but #171 is built after this change, so the exemption is still in force when `doctor` ships,
+  and `doctor` would exit non-zero on every such deployment until #171 lands. Such a
   deployment spends through a stored login, the credentials `claude` keeps in a home directory,
   since no seat names a token for it. *Recommended:* let decision 3 stand from the day `doctor`
   ships, since #171 and #175 already decided that Igor never runs on a stored login.
-- **How `doctor` reads every role's App.** Reading an installation's permissions takes that App's
-  own key, and a role's key is read only from its own environment, so one `doctor` process
-  holds at most one role's key. *Recommended:* on the server, run `doctor` once per role with
-  that role's environment file; elsewhere each App check is unchecked, naming the missing key.
+- **How `doctor` reads every role's App.** A role's App key is read only from its own
+  environment, so one `doctor` process holds at most one role's key. Whether any other
+  credential, such as an organization owner's token, can read every installation's permissions
+  is unmeasured (task 3.7). *Recommended, if only the App's own key can:* on the host where
+  `igor serve` runs, run `doctor` once per role with that role's environment file
+  (`/etc/igor/<role>.env`); elsewhere each App check is unchecked, naming the missing key.
 - **App keys in CI.** Running the App check in CI would put every role's private key in the lore
   repository's Actions secrets, where repository code can reach them. *Recommended:* place no
   App key in CI; there the App checks are reported unchecked.
@@ -30,6 +58,14 @@
   App's installation token, so the permission of the person's own `gh` login, which the spec
   calls the credential, says little. *Recommended:* the state-branch check (spec, and task 3.6)
   reads each role's App's permission on the repository instead, with the App check.
+- **A lore repository used only through `igor run`.** Under #171, `igor run` spends a token from
+  the developer's own environment, `IGOR_RUN_TOKEN`, and needs no seat file. This change still
+  reports every role with no seat, because a seat is what `igor serve` spends. On such a
+  repository `doctor` always exits non-zero, so a CI step there is always red. *Recommended:*
+  keep the finding; such a repository can skip `doctor` in CI.
+
+**Conflict, recorded and not resolved:** #150's task 2.5 relies on `igor doctor` reporting a role
+whose identity is not an App, which decision 2 rules out; #150 is to drop or replace it.
 
 ## Why
 
@@ -182,7 +218,7 @@ restates one of theirs, and the two added requirements in #112 are in a differen
   of it took. #112 rewrote that section around `igor init`, and this adds one line to the end
   of it.
 - `docs/architecture.md` §5.0.3 is **not** amended to name this as a third command. Its two —
-  `role explain` and `role dry-run` — are both about a role's effective behaviour, inside a
+  `role explain` and `igor run --plan` — are both about a role's effective behaviour, inside a
   section titled *What a role actually looks like*. A repository-wiring check is the same
   principle applied to a different subject, so the passage gains one sentence saying the
   principle produced a setup check and where it is documented, and its list stays at two.

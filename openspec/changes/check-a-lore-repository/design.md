@@ -14,10 +14,10 @@ like the first is a command people will conflate at the prompt and in documentat
 `doctor` shares none of that surface. It is the ecosystem's word for a read-only diagnostic —
 `brew doctor`, `flutter doctor` — so the read-only contract is carried by the name before
 anybody reads the help text, which is worth something for a command whose whole value is that
-people are willing to run it. And the repository already uses the word for this idea in prose:
-`docs/deployment.md`'s table is *"a doctor, written as prose for a person to execute"*, and the
-constraint is *"a doctor that mutates is one people are afraid to run"*. Naming the command
-after the thing the docs already call it costs no explanation.
+people are willing to run it. And issue #110, which asks for this command, already uses the
+word twice: it calls `docs/deployment.md`'s table *"a doctor, written as prose for a person to
+execute"*, and sets the command the constraint that *"a doctor that mutates is one people are
+afraid to run"*. Naming the command after what the issue calls it costs no explanation.
 
 Rejected: `igor setup check`, as a subcommand of a `setup` group. It reads well and it makes
 room for `setup init` later, but there is no `setup` group today and inventing one to hold a
