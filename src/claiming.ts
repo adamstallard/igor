@@ -19,16 +19,21 @@ export interface Said {
   error?: string
 }
 
+const UNCONFIRMED = 'the tracker did not confirm the post landed'
+
 /**
- * Posts `text` and answers whether it landed. It never throws, even where `report` throws before
- * returning a promise. `takeClaim` refuses on any throw inside its claim window, so a throw from a
- * post after a lost claim would report the loss as a refusal.
+ * Posts `text` and answers whether it landed. Where `report` answers `undefined`, the post may
+ * have landed but was not confirmed, so it counts as not landed, with `UNCONFIRMED` as its error.
+ *
+ * It never throws, even where `report` throws before returning a promise. `takeClaim` calls it
+ * inside its claim window, where any throw makes the claim refused, so a throw from a post after
+ * a lost claim would report the loss as a refusal.
  */
 export function say(tracker: Tracker, candidate: Candidate, text: string): Promise<Said> {
   return Promise.resolve()
     .then(() => tracker.report(candidate, text))
     .then(
-      () => ({ landed: true }),
+      (id): Said => (id === undefined ? { landed: false, error: UNCONFIRMED } : { landed: true }),
       // An error with no message still gets a reason, so the warning always names one.
       (error: unknown) => ({ landed: false, error: why(error) || 'the tracker gave no reason' }),
     )
@@ -72,9 +77,10 @@ export interface ClaimResult {
    */
   announced?: true
   /**
-   * Set beside `announced` where the claim message's own post threw, so nobody knows whether it
-   * is on the item. Only a refusal carries it, because a throw from that post always ends the
-   * claim refused.
+   * Set beside `announced` where the claim message's own post threw or was not confirmed, so
+   * nobody knows whether it is on the item. Only the refusal returned where the claim window
+   * throws carries it. There the withdrawal is the run's only answer to the claim message, and
+   * `silenceWarning` in src/loop.ts words its warning from this flag.
    */
   unconfirmed?: true
   /**
@@ -335,8 +341,9 @@ export async function takeClaim(
       // and a surface that accepted the write can still throw. Set afterwards, it would answer
       // a different question: whether this process saw the write succeed.
       announced = true
-      await tracker.report(candidate, claimMessage(role, identity, options.catchUp === true))
-      claimLanded = true
+      // `undefined` is the tracker saying the message may have landed without confirming it.
+      const id = await tracker.report(candidate, claimMessage(role, identity, options.catchUp === true))
+      claimLanded = id !== undefined
     }
 
     // A directed item is checked at once rather than after the settle interval, which still

@@ -67,6 +67,9 @@ function tracker(
       if (opts.reportFailsOnce === true && reports === 1) throw new Error('503 from the surface')
       log.reported.push(m)
       if (opts.reportPostsThenThrows === true) throw new Error('timeout after the write')
+      // Every post this fake accepts answers a comment id, as a real surface does. A post
+      // answered with `undefined` would read as not confirmed.
+      return `comment-${reports}`
     },
     release: async (_c, as) => {
       if (opts.releaseThrows) throw new Error('cannot unassign')

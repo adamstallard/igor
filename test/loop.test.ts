@@ -57,6 +57,8 @@ function deps(opts: {
   releaseLeavesHolder?: boolean
   /** A tracker that rejects the posts this picks, after recording nothing for them. */
   rejects?: (message: string) => boolean
+  /** A tracker that records the posts this picks and answers `undefined`: landed, not confirmed. */
+  unconfirms?: (message: string) => boolean
 } = {}) {
   const posts: string[] = []
   const released: string[] = []
@@ -80,6 +82,7 @@ function deps(opts: {
     report: async (_c, m) => {
       if (opts.rejects?.(m) === true) throw new Error('tracker returned 503')
       posts.push(m)
+      return opts.unconfirms?.(m) === true ? undefined : `comment-${posts.length}`
     },
     release: async (_c, as) => {
       if (opts.releaseThrows === true) throw new Error('503 unassigning')
@@ -775,6 +778,28 @@ describe('a run reports what landed on the item, not what it tried to say', () =
 
     expect(r.outcome).toBe('refused')
     expect(silenceWarning(r)).toBe('WARNING: held a claim and left no message — that is a bug: tracker returned 503')
+  })
+
+  it('warns that a claim message may be on the item where its post went unconfirmed and its withdrawal failed', async () => {
+    const { d } = deps({ unconfirms: (m) => m.includes('<!-- igor:claim -->'), rejects: afterClaim })
+    d.tracker.verifyClaim = async () => { throw new Error('503 reading') }
+    const r = await runItem(d, candidate(), role(), 'igor-bot', noWait)
+
+    expect(r.outcome).toBe('refused')
+    expect(r.unconfirmed).toBe(true)
+    expect(silenceWarning(r)).toBe(
+      'WARNING: a claim message may have been posted and could not be withdrawn: tracker returned 503',
+    )
+  })
+
+  it('does not count a receipt the tracker did not confirm as spoken', async () => {
+    const { d } = deps({ verdicts: [{ status: 'stopped', by: 'bob' }], unconfirms: afterClaim })
+    const r = await runItem(d, candidate(), role(), 'igor-bot', noWait)
+
+    expect(r.outcome).toBe('stopped')
+    expect(r.spoke).toBe(false)
+    expect(r.silence).toBe('the tracker did not confirm the post landed')
+    expect(wentSilent(r)).toBe(true)
   })
 
   it('never reports a loss that tried no post as silent', async () => {

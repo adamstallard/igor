@@ -101,7 +101,10 @@ export interface ItemRun {
    * nothing and leaves this unset.
    */
   announced?: true
-  /** Set beside `announced` where the claim message's own post threw; see `ClaimResult.unconfirmed`. */
+  /**
+   * Set beside `announced` where the claim message's own post threw or was not confirmed; see
+   * `ClaimResult.unconfirmed`.
+   */
   unconfirmed?: true
   /**
    * Why the answer the run owed did not land: the tracker's error from the last post that failed.
@@ -166,8 +169,9 @@ export function wentSilent(run: ItemRun): boolean {
  * there is one, so whoever reads the line can tell whether the tracker was down. Undefined where
  * the run did not go silent.
  *
- * Where the claim message's own post threw, nobody knows whether it is on the item, so the line
- * says only that it may be, and does not call it a bug.
+ * Where the claim message's own post threw or was not confirmed, nobody knows whether it is on the
+ * item, and so whether anybody was told to stand off. The line then says only that the claim
+ * message may have been posted and could not be withdrawn, and does not call it a bug.
  */
 export function silenceWarning(run: ItemRun): string | undefined {
   if (!wentSilent(run)) return undefined
