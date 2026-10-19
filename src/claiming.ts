@@ -13,6 +13,38 @@ import type { Role } from './role.js'
 
 export type Outcome = 'held' | 'lost' | 'stopped' | 'refused'
 
+/** What one post left on the item, and the tracker's error where it left nothing. */
+export interface Said {
+  landed: boolean
+  error?: string
+}
+
+/**
+ * Posts `text` and answers whether it landed. It never throws, even where `report` throws before
+ * returning a promise. `takeClaim` refuses on any throw inside its claim window, so a throw from a
+ * post after a lost claim would report the loss as a refusal.
+ */
+export function say(tracker: Tracker, candidate: Candidate, text: string): Promise<Said> {
+  return Promise.resolve()
+    .then(() => tracker.report(candidate, text))
+    .then(
+      () => ({ landed: true }),
+      // An error with no message still gets a reason, so the warning always names one.
+      (error: unknown) => ({ landed: false, error: why(error) || 'the tracker gave no reason' }),
+    )
+}
+
+/**
+ * Combines every post a run or a claim made into `spoke` and `silence`. `spoke` is true where any
+ * post landed; otherwise `silence` holds the last error. A caller passes a post it skipped as
+ * `{ landed: false }`, which has no error and so never sets `silence`.
+ */
+export function spoken(...said: readonly Said[]): { spoke: boolean; silence?: string } {
+  if (said.some((s) => s.landed)) return { spoke: true }
+  const error = [...said].reverse().find((s) => s.error !== undefined)?.error
+  return error === undefined ? { spoke: false } : { spoke: false, silence: error }
+}
+
 export interface ClaimResult {
   outcome: Outcome
   candidate: Candidate
@@ -39,6 +71,12 @@ export interface ClaimResult {
    * answer.
    */
   announced?: true
+  /**
+   * Set beside `announced` where the claim message's own post threw, so nobody knows whether it
+   * is on the item. Only a refusal carries it, because a throw from that post always ends the
+   * claim refused.
+   */
+  unconfirmed?: true
   /**
    * Whether the message answering the claim message landed. Set on a refusal, where the answer
    * is the withdrawal `takeClaim` posts when its claim window threw after announcing, and on a
@@ -274,6 +312,7 @@ export async function takeClaim(
   // tracker 503 is enough to cause it. The whole window is guarded, not each call in it, so a
   // call added here later is covered without anyone remembering to guard it.
   let announced = false
+  let claimLanded = false
   try {
     if (tracker.nativeHolderField && options.directed !== true) {
       const recorded = await tracker.claim(candidate, identity)
@@ -297,6 +336,7 @@ export async function takeClaim(
       // a different question: whether this process saw the write succeed.
       announced = true
       await tracker.report(candidate, claimMessage(role, identity, options.catchUp === true))
+      claimLanded = true
     }
 
     // A directed item is checked at once rather than after the settle interval, which still
@@ -327,13 +367,14 @@ export async function takeClaim(
     // "released this", and the correction must follow it, so the caller gets `releaseStuck` and
     // posts it. Nobody posts anything on a lost claim, so its standalone message is posted here.
     const stoodDown = await standDown(tracker, candidate, identity, verdict)
-    const posted = (text: string) => tracker.report(candidate, text).then(() => true, () => false)
-    let spoke = false
-    if (verdict.status === 'lost' && tracker.holderField.holds === 'single') {
-      spoke = await posted(handingBack(role))
-    } else if (!stoodDown && verdict.status === 'lost') {
-      spoke = await posted(stoodDownStuck(role))
-    }
+    const note =
+      verdict.status !== 'lost'
+        ? undefined
+        : tracker.holderField.holds === 'single'
+          ? await say(tracker, candidate, handingBack(role))
+          : stoodDown
+            ? { landed: false }
+            : await say(tracker, candidate, stoodDownStuck(role))
 
     return {
       outcome: verdict.status,
@@ -341,7 +382,7 @@ export async function takeClaim(
       claimedAt,
       verdict,
       ...told,
-      ...(verdict.status === 'lost' ? { spoke } : {}),
+      ...(note === undefined ? {} : spoken(note)),
       ...(stoodDown ? {} : { releaseStuck: true as const }),
       reason:
         verdict.status === 'stopped'
@@ -367,17 +408,15 @@ export async function takeClaim(
       (clear) => (clear ? undefined : `the ${candidate.repo} holder field is still set`),
       why,
     )
-    let answer: { spoke: boolean; silence?: string } = { spoke: false }
-    if (announced) {
-      answer = await tracker
-        .report(
+    const answer = announced
+      ? spoken(await say(
+          tracker,
           candidate,
           stillHeld === undefined
             ? claimWithdrawn(role, options.directed === true)
             : claimStuck(role, options.directed === true),
-        )
-        .then(() => ({ spoke: true }), (e: unknown) => ({ spoke: false, silence: why(e) }))
-    }
+        ))
+      : { spoke: false }
     const releaseRefused = stillHeld
     return {
       outcome: 'refused',
@@ -385,6 +424,7 @@ export async function takeClaim(
       claimedAt,
       surfaceFailed: true,
       ...(announced ? { announced: true as const } : {}),
+      ...(announced && !claimLanded ? { unconfirmed: true as const } : {}),
       ...answer,
       reason:
         releaseRefused === undefined

@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process'
-import { stillHeld } from './claiming.js'
+import { say, stillHeld, type Said } from './claiming.js'
 import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -2023,18 +2023,19 @@ export async function execute(
 
 /**
  * Releases the claim a finished run holds, leaving the artifact for its reviewers. Trust the
- * answer `release` gives, not the call returning: where the holder is not clear, the item still
- * names an Igor that has finished with it while the run reports success, so the item gets a
- * comment saying it is still held.
+ * answer `release` gives, not the call returning. Where the release leaves the holder field set,
+ * the item still names this Igor after its run has finished, so the item gets a comment saying it
+ * is still held. Returns what that comment left on the item, or `{ landed: false }` where the
+ * release took and nothing was posted.
  */
 export async function complete(
   tracker: Tracker,
   candidate: Candidate,
   role: Role,
   identity: string,
-): Promise<void> {
+): Promise<Said> {
   const clear = await tracker.release(candidate, identity)
-  if (!clear) await tracker.report(candidate, stillHeld(role)).catch(() => undefined)
+  return clear ? { landed: false } : say(tracker, candidate, stillHeld(role))
 }
 
 /**

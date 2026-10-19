@@ -352,8 +352,9 @@ describe('standing down when the release does not take', () => {
   })
 
   it('speaks at all on a lost claim it could not give up', async () => {
-    // Standing down silently is right only while the release works: otherwise the item shows
-    // two holders and accounts for neither, and `cli.ts`'s silence warning excludes `lost`.
+    // A lost claim whose release did not take posts `stoodDownStuck`: without it the item shows
+    // two holders and accounts for neither. Standing down without a note is right only where the
+    // release works. A lost run is reported silent only where this note did not land.
     const { t, log } = tracker({ status: 'lost', by: 'bob' }, { releaseLeavesHolder: true })
     const r = await takeClaim(t, candidate(), role(), 'igor-bot', opts)
 

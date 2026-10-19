@@ -719,6 +719,104 @@ describe('a run reports what landed on the item, not what it tried to say', () =
     expect(r.spoke).toBe(true)
   })
 
+  it('reports a loss at the settle check as silent where its release did not take and its note did not land', async () => {
+    // The Igor's name stays beside the new holder's, and the note explaining it is not there.
+    const { d, posts } = deps({ verdicts: [{ status: 'lost', by: 'alice' }], releaseLeavesHolder: true, rejects: afterClaim })
+    const r = await runItem(d, candidate(), role(), 'igor-bot', noWait)
+
+    expect(r.outcome).toBe('lost')
+    expect(posts).toHaveLength(1)
+    expect(r.spoke).toBe(false)
+    expect(r.silence).toContain('tracker returned 503')
+    expect(wentSilent(r)).toBe(true)
+  })
+
+  it('reports a loss at the settle check as silent where its hand-back did not land', async () => {
+    const { d, posts } = deps({ verdicts: [{ status: 'lost', by: 'alice' }], rejects: afterClaim })
+    d.tracker.holderField = { holds: 'single', distinctFromAssignee: true }
+    const r = await runItem(d, candidate(), role(), 'igor-bot', noWait)
+
+    expect(r.outcome).toBe('lost')
+    expect(posts).toHaveLength(1)
+    expect(r.silence).toContain('tracker returned 503')
+    expect(wentSilent(r)).toBe(true)
+  })
+
+  it('reports a loss mid-run that left a draft as silent where its hand-over note did not land', async () => {
+    const { d, posts } = deps({
+      changes: [{ path: 'src/a.ts', content: 'fixed', kind: 'modified' }],
+      verdicts: [{ status: 'held' }, { status: 'lost', by: 'alice' }],
+      rejects: afterClaim,
+    })
+    const r = await runItem(d, candidate(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+
+    expect(r.outcome).toBe('lost')
+    expect(posts).toHaveLength(1)
+    expect(wentSilent(r)).toBe(true)
+  })
+
+  it('warns that a claim message may be on the item where its own post threw and its withdrawal failed', async () => {
+    // Nobody knows whether the claim message landed, so the warning cannot call it a bug.
+    const { d, posts } = deps({ rejects: () => true })
+    const r = await runItem(d, candidate(), role(), 'igor-bot', noWait)
+
+    expect(r.outcome).toBe('refused')
+    expect(posts).toHaveLength(0)
+    expect(wentSilent(r)).toBe(true)
+    expect(silenceWarning(r)).toBe(
+      'WARNING: a claim message may have been posted and could not be withdrawn: tracker returned 503',
+    )
+  })
+
+  it('calls it a bug where the claim message landed and its withdrawal failed', async () => {
+    const { d } = deps({ rejects: afterClaim })
+    d.tracker.verifyClaim = async () => { throw new Error('503 reading') }
+    const r = await runItem(d, candidate(), role(), 'igor-bot', noWait)
+
+    expect(r.outcome).toBe('refused')
+    expect(silenceWarning(r)).toBe('WARNING: held a claim and left no message — that is a bug: tracker returned 503')
+  })
+
+  it('never reports a loss that tried no post as silent', async () => {
+    // The release took, and the holder field lists several names, so nothing needs handing back.
+    // The run posts nothing and owes nothing, because somebody else is visibly on the item.
+    const r = await runItem(deps({ verdicts: [{ status: 'lost', by: 'alice' }] }).d, candidate(), role(), 'igor-bot', noWait)
+
+    expect(r.outcome).toBe('lost')
+    expect(wentSilent(r)).toBe(false)
+  })
+
+  it('reports a catch-up as spoken where its still-held correction landed and its closing note did not', async () => {
+    const { d, posts } = deps({
+      caughtUp: [{ outcome: 'conflict' }, { outcome: 'already-current' }],
+      merge: conflicted,
+      changes: [{ path: 'src/a.ts', content: 'resolved\n', kind: 'modified' }],
+      releaseLeavesHolder: true,
+      rejects: (m) => !m.includes('<!-- igor:') && m !== stillHeld(role()),
+    })
+    const run = await catchUpItem(d, stale(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+
+    expect(run.outcome).toBe('produced')
+    expect(posts.at(-1)).toBe(stillHeld(role()))
+    expect(run.spoke).toBe(true)
+    expect(run.silence).toBeUndefined()
+    expect(wentSilent(run)).toBe(false)
+  })
+
+  it('keeps no silence on a catch-up whose correction failed and whose closing note landed', async () => {
+    const { d } = deps({
+      caughtUp: [{ outcome: 'conflict' }, { outcome: 'already-current' }],
+      merge: conflicted,
+      changes: [{ path: 'src/a.ts', content: 'resolved\n', kind: 'modified' }],
+      releaseLeavesHolder: true,
+      rejects: (m) => m === stillHeld(role()),
+    })
+    const run = await catchUpItem(d, stale(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+
+    expect(run.spoke).toBe(true)
+    expect(run.silence).toBeUndefined()
+  })
+
   it('never reports a clean catch-up or an unrecorded claim as silent', async () => {
     const clean = await catchUpItem(deps({ caughtUp: [{ outcome: 'merged', sha: 's' }] }).d, stale(), role(), 'igor-bot')
     const unrecorded = await runItem(deps({ claimSticks: false }).d, candidate(), role(), 'igor-bot', noWait)

@@ -1,7 +1,8 @@
 import type { Artifact, Candidate, ClaimVerdict, CodeHost, Comment, ReleaseHow, Tracker } from './adapter.js'
 import type { Gate, SeatVerdict } from './budget.js'
 import {
-  checkpoint, CLAIM_MARKER, eligibleAfterStop, inFlightNotice, RECEIPT_MARKER, standDown, stillHeld, stopReceipt, STOPPED_MARKER, takeClaim,
+  checkpoint, CLAIM_MARKER, eligibleAfterStop, inFlightNotice, RECEIPT_MARKER, say, spoken, standDown, stillHeld, stopReceipt, STOPPED_MARKER,
+  takeClaim,
   waitingMarker, waitingNotice,
   type ClaimOptions, type ClaimResult,
 } from './claiming.js'
@@ -100,6 +101,8 @@ export interface ItemRun {
    * nothing and leaves this unset.
    */
   announced?: true
+  /** Set beside `announced` where the claim message's own post threw; see `ClaimResult.unconfirmed`. */
+  unconfirmed?: true
   /**
    * Why the answer the run owed did not land: the tracker's error from the last post that failed.
    * Present only beside `spoke: false`. The tracker refused the answer, so the reason cannot go on
@@ -143,26 +146,35 @@ export interface RunOptions extends ExecuteOptions {
 }
 
 /**
- * A claim message is on the item and nothing this run said after it landed. The graceful-handoff
- * spec forbids a run ending that way, since the claim told other people to stand off.
+ * A claim message is, or may be, on the item, and none of the posts this run made after it
+ * landed. The graceful-handoff spec forbids a run ending that way, since the claim told other
+ * people to stand off.
  *
  * Every place a run is reported reads this, so the rule has one copy. A catch-up the code host
  * merged without a worker claims nothing and says nothing on purpose, so it is exempt by never
- * setting `announced`. A loss is exempt, including one whose correction after a release that did
- * not take failed to land, because somebody else is visibly on the item.
+ * setting `announced`. A loss counts as silent only where a post it tried did not land: a
+ * hand-back, a hand-over note for a draft it left, or a note that its release did not take. A loss
+ * that stood down cleanly with nothing to hand over posts nothing and is not silent, because
+ * somebody else is visibly on the item.
  */
 export function wentSilent(run: ItemRun): boolean {
-  return run.announced === true && !run.spoke && run.outcome !== 'lost'
+  return run.announced === true && !run.spoke && (run.outcome !== 'lost' || run.silence !== undefined)
 }
 
 /**
- * The line every report of a run prints where it went silent, naming the tracker's reason where
- * there is one, so a tracker that was down does not read as the Igor's own bug. Undefined where
+ * The line every report of a run prints where it went silent. The tracker's reason follows, where
+ * there is one, so whoever reads the line can tell whether the tracker was down. Undefined where
  * the run did not go silent.
+ *
+ * Where the claim message's own post threw, nobody knows whether it is on the item, so the line
+ * says only that it may be, and does not call it a bug.
  */
 export function silenceWarning(run: ItemRun): string | undefined {
   if (!wentSilent(run)) return undefined
-  return `WARNING: held a claim and left no message — that is a bug${run.silence === undefined ? '' : `: ${run.silence}`}`
+  const reason = run.silence === undefined ? '' : `: ${run.silence}`
+  return run.unconfirmed === true
+    ? `WARNING: a claim message may have been posted and could not be withdrawn${reason}`
+    : `WARNING: held a claim and left no message — that is a bug${reason}`
 }
 
 /**
@@ -175,18 +187,11 @@ async function sayAll(
   candidate: Candidate,
   messages: readonly (string | undefined)[],
 ): Promise<{ spoke: boolean; silence?: string }> {
-  let spoke = false
-  let silence: string | undefined
+  const said = []
   for (const message of messages) {
-    if (message === undefined) continue
-    try {
-      await tracker.report(candidate, message)
-      spoke = true
-    } catch (error) {
-      silence = why(error) || 'the tracker gave no reason'
-    }
+    if (message !== undefined) said.push(await say(tracker, candidate, message))
   }
-  return spoke || silence === undefined ? { spoke } : { spoke, silence }
+  return spoken(...said)
 }
 
 /** What a handoff left on the item, as a run reports it. */
@@ -242,6 +247,7 @@ export async function runItem(
       spoke: claim.spoke ?? false,
       ...(claim.silence === undefined ? {} : { silence: claim.silence }),
       ...told,
+      ...(claim.unconfirmed === true ? { unconfirmed: true as const } : {}),
       cures: [],
       ...(claim.surfaceFailed === true ? { surfaceFailed: true as const } : {}),
     }
@@ -472,15 +478,17 @@ async function runClaimedItem(
   switch (execution.outcome) {
     case 'produced': {
       step('completing')
-      await complete(tracker, candidate, role, identity)
+      const correction = await complete(tracker, candidate, role, identity)
       return {
         outcome: 'produced',
         candidate,
         reason: execution.reason,
         execution,
         costUsd: execution.costUsd,
-        // The pull request is the answer, and the code host accepted it.
-        spoke: true,
+        // A pull request is the answer, and the code host accepted it. A catch-up opens none, so
+        // only the still-held correction, where one was posted, has spoken so far. `catchUpItem`
+        // combines that with its closing note.
+        ...(options.catchUp === undefined ? { spoke: true } : spoken(correction)),
         cures: execution.cures ?? [],
       }
     }
@@ -660,29 +668,35 @@ export async function catchUpItem(
   const run = await runItem(
     { ...deps, tracker: keepingLabel(deps.tracker, floor) }, candidate, role, identity, { ...options, catchUp: artifact },
   )
-  // The claim comment said the Igor picked the item up; nothing else would say what it then
-  // did. An ordinary run ends in a pull request that announces itself, and a catch-up ends on
-  // a branch that already exists — so without this the item goes quiet mid-sentence.
+  // The claim comment said the Igor picked the item up, and nothing else would say what it then
+  // did. An ordinary run ends in a pull request that announces itself, but a catch-up pushes to a
+  // branch that already exists, so without this note the claim comment would be the last word on
+  // the item.
   //
   // By here a claim has been taken and the claim comment is on the item, so a produced run always
-  // posts a note. Silence after the claim is the failure this exists to prevent. The exemption
-  // belongs only to the catch-up the code host merged without a worker, earlier in this
-  // function, which claims nothing.
+  // posts a note. The one catch-up that posts nothing is the one the code host merged without a
+  // worker, returned above as `caught-up`, and it claims nothing.
   //
   // Which note turns on whether the merge in the clone had conflicts for the worker to resolve
   // (`conflictResolved`), not on whether files changed. A merge that came out clean in the clone
   // changes plenty of files and resolved nothing, and saying otherwise claims work nobody did.
   //
-  // This note, not the pull request, is the catch-up's answer to its claim message, so `spoke`
-  // says whether the note landed.
+  // This note, not the pull request, is the catch-up's answer to its claim message. The run's
+  // own `spoke` covers only the still-held correction, so the `spoke` returned here says whether
+  // either landed.
   if (run.outcome === 'produced') {
-    const said = await sayAll(deps.tracker, candidate, [
+    const note = await say(
+      deps.tracker,
+      candidate,
       (run.execution?.conflictResolved === true
         ? resolvedNote(role, artifact.ref, artifact.url, artifact.base)
         : broughtCurrentNote(role, artifact.ref, artifact.url, artifact.base)) +
         undoneNote(run.execution?.reverts),
-    ])
-    return { ...run, ...said }
+    )
+    // `run.silence` is the correction's error. It is taken out of the run and passed to `spoken`
+    // with the note, so it survives only where the note failed too.
+    const { silence, ...ran } = run
+    return { ...ran, ...spoken({ landed: run.spoke, ...(silence === undefined ? {} : { error: silence }) }, note) }
   }
   return run
 }
