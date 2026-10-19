@@ -34,10 +34,20 @@ export interface ClaimResult {
    */
   releaseStuck?: true
   /**
-   * Whether anything was said on the item. On a refusal, only a claim window that threw after
-   * announcing has said anything: the claim message, then its withdrawal.
+   * Set where the claim message is on the item, or may be: a surface can accept the write and
+   * still throw. Whoever reads the item has been told to stand off, so the caller owes them an
+   * answer.
+   */
+  announced?: true
+  /**
+   * Whether the message answering the claim message landed. Set on a refusal, where the answer
+   * is the withdrawal `takeClaim` posts when its claim window threw after announcing, and on a
+   * loss, where it is the message handing the item back or saying the release did not take.
+   * Unset on a stop, whose receipt the caller posts.
    */
   spoke?: boolean
+  /** The tracker's error, where that answer was owed and did not land. */
+  silence?: string
   /** Set where a person handed the item to this Igor; see `ClaimOptions.directed`. */
   directed?: true
   /** Set where a go-ahead lifted a stop the claim's check found; see `ClaimVerdict.liftedAt`. */
@@ -299,9 +309,11 @@ export async function takeClaim(
     // cancelled.
     const verdict = await tracker.verifyClaim(candidate, identity, since, { liftable: options.directed !== true })
 
+    // Every return from here on carries whether the claim message was posted or attempted.
+    const told = announced ? { announced: true as const } : {}
     if (verdict.status === 'held') {
       return {
-        outcome: 'held', candidate, claimedAt, verdict, reason: 'claim stands',
+        outcome: 'held', candidate, claimedAt, verdict, reason: 'claim stands', ...told,
         ...(options.directed === true ? { directed: true as const } : {}),
         ...(verdict.liftedAt === undefined ? {} : { liftedAt: verdict.liftedAt }),
       }
@@ -315,10 +327,12 @@ export async function takeClaim(
     // "released this", and the correction must follow it, so the caller gets `releaseStuck` and
     // posts it. Nobody posts anything on a lost claim, so its standalone message is posted here.
     const stoodDown = await standDown(tracker, candidate, identity, verdict)
+    const posted = (text: string) => tracker.report(candidate, text).then(() => true, () => false)
+    let spoke = false
     if (verdict.status === 'lost' && tracker.holderField.holds === 'single') {
-      await tracker.report(candidate, handingBack(role)).catch(() => undefined)
+      spoke = await posted(handingBack(role))
     } else if (!stoodDown && verdict.status === 'lost') {
-      await tracker.report(candidate, stoodDownStuck(role)).catch(() => undefined)
+      spoke = await posted(stoodDownStuck(role))
     }
 
     return {
@@ -326,6 +340,8 @@ export async function takeClaim(
       candidate,
       claimedAt,
       verdict,
+      ...told,
+      ...(verdict.status === 'lost' ? { spoke } : {}),
       ...(stoodDown ? {} : { releaseStuck: true as const }),
       reason:
         verdict.status === 'stopped'
@@ -351,15 +367,16 @@ export async function takeClaim(
       (clear) => (clear ? undefined : `the ${candidate.repo} holder field is still set`),
       why,
     )
+    let answer: { spoke: boolean; silence?: string } = { spoke: false }
     if (announced) {
-      await tracker
+      answer = await tracker
         .report(
           candidate,
           stillHeld === undefined
             ? claimWithdrawn(role, options.directed === true)
             : claimStuck(role, options.directed === true),
         )
-        .catch(() => undefined)
+        .then(() => ({ spoke: true }), (e: unknown) => ({ spoke: false, silence: why(e) }))
     }
     const releaseRefused = stillHeld
     return {
@@ -367,7 +384,8 @@ export async function takeClaim(
       candidate,
       claimedAt,
       surfaceFailed: true,
-      spoke: announced,
+      ...(announced ? { announced: true as const } : {}),
+      ...answer,
       reason:
         releaseRefused === undefined
           ? `${identity} could not finish taking ${candidate.id}, and any claim it took ` +

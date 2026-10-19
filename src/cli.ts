@@ -22,7 +22,9 @@ import { actAs, GhError } from './gh.js'
 import { AppError, canMint, canWriteWorkflows, startApp, type AppSession } from './app.js'
 import { claimRequested, contradictoryRunFlags } from './flags.js'
 import { explainRole, loadRole, rolesFrom, RoleError, type Role } from './role.js'
-import { catchUpItem, honourIdleStop, planCycle, runItem, UNTRIAGED_NO_SEAT, type CycleReport } from './loop.js'
+import {
+  catchUpItem, honourIdleStop, planCycle, runItem, silenceWarning, UNTRIAGED_NO_SEAT, type CycleReport,
+} from './loop.js'
 import { waitingNotice } from './claiming.js'
 import { renderProgress } from './execute.js'
 import { serve, untilSignalled } from './serve.js'
@@ -465,9 +467,8 @@ program
         process.stdout.write(spent === undefined ? '  cost not reported\n' : `  cost $${spent.toFixed(4)}\n`)
         if (run.execution.artifact) process.stdout.write(`  ${run.execution.artifact.url}\n`)
       }
-      if (!run.spoke && run.outcome !== 'refused' && run.outcome !== 'lost') {
-        process.stdout.write('  WARNING: held a claim and left no message — that is a bug\n')
-      }
+      const silent = silenceWarning(run)
+      if (silent !== undefined) process.stdout.write(`  ${silent}\n`)
       return run
     }
 
@@ -495,6 +496,8 @@ program
         const gate = await gateFor()
         const run = await catchUpItem(deps, item, role, identity, { budget: gate, store })
         process.stdout.write(`  ${run.outcome}: ${run.reason}\n`)
+        const silent = silenceWarning(run)
+        if (silent !== undefined) process.stdout.write(`  ${silent}\n`)
         if (run.execution) await record(item, run.execution, gate.seat)
         return
       }
@@ -535,6 +538,8 @@ program
       const gate = await gateFor()
       const run = await catchUpItem(deps, c.candidate, role, identity, { budget: gate, store, claim: { since: report.readAt } })
       process.stdout.write(`  ${c.candidate.id}: ${run.reason}\n`)
+      const silent = silenceWarning(run)
+      if (silent !== undefined) process.stdout.write(`  ${silent}\n`)
       if (shouldDefer(run.outcome, run.handoff, run.cures)) {
         await noteHandoff(destination, c.candidate, run.reason).catch(() => undefined)
       }
@@ -608,6 +613,8 @@ program
             break
           case 'worked': {
             say(`  ${e.run.outcome}: ${e.run.reason}`)
+            const silent = silenceWarning(e.run)
+            if (silent !== undefined) say(`  ${silent}`)
             if (e.run.execution) void record(e.item, e.run.execution, e.seat)
             break
           }

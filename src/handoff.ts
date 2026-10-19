@@ -343,6 +343,12 @@ export function composeHandoff(role: Role, candidate: Candidate, handoff: Handof
 
 export interface HandoffOutcome {
   posted: boolean
+  /**
+   * Whether anything this call posted landed on the item: the handoff, or the correction saying
+   * the release did not take. A correction can land where the handoff did not, so this, not
+   * `posted`, answers whether the item was left with a message.
+   */
+  said: boolean
   released: boolean
   text: string
   /** Why posting failed, when it did. The handoff exists for broken situations. */
@@ -390,11 +396,12 @@ export async function handOff(
   // threw on the way home leaves the false sentence on the item with that flag false. Where
   // nothing landed the correction still stands on its own: the item is held, and saying so is
   // true whether or not anybody read a handoff first.
+  let corrected = false
   if (!released) {
-    await tracker.report(candidate, stillHeld(role)).catch(() => undefined)
+    corrected = await tracker.report(candidate, stillHeld(role)).then(() => true, () => false)
   }
 
-  return { posted, released, text, ...(error === undefined ? {} : { error }) }
+  return { posted, said: posted || corrected, released, text, ...(error === undefined ? {} : { error }) }
 }
 
 /**

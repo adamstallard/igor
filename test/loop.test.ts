@@ -17,8 +17,8 @@ import type {
 import type { Role } from '../src/role.js'
 import { blobSha, type TreeProvider, type WorkingTree, type ChangedFile, type MergeState, type BaseChange } from '../src/worktree.js'
 import {
-  catchUpItem, declineReason, dropDeferred, dropStopped, oneFetchPerItem, recordDecisions, runItem,
-  type CommentSource, type CycleReport, type ItemDeps,
+  catchUpItem, declineReason, dropDeferred, dropStopped, oneFetchPerItem, recordDecisions, runItem, silenceWarning,
+  wentSilent, type CommentSource, type CycleReport, type ItemDeps,
 } from '../src/loop.js'
 import { defer, NO_DEFERRALS, shouldDefer } from '../src/deferred.js'
 import { DECLARATION_FILE, ExecutionError } from '../src/execute.js'
@@ -55,6 +55,8 @@ function deps(opts: {
    * no, as distinct from the surface not answering at all.
    */
   releaseLeavesHolder?: boolean
+  /** A tracker that rejects the posts this picks, after recording nothing for them. */
+  rejects?: (message: string) => boolean
 } = {}) {
   const posts: string[] = []
   const released: string[] = []
@@ -75,7 +77,10 @@ function deps(opts: {
     claim: async () => opts.claimSticks ?? true,
     commentsSince: async () => [],
     verifyClaim: async () => verdicts[Math.min(i++, verdicts.length - 1)]!,
-    report: async (_c, m) => { posts.push(m) },
+    report: async (_c, m) => {
+      if (opts.rejects?.(m) === true) throw new Error('tracker returned 503')
+      posts.push(m)
+    },
     release: async (_c, as) => {
       if (opts.releaseThrows === true) throw new Error('503 unassigning')
       released.push(as)
@@ -622,6 +627,106 @@ describe('a stop gets a receipt, not a handoff', () => {
     expect(released).toContain('igor-bot')
   })
 
+})
+
+describe('a run reports what landed on the item, not what it tried to say', () => {
+  /** Every post after the claim message fails. */
+  const afterClaim = (m: string) => !m.includes('<!-- igor:claim -->')
+
+  it('reports a stop found at the settle check whose receipt did not land as silent', async () => {
+    const { d, posts } = deps({ verdicts: [{ status: 'stopped', by: 'bob' }], rejects: afterClaim })
+    const r = await runItem(d, candidate(), role(), 'igor-bot', noWait)
+
+    expect(posts).toHaveLength(1)
+    expect(r.outcome).toBe('stopped')
+    expect(r.spoke).toBe(false)
+    expect(r.silence).toContain('tracker returned 503')
+    expect(wentSilent(r)).toBe(true)
+    expect(silenceWarning(r)).toContain('tracker returned 503')
+  })
+
+  it('reports a stop found mid-run whose receipt did not land as silent', async () => {
+    const { d } = deps({ changes: [], verdicts: [{ status: 'held' }, { status: 'stopped', by: 'bob' }], rejects: afterClaim })
+    const r = await runItem(d, candidate(), role(), 'igor-bot', { ...noWait, worker: idleWorker })
+
+    expect(r.outcome).toBe('stopped')
+    expect(r.spoke).toBe(false)
+    expect(wentSilent(r)).toBe(true)
+  })
+
+  it('reports a stop as spoken where only the correction after its receipt landed', async () => {
+    const { d, posts } = deps({
+      verdicts: [{ status: 'stopped', by: 'bob' }],
+      releaseLeavesHolder: true,
+      rejects: (m) => m.includes('released this'),
+    })
+    const r = await runItem(d, candidate(), role(), 'igor-bot', noWait)
+
+    expect(posts.at(-1)).toBe(stillHeld(role()))
+    expect(r.spoke).toBe(true)
+    expect(wentSilent(r)).toBe(false)
+  })
+
+  it('reports a refused run whose retry handoff did not land as silent', async () => {
+    // A run that fails before its worker is refused and posts a handoff saying it will retry. The
+    // claim message is on the item either way, so where the handoff did not land, the claim
+    // message is the only post on the item.
+    const { d, posts } = deps({ provisionThrows: true, rejects: afterClaim })
+    const r = await runItem(d, candidate(), role(), 'igor-bot', noWait)
+
+    expect(posts).toHaveLength(1)
+    expect(r.outcome).toBe('refused')
+    expect(r.spoke).toBe(false)
+    expect(r.silence).toContain('tracker returned 503')
+    expect(wentSilent(r)).toBe(true)
+  })
+
+  it('reports a handoff as spoken where only the correction after it landed', async () => {
+    const { d, posts } = deps({
+      changes: [],
+      releaseLeavesHolder: true,
+      rejects: (m) => afterClaim(m) && m !== stillHeld(role()),
+    })
+    const r = await runItem(d, candidate(), role(), 'igor-bot', { ...noWait, worker: idleWorker })
+
+    expect(r.outcome).toBe('handed-off')
+    expect(posts.at(-1)).toBe(stillHeld(role()))
+    expect(r.spoke).toBe(true)
+    expect(wentSilent(r)).toBe(false)
+  })
+
+  it('reports a catch-up whose closing note did not land as silent', async () => {
+    const { d } = deps({
+      caughtUp: [{ outcome: 'conflict' }, { outcome: 'already-current' }],
+      merge: conflicted,
+      changes: [{ path: 'src/a.ts', content: 'resolved\n', kind: 'modified' }],
+      rejects: (m) => m.includes('#21') && !m.includes('<!-- igor:'),
+    })
+    const run = await catchUpItem(d, stale(), role(), 'igor-bot', { ...noWait, worker: busyWorker })
+
+    expect(run.outcome).toBe('produced')
+    expect(run.spoke).toBe(false)
+    expect(wentSilent(run)).toBe(true)
+  })
+
+  it('reports a loss found at the settle check as spoken where its hand-back landed', async () => {
+    const { d, posts } = deps({ verdicts: [{ status: 'lost', by: 'alice' }] })
+    d.tracker.holderField = { holds: 'single', distinctFromAssignee: true }
+    const r = await runItem(d, candidate(), role(), 'igor-bot', noWait)
+
+    expect(r.outcome).toBe('lost')
+    expect(posts).toHaveLength(2)
+    expect(r.spoke).toBe(true)
+  })
+
+  it('never reports a clean catch-up or an unrecorded claim as silent', async () => {
+    const clean = await catchUpItem(deps({ caughtUp: [{ outcome: 'merged', sha: 's' }] }).d, stale(), role(), 'igor-bot')
+    const unrecorded = await runItem(deps({ claimSticks: false }).d, candidate(), role(), 'igor-bot', noWait)
+
+    expect(wentSilent(clean)).toBe(false)
+    expect(wentSilent(unrecorded)).toBe(false)
+    expect(silenceWarning(clean)).toBeUndefined()
+  })
 })
 
 describe('paths that owe nothing', () => {

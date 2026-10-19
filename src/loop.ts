@@ -8,7 +8,7 @@ import {
 import {
   complete, denialsFrom, execute, headlessClaude, workerEnv, type ExecuteOptions, type ExecutionResult, type WorkerOutput,
 } from './execute.js'
-import { handOffFrom, type HandoffReason } from './handoff.js'
+import { handOffFrom, type HandoffOutcome, type HandoffReason } from './handoff.js'
 import type { Role } from './role.js'
 import type { ChangedFile, TreeProvider } from './worktree.js'
 import { appendRecord } from './state.js'
@@ -89,11 +89,23 @@ export interface ItemRun {
   /** Undefined where the worker never reported one, which a killed run never does. */
   costUsd: number | undefined
   /**
-   * Whether a message was left on the item. False is a bug on any outcome that took a claim,
-   * because the claim told other people to stand off. A clean catch-up takes none and says
-   * nothing on purpose, so there it is a state.
+   * Whether the run's answer to its claim message landed on the item: a post the tracker
+   * accepted, or a pull request the code host opened. Read from what each call answered, never
+   * assumed. See `wentSilent` for when false is a bug.
    */
   spoke: boolean
+  /**
+   * Set where the claim message is on the item, or may be. The claim told other people to stand
+   * off, so the run owes them an answer. A catch-up the code host merged without a worker claims
+   * nothing and leaves this unset.
+   */
+  announced?: true
+  /**
+   * Why the answer the run owed did not land: the tracker's error from the last post that failed.
+   * Present only beside `spoke: false`. The tracker refused the answer, so the reason cannot go on
+   * the item either, and travels out to whoever watches the run instead.
+   */
+  silence?: string
   /** Why it was handed back, where it was — a budget handoff says nothing about the item. */
   handoff?: HandoffReason['kind']
   /**
@@ -130,6 +142,60 @@ export interface RunOptions extends ExecuteOptions {
   }
 }
 
+/**
+ * A claim message is on the item and nothing this run said after it landed. The graceful-handoff
+ * spec forbids a run ending that way, since the claim told other people to stand off.
+ *
+ * Every place a run is reported reads this, so the rule has one copy. A catch-up the code host
+ * merged without a worker claims nothing and says nothing on purpose, so it is exempt by never
+ * setting `announced`. A loss is exempt, including one whose correction after a release that did
+ * not take failed to land, because somebody else is visibly on the item.
+ */
+export function wentSilent(run: ItemRun): boolean {
+  return run.announced === true && !run.spoke && run.outcome !== 'lost'
+}
+
+/**
+ * The line every report of a run prints where it went silent, naming the tracker's reason where
+ * there is one, so a tracker that was down does not read as the Igor's own bug. Undefined where
+ * the run did not go silent.
+ */
+export function silenceWarning(run: ItemRun): string | undefined {
+  if (!wentSilent(run)) return undefined
+  return `WARNING: held a claim and left no message — that is a bug${run.silence === undefined ? '' : `: ${run.silence}`}`
+}
+
+/**
+ * Posts each message in order, and answers whether any landed. A post that fails does not stop
+ * the next: a correction after a receipt that failed still tells readers of the item that it is
+ * held.
+ */
+async function sayAll(
+  tracker: Tracker,
+  candidate: Candidate,
+  messages: readonly (string | undefined)[],
+): Promise<{ spoke: boolean; silence?: string }> {
+  let spoke = false
+  let silence: string | undefined
+  for (const message of messages) {
+    if (message === undefined) continue
+    try {
+      await tracker.report(candidate, message)
+      spoke = true
+    } catch (error) {
+      silence = why(error) || 'the tracker gave no reason'
+    }
+  }
+  return spoke || silence === undefined ? { spoke } : { spoke, silence }
+}
+
+/** What a handoff left on the item, as a run reports it. */
+function saidBy(out: Pick<HandoffOutcome, 'said' | 'error'>): { spoke: boolean; silence?: string } {
+  if (out.said) return { spoke: true }
+  // A blank reason still has to read as a failure.
+  return { spoke: false, silence: out.error === undefined || out.error === '' ? 'the tracker gave no reason' : out.error }
+}
+
 export async function runItem(
   deps: ItemDeps,
   candidate: Candidate,
@@ -146,27 +212,27 @@ export async function runItem(
     ...(options.catchUp === undefined ? {} : { catchUp: true }),
     onSettle: () => step('settling'),
   })
+  // Spread into every return below, so no exit drops the fact that the item was told to stand off.
+  const told = claim.announced === true ? { announced: true as const } : {}
   if (claim.outcome !== 'held') {
-    // Nothing was claimed, someone else holds it, or the claim could not be finished. None owes
-    // a handoff: on a lost claim somebody else is now visibly on it, and a stop gets a receipt
-    // instead, because whoever issued it is presumably taking the work and composing a handoff
-    // would only delay the release.
+    // A claim that is not held owes no handoff. A refusal holds no claim, a lost claim leaves
+    // somebody else visibly on the item, and a stop gets a receipt instead, because whoever issued
+    // it is presumably taking the work and composing a handoff would only delay the release.
     //
     // **A refused claim is not necessarily a silent one.** `takeClaim` refuses where its claim
     // window threw. That path has already released the claim and, where the claim message may
-    // have landed, withdrawn it on the item, so `spoke` carries what it said rather than false.
+    // have landed, withdrawn it on the item, so `spoke` carries whether the withdrawal landed.
     //
-    // The one reader of `spoke`, the run summary in `src/cli.ts`, skips `refused` and `lost`
-    // runs, because both have released the claim. So any new `refused` path must release the
-    // claim itself: one that ended still holding it would be silent, and nothing would report it.
+    // **A stop whose receipt did not land is still a stop**, reported with `spoke: false` and the
+    // reason in `silence`, so no report claims the receipt was said.
     if (claim.outcome === 'stopped' && claim.verdict) {
-      await tracker.report(candidate, stopReceipt(role, claim.verdict)).catch(() => undefined)
-      // After the receipt, never before it. The receipt is what claims the release, and a
-      // clause correcting it that stands above it answers nothing.
-      if (claim.releaseStuck === true) {
-        await tracker.report(candidate, stillHeld(role)).catch(() => undefined)
-      }
-      return { outcome: 'stopped', candidate, reason: claim.reason, costUsd: 0, spoke: true, cures: [] }
+      // The correction goes after the receipt, never before it. The receipt says the claim was
+      // released, and a correction posted above it in the thread corrects nothing.
+      const said = await sayAll(tracker, candidate, [
+        stopReceipt(role, claim.verdict),
+        claim.releaseStuck === true ? stillHeld(role) : undefined,
+      ])
+      return { outcome: 'stopped', candidate, reason: claim.reason, costUsd: 0, ...said, ...told, cures: [] }
     }
     return {
       outcome: claim.outcome === 'lost' ? 'lost' : 'refused',
@@ -174,6 +240,8 @@ export async function runItem(
       reason: claim.reason,
       costUsd: 0,
       spoke: claim.spoke ?? false,
+      ...(claim.silence === undefined ? {} : { silence: claim.silence }),
+      ...told,
       cures: [],
       ...(claim.surfaceFailed === true ? { surfaceFailed: true as const } : {}),
     }
@@ -199,7 +267,7 @@ export async function runItem(
   // tracker 503 above finds it full. Read as item versus surface, it gets both backwards.
   const reached: Reached = {}
   try {
-    return await runClaimedItem(deps, candidate, role, identity, claim, options, reached)
+    return { ...(await runClaimedItem(deps, candidate, role, identity, claim, options, reached)), ...told }
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
     const ran = reached.result ?? standIn(reached, role, detail)
@@ -213,6 +281,7 @@ export async function runItem(
       costUsd: ran === undefined ? 0 : ran.costUsd,
       ...(ran === undefined ? {} : { execution: ran }),
       cures: ran?.cures ?? [],
+      ...told,
       surfaceFailed: true as const,
       reason: `${candidate.id} was claimed and the run could not finish: ${detail}`,
     }
@@ -225,18 +294,16 @@ export async function runItem(
     if (verdict?.status === 'stopped' || verdict?.status === 'lost') {
       const clear = await standDown(tracker, candidate, identity, verdict)
       const artifact = reached.published?.artifact.url
-      if (verdict.status === 'stopped') {
-        await tracker.report(candidate, stopReceipt(role, verdict, artifact)).catch(() => undefined)
-      } else if (artifact !== undefined) {
-        await tracker.report(candidate, handOverNote(role, verdict.by, artifact)).catch(() => undefined)
-      }
-      // If the release did not take, say so in either case. A needless comment costs one
-      // comment, but silence leaves the item held by this Igor with nobody told.
-      if (!clear) await tracker.report(candidate, stillHeld(role)).catch(() => undefined)
-      return {
-        ...ended, outcome: verdict.status,
-        spoke: verdict.status === 'stopped' || artifact !== undefined || !clear,
-      }
+      const said = await sayAll(tracker, candidate, [
+        verdict.status === 'stopped'
+          ? stopReceipt(role, verdict, artifact)
+          : artifact === undefined ? undefined : handOverNote(role, verdict.by, artifact),
+        // If the release did not take, say so in either case. `standDown` also answers false
+        // where the surface did not answer, so the correction can be needless. A needless comment
+        // costs one comment, but silence leaves the item held by this Igor with nobody told.
+        clear ? undefined : stillHeld(role),
+      ])
+      return { ...ended, outcome: verdict.status, ...said }
     }
 
     // **What a retry would cost decides what happens next, not whose fault the throw was**,
@@ -258,11 +325,11 @@ export async function runItem(
     const next = retryIsDear ? {} : { next: published ? ('published' as const) : ('retry' as const) }
     const out = await handOffFrom(
       tracker, candidate, role, identity, claim, { kind: 'failure', detail, ...next }, ran,
-    ).catch(() => ({ posted: false }))
+    ).catch((e: unknown) => ({ said: false, error: why(e) }))
     return {
       ...ended,
       outcome: retryIsDear ? 'handed-off' : 'refused',
-      spoke: out.posted,
+      ...saidBy(out),
       ...(retryIsDear ? { handoff: 'failure' as const } : {}),
     }
   }
@@ -345,7 +412,7 @@ async function runClaimedItem(
     const out = await handOffFrom(tracker, candidate, role, identity, claim, reason)
     return {
       outcome: 'handed-off', candidate, reason: 'budget exhausted before starting',
-      costUsd: 0, spoke: out.posted, handoff: 'budget', cures: [],
+      costUsd: 0, ...saidBy(out), handoff: 'budget', cures: [],
     }
   }
 
@@ -412,6 +479,7 @@ async function runClaimedItem(
         reason: execution.reason,
         execution,
         costUsd: execution.costUsd,
+        // The pull request is the answer, and the code host accepted it.
         spoke: true,
         cures: execution.cures ?? [],
       }
@@ -432,13 +500,15 @@ async function runClaimedItem(
       }
       if (verdict.status === 'stopped') {
         const artifact = execution.artifact ? execution.artifact.url : undefined
-        await tracker.report(candidate, stopReceipt(role, verdict, artifact)).catch(() => undefined)
-        // After the receipt, never before it: a correction posted first corrects nothing and
-        // leaves the false clause as the last word.
-        if (!stoodDown) await tracker.report(candidate, stillHeld(role)).catch(() => undefined)
+        // The correction after the receipt, never before it: a correction posted first corrects
+        // nothing and leaves the false clause as the last word.
+        const said = await sayAll(tracker, candidate, [
+          stopReceipt(role, verdict, artifact),
+          stoodDown ? undefined : stillHeld(role),
+        ])
         return {
           outcome: 'stopped', candidate, reason: execution.reason, execution,
-          costUsd: execution.costUsd, spoke: true, cures: execution.cures ?? [],
+          costUsd: execution.costUsd, ...said, cures: execution.cures ?? [],
         }
       }
       if (verdict.status === 'lost') {
@@ -449,17 +519,17 @@ async function runClaimedItem(
         // Never silent where the release did not take: this Igor's name is still on the item
         // beside whoever took it, and nothing else on the item explains the second name.
         const artifact = execution.artifact
-        if (artifact !== undefined) {
-          await tracker.report(candidate, handOverNote(role, verdict.by, artifact.url)).catch(() => undefined)
-        }
-        // A correction, never the standalone: a loss does not cut a run short — only a stop
-        // does — so reaching here means the run finished and published, and there is always a
-        // hand-over note above this to correct. `takeClaim` owns the standalone, for a loss
-        // found in the settle window where nothing has been said.
-        if (!stoodDown) await tracker.report(candidate, stillHeld(role)).catch(() => undefined)
+        const said = await sayAll(tracker, candidate, [
+          artifact === undefined ? undefined : handOverNote(role, verdict.by, artifact.url),
+          // A correction, never the standalone. A loss does not cut a run short, only a stop
+          // does, so a run that reaches here has finished, and the hand-over note above, where it
+          // published, is what this corrects. `takeClaim` owns the standalone, for a loss found
+          // in the settle window where nothing has been said.
+          stoodDown ? undefined : stillHeld(role),
+        ])
         return {
           outcome: 'lost', candidate, reason: execution.reason, execution,
-          costUsd: execution.costUsd, spoke: artifact !== undefined || !stoodDown, cures: execution.cures ?? [],
+          costUsd: execution.costUsd, ...said, cures: execution.cures ?? [],
         }
       }
       // Still held, so the refusal was the action space rather than the claim: that is a
@@ -472,7 +542,7 @@ async function runClaimedItem(
       )
       return {
         outcome: 'handed-off', candidate, reason: execution.reason, execution,
-        costUsd: execution.costUsd, spoke: out.posted, handoff: 'failure', cures,
+        costUsd: execution.costUsd, ...saidBy(out), handoff: 'failure', cures,
       }
     }
 
@@ -489,7 +559,7 @@ async function runClaimedItem(
       const out = await handOffFrom(tracker, candidate, role, identity, claim, reason, execution)
       return {
         outcome: 'handed-off', candidate, reason: execution.reason, execution,
-        costUsd: execution.costUsd, spoke: out.posted, handoff: 'budget', cures: execution.cures ?? [],
+        costUsd: execution.costUsd, ...saidBy(out), handoff: 'budget', cures: execution.cures ?? [],
       }
     }
 
@@ -512,7 +582,7 @@ async function runClaimedItem(
       const out = await handOffFrom(tracker, candidate, role, identity, claim, reason, execution)
       return {
         outcome: 'handed-off', candidate, reason: execution.reason, execution,
-        costUsd: execution.costUsd, spoke: out.posted, handoff: reason.kind, cures,
+        costUsd: execution.costUsd, ...saidBy(out), handoff: reason.kind, cures,
       }
     }
   }
@@ -594,23 +664,25 @@ export async function catchUpItem(
   // did. An ordinary run ends in a pull request that announces itself, and a catch-up ends on
   // a branch that already exists — so without this the item goes quiet mid-sentence.
   //
-  // Both branches speak, because by here a claim has been taken and the claim comment is
-  // already on the item — silence after it is the very failure this exists to prevent, not
-  // the quiet path's exemption, which claims nothing.
+  // By here a claim has been taken and the claim comment is on the item, so a produced run always
+  // posts a note. Silence after the claim is the failure this exists to prevent. The exemption
+  // belongs only to the catch-up the code host merged without a worker, earlier in this
+  // function, which claims nothing.
   //
-  // What they say turns on whether a worker was handed a conflict, not on whether files
-  // changed. A merge that came out clean in the clone changes plenty of files and resolved
-  // nothing, and saying otherwise claims work nobody did.
+  // Which note turns on whether the merge in the clone had conflicts for the worker to resolve
+  // (`conflictResolved`), not on whether files changed. A merge that came out clean in the clone
+  // changes plenty of files and resolved nothing, and saying otherwise claims work nobody did.
+  //
+  // This note, not the pull request, is the catch-up's answer to its claim message, so `spoke`
+  // says whether the note landed.
   if (run.outcome === 'produced') {
-    await deps.tracker
-      .report(
-        candidate,
-        (run.execution?.conflictResolved === true
-          ? resolvedNote(role, artifact.ref, artifact.url, artifact.base)
-          : broughtCurrentNote(role, artifact.ref, artifact.url, artifact.base)) +
-          undoneNote(run.execution?.reverts),
-      )
-      .catch(() => undefined)
+    const said = await sayAll(deps.tracker, candidate, [
+      (run.execution?.conflictResolved === true
+        ? resolvedNote(role, artifact.ref, artifact.url, artifact.base)
+        : broughtCurrentNote(role, artifact.ref, artifact.url, artifact.base)) +
+        undoneNote(run.execution?.reverts),
+    ])
+    return { ...run, ...said }
   }
   return run
 }
