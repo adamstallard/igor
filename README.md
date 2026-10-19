@@ -11,8 +11,9 @@ person's sessions.
 
 Deciding belongs in the open too. People keep personal agents for private thinking, but they
 brainstorm and decide together in a shared channel or document, where an Igor called the scribe
-keeps a single shared record of what was decided. The scribe is not built: its design is a
-proposal under review, in [`openspec/changes/discussion-scribe/`](openspec/changes/discussion-scribe/).
+watches the discussion and keeps a single shared record of what was decided, in the team's
+repositories. The scribe's rules are in
+[`openspec/changes/discussion-scribe/`](openspec/changes/discussion-scribe/).
 
 An Igor is a named teammate that holds one role. Nothing durable lives inside one: run
 five, kill four mid-week, and nothing is lost. The roles live in git, the knowledge belongs to the

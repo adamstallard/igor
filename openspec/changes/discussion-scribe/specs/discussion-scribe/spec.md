@@ -8,8 +8,8 @@ discussion's index. A person SHALL have authority in the discussion when
 `directed-interaction`'s authority rule grants them authority over that home repository.
 
 On a surface that is not the code host, the scribe SHALL find the person's code-host account
-through a configured mapping from their account on the surface. A person with no mapping SHALL
-have no authority.
+through the configured mapping from surface accounts to code-host logins that #160 defines for
+every Igor taking requests on Discord, extended to each surface the scribe watches.
 
 #### Scenario: Authority in a discussion is authority over its home repository
 
@@ -26,13 +26,21 @@ have no authority.
 ### Requirement: A scribe summarises a discussion at intervals or when asked, within a declared budget
 
 The scribe SHALL summarise the discussion at intervals, and when a person with authority asks.
-It SHALL NOT post in response to individual messages. Its summaries SHALL draw on a budget
-declared for them, and SHALL stop when that budget is spent.
+A request moves the next scheduled summary earlier. That summary is the one the schedule would
+have produced, and later summaries keep their schedule. The scribe SHALL NOT post in response
+to an individual message that does not address it. It posts in the discussion only its
+summaries, its answers to people who address it, and the notices other requirements here call
+for. Its summaries SHALL draw on a budget declared for them, and SHALL stop when that
+budget is spent.
 
 A summary is the scribe's own work, posted on its schedule. `directed-interaction`'s rule that
-an Igor replies only when addressed governs the scribe's answers to people, not its summaries.
+a stranger's mention gets no reply (*A stranger's mention changes nothing*) and its rule that a
+mention narrows what an Igor may do govern the scribe's answers to people. Neither governs a
+summary, which answers nobody, even when a request brought it forward.
 
 A summary SHALL say which messages it could not read, where the surface withheld their content.
+Where the scribe cannot tell whether content was withheld, the summary SHALL say that some
+content may be missing, and SHALL NOT say that every message was read.
 
 #### Scenario: A busy discussion is summarised, not answered message by message
 
@@ -43,7 +51,8 @@ A summary SHALL say which messages it could not read, where the surface withheld
 #### Scenario: A person with authority asks for a summary
 
 - **WHEN** a person with authority asks the scribe for a summary
-- **THEN** it summarises the discussion so far, budget permitting
+- **THEN** it summarises the discussion so far, budget permitting, as its next scheduled
+  summary would
 
 #### Scenario: A person without authority asks for a summary
 
@@ -60,14 +69,20 @@ A summary SHALL say which messages it could not read, where the surface withheld
 - **WHEN** the surface withholds the content of some messages from the scribe
 - **THEN** the summary says those messages were not read
 
+#### Scenario: Withheld content cannot be told apart
+
+- **WHEN** the surface returns empty messages and the scribe cannot tell whether their content
+  was withheld
+- **THEN** the summary says that some content may be missing
+
 ### Requirement: A discussion's record lives in a repository, never only in chat
 
 Everything the scribe records SHALL be written to files in a repository. A summary the scribe
 posts in the discussion SHALL link the index it updated. A summary that exists only as a chat
 message is not a record.
 
-The scribe SHALL write a record, post a summary or pin a message only where its role grants
-that action.
+The scribe SHALL write a record, post in the discussion, pin a message or propose a lore
+candidate only where its role grants that action.
 
 #### Scenario: A summary updates the record
 
@@ -80,6 +95,14 @@ that action.
 
 - **WHEN** the scribe's role does not grant the action that writes a record
 - **THEN** the scribe writes nothing, and says which action its role lacks
+
+#### Scenario: A role that may not post or pin
+
+- **WHEN** the scribe's role does not grant the action that posts in the discussion, or the one
+  that pins
+- **THEN** the scribe does not post, or does not pin
+- **AND** it records the refusal, naming the action its role lacks, as `task-execution`'s *Only
+  reversible artifacts are produced* records any action outside a role's allow list
 
 ### Requirement: Each discussion has one index, kept as a file and linked from the discussion
 
@@ -97,6 +120,7 @@ The index SHALL NOT restate a decision's reasoning, which belongs to its MADR.
 
 - **WHEN** a decision's MADR is drafted
 - **THEN** the index gains a line for it linking the MADR
+- **AND** that line does not restate the decision's reasoning
 
 #### Scenario: An open question has an owner or says it has none
 
@@ -162,8 +186,8 @@ the new one's number.
 ### Requirement: A record lives in the repository its decision concerns
 
 The scribe SHALL write a decision's MADR in the repository the decision concerns. A decision
-concerning several repositories SHALL be recorded in the organization's shared specs
-repository.
+concerning several repositories SHALL be recorded in the team's lore repository, which
+`docs/architecture.md` §6.7 makes the home of everything specific to the team.
 
 #### Scenario: A decision about one repository
 
@@ -173,13 +197,18 @@ repository.
 #### Scenario: A decision across repositories
 
 - **WHEN** a discussion decides something affecting two repositories
-- **THEN** the MADR is written in the shared specs repository
+- **THEN** the MADR is written in the team's lore repository
 
 ### Requirement: A record from a private discussion is not written to a public repository
 
 The scribe SHALL treat a discussion as private unless its role declares it public. It SHALL NOT
 write any record from a private discussion, a MADR or an index, into a public repository, and
 SHALL say in the discussion that the record was refused and why.
+
+An issue or OpenSpec change the scribe files in a public repository from a private discussion
+SHALL link the discussion and SHALL NOT quote it. In a discussion declared public, the scribe
+SHALL answer and summarise only from records in public repositories and from a public lore
+store.
 
 #### Scenario: A private discussion's decision concerns a public repository
 
@@ -195,11 +224,23 @@ SHALL say in the discussion that the record was refused and why.
 - **AND** the scribe says in the discussion that the index was refused because the repository
   is public
 
-### Requirement: Text from the discussion is written into a record as data
+#### Scenario: Work filed in a public repository from a private discussion
 
-Text the scribe quotes or paraphrases from the discussion into a record SHALL be written so it
-renders as text: it SHALL NOT notify anyone it names, and markup in it SHALL NOT render as
-links, images or HTML of its own.
+- **WHEN** a confirmed issue from a discussion not declared public lands in a public repository
+- **THEN** the issue links the discussion and quotes nothing from it
+
+#### Scenario: A public discussion asks about a private record
+
+- **WHEN** a person in a discussion declared public asks about a decision recorded only in a
+  private repository
+- **THEN** the scribe's answer neither quotes nor links that record
+
+### Requirement: Text from the discussion is written as data
+
+Text the scribe quotes or paraphrases from the discussion SHALL be written so it renders as
+text, wherever the scribe writes it: in a record, a summary, a filed issue, or a pull request
+body. It SHALL NOT notify anyone it names, and markup in it SHALL NOT render as links, images
+or HTML of its own.
 
 #### Scenario: A quoted mention notifies nobody
 
@@ -211,15 +252,28 @@ links, images or HTML of its own.
 - **WHEN** a recorded message contains raw HTML or an image link
 - **THEN** the record shows it as text
 
+#### Scenario: A mention copied into a summary or a filed issue notifies nobody
+
+- **WHEN** a summary, or an issue the scribe files, quotes a message containing an `@`-mention
+- **THEN** it shows the name without notifying its owner
+
 ### Requirement: The scribe files work only after a person with authority confirms it
 
 The scribe SHALL suggest each issue or OpenSpec change in the discussion, and SHALL file it only
-after a person with authority over the repository it would land in, under
-`directed-interaction`'s rule, confirms it. The action of filing SHALL be one the scribe's role grants;
-confirmation SHALL NOT grant an action the role lacks.
+after a person with authority, under `directed-interaction`'s rule, confirms it. Authority is
+read on the repository the work concerns, whichever tracker the issue is filed on. That holds
+when the claiming tracker, where the organization's Igors take their claims, is not the code
+host. Where the work concerns no repository, authority is read on the discussion's home
+repository. Whether the role
+may file at all is decided by the action rules pull request #140 adds to `directed-interaction`
+and by `task-execution`'s allow list, and a confirmation changes neither.
 
 The scribe SHALL NOT claim an issue it files. Once filed, the dispatch SHALL be added to the
 index and to the MADR it came from.
+
+The scribe's records, and the issues and OpenSpec changes it files, are not work on a tracker
+item. `work-claiming`'s rule that an Igor claims an item before producing an artifact for it
+governs pickups of tracker items, and the scribe picks up none.
 
 #### Scenario: A confirmed issue is filed
 
@@ -232,6 +286,12 @@ index and to the MADR it came from.
 
 - **WHEN** the scribe has suggested an issue and nobody with authority has confirmed it
 - **THEN** nothing is filed
+
+#### Scenario: Work filed on a tracker that is not the code host
+
+- **WHEN** the claiming tracker is Linear, and a person with write access to the repository the
+  work concerns confirms a suggested issue
+- **THEN** the scribe files the issue on Linear
 
 #### Scenario: Confirmation cannot widen the role
 
@@ -250,6 +310,7 @@ Decisions section and SHALL NOT restate the MADR's reasoning.
 - **WHEN** an accepted decision changes required behaviour, and a person with authority over
   the target repository confirms the suggested change
 - **THEN** the scribe opens the OpenSpec change, citing the MADR in its Decisions section
+- **AND** the change does not restate the MADR's reasoning
 - **AND** the index and the MADR link the change
 
 #### Scenario: A decision that changes no behaviour gets no change
@@ -276,7 +337,8 @@ person's own.
 
 #### Scenario: An unmarked post counts as the person's
 
-- **WHEN** a person with authority approves a `proposed` MADR in a post with no such marking
+- **WHEN** a person with authority over the repository holding a `proposed` MADR approves it in
+  a post with no such marking
 - **THEN** the MADR becomes `accepted`
 
 ### Requirement: The scribe answers from the record
@@ -313,18 +375,50 @@ whoever made them. It SHALL NOT add arguments of its own, rank options, or recom
 
 ### Requirement: An accepted decision that states a lasting rule becomes a lore candidate
 
-Where an accepted MADR states a rule for future work, the scribe SHALL propose a lore candidate
-for it. The candidate's provenance SHALL cite the MADR and SHALL name as authors the people the
-MADR records as approving it. The candidate SHALL reach the store only through lore review, like
-any other.
+Where an accepted MADR states a rule for future work, and the scribe's role grants the action
+that proposes lore, the scribe SHALL propose a lore candidate for it. Where the role does not
+grant it, no candidate is produced, and the refusal is recorded as `task-execution`'s *Only
+reversible artifacts are produced* records any action outside a role's allow list. The
+candidate's provenance SHALL be one item. That item cites the MADR, and its author is the
+first person the MADR records as approving it, so one decision counts as support once.
+The candidate SHALL reach the store only through lore review, like any other.
 
 #### Scenario: A decision with a lasting rule
 
-- **WHEN** an accepted MADR records a rule that applies to future work
+- **WHEN** an accepted MADR records a rule that applies to future work, and the role grants the
+  action that proposes lore
 - **THEN** the scribe proposes a lore candidate citing the MADR
-- **AND** the candidate's provenance names the MADR's approvers as its authors
+- **AND** its provenance is one item, whose author is the MADR's first approver
+
+#### Scenario: A role that may not propose lore
+
+- **WHEN** an accepted MADR records a rule for future work, and the role does not grant the
+  action that proposes lore
+- **THEN** no candidate is produced, and the refusal is recorded
 
 #### Scenario: A decision with no lasting rule
 
 - **WHEN** an accepted MADR records a one-off choice
 - **THEN** no lore candidate is proposed
+
+### Requirement: Anyone in the discussion can stop the scribe
+
+A stop posted in the discussion the scribe watches SHALL stop the scribe there at once. It
+takes effect from anyone, with no authority required. A stop is worded as `work-claiming`'s
+*Stop is unconditional and open to anyone* words one on an item: a message opening with "stop"
+that names no Igor, or names the scribe. The scribe holds no claim, so the claiming tracker has
+no item a stop could be posted on.
+
+The scribe SHALL resume after the role's cooldown, or earlier on a go-ahead posted in the
+discussion by a person with authority. A go-ahead from anyone else SHALL NOT lift the stop.
+
+#### Scenario: A stop from someone without authority
+
+- **WHEN** a person without authority posts a stop in the discussion
+- **THEN** the scribe posts, writes and files nothing more for that discussion until the
+  cooldown passes or a person with authority posts a go-ahead
+
+#### Scenario: A go-ahead from someone without authority
+
+- **WHEN** the scribe was stopped, and a person without authority posts a go-ahead
+- **THEN** the scribe stays stopped until the cooldown passes

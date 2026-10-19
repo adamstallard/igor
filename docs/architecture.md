@@ -15,9 +15,10 @@ than restating it.
 others' agents, every agent holds one person's partial view, and decisions end up in traffic
 nobody reads. Igor makes agents part of a shared process instead. People keep personal agents
 for private thinking, but they decide together in a shared channel or document, and what a
-personal agent produces is posted there as a proposal. A scribe Igor folds those proposals into
-one record of what was decided. The scribe is not built: its design is a proposal under
-review, in [`openspec/changes/discussion-scribe/`](../openspec/changes/discussion-scribe/).
+personal agent produces is posted there as a proposal. The scribe, an Igor that watches the
+discussion, folds those proposals into one record of what was decided, which it keeps in the
+team's repositories. The scribe's rules are in
+[`openspec/changes/discussion-scribe/`](../openspec/changes/discussion-scribe/).
 
 Igor also replaces the sub-agents that act for a person inside a session, whose work and
 lessons stay in that session. Igors act in the team's shared space instead: whatever an Igor

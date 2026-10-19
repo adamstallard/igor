@@ -5,8 +5,9 @@ a decision calls for once a person with authority confirms it. Tracked in #201.
 
 This change is gate one: the specification, reviewed alone before any code is written. Gate
 two is the implementation, on the same branch. The change is provisional. Decisions 1 to 9 are
-Adam's (2026-10-16). Decisions 10 to 14 follow from them and are for the reviewer to confirm.
-The questions under *Still open* need answers before gate two builds anything.
+Adam's, as the project's owner (2026-10-16). Decision 5 names the team's lore repository
+because Adam answered that question on 2026-10-19. Decisions 10 to 23 follow from them and are for the reviewer to confirm. The
+questions under *Still open* need answers before gate two builds anything.
 
 ## Decisions
 
@@ -44,11 +45,16 @@ The questions under *Still open* need answers before gate two builds anything.
    behaviour and lose the rest. *Also rejected:* MADRs alone, which nothing validates and no
    implementer builds from. `design.md` gives the reasoning for each layer.
 5. **Records live in the repository the decision concerns.** A decision that spans
-   repositories goes in a shared specs repository.
+   repositories goes in the team's lore repository. `docs/architecture.md` §6.7 makes that
+   repository the home of everything specific to the team, so the scribe has one place to look,
+   and so does the inquisitor (#211): an Igor that asks the team the questions it must decide,
+   and searches the scribe's record before asking. A team that works in private repositories
+   keeps its lore repository private. Igor refuses to start with a public lore repository when
+   a role's repository is private (#212).
 6. **The scribe dispatches only with approval.** It suggests issues and OpenSpec changes, and
    files one only after a person with authority confirms it. Authority follows
    `directed-interaction`: an instruction counts only from a person with write access to the
-   repository it would change, here the repository the issue or change would land in.
+   repository it would change, here the repository the issue or change concerns (decision 16).
 7. **The scribe answers from the written record**, such as "we decided X in #123, because Y", citing the
    records and lore, the store of lessons every Igor reads.
 8. **The scribe stays neutral.** It represents the team, records each argument with who made
@@ -59,10 +65,10 @@ The questions under *Still open* need answers before gate two builds anything.
 
 **Following from those, for the reviewer to confirm:**
 
-10. **A summary is the scribe's own work, not a reply.** `directed-interaction` has an Igor
-    reply only when addressed; that governs the scribe's answers, not the summaries its role
-    posts on a schedule. *Rejected:* summaries only when asked, which would drop the intervals
-    of decision 2.
+10. **A summary is the scribe's own work, not a reply.** `directed-interaction`'s scenario *A
+    stranger's mention changes nothing* and its rule that a mention narrows what an Igor may do
+    govern the scribe's answers, not the summaries its role posts on a schedule. *Rejected:*
+    summaries only when asked, which would drop the intervals of decision 2.
 11. **Each discussion has a home repository, configured on the role, which holds its index and
     decides who has authority in the discussion.** A person on Discord, Slack or Linear has
     authority only through a configured mapping to a code-host account, as #160 decided for
@@ -72,14 +78,54 @@ The questions under *Still open* need answers before gate two builds anything.
     from `work-claiming`'s Discord scenario, where the Igor asked for the work claims the issue
     it opens: the scribe files work for others.
 13. **A discussion is private unless its role declares it public, and a private discussion's
-    record is never written to a public repository.** Text from the discussion is written into
-    a record so it renders as text and notifies nobody. *Rejected:* relying on `lore-review`'s
-    guard, which checks only repositories cited, so a private chat reaches a public repository
-    through a MADR before any lore is proposed.
-14. **A lore candidate's authors are the people who approved the MADR.** `lore-review` routes a
-    candidate to its authors, and the approvers are the people who can confirm what was meant.
-    *Rejected:* everyone who argued, which would ask people to vouch for an outcome they may
-    have argued against.
+    record is never written to a public repository.** Work filed in a public repository from a
+    private discussion links the discussion and quotes nothing from it. In a public discussion
+    the scribe answers and summarises only from public records and a public lore store. Text
+    from the discussion renders as text and notifies nobody, wherever the scribe writes it: a
+    record, a summary, a filed issue or a pull request body. *Rejected:* relying on
+    `lore-review`'s guard, which checks only repositories cited, so a private chat reaches a
+    public repository through a MADR before any lore is proposed.
+14. **A lore candidate's author is the first person who approved the MADR, in one provenance
+    item citing it.** `lore-review` routes a candidate to its author, and an approver can
+    confirm what was meant. One item means one decision counts as support once, however many
+    approved it. *Rejected:* everyone who argued, which would ask people to vouch for an
+    outcome they may have argued against. *Also rejected:* one item per approver, which would
+    count one decision as support several times. The scribe proposes only where its role grants
+    the action that proposes lore.
+15. **A request for a summary moves the next scheduled summary earlier, and changes nothing
+    else.** The summary is the role's own scheduled work, so a mention asking for it widens
+    nothing, as `directed-interaction` requires of a mention. *Rejected:* answering a request
+    with a summary that does not update the index, which would link an index that is out of
+    date, against decision 3.
+16. **Confirming filed work takes authority over the repository the work concerns, whichever
+    tracker the issue is filed on.** Where it concerns no repository, authority is read on the
+    discussion's home repository. The claiming tracker, where an organization's Igors take their
+    claims (`work-claiming`), may be Linear, and an issue filed there lives in no repository,
+    so the repository has to come from the work. *Rejected:* membership of the
+    Linear team, which `directed-interaction` rejects for organizations as too coarse.
+17. **The scribe works on no tracker item, so `work-claiming`'s claim-before-work rule does not
+    govern its records or what it files.** That rule governs pickups of tracker items, and the
+    scribe picks up none. *Rejected:* a `work-claiming` delta exempting the scribe, which would
+    carve one role out of a rule `work-claiming` declares not configurable.
+18. **Anyone in the discussion can stop the scribe there,** with no authority, as anyone can
+    stop an Igor on an item under `work-claiming`. A stop cannot be posted on the claiming
+    tracker, because the scribe holds no claim there.
+19. **Only a person with authority can lift that stop early, with a go-ahead.** Otherwise the
+    scribe resumes after the role's cooldown. In a channel, anyone could undo a stranger's stop
+    the moment it was posted, and `work-claiming` itself holds that lifting a stop by mistake
+    costs more than leaving one in place. *Rejected:* a go-ahead from anyone, as
+    `work-claiming` allows on a tracker item, where only people who can comment on the item
+    can post one.
+20. **A post marked as a personal agent's output never approves a MADR or confirms a
+    dispatch.** *Rejected:* letting it approve, which would put one person's agent in the
+    place of the person (`design.md`).
+21. **A reversal leaves the earlier MADR `accepted` until the reversal is accepted.** A reader
+    who lands on the old decision is never sent to a reversal nobody approved.
+22. **A summary names the messages it could not read,** and where the scribe cannot tell
+    whether content was withheld, says that some may be missing. It never claims every message
+    was read.
+23. **Approving a MADR takes authority over the repository holding it,** not over the
+    discussion's home repository, because the MADR is a file in that repository.
 
 **Still open:**
 
@@ -89,32 +135,48 @@ The questions under *Still open* need answers before gate two builds anything.
   tracker and code host. `work-claiming` and `docs/architecture.md` also describe Discord as a
   surface that directs work but holds no claim, which neither of those roles covers. A
   discussion may be that directing role, made explicit, or a separate one. This change leaves
-  `surface-adapter` unchanged until that is decided.
+  `surface-adapter` unchanged until that is decided. The answer covers more than the scribe:
+  the inquisitor (#211), an Igor that asks the team the questions it must decide, and searches
+  the scribe's record before asking, works in the same discussions.
 - **How the index file is stored and named, and how records are written.** A record could
   reach the repository by pull request, as lore does, or by direct commit. No action in a
   role's closed `allow` list commits to a default branch, so a direct commit needs a new one.
+  By pull request, a decision is approved twice, in the discussion and at merge, and which of
+  the two makes a MADR `accepted` is part of this question.
+- **Which `allow` actions write a record, post in a discussion, pin and propose lore.** None
+  of `role-config`'s closed set names them. The set includes `send`, but `role-config` does not
+  say what it sends, so it cannot be assumed to post in a discussion. Until they are named,
+  a scenario that says which action the role lacks has nothing to name.
 - **How a person's approval is recognised on each surface.** On GitHub, pull request #140
   matches a reply against options an Igor recorded, but only on an artifact the Igor authored,
   and a discussion is not one. #160's mapping says who a Discord user is, not how they approve.
   Slack and Linear have neither.
 - **How often the scribe summarises, and what budget it draws on.** `directed-interaction`
   charges talking to a fraction of cycle budget, and `seat-budget` bounds a role by
-  `budget_share`. Which of them a summary draws on is undecided.
+  `budget_share`. Which of them a summary draws on is undecided. A third option, which Adam
+  has not decided: a seat holding an API key paid by the monthly API credits of a Claude Max
+  plan, capped by the Claude Console's spend limit. A busy channel then cannot drain the
+  subscription seat the team's coding work draws on, and when the credits run out the
+  scribe's calls stop until the next month.
 - **How a post from a personal agent is marked as a proposal.** Until it is, the spec treats
   an unmarked post as the person's own.
 - **Whose posts go into the record.** Anyone who can post in a channel can put an argument into
   a repository file, including someone with no authority.
 - **Through what action the scribe proposes a lore candidate.** `lore-from-corrections`
-  defines `propose-lore` for corrections only, and proposes only when a correction recurs. The
-  scribe proposes from one accepted decision that states a rule for future work, so that action
-  needs extending, or the scribe needs its own.
-- **Which repository is the shared specs repository.** None is named yet.
+  defines `propose-lore` for corrections, and proposes one when it recurs or contradicts what
+  the store already says. The scribe proposes from one accepted decision that states a rule
+  for future work, so that action needs extending, or the scribe needs its own.
+- **What keeps two scribe processes from colliding.** `role-config` makes processes running one
+  role interchangeable, and `concurrent-instances` coordinates them through claims, which the
+  scribe never takes. Two processes could number two MADRs alike, or post the same scheduled
+  summary twice. Once the mechanism is chosen, a TLA+ model beside this spec checks it.
 - **How a role names the discussion it watches.** In `role-config`, a `sources` entry names a
   tracker and carries its query; a channel or a document is neither.
 - **What the first surface can do, measured.** Whether Discord gives a bot the content of
   messages that do not mention it, which needs its Message Content intent (#160); whether a
   Linear document can be read incrementally, from the last position handled, and whether Linear can pin; and whether a mention
-  of an Igor App on GitHub can be found at all (pull request #140, task 8.9).
+  of an Igor App on GitHub can be found at all (pull request #140, task 8.9). And on each
+  surface, whether a message whose content was withheld can be told from an empty one.
 
 ## Why
 
@@ -131,8 +193,7 @@ memory of what was decided, and someone to file the follow-up work.
   record it keeps and where, how it dispatches, how it answers, and how it feeds lore.
 - No in-force spec changes. Whether `surface-adapter` gains a discussion role is open.
 - `README.md` and `docs/architecture.md` §0 no longer tell each person to decide with their own
-  AI. Each says deciding happens in a shared discussion, and that the scribe is not built and
-  its design is this change.
+  AI. Each says deciding happens in a shared discussion, and that the scribe keeps its record.
 
 ## Capabilities
 
@@ -154,7 +215,17 @@ None.
   filing an issue without claiming it.
 - **`lore-from-corrections`** (open change) adds `propose-lore`, the role action that lets an
   Igor submit a lore candidate for review. It covers corrections only today.
-- **#160** builds the Discord adapter, if Discord comes first.
+- **#160** builds the Discord adapter, if Discord comes first, and defines the mapping from a
+  Discord account to a code-host login that this change extends to each surface.
+- **Pull request #153** (`signed-publishing`) requires every post a model writes, for a role
+  that lists the prose skill, to carry a valid prose footer, and sets rules for every commit
+  Igor pushes. Once it lands, the scribe's summaries, filed issues and record commits must meet
+  them.
+
+`directed-interaction` states in its proposal that an Igor replies only when addressed, but no
+requirement there states it. This change cites the requirements that do exist: *A mention
+narrows what an Igor may do and claims nothing*, and the scenario *A stranger's mention changes
+nothing*.
 
 ## Impact
 

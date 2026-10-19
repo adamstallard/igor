@@ -49,9 +49,12 @@ from.
 
 A scribe that posted in response to every message would spend its budget on the busiest thread
 and say least where a summary helps most. So it posts on a schedule, or when asked. A
-scheduled summary is not a reply to anyone, which is why `directed-interaction`'s rule that an
-Igor replies only when addressed does not forbid it. That rule still governs every answer the
-scribe gives a person.
+scheduled summary is not a reply to anyone. `directed-interaction` has two rules for mentions:
+a stranger's mention gets no reply, and a mention narrows what an Igor may do. Neither forbids
+a scheduled summary, and both still govern every answer the scribe gives a person. A request
+for a summary only brings the next scheduled one forward. The summary is one the scribe would
+have posted anyway, so the mention that asked for it adds nothing to what the scribe may do. A
+request from someone without authority brings nothing forward.
 
 ### Authority comes from `directed-interaction`, through a home repository
 
@@ -63,7 +66,10 @@ authority, which fails closed.
 
 A question or a request for a summary concerns no repository of its own, so each discussion
 has a home repository, and authority in the discussion is authority over it. Approving a MADR
-or confirming a dispatch is checked against the repository that MADR or dispatch lands in.
+is checked against the repository holding it. Confirming a dispatch is checked against the
+repository the work concerns, whichever tracker the issue is filed on. An issue filed on GitHub
+usually lands in that repository anyway. An issue filed on Linear lands in no repository at
+all, so only the work can say which repository's write access counts.
 
 **How an approval is expressed is open.** Pull request #140, which extends
 `directed-interaction`, matches a reply against numbered options an Igor recorded when it asked,
@@ -109,11 +115,15 @@ argument. It does not add arguments of its own, rank the options, or recommend o
 that recommended would make the scribe one more voice in the discussion, and the team could
 not tell its view from the team's.
 
-### Lore candidates name the approvers
+### Lore candidates name an approver
 
 The people who approved a decision asserted it; the scribe only noticed it. `lore-review` sends a
-candidate to its authors for review, so naming the approvers sends it to people who can confirm
-what they meant, as `lore-from-corrections` names the correcting person rather than the Igor.
+candidate to its author for review, so naming an approver sends it to someone who can confirm
+what was meant, as `lore-from-corrections` names the correcting person rather than the Igor.
+`lore-store` gives each provenance item one author and counts support from the items. One item
+per approver would count a single decision as support several times. So a decision is one
+item, and its author is the first person to approve it: any approver can confirm what was
+meant, and the first is the one the MADR records without ambiguity.
 The candidate's provenance cites the MADR, which lives in a repository, so `lore-review`'s
 refusal to put an entry citing a private repository into a public store applies unchanged.
 
