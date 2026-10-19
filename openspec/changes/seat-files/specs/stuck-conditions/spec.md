@@ -132,14 +132,15 @@ Recurrence is the trigger, except for the two conditions below. A first occurren
 carries the diff, and a handoff naming the missing command is how the cure gets found at all.
 The twentieth is waste, whatever the cause.
 
-Two conditions open on their first occurrence. The first is a refused GitHub App credential,
-which stops the Igor itself. An Igor whose App is refused can do nothing on GitHub, so no item
-it takes could find the cure, and `app-identity` already requires that it take no new item while
-refused. The second is the read-cleared condition on a seat file Igor fails to decrypt, which
-seat-budget's *A seat's token travels as ciphertext in its file* opens. Unlike the first, it
-stops nothing (*A read-cleared condition opens on a failing read and clears on a passing one*). Such a seat is never
-chosen and never probed, so no run or probe item ever uses it, and reading the file again is the
-only observation of its cure.
+Two kinds of condition open on their first occurrence. The first is a refused GitHub App
+credential, which stops the Igor itself. An Igor whose App is refused can do nothing on GitHub,
+so no item it takes could find the cure, and `app-identity` already requires that it take no new
+item while refused. The second is a read-cleared condition, such as the one on a seat file Igor
+fails to decrypt, which seat-budget's *A seat's token travels as ciphertext in its file* opens,
+or on a malformed seat file, which its *A malformed seat file takes only its own seat out* opens.
+Unlike the first, it stops nothing (*A read-cleared condition opens on a failing read and clears
+on a passing one*). Such a seat is never chosen and never probed, so no run or probe item ever
+uses it, and reading the file again is the only observation of its cure.
 
 #### Scenario: A recurring condition stops the scope
 
@@ -149,7 +150,7 @@ only observation of its cure.
 #### Scenario: A first occurrence is not a condition
 
 - **WHEN** a cure key is recorded for the first time, other than a refused App credential or a
-  seat file Igor fails to decrypt
+  read-cleared condition
 - **THEN** work continues, because one occurrence is what finds the cure
 
 #### Scenario: A refused App credential stops at once
@@ -244,8 +245,8 @@ capacity that was never affected.
 
 #### Scenario: A seat-scoped condition stops every role on that seat
 
-- **WHEN** a seat's token cannot be read, for a reason other than a seat file Igor cannot
-  decrypt, and it is the only seat serving each role drawing on it
+- **WHEN** a seat's token cannot be read, under a condition that is not read-cleared, such as an
+  unset `token_env` variable, and it is the only seat serving each role drawing on it
 - **THEN** every role drawing on that seat stops, whatever their own configuration says
 
 #### Scenario: An undecryptable seat's condition stops no role

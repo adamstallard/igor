@@ -21,6 +21,10 @@ the accepted ones:
 A *lent seat* is one whose file names `encrypted_token`: a person's subscription, lent to the
 team's Igors.
 
+Where this requirement or *A seat file names its token only by ciphertext or its own variable*
+refuses a seat file, the refusal takes that file's seat out and fails nothing else, as *A
+malformed seat file takes only its own seat out* says.
+
 `roles` SHALL be a list of strings, each naming a role file under `roles/` other than the org
 base. A name with no role file SHALL be refused, naming the seat file, the name, and the roles
 that exist. An empty list is a seat that serves nothing, which a holder may want while they decide.
@@ -145,8 +149,88 @@ file cannot name `GH_TOKEN`, or another seat's variable.
 #### Scenario: A seat naming no token is refused
 
 - **WHEN** a seat file names neither `encrypted_token` nor `token_env`
-- **THEN** it is refused at load, naming the file and both keys
+- **THEN** it is refused, naming the file and both keys, and its seat is taken out
 - **AND** nothing is spent on a stored Claude login in its place
+
+### Requirement: A malformed seat file takes only its own seat out
+
+A seat file is *malformed* where it does not parse as YAML, or where *A seat is a file under
+`seats/`, and its filename is its id* or *A seat file names its token only by ciphertext or its
+own variable* refuses it. A plain token in `encrypted_token` is the one exception: it fails the
+configuration, as *A seat's token travels as ciphertext in its file* says, so that its holder is
+told to revoke it.
+
+A malformed seat file SHALL NOT fail the configuration. Its seat SHALL be ineligible: seat choice
+SHALL NOT pick it, #143's probe SHALL skip it, and no token SHALL be read from it. It is under a
+read-cleared condition (`stuck-conditions`' *A read-cleared condition opens on a failing read and
+clears on a passing one*): what is read is the file, on a lore read; failing is being malformed;
+the condition is on the seat the filename names, with cure key `seat:<id>:file`. A file whose
+name is not a seat id names no seat; every such file is under one read-cleared condition,
+`seats:filename`.
+
+The condition's report SHALL name the file and say it is malformed, with no other text from the
+file, since a handoff may quote it on a public issue. It SHALL name the file only where its name
+has a seat id's form, and otherwise say that a file under `seats/` has a name that is not a seat
+id. The refusal's own text, which names the offending key or value, SHALL be shown by the
+configuration's validation, and so by `igor doctor`, and by `igor budget`.
+
+The roles a malformed file lists, where its `roles` reads as a list of names that have role
+files, are served by its seat, which is ineligible, so such a role hands off rather than stops
+(*A role draws on the seat with the most headroom*). Where a malformed file's roles cannot be
+read, or its name is not a seat id, whose `roles` Igor does not read, Igor cannot tell which roles
+it serves. So while any such file is present, a role that no
+other seat file lists SHALL NOT be refused at load for want of a seat: it has no usable seat, and
+it hands off each item, naming each open condition on a malformed seat file. A role whose `seat:`
+names a malformed file's seat SHALL NOT be refused either, and draws on that seat alone, which is
+ineligible.
+
+Taking one seat out keeps every other role working. Refusing the whole configuration would stop
+every role at start and, under `lore-pull` (#208), refuse the whole pull, for a fault in one
+file.
+
+#### Scenario: A malformed seat file takes only its seat out
+
+- **WHEN** `seats/bob.yaml` declares `reserv: 0.5`, and `seats/adam.yaml` is well formed
+- **THEN** the configuration loads, and roles served by `adam` keep working
+- **AND** `bob` is never chosen or probed, and `seat:bob:file` opens, its report naming
+  `seats/bob.yaml` and saying it is malformed
+- **AND** `igor doctor` shows the refusal naming the key `reserv`
+
+#### Scenario: A fixed seat file clears its condition
+
+- **WHEN** `seat:bob:file` is open and a later lore read finds `seats/bob.yaml` well formed
+- **THEN** the condition clears, and `bob` is eligible again
+
+#### Scenario: A role whose only seat file is malformed hands off
+
+- **WHEN** the only seat file listing `generalist` is malformed, and its `roles` still reads as
+  `[generalist]`
+- **THEN** `generalist` is not refused at load, does not stop, and hands off each item naming
+  `seat:<id>:file`
+
+#### Scenario: A seat file that does not parse leaves unlisted roles handing off
+
+- **WHEN** `seats/bob.yaml` is not valid YAML, and no other seat file lists `generalist`
+- **THEN** `generalist` is not refused at load, and hands off each item naming `seat:bob:file`
+
+#### Scenario: A file whose name is not a seat id names no seat
+
+- **WHEN** `seats/Bob_1.yaml` is present beside well-formed seat files
+- **THEN** the configuration loads, and `seats:filename` opens, its report saying a file under
+  `seats/` has a name that is not a seat id, without the name
+- **AND** `igor doctor` names `seats/Bob_1.yaml`
+
+#### Scenario: A role naming a malformed file's seat is not refused
+
+- **WHEN** `frontend` names `seat: bob`, and `seats/bob.yaml` is malformed
+- **THEN** `frontend` is not refused at load, draws only on `bob`, which is ineligible, and hands off naming
+  `seat:bob:file`
+
+#### Scenario: A plain token still fails the configuration
+
+- **WHEN** a seat file's `encrypted_token` is a plain token
+- **THEN** the configuration is refused at load, and the refusal tells the holder to revoke the
+  token
 
 ### Requirement: A seat's token travels as ciphertext in its file
 
@@ -167,16 +251,31 @@ A value that does not begin with `YWdlLWVuY3J5cHRpb24ub3JnL3Yx`, the base64 of
 `age-encryption.org/v1`, SHALL be refused at load, naming the file, and saying that a plain token
 committed to the repository is to be revoked at Anthropic and replaced with ciphertext. A plain
 token in a seat file is a credential in git history, and the refusal is the only place anybody is
-told.
+told. So, unlike every other refusal of a seat file, this one fails the configuration (*A
+malformed seat file takes only its own seat out*).
 
 `igor serve` SHALL decrypt a seat's token only on a lore read, `lore-pull`'s (#208) term for an
 Igor process loading its configuration, role files and seat files
 from one commit: at start, and at each cycle start, where #179 rereads the configuration and,
-once built, #208 makes its lore read. Until #208 pulls the checkout, the seat files change only
+once built, #208 makes its lore read. Besides those, the gate's re-read of a single seat file,
+below, is a lore read of that one file. Until #208 pulls the checkout, the seat files change only
 when someone updates the checkout by hand. `igor run` decrypts nothing (*A lent seat is decrypted
 only where the worker has a user of its own*). It SHALL NOT decrypt when it starts a worker or a
 probe: each is given the plaintext Igor holds from its last read, held as *A decrypted seat token
-never touches the server's disk* requires. Where decryption fails, the seat SHALL be reported
+never touches the server's disk* requires.
+
+A process can find a lent seat eligible while holding no plaintext for it. The seat's condition
+is shared by every Igor process, since each rebuilds it from the one execution log, but each
+process holds only the plaintext of its own last read, so another process's passing read can
+clear a condition this process's failing read opened. Where the gate would choose a lent seat for
+which the process holds no plaintext, the process SHALL first read that one seat file again,
+from the commit it last applied, before using the seat, at most once a cycle. Where that read
+decrypts the file, the process holds the plaintext and may use the seat. Where it fails, the
+process SHALL pass the seat over for itself only and SHALL NOT reopen the condition or append a
+condition row: another process's passing read has just shown the file decrypts, and reopening
+the shared condition would take the seat from every process holding a good token.
+
+Where decryption fails, the seat SHALL be reported
 unreadable with the reason, and no other credential SHALL be used in its place. Decryption fails
 where no `seatKey` is declared, the key file cannot be read, the key does not match, the
 ciphertext does not decrypt, or the plaintext does not name the file's own seat id. A seat whose token Igor cannot decrypt SHALL be ineligible: seat choice SHALL NOT
@@ -188,13 +287,14 @@ no eligible seat is *A role draws on the seat with the most headroom*.
 
 Where the key is read but the seat's ciphertext does not decrypt with it, because it was
 encrypted to another key or is corrupt, or decrypts to a plaintext naming another seat's id or
-none, that condition's report SHALL name the seat and its
-`owner`, the lender, so that someone re-lends it; where the file names no `owner`, the report
-SHALL say so, and that the operator re-lends the seat or removes its file. The report SHALL show
-the `owner` only where it has a GitHub login's form, letters, digits and single hyphens, and
-then in a code span, so that a handoff quoting it on a public issue carries no @-mention, link
-or markup from the seat file; any other `owner` SHALL be reported as not a GitHub login, with
-none of its text shown. Where the plaintext
+none, that condition's report SHALL name the seat and say that its
+lender re-lends it; where the file names no `owner`, the report SHALL say so, and that the
+operator re-lends the seat or removes its file. The report SHALL NOT name the `owner`: a handoff
+may quote it on a public issue, even where the lore repository is private. A lender's login SHALL
+appear only in `igor doctor` and `igor budget`, which the operator reads. Where `igor budget`
+shows a seat it cannot decrypt, or one under `seat:<id>:decrypt`, it SHALL name the seat's
+`owner`, showing it only where it has a GitHub login's form, letters, digits and single hyphens,
+and otherwise saying the `owner` is not a GitHub login, with none of its text shown. Where the plaintext
 names another seat's id, or none, the report SHALL also say so. It SHALL name the id it found
 only where that id has a seat id's form, and then in a code span; anyone can encrypt any text to
 the public key, so any other text before the colon SHALL NOT be shown. Where no `seatKey` is
@@ -239,8 +339,8 @@ can read the lore repository, which may be anyone.
 - **WHEN** `seats/eve.yaml` carries the `encrypted_token` copied from `seats/bob.yaml`, which
   decrypts to `bob:<token>`
 - **THEN** seat choice never picks `eve`, and #143's probe does not probe it
-- **AND** the condition `seat:eve:decrypt` opens, and its report names `eve`, its owner, and the
-  id `bob` that the plaintext holds
+- **AND** the condition `seat:eve:decrypt` opens, and its report names `eve` and the id `bob`
+  that the plaintext holds, and not `eve`'s owner
 - **AND** `bob` itself is unaffected
 
 #### Scenario: A plaintext with no seat id is refused
@@ -272,11 +372,11 @@ can read the lore repository, which may be anyone.
 - **THEN** the condition's report says the plaintext names another seat or none, and shows none
   of the text before the colon
 
-#### Scenario: A report shows an owner only in a login's form
+#### Scenario: `igor budget` shows an owner only in a login's form
 
-- **WHEN** a seat whose file names `owner: "x\n\n@everyone"` cannot be decrypted
-- **THEN** the condition's report says the seat's `owner` is not a GitHub login, and shows none
-  of its text
+- **WHEN** a seat whose file names `owner: "x\n\n@everyone"` cannot be decrypted, and an operator
+  runs `igor budget`
+- **THEN** the seat's line says its `owner` is not a GitHub login, and shows none of its text
 
 #### Scenario: A report says when a seat names no owner
 
@@ -328,19 +428,23 @@ can read the lore repository, which may be anyone.
 - **AND** each of the two reads appends a condition row, and a read between them that still
   fails to decrypt `bob` appends none
 
-#### Scenario: An owner in a condition report carries no markup
-
-- **WHEN** `seats/bob.yaml`, whose `owner` is ``@team [x](https://example.com)``, carries
-  ciphertext that does not decrypt
-- **THEN** the condition's report says the seat's `owner` is not a GitHub login, and shows none of
-  its text, so it mentions nobody and links nowhere
-
-#### Scenario: A lent seat that does not decrypt is skipped, and its lender named
+#### Scenario: A lent seat that does not decrypt is skipped, and its lender named only to the operator
 
 - **WHEN** `seats/bob.yaml`, whose `owner` is `bobsmith`, carries ciphertext that is corrupt or
   was encrypted to another key, and `seatKey` names a key Igor can read
 - **THEN** seat choice never picks `bob`, and #143's probe does not probe it
-- **AND** the seat's condition names the seat `bob` and its owner `bobsmith`
+- **AND** the seat's condition report names the seat `bob`, says its lender re-lends it, and does
+  not contain `bobsmith`, so no handoff quoting it names the lender
+- **AND** `igor budget` names `bobsmith` as the seat's owner
+
+#### Scenario: A process with no token for an eligible seat reads its file first
+
+- **WHEN** one Igor process failed to decrypt `seats/bob.yaml` and holds no token for `bob`, and
+  another process's passing read has since cleared `seat:bob:decrypt`
+- **AND** the gate would choose `bob` for the first process
+- **THEN** that process makes a lore read of `seats/bob.yaml` before using `bob`
+- **AND** it uses `bob` only where that read decrypts the file; otherwise it passes `bob` over
+  for itself, and `seat:bob:decrypt` stays clear for the other processes
 
 #### Scenario: A key file that cannot be read is unreadable, not substituted
 
@@ -365,7 +469,8 @@ single seat with `seat:`, and then SHALL draw on that seat alone. A role SHALL b
 - where it names no seat and no seat file lists it, saying a seat file must list it.
 
 Under `igor run` none of these refusals applies: the run's one seat is its implicit local seat
-(*`igor run` spends its own token as an implicit local seat*).
+(*`igor run` spends its own token as an implicit local seat*). Where a seat file is malformed, *A
+malformed seat file takes only its own seat out* says which of them still apply.
 
 Which roles a seat serves is decided in the seat's own file and nowhere else. A `seat:` that could
 point a role at a seat whose file does not list it would be a second link the holder cannot see,
@@ -415,16 +520,25 @@ passed over, and the role SHALL keep working on its other eligible seats.
 Where no seat serving the role is eligible, exactly one of two things SHALL happen:
 
 - **The role stops** (`stuck-conditions`' *A condition that recurs stops the affected scope from
-  taking new work*), where every seat serving it is under an open
-  condition and none of those conditions is read-cleared, such as a refused credential or an unset
+  taking new work*), where at least one seat serves it, every seat serving it is under an open
+  condition, and none of those conditions is read-cleared, such as a refused credential or an unset
   `token_env` variable on every seat.
-- **Otherwise the Igor hands off the item** and the role does not stop. This covers every seat at
+- **Otherwise the Igor hands off the item** and the role does not stop. This covers a role no
+  seat serves, as after a removal or beside a malformed file whose roles cannot be read; every seat at
   its line; some seats under a condition and the rest at their lines; and any case where at least
   one seat is under a read-cleared condition, such as a seat whose file Igor could not decrypt,
   whatever the other seats' state. The handoff SHALL name each open condition on the role's
   seats. For a seat under a read-cleared condition it SHALL state no line crossing or reset, since
-  the seat may have no reading, and the reason Igor records SHALL be the condition, not holding
-  back at the line.
+  the seat may have no reading.
+
+Where every seat serving the role is under an open condition, and so none is merely at its line,
+the handoff SHALL be a *condition handoff*: it names each condition and its cure, such as
+re-lending the seat or fixing the server's key, states no return time, and records the condition
+as its reason. No reset brings such a seat back, so a return time would be false. A condition
+handoff is not a budget handoff, so graceful-handoff's *A budget handoff states when capacity
+returns* does not apply to it. Where at least one seat serving the role is at its line, the
+handoff is a budget handoff, which states when that capacity returns and also names each open
+condition.
 
 The tie-break spends the capacity a reset is about to destroy: leftover capacity in a week is lost
 at its reset, while a session refills within hours.
@@ -486,15 +600,14 @@ at its reset, while a session refills within hours.
 - **THEN** the role draws on the other seat
 - **AND** the role does not stop for the first seat's condition
 
-#### Scenario: A role whose only seat is undecryptable waits as at its line
+#### Scenario: A role whose only seat is undecryptable hands off rather than stops
 
 - **WHEN** the only seat serving a role has an open condition because its token cannot be
   decrypted
-- **THEN** the role does not stop
-- **AND** it hands off as a role whose seats are all at their lines does, and the handoff names
-  the condition
-- **AND** the handoff states no line crossing for that seat, and the reason recorded is the
-  condition, not holding back at the line
+- **THEN** the role does not stop, and hands off each item with a condition handoff
+- **AND** the handoff names the condition and its cure, re-lending the seat or fixing the
+  server's key, and states no return time
+- **AND** the reason recorded is the condition, not holding back at the line
 
 #### Scenario: Seats under a condition and seats at their lines are a handoff
 
@@ -513,10 +626,19 @@ at its reset, while a session refills within hours.
 The lore repository SHALL carry a workflow, shipped as `templates/seat-notice.yml` and installed
 by `igor init`, that comments on every pull request changing, renaming or deleting a file at
 `seats/<id>.yaml`, @-mentioning that seat's owner. The owner SHALL be read from the default
-branch's copy of the file. An owner SHALL be mentioned at most once per pull request, SHALL NOT be
+branch's copy of the file. An owner SHALL be mentioned on every push that changes their seat
+file, and on every opening, reopening, marking ready for review and change of base branch of a
+pull request that changes it. The workflow SHALL NOT read earlier comments to decide whom to
+mention, so no comment, whoever posted it, can stop a mention. An owner SHALL NOT be
 mentioned for an event they caused on a pull request they opened, and SHALL NOT be mentioned where `owner` does not
 have a GitHub login's form, letters, digits and single hyphens. The workflow checks the form
 only, not that the login exists; `igor doctor` checks that.
+
+On a push, the seat files changed SHALL be those that differ between the pull request's head
+before the push and after it; where the head before the push cannot be fetched, as after some
+force-pushes, they SHALL be those that differ between the base and the new head. On every other
+event they SHALL be those that differ between the base and the head. An edit that leaves the
+base branch unchanged, such as a new title, SHALL mention nobody.
 
 The workflow SHALL run on GitHub-hosted runners, triggered by `pull_request_target` so that it can
 comment on pull requests from forks, and by no other event. It SHALL run when a pull request is
@@ -525,15 +647,14 @@ branch. The trigger SHALL have no `paths`
 filter, so that it runs on every pull request: GitHub's path filter misses seat files on large
 pull requests (`design.md`, *The lender hears about a change to their seat file*). The workflow SHALL find the seat files a pull request
 changes by fetching the pull request's commits as git data, with no checkout and no file
-contents, and comparing the trees of its base and head under `seats/`. It SHALL take nothing from
+contents, and comparing under `seats/` the trees of the two commits the paragraph above names
+for the event. It SHALL take nothing from
 the head but those paths' names, SHALL match each against `^seats/[a-z0-9][a-z0-9-]*\.yaml$`
 before use, and SHALL run nothing from the head. Its token SHALL be limited to reading contents
 and writing pull requests.
 
 Igor SHALL NOT comment on an open lore pull request about a seat file; its own notice comes only
 after a seat-file change lands and Igor pulls it (`lore-pull`, #208).
-
-A mention SHALL be recognised as already made only from a comment the workflow itself posted.
 
 The lore repository's default branch SHALL require a pull request before merging, because only
 a pull request's notice reaches the lender before the change lands. `igor doctor`
@@ -564,6 +685,12 @@ path names from the head is part of this requirement, not a detail of the templa
 
 - **WHEN** a pull request changes 3,101 files, and `seats/bob.yaml` sorts after the first 3,000
 - **THEN** the workflow runs, and `@bob` is mentioned
+
+#### Scenario: Marking a draft ready mentions the owner again
+
+- **WHEN** a draft pull request that changes `seats/bob.yaml`, opened by someone other than
+  `bob`, mentioned `@bob` when it was opened, and is then marked ready for review
+- **THEN** `@bob` is mentioned
 
 #### Scenario: A pull request with no seat file gets no comment
 
@@ -608,17 +735,29 @@ path names from the head is part of this requirement, not a detail of the templa
   commit to it that changes the file's roles
 - **THEN** `@bob` is mentioned
 
-#### Scenario: A later push does not repeat a mention
+#### Scenario: Each push that changes a seat file mentions its owner again
 
-- **WHEN** a pull request already mentioned `@bob`, and a later push to it also changes
-  `seats/dana.yaml`
-- **THEN** a new comment mentions `@dana` only
+- **WHEN** a pull request already mentioned `@bob`, and a later push to it changes
+  `seats/bob.yaml` again and also changes `seats/dana.yaml`
+- **THEN** a new comment mentions `@bob` and `@dana`
 
-#### Scenario: A mention someone else wrote does not count
+#### Scenario: A push that leaves the seat files alone mentions nobody
 
-- **WHEN** the pull request's author posts a comment shaped like the workflow's notice that
-  mentions `@bob`, then changes `seats/bob.yaml`
+- **WHEN** a pull request already mentioned `@bob`, and a later push to it changes only
+  `roles/triage.yaml`
+- **THEN** no one is mentioned for that push
+
+#### Scenario: No comment can silence a mention
+
+- **WHEN** a comment posted as `github-actions[bot]`, by a workflow another pull request brought,
+  is shaped like the workflow's notice and mentions `@bob`, and a later push changes
+  `seats/bob.yaml`
 - **THEN** the workflow still mentions `@bob`
+
+#### Scenario: A new title mentions nobody
+
+- **WHEN** a pull request that changes `seats/bob.yaml` is edited to change only its title
+- **THEN** the workflow mentions no one
 
 #### Scenario: The workflow holds no more than it needs
 
@@ -663,8 +802,8 @@ installed, and SHALL:
 3. Encrypt `<id>:<token>`, the seat's id, a colon and the token, to that key, as *A seat's token
    travels as ciphertext in its file* requires, and base64-encode the result on one line.
 4. Where `seats/<id>.yaml` does not exist on the default branch, write it with the holder's GitHub
-   login as `owner`, the `reserve` and `roles` given as options, and the ciphertext as
-   `encrypted_token`. That login comes from `gh`, so it is always a GitHub login. A hand-written
+   login as `owner`, the `reserve` and `roles` given as options or answered at the prompts below,
+   and the ciphertext as `encrypted_token`. That login comes from `gh`, so it is always a GitHub login. A hand-written
    seat file's `owner` may not be one, and `igor doctor` checks that.
 5. Where `seats/<id>.yaml` already exists on the default branch and names `encrypted_token`,
    replace its `encrypted_token` and change nothing else. This is how a token is rotated. Where it
@@ -682,6 +821,13 @@ there is no `upstream`. Outside a clone,
 the command SHALL refuse without `--lore`, before reading the token. Before reading the token, the
 command SHALL print the lore repository the token will be encrypted for and the pull request
 opened against, and where it took that repository from a remote, which remote.
+
+For a new seat, where `--reserve` or `--roles` is left out, the command SHALL prompt for it
+before reading the token, explaining what it sets. The reserve prompt says it is the share of
+each usage window Igors leave for the holder, from 0 to 1, and asks again until it gets one. The
+roles prompt lists the roles the default branch defines and says the seat serves only the roles
+named; an empty answer is a seat that serves nothing yet. A rotation prompts for neither, since it
+changes only `encrypted_token`.
 
 The command SHALL require `gh`, installed and signed in, and SHALL refuse before reading the token
 where it is missing or signed out. Igor SHALL NOT hold the holder's GitHub credentials: `gh` keeps
@@ -705,6 +851,20 @@ copy, and whoever replaces `recipient.txt` receives every token encrypted to it 
   does not exist
 - **THEN** a pull request adds `seats/bob.yaml`, carrying ciphertext only the server's key
   decrypts, of `bob:` followed by the token
+
+#### Scenario: A left-out reserve and roles are asked for
+
+- **WHEN** a holder runs `igor seat add bob` without `--reserve` or `--roles`, and
+  `seats/bob.yaml` does not exist
+- **THEN** before reading the token, the command asks for the reserve, explaining it, and for the
+  roles, listing those the default branch defines
+- **AND** the seat file it writes carries the answers
+
+#### Scenario: A rotation asks for neither
+
+- **WHEN** a holder runs `igor seat add bob` without `--reserve` or `--roles`, and
+  `seats/bob.yaml` exists on the default branch
+- **THEN** the command asks for neither, and the pull request changes only `encrypted_token`
 
 #### Scenario: A holder without write access lends from a fork
 
@@ -791,6 +951,18 @@ Igor's own user (#175's `task-execution`), and so could read the key `seatKey` n
 every lent token. A lent seat left undecrypted there has no fault in its file, so it SHALL raise no
 condition. `igor run` spends no seat file's seat in any case (*`igor run` spends its own token as
 an implicit local seat*).
+
+Not decrypting is not enough where `igor run` can read the key itself, as when someone runs it as
+the service user on the server: its worker, running as the same user, could read the key and
+decrypt every lent token without Igor. So where the configuration names a `seatKey` and `igor
+run` can read the file at that path, `igor run` SHALL refuse to start, before any model call,
+naming the path.
+
+#### Scenario: `igor run` refuses where it can read the server's key
+
+- **WHEN** `igor run` starts as a user who can read the file `seatKey` names
+- **THEN** it refuses before any model call, naming that path
+- **AND** no worker starts
 
 #### Scenario: `igor run` decrypts no lent seat
 

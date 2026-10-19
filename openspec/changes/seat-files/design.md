@@ -37,11 +37,10 @@ a fork.
    starting one decrypts nothing (Adam, 2026-10-18).
 
 Rotating is the same pull request with new ciphertext: `igor seat add` again. A lender revokes by
-revoking the token at Anthropic; the operator can also remove the seat file, which takes effect
+revoking the token at Anthropic, through the claude.ai web interface (Adam, 2026-10-19, who named
+the interface but not the page); the operator can also remove the seat file, which takes effect
 when the server's lore checkout next updates. Adam decided on 2026-10-17 not to measure how soon
-Anthropic refuses a revoked token, so no guide promises a speed. That a holder can revoke a
-`setup-token` at all, and how, has not been measured; task 1.2 measures it, and the lender's veto
-rests on it.
+Anthropic refuses a revoked token, so no guide promises a speed.
 
 ### The server's private key is the whole protection
 
@@ -66,15 +65,19 @@ operator must get right:
   file Igor cannot read, a wrong key, or a corrupt file), the seat is ineligible: seat choice
   never picks it and #143's probe skips it, and it is under a condition on the seat. For a wrong
   key or a corrupt file the cure is the lender's, so the condition's report names the seat and
-  its `owner`, so that someone re-lends it. For a missing `seatKey` or an unreadable key file the
+  says its lender re-lends it. It does not name the lender: a handoff may quote the report on a
+  public issue, so a lender's login appears only in `igor doctor` and `igor budget`, which the
+  operator reads (Adam, 2026-10-19). For a missing `seatKey` or an unreadable key file the
   cure is the operator's, and the report names the key, as task 3.4 words it.
 - **That condition is tied to reading seat files** (Adam, 2026-10-17). #101 opens a seat's
   condition when handoffs keep naming it, and clears it with #143's probe. A seat that is never
   picked causes no handoff, and the probe skips it, so neither path reaches it. Instead Igor
   opens the condition when a lore read fails to decrypt the seat's file, at start and at each cycle start, and clears it when a later lore read decrypts
-  the file, as when the lender re-lends. The condition stops no role: the role treats the seat as
-  it treats a seat that has reached its line. So a role with no other usable seat hands off each item, as a role whose seats have all
-  reached their lines does, and the handoff names the condition. The `stuck-conditions` delta
+  the file, as when the lender re-lends. The condition stops no role: a role with no other
+  usable seat hands off rather than stops. Its handoff is a condition handoff, naming the
+  condition and its cure, with no return time, since no reset brings the seat back (Adam,
+  2026-10-19). A condition handoff is not a budget handoff, so graceful-handoff's rule that a
+  budget handoff states when capacity returns does not reach it. The `stuck-conditions` delta
   carries both rules. Its block on #101's *A condition that recurs stops the affected scope
   from taking new work* says this condition opens on its first occurrence and clears on a good
   read, not by a probe item (proposal, decision 32). Its block on *A condition's scope is its
@@ -82,6 +85,19 @@ operator must get right:
   read-cleared condition, the kind this is. The delta's third block, on #101's *A condition
   clears by not recurring, and a probe is what observes that*, exempts that kind from the probe
   item.
+
+- **A process with no token for an eligible seat reads its file first** (Adam, 2026-10-19).
+  A condition is shared by every Igor process, each rebuilding it from the one execution log,
+  while each process holds only the plaintext of its own last read. So when one process's read
+  fails and another's passes, the passing read clears the condition, and the failing process
+  would find the seat eligible with no token for it. Before using a lent seat it holds no
+  plaintext for, a process reads that seat's file again, from the commit it last applied, at
+  most once a cycle. A pass gives it the token. A failure passes the seat over for this process
+  only, and opens nothing (proposal, decision 71): another process's passing read has just shown
+  that the file decrypts, so reopening the shared condition would take the seat from every
+  process that holds a good token, and the two processes would reopen and clear it in turn for
+  as long as they disagree. They disagree mostly while one has applied a newer lore commit than
+  the other, which ends at the other's next cycle.
 
 ### Why ciphertext in history no longer rules this out
 
@@ -167,6 +183,31 @@ its own id, with a reserve and roles that seat's holder never chose. Both are on
 an operator may merge without much scrutiny, since lending is meant to be easy. A seat id holds only lowercase letters,
 digits and hyphens, so no two ids map to the same name.
 
+### A malformed seat file takes only its own seat out
+
+A seat file with an unknown key, an `id` field, a role that has no file, no token, or YAML that
+does not parse takes only its own seat out (Adam, 2026-10-19). Its seat is under the read-cleared
+condition `seat:<id>:file`, and the configuration loads, so roles with other seats keep working.
+Refusing the whole configuration instead would stop every role at start, and under `lore-pull`
+(#208) refuse the whole pull, for one file.
+
+A plain token pasted into `encrypted_token` stays a refusal of the whole configuration. That
+refusal is the only place anybody tells its holder that the token is now in git history and must
+be revoked; a condition on one seat is too easy to miss.
+
+The condition's report names the file and says it is malformed, and quotes nothing else from it,
+since a handoff may carry it to a public issue. The refusal's own text, which names the key or
+value at fault, goes only where the operator reads: the configuration's validation, and so `igor
+doctor`, and `igor budget`. A file whose name is not a seat id names no seat, so every such file
+shares one condition, `seats:filename`, and its report names none of them. Its `roles` are not
+read.
+
+Where a malformed file's `roles` still reads as a list of known roles, those roles are served by
+a seat that is ineligible, and hand off rather than stop. Where it cannot be read, or the file's name is not a seat id, Igor cannot
+tell which roles the file serves. So while such a file is present, a role that no other seat file
+lists is not refused at load for want of a seat; it hands off naming the open conditions on
+malformed seat files (proposal, decision 72).
+
 ### The ciphertext is one line, and says what it is
 
 `encrypted_token` holds the binary age ciphertext, base64-encoded on one line with no wrapping, so
@@ -241,8 +282,8 @@ The operator's `token_env` seats name variables only the server sets. A seat fil
 developer's own would show their seat, and the roles it serves, to every reader of the lore
 repository.
 
-Three details follow from the decision. They are this change's interpretation, not Adam's words,
-and wait for him to confirm them (proposal, *Still open*):
+Three details are not in Adam's words of 2026-10-18. This change inferred them, and Adam
+confirmed them on 2026-10-19:
 - `igor run` draws on no seat file's seat, `token_env` seats included, so one rule says what it
   spends.
 - The implicit seat's id is `_run`. A seat file's id holds only lowercase letters, digits and
@@ -251,6 +292,11 @@ and wait for him to confirm them (proposal, *Still open*):
   seat file's.
 - Its reserve is 0, and the role's own `reserve` does not apply to it. `igor run` makes no probe,
   so a reserve would hold the seat back until a reading arrived, and no reading would arrive.
+
+Decrypting nothing does not keep the key from a worker that can read it itself. Someone who runs
+`igor run` as the service user on the server gives its worker, running as that same user, the key
+and so every lent token. So `igor run` refuses to start where it can read the file `seatKey`
+names (Adam, 2026-10-19).
 
 ## How a seat is chosen without pools
 
@@ -274,10 +320,10 @@ the one with the most headroom:
    them and restates none. A seat under
    such a condition is passed over, so a role with another eligible seat keeps working (Adam,
    2026-10-17). A role stops, as #101 says, only when every seat serving it is under a condition
-   and none of those is read-cleared; a seat whose file Igor could not decrypt is treated as a
-   seat that has reached its line. In every
+   and none of those is read-cleared. In every
    other case where the role has no eligible seat, such as some seats under a condition and the
-   rest at their lines, it hands off, and the handoff names each condition (Adam, 2026-10-17).
+   rest at their lines, it hands off rather than stops, and the handoff names each condition
+   (Adam, 2026-10-17).
 2. **Headroom** of a window is the role's line on that seat minus the reading, in percentage
    points. A seat's headroom is the smaller of its two windows' headrooms, because the window
    with less room is the one that stops it.
@@ -357,10 +403,10 @@ starts no workflow.
 request, and by nothing else.**
 It ships as `templates/seat-notice.yml`, and `igor init` installs it beside
 `reconcile-on-merge.yml`. Each time a pull request is opened, reopened, pushed to, marked ready
-or edited, which includes changing its base branch, it lists the seat files the pull request
-changes, renames or deletes, and posts one comment mentioning the owner of each whom no earlier
-notice on that pull request already mentioned. A pull request that touches no seat file gets no
-comment.
+or edited to change its base branch, it lists the seat files the event changes, renames or
+deletes, and posts one comment mentioning the owner of each. It mentions an owner again on every
+later push that changes their file (Adam, 2026-10-19), and reads no earlier comment to decide. A
+push that touches no seat file, or a pull request that touches none, gets no comment.
 
 **Decided 2026-10-18 (Adam): the trigger has no `paths` filter, and the workflow finds the seat
 files itself with git.** GitHub's path filter can miss a seat file on a large pull request.
@@ -385,10 +431,19 @@ files API's cap, is the likely value. Because of that cap, the workflow does not
 through the API either.
 
 Instead it fetches the pull request's commits as git data and compares trees:
-`git diff --name-only --no-renames -z <base>...<head> -- seats/`. The fetch takes trees and
+`git diff --name-only --no-renames -z <base>...<head> -- seats/`. On a push it compares the head
+before the push with the head after it instead, so the comment names what that push changed.
+Where the earlier head cannot be fetched, as after some force-pushes, it falls back to the base,
+which may mention an owner whose file that push left alone. The fetch takes trees and
 commits only (`--filter=blob:none`), with no checkout, so no file of the pull request is written
 to disk, and git runs no hook or filter from it. Running on every pull request costs one such
 fetch per push; on a pull request with no seat file the job exits after the diff.
+
+The 3,000-file limit does not reach this comparison. `git diff` with a pathspec walks the two
+trees under `seats/` and never pages through a list of the pull request's files; the limit
+belongs to GitHub's `paths:` filter and its files API. So no measurement on a padded pull
+request is needed (Adam, 2026-10-19, dropping task 10.8), and the workflow's own test uses an
+ordinary small pull request that changes a seat file (task 10.9).
 
 *Rejected:* keeping the filter and documenting the gap. The notice is how a lender hears of a
 change in time to revoke, and a gap anyone can open by padding a pull request makes it no notice.
@@ -412,15 +467,12 @@ So this workflow takes only the names of changed paths from the head, and runs n
   of another seat's ciphertext, as in the `eve.yaml` attack above, the notice does not catch it:
   the seat id bound inside the ciphertext does, and Igor refuses the copy.
 - **The token is scoped** to `contents: read` and `pull-requests: write`.
-- **A mention counts as made only from the workflow's own comments:** one posted by
-  `github-actions[bot]` that starts with the marker `<!-- igor-seat-notice -->`. A comment the
-  pull request's author posts, shaped the same, does not count. Every workflow of the lore
-  repository posts as that login. On a fork's pull request only workflows on the default branch
-  can post, but a writer's pull request from a branch of the lore repository can bring its own
-  `pull_request` workflow and forge such a comment, so that a later change to a seat file is
-  never announced, because the workflow skips an owner an earlier marker comment already names.
-  Whether to drop that skip, and mention an owner on every push that changes their file, is open
-  for Adam in the proposal's *Still open*.
+- **No earlier comment decides a mention.** Every workflow of the lore repository posts as
+  `github-actions[bot]`, and a writer's pull request from a branch of the lore repository can
+  bring its own `pull_request` workflow. So a comment shaped like the notice, even one from
+  `github-actions[bot]`, proves nothing about who was told. *Rejected* (Adam, 2026-10-19):
+  mentioning an owner once per pull request, which needed exactly such a check of earlier
+  comments, so a forged one could keep a later change from its lender.
 - **The owner's own change needs no notice; anyone else's does.** An owner is skipped only for
   an event they caused on a pull request they opened. A maintainer's push to a lender's pull
   request mentions the lender.
