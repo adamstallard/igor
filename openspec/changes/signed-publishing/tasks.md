@@ -65,6 +65,9 @@
       binary file and for a file under a clean filter (`core.autocrlf`, an `eol=` or `text=auto`
       attribute), with paths carried as #137 specifies. Record the result in design,
       *Measurements*; a case that differs is refused as a tree mismatch until #137 covers it
+- [ ] 0.18 Measure whether bug-hunter's triage runs as its own model step on a given diff and a
+      given model, and reports skip or hunt in a form Igor can parse. Record the result in
+      design, *Measurements*; if it does not, the triage step goes back to Adam before building
 
 ## 1. Verifying and publishing
 
@@ -72,8 +75,9 @@
       post, gives the step the rules and the token in its prompt, runs the second call with the
       cold read, and runs `prose verify-post` on the exact text before publishing it, on every
       surface; code-assembled handoffs, receipts and claim messages pass unsigned
-- [ ] 1.2 The cold read: run the second call without a report, start a fresh model step whose
-      whole prompt is the brief exactly as printed, give its report to the step that wrote the
+- [ ] 1.2 The cold read: run the second call without a report, start a fresh model step, as the
+      worker user with Read on the tree and no other tool, whose whole prompt is the brief
+      exactly as printed, give its report to the step that wrote the
       text to fix and answer, read the report and the answers as #175 reads every file a worker
       wrote, and run the second call with copies of both. For a commit, restage and run
       bug-hunter's triage on the answers' diff first; a diff it does not skip fails the attempt
@@ -112,23 +116,25 @@
       both from the pinned skills directory, with `GIT_DIR`, `GIT_WORK_TREE` and
       `GIT_INDEX_FILE` set to Igor's git directory, the tree and Igor's index (proposal,
       decisions 11 and 12; design, *Measurements*, 0.12)
-- [ ] 2.6 In `produce()` and in #150's `commitOnBranch`, check that the uploaded tree equals both
+- [ ] 2.6 In `produce()` and in #150's head push, check that the uploaded tree equals both
       signed trees, that `prose verify-staged` accepts the trailer, and that the subject is the
       issue title with any closing keyword dropped
 - [ ] 2.7 Append the trailers; leave merge commits without them
 - [ ] 2.8 Tests: a tree mismatch, a message mismatch and a changed subject each refuse the
-      commit, and a tree mismatch goes back to no step; a prose-pass edit is in the tree both
-      trailers name; a diff the triage skips runs no second bug-hunter iteration and one it does
-      not skip runs one, after which no prose pass runs; the signing calls run in Igor's code,
-      from the pinned skills directory, and a planted `.git` in the tree runs nothing; a
-      gate-one commit ends with `Refs #N`; gate two's `commitOnBranch` commit is signed and
-      verified; a gate-two body not ending with `Closes #N`, and a closing keyword for another
-      issue at any gate, go back to the prose pass; a `Bug-hunter:` value holding a line break
-      or a closing keyword goes back to the bug-hunter step; a refused minting call goes back to
-      no step; a linked message file is not read; a hard-linked file stops the run before any
-      staging; gate one stages after dropping `src/`; the token is one argument with no shell;
-      an extra iteration that hunts mints `Bug-hunter-Tree:`; answers to the cold read that
-      change code fail the attempt; a stop during the signing steps publishes nothing
+  commit, and a tree mismatch goes back to no step; a prose-pass edit is in the tree both
+  trailers name; a diff the triage skips runs no second bug-hunter iteration and one it does not
+  skip runs one, after which no prose pass runs; the signing calls run in Igor's code, from the
+  pinned skills directory, and a planted `.git` in the tree runs nothing; a gate-one commit ends
+  with the adapter's non-closing reference; gate two's head-push commit is signed and verified;
+  a gate-two body not ending with `Closes #N`, and a closing keyword for another issue at any
+  gate, go back to the prose pass; a `Bug-hunter:` value holding a line break or a closing
+  keyword goes back to the bug-hunter step; a refused minting call goes back to no step; a
+  linked message file is not read; a hard-linked file stops the run before any staging; gate one
+  stages after dropping `src/`; the token is one argument with no shell; an extra iteration that
+  hunts mints `Bug-hunter-Tree:`; answers to the cold read that change code fail the attempt; a
+  stop during the signing steps publishes nothing; a gate-two description saying `Fixes #999`
+  goes back; the extra iteration's `Bug-hunter:` value replaces the first; the message reaches
+  prose only as a `-F` file
 
 ## 3. The pull request description
 
@@ -154,9 +160,8 @@
 ## 5. Archive
 
 - [ ] 5.1 Before archiving, rewrite this change's MODIFIED text of *Merge semantics differ by
-      field kind* from the requirement as it is in force then, adding only `skills`. Three other
-      changes MODIFY it: `loop-verifies-commands` (#189), adding `checks`;
-      `lore-from-corrections`, adding `propose-lore` to the `allow` vocabulary; and
-      `read-seat-windows-from-the-stream` (#143), adding `reserve` to the monotonic fields. The
-      text in force then already holds the addition of each of them that has archived, so
-      rewriting from it keeps every addition.
+  field kind* from the requirement as it is in force then, adding only `skills`. One other
+  change MODIFIES it: `lore-from-corrections`, adding `propose-lore` to the `allow` vocabulary.
+  If it has archived by then, the text in force already holds its addition, so rewriting from
+  that text keeps it. If it has not, rewrite from `main`'s text, and `lore-from-corrections`
+  rewrites its own copy from the text in force when it archives.

@@ -2,21 +2,26 @@
 
 ### Requirement: A role declares the skills its worker uses
 
-A role SHALL declare `skills: [<name>, …]`, the pinned skills its worker uses, named from the
+A role MAY declare `skills: [<name>, …]`, the pinned skills its worker uses, named from the
 skills of the `igor` plugin under `skills_dir` (#174). The list decides which skills' steps Igor
 runs and which checks Igor's code makes on what it publishes; a listed skill other than `prose`
-and `bug-hunter` gets no step and no check from `signed-publishing`. It does not decide what
+and `bug-hunter` gets no step and no check from `signed-publishing`, and another capability may
+give it a use of its own. It does not decide what
 loads: #174 loads every installed skill, as `igor:<name>`, for every role. The org base MAY set
 `skills` for every role, and the list is inherited by appending, as *Merge semantics differ by
 field kind* sets out.
 
-A name that is not a skill installed under `skills_dir` SHALL be refused at load, naming it and
-the installed skills.
+A command that runs a model step SHALL refuse to start when a role it runs lists a name that is
+not a skill installed under `skills_dir`, naming it and the installed skills, and SHALL refuse,
+naming the directory, when `skills_dir` does not exist. A command that runs no model step, such
+as `igor role explain` or a dry run, SHALL NOT check the names. This follows the recommendation
+of the proposal's *For Adam* 10, which is open.
 
 Listing a skill grants the worker nothing: it adds nothing to `commands`, and Igor's code runs
 every script of a listed skill itself, as `signed-publishing` requires.
 
-A role that declares no `skills`, and inherits none, uses no pinned skill.
+A role that declares no `skills`, and inherits none, gets no step or check from the list; its
+worker may still invoke any skill #174 loads.
 
 #### Scenario: The org base sets the list for every role
 
@@ -36,9 +41,15 @@ A role that declares no `skills`, and inherits none, uses no pinned skill.
 
 #### Scenario: An unknown skill is refused
 
-- **WHEN** a role declares `skills: [prose, bughunter]` and no skill `bughunter` is installed
-  under `skills_dir`
-- **THEN** loading the role fails, naming `bughunter` and the installed skills
+- **WHEN** `igor serve` starts a role that declares `skills: [prose, bughunter]`, and no skill
+  `bughunter` is installed under `skills_dir`
+- **THEN** it refuses to start, naming `bughunter` and the installed skills
+
+#### Scenario: A machine without the skills directory can still explain a role
+
+- **WHEN** `skills_dir` does not exist and a person runs `igor role explain` on a role whose
+  `skills` lists `prose`
+- **THEN** the role is explained, and no skill name is checked
 
 ## MODIFIED Requirements
 

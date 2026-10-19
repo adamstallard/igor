@@ -8,7 +8,8 @@ Terms. An *Igor* is one role of the agent, acting under its own GitHub App; the 
 issue or pull request it works on. Under the two-gate workflow (#150), *gate one* publishes a
 change's specification and *gate two* its implementation, on the same pull request; a
 *revision* is a push at either gate answering a reviewer's change request. `produce()` opens a
-pull request; #150's `commitOnBranch` pushes onto an existing one. Prose signs in two calls: the
+pull request; #150's *head push*, built on the `commitOnBranch` primitive already on `main`,
+pushes onto an existing one. Prose signs in two calls: the
 first prints the rules and a one-use *pass token*; the model writes by the rules; the second,
 given the token, signs, after a *cold read*, a fresh model step reading the text with none of
 the conversation behind it. The *prose pass* is the model step that writes between the two
@@ -42,7 +43,7 @@ before any hunt. The *state branch* is where Igor records each item's outcome.
    *Rejected:* a switch for "posts" and "commits", which cannot say which skill's check applies.
 5. **Every commit Igor pushes for an item, other than a merge, goes through the steps for the
    skills its role lists, and carries their trailers (Adam, 2026-10-13)**, whether `produce()`
-   opens a pull request with it or `commitOnBranch`, under #150, pushes gate two's
+   opens a pull request with it or #150's head push pushes gate two's
    implementation or a revision. Bug-hunter's trailers are `Bug-hunter:` and
    `Bug-hunter-Tree:`; the prose pass's is `Prose: ✓ <tree>:<message>`, short hashes of the
    staged tree and the message. Igor commits only when `prose verify-staged` accepts the
@@ -111,13 +112,13 @@ before any hunt. The *state branch* is where Igor records each item's outcome.
 
     The scripts come from the root-owned skills directory (#174), run with Igor's own git
     directory and index, so running them as the service user executes nothing the worker wrote.
-    `Bug-hunter-Tree:` attests that bug-hunter reviewed every change in the tree except
-    prose-pass edits its triage skipped. Bug-hunter's triage line is wider than comments or
-    docs: it also skips tests, specs, lockfiles, generated files, formatting and renames
-    (task 0.11); whether that line is the one wanted is *For Adam* 1. *Rejected:* the steps
-    running the signing calls themselves, which under #175 they cannot do against Igor's index;
-    and bug-hunter running again after every prose pass, which spends a hunt on a diff of
-    comments.
+    `Bug-hunter-Tree:` attests that bug-hunter's triage saw every change in the tree, and that
+    bug-hunter hunted each change its triage did not skip. Bug-hunter's triage line is wider
+    than comments or docs: it also skips tests, specs, lockfiles, generated files, formatting
+    and renames (task 0.11); whether that line is the one wanted is *For Adam* 1. *Rejected:*
+    the steps running the signing calls themselves, which under #175 they cannot do against
+    Igor's index; and bug-hunter running again after every prose pass, which spends a hunt on a
+    diff of comments.
 13. **No second prose pass after the extra bug-hunter iteration (Adam, 2026-10-18).** Comments
     that iteration writes reach the tree after the prose pass's rewrite. The cold read of step 5
     reads them, and the prose pass, answering it, fixes what it names; that is the only way the
@@ -166,9 +167,13 @@ before any hunt. The *state branch* is where Igor records each item's outcome.
     repository. The first calls of decision 16 wait on it, and with them the whole change,
     unless Adam accepts *For Adam* 13, whose goals hold no item text.
   - Task 0.17: whether a binary file and a clean-filtered file give equal trees.
+  - Task 0.18: whether bug-hunter's triage runs as its own step on a given diff and model, and
+    reports skip or hunt in a form Igor can read.
 - Every other measurement has run; `design.md`, *Measurements*, records what each showed.
 
-**For Adam,** each a question this change cannot settle alone, with a recommendation:
+**For Adam,** each a question this change cannot settle alone, with a recommendation. Where the
+spec deltas already state an item's answer, they follow its recommendation; if Adam decides
+otherwise, the requirement that states it changes.
 
 1. **Bug-hunter's triage line.** Decision 12 names a prose diff of comments or docs as the one
    to skip. Bug-hunter's own triage also skips a prose diff that changes tests, specs,
@@ -186,13 +191,16 @@ before any hunt. The *state branch* is where Igor records each item's outcome.
 4. **Who rewrites the description on gate two's implementation push.** Decision 10 rewrites it
    there; #190 rewrites it only on a revision. *Recommendation:* confirm decision 10, so that
    #190 adds gate two's implementation push. This change does not edit #190.
-5. **Model or person text inside code-assembled posts, published unsigned.** #150 places
-   bug-hunter's open decisions in the opening block, and #140 posts them as numbered questions;
-   a nothing-to-do handoff carries the worker's own account of why it declined
-   (`src/loop.ts`), which `directed-interaction` publishes as its question; an issue Igor opens
-   from chat quotes the person's request and links it (`work-claiming`). The signed-publishing
-   spec states these as the exceptions. *Recommendation:* accept them unsigned: each is quoted
-   as someone's words inside text the code assembles, and #140 acts only on an answer that picks
+5. **Model or person text inside code-assembled posts, published unsigned.** #150 includes
+   bug-hunter's open decisions in gate two's body, which this change puts in the opening block,
+   and #140 posts them as numbered questions; a nothing-to-do handoff carries the worker's own
+   account of why it declined (`src/loop.ts`), which `directed-interaction` publishes as its
+   question; an issue Igor opens from chat (`work-claiming`) or from a mention (#140) quotes the
+   person's request and links it. #140 also places a question in the artifact's description;
+   under this change that question is part of the signed description, not one of these
+   exceptions. The signed-publishing spec states these as the exceptions. *Recommendation:*
+   accept them unsigned: each is someone else's words, quoted as theirs inside text the code
+   assembles, not text the model presents as its own; and #140 acts only on an answer that picks
    one of the options Igor recorded, so the text cannot make Igor do anything it had not already
    proposed.
 6. **Whether Igor still runs `prose start`.** Nothing in a worker checks the gate it opens, and
@@ -216,7 +224,8 @@ before any hunt. The *state branch* is where Igor records each item's outcome.
     path (#174), so where it does not exist every role whose org base lists `prose` is refused
     at load, which breaks `igor role explain`, the dry run and same-user `igor run`.
     *Recommendation:* check names only in a command that runs a model step, and only where the
-    directory exists, naming it when it does not.
+    directory exists, naming it when it does not. The `role-config` delta is written to this
+    recommendation, which narrows decision 4's "refused at load".
 11. **A conflicted catch-up's resolution is a merge**, so model-written code reaches the branch
     with no trailers. *Recommendation:* accept the gap for now; signing a merge needs a design of
     its own.
@@ -247,16 +256,28 @@ before any hunt. The *state branch* is where Igor records each item's outcome.
     is built a change holding a link or a submodule is refused as a tree mismatch.
     *Recommendation:* reverse design item 3's decision and sign against Igor's index: today's API
     tree carries a link or a submodule wrongly, so signing it would sign a wrong upload.
-17. **A lore proposal is a third commit path.** `lore-from-corrections` publishes a
-    model-drafted lore entry as a pull request through the existing propose path, which is
-    neither `produce()` nor `commitOnBranch`. *Recommendation:* decision 5 covers every commit
-    Igor pushes, so `lore-from-corrections` cites this change for that path; this change does
-    not edit it.
+17. **Commit paths other than `produce()` and #150's head push.** `lore-from-corrections`
+    publishes a model-drafted lore entry as a pull request through the existing propose path,
+    and `discussion-scribe` (#202) commits model-written records and posts chat summaries.
+    *Recommendation:* decision 5 covers every commit Igor pushes, so each of those changes cites
+    this one for its path; this change does not edit them.
 18. **Closing keywords for other issues.** Model text shaped by an item's untrusted text could
     end a commit body, a `Bug-hunter:` value or a description with `Fixes #999`, which closes an
     unrelated issue on merge. This change refuses any closing keyword other than the closing
     linkage decision 6 sets for the item itself, at every gate, and sends the text back to the
     step that wrote it. *Recommendation:* as written.
+19. **Staging before the prose pass.** #175 says nothing stages before the last model step
+    exits, and lists when this change (#153) stages as its own question for Adam. This change
+    stages before prose's first call, since the token records the goals of the docs the first
+    call sees staged (task 0.9), and makes #175's link and hard-link checks before every
+    staging. *Recommendation:* as written, and #175 is changed to allow staging after its
+    checks.
+20. **A claim lost during the signing steps.** Igor checks for a stop and its claim before each
+    model step after the worker, as at any checkpoint; a stop publishes nothing.
+    `task-execution` on `main` publishes what exists as a draft on a lost claim, but at that
+    point no text is signed. *Recommendation:* run no further model step and publish the
+    worker's change as that draft, with a body the code assembles and no signed text; the next
+    Igor to claim the item redoes it, signed, before it can merge.
 
 ## Why
 
@@ -304,7 +325,7 @@ governs them. Neither change is edited here: the rule lives in one place, and th
 - `task-execution`: owns producing the artifact, so it gains what is specific to a commit and a
   pull request. Every commit Igor pushes, other than a merge, is verified against the signed
   trees, the prose trailer and the issue title before it is committed, whether by `produce()`
-  or by #150's `commitOnBranch`. The pull request description is written by the prose pass
+  or by #150's head push. The pull request description is written by the prose pass
   instead of cut from the worker's final message, is published uncut, and is re-signed on gate
   two and on each revision, never on a catch-up resolution.
 

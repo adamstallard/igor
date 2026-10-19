@@ -113,9 +113,9 @@ come from the root-owned skills directory (#174), and Igor runs them with `GIT_D
 `GIT_WORK_TREE` and `GIT_INDEX_FILE` set to its own git directory, the tree and its own index,
 so they read none of a `.git` the worker can replace (task 0.12).
 
-`Bug-hunter-Tree:` names the staged tree. It attests that bug-hunter reviewed every change in
-that tree except the prose-pass edits its triage skipped; the answers to the cold read are among
-those edits.
+`Bug-hunter-Tree:` names the staged tree. It attests that bug-hunter's triage saw every change
+in that tree, and that bug-hunter hunted each change its triage did not skip. The prose pass's
+edits and its answers to the cold read are triaged like any other change.
 That triage skips more than comments and docs (task 0.11): also tests, specs, lockfiles,
 generated or vendored files, formatting and renames.
 
@@ -180,10 +180,11 @@ date is given.
 
 **Decided by Adam, 2026-10-11.** The opt-in is a list of skills, not a switch for "posts" and
 "commits". A role declares `skills: [<name>, …]`, the pinned skills of #174's `igor` plugin its
-worker uses. The org base may set the list for every role, and a role may add to it;
-inheritance adds and never removes, so a skill the org requires stays required. A name that is
-not installed under `skills_dir` is refused at load. A listed skill other than `prose` and
-`bug-hunter` gets no step and no check from this change.
+worker uses. The org base may set the list for every role, and a role may add to it; inheritance
+adds and never removes, so a skill the org requires stays required. A name that is not installed
+under `skills_dir` is refused at load. *For Adam* 10, open, recommends narrowing that to a
+command that runs a model step, and the spec follows the recommendation. A listed skill other
+than `prose` and `bug-hunter` gets no step and no check from this change.
 
 Igor's code runs the steps and checks per listed skill. `prose` means every model-written post
 needs a valid `prose ✓` footer and every commit a matching `Prose:` trailer. `bug-hunter` means
@@ -339,5 +340,13 @@ design.
   keeps in the worker's outbox (a directory the worker shares with Igor, for `git rm` and `git
   mv`), minting failed with `insufficient permission`. **Confirms** that Igor mints the tree:
   the bug-hunter step reports only its `Bug-hunter:` value and runs no script.
-- **Not measured:** 0.15, whether bug-hunter's regression tests run under the role's existing
-  `commands`; and 0.17, whether a binary file and a clean-filtered file give equal trees.
+- **Observed, 2026-10-19, signing this change's own pull request description:** `prose sign
+  --pass <token>` read the post on stdin; run without a report it printed a cold-read brief and
+  exited 5, and run again with `--cold-read` and `--dispositions` it printed the post signed.
+  The same day, staging again after the answers left `prose check`'s token valid, and the second
+  call signed the tree staged when it ran. **Confirms** the three-part flow of *Every signature
+  needs a cold read*.
+- **Not measured:** 0.18, whether bug-hunter's triage runs as its own step on a given diff and
+  model and reports skip or hunt in a form Igor can read; 0.15, whether bug-hunter's regression
+  tests run under the role's existing `commands`; and 0.17, whether a binary file and a
+  clean-filtered file give equal trees.

@@ -3,7 +3,8 @@
 ### Requirement: Igor verifies what each skill in a role's list requires
 
 Igor's code SHALL verify a role's published work according to the role's `skills` list, one
-check per skill:
+check per skill. An *extra iteration* is the one more bug-hunter run `task-execution` gives a
+prose pass's diff that bug-hunter's triage does not skip.
 
 - **`prose`:** every model-written post SHALL carry a valid `prose ✓` footer, and every commit
   a `Prose:` trailer that matches its staged tree and message.
@@ -47,7 +48,8 @@ capability.
 For a role whose `skills` lists `prose`, every text a model step writes for an Igor to publish
 SHALL go through prose's pass. That covers pull request descriptions, replies, questions, and
 any other model-written post to GitHub, Discord or Linear. The *prose pass* is the model step
-that writes the text between prose's two calls.
+that writes the text between prose's two calls. The *pass token* is the one-use value prose's
+first call prints, which its second call requires.
 
 Igor's code SHALL run both of prose's calls itself, as Igor's service user, from the pinned
 skills directory (#174):
@@ -61,8 +63,10 @@ skills directory (#174):
 Before the second call signs, the text SHALL be read cold: Igor SHALL run a fresh model step
 whose whole prompt is the cold-read brief the second call prints, exactly as printed, and SHALL
 give its report to the step that wrote the text, which fixes what the report names and answers
-each line. Igor SHALL then run the second call with that report and those answers. A step SHALL
-fix every finding, and prose's refusal of a kept one SHALL count as a failed check.
+each line. The cold reader SHALL run as the worker user, with no tool but Read on the tree for a
+commit, and no tool at all for a post. Igor SHALL then run the second call with that report and
+those answers. A step SHALL fix every finding, and prose's refusal of a kept one SHALL count as
+a failed check.
 
 No model step SHALL run a prose script, and no worker user SHALL be able to write prose's token
 store, so no step can issue a token or sign. No model step SHALL post. A commit message is
@@ -72,8 +76,8 @@ bug-hunter and the prose pass before it is committed* requires.
 Text the code assembles from recorded state is not signed: handoffs, stop receipts and claim
 messages. `graceful-handoff` stays as it is. Nor are someone's words that code-assembled text
 quotes: bug-hunter's open decisions in the opening block the code assembles for a pull request
-body, the worker's reason for declining in a handoff, and a person's chat request in the issue
-Igor opens from it.
+body, the worker's reason for declining in a handoff, and a person's request in an issue Igor
+opens for them, from chat or from a mention under `directed-interaction` (#140).
 
 #### Scenario: No model step posts
 
@@ -91,6 +95,12 @@ Igor opens from it.
 
 - **WHEN** a model step running as a worker user tries to write a file into prose's token store
 - **THEN** the write fails, and no token exists that Igor's first call did not issue
+
+#### Scenario: The cold reader can only read
+
+- **WHEN** Igor starts the cold reader for a commit
+- **THEN** it runs as the worker user, can read the tree, and can run no command and edit no
+  file
 
 #### Scenario: A signature waits for a cold read
 
