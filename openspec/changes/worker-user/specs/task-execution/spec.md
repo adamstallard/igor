@@ -9,15 +9,15 @@ systemd unit SHALL pass the instance name, `%i`, to `igor serve`, and the Igor S
 #179 splits the instance name into a role and a rank. A sibling rank that sweeps the trees a
 gone rank of its role left SHALL build that rank's worker user the same way, as
 `igor-worker-<role>-<rank>` from its own role and the number of the gone rank that #179's sweep
-finds. The unit's `User=` and `Group=` SHALL remain the service
-user. The name SHALL NOT be read from `igor.config.yaml` or any other lore file. Under `igor serve`, execution
+finds. The unit's `User=` and `Group=` SHALL name the service user and its group. The name SHALL NOT be read from `igor.config.yaml` or any other lore file. Under `igor serve`, execution
 SHALL run the worker as that user, and every process the worker starts SHALL run as that user
 too. Every other `claude -p` the Igor starts with the
 worker's tree as its working directory SHALL run as that user as well, such as #153's bug hunt
 and prose pass. #153's
 `prose start`, which writes the session mark #153's prose steps check for, SHALL run as that user
 too, after the reset of the worker's home that #174 (`pinned-skills`) specifies, so the mark is
-the worker's and sits in the worker's home. The worker user SHALL be neither root nor the user the Igor runs as. The
+the worker's and sits in the worker's home. No argument of a command the Igor starts as the worker
+user SHALL carry a prompt or text taken from the item. The worker user SHALL be neither root nor the user the Igor runs as. The
 worker SHALL NOT be able to read any credential the Igor holds: the files its environment was
 loaded from, any private key or token file it reads, the private key that decrypts seat files,
 and the Igor's own process environment, which holds the App key where it is given inline as
@@ -121,6 +121,12 @@ then the separate user protects nothing.
 - **WHEN** a worker writes into the Igor user's home directory, or over a key file the Igor
   reads
 - **THEN** the write is refused
+
+#### Scenario: The worker cannot write the Igor's records
+
+- **WHEN** a worker writes a file named `executions.ndjson` anywhere it can write
+- **THEN** the Igor's record of the run is the one it wrote on the `igor-state` branch through the
+  code host, and the worker's file is not read as a record
 
 ### Requirement: Nothing the worker writes is executed by the Igor
 
@@ -472,7 +478,9 @@ on a kernel without per-mount `hidepid`, and out of `sudo`'s log.
 `igor serve` SHALL always run its worker as its worker user, and SHALL offer no way to run it as
 the Igor's own user. `igor run`, the one-shot command for development, SHALL always run the
 worker as the Igor's own user, and SHALL say so when it starts, naming what the worker can then
-read. Nothing else SHALL tell the Igor whether it has a worker user.
+read. Nothing else SHALL tell the Igor whether it has a worker user. Under #179 `igor run` is
+rank 0, and its release and startup sweep SHALL remove only rank-0 trees of its own role, as the
+Igor's own user and without `sudo`; it SHALL NOT remove a tree another rank or another role left.
 
 `serve` takes work from issues anyone can file with nobody watching, and that is the case #163
 is about. `run` is a person at a terminal, usually on their own machine with their own
@@ -488,6 +496,13 @@ credentials. The notice keeps the trade visible.
 - **WHEN** `igor run` starts
 - **THEN** it runs the worker as the same user, and its first line says workers run as its own
   user and can read its credentials
+
+#### Scenario: run sweeps only its own trees
+
+- **WHEN** `igor run` for the role `generalist` sweeps on a host holding the trees
+  `generalist-0-a1` and `generalist-1-b2`
+- **THEN** it removes `generalist-0-a1` as its own user, without `sudo`
+- **AND** it leaves `generalist-1-b2`
 
 #### Scenario: run ignores a worker user on the host
 

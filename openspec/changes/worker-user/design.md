@@ -209,7 +209,10 @@ environment (the worker-environment requirement), so the start-up check sets `sa
   it stays because the cost of being wrong is running code as the Igor.
 - Filter, merge and diff drivers are defined only in configuration. `.gitattributes`, which the
   worker can write, can name a driver but cannot define one, and the tree's configuration is
-  not the worker's to write.
+  not the worker's to write. The service user's and the system's configuration can still
+  define one, such as `filter.lfs`, which a name in `.gitattributes` would then run. How to keep
+  those two configurations out of the Igor's git calls is open in the proposal; task 3.6 builds
+  the recommended way unless Adam chooses another.
 - A nested repository is the exception: its own `.git/config` is the worker's, and git running
   in the outer tree can recurse into it and run a filter that file defines. So every git command
   the Igor runs in a tree also passes `-c submodule.recurse=false` and `--ignore-submodules=all`
@@ -409,6 +412,20 @@ nor any worker user is logged in to Claude, and #174's reset deletes a login sto
 worker's home, so there is no stored login for the worker user to come by. How a person creates
 a token is in #171's guides (its task 9.5).
 
+Under `igor run`, the seat is the token in `IGOR_RUN_TOKEN` (Adam, 2026-10-18), an
+implicit local seat (#171's *`igor run` spends its own token as an implicit local seat*):
+nothing in the lore repository describes it, and `run` spends
+no lent seat. Triage and the worker under `run` both authenticate with it, and the worker's
+environment holds it as it would hold any seat's token.
+
+This does not wait for #171. `token_env`, `token_file` and `token_command` seats are on `main`
+(the in-force `seat-budget` requirement *A seat names its token through exactly one mechanism*,
+read by `parseOrgBudget` in `src/budget.ts`), so every seat can name a token now. What #171
+removes is the in-force allowance for a seat with no token and for an organization with no
+seats, which run on the ambient login. Until #171 archives, that allowance and the proposal's
+decision 21, that every seat has a token, disagree; the proposal lists it for Adam, and what is
+built follows decision 21.
+
 ### Prompts go on stdin (Adam, 2026-10-18)
 
 On Linux every user can read every process's `/proc/<pid>/cmdline`. Today `claudeWorker`
@@ -450,6 +467,10 @@ checks worker isolation when it starts. That is a later edit to its branch, not 
 - **`run` always runs the worker as the same user**, with a notice. It is the one-shot command
   for development: a person at a terminal, usually on a laptop with their own login, where a
   second account is friction for no gain. The notice puts the choice in every log.
+- **`run` sweeps only its own trees** (Adam, 2026-10-18). Under #179 `run` is rank 0,
+  so its trees are `<role>-0-<id>`. Its release and startup sweep remove those alone, as the
+  Igor's own user with no `sudo`, which is the user its worker ran as. A tree a `serve` instance
+  left belongs to that instance's worker user, which `run` cannot act as, and `run` leaves it.
 
 So the command says whether there is a worker user, and no setting does. The alternatives:
 `serve --same-user`, which leaves an unattended Igor whose worker can read its credentials;
@@ -479,12 +500,12 @@ compose file runs, and their sudoers lines, and moves the compose file's trees v
   the service user's home and so cannot run `~igor/.local/bin/claude`.
 - `ProtectProc=invisible` hides every other user's processes from each process in the unit
   (*Prompts go on stdin*, above).
-- `RestartPreventExitStatus=78 79` and `SuccessExitStatus=79` (Adam, 2026-10-18). A refused
-  start exits 78 (#82's *A process that refuses to start exits with status 78*), and a rank
-  removed from the roster exits 79 (#179's *A rank removed from the roster exits with status
-  79*). With `Restart=always`, either would otherwise restart every 30 seconds and be refused
-  again. systemd now leaves a refused instance failed and a retired one inactive, with Igor's
-  reason in the journal.
+- `Restart=on-failure` and `RestartPreventExitStatus=78` (Adam, 2026-10-18), as
+  #82 requires. A refused start exits 78 (#82's *A process that refuses to start exits with
+  status 78*), and systemd leaves the instance failed, with Igor's reason in the journal,
+  instead of restarting it 30 seconds later (the unit's `RestartSec=30`) to be refused again. A rank #179 removed from the
+  roster exits 0, which `Restart=on-failure` does not restart, so the unit shows it inactive. A
+  crash is still restarted.
 
 ## Risks / Trade-offs
 

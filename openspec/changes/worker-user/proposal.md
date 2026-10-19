@@ -182,50 +182,91 @@
     *Rejected:* `ProtectProc=invisible` alone, which leaves the prompt in `ps` output on a host
     whose kernel lacks the feature, and in `sudo`'s log.
 23. **A refused start exits with status 78, and the unit stops restarting on it** (Adam,
-    2026-10-18). Each of `serve`'s start-check refusals, the missing worker user and
-    `fs.protected_hardlinks` among them, exits 78, as #82's (`stopped-scope-visible`) *A
-    process that refuses to start exits with status 78* requires; #179's *A rank removed from
-    the roster exits with status 79* gives a retired rank 79. The unit lists both in
-    `RestartPreventExitStatus=78 79`, and 79 in `SuccessExitStatus=79`. systemd then stops
-    restarting: it shows a refused instance as failed, a retired one as inactive, and Igor's
-    reason in the journal. Both numbers are defined in those two changes, not here.
+    2026-10-18). Each of `serve`'s start-check refusals, the missing worker user
+    and `fs.protected_hardlinks` among them, exits 78, as #82's (`stopped-scope-visible`) *A
+    process that refuses to start exits with status 78* requires. The unit sets
+    `Restart=on-failure` and lists 78, and only 78, in `RestartPreventExitStatus=`, as #82
+    requires. systemd then shows a refused instance as failed, with Igor's reason in the
+    journal, and leaves an instance that exits 0, such as a rank #179 removed from the roster,
+    inactive. The number is defined in #82, not here. *Rejected:* a status 79 for a retired
+    rank, with `SuccessExitStatus=79`; `Restart=on-failure` never restarts a clean exit.
+24. **`igor run` spends the token in its own environment, `IGOR_RUN_TOKEN`, as an implicit local
+    seat** (Adam, 2026-10-18). Triage and the worker under `run` both authenticate
+    with it. Nothing goes in the lore repository and no seat file is needed; `run` never
+    decrypts or spends a lent seat. #171 states the rule, in *`igor run` spends its own token as
+    an implicit local seat*. This change passes the token to the worker as it passes any seat's:
+    the worker's environment holds that token and no other credential. This answers how a developer gives `run` a seat.
+25. **`igor run` sweeps only the trees it made** (Adam, 2026-10-18). Under #179
+    `run` is rank 0, outside the roster, so its trees are named `<role>-0-<id>`. Its release and
+    startup sweep remove only those, as the Igor's own user and with no `sudo`, since its worker
+    runs as that user. It never removes a tree a `serve` instance left. No worker user
+    `igor-worker-<role>-0` is needed, because no other user ever acts on a rank-0 tree: under
+    #179 a serving rank never removes one, and the next `igor run` removes any a run left
+    behind, at its start.
+26. **Decision 21 does not wait for #171** (checked 2026-10-18). Seats that name their token in
+    an environment variable, a file or a command are already on `main`: the in-force `seat-budget`
+    requirement *A seat names its token through exactly one mechanism*, and
+    `parseOrgBudget` in `src/budget.ts`, which reads `token_env`, `token_file` and
+    `token_command`. So a deployment can give every seat a token today, and this change builds
+    decision 21 on those seats. The in-force `seat-budget` still lets a seat name no token and
+    an organization with no seats run on the ambient login; #171 removes both, and archives after
+    this change (*Still open*, below).
 
-**Still open:**
+**Still open:** an item marked *for Adam* waits on his decision; the rest wait on a measurement
+or on another change.
 
-- **What `igor run` needs on a developer's machine under decision 21, for Adam.** Nothing below
-  is decided:
-  - **A seat it may spend.** `run` decrypts no lent seat, one whose file carries its token
-    encrypted as `encrypted_token` (#171's *A lent seat is decrypted only where the worker has a
-    user of its own*), so the role needs a seat file in the lore checkout
-    `run` reads that names `token_env: IGOR_SEAT_<ID>` and lists the role, and the developer
-    sets that variable to a token they created with `claude setup-token`. Where the role's
-    seats are all lent, `run` triages nothing and hands every item back to a person. Whether a developer
-    adds such a seat to the organization's lore, keeps a lore checkout of their own, or gets
-    some other way to give `run` a token is open.
-  - **Triage's login.** Triage runs as the developer, in the developer's own home, which #174
-    does not reset. Their own Claude login sits there, or in the macOS Keychain. That the
-    seat's token in the environment wins over it, and that an invalid token fails rather than
-    falling back to it, is #174's task 0.3.
-  - **`igor budget`** reads usage with a seat's own token, so on a developer's machine it can
-    read only `token_env` seats whose variable is set there.
-  - #174's startup skills check needs no token and is unaffected. The worker, unlike triage,
-    does not use the developer's home under `run`: #174 sets its `HOME` to a home per role under
-    Igor's state directory, which the reset leaves with no login.
-- **Until #171 is built, decision 21 has no spec to rest on, for Adam.** This change carries no
-  `seat-budget` delta, and on `main` a seat that names no token still reads through the ambient
-  login. #171 removes that, but #171 is built after this change (#171's decision 11). Whether
-  decision 21 waits for #171, or this change carries the rule itself, is open.
-- **How `igor run` sweeps, for Adam.** The release and the startup sweep run `rm` as the worker
-  user through `sudo`, and #179 has a rank 1 started by `igor run` sweep as
-  `igor-worker-<role>-1`. A developer's machine has no such user, and on a server `run` cannot
-  remove the trees `serve` left without that `sudo`.
+- **Triage's login under `run`.** Triage runs as the developer, in the developer's own home,
+  which #174 does not reset. Their own Claude login sits there, or in the macOS Keychain. #174's
+  task 0.3 measures two things: that `IGOR_RUN_TOKEN` in the environment wins over that login,
+  and that an invalid token fails rather than falling back to the login. The worker, unlike triage, does not use the
+  developer's home under `run`: #174 sets its `HOME` to a home per role under Igor's state
+  directory, which the reset leaves with no login.
+- **The ambient login in force until #171 archives, for Adam.** The in-force `seat-budget` lets a
+  seat name no token (*A seat names its token through exactly one mechanism*) and lets an
+  organization with no seats run every call on the ambient login (*A spend with no seat behind it
+  does not happen*). Decision 21 forbids both. #171 removes them, and archives after this change,
+  so between the two archives the in-force spec and decision 21 disagree.
+- **Two `igor run`s of one role at once, for Adam.** Both are rank 0 under #179, so one's startup
+  sweep removes the other's live tree. #179's model finds the two can also work one item, and
+  #174 lists their shared home as open. Nothing here decides it.
+- **`prose start` as the worker user, for Adam.** This change runs #153's `prose start` as the
+  worker user so that its session mark lands in the worker's home. #174's plugin installs no
+  hooks, so no hook reads the mark in a worker, and whether Igor runs `prose start` at all is
+  open in #153. *Recommendation:* keep the rule as written, and drop it if #153 drops
+  `prose start`.
+- **An escaped process after the last model step.** Igor kills every process the worker user
+  owns before each reset of its home (#174's decision 13), but no reset follows the last model
+  step. So a process that left the last model step's process group outlives the task. #174 lists this as open; this change
+  follows its answer.
+- **The index copy in the outbox.** The in-force `task-execution` requirement *A base change is
+  undone only where the resolution says so* wants that outbox empty when the worker starts and
+  granted to the worker alone, while this change puts the index copy there and gives the outbox
+  the Igor's group. *Recommendation:* a `MODIFIED` block on that requirement naming the index copy
+  as the one file the Igor puts there, and the group's read access.
+- **The in-force scenario *No state carries between tasks*** and this change's lasting home
+  disagree until #174, which rewords it (its decision 15), archives after this change.
+- **What the start check probes.** It tries `skills_dir`'s top level only, so a script under
+  `skills_dir/skills/` the worker could write passes it and is then run as the service user. And
+  a named path that does not exist passes `test -r` and `test -w` as isolated. *Recommendation:*
+  refuse on a named path that does not exist, naming it, and probe each script the Igor runs from
+  `skills_dir`.
 - **The signing claims rest on #153's measurements** 0.9, 0.10 and 0.12: that the service user
   can spend a pass token the worker user's first call issued, that bug-hunter can mint its
   trailer as a separate call, and that the signing scripts can be pointed at the Igor's own git
-  directory. Decision 12 holds only if they pass.
+  directory. Decision 12 holds only if they pass. Decision 12 also rests on 0.11, that bug-hunter's own
+  triage skips exactly a diff touching only comments or docs; 0.13, that `prose start` can take
+  its goals other than on its command line, which the spec's rule that no argument of a
+  worker-user command carries item text needs; and 0.14, that
+  bug-hunter's caller-commits mode works without staging.
 - **Filters named by a worker's `.gitattributes`.** The Igor's `git add` and status read honour
   `.gitattributes` in the tree, which can name a filter defined in the service user's or the
-  system's git config, such as `filter.lfs`. Nothing yet keeps those calls from running one.
+  system's git config, such as `filter.lfs`. Nothing yet keeps those calls from running one,
+  which *The Igor runs nothing the worker wrote* forbids. *Recommendation:* run the Igor's git
+  calls in a tree with `GIT_CONFIG_NOSYSTEM=1` and `GIT_CONFIG_GLOBAL=/dev/null`, so the only
+  configuration is the Igor's own git directory, which defines no filter (task 3.6).
+- **The worker's umask.** Nothing sets it, and the Igor reads what the worker creates through
+  the group. A file Claude Code or a toolchain creates `0600` would stop every run at *A file the
+  Igor cannot open*. Task 6.10 measures it. *Recommendation:* the `sudo` spawn sets `umask 0027`.
 - **Measurement 6.7**, the unit's groups and paths for the worker user, runs before task 8.2
   ships.
 
@@ -235,7 +276,9 @@
   environment Claude Code passes to the commands it runs, and what `sudo` logs. Measurement 6.6,
   the reach between workers of one user, informs the docs only. Measurements 6.8, that
   `ProtectProc=invisible` hides other users' processes under the unit, and 6.9, that `claude -p`
-  takes its prompt on stdin and its system prompt from `--system-prompt-file`, are owed before
+  takes its prompt on stdin and its system prompt from `--system-prompt-file`, including the
+  usage read (the `claude -p` call whose prompt is `/usage`, which reads a seat's usage) under
+  `--output-format json`, are owed before
   tasks 1.7 and 8.2 are built.
 
 ## Why
@@ -290,10 +333,10 @@ that doesn't depend on Claude Code enforcing anything.
   are not in the process environment, and the check probes that file as not readable.
 - **`serve` always has a worker user, and `run` never does.** `run` runs the worker as the same
   user with a notice.
-- **Deployment:** `deploy/igor.service` keeps `User=` and `Group=` as the service user, passes
+- **Deployment:** `deploy/igor.service` sets `User=` and `Group=` to the service user and its group, passes
   `%i` to `igor serve`, names the worker user `igor-worker-%i` for the worker's group and
-  home, sets `ProtectProc=invisible`, lists the statuses 78 and 79 in
-  `RestartPreventExitStatus=` and 79 in `SuccessExitStatus=`, and drops `NoNewPrivileges`,
+  home, sets `ProtectProc=invisible`, sets `Restart=on-failure` and lists
+  78 in `RestartPreventExitStatus=`, and drops `NoNewPrivileges`,
   which blocks `sudo`. A new `deploy/sudoers.example` and a
   section in `docs/deployment.md` cover creating a worker user, its home and its sudoers line
   for each instance. #192's container image gains `sudo`, the worker users and their sudoers

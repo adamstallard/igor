@@ -38,12 +38,15 @@
       requirement *A process is named by its role and rank*. If #179 has merged, build on it.
       Otherwise, file an issue asking whichever of #179 and this change is built second to name
       instances that way and check role names, and link it here.
-- [ ] 0.9 The exit statuses in 5.1 and 8.2 come from two other changes. #82
-      (`stopped-scope-visible`) sets 78 for a refused start, in *A process that refuses to start
-      exits with status 78*. #179 sets 79 for a retired rank, in *A rank removed from the roster
-      exits with status 79*. If #82 has not merged, file an issue asking whichever of #82 and
-      this change is built second to exit 78 on a refused start, and link it here. Do the same
-      for #179 and status 79.
+- [ ] 0.9 The exit status in 5.1 and the restart lines in 8.2 come from #82
+      (`stopped-scope-visible`): 78 for a refused start, in *A process that refuses to start
+      exits with status 78*, with `Restart=on-failure` and `RestartPreventExitStatus=78`. If #82
+      has not merged, file an issue asking whichever of #82 and this change is built second to
+      exit 78 on a refused start and set those lines, and link it here.
+- [ ] 0.10 Whichever of this change and #174 is built second makes the `sudo` spawn of 1.1 run
+      #174's kill of the worker user's processes and its reset of the worker's home before each
+      model step, as `design.md` (*The worker is started through `sudo`*) says. If #174 has
+      not merged, file an issue saying so, and link it here.
 
 ## 1. Starting the worker as another user
 
@@ -60,7 +63,9 @@
       the absolute path the Igor resolves on its own `PATH`. The worker's own flags are
       unchanged, and so are `detached` and the stdio pipes, except that the prompt and the
       system prompt leave the arguments (1.7).
-- [ ] 1.3 Under `run`, the spawn is exactly what it is today.
+- [ ] 1.3 Under `run`, the spawn is what it is today, as the Igor's own user, with the token in
+      `IGOR_RUN_TOKEN` as the seat's token in the worker's environment (proposal, decision 24;
+      #171 defines the seat).
 - [ ] 1.4 Every other `claude -p` the Igor starts with a tree as its working directory goes
       through 1.2's spawn, with the same environment rules. Triage and usage reads, which run
       outside any tree, do not; they run as the Igor with a seat's token in their environment
@@ -214,6 +219,9 @@
       FIFO is never opened and stops the run; a declaration file that does not
       parse appears in no reason, record or log; a path holding a backtick is escaped in the
       reason.
+- [ ] 3.6 The Igor's git calls in a tree run with `GIT_CONFIG_NOSYSTEM=1` and
+      `GIT_CONFIG_GLOBAL=/dev/null`, so no filter a worker's `.gitattributes` names is defined
+      for them, unless Adam answers the proposal's open question otherwise.
 
 ## 4. Kill, release, sweep
 
@@ -222,8 +230,11 @@
       group already gone is not an error.
 - [ ] 4.2 `ClonedTree.release()` and the startup sweep first run
       `sudo -n -u <worker> -- rm -rf -- <tree> <outbox>`, then the Igor's own removal of the
-      tree, the outbox and the git directory. Both are attempted whatever the first does.
-- [ ] 4.3 Tests with an injected runner: the kill and the removal argv; a failed first removal
+      tree, the outbox and the git directory. Both are attempted whatever the first does. Under
+      `run`, which #179 makes rank 0, the release and the startup sweep remove only trees named
+      `<role>-0-<id>` for its own role, as the Igor's own user with no `sudo`, and leave a tree
+      another rank or another role left (proposal, decision 25).
+- [ ] 4.3 Tests with an injected runner: `run`'s sweep leaves another rank's tree; the kill and the removal argv; a failed first removal
       still leads to the second.
 
 ## 5. The start-up check, and `run` as the same user
@@ -344,8 +355,13 @@ file in the service user's home. Each holds a random string and nothing else. Ne
 - [ ] 6.9 Before 1.7 is built, on the Claude Code version the server runs: `claude -p` with
       `--output-format stream-json --verbose` and no prompt argument reads its prompt from
       stdin, and `--system-prompt-file <file>` sets the system prompt, as `claude --help`
-      lists it. If either fails, the means of keeping prompts out of the arguments goes back to
-      Adam; the rule stands.
+      lists it. Also: the usage read's `/usage`, passed on stdin under `--output-format json`, runs
+      as it does as an argument; and triage's `claude -p` under `--output-format json` reads its prompt from stdin. If any
+      fails, the means of keeping prompts out of the arguments goes back to Adam; the rule
+      stands.
+- [ ] 6.10 Under the unit, as the worker user through the `sudo` spawn: the modes of a file and a
+      directory created by the Edit and Write tools, by `npm install` and by `git`, and whether
+      the Igor can read each through the group. Record the umask in effect.
 
 ## 7. An automated end-to-end test
 
@@ -379,7 +395,8 @@ file in the service user's home. Each holds a random string and nothing else. Ne
       `ReadWritePaths=/var/lib/igor-worker-%i`, and
       keep `/var/lib/igor/trees`, under #179's `StateDirectory=`, writable; `PrivateTmp=true`
       stays for everything else. No
-      drop-in per instance and no `/etc/group` step. `User=` and `Group=` stay the service user,
+      drop-in per instance and no `/etc/group` step. `User=` stays the service user, and the unit
+      gains `Group=igor`, the service user's group, which the unit on `main` does not set,
       and `ExecStart=` passes `%i` to `igor serve` (1.1). Put `/usr/local/bin` first on `PATH` and change the `PATH` comment to say `claude` must
       live where the worker can run it. Replace `NoNewPrivileges=true` with this comment (may be
       reworded):
@@ -390,17 +407,18 @@ file in the service user's home. Each holds a random string and nothing else. Ne
       # separate user for the worker".
       ```
 
-      Add these lines, with this comment (may be reworded; the numbers come from 0.9):
+      Add these lines, with this comment (may be reworded; the restart lines come from 0.9 and
+      replace `Restart=always`):
 
       ```
       # A process sees only its own user's processes, so no worker can read another's command
       # line or environment through /proc.
       ProtectProc=invisible
-      # 78: the instance refused to start, such as on a missing worker user; fix what the
-      # journal names, then start it. 79: its rank was removed from the roster. Either way,
-      # restarting would only be refused again.
-      RestartPreventExitStatus=78 79
-      SuccessExitStatus=79
+      # A crash is restarted; a clean exit (status 0) is not. A process that refuses to start,
+      # such as on a missing worker user, exits 78 (EX_CONFIG) and is not restarted: fix what
+      # the journal names, then start it again.
+      Restart=on-failure
+      RestartPreventExitStatus=78
       ```
 
 - [ ] 8.3 #192's (`deploy-image`) container image and compose file, after #192 merges as it is
