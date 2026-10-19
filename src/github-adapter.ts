@@ -690,8 +690,13 @@ export class GitHubCodeHost implements CodeHost {
       request.body,
       request.draft,
     )
-    if (request.reviewers?.length) await requestReviewers(request.repo, pr.number, request.reviewers)
-    return { kind: 'pull-request', ref: `#${pr.number}`, url: pr.url }
+    const artifact: Artifact = { kind: 'pull-request', ref: `#${pr.number}`, url: pr.url }
+    // Returned with a warning, not thrown: the branch and the pull request exist by now, and a
+    // throw would tell the caller that nothing was published.
+    const reviewers = request.reviewers ?? []
+    const refused = await requestReviewers(request.repo, pr.number, reviewers)
+    if (refused === undefined) return artifact
+    return { ...artifact, warning: `could not request review from ${reviewers.join(', ')}: ${refused}` }
   }
 
   async catchUp(request: CatchUpRequest): Promise<CatchUp> {

@@ -118,6 +118,11 @@ export interface ExecutionResult {
   /** Only on a budget stop or a failure. */
   terminalReason?: string
   /**
+   * Only on a failure inside a publish: the branch it was writing. The host may have created the
+   * branch, or opened the pull request too, before it threw.
+   */
+  publishing?: string
+  /**
    * The whole terminal envelope, for `recordExecution` to write to `refusals/`. Set on a budget
    * stop, and on any run not reported as a success whose envelope names a limit in a field the
    * provider fills, whatever the run then did.
@@ -2014,7 +2019,7 @@ export async function execute(
         transcript,
         ...kept,
         ...cured(),
-        reason: `opened ${opened.ref}`,
+        reason: opened.warning === undefined ? `opened ${opened.ref}` : `opened ${opened.ref} and ${opened.warning}`,
       }
     },
     artifact?.branch,
