@@ -8,11 +8,13 @@ check per skill:
 - **`prose`:** every model-written post SHALL carry a valid `prose ✓` footer, and every commit
   a `Prose:` trailer that matches its staged tree and message.
 - **`bug-hunter`:** every commit SHALL carry a `Bug-hunter:` trailer. It SHALL also carry a
-  `Bug-hunter-Tree:` trailer bound to its staged tree, unless bug-hunter's first triage, run on
-  the whole change before any hunt, found nothing to hunt; then `Bug-hunter:` alone is checked.
+  `Bug-hunter-Tree:` trailer bound to its staged tree whenever a bug-hunter run hunted: its first
+  triage, run on the whole change before any hunt, or an extra iteration. Where none hunted,
+  `Bug-hunter:` alone is checked.
 
 A role that does not list a skill SHALL NOT be checked for it, and publishes as it does without
-this capability. Each skill's check SHALL be defined in Igor's code, not in configuration.
+this capability. A listed skill other than `prose` and `bug-hunter` gets no check from this
+capability.
 
 #### Scenario: A role listing prose has its posts and commits checked
 
@@ -31,8 +33,8 @@ this capability. Each skill's check SHALL be defined in Igor's code, not in conf
 
 #### Scenario: A change bug-hunter's triage skipped needs no tree trailer
 
-- **WHEN** a role's `skills` is `[bug-hunter]` and bug-hunter's first triage finds nothing to
-  hunt in the change
+- **WHEN** a role's `skills` is `[bug-hunter]`, bug-hunter's first triage finds nothing to hunt
+  in the change, and no extra iteration runs
 - **THEN** the commit is made with its `Bug-hunter:` trailer and no `Bug-hunter-Tree:`
 
 #### Scenario: A role listing neither publishes as before
@@ -40,34 +42,74 @@ this capability. Each skill's check SHALL be defined in Igor's code, not in conf
 - **WHEN** a role's `skills` lists neither `prose` nor `bug-hunter`
 - **THEN** its posts and commits are published with no footer or trailer check
 
-### Requirement: Published text is signed by the model step that wrote it
+### Requirement: Igor runs prose's calls around the model step that writes
 
 For a role whose `skills` lists `prose`, every text a model step writes for an Igor to publish
-SHALL be signed by that step. That
-covers pull request descriptions, replies, questions, and any other model-written post to
-GitHub, Discord or Linear. The step SHALL sign with the prose skill's `prose sign`, which
-appends a `prose ✓ <hash>` footer computed over the text above it. No model step SHALL post.
-A commit message is the exception: the prose pass writes it, and Igor's code signs it, as
-`task-execution`'s *A commit is signed by bug-hunter and the prose pass before it is committed*
-requires.
+SHALL go through prose's pass. That covers pull request descriptions, replies, questions, and
+any other model-written post to GitHub, Discord or Linear. The *prose pass* is the model step
+that writes the text between prose's two calls.
+
+Igor's code SHALL run both of prose's calls itself, as Igor's service user, from the pinned
+skills directory (#174):
+
+1. **The first call**, `prose sign` for a post, SHALL run before the step writes. Igor SHALL
+   give the step the rules and the pass token it prints, in the step's prompt on stdin.
+2. **The second call**, `prose sign --pass <token>`, SHALL run on the text the step hands back,
+   given on stdin. Once the cold read below is answered, it appends a `prose ✓ <hash>` footer
+   computed over that text.
+
+Before the second call signs, the text SHALL be read cold: Igor SHALL run a fresh model step
+whose whole prompt is the cold-read brief the second call prints, exactly as printed, and SHALL
+give its report to the step that wrote the text, which fixes what the report names and answers
+each line. Igor SHALL then run the second call with that report and those answers. A step SHALL
+fix every finding, and prose's refusal of a kept one SHALL count as a failed check.
+
+No model step SHALL run a prose script, and no worker user SHALL be able to write prose's token
+store, so no step can issue a token or sign. No model step SHALL post. A commit message is
+signed the same way, through `prose check`, as `task-execution`'s *A commit is signed by
+bug-hunter and the prose pass before it is committed* requires.
 
 Text the code assembles from recorded state is not signed: handoffs, stop receipts and claim
-messages. `graceful-handoff` stays as it is.
+messages. `graceful-handoff` stays as it is. Nor are someone's words that code-assembled text
+quotes: bug-hunter's open decisions in the opening block the code assembles for a pull request
+body, the worker's reason for declining in a handoff, and a person's chat request in the issue
+Igor opens from it.
 
 #### Scenario: No model step posts
 
 - **WHEN** a model step has a reply ready
-- **THEN** it returns the signed reply to Igor's code, which posts it, and makes no post itself
+- **THEN** it hands the reply to Igor's code, which signs and posts it, and makes no post itself
 
-#### Scenario: A reply is signed where it is written
+#### Scenario: The step writes with the rules Igor's first call printed
 
-- **WHEN** a model step composes a reply to a mention
-- **THEN** it returns the reply with a `prose ✓` footer from `prose sign`
+- **WHEN** a model step is to compose a reply to a mention
+- **THEN** Igor runs `prose sign`'s first call first, and the step's prompt holds the rules and
+  the pass token it printed
+- **AND** Igor, not the step, runs the second call on the reply the step hands back
+
+#### Scenario: A worker cannot issue a token
+
+- **WHEN** a model step running as a worker user tries to write a file into prose's token store
+- **THEN** the write fails, and no token exists that Igor's first call did not issue
+
+#### Scenario: A signature waits for a cold read
+
+- **WHEN** Igor runs the second call on a reply and it prints a cold-read brief
+- **THEN** a fresh model step reads the brief as its whole prompt, and the step that wrote the
+  reply fixes what that read names
+- **AND** Igor runs the second call again with the report and the answers, and only then has a
+  signed reply
+
+#### Scenario: A kept cold-read finding is a failed check
+
+- **WHEN** the step that wrote a reply answers a cold-read finding by keeping it
+- **THEN** prose's second call refuses to sign, and the reply goes back to the step as a failed
+  attempt
 
 #### Scenario: The rule holds on every surface
 
 - **WHEN** an Igor whose role lists `prose` posts model-written text to GitHub, Discord or Linear
-- **THEN** the text carries a footer from the model step that wrote it
+- **THEN** the text carries a footer from prose's second call on that text
 
 #### Scenario: A handoff needs no model call
 
@@ -87,10 +129,11 @@ runs on.
 
 #### Scenario: Signed text is published unchanged
 
-- **WHEN** a model step returns text whose footer verifies
+- **WHEN** prose's second call returns text whose footer verifies
 - **THEN** the code publishes exactly that text
-- **AND** in a pull request body, the span between the opening block and `<!-- igor:evidence -->`, or to the end where there is no marker, is exactly that
-  text, and anything from the marker on is the evidence section Igor's code assembled
+- **AND** in a pull request body, the span between the opening block and
+  `<!-- igor:evidence -->`, or to the end where there is no marker, is exactly that text, and
+  anything from the marker on is the evidence section Igor's code assembled
 
 #### Scenario: Text edited after signing is not published
 
@@ -105,20 +148,24 @@ runs on.
 ### Requirement: A failed check goes back to the model step, a bounded number of times
 
 When a check fails, the code SHALL return the text to the model step that wrote it, with the
-reason, and that step SHALL redo its check and sign again. A commit is signed by Igor's code,
-not by the prose pass, so where prose's second call refuses the token the prose pass reported,
-the prose pass SHALL run prose's first call again and report a new token. A commit's tree or message mismatch, and a
-refused minting call, are the exceptions: each goes back to no step, as `task-execution`
-requires. After two failed
-attempts the code SHALL publish none of the text and SHALL record the failure, with each reason,
-to the state branch. On a claimed item, the handoff the code assembles is still posted, as
-`graceful-handoff` requires.
+reason, and that step SHALL write it again. Where prose's second call refuses the token, Igor
+SHALL run the first call again and give the step the new rules and token. A commit's tree or
+message mismatch, and a refused minting call, are the exceptions: each goes back to no step, as
+`task-execution` requires. After two failed attempts in total, the first and one redo, the code
+SHALL publish none of the text and SHALL record the failure, with each reason, to the state
+branch. On a claimed item, the handoff the code assembles is still posted, as `graceful-handoff`
+requires.
 
 #### Scenario: A failure is sent back with its reason
 
 - **WHEN** a text fails verification
 - **THEN** the model step receives it back with the reason it failed
-- **AND** returns it checked and signed again
+- **AND** writes it again, and Igor signs and checks it again
+
+#### Scenario: A refused token gets a new first call
+
+- **WHEN** prose's second call refuses the token for a reply
+- **THEN** Igor runs the first call again and gives the step the new rules and token
 
 #### Scenario: A commit's tree mismatch goes back to no step
 

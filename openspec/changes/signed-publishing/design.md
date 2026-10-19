@@ -5,83 +5,152 @@ commit remotely through GitHub's Git Data API (`createBranchWithFiles`) and open
 request. So the prose and bug-hunter skills' usual safety net, a hook that reads the reflog
 after `git commit`, never sees an Igor commit. Igor has to run the checks itself.
 
-Issue [#139](https://github.com/adamstallard/igor/issues/139) holds the full reasoning.
+Issue [#139](https://github.com/adamstallard/igor/issues/139) holds the original reasoning.
+Where #139 differs from proposal decision 12, which sets the order of a commit's signing steps,
+or from decision 16, which has Igor's code run both of prose's calls, the proposal holds.
 
 ## Decisions
 
-### A model step signs; the code verifies
+### The model writes between prose's two calls; Igor's code runs both
 
-Each half does what the other cannot.
+Prose takes two calls per text. The first prints the rules and a one-use pass token; the model
+writes by those rules; the second, given the token, signs. A token is a file in prose's token
+store, which prose keeps in the repository's git directory (task 0.9). The second call accepts
+only a token that store holds.
 
-- **The model step runs the checks**, because running `prose check` or `prose sign` prints the
-  pass and the rules to the model while it writes. A trailer or footer is the check's output, so
-  a step that skipped the check has nothing to return.
-- **The code verifies**, because the model's word is not proof. A step can return a footer
-  from an earlier draft, or text edited after signing; `prose verify-post` and
-  `prose verify-staged` catch both.
+**Igor's code runs both calls, as Igor's service user (Adam, 2026-10-18; proposal, decision
+16).** It runs the first call, puts the printed rules and the token in the model step's prompt,
+on stdin, and runs the second call once the step has written. The worker user never writes the
+token store, so it cannot forge a token, and the token is still what shows that the rules were
+printed for this text before it was written. This holds for a commit (`prose check`) and for a
+post (`prose sign`).
 
-No model step commits, pushes or posts. No code step writes prose.
+- **The model does the pass**, because it is the model that writes.
+- **The code verifies**, because the model's word is not proof. A step can hand back a footer
+  from an earlier draft, or text edited after signing; `prose verify-post` and `prose
+  verify-staged` catch both.
+
+No model step commits, pushes, posts or runs a prose or bug-hunter script.
+
+**No prose step reads a skill file itself.** `--plugin-dir` gives a step no Read access to the
+plugin's files (#174), so a step told to read prose's `rules.md` or `cold-read.md` would be
+refused. Under decision 16 it never needs to: the rules come in its prompt from the first call
+Igor runs, and the cold-read brief the second call prints begins with `cold-read.md` (prose's
+source at shared-skills `44d1f67`). The
+bug-hunter steps are the exception, since bug-hunter's instructions point at files beside its
+`SKILL.md`; how they reach them is *For Adam* 14.
+
+### Every signature needs a cold read, run as its own step
+
+Prose's second call signs nothing until a reader who has not seen the conversation has read
+the text cold. Run without a report, it prints a cold-read brief and exits 5 (prose's source at
+shared-skills `44d1f67`). So Igor runs the second call in three parts:
+
+1. **The brief.** Igor runs the second call without a report and keeps the brief it prints.
+2. **The cold read.** Igor starts a fresh model step whose whole prompt, on stdin, is the
+   brief exactly as printed, and saves its report.
+3. **The answers.** Igor gives the report to the step that wrote the text, run again with the
+   rules. That step fixes what the report names and writes its answers, the file prose calls a
+   dispositions file. The file holds two kinds of line: one answering each finding, and one
+   answering each line in which the cold reader said what it understood the text to mean. Igor
+   reads the report and the answers without following a link, and only if each is a regular
+   file with one hard link, as #175 requires of every file the worker wrote. For a commit whose
+   role lists `bug-hunter`, Igor then restages the change and runs bug-hunter's triage on the
+   answers' diff; a diff the triage does not skip fails the attempt, since answering a cold read
+   changes prose, not code (*For Adam* 15). Igor then runs the second call with `--cold-read`
+   and `--dispositions`.
+
+No person is there to answer a kept finding. So the writing step fixes every finding, and
+wherever the cold reader understood a line other than as meant, it changes the text and answers
+that line `fixed`; it answers `matches` only where the cold reader understood the line as
+meant. Prose refuses to sign while any finding or line is kept without a person's answer, and
+that refusal is a failed attempt (*A failure goes back*, below). This mechanism is *For Adam* 3
+in the proposal.
 
 ### A commit is signed three ways, once, at the end
 
 - **Bug-hunter's** trailer binds the tree (`Bug-hunter-Tree:`).
 - **The prose pass's** trailer binds the staged tree and the message together
   (`Prose: ✓ <tree>:<message>`).
-- **The issue title** is the subject, because a person wrote it. The prose pass is given the
-  title; the code checks it was kept.
+- **The issue title** is the subject. The prose pass is given the title; the code checks it
+  was kept.
 
 The code compares both signed trees with the sha that `POST /git/trees` returns, which is known
-before the commit exists. Igor never rebases its branches, so that hash still matches whenever
-the commit is checked later.
+before the commit exists. Igor never rebases its branches, so anyone verifying the trailers
+after the push finds the same tree on the branch's commit. A squash merge makes a new commit on
+the base with another tree, so the trailers it copies verify against the branch's commit, not
+the squash.
 
-**Decided by Adam, 2026-10-17 (on #175): for a commit, the steps edit, and the trailers are made
-once.** This narrows *A model step signs; the code verifies*, above: for a commit, neither step
-signs while it runs. Bug-hunter runs, then the prose pass, which also rewrites the code comments
-bug-hunter's fixes added. After the last model step exits, Igor stages the change once, in its
-own index, and every trailer is created against that tree, the one Igor records and publishes.
-So the prose pass's edits are always in the tree the trailers name. Under #175 (`worker-user`)
-the steps run as a worker user that cannot write the git directory, which rules out a step
-staging for itself.
+The order, from proposal decisions 11, 12, 13 and 16:
 
-**Decided by Adam, 2026-10-17, answering questions raised on #175: Igor runs the signing
-calls, and bug-hunter triages the prose pass's diff.** Each step ends by reporting its pass
-result. Bug-hunter's is its result block: the `Bug-hunter:` value, such as `1 iteration, 1 bug
-fixed`, which becomes that trailer, and any open decisions. The prose pass's is the pass token
-its first `prose check` call printed. Bug-hunter then runs its usual triage on the prose pass's
-diff: a diff that touches only comments or docs is skipped, and anything else gets one more
-bug-hunter iteration. Igor then stages once and runs both signing calls itself: prose's second
-`prose check` call with the prose pass's token, and bug-hunter's minting script, which writes
-`Bug-hunter-Tree:` for the staged tree (task 0.10 confirms it can run as a separate call). The
-scripts come from the root-owned skills directory (#174), so Igor's service user runs nothing
-the worker wrote. The token is what shows the model ran the call that prints the rules: prose's
-second call accepts only a token its first call issued. `Bug-hunter-Tree:` names the staged
-tree, which bug-hunter reviewed in full apart from prose-pass edits its triage judged to touch
-only comments or docs.
+1. **Bug-hunter** runs as the worker user, in caller-commits mode, and reports its
+   `Bug-hunter:` value, such as `1 iteration, 1 bug fixed`, and any open decisions. It neither
+   stages nor runs `caller-result.sh`: the worker user cannot write the git directory, so that
+   script would mint the wrong tree or fail (task 0.14).
+2. **Igor stages** the change in its own index and runs prose's first `prose check` call on a
+   draft message holding the issue title, with reader goals for the message and for each
+   changed doc and spec. A token records the per-file goals its first call saw, and the second
+   call refuses a doc that had none (task 0.9). So the change is staged before the first call,
+   which then sees the changed docs and records their goals. Before this staging, as before
+   every staging, Igor runs #175's link and hard-link checks on the changed paths; otherwise
+   `git add` would turn a hard link the worker made to a credential, such as the App's private
+   key, into a blob in a git directory the worker can read.
+3. **The prose pass** gets the rules and the token in its prompt. It rewrites the message and
+   the change's docs and comments by those rules, including the comments bug-hunter's fixes
+   added.
+4. **Bug-hunter's triage** runs on the prose pass's diff, on a pinned model (proposal, decision
+   17). A diff its triage skips gets no hunt; any other diff gets one more bug-hunter iteration.
+5. **Igor stages once more** and runs two things: the second call, with the cold read above and
+   the triage of its answers; and bug-hunter's minting script, which writes `Bug-hunter-Tree:`
+   for the staged tree.
 
-**Accepted by Adam, 2026-10-18: no second prose pass after the extra iteration.** Comments that
-iteration writes reach the tree after the prose pass, so no prose pass reads them, and the
-`Prose:` trailer Igor then makes vouches for a tree holding comments no prose pass read. The
-prose pass is not meant to change code, so a prose-pass diff that needs another hunt is an edge
-case, and Adam judged the gap not worth a second prose pass.
+Igor checks for a stop, and that it still holds the claim, before every model step after the
+worker,
+as at any checkpoint of a long execution (`surface-adapter`); a stop publishes nothing.
 
-Two mismatches can still refuse a commit, and neither goes back to a step, because Igor's code
-made both bindings. The tree the trailers name, from Igor's clone, can differ from the tree the
-Git Data API builds for the commit (item 3, task 0.4). The message Igor commits can differ from
-the message the `Prose:` trailer hashes. Either is recorded as the item's failure.
+Every trailer that binds a tree then names the tree Igor records and publishes. The scripts
+come from the root-owned skills directory (#174), and Igor runs them with `GIT_DIR`,
+`GIT_WORK_TREE` and `GIT_INDEX_FILE` set to its own git directory, the tree and its own index,
+so they read none of a `.git` the worker can replace (task 0.12).
+
+`Bug-hunter-Tree:` names the staged tree. It attests that bug-hunter reviewed every change in
+that tree except the prose-pass edits its triage skipped; the answers to the cold read are among
+those edits.
+That triage skips more than comments and docs (task 0.11): also tests, specs, lockfiles,
+generated or vendored files, formatting and renames.
+
+**No second prose pass follows the extra iteration (Adam, 2026-10-18).** Comments that
+iteration writes reach the tree after the prose pass, which never rewrites them. The cold read
+in step 5 does read them, since it reads every comment in the staged change, and the prose
+pass fixes what it names. Adam judged a full second prose pass over those comments not worth
+its cost, since the prose pass is not meant to change code.
+
+Three failures can still refuse a commit, and none goes back to a step, because each is Igor's
+own. The tree the trailers name can differ from the tree the Git Data API builds (*Decided
+questions*, item 3). The message Igor commits can differ from the message the `Prose:` trailer
+hashes. The minting call can fail. Each is recorded as the item's failure.
 
 Merge commits carry no trailers: `resolve` and the server-side `Merge X into Y` commits are
 Igor's own mechanics, and the skills' checks skip merges.
 
+### A post is signed the same way
+
+Igor runs `prose sign`'s first call and gives the rules and the token to the step that writes
+the post. The step hands back the text. Igor runs the second call, `prose sign --pass <token>`,
+with the text on stdin and with the cold read above; it prints the text with its `prose ✓`
+footer. Igor runs `prose verify-post` on that text and publishes it exactly.
+
 ### A failure goes back, a bounded number of times
 
 A failed check returns the text to the step that wrote it, with the reason ("the footer does
-not verify", "prose refused the pass token"). The step redoes its check: for a post it signs
-again, and for a commit the prose pass runs its first call again and reports the new token. A
-commit's tree and message are bound by Igor's code, not by a step, so a tree or message
-mismatch goes back to no step: it refuses the commit and is recorded as the item's failure.
+not verify", "prose refused the pass token"). Where prose refused the token, Igor runs the
+first call again and gives the step the new rules and token. A commit's tree and message are
+bound by Igor's code, not by a step, so a tree or message mismatch goes back to no step: it
+refuses the commit and is recorded as the item's failure.
 
-The bound is two attempts, the same for every role. Without a bound, a step that keeps failing
-spends the seat's budget on one item. A per-role setting can be added later if a role needs one. After the last attempt the code
+The bound is two attempts in total, the same for every role: a text that fails goes back to its
+step once. Without a bound, a step that keeps failing spends the seat's budget on one item. A
+per-role setting can be added later if a role needs one. After the last attempt the code
 publishes nothing and records the failure, with each reason, to the state branch.
 
 ### Text the code assembles is not signed
@@ -95,8 +164,8 @@ its claim in the very case `graceful-handoff` exists for, so that capability sta
 
 ### What a signature proves, and what it does not
 
-- **Proves:** the check's script ran over this exact text, or this exact tree, and nothing
-  changed afterwards.
+- **Proves:** prose's second call ran over this exact text, or this exact tree, with a token
+  its first call issued, and nothing changed afterwards.
 - **Does not prove** that the pass or the hunt was done well. Igor running the steps itself is
   what guarantees they ran.
 - **Does not prove who signed.** The footer is a hash, not a key: anyone can run `prose sign`.
@@ -104,8 +173,8 @@ its claim in the very case `graceful-handoff` exists for, so that capability sta
 
 ## Decided questions
 
-Adam accepted the recommendation on each question below on 2026-10-11. Items 1 to 4 were raised
-in review on 2026-10-04.
+Adam accepted the recommendation on each question below on 2026-10-11, except where a later
+date is given.
 
 ### Which roles: a role lists the skills its worker uses
 
@@ -113,12 +182,14 @@ in review on 2026-10-04.
 "commits". A role declares `skills: [<name>, …]`, the pinned skills of #174's `igor` plugin its
 worker uses. The org base may set the list for every role, and a role may add to it;
 inheritance adds and never removes, so a skill the org requires stays required. A name that is
-not installed under `skills_dir` is refused at load.
+not installed under `skills_dir` is refused at load. A listed skill other than `prose` and
+`bug-hunter` gets no step and no check from this change.
 
-Igor's code verifies per listed skill. `prose` means every model-written post needs a valid
-`prose ✓` footer and every commit a matching `Prose:` trailer. `bug-hunter` means every commit
-needs a `Bug-hunter:` trailer bound to the staged tree. A role that lists neither publishes as
-it does today. Each skill's check is written in Igor's code, because only these two exist; a
+Igor's code runs the steps and checks per listed skill. `prose` means every model-written post
+needs a valid `prose ✓` footer and every commit a matching `Prose:` trailer. `bug-hunter` means
+every commit needs a `Bug-hunter:` trailer and, whenever a bug-hunter run hunted, a
+`Bug-hunter-Tree:` trailer bound to the staged tree. A role that lists neither publishes as it
+does today. Each skill's check is written in Igor's code, because only these two exist; a
 configurable table of checks would be configuration for two rows.
 
 Which skills an org lists for every role is its own choice, informed by the cost task 4.1
@@ -126,102 +197,147 @@ measures.
 
 ### 1. Igor opens the prose hook's gate for its worker
 
-**Decided on 2026-10-11, and open again:** under #174's reset nothing in a worker checks the gate
-this item opens (*Interactions*, below), so whether Igor runs `prose start` at all is listed for
-Adam in the proposal. Where it runs, Igor runs `prose start` for the worker's session id itself,
-before the worker starts. *Rejected:* leaving the worker to open the gate with its own first call, which spends
-a turn, and where the worker's first act is a file write, has that write blocked by the gate
-described below.
+Prose's *gate* is its Claude Code hook that blocks a session's first doc edit or post until
+`prose start` has written the session mark, a file in the session's home. **Decided by Adam,
+2026-10-11.** Whether Igor still runs `prose start` at all is now *For Adam* 6. Under
+#174's reset nothing in a worker checks the gate (*Interactions*, below), and under decision 16
+the prose pass gets the rules from the first call Igor runs.
 
-If prose's hooks are installed for the user Igor runs as, the first-write gate blocks a
-worker's first file write until prose's first call has run in that session. The gate is per
-session: it opens once `prose start` or a first `check` or `sign` has marked the session id.
-`prose.py start --session <id>` marks a given session, and `claude -p` accepts
-`--session-id <uuid>`. So Igor opens the gate itself:
+Where it runs, Igor runs `prose start` for the worker's session id before the worker starts.
+Igor runs it as the worker user, through the spawn #175 defines, so that the session mark lands
+in the worker's home (#175, decision 15). *Rejected:* leaving the worker to open the gate with
+its own first call, which spends a turn and, where the worker's first act is a file write, has
+that write blocked.
 
-1. It generates a uuid for the worker.
+1. Igor generates a uuid for the worker.
 2. It runs `prose.py start --session <uuid>` with reader goals for the item's commit and
-   description, which marks the session and prints the rules. What those goals are is not yet
-   defined; the proposal lists it for Adam.
+   description, which marks the session and prints the rules. What those goals are is *For
+   Adam* 13.
 3. It writes those rules to a file in a directory Igor owns, which no worker user can write, and
-   passes it with `--append-system-prompt-file`.
+   passes it as a system-prompt file, as #175 requires.
 4. It starts the worker with `claude -p --session-id <uuid>`, its prompt on stdin.
 
-No prompt text, rule or goal goes on a command line (proposal, decision 15), since every user on
-the server can read a process's `/proc/<pid>/cmdline`. `prose start` takes its goals only as
-`--goals` today, so task 0.13 finds or adds another way to pass them, and these four steps are
-not built until it has.
+No prompt text, rule or goal goes on a command line (proposal, decision 15). `prose start`
+takes its goals only as `--goals` (task 0.13), so these four steps wait on task 0.16.
 
-Nothing depends on the model running a step, and the role needs no permission to run prose.
-The mark lives under `$XDG_STATE_HOME` or `$HOME`, and the worker's environment is given
-rather than inherited, so `start` runs with the same values the worker gets.
-
-**Not measured:** that a fresh `claude -p --session-id <uuid>` reports that id as `session_id`
-in its hook payload. Task 0.3 measures it.
+**Measured (task 0.3, 2026-10-18):** a fresh `claude -p --session-id <uuid>` reports that uuid
+as `session_id` in every hook payload. Stdin with `--append-system-prompt-file` works (task
+0.13).
 
 **Interactions.** `--bare` would skip hooks, and the gate with them, but it also drops the
 seat's OAuth token (#144), so it is no way around the gate. `pinned-skills` (#174) loads skills
 as the `igor` plugin with `--plugin-dir`; the plugin declares no hooks and the install wires
-none, so the plugin itself turns on no first-write hook. And #174 resets the home every model
-step runs in, the worker's and the later prose and bug-hunter steps', to a template whose
-`settings.json` holds no hooks. So in a worker the gate never runs, whatever is installed for the
-user Igor runs as, and `prose start` opens a gate nothing checks.
+none. And #174 resets the home every model step runs in to a template whose `settings.json`
+holds no hooks. So in a worker the gate never runs, and `prose start` opens a gate nothing
+checks.
 
-### 2. The worker is granted the scripts it signs with, by path
+### 2. The worker is granted no signing script
 
-**Decided:** a role that lists `prose` or `bug-hunter` is granted the commands its skills
-need, from the list below, by path into the
-pinned skills directory that `pinned-skills` (#174) installs. Where Igor's own code can run a script instead, as in item
-1, it does, and the role needs no grant for it. *Rejected:* granting the scripts by bare
-name, which would run whatever copy is first on the worker's `PATH`.
-
-`prose check` and `prose sign` are shell commands the model step runs, and the `commands` list
-in `roles/org.yaml` of the `igor-lore` repository, which holds this organization's shared role
-configuration, allows neither without this grant.
+**Decided by Adam, 2026-10-18 (proposal, decision 16):** Igor's code runs every prose and
+bug-hunter script, so a role that lists `prose` or `bug-hunter` is granted none of them.
+*Rejected (Adam, 2026-10-18):* granting the worker `prose.py check` and `… sign` by path into
+the pinned skills directory, so that the model step could run prose's first call. A step that
+runs the first call needs a token store it can write, and could then forge a token.
 
 | Step | Run by | Why |
 | --- | --- | --- |
-| `prose check -F <msg>`, the first call, given its goals | model | run on the step's draft message, it prints the rules and a pass token before the model rewrites; the step reports the token (proposal, decision 12) |
-| `prose sign`, the first call, given its goals, then `prose sign --pass <token>` with the token the first call printed | model | the first call prints the rules and a token before the model writes the post, and the second signs it. Neither first call may take its goals on its command line; task 0.13 finds how they take them |
-| bug-hunter's run, and its triage of the prose pass's diff | model | the hunt is the model's work; the step reports its result block |
-| `prose start --session <uuid>` | code | item 1 |
-| `git add -A` once, after the last model step exits | code | only Igor's code can write its own index (task 2.1) |
-| `prose check -F <msg> --pass <token>`, the second call, and bug-hunter's minting script | code | they mint against Igor's staged tree, which the steps cannot write (proposal, decision 12) |
+| bug-hunter's run, and its triage of the prose pass's diff | model, as the worker user | the hunt is the model's work; the step reports its `Bug-hunter:` value |
+| the pass between prose's two calls, and the answers to the cold read | model, as the worker user | writing is the model's work |
+| the cold read | model, a fresh step | a reader who has not seen the conversation |
+| `git add -A` in Igor's own index | code | only Igor's code can write its own index (tasks 2.1 and 2.5) |
+| prose's first and second calls, `check` and `sign`, and bug-hunter's `mint-trailer.sh` | code, as the service user | decision 16; the token store and Igor's index are the service user's |
+| `prose start --session <uuid>`, where it runs | code, through #175's spawn as the worker user | item 1 |
 | `prose verify-post`, `prose verify-staged` | code | verifying is the code's half |
 
-So the grant, where `<skills>` stands for `<skills_dir>/skills`, the `skills/` folder of the
-pinned directory (#174):
-
-- `python3 <skills>/prose/scripts/prose.py check`
-- `python3 <skills>/prose/scripts/prose.py sign`
-
 The regression tests bug-hunter writes are expected to run under the `npm test` and `npx vitest
-run` entries the role's `commands` list already holds. Task 0.15 measures it; if they do not,
-the grants come back to Adam before building.
+run` entries the role's `commands` list already holds. Task 0.15 measures it. If they do not,
+Adam decides before building which commands to grant for them, with the recommendation to
+grant the role exactly the commands the tests need.
 
-### 3. The clone's staged tree is measured against the API's tree before either is trusted
+### 3. Igor's staged tree is measured against the API's tree before either is trusted
 
-**Decided:** measure first (task 0.4), and if the two trees can differ, sign and verify against
-the API's tree instead of the clone's index. *Rejected:* assuming the two trees agree, which
-fails silently on the first executable or deletion where they do not.
+**Decided (Adam, 2026-10-11):** measure first (task 0.4), and if the two trees can differ, sign
+and verify against the API's tree, not Igor's index. *For Adam* 16 asks Adam to reverse the
+second half: the measurement below shows the trees differ only where `main` uploads a path
+wrongly, so this change signs against Igor's index and builds on #137.
+*Rejected:* assuming the two trees agree, which fails silently on the first executable or
+deletion where they do not.
 
-`prose verify-staged` checks the git index, but Igor builds its commit through the Git Data
-API (`createBranchWithFiles`) and never stages in its clone. Comparing the signed trees with
-the sha `POST /git/trees` returns holds only if Igor stages in the clone (`git add -A`, task
-2.1) and `git write-tree` there equals the API's tree sha, with the same modes, deletions and
-symlinks.
+`prose verify-staged` checks the git index, but Igor builds its commit through the Git Data API
+(`createBranchWithFiles`). Comparing the signed trees with the sha `POST /git/trees` returns
+holds only if `git write-tree` in Igor's index equals the API's tree sha, with the same modes,
+deletions, symbolic links and submodules.
 
-The modes are where they can differ: `createBranchWithFiles` writes an executable file as
-`100755` and every other file as `100644`, so the two trees agree only if the clone's modes map
-onto those two exactly. The measurement stages a change in a clone, runs `git write-tree`,
-builds the same tree through the Git Data API, and compares the shas, with a deletion and an
-executable file among the changes.
+**Measured (task 0.4, 2026-10-19):** the trees are equal for a modified file, a deletion and an
+executable bit, added or changed alone. They differ today for a symbolic link and a submodule:
+the code on `main` reads a link through `readFile` and `stat`, which follow it, so the link goes
+out as a `100644` blob of its target's content, and a submodule's change reads as `EISDIR` and
+is skipped. Built with each path as the tree holds it (a link as a `120000` blob of its target,
+a submodule as a `160000` commit), which is what `carry-what-a-tree-holds` (#137) specifies, the
+trees are equal for every measured case. So this change signs against `git write-tree` of Igor's
+own index and builds on #137 (*For Adam* 16). Until #137 is built, a change holding a link or a
+submodule is refused as a tree mismatch, recorded as the item's failure. A binary file and a
+clean-filtered file, which #137 also carries, are not measured yet (task 0.17).
 
 ### 4. Igor's posting code refuses an unsigned post
 
-**Decided:** a test that Igor itself refuses a post without a valid footer, with no hook
-installed (task 1.4). *Rejected:* relying on prose's posting hook, which guards only posts made
-from a Claude Code session.
+**Decided (Adam, 2026-10-11):** a test that Igor itself refuses a post without a valid footer,
+with no hook installed (task 1.5). *Rejected:* relying on prose's posting hook, which guards
+only posts made from a Claude Code session.
 
-Prose's posting hook guards only posts made from a Claude Code session. Igor posts from its
-own code, so `prose verify-post` in Igor's posting code is the only guard.
+## Measurements
+
+Each ran on 2026-10-18 or 2026-10-19, with shared-skills at `44d1f67` (its `main`) and Claude
+Code 2.1.303. Each entry says what the measurement showed, including where it contradicted this
+design.
+
+- **0.2, bug-hunter's caller-commits mode has landed.** It is in shared-skills `main` at
+  `44d1f67`, with `caller-result.sh` and `mint-trailer.sh`. **Confirms** #139's record.
+- **0.3, the session id.** `claude -p --session-id <uuid>` gives that uuid as `session_id` in
+  the `SessionStart`, `UserPromptSubmit`, `PreToolUse` and `Stop` payloads, and in the
+  transcript's name. **Confirms** item 1.
+- **0.4, the two trees.** As item 3 records: equal for a modified file, a deletion and an
+  executable bit; different today for links and submodules; equal for every case once paths are
+  carried as #137 specifies. **Confirms** item 3, provided this change builds on #137.
+- **0.9, a token from the worker's first call.** **Contradicted** what decision 12 assumed.
+  Prose keeps a `check` token under `$(git rev-parse --git-common-dir)/prose/passes`, which
+  under #175 is a git directory the worker user cannot write, so the worker's first call failed
+  with `Permission denied` and issued no token. It also could not stage, so it saw only the
+  unchanged index. A variant worked: Igor pre-creating `<git dir>/prose/passes`, mode 2770, for
+  the worker's group. It was not adopted, because a token is a plain JSON file, so a worker that
+  can write that directory can forge one without running the first call. The run also showed
+  that the token records the per-file goals the first call saw, and that the second call needs a
+  cold-read report and a dispositions file. Adam's decision 16 answers the token store, the
+  goals and the cold read: Igor runs the first call, on its own staged index, and runs the cold
+  read as a step.
+- **0.10, minting as a separate call.** `bug-hunter/scripts/mint-trailer.sh`, run by the
+  service user after bug-hunter's run had ended, printed `Bug-hunter-Tree:` with the
+  `git write-tree` of Igor's index. It needs the full shared-skills clone beside it, which
+  #174's layout provides. **Confirms.**
+- **0.11, where bug-hunter's triage draws its line.** **Contradicts** decision 12, which names
+  "a diff that touches only comments or docs". Bug-hunter's written rule also skips tests,
+  specs, lockfiles, generated or vendored files, formatting, renames and moves. Seven prose-pass
+  diffs were each sent with the rule to haiku and to sonnet. Both skipped a comment in code, a
+  line of `README.md`, a test's title and comments, and a docstring. Both reviewed a thrown
+  error's message and a CLI help string. On one requirement's wording in an OpenSpec spec, haiku
+  reviewed and sonnet skipped. So the triage is pinned to one model (decision 17), and which
+  model is *For Adam* 2.
+- **0.12, the scripts follow Igor's git directory.** With `GIT_DIR`, `GIT_WORK_TREE` and
+  `GIT_INDEX_FILE` set, prose's calls, `verify-staged` and bug-hunter's minting scripts all used
+  Igor's git directory and index, and a `.git` the worker had planted, with a `core.fsmonitor`
+  script and a pre-commit hook, ran nothing. Without them, the same run executed the worker's
+  `core.fsmonitor` script 14 times and its hook once, as the service user. **Confirms**,
+  provided Igor always sets all three.
+- **0.13, goals and prompts off the command line.** `claude -p` reads its prompt on stdin
+  beside `--append-system-prompt-file`. **Confirms.** Prose's half **contradicts** decision 15:
+  `prose start` and `prose sign` take reader goals only from `--goals`, and `prose check`'s
+  `--goals-file` holds per-file goals only, so the message's own goals also need `--goals`.
+  Under decision 16 Igor runs those calls, so the goals would sit on Igor's command line. Prose
+  needs a file form for those goals, which task 0.16 adds as a dependency on shared-skills.
+- **0.14, caller-commits mode as the worker user.** With nothing staged, `caller-result.sh`
+  minted HEAD's tree, not the change; after the worker wrote to the copy of the index that #175
+  keeps in the worker's outbox (a directory the worker shares with Igor, for `git rm` and `git
+  mv`), minting failed with `insufficient permission`. **Confirms** that Igor mints the tree:
+  the bug-hunter step reports only its `Bug-hunter:` value and runs no script.
+- **Not measured:** 0.15, whether bug-hunter's regression tests run under the role's existing
+  `commands`; and 0.17, whether a binary file and a clean-filtered file give equal trees.

@@ -3,8 +3,9 @@
 ### Requirement: A role declares the skills its worker uses
 
 A role SHALL declare `skills: [<name>, …]`, the pinned skills its worker uses, named from the
-skills of the `igor` plugin under `skills_dir` (#174). The list decides which skills the worker is
-directed to use and which checks Igor's code makes on what it publishes. It does not decide what
+skills of the `igor` plugin under `skills_dir` (#174). The list decides which skills' steps Igor
+runs and which checks Igor's code makes on what it publishes; a listed skill other than `prose`
+and `bug-hunter` gets no step and no check from `signed-publishing`. It does not decide what
 loads: #174 loads every installed skill, as `igor:<name>`, for every role. The org base MAY set
 `skills` for every role, and the list is inherited by appending, as *Merge semantics differ by
 field kind* sets out.
@@ -12,10 +13,8 @@ field kind* sets out.
 A name that is not a skill installed under `skills_dir` SHALL be refused at load, naming it and
 the installed skills.
 
-Listing a skill does not add to `commands`. Whether it grants the skill's scripts beside
-`commands`, as `signed-publishing`'s design proposes, is open (proposal, *For Adam*); until that is
-decided, *A role declares its sources, lane, behaviour, permissions, and reviewers* stands as
-written.
+Listing a skill grants the worker nothing: it adds nothing to `commands`, and Igor's code runs
+every script of a listed skill itself, as `signed-publishing` requires.
 
 A role that declares no `skills`, and inherits none, uses no pinned skill.
 
@@ -28,6 +27,12 @@ A role that declares no `skills`, and inherits none, uses no pinned skill.
 
 - **WHEN** the org base declares `skills: [prose]` and a role declares `skills: []`
 - **THEN** the role's effective `skills` is still `[prose]`
+
+#### Scenario: Listing a skill grants no command
+
+- **WHEN** a role declares `skills: [prose]`
+- **THEN** its effective `commands` are the ones it declares and inherits, with nothing added
+  for prose, and Igor's code runs prose's calls itself
 
 #### Scenario: An unknown skill is refused
 
@@ -86,7 +91,7 @@ base should ship with is `[draft-pr, comment]` — everything reversible, nothin
 - **Override** for settings (`seat`, poll interval, settle interval, cooldown): the most specific
   level wins.
 - **Append** for `instructions`, `lane` and `skills`: levels accumulate, with lane constraints
-  conjoined. A role may add to an appended list it inherits and never drop an entry from it.
+  conjoined.
 
 #### Scenario: Role narrows a permission
 
@@ -102,9 +107,7 @@ base should ship with is `[draft-pr, comment]` — everything reversible, nothin
 
 - **WHEN** the org base permits the command `npm test` and a role also declares `npm install`
 - **THEN** validation fails, for the reason widening `allow` fails: a role that can grant
-  itself a command can grant itself every command, since only an exact match can be checked
-  without a pattern matcher, and a matcher that lets one wider pattern through also lets `*`
-  through
+  itself a command can grant itself every command
 
 #### Scenario: An action outside the vocabulary is refused
 
