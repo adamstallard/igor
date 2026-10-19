@@ -5,9 +5,10 @@
 Where a worker run's output stream carries a `rate_limit_event`, the last such event of the run
 SHALL be recorded as an observation of the seat the gate chose for that run, taken with that
 seat's own credential. It SHALL record, for each window the event reports, the fraction of the
-window consumed and the instant the window resets; and it SHALL record the event's status —
-`allowed`, `allowed_warning` with the threshold it crossed, or `rejected` — and whether extra
-usage is being spent.
+window consumed and the instant the window resets. The row of the window the event names in
+`rateLimitType` SHALL be marked as the named window, and SHALL carry the event's status — `allowed`,
+`allowed_warning` with the threshold it crossed, or `rejected`. On every row from the event it
+SHALL record whether extra usage is being spent.
 
 A stream reading SHALL be recorded in the observation shape already in force, with source
 `stream`, so that it is distinguishable in the record and in reporting from a reading taken
@@ -17,7 +18,9 @@ the event names, with the reset it states. A `rejected` event on a run the provi
 successful SHALL be recorded at the figures it gives, not as a refusal: a limit the run met,
 retried past and finished around is not the reason it stopped.
 A window the event names that is neither the session nor the weekly window SHALL NOT be recorded
-as either.
+as either. Where it is a weekly window of one model, it SHALL be recorded as a week observation
+carrying that model (*An observation records how full a window was, and when it resets*); any
+other window is not recorded.
 
 One reading per run, not one per event: the last event is the newest, and the gate reads the
 newest unreset reading (*The reserve is untouchable*).
@@ -67,10 +70,20 @@ newest unreset reading (*The reserve is untouchable*).
 - **WHEN** the event reports a window other than the five-hour and seven-day ones
 - **THEN** that window is not recorded as the session or the weekly window
 
+#### Scenario: A per-model weekly window keeps its model
+
+- **WHEN** the event reports a weekly window of one model
+- **THEN** it is recorded as a week observation carrying that model
+
 ### Requirement: A stream reading is timed when it arrived, not when the run ended
 
 An observation taken from a worker's stream SHALL carry the instant the event was received as the
 instant it was taken.
+
+#### Scenario: A stream reading carries its arrival instant
+
+- **WHEN** a run's `rate_limit_event` arrives at 10:00 and the run ends at 10:20
+- **THEN** the observations from it are recorded as taken at 10:00
 
 #### Scenario: The run's own spend is not in the numerator
 
@@ -84,11 +97,9 @@ it was taken until the reset it reports, and SHALL NOT be taken to describe any 
 the window. Reporting SHALL present an unexpired reading as a lower bound, with the instant it was
 taken.
 
-This assumes fullness does not fall within an instance, the stretch of a window from one reset to
-the next, which is unmeasured; on that assumption an old reading understates the present rather
-than misstating it, and needs no staleness threshold until its window turns over. If the
-assumption fails, so that a newer reading of an instance is lower than an older one, the newer one
-governs: the gate reads the newest unreset reading, and the older one stops being a bound.
+An instance is one stretch of a window from one reset to the next. If the provider's figure for an
+instance falls, so that a newer reading of it is lower than an older one, the newer one governs:
+the gate reads the newest unreset reading, and the older one stops being a bound.
 
 A reading is unreset, which this spec also calls unexpired, until the reset it states. A reading
 whose reset never resolved is unreset until one window length after it was taken
@@ -164,17 +175,10 @@ from the stream, SHALL leave the run's recording exactly as it would otherwise h
 SHALL NOT fail the run. Its one effect on a budget decision is the one *A seat with no reading is
 drawn on only where its line is the whole window* states.
 
-The event is undocumented, and the gate rests on it for reserved seats. For a seat whose
-credential is a `setup-token` one the stream is the only source of a reading other than a refusal,
-and a refusal only ever shuts a window. So if the provider drops or changes the event:
-
-- **What fails closed:** every seat whose line, for a role, uses a reserve above 0 (the larger of
-  the seat's and the role's) goes idle for that role once
-  its last reading resets, and stays idle until readings return. Nobody's reserve is spent on a
-  guess.
-- **What keeps running:** every seat whose line, for a role, uses a reserve of 0, stopped by the
-  provider's refusal as it is without this change. A refusal is still recorded from the envelope,
-  and still shuts its window until its reset.
+The event is undocumented, and the gate rests on it for reserved seats: for a seat whose
+credential is a `setup-token` one, the stream is the only source of a reading other than a
+refusal. If the provider drops or changes the event, *A seat with no reading is drawn on only where
+its line is the whole window* decides which seats go idle and which keep running.
 
 #### Scenario: No event, no observation
 
@@ -187,27 +191,6 @@ and a refusal only ever shuts a window. So if the provider drops or changes the 
 - **WHEN** a `rate_limit_event` is missing fields or carries values of the wrong type
 - **THEN** no observation is recorded for what cannot be read
 - **AND** the run's outcome is unaffected
-
-#### Scenario: A reserved seat whose readings stop is closed, not guessed at
-
-- **WHEN** a seat declares a reserve of 0.5, its runs stop carrying events, and its last reading of
-  the session has passed its reset
-- **THEN** it is passed over for want of a reading
-- **AND** it is left to the seat probe, under the probe's own limits
-
-#### Scenario: A seat at reserve 0 runs on without events
-
-- **WHEN** a seat declares reserve 0, the role drawing on it declares none, and its runs carry no
-  events
-- **THEN** work may still be charged to it
-- **AND** it stops when the provider refuses it
-
-#### Scenario: A role's reserve needs a reading even on a reserve-0 seat
-
-- **WHEN** a seat declares reserve 0, a role drawing on it declares 0.3, and the seat has no unreset
-  reading of a window
-- **THEN** that role's Igor does not draw on the seat until something reads it
-- **AND** a role declaring no reserve still may
 
 ### Requirement: A seat nothing has read is probed on the Igor server with its own token
 
@@ -240,10 +223,14 @@ first use* specifies is a seat probe too, and every limit and exclusion here app
 A seat probe SHALL run only on the server that runs the Igors, never on a person's machine, and
 nothing SHALL be installed anywhere else for it.
 
-A seat probe is not free. Its cost SHALL be recorded like any other spend, against the seat it
-read, marked as a seat probe. Spend attribution, capacity and reporting SHALL count that row. Where
-the probe is also recorded as a check of the seat's credential (*A probe checks the credential
-too*, below), that is a second row, and the cost stays on the spend row. Its consumption reaches the seat's next reading like any other.
+A seat probe is not free. Every probe SHALL be recorded on a spend row against the seat it read,
+marked as a seat probe, with its cost (0 where it reported none, as after an error exit) and with
+whether a `rate_limit_event` arrived. Spend attribution, capacity and reporting SHALL count that
+row, and the hourly limit and the five-hour back-off below are computed from these rows, by any
+Igor and after a restart. The spend row SHALL NOT count toward opening or clearing any condition on
+the seat, such as its credential condition; only the check row below does. Where the probe is also recorded as a check of the seat's credential (*A probe checks the
+credential too*, below), that is a second row, and the cost stays on the spend row. Its
+consumption reaches the seat's next reading like any other.
 
 A seat SHALL NOT be probed more than once an hour, counted from the most recent probe of it that
 any Igor recorded, nor while a probe this process started on it is still running. Two Igors that
@@ -269,15 +256,17 @@ for, and that line has since risen past
 the reading, the gate SHALL NOT start work on the seat on that reading alone. A seat probe SHALL be
 made first, and the gate SHALL decide on the reading it records. The old reading is only a lower
 bound, and the owner may have used the seat since, so starting work on it can spend the margin the
-line keeps for them. A probe that records no observation SHALL leave the decision to the reading the
-gate already has, so a failed probe cannot shut a seat out. The hourly limit still applies: a seat
-probed less than an hour before its crossing stays held until a probe is allowed.
+line keeps for them. Once a probe made after the crossing has recorded no observation, the gate
+SHALL decide on the reading it already has, so a failed probe cannot shut a seat out. Until a probe
+has been made after the crossing, the seat stays held, and that is recorded as holding back at the
+line: a seat probed less than an hour before its crossing waits until the hourly limit allows the
+next probe.
 
 **A probe checks the credential too.** A probe the provider answers with an authentication failure
 (HTTP 401) SHALL be recorded as a row in the execution log carrying the seat's credential key,
 `seat:<id>:credential`, and a full hash of the credential it used, which opens the seat's credential
-condition. A probe that succeeds SHALL be recorded without that key, and SHALL count as the check
-that clears that condition. An authentication failure is not a probe that received no event, so the
+condition. A probe that succeeds SHALL be recorded as a check of that key that found the
+condition not holding, which clears it. An authentication failure is not a probe that received no event, so the
 five-hour back-off SHALL NOT follow it. A seat whose credential condition is open SHALL be probed only as
 that clearing check, even when it holds an unexpired reading of every window, and never more than
 once an hour. Every other exclusion
@@ -498,12 +487,6 @@ its cost is recorded. Where one is excluded, the measurement waits for the next 
 of; reading the seat does not wait, as *A seat nothing has read is probed on the Igor server with
 its own token* says.
 
-Two costs of it are stated rather than hidden. On a window that starts at first use the probe
-itself starts the instance, which then runs from the probe rather than from the owner's first
-use. And on a shared seat the owner may use it between the reset and the probe, which starts the
-instance earlier and makes the probe-time difference short by that interval. Ten minutes keeps
-the second small, and the weekly repeat bounds the first.
-
 A length measured this way SHALL supersede the built-in length whether it is longer or shorter,
 because the probe reads the instance immediately after the reset it follows and no unread instance
 lies between them.
@@ -667,7 +650,8 @@ How full a seat is SHALL be established from the seat itself: by the live `/usag
 whose credential yields windows to it, which a `setup-token` credential does not (below), and
 otherwise from recorded observations of that seat,
 which include the stream readings its own runs and probes carry. The system MUST NOT require a
-person to submit a usage figure.
+person to submit a usage figure. A seat whose named token is not available SHALL be reported
+unreadable, and no other credential SHALL be used in its place.
 
 Neither a usage figure nor a capacity SHALL be configured. How full the window is right now
 changes by the minute and is the thing a person cannot supply usefully. Whether Igor may start
@@ -759,7 +743,7 @@ the role draws on, and it is not set per seat. The line that role's Igor checks 
 the role's (*The reserve is untouchable*). So a role can hold back more than a seat does and never
 less: a lender's reserve holds whatever a role declares. On a seat declaring reserve 0, the role's
 reserve alone sets that role's line. A role reserve is valid whatever seats the role draws on,
-including a seat declared `dedicated: true`, which may also declare a reserve of its own.
+including a seat that no person uses, which may also declare a reserve of its own.
 
 How a role's reserve is inherited is role-config's *A role's reserve is raised by inheritance and
 never lowered*.
@@ -800,7 +784,7 @@ served elsewhere.
 
 #### Scenario: A role reserve with a dedicated seat is valid
 
-- **WHEN** a role naming a seat declared `dedicated: true` declares a reserve of 0.4
+- **WHEN** a role naming a seat that no person uses, at reserve 0, declares a reserve of 0.4
 - **THEN** configuration is valid
 
 ## REMOVED Requirements
@@ -847,7 +831,8 @@ A reserve SHALL be a fraction from 0 to 1, both included. On a seat a person len
 back for that person. On a seat nobody works on, it is held back for work that arrives later in
 the window, which spreads Igor's use across the window rather than spending it as work comes; such
 a seat declares none by default, because spending early is not waste when the work is there. At 1
-nothing is held back at the reset and the window is spent evenly across its length. A reserve is
+the whole window is held back just after its reset and released evenly across its length, so the
+window is spent evenly. A reserve is
 the same setting on every seat, and the same rule reads it. A role MAY hold back more of a seat
 than the seat does, never less (*A role may hold back more of a seat than the seat does*).
 
@@ -869,7 +854,7 @@ than the seat does, never less (*A role may hold back more of a seat than the se
 
 #### Scenario: A seat nobody works on may declare a reserve
 
-- **WHEN** a seat declared `dedicated: true` declares a reserve of 0.5
+- **WHEN** a seat that nobody works on declares a reserve of 0.5
 - **THEN** configuration is valid
 - **AND** the seat is held to its line as any other seat is
 
@@ -986,6 +971,13 @@ work is charged to the seat; it does not mean the seat is never read.
 - **THEN** it is passed over
 - **AND** the reason given is that nothing has read it
 - **AND** it is left to the seat probe
+
+#### Scenario: A role's reserve needs a reading even on a reserve-0 seat
+
+- **WHEN** a seat declares reserve 0, a role drawing on it declares 0.3, and the seat has no unreset
+  reading of a window
+- **THEN** that role's Igor does not draw on the seat until something reads it
+- **AND** a role declaring no reserve still may
 
 #### Scenario: A read seat needs no capacity figure
 
@@ -1127,7 +1119,8 @@ one line without adding up each other's books.
 
 - **WHEN** an Igor shares a seat with the person who owns it
 - **THEN** the reserved share of what remains of the window is left for that person, whatever
-  Igor does, less about two runs for each Igor process drawing on the seat
+  Igor does, minus an overshoot for each Igor process drawing on the seat: the item it admits and
+  what the previous run spent after its last event arrived
 
 #### Scenario: The floor holds without observing the owner
 
@@ -1326,8 +1319,10 @@ An hour a handoff states SHALL be marked approximate where no reset the provider
 it, in three cases. First, a cadence ceiling: the latest a window can return judged from its
 length alone, standing in for a reset a refusal never named. Second, the hour stated for one window
 of a seat whose other window is also shut and named no return, since the seat may stay shut past
-that hour. Third, the instant a reserve line rises
-past a reading (*A handoff for a window the line shut states its crossing, marked approximate*). An hour
+that hour. Third, a reserve line's crossing,
+which is computed from a stated reset but crosses a reading that is only a lower bound, so the seat
+can be back later (*A handoff for a window the line shut states its crossing, marked
+approximate*). An hour
 the provider stated, and a window boundary placed from one along a fixed schedule, SHALL NOT be
 marked.
 
@@ -1341,8 +1336,7 @@ boundary before and after it by subtraction, and an instance end computed that w
 the reset it came from. On a window measured to start at first use, only an instance's own reset
 fixes its end, and no boundary is placed from another instance's reset. A cadence ceiling is not
 fixed: nothing was stated, and the hour is a bound on how late the return can be rather than the
-return. A line's crossing is computed from a stated reset but is not fixed by it, because the
-reading it crosses is only a lower bound: the seat can be back later than the crossing.
+return.
 
 The later of two stated hours is not marked. Comparing two returns the provider stated yields
 one of them, the provider's own hour, chosen by ordering rather than substituted, and marking it
@@ -1371,7 +1365,3 @@ where one of them is a line's crossing, because only then can the hour be early.
   reset the provider stated, on a window that runs on a fixed schedule
 - **THEN** it is not marked approximate
 
-#### Scenario: A crossing is approximate though computed from a stated reset
-
-- **WHEN** the hour stated is the instant a seat's reserve line rises past its reading
-- **THEN** it is marked approximate

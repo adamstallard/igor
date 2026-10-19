@@ -100,9 +100,11 @@ whatever row is newest, and the budget report prints the source verbatim in the 
 So a refusal recorded as `stream` holds the seat shut and lowers the estimate exactly as a `limit`
 row would. The envelope path keeps writing `limit` for a refusal the stream did not report.
 
-The event-level fields — `status`, `surpassedThreshold`, `isUsingOverage` — are recorded on the
-row for the window `rateLimitType` names; `isUsingOverage`, being about the seat, on every row
-from the event.
+The event-level fields — `status` and `surpassedThreshold` — are recorded on the row for the
+window `rateLimitType` names, with a `named` flag saying that row is the named one.
+`isUsingOverage`, being about the seat, goes on every row from the event. Overage shuts only the
+window the event named (decision 21), both for spending (*A seat spending extra usage has no
+headroom*) and for probing, so those rules need `named` to find that window.
 
 ### A refusal is recorded once
 
@@ -464,12 +466,13 @@ holds a role back: a reserve up, a share down.
 ### A reserve on a dedicated seat is pacing
 
 Decided by Adam on 2026-09-28. On a seat nobody works on, a reserve holds capacity back for work
-that arrives later in the window, and at 1 it spends the window evenly. A dedicated seat defaults to
+that arrives later in the window. At 1 it holds the whole window back just after a reset and
+releases it evenly across the window's length. A dedicated seat defaults to
 reserve 0, because burning early is not waste when the work is there. So the validation that refuses
 a reserve on a dedicated seat (`parseOrgBudget` in `src/budget.ts`, "is dedicated, so nobody is
 there to reserve capacity for") is removed in gate two. So are the parser forcing a dedicated seat's
 reserve to 0 and its range check that refuses a reserve of 1,
-since a reserve of 1 now means even pacing. The `MODIFIED` *Seats are named configuration entities
+since a reserve of 1 is valid: it is even pacing. The `MODIFIED` *Seats are named configuration entities
 with an owner and a reserve* says a reserve is the share of the remaining window held back, from 0
 to 1 inclusive, on any seat. The key keeps its name `reserve` (confirmed by Adam, 2026-09-28).
 With the refusal and the forced zero gone, the `dedicated` key does nothing, and `seat-files`
@@ -607,7 +610,10 @@ accepted as the overshoot is.
 
 **From an empty directory.** A probe carries a seat token. Run from a directory holding a project's
 `.claude/settings.json` or `CLAUDE.md`, it would load that project's hooks beside the token, and
-"no tools" does not stop a hook. So it runs from a fresh empty temporary directory. Claude Code
+"no tools" does not stop a hook. So it runs from a fresh empty temporary directory, as the Igor's own Unix user. Where #175
+(`worker-user`) is built, a worker runs as a separate user through `sudo`, which resets `HOME` to
+that user's home and would undo the probe's empty `HOME`. The probe runs no repository code, so it
+needs no separate user. Claude Code
 also loads `.claude` from every directory above the one it runs in, so that directory must not sit
 under a home: in task 6.0's measurement, below, the same call run from a directory under
 `/Users/adam` loaded that home's skills, though its own `HOME` was empty.

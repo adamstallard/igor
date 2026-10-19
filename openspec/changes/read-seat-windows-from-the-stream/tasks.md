@@ -56,7 +56,9 @@
       runner without changing `final`, the terminal `result` the runner returns now
 - [ ] 2.2 `readingFrom(event, arrivedAt)` — pure, non-throwing, in the style of `asIso`: per window,
       `utilization` × 100 and `resetsAt` from epoch seconds via `fromEpoch`; `five_hour` →
-      `session`, `seven_day` → `week`, any other window name dropped; `status`,
+      `session`, `seven_day` → `week`, a per-model weekly window → `week` with its `model` (its
+      name is unmeasured, task 1.5), any other window name dropped; which window
+      `rateLimitType` names; `status`,
       `surpassedThreshold`, `isUsingOverage` kept where they are the right type and dropped where
       not
 - [ ] 2.3 Prefer `unifiedWindows` for per-window figures; fall back to the top-level
@@ -69,7 +71,8 @@
 ## 3. Recording
 
 - [ ] 3.1 Extend `Observation`'s `source` to `'usage' | 'limit' | 'stream'`, and add optional
-      `status`, `surpassedThreshold` and `isUsingOverage`; rows without them read exactly as today
+      `named` (this row is the window the event's `rateLimitType` named), `status`,
+      `surpassedThreshold` and `isUsingOverage`; rows without them read exactly as today
 - [ ] 3.2 In `recordExecution`, write one observation per window from the run's reading through
       `recordObservation`, against the seat the run was charged to, with `at` the arrival instant
       from 2.1 — never the time `recordExecution` runs
@@ -159,6 +162,9 @@
       and working directory both empty, no tools and only the seat's token, still gets a
       `rate_limit_event`. If it does not, the probe goes back to Adam. Confirmed 2026-10-18 on
       Claude Code 2.1.303: `design.md`, *A seat probe*, *Measured*
+- [ ] 6.0a Once #174 (`pinned-skills`) is built, measure that the probe with #174's shared
+      arguments, `--plugin-dir` among them, still gets a `rate_limit_event`, and its cost, and
+      record both in `design.md`, *A seat probe*. If it gets no event, the probe goes back to Adam
 - [ ] 6.1 In the serve loop, select the seats to probe: the deployment declares seats; some window has no unexpired `usage` or `stream` observation; no unexpired row at
       100%; no unexpired overage reading for the window its `rateLimitType` names; no window whose
       newest unreset reading is at or past that window's line (7.1), computed with the seat's own
@@ -169,10 +175,13 @@
       probe is due at that reset, the probe is that post-reset probe, not a second one, unless it
       was excluded. Build
       the overage exclusion only once 1.4 confirms what `isUsingOverage` means
-- [ ] 6.2 Spawn the probe as `claudeWorker` spawns a worker, with the environment written out
-      (§6.3.2) and only that seat's token, from a fresh empty temporary directory removed after,
-      made under the system's temporary directory and never under a home, and with `HOME` set to
-      a second empty temporary directory, not the home a worker is given. Fail the probe, and
+- [ ] 6.2 Spawn the probe with the environment written out as `claudeWorker` writes a
+      worker's (§6.3.2), as the Igor's own Unix user, not through #175's worker user: `sudo` to the
+      worker user resets `HOME` to that user's home, which would undo the empty `HOME` below,
+      and the probe runs no repository code that needs a separate user.
+      Give it only that seat's token. Run it from a fresh empty temporary directory, made under
+      the system's temporary directory and never under a home, with `HOME` set to a second empty
+      temporary directory, not the home a worker is given. Fail the probe, and
       record nothing, where any directory above the first holds a `.claude` directory or
       `CLAUDE.md`.
       Remove both directories once the probe exits.
@@ -182,9 +191,12 @@
       measured on 2026-10-18, a call without `--setting-sources user` run under a home holding
       `.claude` loads that home's skills. Where #174 is not built, pass `--setting-sources user` and
       `--strict-mcp-config` directly. Reuse 2.1–2.3's parsing
-- [ ] 6.3 Record its event through 3.2's path as `stream` rows, timed at arrival. Record its cost
-      against the seat on a spend row, marked as a seat probe in place of a role, that
-      `loadSpend` returns. Where #101 has merged, its `check` row for the credential (6.7) is a
+- [ ] 6.3 Record its event through 3.2's path as `stream` rows, timed at arrival. Record every probe,
+      an error exit included, on a spend row that `loadSpend` returns: against the seat, marked
+      as a seat probe in place of a role, with its cost (0 where none was reported) and whether
+      an event arrived. 6.1's hourly limit and five-hour back-off read these rows. Where #101's
+      code has merged, make its condition reader skip a row marked as a seat probe, and test
+      that such a row neither opens nor clears any condition. Where #101 has merged, its `check` row for the credential (6.7) is a
       second row and carries no cost. Record no observation when no event arrived
 - [ ] 6.4 Tests: a reserved seat with no reading is probed once; a seat whose post-reset probe
       was excluded is probed once no exclusion applies; the probe runs with an empty `HOME`, the
@@ -205,7 +217,8 @@
 - [ ] 6.7 A probe answered with an authentication failure (401) appends its row to
       `executions.ndjson` (a row of its own kind, #101's task 2.3) carrying `seat:<id>:credential`
       and the credential's full hash, which opens the seat's credential condition as #101 rebuilds
-      it. A probe that succeeds appends one without the key, which clears it. A 401 is not "no
+      it. A probe that succeeds appends a check row of `seat:<id>:credential` that found the
+      condition not holding (`met: false`), which clears it. A 401 is not "no
       event": the five-hour back-off does not follow it. A seat whose stop is open is selected by
       6.1 as a clearing check whatever its readings, still under the hourly limit and the refusal,
       overage and line exclusions. Tests: a 401 opens the stop and records nothing; a success clears
@@ -474,3 +487,7 @@ requirements are in force:
       replace them
 - [ ] 16.2 If #196 (spec-trace) has merged by the time this change archives, its CI fails each new
       scenario with no tagged test. Tag a test for each scenario this change adds
+- [ ] 16.3 Before archiving, check that every other change modifying role-config's *A role
+      declares its sources, lane, behaviour, permissions, and reviewers* or *Merge semantics
+      differ by field kind* (among open changes, #153, #189 and `lore-from-corrections`)
+      carries `reserve` in its copy, since a later block replaces this change's

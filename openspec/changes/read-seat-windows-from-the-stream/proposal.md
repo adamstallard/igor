@@ -135,6 +135,23 @@ weekly (Adam, 2026-09-28). The smallest gap between observed resets is a fallbac
     most the line holds back. This change's choice. *Rejected:* `remaining` as 0, which would put
     the line at 100% and hold nothing back, and excluding the reading, which would leave a
     reserved seat unread.
+31. **A handoff for a window the line shut states the line's crossing, marked approximate, not
+    the reset** (Adam, 2026-10-10, moved here from #74). The crossing is the instant the rising
+    line passes the seat's last reading, when the window reopens for Igor. It is marked because
+    that reading is only a lower bound.
+32. **A seat whose credential condition is open is still not probed while the refusal, overage or
+    line exclusion applies to it.** This change's choice: such a seat could not be used even with its credential
+    cleared. *Rejected:* probing it regardless, which spends on a seat nothing could use.
+33. **A probe's spend row names a seat probe in place of a role.** This change's choice, since a
+    probe is made for no role. *Rejected:* charging it to the role the gate was deciding for.
+34. **A post-reset probe due at a reset is also the probe a reading expiring there calls for.**
+    This change's choice. *Rejected:* a second probe at the same reset.
+35. **A seat whose crossing comes within the hour after its last probe stays held until the next
+    probe**, which the one-probe-an-hour limit delays. This change's choice. *Rejected:* admitting
+    the seat on its old reading without a probe.
+36. **Capacity in dollars is still derived, and only reported.** This change's choice, under
+    decision 9. *Rejected:* removing the derivation, which would drop the figure `igor budget`
+    shows.
 
 **Still open:**
 
@@ -144,6 +161,12 @@ weekly (Adam, 2026-09-28). The smallest gap between observed resets is a fallbac
 - **A never-used seat is unmeasured.** Task 1.1 measured a seat below every threshold, at 42% and
   11%, not one with no current instance; task 1.1c measures one when a fresh seat is available.
 - **Per-model weekly windows** have no source for a token seat (#75 task 5.1).
+- **Which readings combine into a capacity on a shared seat** is not decided; it waits until a
+  long run of readings has been collected (`design.md`, *Newest-wins, against `src/capacity.ts`*).
+- **The probe with #174's arguments is unmeasured.** #174 gives every `claude` call a shared set of
+  arguments. Task 6.0 measured it without
+  `--plugin-dir`, `--setting-sources` or `--strict-mcp-config`; task 6.0a measures whether it
+  still gets an event, and at what cost, once #174 is built.
 - **Facts the gate rests on are unmeasured:** that fullness does not fall within an instance
   (task 1.3); what `isUsingOverage` means (task 1.4); whether an ordinary worker run carries an
   event after its first call (task 1.1b); and whether triage's single JSON envelope, from
@@ -239,7 +262,9 @@ tokens and the seat config.
   `1 − r × remaining`, where `remaining` is the fraction of the window still to come and `r` is the
   larger of the seat's reserve and the role's. The reserve is held back at the start of a window
   and released evenly toward the reset: at 0.3 the line is 70% just after a reset, 85% halfway,
-  97% with a tenth left and 100% at the reset. At 0 it is the whole window; at 1 it is even pacing.
+  97% with a tenth left and 100% at the reset. At 0 the line is 100% throughout. At 1 the whole
+  window is held back just after a reset and released evenly across its length, which is even
+  pacing.
   It needs no figure for the owner's use and no dollar capacity, and Igor takes more when the owner
   uses less. It **replaces** the dollar bound `(1 − reserve) × capacity`. A capacity in dollars is
   still derived and reported, and gates nothing. An item already running finishes, so each Igor
@@ -284,7 +309,10 @@ Explicitly out of scope:
 
 ### Modified Capabilities
 
-- `role-config`: a role's `reserve` is raised by inheritance and never lowered.
+- `role-config`: a role file accepts `reserve`, which a child role may raise and never lower,
+  as a monotonic field. This modifies *A role declares its sources, lane, behaviour, permissions,
+  and reviewers* and *Merge semantics differ by field kind*. #153, #189 and
+  `lore-from-corrections` modify the same two, and their blocks must carry `reserve` (task 16.3).
 - `surface-adapter`: `observe` leaves the list of commands that take no role, in *On GitHub,
   every call an Igor makes acts as its App*, since this change removes the command. #171 modifies
   the same requirement after this change, adding `seat` to that list.
