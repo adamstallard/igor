@@ -1,6 +1,7 @@
 Build after `condition-backoff` (#101), `read-seat-windows-from-the-stream` (#143), worker-user
-(#175) and `check-a-lore-repository` (#113, which adds `igor doctor`). Line numbers
-below are main's at the time of writing and will have moved under those four changes; the names are
+(#175), `pinned-skills` (#174, whose startup skills check and reset tasks 3.10 relies on) and
+`check-a-lore-repository` (#113, which adds `igor doctor`). Line numbers below are main's at the
+time of writing and will have moved under those five changes; the names are
 what to find. Where a task quotes text in a fenced block, that text is the deliverable: it may be
 reworded only where a measurement in section 1 contradicts it, and then `design.md` records the
 measurement.
@@ -128,7 +129,7 @@ measurement.
       reworded; it must name both):
 
       ```
-      seat "<id>" carries a token this Igor cannot decrypt, so no role draws on it. Its lender, <owner>, re-lends it with `igor seat add <id>`.
+      seat "<id>" carries a token this Igor cannot decrypt, so no role draws on it. Its lender, `<owner>`, re-lends it with `igor seat add <id>`.
       ```
 
       Tests: the scenarios *A lent seat that does not decrypt is skipped, and its lender named*,
@@ -137,20 +138,24 @@ measurement.
       seat's condition stops no role*. Until #176 builds the pull, the condition opens and
       clears at start only
 
-- [ ] 3.10 No model call Igor makes, under `igor serve` or `igor run`, is authenticated by a
-      stored Claude login (proposal, decision 36; *A spend with no seat behind it is not made*).
+- [ ] 3.10 No model call Igor makes, under `igor serve` or `igor run`, is given a stored Claude
+      login in place of a seat's token (proposal, decision 36; *A spend with no seat behind it is
+      not made*).
       Triage, worker runs and probes each carry the chosen seat's token, and where the gate names
       no seat no call is made. Test: with a stored login in the home directory of the user Igor
       runs `claude` as, and no seat serving the role, a cycle makes no model call; with a seat, every call carries
-      that seat's token. Whether a token in the environment wins over a stored login is #174's
-      task 0.3, and the reset that removes the stored login from a worker's home is #174's and
-      #175's. Triage and probes run as the service user, whose home no reset touches: if 0.3
-      finds that a stored login can win over the token in the environment, they run with `HOME`
-      set to a directory holding no login, and the test covers that case
+      that seat's token, #174's startup skills check included (proposal, decision 42). The reset
+      that removes a stored login from a worker's home is #174's and #175's. Under `igor serve`
+      no stored login exists. Under `igor run`, if #174's task 0.3 finds that Claude Code prefers
+      a stored login over the token in the environment, a call may spend the developer's own
+      login, which is accepted (proposal, decision 45); nothing works around it
 - [ ] 3.11 #143's probe skips a seat whose condition `seat:<id>:decrypt` is open, and `igor run`
       makes no seat probe (proposal, decision 41; the `MODIFIED` block on #143's *A seat nothing
       has read is probed on the Igor server with its own token*). Tests: *An undecryptable seat
       is not probed* and *`igor run` probes no seat*
+- [ ] 3.12 Confirm, on a server set up by the operator guide, that the service user's home holds
+      no stored Claude login, so that under `igor serve` none exists (proposal, decision 45). If
+      one can exist there, that goes back to Adam
 
 ## 4. Which seats a role draws on
 
@@ -296,8 +301,14 @@ first (Adam, 2026-10-17).
       ```
       .github/workflows/seat-notice.yml is missing from <branch>, so no lender is told when a pull request changes their seat file, and revoking their token is their only veto. Run `igor init` to write it.
       ```
-- [ ] 8.3 A seat file carrying `encrypted_token` while `igor.config.yaml` declares no `seatKey` is
-      a finding, worded so:
+
+      Where the file is present, read the workflow's state and whether Actions are enabled for
+      the repository; a disabled workflow, or Actions off, is a finding, and an unreadable state
+      is unchecked. Test: *A disabled notice workflow*
+- [ ] 8.3 The configuration's validation, which reads no secret, reports a seat file carrying
+      `encrypted_token` while `igor.config.yaml` declares no `seatKey` (proposal, decision 43).
+      `igor doctor` shows it because #113 has `doctor` invoke that validation; `doctor` has no
+      check of its own for it. The finding, worded so:
 
       ```
       seats/<id>.yaml carries an encrypted token, and igor.config.yaml names no seatKey, so Igor cannot read that seat. Set seatKey to the private key whose public half is seats/recipient.txt.
@@ -362,7 +373,9 @@ leaks.
     since only a pull request's notice comes before the change lands; `igor doctor` reports a branch that
     does not
   - **Checking it:** `igor doctor`, and `igor budget` showing the new seat as readable
-  - **When things go wrong:** removing a seat (delete its file); a lender withdrawing (they revoke
+  - **When things go wrong:** removing a seat (delete its file, and for a `token_env` seat also
+    remove its `IGOR_SEAT_<ID>` variable from the server's env file, since a later pull request
+    adding a file of that id would spend whatever token the variable still holds); a lender withdrawing (they revoke
     the token; delete the file); a leaked server key (above); a leaked seat token (its holder
     revokes it at Anthropic and runs `igor seat add` with a new one)
   - The *When something is wrong* table gains the refusals of tasks 2.2, 3.2, 3.4 and 4.1, and
@@ -489,8 +502,7 @@ leaks.
                 while IFS= read -r path; do
                   [[ "$path" =~ ^seats/[a-z0-9][a-z0-9-]*\.yaml$ ]] || continue
                   owner=$(gh api "repos/$REPO/contents/$path?ref=$DEFAULT" --jq .content 2>/dev/null \
-                    | base64 -d | sed -n 's/^owner:[[:space:]]*\([A-Za-z0-9-]*\)[[:space:]]*$/\1/p' \
-                    | head -n 1) || continue
+                    | base64 -d | yq -r '.owner // ""') || continue
                   [[ "$owner" =~ ^[A-Za-z0-9](-?[A-Za-z0-9])*$ ]] || continue
                   [[ "$(tr A-Z a-z <<<"$owner")" == "$(tr A-Z a-z <<<"$AUTHOR")" ]] && continue
                   grep -qixF "@$owner" <<<"$told" && continue
@@ -523,10 +535,13 @@ leaks.
 - [x] 10.6 ~~Measure whether a push through the Actions bypass runs `seat-notice.yml`~~ Moot:
       the workflow's `push` trigger is dropped (proposal, decision 26; Adam, 2026-10-17), so no
       push runs it
+- [ ] 10.7 Measure whether GitHub starts a `pull_request_target` workflow filtered on
+      `seats/**` for a pull request that changes more than 300 files, one of them a seat file.
+      Record the answer in `design.md`
 
 ## 11. Matching condition-backoff (#101)
 
-#101 is in force before this change is built, and the `stuck-conditions` delta here restates four
+#101 is in force before this change is built, and the `stuck-conditions` delta here restates five
 of its requirements. Build each against #101's code:
 
 - [ ] 11.1 *A seat's refused credential is a condition on that seat*: the hash is of the decrypted
@@ -550,7 +565,9 @@ of its requirements. Build each against #101's code:
       on a failing read and clears on a passing one* states, so #179's refused-configuration
       condition reuses the same code (proposal, decision 38). Tests: the first failed read opens
       it; a good read clears it; no probe item is ever taken for it; it stops no scope by itself
-
+- [ ] 11.5 *A condition clears by not recurring, and a probe is what observes that*: a read-cleared
+      condition takes no probe item and waits for no cooldown; it clears only on a passing read
+      (proposal, decision 38). Test: the scenario *A read-cleared condition takes no probe item*
 ## 12. Publishing to npm as `igor-agent`
 
 - [ ] 12.1 A build step that emits JavaScript: the package runs from `dist/` with no TypeScript
@@ -584,19 +601,18 @@ of its requirements. Build each against #101's code:
       GitHub-hosted runners: it builds, runs the licence check, and publishes through npm trusted
       publishing (OIDC), with `id-token: write` in its permissions and no npm token stored
       anywhere (Adam, 2026-10-17). Configure `igor-agent` on npm to trust this workflow. Trusted
-      publishing adds provenance to each version
+      publishing adds provenance to each version. `igor-agent` does not exist on npm yet: first
+      measure whether a trusted publisher can be configured for a package that has never been
+      published. If a first publish needs a token, that one publish goes back to Adam
 - [ ] 12.4 Test from a clean machine with only Node and a signed-in `gh` installed that
       `npx igor-agent seat add <id> --lore <owner/repo>` works outside any clone, after the first
       release. Record the result in `design.md`
 
 ## 13. Archiving
 
-- [ ] 13.1 Archive `condition-backoff` (#101) first. Then archive
-      `read-seat-windows-from-the-stream` (#143), `worker-user` (#175) and this change in one
-      commit, in that order, so this change's `MODIFIED` blocks apply to #101's and #143's
-      in-force text (proposal, decision 32). Whether #174 archives between #175 and this change
-      is open, in the proposal's *Still open*. `check-a-lore-repository` (#113) archives before
-      this change, since the `setup-check` delta cites #113's requirements
+- [ ] 13.1 Archive in the order issue #204 holds, so that this change's `MODIFIED` blocks apply
+      to #101's and #143's in-force text and its `setup-check` delta finds #113's requirements
+      (proposal, decision 32). This change archives in the same commit as #143
 - [ ] 13.2 #99 (`structured-failure-record`, its task 8.1) rewrites the same pointer in
       `work-triage`'s *A candidate left untriaged is not a candidate triage decided about*,
       "what becomes of it is #78". Whichever of the two archives second merges the two texts by

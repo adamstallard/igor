@@ -9,8 +9,11 @@ check cannot read the key file, as an operator other than the service user usual
 key match is unchecked, naming the path and the reason, as `check-a-lore-repository`'s *A check
 that cannot be made is skipped and said, not failed* (#113) says.
 
-Where a seat file carries `encrypted_token` and `igor.config.yaml` declares no `seatKey`, it SHALL
-report a finding naming those seat files.
+A seat file that carries `encrypted_token` where no `seatKey` is declared is the configuration
+validation's finding (seat-budget's *A seat's token travels as ciphertext in its file*). `igor
+doctor` reports it by invoking that validation, as `check-a-lore-repository`'s *Setup is reported
+by one command, over what configuration alone cannot show* (#113) says, and SHALL NOT check it
+again.
 
 A mismatched key fails silently: every token encrypted from then on is unreadable on the server,
 and nothing says so until each seat is reported unreadable in turn.
@@ -35,7 +38,8 @@ and nothing says so until each seat is reported unreadable in turn.
 #### Scenario: Ciphertext with no key to read it
 
 - **WHEN** `seats/bob.yaml` carries `encrypted_token` and `igor.config.yaml` declares no `seatKey`
-- **THEN** it is reported as a finding, naming `seats/bob.yaml`
+- **THEN** `igor doctor` reports the configuration validation's finding, naming `seats/bob.yaml`
+  and the validation as its source
 
 #### Scenario: A matching key
 
@@ -47,7 +51,9 @@ and nothing says so until each seat is reported unreadable in turn.
 Where the lore repository has at least one seat file, `igor doctor` SHALL report a finding where
 the default branch carries no `.github/workflows/seat-notice.yml`. The finding SHALL say that no
 lender is then told when a pull request changes their seat file, and SHALL name `igor init` as
-the command that writes the workflow.
+the command that writes the workflow. Where the file is present, `doctor` SHALL also report a
+finding where the workflow is disabled or Actions are off for the repository, and report the
+check as unchecked where it cannot read that state.
 
 A lender's veto over their seat is revoking its token, and the notice is how they learn of a
 change in time to use it. Without the workflow nothing fails and nothing is reported: lenders are
@@ -60,6 +66,12 @@ simply never told.
 - **THEN** it is reported as a finding
 - **AND** the finding states that no lender is told of a change to their seat file, and names
   `igor init` as the command that writes the workflow
+
+#### Scenario: A disabled notice workflow
+
+- **WHEN** `.github/workflows/seat-notice.yml` is present but the workflow is disabled, or Actions
+  are off for the lore repository
+- **THEN** it is reported as a finding, saying no lender is told of a change to their seat file
 
 #### Scenario: No seats, no finding
 

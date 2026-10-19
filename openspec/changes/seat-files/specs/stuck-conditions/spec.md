@@ -12,13 +12,11 @@ follows: for a seat, seat-budget's *A role draws on the seat with the most headr
 with no other eligible seat hand off rather than stop. The condition records the fault and names its cure, and it is reported like any other
 condition.
 
-Every rule that opens a condition of this kind SHALL cite this requirement and SHALL state only
-what is read, what counts as failing, and what the condition is on. Two such conditions exist:
-a seat file Igor fails to decrypt, specified below in *A condition that recurs stops the affected
-scope from taking new work*, beside the other condition that opens on its first occurrence, and
-a configuration that fails the startup checks when a running process rereads it
-at a cycle, which `concurrent-instances` (#179) specifies in *A retired rank does not hold its
-items forever*.
+A rule that opens a condition of this kind cites this requirement and states only what is read,
+what counts as failing, and what the condition is on. This change specifies one: a seat file Igor
+fails to decrypt, below in *A condition that recurs stops the affected scope from taking new
+work*, beside #101's refused GitHub App credential, the other condition that opens on its first
+occurrence.
 
 A read is its own observation of the cure. A probe item takes work to find out whether a fault
 recurs; a file that reads cleanly has already shown it.

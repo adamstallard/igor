@@ -137,8 +137,8 @@
     from #143's probe, which never reach a seat that is never picked or probed.
 
 32. **This change amends #101 (`condition-backoff`) through its own delta** (Adam, 2026-10-17).
-    #101 merges as it is, and this change archives after it, in the order #101, #143, #175,
-    this change. This change's `stuck-conditions` delta therefore carries a `MODIFIED` block on
+    #101 merges as it is, and this change archives after it, in the order issue #204 holds,
+    the one place the archive order across the open changes is stated. This change's `stuck-conditions` delta therefore carries a `MODIFIED` block on
     #101's *A condition that recurs stops the affected scope from taking new work*, written from
     that requirement's text on #101's branch. #101 lets one condition open on its first
     occurrence, a refused GitHub App credential. The block adds decision 31's condition as a
@@ -225,6 +225,44 @@
     from #143's branch with its scenarios kept. The probe skips a seat Igor could not decrypt,
     and `igor run` makes no probe. This change archives after #143 (decision 32), so the block
     applies to #143's requirement once it is in force. Task 3.11.
+42. **#174's startup skills check spends a seat through the gate, as an ordinary call** (Adam,
+    2026-10-18). The gate is the budget check that chooses which seat a model call is charged to.
+    The seat probe stays the one call the gate does not choose a seat for. *A spend
+    with no seat behind it is not made*; task 3.10. *Rejected:* a second exception for the
+    startup check.
+43. **`igor doctor` invokes the configuration's validation, which reads no secret, and reports
+    its findings, each named with its source** (Adam, 2026-10-18). Among them is a seat file
+    carrying `encrypted_token` where no `seatKey` is declared, which the validation reports and
+    `doctor` no longer checks itself. #113 records that `doctor` may invoke an existing check and
+    never re-implements one. *A seat's token travels as ciphertext in its file*; the
+    `setup-check` delta; task 8.3.
+44. **Two rules confirmed** (Adam, 2026-10-18): the notice workflow does not mention a lender on
+    a seat-file pull request they opened themselves; and an `encrypted_token` that is not age
+    ciphertext, such as a plain token pasted there, is refused at load, telling the holder to
+    revoke it. *A pull request that changes a seat file mentions that seat's owner* and *A seat's
+    token travels as ciphertext in its file*.
+45. **Under `igor run`, Claude Code's own preference for a stored login is accepted** (Adam,
+    2026-10-18). If #174's task 0.3 shows Claude Code prefers a stored login on the developer's
+    machine over the token Igor passes, the call spends the developer's own login and quota.
+    Igor sets no `HOME` to hide it and does not refuse. Under `igor serve` no stored login
+    exists, so it never arises there. *A spend with no seat behind it is not made*; tasks 3.10
+    and 3.12.
+
+Smaller choices this change makes, which Adam approves with it:
+
+46. **A seat's headroom is the smaller of its two windows' headroom.** Where a seat may be drawn
+    on with no reading, because its line's reserve is 0, a window with no unreset reading counts
+    as 0% used. A seat with no known week
+    reset sorts after every seat with one in a tie, and seats still tied go in id order.
+47. **A condition report shows only inert text from a seat file.** The `owner` appears in a code
+    span with backticks removed, so it carries no @-mention, link or markup. Anyone can encrypt
+    any text to the public key, so the id a mismatched plaintext names appears only where it has
+    a seat id's form.
+48. **A read of the seat files appends a condition row only when it opens or clears the
+    condition**, not on every read.
+49. **Inside a clone, `igor seat add` takes the lore repository from the `upstream` remote, or
+    `origin` where there is none**, so a holder working in a fork's clone opens the pull request
+    against the team's repository.
 
 **Still open:**
 
@@ -239,29 +277,20 @@
   id is `_run`. Its reserve is 0 and the role's own `reserve` does not apply to it, because
   otherwise a role with a reserve could never run under `igor run`, which makes no probe to get
   the first reading.
-- **For Adam, from round eight's consistency read, each with a recommendation:**
-  - **Archive order.** Decision 32 archives #101, then #143, #175 and this change in one commit.
-    #174 (`pinned-skills`) says this change archives first, and #175's body puts #174 between
-    #175 and this change. *Recommended:* #101, #143, #175, #174, this change, then #179, the
-    order a trial archive in a scratch copy has run cleanly, with #113 at any point before this
-    change; #174 drops its rule that this change archives first.
-  - **The `HOME` fallback of task 3.10.** If #174's task 0.3 finds that a stored login can win
-    over a token in the environment, triage and probes run with `HOME` set to a directory holding
-    no login. No decision records that, and it does not hide a macOS Keychain login.
-    *Recommended:* record it as a decision for Linux, where `igor serve` runs, and send the
-    Keychain case back to Adam if 0.3 finds a Keychain login can win under `igor run`.
-  - **Two choices made without a decision.** The notice workflow does not mention a lender on a
-    pull request they opened themselves, and a seat file whose `encrypted_token` is not age
-    ciphertext is refused with a message telling the holder to revoke the token. *Recommended:*
-    approve both as written.
-  - **`igor doctor`'s check for ciphertext with no `seatKey`.** #113 forbids `doctor` to
-    re-implement a condition another command reports, and Igor already reports such a seat as
-    unreadable. *Recommended:* follow #113's rule: drop the check (task 8.3), and have `igor
-    doctor`'s report name `igor budget` for that case. The key-match check stays, as decision 7 decided it.
-  - **#174's startup skills check** is a model call with no seat, while *A spend with no seat
-    behind it is not made* allows only the probe as an exception. *Recommended:* run the check
-    with the chosen seat's token, or under `igor run` with `IGOR_RUN_TOKEN`, so that no exception
-    is needed. The edit would be #174's.
+- **For Adam, from round eight's second consistency read, each with a recommendation:**
+  - **Seat files read at every cycle.** #179 rereads the configuration, seat files included, at
+    each cycle, while this change decrypts seat files only at start or on a pull. Whether a
+    cycle's reread decrypts, opens or clears `seat:<id>:decrypt`, or applies a removal, is not
+    said. *Recommended:* treat #179's cycle reread as a read of the seat files, so it does all
+    three.
+  - **A lender's login on a public issue.** A decryption condition's report names the seat's
+    `owner`, and a handoff may quote it on a public issue, even where the lore repository is
+    private. *Recommended:* name the owner only in `igor doctor` and `igor budget`, which the
+    operator reads, and name only the seat in a handoff.
+  - **npm trusted publishing before a first publish** is unmeasured (task 12.3). If the first
+    publish of `igor-agent` needs a token, Adam decides how that one publish is made.
+- **Conflict, recorded and not resolved:** #174 still says its startup skills check carries no
+  seat token, against decision 42; #174 is being amended to match.
 - **For Adam, from a consistency read on 2026-10-18:**
   - **A condition is fleet-wide, a decrypted token is not.** Every process appends to one
     execution log, and conditions are rebuilt from it, so one process's open condition makes the
@@ -271,9 +300,6 @@
     from processes that hold a good token. Several processes per role (#179) make this reachable.
   - **`igor seat add` has no default for `--reserve` or `--roles`,** and an absent reserve is 0,
     so a lender who follows the guide's one command keeps nothing.
-  - **Whether a token in the environment takes precedence over a stored login** when both are
-    present, so that a leftover login is never what a call uses, is measured by #174's task 0.3,
-    which now also covers a login in the macOS Keychain under `igor run`.
 
 ## Why
 
@@ -346,8 +372,8 @@ from [#147](https://github.com/adamstallard/igor/issues/147).
 
 ### New Capabilities
 
-None. `setup-check` gains requirements here, and is created by whichever of this change and
-`check-a-lore-repository` archives first.
+None. `setup-check` gains requirements here. `check-a-lore-repository` (#113) creates it, since
+it archives first.
 
 ### Modified Capabilities
 
@@ -398,15 +424,15 @@ None. `setup-check` gains requirements here, and is created by whichever of this
   `igor.config.example.yaml`, `deploy/`.
 - `adamstallard/igor-lore`: `seats/adam.yaml`.
 - Build order: `condition-backoff` (#101), `read-seat-windows-from-the-stream` (#143),
-  worker-user (#175) and `check-a-lore-repository` (#113), then this. Archiving goes #101, then #143, #175 and this change together in one commit, in that order (decision 32; Adam,
-  2026-10-17), so no in-force requirement text names `capacity_estimate`, which #143 removes, or
-  `dedicated`, which this change removes. Where #174 archives in that order is open (*Still
-  open*). The word "dedicated" survives only as plain English in two scenario
-  titles, which openspec will not rename (decision 16). #143 also withdraws the open changes
+  worker-user (#175) and `check-a-lore-repository` (#113), then this. The archive order is the
+  one issue #204 holds (decision 32). This change and #143 archive in one commit (Adam,
+  2026-10-17), so the changes #204 places between them archive in that commit too. No commit then
+  leaves one of the two archived without the other, so no in-force requirement text names
+  `capacity_estimate`, which #143 removes, or `dedicated`, which this change removes. The word
+  "dedicated" survives only as plain English in two scenario titles, which openspec will not
+  rename (decision 16). #143 also withdraws the open changes
   `scheduled-observation` and `budget-pacing`, which keep a job on a lender's machine and pool
-  order; this change depends on that, and archives after #143.
-  `check-a-lore-repository` (#113) archives before this change, since this change's
-  `setup-check` delta cites #113's requirements. The `MODIFIED` blocks here are
+  order; this change depends on that. The `MODIFIED` blocks here are
   written against #143's text where #143 modifies the same requirement.
 - worker-user (#175) modifies the same worker-environment requirement, to let `GIT_INDEX_FILE`
   reach the worker. #175 is built first, so this change's block is written over #175's text and

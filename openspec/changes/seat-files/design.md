@@ -117,8 +117,12 @@ forever, readable by anyone who later holds the key. That permanence adds little
 A seat file carries `encrypted_token` or `token_env`, never both. `token_env` serves the seat
 whose token the operator holds and puts in the server's env file by hand, such as `igor-lore`'s
 `adam` seat or a fleet seat bought for the team, or a token a secret store writes there. It names
-a variable and runs nothing, so it is as safe in a contributed file as ciphertext is, and it costs
-the operator no encryption step for a token already on the server. Its value is a plain token.
+a variable and runs nothing, and it costs the operator no encryption step for a token already on
+the server. Its value is a plain token. Unlike ciphertext, nothing binds the variable to a file.
+Suppose an operator removes a `token_env` seat's file but leaves its `IGOR_SEAT_<ID>` variable in
+the server's env file. A later pull request that adds a file of the same id, naming `token_env`,
+then spends that leftover token, on whatever roles and reserve the pull request sets. So removing
+a `token_env` seat removes its variable too (task 9.3).
 
 A seat file naming neither key is refused (Adam, 2026-10-17). It would spend whatever login the
 server holds, which can be a pay-per-use API key. *Rejected:* allowing such a file behind a flag
@@ -132,6 +136,11 @@ or a `token_env` seat file, and the operator guide gives those steps. A pull tha
 seat file serving a role, once Igor pulls its lore checkout (#176), leaves the role with no usable
 seat. The process is already running, so it does not refuse to start: it keeps running, hands off
 what its workers held and takes nothing new, and the rest of that pull is refused.
+
+"Never uses" means Igor never passes a stored login in place of a seat's token. Under `igor run`,
+on a developer's machine, Claude Code may itself prefer a stored login there over the token Igor
+passes; whether it does is #174's task 0.3. That spends the developer's own login and quota, and
+Adam accepted it (proposal, decision 45): Igor neither hides the login nor refuses.
 
 `token_env` is kept rather than requiring every seat to carry ciphertext: an operator would
 otherwise encrypt their own token to their own server only to decrypt it again, and a seat whose
