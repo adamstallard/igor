@@ -105,27 +105,6 @@ be written to the state branch, never to the destination's default branch.
 - **WHEN** the worker reports its cost for an invocation
 - **THEN** that figure is recorded and accumulated against the seat
 
-### Requirement: Completion behaviour follows configured policy
-
-On believing work complete, an Igor SHALL take the completion action its effective
-configuration specifies. The default SHALL be to release the claim and leave the artifact.
-
-#### Scenario: Default completion releases the claim
-
-- **WHEN** a role specifies no completion action
-- **THEN** the Igor unassigns itself and leaves the artifact in place
-- **AND** it does not close the item
-
-#### Scenario: Configured completion honoured
-
-- **WHEN** a role configures a completion action other than the default
-- **THEN** that action is taken instead
-
-#### Scenario: Completion is not hardcoded
-
-- **WHEN** an organization requires a completion workflow differing from the default
-- **THEN** it is expressible in configuration without modifying the tool
-
 ### Requirement: Work finished before a claim is lost is offered, not discarded
 
 Where a claim is found to be gone between the worker finishing and publication, execution SHALL
@@ -165,8 +144,8 @@ why nothing is requested of the new holder.
 #### Scenario: Losing a claim does not complete the item
 
 - **WHEN** work is published after a claim was lost
-- **THEN** the configured completion behaviour is not performed, because the item is not the
-  Igor's to complete
+- **THEN** the Igor releases only its own claim and does nothing else to the item, because the
+  item is not the Igor's to finish
 
 ### Requirement: A worker is bounded by silence on its stream
 
@@ -375,6 +354,11 @@ present. Where the chosen seat names a token source that cannot be read — an u
 unreadable or empty file, a command that fails, prints nothing, or never returns — execution
 SHALL fail naming it rather than spawning a worker that authenticates as something else.
 
+For an Igor acting as a GitHub App, the surface credential is anything that yields an App
+token: the token itself, the `GITHUB_APP_*` variables, and a git credential helper or
+`GIT_CONFIG_*` entry that mints one. None of them SHALL reach the worker, and the working tree
+SHALL hold none of them.
+
 The worker needs none of them. It edits files in a disposable tree; claiming, commenting,
 branching and publishing all happen in the loop afterwards, with the loop's own credentials. An
 inherited environment is therefore a set of credentials nothing in the worker has a use for,
@@ -388,6 +372,13 @@ something else entirely when it is missing.
 
 - **WHEN** a worker is spawned while the Igor holds a code-host token
 - **THEN** that token is not in the worker's environment
+
+#### Scenario: Nothing that yields an App token reaches the worker
+
+- **WHEN** a worker is spawned for an Igor acting as a GitHub App
+- **THEN** its environment holds no App token, no `GITHUB_APP_*` variable and no `GIT_CONFIG_*`
+  entry
+- **AND** its working tree's git config names no credential helper
 
 #### Scenario: Only the chosen seat's token is present
 
@@ -660,4 +651,137 @@ obligation is stated rather than left to whichever mechanism reads the tree.
 - **WHEN** a run's changes include a removal of a path the base does not hold
 - **THEN** the artifact is published, rather than the whole tree request being refused
 - **AND** every change the worker made that the base can carry is in it
+
+### Requirement: A base change is undone only where the resolution says so
+
+Where resolving a conflict would publish a commit that names the base as a parent, the Igor
+SHALL compare what the base changed since the merge base against what the resolution publishes,
+and SHALL NOT publish it where any path would be restored to the state it held before the base
+changed it — unless the resolution carries a declaration naming that path. Where an undeclared
+path would be restored, nothing is published and the item is handed off naming those paths.
+
+The commit's tree is the merge result, so a path the resolution leaves at the artifact's own
+version is not a gap in the resolution — it is a revert of the base's change to that path, which
+lands the moment the artifact merges. A reverted deletion appears in review as the file still
+being there and a reverted rewrite as the file being unchanged, so review cannot be relied on to
+catch either.
+
+The comparison reads outcomes, not intentions. A resolution that takes the base's side, combines
+both sides, or honours a deletion the base made restores nothing and needs no declaration. What
+is refused undeclared is the exact undo: the base changed a path and the published content is
+what stood there before it did.
+
+**A declaration names one path and the base state it discards** — the base's content for that
+path, or its absence where the base deleted it. It SHALL NOT take a blanket form: no wildcard,
+no flag covering a whole resolution, nothing a role or a configuration file can set once. A
+declaration whose named state is not what the base actually holds authorizes nothing, and a
+declaration naming a path that would not be reverted changes nothing.
+
+**A declared revert is still reported, wherever the refusal would have been.** Publishing it
+does not make it quiet: the paths undone and the base state each one discards are named on the
+published resolution and recorded with the run. The guard exists because an undone base change
+is invisible to review, and a declaration converts that into a statement rather than an
+exemption from it.
+
+**A declaration is this run's word, and the place it is written is what says so.** It SHALL be
+written outside the artifact's working tree, into a directory the Igor makes empty for the run,
+grants the worker alone, and removes with the tree. A file the repository itself keeps SHALL NOT
+be read as a declaration, at any path and however it got there: a repository can commit a file at
+any path inside itself, and one that is on disk in every fresh clone would authorize the same
+revert on every run that ever clones it, each reporting a declaration nobody made.
+
+No path inside the tree is reserved. A file the repository keeps at whatever path the channel
+once used is ordinary content, carried into the artifact like any other.
+
+#### Scenario: A rewrite the base made is restored without a declaration
+
+- **WHEN** a resolution would publish, for a path the base rewrote, the content that stood there
+  before the base rewrote it, and no declaration names that path
+- **THEN** nothing is published
+- **AND** the item is handed off naming that path
+
+#### Scenario: A deletion the base made is undone without a declaration
+
+- **WHEN** a resolution would publish a path the base deleted since the merge base, and no
+  declaration names that path
+- **THEN** nothing is published
+- **AND** the item is handed off naming that path
+
+#### Scenario: A declared revert is published and said out loud
+
+- **WHEN** a resolution restores a path the base changed and carries a declaration naming that
+  path and the base state it discards
+- **THEN** the resolution is published
+- **AND** the path and what it undoes are named on the resolution and recorded with the run
+
+#### Scenario: A declaration covers the path it names and nothing else
+
+- **WHEN** a resolution restores two paths the base changed and declares one of them
+- **THEN** nothing is published
+- **AND** the handoff names the undeclared path
+
+#### Scenario: A declaration that does not match what the base holds authorizes nothing
+
+- **WHEN** a declaration names a base state for a path that is not the state the base holds
+- **THEN** the revert is treated as undeclared and the item is handed off
+
+#### Scenario: A blanket declaration is not a declaration
+
+- **WHEN** a resolution carries a declaration that names no specific path, or a configuration
+  attempts to permit reverts generally
+- **THEN** it authorizes nothing, and every revert is handed off as if undeclared
+
+#### Scenario: A resolution that keeps the base's work needs no declaration
+
+- **WHEN** every path the base changed survives the resolution, whether taken whole or combined
+  with the artifact's own change
+- **THEN** the resolution is published and no handoff is posted
+
+#### Scenario: Agreeing with the base is not a revert
+
+- **WHEN** the base deleted a path and the resolution deletes it too
+- **THEN** the resolution is published, because nothing was restored
+
+#### Scenario: A declaration the repository commits is not this run's word
+
+- **WHEN** the repository keeps a file of declarations in its own tree and no worker writes one
+  for this run
+- **THEN** the revert is treated as undeclared and the item is handed off
+
+#### Scenario: A file the repository keeps is content, not a channel
+
+- **WHEN** the tree holds a file of declarations at a path the repository tracks
+- **THEN** it is carried into the artifact like any other file, and authorizes nothing
+
+#### Scenario: The declaration does not reach the artifact
+
+- **WHEN** a resolution is published
+- **THEN** no declaration is part of the published commit
+
+#### Scenario: The check runs before the commit, not after it
+
+- **WHEN** a resolution is refused
+- **THEN** no commit reaches the artifact's branch
+- **AND** the refusal does not depend on anything the code host is asked afterwards
+
+#### Scenario: A first artifact is unaffected
+
+- **WHEN** an artifact is produced rather than resolved
+- **THEN** no such comparison is made, because its commit names no base as a parent
+
+### Requirement: A person approves every Igor pull request
+
+A pull request an Igor opened SHALL be reviewed and approved by a person before it merges. An
+Igor SHALL NOT merge a pull request it opened, and an approval from any Igor SHALL NOT count as
+that person's approval, whatever the code host's branch protection accepts.
+
+#### Scenario: Igor does not merge its own pull request
+
+- **WHEN** an Igor's own pull request is approved and mergeable
+- **THEN** the Igor does not merge it
+
+#### Scenario: Another Igor's approval is not enough
+
+- **WHEN** an Igor's pull request carries an approving review from another Igor and none from a person
+- **THEN** no Igor merges it
 

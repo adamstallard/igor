@@ -17,15 +17,23 @@ import type { CycleDeps } from '../src/loop.js'
 import type { Role } from '../src/role.js'
 import type { TreeProvider, WorkingTree } from '../src/worktree.js'
 import { serve, untilSignalled, type ServeEvent } from '../src/serve.js'
+import { labelVerdictFrom } from '../src/github-adapter.js'
 import { tempDir } from './tmp.js'
+import { IGORS } from './igors.js'
+
+/**
+ * Fixture times, counted back from when the suite runs. Discovery reads `updatedAt` against the
+ * real clock (`sinceDays` below), so a fixed date would age out of the window.
+ */
+const STARTED = Date.now()
+const ago = (minutes: number): string => new Date(STARTED - minutes * 60_000).toISOString()
 
 const role = (over: Partial<Role> = {}): Role =>
   ({
     name: 'triage',
     reviewers: [],
-    allow: ['comment', 'draft-pr', 'unassign'],
+    allow: ['comment', 'draft-pr'],
     commands: [],
-    completion: 'unassign',
     instructions: [],
     settleSeconds: 0,
     cooldownMinutes: 60,
@@ -47,18 +55,25 @@ const issue = (n: number): Candidate =>
     state: 'open',
     labels: [],
     assignees: [],
+    holders: [],
     paths: [],
-    createdAt: '2026-09-13T00:00:00Z',
-    updatedAt: '2026-09-13T00:00:00Z',
+    createdAt: ago(120),
+    updatedAt: ago(120),
     ageDays: 0,
     idleDays: 0,
   }) as unknown as Candidate
 
-function deps(found: Candidate[], opts: { searchThrows?: boolean; verdict?: ClaimVerdict; caughtUp?: CatchUp[] } = {}) {
+function deps(found: Candidate[], opts: { searchThrows?: boolean; verdict?: ClaimVerdict; caughtUp?: CatchUp[]; provisionThrows?: boolean; provisionThrowsOn?: readonly number[] } = {}) {
   let searches = 0
   const tracker: Tracker = {
     name: 'github',
     nativeHolderField: true,
+    holderField: { holds: 'list', distinctFromAssignee: true },
+    holder: 'igor:triage',
+    holderSetBy: async () => undefined,
+    directed: async () => [],
+    findLinking: async () => undefined,
+    createIssue: async () => 'https://github.com/o/r/issues/100',
     identity: async () => 'igor-bot',
     search: async () => {
       searches += 1
@@ -69,7 +84,7 @@ function deps(found: Candidate[], opts: { searchThrows?: boolean; verdict?: Clai
     commentsSince: async () => [],
     verifyClaim: async () => opts.verdict ?? { status: 'held' },
     report: async () => {},
-    release: async () => {},
+    release: async () => true,
     linkage: () => 'Closes #1',
   }
   const caughtUp: CatchUpRequest[] = []
@@ -83,14 +98,26 @@ function deps(found: Candidate[], opts: { searchThrows?: boolean; verdict?: Clai
     },
     resolve: async (): Promise<string> => 'resolvedsha',
   }
+  let provisions = 0
   const trees: TreeProvider = {
     name: 'fake',
-    provision: async (): Promise<WorkingTree> => ({
-      path: tempDir('igor-serve-'),
-      repo: 'o/r',
-      changes: async () => [],
-      release: async () => {},
-    }),
+    provision: async (): Promise<WorkingTree> => {
+      if (opts.provisionThrows === true) throw new Error('disk on fire')
+      // Named attempts wedged and the rest healthy — deterministic item faults, not an
+      // outage. Which attempts matters: whether two failures were adjacent is the whole
+      // question the counter answers.
+      provisions += 1
+      if (opts.provisionThrowsOn?.includes(provisions) === true) {
+        throw new Error('422 Reference already exists')
+      }
+      return {
+        path: tempDir('igor-serve-'),
+        outbox: tempDir('igor-serve-outbox-'),
+        repo: 'o/r',
+        changes: async () => [],
+        release: async () => {},
+      }
+    },
   }
   return {
     d: { tracker, codeHost, trees, destination: 'o/lore' } as CycleDeps,
@@ -165,6 +192,23 @@ describe('the loop keeps going', () => {
     expect(s.cycles).toBe(3)
     expect(s.failures).toBe(3)
     expect(events.filter((e) => e.kind === 'cycle-failed')).toHaveLength(3)
+  })
+
+  it('abandons the cycle when a surface stops answering, rather than doing it to every item', async () => {
+    // Converting the throw into a per-item refusal removed the abandonment a throw used to
+    // cause here. Without this the loop walks the whole pool doing the same thing to each —
+    // two comments per item per poll for as long as the outage lasts, at a volume that is
+    // itself what trips the rate limit.
+    const events: ServeEvent[] = []
+    const onEvent = (e: ServeEvent) => events.push(e)
+    const { d } = deps([issue(1), issue(2), issue(3)], { provisionThrows: true })
+    const s = await serve(d, role(), 'igor-bot', { ...base, maxCycles: 1, onEvent })
+
+    // Two items attempted, not three: the second consecutive failure is what ends the cycle,
+    // because one on its own does not say whether the surface or the item is at fault.
+    expect(events.filter((e) => e.kind === 'working')).toHaveLength(2)
+    expect(events.filter((e) => e.kind === 'cycle-failed')).toHaveLength(1)
+    expect(s.failures).toBe(1)
   })
 
   it('sleeps between cycles but not after the last', async () => {
@@ -446,5 +490,327 @@ describe('a published artifact that stopped merging', () => {
 
     expect(caughtUp()).toEqual([])
     expect(events.filter((e) => e.kind === 'stopping')).toHaveLength(1)
+  })
+
+  it('abandons the cycle on a surface failure here too, and this loop runs first', async () => {
+    // The catch-up loop runs before the claim loop, so a surface that stops answering is met
+    // here first. A break in only the second loop lets the whole catch-up pool be walked —
+    // a claim and a handoff on each — before the guarded one is ever reached.
+    const events: ServeEvent[] = []
+    const onEvent = (e: ServeEvent) => events.push(e)
+    const { d } = deps([rotting(7), rotting(8), rotting(9)], {
+      caughtUp: [{ outcome: 'conflict' }, { outcome: 'conflict' }, { outcome: 'conflict' }],
+      provisionThrows: true,
+    })
+    const s = await serve(d, role(), 'igor-bot', { ...base, maxCycles: 1, onEvent })
+
+    expect(events.filter((e) => e.kind === 'working')).toHaveLength(2)
+    expect(events.filter((e) => e.kind === 'cycle-failed')).toHaveLength(1)
+    expect(s.failures).toBe(1)
+  })
+
+  it('stops the claim loop on an outage the catch-up loop met, and counts it once', async () => {
+    // A mixed pool, because a pool of only catch-ups never reaches the second loop and so
+    // cannot tell whether it was stopped. Both halves ride on this: the claim pool is not
+    // walked against a surface already known to be dead, and one cycle fails once — without
+    // the cross-loop guard the breaker fires again below and counts the same outage twice.
+    const events: ServeEvent[] = []
+    const onEvent = (e: ServeEvent) => events.push(e)
+    const { d } = deps([rotting(7), issue(8), issue(9)], {
+      caughtUp: [{ outcome: 'conflict' }],
+      provisionThrows: true,
+    })
+    const s = await serve(d, role(), 'igor-bot', { ...base, maxCycles: 1, onEvent })
+
+    expect(events.filter((e) => e.kind === 'working')).toHaveLength(2)
+    expect(events.filter((e) => e.kind === 'cycle-failed')).toHaveLength(1)
+    expect(s.failures).toBe(1)
+    // The item that ended the cycle is still reported as worked. `worked` is the only route
+    // by which a run's execution reaches the ledger, so breaking before it would drop the
+    // spend of a run that published — silently, since the cycle total is added earlier.
+    expect(events.filter((e) => e.kind === 'worked')).toHaveLength(2)
+  })
+
+  it('does not abandon on one failure, because one does not say whose fault it is', async () => {
+    // The pole the counter creates. A branch an earlier run orphaned makes `produce` fail
+    // `422 Reference already exists` on that item and no other, deterministically. Abandoning
+    // on the first would stop every cycle for the life of that item — and since the claim is
+    // now released rather than held, the item comes back next cycle and the worker spends on
+    // it again.
+    const events: ServeEvent[] = []
+    const onEvent = (e: ServeEvent) => events.push(e)
+    const { d } = deps([issue(1), issue(2), issue(3)], { provisionThrowsOn: [1] })
+    const s = await serve(d, role(), 'igor-bot', { ...base, maxCycles: 1, onEvent })
+
+    // That the fault happened at all, before anything about what the cycle then did: without
+    // it every assertion below is also true of a pool where nothing went wrong.
+    const failed = events.filter((e) => e.kind === 'worked' && e.run.surfaceFailed === true)
+    expect(failed).toHaveLength(1)
+    expect(events.filter((e) => e.kind === 'working')).toHaveLength(3)
+    expect(events.filter((e) => e.kind === 'cycle-failed')).toHaveLength(0)
+    expect(s.failures).toBe(0)
+  })
+
+  it('counts consecutively, so a healthy item between two faults does not add up to an outage', async () => {
+    // What "consecutive" is for, and the only shape that tells it from a per-cycle tally: two
+    // wedged items with a healthy one between them. A tally would end the cycle at the second
+    // fault, which is the behaviour the counter was introduced to stop.
+    const events: ServeEvent[] = []
+    const onEvent = (e: ServeEvent) => events.push(e)
+    const { d } = deps([issue(1), issue(2), issue(3)], { provisionThrowsOn: [1, 3] })
+    const s = await serve(d, role(), 'igor-bot', { ...base, maxCycles: 1, onEvent })
+
+    expect(events.filter((e) => e.kind === 'worked' && e.run.surfaceFailed === true)).toHaveLength(2)
+    expect(events.filter((e) => e.kind === 'working')).toHaveLength(3)
+    expect(events.filter((e) => e.kind === 'cycle-failed')).toHaveLength(0)
+    expect(s.failures).toBe(0)
+  })
+
+  it('abandons one cycle, not every cycle after it', async () => {
+    // The breaker is per cycle: the next poll is the retry. A flag that outlived its cycle
+    // would leave the claim loop switched off for the life of the process, which no
+    // single-cycle test can tell apart from abandoning correctly.
+    const events: ServeEvent[] = []
+    const onEvent = (e: ServeEvent) => events.push(e)
+    const { d } = deps([rotting(7), issue(8), issue(9)], {
+      caughtUp: [{ outcome: 'conflict' }],
+      provisionThrows: true,
+    })
+    const s = await serve(d, role(), 'igor-bot', { ...base, maxCycles: 2, onEvent })
+
+    // Each cycle abandons on its own, and the next poll is the retry — so the count rises
+    // across cycles rather than the breaker latching. What matters is the second line: one
+    // failure per cycle, not one per item and not one for the process.
+    expect(events.filter((e) => e.kind === 'working')).toHaveLength(5)
+    expect(s.failures).toBe(2)
+  })
+})
+
+describe('a surface credential refused while serving', () => {
+  it('takes no new item, says which identity was refused, and resumes once a token mints', async () => {
+    const { d, searches } = deps([issue(1)])
+    const { events, onEvent } = collect()
+    const answers: (true | string)[] = ['GitHub would not mint a token for the App "triage": 401 Bad credentials', true, true]
+    const s = await serve(d, role(), 'igor-bot', {
+      ...base,
+      maxCycles: 2,
+      onEvent,
+      credential: async () => answers.shift() ?? true,
+    })
+    const refused = events.filter((e) => e.kind === 'credential-refused')
+    expect(refused).toEqual([
+      { kind: 'credential-refused', cycle: 1, reason: 'GitHub would not mint a token for the App "triage": 401 Bad credentials' },
+    ])
+    // The refused cycle searched nothing and worked nothing; the next one did both.
+    expect(searches()).toBe(1)
+    expect(s.worked).toBe(1)
+  })
+
+  it('stops between items when the credential is refused mid-cycle', async () => {
+    const { d } = deps([issue(1), issue(2)])
+    const { events, onEvent } = collect()
+    const answers: (true | string)[] = [true, true, 'refused']
+    const s = await serve(d, role(), 'igor-bot', {
+      ...base,
+      maxCycles: 1,
+      onEvent,
+      credential: async () => answers.shift() ?? 'refused',
+    })
+    expect(s.worked).toBe(1)
+    expect(events.filter((e) => e.kind === 'credential-refused')).toHaveLength(1)
+  })
+})
+
+describe('items a person hands to this Igor by label', () => {
+  it('claims a handed-over item without triage, without writing the label, and without the settle interval', async () => {
+    const handed = { ...issue(5), holders: ['igor:triage'], assignees: ['adam'] } as Candidate
+    const { d } = deps([])
+    const claimed: string[] = []
+    const reported: string[] = []
+    let triaged = 0
+    Object.assign(d.tracker, {
+      directed: async () => [handed],
+      holderSetBy: async () => ({ self: false, by: 'adam', at: ago(120) }),
+      claim: async (c: Candidate) => {
+        claimed.push(c.id)
+        return true
+      },
+      report: async (_c: Candidate, m: string) => {
+        reported.push(m)
+      },
+    })
+    const s = await serve(d, role({ settleSeconds: 3600 }), 'igor-bot', {
+      ...base,
+      maxCycles: 1,
+      triage: async (cs) => {
+        triaged += cs.length
+        return approveAll(cs)
+      },
+      claim: { wait: async () => { throw new Error('waited the settle interval') } },
+    })
+    expect(s.worked).toBe(1)
+    expect(claimed).toEqual([])
+    expect(triaged).toBe(0)
+    expect(reported[0]).toContain('picked this up')
+  })
+
+  it("posts one notice, and claims nothing, where another Igor's label is there too", async () => {
+    const both = { ...issue(6), holders: ['igor:triage', 'igor:backend'] } as Candidate
+    const { d } = deps([])
+    const reported: string[] = []
+    Object.assign(d.tracker, {
+      directed: async () => [both],
+      holderSetBy: async () => ({ self: false, by: 'adam', at: ago(120) }),
+      report: async (_c: Candidate, m: string) => {
+        reported.push(m)
+      },
+    })
+    const s = await serve(d, role(), 'igor-bot', { ...base, maxCycles: 1 })
+    expect(s.worked).toBe(0)
+    expect(reported).toHaveLength(1)
+    expect(reported[0]).toContain('`igor:backend` holds it')
+  })
+})
+
+describe('an item handed over while a pull request is open for it', () => {
+  it('posts one notice naming the pull request, and claims nothing', async () => {
+    const handed = {
+      ...issue(7), holders: ['igor:triage'],
+      inFlight: { kind: 'pull-request', ref: '#8', url: 'https://github.com/o/r/pull/8', draft: true, author: 'someone', mergeable: 'clean', branch: 'b', base: 'main' },
+    } as Candidate
+    const { d } = deps([])
+    const reported: string[] = []
+    Object.assign(d.tracker, {
+      directed: async () => [handed],
+      holderSetBy: async () => ({ self: false, by: 'adam', at: ago(120) }),
+      report: async (_c: Candidate, m: string) => {
+        reported.push(m)
+      },
+    })
+    const s = await serve(d, role(), 'igor-bot', { ...base, maxCycles: 1 })
+    expect(s.worked).toBe(0)
+    expect(reported).toHaveLength(1)
+    expect(reported[0]).toContain('[#8](https://github.com/o/r/pull/8) is already open for it')
+  })
+})
+
+describe('an item handed over whose own artifact the cycle is catching up', () => {
+  it('is caught up, and gets no in-flight notice the catch-up has already made untrue', async () => {
+    const item = { ...rotting(7), holders: ['igor:triage'] } as Candidate
+    const { d, caughtUp } = deps([item], { caughtUp: [{ outcome: 'conflict' }] })
+    const reported: string[] = []
+    Object.assign(d.tracker, {
+      directed: async () => [item],
+      holderSetBy: async () => ({ self: false, by: 'adam', at: ago(120) }),
+      report: async (_c: Candidate, m: string) => {
+        reported.push(m)
+      },
+    })
+    await serve(d, role(), 'igor-bot', { ...base, maxCycles: 1 })
+    expect(caughtUp()).toHaveLength(1)
+    expect(reported.some((m) => m.includes('is already open for it'))).toBe(false)
+  })
+})
+
+describe('a handed-over item whose own pull request the cycle catches up', () => {
+  it('is caught up when a person handed it over after a stop, without waiting the cooldown', async () => {
+    const now = Date.now()
+    const iso = (m: number) => new Date(now - m * 60000).toISOString()
+    const item = { ...rotting(7), holders: ['igor:triage'], labels: ['igor:triage'] } as Candidate
+    const { d, caughtUp } = deps([item])
+    const reported: string[] = []
+    const comments = [{ author: 'adam', at: iso(10), body: 'stop' }]
+    Object.assign(d.tracker, {
+      directed: async () => [item],
+      holderSetBy: async () => ({ self: false, by: 'adam', at: iso(5) }),
+      commentsSince: async (_c: Candidate, since: string) => comments.filter((c) => Date.parse(c.at) >= Date.parse(since)),
+      report: async (_c: Candidate, m: string) => { reported.push(m) },
+    })
+    const { events, onEvent } = collect()
+    await serve(d, role(), 'igor-bot', { ...base, maxCycles: 1, onEvent })
+    const p = events.find((e) => e.kind === 'planned') as any
+    expect(p.report.toCatchUp).toHaveLength(1)
+    expect(caughtUp()).toHaveLength(1)
+  })
+
+  it('keeps the person\'s label, so the in-flight notice\'s promise holds once the pull request starts conflicting', async () => {
+    let cycle = 0
+    const said: { author: string; at: string; body: string }[] = []
+    const cur = () => ({ ...rotting(7, { mergeable: cycle <= 1 ? 'unknown' : 'conflicting' }), holders: ['igor:triage'], labels: ['igor:triage'] }) as Candidate
+    const { d, caughtUp } = deps([], { caughtUp: [{ outcome: 'conflict' }] })
+    const reported: string[] = []
+    const released: string[] = []
+    Object.assign(d.tracker, {
+      search: async () => { cycle += 1; return [cur()] },
+      directed: async () => [cur()],
+      holderSetBy: async () => ({ self: false, by: 'adam', at: ago(120) }),
+      commentsSince: async () => said,
+      report: async (_c: Candidate, m: string) => { reported.push(`cycle${cycle}: ${m.slice(0, 120)}`); said.push({ author: 'igor-bot', at: new Date().toISOString(), body: m }) },
+      release: async () => { released.push(`cycle${cycle}`); return true },
+    })
+    await serve(d, role(), 'igor-bot', { ...base, maxCycles: 2 })
+    expect(caughtUp()).toHaveLength(1)
+    expect(reported.some((r) => r.includes('is already open for it'))).toBe(true)
+    expect(released).toEqual([])
+  })
+})
+
+describe('a handed-over item stopped while nothing ran', () => {
+  it('loses its label as a stop and gets a receipt, and is not claimed', async () => {
+    const handed = { ...issue(9), holders: ['igor:triage'], labels: ['igor:triage'] } as Candidate
+    const { d } = deps([])
+    const reported: string[] = []
+    const released: boolean[] = []
+    Object.assign(d.tracker, {
+      directed: async () => [handed],
+      holderSetBy: async () => ({ self: false, by: 'adam', at: ago(120) }),
+      commentsSince: async () => [{ author: 'bob', at: ago(60), body: 'stop' }],
+      release: async (_c: Candidate, _as: string, how?: { stop?: boolean }) => { released.push(how?.stop === true); return true },
+      report: async (_c: Candidate, m: string) => { reported.push(m) },
+    })
+    const s = await serve(d, role(), 'igor-bot', { ...base, maxCycles: 1 })
+    expect(s.worked).toBe(0)
+    expect(released).toEqual([true])
+    expect(reported).toHaveLength(1)
+    expect(reported[0]).toContain("stopped at bob's request and released this")
+  })
+})
+
+describe('a stop said while the cycle works another item', () => {
+  it('is seen by the claim on that item, which stands down with a receipt', async () => {
+    const { d } = deps([issue(1), issue(2)])
+    // Comments per item, as GitHub keeps them: `since` filters on the edit time, the verdict on
+    // the creation time.
+    const comments: Record<string, { body: string; user: { login: string }; created_at: string; updated_at: string }[]> = {}
+    const say = (id: string, login: string, body: string) => {
+      const at = new Date().toISOString()
+      ;(comments[id] ??= []).push({ body, user: { login }, created_at: at, updated_at: at })
+    }
+    const outcomes: Record<string, string> = {}
+    Object.assign(d.tracker, {
+      verifyClaim: async (c: Candidate, as: string, since: string) =>
+        labelVerdictFrom({ login: as, accountId: 1, holder: 'igor:triage' }, ['igor:triage'], undefined,
+          (comments[c.id] ?? []).filter((m) => Date.parse(m.updated_at) >= Date.parse(since)), since, IGORS),
+      report: async (c: Candidate, m: string) => { say(c.id, 'igor-bot', m) },
+    })
+    const { events, onEvent } = collect()
+    await serve(d, role({ settleSeconds: 0 }), 'igor-bot', {
+      ...base,
+      maxCycles: 1,
+      onEvent,
+      // While item 1 is worked, somebody stops item 2, and the claim on item 2 comes later than
+      // its own settle window reaches back.
+      worker: async () => {
+        if (!(comments['github:o/r#2'] ?? []).some((m) => m.user.login === 'bob')) {
+          say('github:o/r#2', 'bob', 'stop')
+          // Longer than the checkpoint's one-second look back, so only the claim's scan can see it.
+          await new Promise((r) => setTimeout(r, 1500))
+        }
+        return { result: 'no change needed', total_cost_usd: 0 }
+      },
+    })
+    for (const e of events) if (e.kind === 'worked') outcomes[e.item.id] = e.run.outcome
+    expect(outcomes['github:o/r#2']).toBe('stopped')
+    expect((comments['github:o/r#2'] ?? []).some((m) => m.body.includes("stopped at bob's request"))).toBe(true)
   })
 })

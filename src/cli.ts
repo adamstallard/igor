@@ -18,10 +18,12 @@ import {
 } from './store.js'
 import { eligibleToPropose, idsOnDefaultBranch, propose, upstreamHoldsTheName, ProposeError } from './propose.js'
 import { reconcile, promoteInPlace, renderReconciliation } from './reconcile.js'
-import { GhError } from './gh.js'
+import { actAs, GhError } from './gh.js'
+import { AppError, canMint, canWriteWorkflows, startApp, type AppSession } from './app.js'
 import { claimRequested, contradictoryRunFlags } from './flags.js'
-import { explainRole, loadRole, rolesFrom, RoleError } from './role.js'
-import { catchUpItem, planCycle, runItem, UNTRIAGED_NO_SEAT, type CycleReport } from './loop.js'
+import { explainRole, loadRole, rolesFrom, RoleError, type Role } from './role.js'
+import { catchUpItem, honourIdleStop, planCycle, runItem, UNTRIAGED_NO_SEAT, type CycleReport } from './loop.js'
+import { waitingNotice } from './claiming.js'
 import { renderProgress } from './execute.js'
 import { serve, untilSignalled } from './serve.js'
 import { GitHubTracker, GitHubCodeHost } from './github-adapter.js'
@@ -302,6 +304,29 @@ role
     process.stdout.write(`${explainRole(loadRole(config, name))}\n`)
   })
 
+/**
+ * Starts acting as the role's GitHub App, or refuses to start, naming why. Runs before any other
+ * GitHub call, so nothing `run` or `serve` does reaches GitHub as anyone else: from here every
+ * `gh` call carries the App's token, and so do the clones and fetches of the trees it hands out.
+ */
+async function actAsApp(role: Role, destination: string, warn: (line: string) => void) {
+  const session: AppSession = await startApp(
+    role.name,
+    [...role.sources.map((s) => s.repo), destination],
+    process.env,
+  )
+  for (const warning of session.warnings) warn(warning)
+  const token = () => session.tokens.token()
+  actAs(token)
+  const tracker = new GitHubTracker({ account: session.account, role: role.name })
+  const codeHost = new GitHubCodeHost({ canWriteWorkflows: canWriteWorkflows(session.tokens.permissions) })
+  return {
+    session,
+    identity: session.account.login,
+    deps: { tracker, codeHost, trees: new CloneProvider(1, token), destination },
+  }
+}
+
 /** A floor reads as one: a cycle that spent money it cannot account for must not look cheap. */
 function triageSpend(report: CycleReport): string {
   const amount = `$${report.triageCostUsd.toFixed(4)}`
@@ -346,6 +371,19 @@ function renderCycle(report: CycleReport, verbose: boolean): string {
       out.push(`  ${c.candidate.native.padStart(6)}  ${c.reason}`)
     }
   }
+  const directed = report.toClaim.filter((c) => c.directed === true)
+  if (directed.length > 0) {
+    out.push('', `handed to this Igor by a person (${directed.length}), claimed without triage:`)
+    for (const c of directed) out.push(`  ${c.candidate.native.padStart(6)}  ${c.reason}`)
+  }
+  if (report.stopped.length > 0) {
+    out.push('', `handed to this Igor and stopped while nothing ran (${report.stopped.length}), label to take off:`)
+    for (const c of report.stopped) out.push(`  ${c.candidate.native.padStart(6)}  ${c.reason}`)
+  }
+  if (report.waiting.length > 0) {
+    out.push('', `handed to this Igor but held or in flight (${report.waiting.length}), owed a notice:`)
+    for (const c of report.waiting) out.push(`  ${c.candidate.native.padStart(6)}  ${c.reason}`)
+  }
   out.push(...untriagedLines(report))
   if (verbose && report.skipped.length > 0) {
     out.push('', `skipped before any model call (${report.skipped.length}):`)
@@ -379,18 +417,16 @@ program
     if (contradiction !== undefined) throw new RoleError(contradiction)
     const config = loadConfig(program.opts()['config'])
     const role = loadRole(config, name).role
-    const tracker = new GitHubTracker()
-    const identity = await tracker.identity()
     const destination = await repoFromCheckout(config.destination)
-    const deps = { tracker, codeHost: new GitHubCodeHost(), trees: new CloneProvider(), destination }
-
     const out = {
       say: (line: string) => process.stdout.write(`  ${line}\n`),
       warn: (line: string) => process.stderr.write(`  ! ${line}\n`),
     }
+    const { identity, deps } = await actAsApp(role, destination, out.warn)
+    const { tracker } = deps
     const { gate: gateFor, loreFor, record, store } = await wire(config, role, destination, out)
 
-    const work = async (item: Candidate) => {
+    const work = async (item: Candidate, directed = false, since?: string) => {
       const gate = await gateFor()
       const lore = loreFor(item)
       process.stdout.write(`\nworking ${item.id}  "${item.title}"\n  seat: ${gate.seat ?? '(unenforced)'}\n`)
@@ -400,6 +436,7 @@ program
       const live = process.stdout.isTTY === true
       let drawn = false
       const run = await runItem(deps, item, role, identity, {
+        claim: { ...(directed ? { directed: true } : {}), ...(since === undefined ? {} : { since }) },
         budget: gate,
         lore,
         store,
@@ -445,7 +482,10 @@ program
       // judgement, and the lane exists to substitute for one. The universal skips still
       // apply: acting on a closed item, or one already being worked, is not a preference
       // anybody gets to express.
-      const universal = universalSkip(item, identity)
+      const universal = universalSkip(item, identity, {
+        holder: tracker.holder,
+        distinctFromAssignee: tracker.holderField.distinctFromAssignee,
+      })
       if (universal) throw new RoleError(`refusing ${item.id}: ${universal.reason}`)
 
       // An item whose own artifact stopped merging passes the universal skips and is not new
@@ -493,7 +533,7 @@ program
 
     for (const c of report.toCatchUp) {
       const gate = await gateFor()
-      const run = await catchUpItem(deps, c.candidate, role, identity, { budget: gate, store })
+      const run = await catchUpItem(deps, c.candidate, role, identity, { budget: gate, store, claim: { since: report.readAt } })
       process.stdout.write(`  ${c.candidate.id}: ${run.reason}\n`)
       if (shouldDefer(run.outcome, run.handoff, run.cures)) {
         await noteHandoff(destination, c.candidate, run.reason).catch(() => undefined)
@@ -501,13 +541,20 @@ program
       if (run.execution) await record(c.candidate, run.execution, gate.seat)
     }
 
+    // Owed whether or not anything is claimed, and usually the cycle's only finding.
+    for (const c of report.stopped) {
+      if (c.stop !== undefined) await honourIdleStop(tracker, c.candidate, role, identity, c.stop).catch(() => undefined)
+    }
+    for (const c of report.waiting) {
+      await tracker.report(c.candidate, c.notice ?? waitingNotice(role, c.holders ?? [])).catch(() => undefined)
+    }
     if (report.toClaim.length === 0) {
       process.stdout.write('\nnothing to claim\n')
       return
     }
     const cap = opts.maxItems === undefined ? report.toClaim.length : Number(opts.maxItems)
     for (const c of report.toClaim.slice(0, cap)) {
-      const run = await work(c.candidate)
+      const run = await work(c.candidate, c.directed === true, c.handedOverAt ?? report.readAt)
       // A closed budget stops the cycle rather than being rediscovered per item. Read off the
       // handoff kind rather than the prose, which is written for whoever reads the item.
       if (run.outcome === 'handed-off' && run.handoff === 'budget') {
@@ -527,13 +574,11 @@ program
   .action(async (name: string, opts) => {
     const config = loadConfig(program.opts()['config'])
     const role = loadRole(config, name).role
-    const tracker = new GitHubTracker()
-    const identity = await tracker.identity()
     const destination = await repoFromCheckout(config.destination)
-    const deps = { tracker, codeHost: new GitHubCodeHost(), trees: new CloneProvider(), destination }
 
     const stamp = () => new Date().toISOString().slice(11, 19)
     const say = (line: string) => process.stdout.write(`${stamp()} ${line}\n`)
+    const { session, identity, deps } = await actAsApp(role, destination, (line) => say(`! ${line}`))
     const { gate, loreFor, record, store } = await wire(config, role, destination, {
       say: (line) => say(`  ${line}`),
       warn: (line) => say(`  ! ${line}`),
@@ -543,6 +588,7 @@ program
       ...(opts.poll === undefined ? {} : { pollMinutes: Number(opts.poll) }),
       ...(opts.cycles === undefined ? {} : { maxCycles: Number(opts.cycles) }),
       until: untilSignalled(),
+      credential: () => canMint(session.tokens),
       gate,
       loreFor,
       store,
@@ -567,6 +613,9 @@ program
           }
           case 'cycle-failed':
             say(`cycle ${e.cycle} failed: ${e.error.message}`)
+            break
+          case 'credential-refused':
+            say(`cycle ${e.cycle}: taking no new work, ${e.reason}`)
             break
           case 'sleeping':
             say(`sleeping ${e.minutes}m`)
@@ -643,6 +692,7 @@ try {
     // The superclass of GitHubError and StateError both: every one of these carries a sentence
     // written to be read, and a host where `gh` is missing prints it rather than a stack trace.
     error instanceof GhError ||
+    error instanceof AppError ||
     error instanceof RoleError ||
     error instanceof TriageError ||
     error instanceof BudgetError ||

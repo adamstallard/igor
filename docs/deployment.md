@@ -41,10 +41,9 @@ docs say apt, dnf and apk installs don't update themselves either.
 
 Three things, in this order. None can be automated, and the first two are the ones people miss.
 
-1. **A machine account per Igor**, with write access to the repositories it works. Not a
-   GitHub App — an App's bot user cannot be an issue assignee, so claiming would silently
-   degrade to a comment. [`machine-accounts.md`](machine-accounts.md) has the steps and the
-   traps.
+1. **A GitHub App per role**, installed on the account that holds the repositories the role
+   works and its lore repository. Every `gh` and `git` call an Igor makes acts as that App.
+   [Giving an Igor its GitHub App](#giving-an-igor-its-github-app) below has the steps.
 
 2. **A seat token per seat**, from `claude setup-token` run while signed in *as that seat*.
    Name where it lives in `igor.config.yaml`: `token_env` for a variable, `token_file` for a
@@ -75,6 +74,64 @@ And one thing about the repositories a role is pointed at: its work has to be te
 file a worker changes is published corrupted rather than dropped, and the diff gives no sign of
 it — [`architecture.md`](architecture.md) §6.7.3 has why that is tolerated and what would
 change it.
+
+### Giving an Igor its GitHub App
+
+**An Igor acts on GitHub as a GitHub App, one App per role.** Its pull requests, comments and
+claims show as `<name>[bot]`. An App needs no personal token renewed and no seat, and it needs
+no server: minting a token and calling the API are outbound, and the Igor polls.
+
+1. **Create the App.** On GitHub, under the account that owns the repositories the role works
+   on and its lore repository: **Settings → Developer settings → GitHub Apps → New GitHub App**.
+
+   | Field | Value |
+   |---|---|
+   | GitHub App name | Any free name, such as `igor-<role>`. Commits and claims show as `<name>[bot]`. |
+   | Homepage URL | Any; the lore repository's URL is fine. |
+   | Webhook | Untick **Active**. Igor polls; nothing receives events. |
+   | Repository permissions | **Contents**, **Issues** and **Pull requests**: Read and write. **Workflows**: Read and write only if the role changes files under `.github/workflows/`. |
+   | Where can this GitHub App be installed? | **Only on this account.** |
+
+   On the App's **General** page, copy the **App ID**, and under **Private keys** click
+   **Generate a private key**. GitHub downloads a `.pem` file; it is the App's password.
+
+2. **Install it.** In the App's settings, **Install App**, then **Install** on the account,
+   choosing **Only select repositories**: every repository the role works on, and its lore
+   repository. One installation must cover them all, or the Igor refuses to start.
+
+3. **Store it on the host.** Move the key to `/etc/igor/<role>.pem` and add the three
+   variables to `/etc/igor/<role>.env`, both `0600` and owned by the service user:
+
+       GITHUB_APP_IDENTITY=<role>
+       GITHUB_APP_ID=<App ID>
+       GITHUB_APP_PRIVATE_KEY_FILE=/etc/igor/<role>.pem
+
+   Start the Igor. If anything is missing or wrong, it refuses to start and names it.
+
+**The credentials come from that environment and nowhere else.** A person running an Igor from
+a shell exports the same three variables. `GITHUB_APP_PRIVATE_KEY`, holding the key itself,
+may replace the file variable; set both and the Igor refuses to start. An ambient `GH_TOKEN`
+or a host `gh` login is never used, so don't log `gh` in as the service user: nothing in Igor
+needs that login, and a worker allowed to run `gh` could use it. To diagnose an App, the
+`github-app` skill's `check` reads the same variables:
+`sudo -u igor sh -c 'set -a; . /etc/igor/<role>.env; python3 github_app.py check'`. Igor does
+not need the skill.
+
+**Why an App claims with a label.** An App's bot user cannot be an issue assignee or a
+requested reviewer: the can-this-user-be-assigned check returns 404, and the assignment 403,
+on any plan. So an Igor claims an issue by adding the label `igor:<role>` and posting the claim
+comment, and the assignee stays a person's. An Igor leaves alone an issue assigned to a person
+unless it carries that Igor's label, and a person adding the label hands the issue to that
+Igor, which starts without waiting the settle interval. Adding a label the repository lacks
+creates it, so a new role needs no label set up.
+
+**One App per role, never shared.** An Igor tells a person removing its label, which is a
+stop, from its own release by comparing the event's actor with its own bot account, and that
+works only if no other Igor shares the account. Processes of one role share its App.
+
+**Revoking** an Igor is uninstalling its App. Its history stays attributable to it.
+
+Which seat pays for an Igor's model calls is separate from its App: [`seats.md`](seats.md).
 
 ## systemd
 
@@ -116,8 +173,8 @@ Four steps, once a colleague has sent you a token ([`seats.md`](seats.md) is wha
 
    No `export`: systemd parses this file itself rather than sourcing it in a shell, so shell
    syntax is not available here. Seat tokens belong in the shared file rather than a per-instance
-   one, because a seat is a subscription several Igors may draw from. `GH_TOKEN` is the
-   opposite — it is identity, and belongs in `/etc/igor/<role>.env`.
+   one, because a seat is a subscription several Igors may draw from. The GitHub App is the
+   opposite: it is identity, and its lines belong in `/etc/igor/<role>.env`.
 
    Running from a shell instead, `token_env` needs the variable set in the shell that starts
    `igor`, which means a wrapper rather than an export — or `token_command`, which reads the
@@ -294,7 +351,18 @@ checkout needed.
 | `seat "x" reads its token from Y, which is not set` | the seat has no token; it is skipped rather than substituted |
 | `role "x" names seat "y", which is not declared` | the role spends a seat or `pool:` no `budget` block declares; every command refuses until the name matches one, since a default would charge the wrong seat |
 | `role "x" names no seat` | seats are declared but this role names none; set `seat:` on it or on a level it inherits from. Omitting it used to fall through to the first pool declared, which may be a person's |
-| `the tracker did not record <account> as holding <item>` | the machine account lacks write access — GitHub accepts the assignment and silently drops it |
+| `the GitHub App "x" is missing GITHUB_APP_ID …` | `/etc/igor/<role>.env` lacks that variable; the Igor reads its App only from its environment |
+| `… is set for "default", since GITHUB_APP_IDENTITY is unset, and this Igor acts as "x"` | `GITHUB_APP_IDENTITY` is missing, or names another role; it must be the role's name |
+| `both GITHUB_APP_PRIVATE_KEY_FILE and GITHUB_APP_PRIVATE_KEY are set` | keep one of them |
+| `the private key for "x" … cannot be read` or `… cannot sign` | the path is wrong, the service user cannot read it, or it is not the `.pem` GitHub generated |
+| `GitHub refused the credentials of the App "x" (App ID n)` | the App ID is wrong, or the key was deleted on the App's page |
+| `the App "x" is not installed on <owner>` | install it on the account holding the repository |
+| `the App "x" is installed on <owner> but cannot reach <repo>` | add the repository to the installation |
+| `… through more than one installation` | the role's repositories and its lore repository are on different accounts; one Igor uses one installation |
+| `… lacks Issues write` (or another permission) | grant it in the App's settings, then accept the new permissions on the installation |
+| `the App's installation lacks Workflows write` | reported, not refused; a publish changing `.github/workflows/` fails until it is granted |
+| `taking no new work, GitHub would not mint a token for the App "x"` | the key was deleted or the App uninstalled while it ran; it tries once a cycle and resumes by itself |
+| `the tracker did not record <account> as holding <item>` | the claim label did not stick: read back after it was added, the issue does not carry it |
 | nothing is ever claimed | run `igor run <role> --plan`; the funnel prints where every candidate was dropped |
 | `9 left untriaged — the budget is used up, back at …` | every seat the role may use is held. Nothing is wrong with the host: triage is a spend, so it does not run where the gate names no seat, and those nine items wait rather than being decided about. It keeps discovering and keeps reading comments, so a **stop** still lands |
 | `9 left untriaged — no seat's usage could be read …` | the same stop, for a reason a clock will not clear: the sentence names what to go and look at, and only "used up" means spend |
