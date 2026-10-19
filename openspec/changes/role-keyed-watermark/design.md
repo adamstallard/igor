@@ -27,11 +27,12 @@ The requirement states the scope and not the key format. A composite key
 naming the string would be satisfied by a key that carries the role and still shares a map
 wrongly, and would forbid a file-per-role shape that satisfies the promise perfectly well.
 
-Cost is one mark per role and source in place of one per source, and each mark is one `lastSeen`
-string. Under `concurrent-instances` (#179), a role can run as several processes, each with a
-number it keeps across restarts, its *rank*. `discovery.json` then becomes a log of mark lines,
-each naming its role and rank, folded on read into one mark per role and source (#179's task 5.11), so the cost is
-the role's name on each line.
+Under `concurrent-instances` (#179), each process of a role runs as a numbered *rank*, which it
+keeps across restarts; a role served by one process is rank 1. Each rank keeps its own mark, so
+the cost is one mark per role, rank and source in place of one per source, each mark one
+`lastSeen` timestamp string. `discovery.json` becomes a log of mark lines, each naming its role
+and rank, and a read folds them into one mark per role and source (#179's task 5.11). Storing
+them costs a role name and a rank on each line.
 
 ### It modifies the requirement it was in tension with
 
@@ -114,10 +115,12 @@ of. Changing what `result.key` *is* therefore leaves the block alone, which is w
 requirement is worded about the key's scope and says nothing about how the held or untriaged sets
 are computed.
 
-The wording of the two neighbouring requirements survives as well. #99's "the candidate's source
-mark" and #70's "its source's mark" both stay true under role scoping, because a cycle runs
-exactly one role: within a cycle, "that source's mark" names one mark either way. Neither needs
-rewording, and rewording them from here would be the collision this change is avoiding.
+Two neighbouring requirements keep their wording too: #99's `structured-failure-record` rule,
+"measured against the source mark", and the in-force `work-triage` rule from #70, "holds its
+source's mark back". Both stay true under role scoping, because a cycle runs exactly one role,
+and under #179 its process reads one mark per source, folded from its role's ranks. Neither
+needs rewording. Rewording them from here would add another change modifying requirements other
+changes also modify, which is how one archive overwrites another's edit.
 
 ### `docs/architecture.md` states the rule as it holds after the merge
 

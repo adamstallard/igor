@@ -24,7 +24,10 @@
    ([#101](https://github.com/adamstallard/igor/pull/101)) modifies the same requirement and keeps
    the in-force "Discovery SHALL record a per-source watermark". #101 archives first; at this
    change's archive, this change's block is rewritten by hand to carry the rest of #101's text,
-   keeping this change's wording.
+   keeping this change's wording. #179, which also archives first, modifies the same requirement
+   to add a stand-down (under #179, a process that cannot write its heartbeat stops starting
+   work) as a reason a cycle does not take an item, and so holds its mark back; the hand rewrite carries that
+   reason and its scenario too (task 1.6).
 7. **This change archives after #179** (Adam, 2026-10-18). The requirement cites
    `work-discovery`'s *Processes saving one source keep the lower watermark*, which #179 adds, so
    archiving first would cite a requirement not yet in force.
@@ -33,6 +36,21 @@
    `role:tracker:repo:hash`, is how `tasks.md` builds it. *Rejected:* naming the key string in
    the requirement, which would forbid other shapes that keep the promise, such as #179's log of
    mark lines.
+
+9. **This change states the role scope; #179 states the rank rule.** How a role's marks divide
+   among its ranks, and how they combine, is #179's *Processes saving one source keep the lower
+   watermark*, which this change's requirement cites rather than restates. #179's rule covers
+   `igor run` too: #179 makes it rank 0 (Adam, 2026-10-18), and rank 0 appends its own mark line
+   as any rank does, so nothing here treats it differently.
+10. **A renamed role begins again**, one cold start bounded by the look-back window: a
+    consequence of keying by name (decision 1), and the one editing a query already has.
+11. **Nothing is done about the query hash.** `sourceKey` hashes the raw query string, so
+    reordering a query costs one bounded cold start (*Explicitly out of scope*). It is a decision
+    not to act, so no issue is filed for it.
+
+*Rejected* (`design.md`, *Roads not taken*): holding the mark below anything a lane rejected,
+which would never advance a narrow role's mark; and scoping roles by query instead of by lane,
+which cannot express a path-scoped role.
 
 **Still open:** nothing.
 
@@ -142,9 +160,10 @@ and the collision this rules out.
   the only safe shape.
 - Every source cold-starts once on the upgrade, bounded by `COLD_START_DAYS`
   (`src/discovery.ts:46`). One destination, one author, and the bound is what makes it affordable.
-- `discovery.json` holds one mark per role and source instead of one per source, and keeps its
-  pre-upgrade entries, which nothing reads. Under #179 it is a log of mark lines, each naming its
-  role and rank.
+- `discovery.json` holds one mark per role, rank and source instead of one per source, and keeps its
+  pre-upgrade entries, which nothing reads. Every process is rank 1 until #179's implementation
+  lands, so until then this is one mark per role and source. Once it lands, `discovery.json` is a
+  log of mark lines, each naming its role and rank.
 - `sourceKey` gains the role, so every caller of `discoverSource`/`discover` supplies it. The
   watermark block at `src/loop.ts:1104-1119` is untouched: it maps `result.key` to a watermark and
   does not care what the key is made of.

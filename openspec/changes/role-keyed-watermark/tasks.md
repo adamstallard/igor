@@ -22,7 +22,11 @@
       #101's text, its paragraphs on an item chosen and never taken and on a claim the tracker
       refused, with their scenarios. This change's wording survives: one mark per role, rank and
       source, never one per run, so #101's "one timestamp per source" becomes one per role, rank
-      and source (Adam, 2026-10-18)
+      and source (Adam, 2026-10-18). #179 archives before this change and carries a `MODIFIED`
+      block on the same requirement, adding a stand-down to the reasons a cycle does not take an
+      item, and so holds its mark back: "or its process stood down for missed heartbeats (`work-claiming`'s *A retired rank
+      does not hold its items forever*, #179)", with a scenario. The block rewritten here carries
+      that reason and scenario too, as #179 left them
 - [ ] 1.7 Archive after `concurrent-instances` (#179), whose *Processes saving one source keep the
       lower watermark* this change's requirement cites (Adam, 2026-10-18)
 
@@ -34,9 +38,10 @@
 ## 3. The key
 
 - [ ] 3.1 `sourceKey` takes the role's name and carries it in the key, so `discovery.json` holds
-      one mark per role per source. If #179's implementation has landed, `discovery.json` is a log of
-      mark lines, each naming its role and rank, and #179's fold, the read that collapses those lines into
-      one mark per role and source, keys its result by this key (#179's task 5.11)
+      one mark per role, rank and source; every process is rank 1 until #179's implementation
+      lands. Once it has, `discovery.json` is a log of mark lines, each naming its role and rank,
+      and #179's fold, the read that collapses those lines into one mark per role and source,
+      keys its result by this key, which carries the role but not the rank (#179's task 5.11)
 - [ ] 3.2 `discoverSource` and `discover` take the role's name and pass it through; `planCycle`
       already holds `role.name`
 - [ ] 3.3 Nothing prunes an entry the running role's sources do not resolve to: `advance`, or
@@ -61,3 +66,6 @@
 - [ ] 4.7 The existing key tests in `test/discovery.test.ts` updated rather than deleted: stable
       across runs, independent of declaration order, and different for a different query — each
       now also different for a different role
+- [ ] 4.8 Where #179's implementation has landed: two ranks of one role each save a mark for one
+      source, neither write replaces the other's, and the process running a cycle reads one mark
+      combined by #179's rule; a restarted rank continues its own rank's mark
