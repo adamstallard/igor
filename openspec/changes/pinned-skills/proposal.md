@@ -11,8 +11,15 @@
 4. **The pinned shared-skills commit is at or after `075a73a`** (Adam, 2026-10-11), where every
    skill finds its scripts from its base directory. *Rejected:* a line in the worker's system
    prompt telling it where the pinned skills' scripts are.
-5. **The startup check is a call with no token, separate from #144's self-test** (Adam,
-   2026-10-11). It runs once, with no seat.
+5. **The startup check is an ordinary call that spends a seat through the budget gate,
+   separate from #144's self-test** (Adam, 2026-10-11; amended 2026-10-18). It runs once per
+   start, on the seat the gate chose for the first model call, and costs a few hundred tokens.
+   That it authenticates also shows the seat's token works. The check adds no exception to the
+   gate choosing every call's seat; the only exceptions stay #143's seat probe and a usage read,
+   each of which spends the seat it reads. *Rejected:* a call with no
+   token, which printed the skill list and then failed to authenticate, at no cost. It needed an exception from #171's *A spend with no
+   seat behind it is not made*, and a stored login, such as one in the macOS Keychain under
+   `igor run`, could make it spend unseen.
 6. **No guard against a same-named skill, and no startup check of the service user's hooks,
    `CLAUDE.md` or home skills** (Adam, 2026-10-11). A same-named skill in the home loads under
    its own name beside `igor:<name>` and replaces nothing; one in the worked repository does not
@@ -95,7 +102,10 @@
     `IGOR_RUN_TOKEN` (Adam, 2026-10-18; #171 and #175 record it). #171 states the rule that a
     spend authenticates with its seat's token, in *A spend with no seat behind it is not made*,
     and the local seat in *`igor run` spends its own token as an implicit local seat*; this
-    change applies them to the worker's home. The reset replaces `~/.claude` and `~/.claude.json` whole,
+    change applies them to the worker's home. Under `igor run`, if Claude Code prefers the
+    developer's own stored login, such as one in the macOS Keychain, to the token, `run` spends
+    that login, and that is accepted (Adam, 2026-10-18); under `igor serve` no user is logged
+    in. The reset replaces `~/.claude` and `~/.claude.json` whole,
     `~/.claude/.credentials.json` with them, so a login stored in the home lasts only until the
     next reset. How a person creates a token is in #171's guides. *Rejected:* keeping
     `~/.claude/.credentials.json`, as this change did from its third round to 2026-10-18, so
@@ -115,16 +125,31 @@
 - **Whether a seat's token is the only credential a call uses** is not measured (task 0.3).
   The measurement is that a call whose environment holds a valid token gets a
   `rate_limit_event`, which only a call running as a seat receives (decision 2), even where a
-  stored login sits beside it in the same home, as in the service user's home, which no reset
-  touches. And it is that a call with an invalid token fails, rather than reaching a stored
+  stored login sits beside it in the same home. Triage runs in the service user's home, which
+  no reset touches, so that home would hold such a login if someone logged the service user in
+  by hand. The measurement is also that a call with an invalid token fails, rather than reaching a stored
   login: one in the home, or the person's own login in the Keychain under `igor run` on macOS,
-  where the call's token is the one in `IGOR_RUN_TOKEN`.
-  The same Keychain question decides whether the startup check is free under `igor run` on
-  macOS. If a call reaches a stored login, decision 17 goes back to Adam.
-- **If the startup check authenticates.** It is meant to fail to authenticate at no cost. If a
-  Keychain login under `igor run`, or something else, lets it authenticate, it spends that login
-  on the prompt `ok`, against #171's *A spend with no seat behind it is not made*. *Recommendation:* Igor then reports the skills as not
-  checked and makes no further call without a seat.
+  where the call's token is the one in `IGOR_RUN_TOKEN`. Under `igor serve` no user is logged
+  in to Claude (#175's decision 21), and the deployment guide says not to log one in (task
+  5.4), so a stored login arises only if an operator puts one there; if task 0.3 shows it would
+  win over the token, decision 17 goes back to Adam for `serve`. Under `igor run`, if Claude Code prefers a stored login to the
+  token, `run` spends the developer's own login, on their machine and their quota, and that is
+  accepted (Adam, 2026-10-18): no separate `HOME` for it, and no refusal. So the measurement
+  sends nothing back to Adam for `igor run`. A `rate_limit_event` names no account, so the
+  measurement also has to find a way to tell which account a call ran as, such as comparing
+  the seat's own usage reading before and after.
+- **The ambient login until #171 archives.** #171 archives after this change (issue #204), and
+  until it does the in-force `seat-budget` lets a seat name no token and run on the ambient
+  login, which decision 17 forbids. The same window covers an organization with no seats: the
+  in-force spec runs its calls on the ambient login, while under this change the startup check,
+  and so every later call, waits for a seat the gate names. Nothing is asked of Adam here: what
+  is built follows decision 17, and the window closes when #171 archives.
+- **Citations ahead of the archive order, for Adam.** This change's requirements cite #171's *A
+  spend with no seat behind it is not made* and #82's *A process that refuses to start exits
+  with status 78*, but issue #204 archives both changes after this one, so the archived text
+  would cite requirements not yet in force until they archive. The choice is to accept that
+  window, reorder #204, or word the citations by change rather than by requirement.
+  *Recommendation:* accept the window, since every cited change archives in the same series.
 - **A reset that follows a link.** In same-user mode the worker can make `~/.claude` or
   `~/.claude.json` a link to a file the person owns, and a reset run as the person that follows
   it would remove or overwrite that file. *Recommendation:* the reset removes and creates
@@ -184,8 +209,8 @@ replaces it.
   earlier one wrote to either. With a worker user, Igor kills every process that user owns
   before every reset (decision 13).
 - **Before its first model call, Igor confirms each installed skill loads.** It reads the skill
-  list from the `system/init` event of a `claude -p` call with no token and an empty `HOME`.
-  That call fails to authenticate, at no cost, after printing the event.
+  list from the `system/init` event of a `claude -p` call made with an empty `HOME` and the
+  token of the seat the budget gate chose, spent like any other call (decision 5).
 - **The pinned shared-skills commit is at or after `075a73a`** (shared-skills #19), where every
   skill finds its scripts from its base directory, `<skills_dir>/skills/<name>`. The manager
   installs each skill as a link into its clone, and that base directory was measured on a skill
@@ -214,16 +239,21 @@ every call, so they live in one place, `pinned-skills`.
   scripts by path and its code runs `prose verify-post` and `verify-staged`. Its role-config
   requirement refuses a role that lists a skill not installed under `skills_dir`; this change
   refuses nothing on that account.
-- **#171** (`seat-files`) archives first. Decision 17 rests on it: on `main`, a seat that names
-  no token reads through whatever login is ambient, and only #171 removes that.
+- **#171** (`seat-files`) archives after this change, in the order issue
+  [#204](https://github.com/adamstallard/igor/issues/204) holds for every open change. Decision
+  17 rests on it: on `main`, a seat that names no token reads through whatever login is ambient,
+  and only #171 removes that, so between the two archives the in-force spec and decision 17
+  disagree (*Still open*).
 - **#143** withdraws `scheduled-observation`, whose `igor observe` reads usage under a stored
   login, which decision 17 would forbid. This change assumes #143 has archived.
-- **#175** (`worker-user`) archives first: the startup check's prompt goes on stdin as #175's
+- **#175** (`worker-user`) archives before this change (#204): the startup check's prompt goes on stdin as #175's
   *A prompt reaches claude on stdin, never in its arguments* requires.
 - **#82** (`stopped-scope-visible`): the startup check's refusal exits with status 78, as #82's
   *A process that refuses to start exits with status 78* requires.
 - **#143's seat probe and #144's startup check** are `claude -p` calls, so they carry the flag.
-  The skills check here uses no seat, so it neither depends on them nor duplicates them.
+  The skills check here spends a seat through the gate, as triage does. It checks the skill list,
+  and its spend shows the token works only as any call's does; it reads no usage, as the probe
+  does, and runs once per start, not once per seat as #144's self-test would.
 - `docs/deployment.md` gains the install procedure: a root-owned plugin directory outside the
   service's writable paths, filled by the manager from a clone at a fixed commit.
 - **#144's risk stands:** if `--bare` becomes the default for `claude -p`, Igor must opt out

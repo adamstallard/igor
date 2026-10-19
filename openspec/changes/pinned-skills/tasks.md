@@ -25,21 +25,23 @@
         `.claude/settings.json`, `.mcp.json`, skills and `CLAUDE.md` out of a call, including
         when the worker is also passed `--add-dir <its tree>` as it is today. If any of the
         four still loads, the means of excluding it goes back to Adam;
-      - that the startup check's call still prints `system/init` before it fails to log in
-        with those two flags added;
+      - that the startup check's call still prints `system/init` with those two flags added;
       - that a seat's token is the only credential a call uses, in three cases. First, a
         worker whose `~/.claude` and `~/.claude.json` were just reset from the template, with
         no stored login left in the home, authenticates as its seat with the token alone. It
         receives a `rate_limit_event`, which only a call running as a seat gets, and record
         what the init event's `apiKeySource` reads, expected to name `CLAUDE_CODE_OAUTH_TOKEN`.
         Second, a call with a valid token whose `HOME` also holds a stored login of another
-        account, as the service user's home may for triage and #143's probe, authenticates as
+        account, as the service user's home would if someone logged that user in by hand (triage
+        runs there, unreset), authenticates as
         the token's seat: its `rate_limit_event` describes that seat, not the stored login's
         account. Third, a call with a deliberately invalid token fails rather than reaching a
         stored login, whether that login is in its `HOME` or, under `igor run` on macOS, in the
-        person's Keychain. Also run the startup check's call under `igor run` on macOS with a
-        Keychain login present, and record whether it fails to authenticate or spends. **If a
-        call reaches a stored login, stop: decision 17 goes back to Adam;**
+        person's Keychain. Under `igor serve` no user is logged in, so a stored login arises only
+        if an operator puts one there; if it wins over the token, decision 17 goes back to Adam
+        for `serve`. Under
+        `igor run`, a call that reaches the developer's own stored login spends their login,
+        which is accepted (Adam, 2026-10-18): record the result, and nothing goes back to Adam;
       - which key in `~/.claude.json` marks onboarding done, so that a call made from the
         template's copy starts without onboarding;
       - whether `git -C <clone> rev-parse HEAD` works as the service user on a root-owned clone,
@@ -98,13 +100,19 @@
 
 ## 3. Startup check
 
-Runs in `wire` (`src/wiring.ts`), before the first model call.
+Runs before the first model call: in `wire` (`src/wiring.ts`) when the gate names a seat at
+start, otherwise just before the first model call once it does. A failing check exits 78
+wherever it runs.
 
 - [ ] 3.1 Run `claude -p --plugin-dir <skills_dir> --setting-sources user --strict-mcp-config
       --output-format stream-json --verbose`
       with the one-word prompt `ok` on stdin (#175), from an empty temporary directory, and an
-      environment of `PATH` and a `HOME` that is another empty temporary directory. Read
-      the `system/init` event's `skills`, then stop the process. Refuse to start when
+      environment of `PATH`, the host's network settings, a `HOME` that is another empty
+      temporary directory, and the token of the seat the budget gate chose (under `igor run`,
+      the one in `IGOR_RUN_TOKEN`). Let the call run to its `result` event and record its cost
+      against that seat as any call's is. Where the gate names no seat, make no call, and run the
+      check before the first model call once one is named. Read
+      the `system/init` event's `skills`. Refuse to start when
       `igor:<name>` is missing for a skill under `<skills_dir>/skills/`, or when no init event
       arrives. Each refusal exits with status 78, as #82's *A process that refuses to start
       exits with status 78* requires. Messages (may be reworded):
@@ -132,8 +140,9 @@ Runs in `wire` (`src/wiring.ts`), before the first model call.
       ```
 - [ ] 3.3 Tests: each refusal above with its message; a passing check starts; an unreadable
       commit starts with the not-checked line; the check's
-      environment holds no `CLAUDE_CODE_OAUTH_TOKEN` and no `ANTHROPIC_API_KEY` even when the
-      process has them, and its `HOME` is not the service user's
+      environment holds the chosen seat's token and no other seat's, and no `ANTHROPIC_API_KEY`
+      even when the process has one; its `HOME` is not the service user's; its spend is recorded
+      against that seat; and with no seat from the gate it is not made
 
 ## 4. The pinned shared-skills commit
 
@@ -165,7 +174,9 @@ Runs in `wire` (`src/wiring.ts`), before the first model call.
       ```
 - [ ] 5.4 `docs/deployment.md`, in the same section, this note (decision 17). It may be
       reworded, but it must say that Igor uses no stored login, that the reset deletes one, and
-      where a person creates a token:
+      where a person creates a token. The section it points at, "Getting the token", is #171's
+      task 9.5; if #171 is not built yet, replace only that reference, `docs/seats.md, "Getting
+      the token"`, with a link to #171's pull request:
 
       ```
       Igor never uses a stored Claude login. Every seat has a token, and each call gets only its seat's token, in its environment; docs/seats.md, "Getting the token", shows how to create one. Before every call in a worker's home Igor replaces ~/.claude and ~/.claude.json from its template, which deletes any login stored there, so don't log the service user or a worker user in to Claude.

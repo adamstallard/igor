@@ -229,9 +229,13 @@ How the reset works:
   through its environment, which the reset does not touch, and it is the only credential a call
   in the home has. From its third round to 2026-10-18 this change kept that file, so that an
   organization with no seats could run on a stored login. That left open where a worker user's
-  login would come from, and let a worker rewrite a login that later calls might use. Task 0.3 confirms that a call in a reset home
-  authenticates with the token alone, and that an invalid token fails rather than reaching a
-  login stored elsewhere, such as the macOS Keychain under `igor run`.
+  login would come from, and let a worker rewrite a login that later calls might use. Task 0.3,
+  not yet run, measures whether a call in a reset home authenticates with the token alone, and
+  whether Claude Code prefers a stored login elsewhere to the token. Under `igor serve` no user
+  is logged in to Claude, so a stored login arises only if an operator puts one there. Under
+  `igor run` the developer's own login may sit in the macOS Keychain. Should task 0.3 find that
+  Claude Code prefers it, `run` spends that login, on the developer's own machine and quota,
+  which Adam accepted on 2026-10-18.
 - **What persists:** everything else in the home: `~/.gitconfig`, where #175's start check sets
   `safe.directory` so the worker's git trusts a tree the service user owns, and the files a
   repository's tests cache in the home. A file a run leaves there, such as `~/.npmrc`, can steer
@@ -266,17 +270,27 @@ Still open (proposal): whether anything protects the template in same-user mode,
 worker can write it; whether a seat's token is the only credential a call uses (task 0.3); two
 `igor run`s of one role sharing a home; and what the template's `settings.json` holds.
 
-### The startup check is a call with no token and an empty `HOME`
+### The startup check spends a seat through the gate (Adam, 2026-10-18)
 
-The issue suggests reading the skill list from #144's startup self-test. That self-test is not
-yet specified and runs once per seat. The check here runs once, with no seat: `claude -p
+The startup check confirms that every pinned skill loads, by reading the skill list from the
+`system/init` event of one call. The issue suggests reading that list from #144's startup
+self-test, which #144 proposes to run once per seat and which is not yet specified. The check
+here runs once per start: `claude -p
 --plugin-dir <skills_dir>`, from an empty temporary directory, with an environment holding only
-`PATH` and a `HOME` that is another empty temporary directory. Its prompt is one word, such as
-`ok`, and goes on stdin, as #175 requires of every call's prompt. With no token in the environment and no stored login under
-`HOME`, it prints `system/init` and then fails with `Not logged in`, at no cost: measured above
-with an empty `HOME` (*Measured without a credential*). The empty `HOME` and working directory
-also keep the service user's own skills out of the list the check reads. Adam accepted keeping
-the check separate from #144's.
+`PATH`, the host's network settings, a `HOME` that is another empty temporary directory, and the
+token of the seat the budget gate chose. Its prompt is one word, such as `ok`, and goes on stdin, as #175 requires of every
+call's prompt. It is an ordinary call: it spends a few hundred tokens of that seat and is
+recorded like any other, and that it authenticates shows the seat's token works. The empty
+`HOME` and working directory keep the service user's own skills out of the list the check
+reads. Adam accepted keeping the check separate from #144's.
+
+*Rejected:* a call with no token. Measured with an empty `HOME` (*Measured without a
+credential*, above), such a call prints `system/init` and then fails with `Not logged in`, at no
+cost. But it needed its own exception from #171's *A spend with no seat behind it is not made*,
+and a stored login it could reach, such as the macOS Keychain under `igor run`, would make it
+spend without the gate seeing it. With the check spending through the gate, no exception is
+added: the only calls whose seat the gate does not choose stay #143's seat probe and a usage
+read, each of which spends the seat it reads.
 
 ### No guard against a same-named skill
 

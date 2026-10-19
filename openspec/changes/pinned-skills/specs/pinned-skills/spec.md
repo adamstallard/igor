@@ -113,11 +113,12 @@ directory, such as `~/.local/state/igor/home/<role>`, and set the worker's `HOME
 
 Before every `claude -p` Igor starts in that home, Igor SHALL replace `~/.claude` and
 `~/.claude.json` with a fresh copy of a template that ships with Igor, keeping nothing of what
-was there, a stored login in `~/.claude/.credentials.json` included, so that a call in that
-home authenticates only with its seat's token, as #171's *A spend with no seat behind it is not
-made* requires. Those calls are the worker and each model step Igor starts after it in the same
+was there, a stored login in `~/.claude/.credentials.json` included. The calls Igor starts in
+that home are the worker and each model step Igor starts after it in the same
 home, such as #153's prose pass and bug hunt. #153's `prose start` runs after the reset, as
-#175's *The worker runs as a separate, unprivileged user* requires. The template SHALL hold:
+#175's *The worker runs as a separate, unprivileged user* requires. Under `igor run`, a login
+the developer keeps outside the home, such as in the macOS Keychain, SHALL be neither hidden nor
+refused: where `claude` prefers it to the token, the call spends it. The template SHALL hold:
 
 - a `settings.json` holding only what Igor needs, with no hooks and no MCP servers;
 - no skills and no `CLAUDE.md`, since skills load from `skills_dir`;
@@ -157,12 +158,13 @@ mode.
 - **THEN** that file is gone
 - **AND** the next call in that home authenticates with its seat's token, from its environment
 
-#### Scenario: A login stored outside the home is not used
+#### Scenario: Under igor run, a stored login outside the home may be spent
 
-- **WHEN** Igor starts a call in the worker's home with an invalid seat token in its environment
-- **AND** a login is stored where `claude` could find it outside the home, such as the macOS
-  Keychain of the person running `igor run`
-- **THEN** the call fails to authenticate
+- **WHEN** `igor run` starts a call in the worker's home with `IGOR_RUN_TOKEN` in its
+  environment, and the developer's own login is stored outside the home, such as in the macOS
+  Keychain
+- **THEN** Igor neither refuses nor hides the login: if `claude` prefers the stored login to the
+  token, the call spends the developer's own login, which is accepted
 
 #### Scenario: The rest of the home persists
 
@@ -193,18 +195,23 @@ mode.
 
 ### Requirement: Igor confirms its skills load before its first model call
 
-Before it spawns its first `claude -p` that could spend a seat, Igor
-SHALL run `claude -p --plugin-dir <skills_dir> --setting-sources user --strict-mcp-config
---output-format stream-json --verbose`, from an empty temporary directory, with an environment holding
-only `PATH` and a `HOME` that is another empty temporary directory. Its prompt is one word,
-such as `ok`, on stdin: #175 (`worker-user`) requires every call's prompt to go there, in *A
-prompt reaches claude on stdin, never in its arguments*. It SHALL read the `skills`
-list of the `system/init` event and confirm that `igor:<name>` is in it for every entry under
-`<skills_dir>/skills/`. With no token and no stored login, the call prints the event and then
-fails to authenticate, at no cost.
+Before its first other model call, Igor SHALL run `claude -p --plugin-dir <skills_dir>
+--setting-sources user --strict-mcp-config --output-format stream-json --verbose`, from an empty
+temporary directory, with an environment holding only `PATH`, the network settings the host is
+configured with, a `HOME` that is another empty temporary directory, and the token of the seat
+the budget gate chose for the role the Igor serves. The call SHALL be an ordinary spend on that seat, run to its
+end and recorded as any other call is. Where the gate names no seat, no call is made, as #171's
+*A spend with no seat behind it is not made* requires; Igor starts, and the check runs before
+the first model call whenever a seat is named. Its prompt is one word,
+such as `ok`, on stdin, as #175's (`worker-user`) *A prompt reaches claude on stdin, never in
+its arguments* requires. Igor SHALL read the `skills` list of the `system/init` event and
+confirm that `igor:<name>` is in it for every entry under `<skills_dir>/skills/`. A call that
+fails after printing the event SHALL still be judged on that list; its failure is handled as
+the same failure of any call on that seat.
 
 Igor SHALL refuse to start when an installed skill is missing from the list, or when no
-`system/init` event arrives, and the refusal exits with status 78, as #82's
+`system/init` event arrives, whenever the check runs, including after the first cycle where no
+seat was named at start; the refusal exits with status 78, as #82's
 (`stopped-scope-visible`) *A process that refuses to start exits with status 78* requires. It SHALL report, for each skill, the commit of the git clone that
 the skill's entry under `<skills_dir>/skills/` resolves to. Where that commit cannot be read, or
 the entry is not in a git clone, it SHALL report the skill's commit as not checked, and the
@@ -234,8 +241,24 @@ check still passes on the list alone.
 - **WHEN** the call exits without a `system/init` event
 - **THEN** Igor refuses to start, saying it could not confirm its skills load
 
-#### Scenario: The check spends no seat
+#### Scenario: The check spends the seat the gate chose
 
 - **WHEN** Igor runs the check
-- **THEN** the call's environment holds no seat token and no API key
+- **THEN** the call's environment holds the token of the seat the budget gate chose, and no
+  other seat's token and no API key
 - **AND** its `HOME` holds no stored login
+- **AND** the spend is recorded against that seat
+
+#### Scenario: No seat, no check yet
+
+- **WHEN** the budget gate names no seat for the role when Igor starts
+- **THEN** Igor starts, makes no model call, and runs the check before its first model call once
+  the gate names a seat
+- **AND** if that check fails, the process exits with status 78 then
+
+#### Scenario: A call that fails after the init event is still judged on its list
+
+- **WHEN** the check's call prints a `system/init` event listing every installed skill and then
+  fails, such as on a refused token
+- **THEN** the check passes on that list
+- **AND** the failure is handled as the same failure of any call on that seat
