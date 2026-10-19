@@ -9,6 +9,13 @@ SHALL run in the working tree. Each runs only where the role's
 `skills` lists it (signed-publishing, *Igor verifies what each skill in a role's list
 requires*); a role that lists neither commits as it does without this capability.
 
+Terms used below: bug-hunter's *caller-commits mode* reviews and fixes a change and reports its
+result without committing; its *result block* is that report, holding the `Bug-hunter:` value
+and any open decisions; its *first triage* is the one it runs on the whole change before any
+hunt; its *minting script* is the entry point that writes `Bug-hunter-Tree:` against a given
+staged tree (task 0.10 confirms it exists). A *revision* is a push under #150 after gate two's
+implementation, as #150 defines it.
+
 1. **Bug-hunter**, where the role lists `bug-hunter`, in its caller-commits mode, SHALL review
    and fix the change. Its trailers, made after the last step as below, are `Bug-hunter:` and,
    unless bug-hunter's triage finds nothing to hunt and skips, `Bug-hunter-Tree:`.
@@ -16,25 +23,30 @@ requires*); a role that lists neither commits as it does without this capability
    change touches and write the commit message. Its trailer is `Prose: ✓ <tree>:<message>`,
    over the staged tree and that message. The message's subject SHALL be the issue title, with any
    closing keyword in it dropped (GitHub's `close`, `fix` or `resolve` in any form, followed by an issue reference, as in a title like `Login fails (fixes #12)`), and its body SHALL explain the change. The body SHALL
-   end with `Closes #N` on any commit of a role not using the two-gate workflow (#150), and
-   under #150 on every gate-two commit,
-   the implementation and each revision after it. Gate one's commits, its revisions included,
-   SHALL end with `Refs #N`, since #150 keeps closing keywords off them. A gate-one commit body
+   end with the closing linkage the item's tracker adapter supplies (on GitHub, `Closes #N`) on any commit of a role not
+   using the two-gate workflow (#150), and under #150 on every gate-two commit, the
+   implementation and each revision after it. Gate one's commits, its revisions included,
+   SHALL end with the reference that links without closing, which the same adapter supplies (on GitHub, `Refs #N`). A gate-one commit body
    that holds a closing keyword, as defined above, SHALL go back to the prose pass, and each such
    return counts toward the two attempts the signed-publishing capability allows.
 
 Bug-hunter SHALL run before the prose pass. Neither step SHALL sign a tree while it runs. Each
-SHALL end by reporting its pass result: bug-hunter's result block, holding its `Bug-hunter:`
-value and any open decisions, and the pass token the prose pass's first `prose check` call
-printed. Where both run, bug-hunter SHALL then run its usual triage on the prose pass's diff: a
-diff touching only comments or docs SHALL be skipped, and any other diff SHALL get one more
-bug-hunter iteration. No prose pass SHALL run after that iteration, so comments it writes reach
+SHALL end by reporting its pass result: bug-hunter's result block, and the pass token the prose
+pass's first `prose check` call printed. Where both run, bug-hunter SHALL then run its usual
+triage on the prose pass's diff: a diff touching only comments or docs SHALL be skipped, and any
+other diff SHALL get one more bug-hunter iteration, whose result block replaces the first's. No prose pass SHALL run after that iteration, so comments it writes reach
 the commit unread by the prose pass. After the last model step exits, Igor SHALL stage the
 change once, in its own index. Igor's code SHALL then run the signing calls itself, with the
 scripts from the pinned skills directory: prose's second call, with the prose pass's token, and
 bug-hunter's minting script, which writes `Bug-hunter-Tree:`, both against that staged tree. So
 each trailer that binds a tree names the tree Igor records and publishes: `Prose:`, and
-`Bug-hunter-Tree:` unless bug-hunter's first triage skipped the whole change.
+`Bug-hunter-Tree:` wherever any bug-hunter run hunted, the first or the extra iteration. Igor
+SHALL write the `Bug-hunter:` trailer itself, from the result block's value, on every commit
+bug-hunter ran on, a change its first triage skipped included, and SHALL refuse a value holding a
+line break or, at gate one, a closing keyword.
+
+Igor SHALL stage after every filter that drops paths from what it publishes, such as #150's
+gate-one confinement to `openspec/changes/`, so that the staged tree is the tree it uploads.
 
 Igor SHALL commit, through either path, only when all of these hold for the steps that ran:
 
@@ -44,14 +56,13 @@ Igor SHALL commit, through either path, only when all of these hold for the step
 
 A prose second call that refuses the prose pass's token, or a subject that is not the issue
 title as above, SHALL go back to the prose pass, as the signed-publishing capability requires.
-Two mismatches SHALL refuse the commit and be recorded as the item's failure: a tree Igor
-uploads that differs from the tree the trailers name, as where the Git Data API records modes
-differently from Igor's clone, and a message Igor commits that differs from the one the
-`Prose:` trailer hashes. Igor's code, not a step, made both bindings, so neither goes back to a
-step. The token is model-written text, so Igor SHALL pass it to prose as one argument, with no
-shell. Igor SHALL open the message file the prose pass wrote without following a link, and read
-it only if it is a regular file with one hard link, as #175 (`worker-user`) reads every file the
-worker wrote.
+Three failures SHALL refuse the commit and be recorded as the item's failure, going back to no
+step: a tree Igor uploads that differs from the tree the trailers name, as where the Git Data
+API records modes differently from Igor's clone; a message Igor commits that differs from the
+one the `Prose:` trailer hashes; and a minting call that fails or refuses. Igor SHALL pass the
+token to prose as one argument, with no shell. Igor SHALL open every file a model step hands it,
+the message, a description and a reply, without following a link, and read it only if it is a
+regular file with one hard link, as #175 (`worker-user`) reads every file the worker wrote.
 The commit SHALL carry the message, then the `Bug-hunter:`, `Bug-hunter-Tree:` and `Prose:`
 trailers of the steps that ran. Merge commits carry none of these trailers.
 
@@ -83,6 +94,28 @@ trailers of the steps that ran. Merge commits carry none of these trailers.
 - **WHEN** the message Igor commits differs from the one the `Prose:` trailer names
 - **THEN** nothing is committed
 - **AND** the mismatch is recorded as the item's failure, and no model step is sent it
+
+#### Scenario: A refused minting call goes back to no step
+
+- **WHEN** bug-hunter's minting script fails against the staged tree
+- **THEN** nothing is committed
+- **AND** the failure is recorded as the item's, and no model step is sent it
+
+#### Scenario: A trailer value cannot forge trailers
+
+- **WHEN** bug-hunter's result block reports a `Bug-hunter:` value holding a line break
+- **THEN** nothing is committed with it
+
+#### Scenario: A linked message file is not read
+
+- **WHEN** the message file the prose pass wrote is a symbolic link
+- **THEN** Igor does not follow it, and nothing is committed
+
+#### Scenario: Gate one stages only what it publishes
+
+- **WHEN** a gate-one worker changed `src/` as well as a file under `openspec/changes/`
+- **THEN** Igor stages after dropping the `src/` change, and the tree it signs is the tree it
+  uploads
 
 #### Scenario: A refused token goes back to the prose pass
 
@@ -136,9 +169,7 @@ the description first, as the signed-publishing capability requires.
 The pull request body holds, in order: the opening block, then the description, then, from the
 marker `<!-- igor:evidence -->` on, the evidence section. Once `review-evidence` (#190) ships,
 it defines the opening block. Until then, the opening block is the line linking the pull
-request to its item, preceded for a role under the two-gate workflow (#150) by the text #150 places first (gate one's "specification only" opening and the paths gate one
-refused to publish; at gate two, the note that the issue changed after the spec was approved,
-and bug-hunter's open decisions).
+request to its item, preceded for a role under the two-gate workflow (#150) by the text #150 places first.
 
 `review-evidence` (#190) has the code assemble the evidence section. Every line the code adds
 after the description goes after the marker. The code assembles the evidence section from its own record of the run,
@@ -157,8 +188,7 @@ pass, as text that fails verification is.
 The description SHALL describe the pull request as it stands. When Igor pushes a commit that
 changes what the worker did, gate two's implementation or a revision under #150, the description
 SHALL be rewritten, signed again, and verified before it replaces the old one, and the opening
-block SHALL be recomputed for that push, since its notes come from that push's bug-hunter run,
-as #190 sets out. A catch-up resolution, which only brings the base
+block SHALL be recomputed for that push, as #190 sets out. A catch-up resolution, which only brings the base
 branch in, leaves the description as it is. Replacing the description leaves the evidence
 section to #190, which rebuilds it on the same push.
 
@@ -169,10 +199,16 @@ section to #190, which rebuilds it on the same push.
   is exactly that description
 - **AND** anything from the marker on is the evidence section Igor's code assembled, not signed
 
+#### Scenario: A long description is published uncut
+
+- **WHEN** the prose pass returns a signed description of 1,500 characters
+- **THEN** the body holds all of it, footer included
+
 #### Scenario: The description follows the pull request
 
 - **WHEN** Igor pushes gate two's implementation or a revision to its pull request
 - **THEN** the description is rewritten, signed and verified before it is replaced
+- **AND** the opening block is recomputed for that push
 
 #### Scenario: A closing keyword in a gate-one description goes back
 

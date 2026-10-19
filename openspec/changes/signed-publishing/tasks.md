@@ -6,8 +6,11 @@
 - [ ] 0.3 Measure that a fresh `claude -p --session-id <uuid>` reports that uuid as
       `session_id` in its hook payload (design, item 1)
 - [ ] 0.4 Measure whether `git write-tree` after `git add -A` in a clone equals the tree sha
-      the Git Data API returns for the same change, with a deletion and an executable file;
-      if not, sign and verify against the API's tree (design, item 3)
+      the Git Data API returns for the same change, with a deletion, an executable file, a
+      symbolic link and a submodule among the changes, and again once `carry-what-a-tree-holds`
+      (#137) changes which modes the API's tree carries. If they differ, find how to sign against
+      the tree the API builds, such as building that tree through the API first and minting
+      against its sha (design, item 3)
 - [ ] 0.5 After task 0.13, and once the reader goals for an item are defined (proposal, *For
       Adam*): before a worker starts, generate its session uuid, run `prose.py start --session
       <uuid>` with those goals and the worker's `HOME` and `XDG_STATE_HOME`, write
@@ -43,9 +46,13 @@
       when given #175's separate git directory, rather than a `.git` the worker can replace in
       the tree. Record the result in `design.md`; if a script does not follow them, stop and
       bring decision 12 back to Adam
-- [ ] 0.13 Find how `prose start` can take its goals other than on its command line, such as a
-      file or stdin; today it takes only `--goals`. If it cannot, decision 15 needs a change to
-      the prose skill and goes back to Adam before building (proposal, decision 15)
+- [ ] 0.13 Find how `prose start`, the model step's first `prose check` and `prose sign` can take
+      their goals other than on their command lines, such as a file or stdin (`prose check` has
+      `--goals-file`); today `prose start` takes only `--goals`. The goals are drawn from the
+      item, whose text may be private. Also measure that `claude -p` reads its prompt on stdin
+      together with `--append-system-prompt-file`, which #175's task 6.9 measures only for
+      `--system-prompt-file`. If `prose start` cannot take its goals another way, decision 15
+      needs a change to the prose skill and goes back to Adam before building (proposal, decision 15)
 - [ ] 0.14 Measure whether bug-hunter's caller-commits mode runs as the worker user without
       staging, since that user cannot write the git directory or the index (#175). Record the
       result; if it cannot, decision 12 goes back to Adam before building
@@ -119,8 +126,9 @@
 
 ## 5. Archive
 
-- [ ] 5.1 Before archiving, check whether `loop-verifies-commands` (#189) has archived. Both
-      changes MODIFY *Merge semantics differ by field kind*, this one adding `skills` and #189
-      adding `checks`. If #189 archived first, rewrite this change's MODIFIED text from the
-      in-force requirement, which by then lists `checks`, adding `skills` to it, so that
-      archiving keeps both.
+- [ ] 5.1 Before archiving, rewrite this change's MODIFIED text of *Merge semantics differ by
+      field kind* from the requirement as it is in force then, adding only `skills`. Two other
+      changes MODIFY it: `loop-verifies-commands` (#189), adding `checks`, and
+      `lore-from-corrections`, adding `propose-lore` to the `allow` vocabulary. The text in force
+      then already holds the addition of each of them that has archived, so rewriting from it
+      keeps every addition.

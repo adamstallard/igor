@@ -126,8 +126,10 @@ measures.
 
 ### 1. Igor opens the prose hook's gate for its worker
 
-**Decided:** Igor runs `prose start` for the worker's session id itself, before the worker
-starts. *Rejected:* leaving the worker to open the gate with its own first call, which spends
+**Decided on 2026-10-11, and open again:** under #174's reset nothing in a worker checks the gate
+this item opens (*Interactions*, below), so whether Igor runs `prose start` at all is listed for
+Adam in the proposal. Where it runs, Igor runs `prose start` for the worker's session id itself,
+before the worker starts. *Rejected:* leaving the worker to open the gate with its own first call, which spends
 a turn, and where the worker's first act is a file write, has that write blocked by the gate
 described below.
 
@@ -160,8 +162,10 @@ in its hook payload. Task 0.3 measures it.
 **Interactions.** `--bare` would skip hooks, and the gate with them, but it also drops the
 seat's OAuth token (#144), so it is no way around the gate. `pinned-skills` (#174) loads skills
 as the `igor` plugin with `--plugin-dir`; the plugin declares no hooks and the install wires
-none, so the plugin itself never starts the gate. The gate still runs where prose's hooks are
-installed for the user Igor runs as, and Igor's own `prose start` above opens it there.
+none, so the plugin itself turns on no first-write hook. And #174 resets the home every model
+step runs in, the worker's and the later prose and bug-hunter steps', to a template whose
+`settings.json` holds no hooks. So in a worker the gate never runs, whatever is installed for the
+user Igor runs as, and `prose start` opens a gate nothing checks.
 
 ### 2. The worker is granted the scripts it signs with, by path
 
@@ -177,8 +181,8 @@ configuration, allows neither without this grant.
 
 | Step | Run by | Why |
 | --- | --- | --- |
-| `prose check -F <msg> --goals …`, the first call | model | run on the step's draft message, it prints the rules and a pass token before the model rewrites; the step reports the token (proposal, decision 12) |
-| `prose sign --goals …` and `--pass <token>` | model | the same, for a post |
+| `prose check -F <msg>`, the first call, given its goals | model | run on the step's draft message, it prints the rules and a pass token before the model rewrites; the step reports the token (proposal, decision 12) |
+| `prose sign`, the first call, given its goals, then `prose sign --pass <token>` with the token the first call printed | model | the first call prints the rules and a token before the model writes the post, and the second signs it. Neither first call may take its goals on its command line; task 0.13 finds how they take them |
 | bug-hunter's run, and its triage of the prose pass's diff | model | the hunt is the model's work; the step reports its result block |
 | `prose start --session <uuid>` | code | item 1 |
 | `git add -A` once, after the last model step exits | code | only Igor's code can write its own index (task 2.1) |

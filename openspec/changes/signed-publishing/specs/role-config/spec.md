@@ -2,14 +2,20 @@
 
 ### Requirement: A role declares the skills its worker uses
 
-A role SHALL declare `skills: [<name>, …]`, the pinned skills its worker uses: the skills of the
-`igor` plugin under `skills_dir` (#174), each loaded as `igor:<name>`. The org base MAY set
-`skills` for every role, and a role MAY add to what it inherits. Inheritance SHALL add and
-SHALL NOT remove: a role's effective list is every level's names together, so a skill the org
-base requires cannot be dropped by a role.
+A role SHALL declare `skills: [<name>, …]`, the pinned skills its worker uses, named from the
+skills of the `igor` plugin under `skills_dir` (#174). The list decides which skills the worker is
+directed to use and which checks Igor's code makes on what it publishes. It does not decide what
+loads: #174 loads every installed skill, as `igor:<name>`, for every role. The org base MAY set
+`skills` for every role, and the list is inherited by appending, as *Merge semantics differ by
+field kind* sets out.
 
 A name that is not a skill installed under `skills_dir` SHALL be refused at load, naming it and
-the installed skills. A misspelt name would otherwise turn a check off without a word.
+the installed skills.
+
+Listing a skill does not add to `commands`. Whether it grants the skill's scripts beside
+`commands`, as `signed-publishing`'s design proposes, is open (proposal, *For Adam*); until that is
+decided, *A role declares its sources, lane, behaviour, permissions, and reviewers* stands as
+written.
 
 A role that declares no `skills`, and inherits none, uses no pinned skill.
 
@@ -17,11 +23,6 @@ A role that declares no `skills`, and inherits none, uses no pinned skill.
 
 - **WHEN** the org base declares `skills: [prose]` and a role declares none
 - **THEN** the role's effective `skills` is `[prose]`
-
-#### Scenario: A role adds to what it inherits
-
-- **WHEN** the org base declares `skills: [prose]` and a role declares `skills: [bug-hunter]`
-- **THEN** the role's effective `skills` is `[prose, bug-hunter]`
 
 #### Scenario: A role cannot drop an inherited skill
 
@@ -35,6 +36,40 @@ A role that declares no `skills`, and inherits none, uses no pinned skill.
 - **THEN** loading the role fails, naming `bughunter` and the installed skills
 
 ## MODIFIED Requirements
+
+### Requirement: A role declares its sources, lane, behaviour, permissions, and reviewers
+
+A role file SHALL support: `extends`, `seat`, `sources`, `lane`, `instructions`, `allow`,
+`commands`, `budget_share`, `reviewers` and `skills`. Each `sources` entry MUST name a
+`tracker` and carry that tracker's own query verbatim. Entries failing validation SHALL be
+rejected rather than loaded.
+
+`commands` names the shell commands a worker may run, and is the only thing that lets one
+run anything at all. It is declared on the role and nowhere else: a worker that can edit
+files can edit a settings file in the repository it is working, so an allowlist read from
+there is one the worker can widen for itself.
+
+#### Scenario: Well-formed role accepted
+
+- **WHEN** a role declares a tracker source, a lane, standing instructions, an allow list, and
+  reviewers
+- **THEN** validation passes and the role loads
+
+#### Scenario: Declared commands bound what the worker may run
+
+- **WHEN** a role declares `commands` and an item is executed
+- **THEN** the worker may run those commands and nothing else
+
+#### Scenario: Source without a tracker rejected
+
+- **WHEN** a `sources` entry omits `tracker`
+- **THEN** validation fails, because a query cannot be dispatched without knowing who executes it
+
+#### Scenario: A role may declare its skills
+
+- **WHEN** a role file declares `skills: [prose]`
+- **THEN** the key is accepted, not refused as unknown
+
 
 ### Requirement: Merge semantics differ by field kind
 

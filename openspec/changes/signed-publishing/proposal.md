@@ -14,7 +14,8 @@
    that fails. *Rejected:* relying on prose's posting hook, which guards only posts made from a
    Claude Code session, not Igor's own code.
 4. **A role lists the skills its worker uses (Adam, 2026-10-11).** `skills: [<name>, …]` names
-   pinned skills from #174's `igor` plugin. The org base may set it for every role and a role may
+   pinned skills from #174's `igor` plugin. The list decides what the worker is directed to use
+   and what Igor's code checks, not what loads: #174 loads every installed skill for every role. The org base may set it for every role and a role may
    add to it, never remove; an unknown name is refused at load. Igor's code checks per listed
    skill: for `prose`, a valid footer on every model-written post and a matching `Prose:` trailer
    on every commit; for `bug-hunter`, a `Bug-hunter:` trailer, with `Bug-hunter-Tree:` bound to
@@ -34,10 +35,10 @@
 
    Igor commits through the API only when `prose verify-staged` accepts the trailer, the staged
    tree equals every signed tree, and the subject is the issue title as decision 6 sets out.
-   *Rejected:* signing only in `produce()`, which leaves gate two's commit unsigned. Then the
-   role's tests that `loop-verifies-commands` (#189) runs on the signed tree would not test what
-   is committed on every push.
-6. **The commit message (Adam, 2026-10-13).** The subject is the issue title with any closing
+   *Rejected:* signing only in `produce()`, which leaves gate two's commit unsigned, so the tests
+   that `loop-verifies-commands` (#189) runs on the signed tree would not test what gate two
+   commits.
+6. **The commit message (Adam, 2026-10-13),** for a role that lists `prose`. The subject is the issue title with any closing
    keyword dropped (GitHub's `close`, `fix` or `resolve` in any form, followed by an issue
    reference, as in a title like `Login fails (fixes #12)`), so a title cannot close an issue by
    itself. The body explains the change and ends with one of two lines:
@@ -47,7 +48,7 @@
      gate one closes nothing.
 
    *Rejected:* `Closes #N` everywhere, which would close the issue when gate one merges; and
-   `Refs #N` on gate-two revisions, since a squash merge whose message is taken from the last
+   `Refs #N` on gate-two revisions, since a squash merge that took its message from the last
    commit would then carry no closing keyword, and the issue would stay open.
 7. **A failed check goes back to the model step with the reason**, to redo and sign again. After
    two attempts in total, the code publishes nothing and records the failure. *Rejected:*
@@ -59,9 +60,9 @@
    a model call would leave an Igor silent in the case `graceful-handoff` exists for.
 9. **A pull request body is the opening block, then the signed description, then the code's
    evidence section (Adam, 2026-10-13).** Until `review-evidence` (#190) ships, the opening block
-   is the line linking the pull request to its item, preceded under #150 by the text #150 places first (gate one's "specification only" opening and the paths gate one
-   refused to publish; at gate two, the note that the issue changed after the spec was approved,
-   and bug-hunter's open decisions); once #190 ships, #190 defines it. Every line the code adds after the description
+   is the line linking the pull request to its item, preceded under #150 by the notes #150 places
+   first, such as gate one's "specification only" opening and, at gate two, bug-hunter's open
+   decisions; once #190 ships, #190 defines it. Every line the code adds after the description
    starts at the marker `<!-- igor:evidence -->`, which #190 defines; before #190 ships there is
    no marker, and the description runs to the end of the body. The description is exactly the span between the
    opening block and the marker, and `prose verify-post` runs on exactly that span. Neither the
@@ -170,21 +171,61 @@ The choices `design.md` records as decided on 2026-10-11, under *Decided questio
 beside decisions 1 to 15: Igor runs `prose start`, the signing scripts are granted by path, and
 the tree is measured before signing.
 
-**For Adam,** found by a consistency read on 2026-10-18, each a conflict or a question this
-change cannot settle alone:
-- #190 leaves the description alone on gate two's implementation push, which it does not call a
-  revision, while this change rewrites it there; and #190 claims to be the one definition of the
-  opening block, which this change also states.
-- Bug-hunter's open decisions go into the opening block, which the code assembles and does not
-  sign, while #140 makes them the numbered questions a model writes.
+**Reconciled on 2026-10-18 with #190, #140 and #174, where the fix was mechanical:**
+- The opening block is #190's to define. Before #190 ships, this change names it only as the
+  linkage line after the text #150 places first, and no longer lists that text, so #190's
+  requirement stays the one place the block's contents are spelled out.
+- A role's `skills` list decides what its worker is directed to use and what Igor checks, not
+  what loads; #174 loads every installed skill for every role (decision 4). This matches what
+  #174 now says. Nothing here depends on #174's decision 7, one plugin directory for every role,
+  which #174 still lists for Adam.
+- `design.md` item 1 no longer says the first-write gate runs where prose's hooks are installed
+  for Igor's user: #174 resets every model step's home to a template with no hooks, so the gate
+  never runs in a worker.
+
+**For Adam,** each a conflict or a question this change cannot settle alone:
+- **Who rewrites the description on gate two's implementation push.** Decision 10 (Adam,
+  2026-10-13) rewrites it there. #190 rewrites it only on a revision, which it defines as a push
+  answering a reviewer's change request, so on gate two it leaves the description as it is.
+  *Question:* confirm decision 10 over #190's text, so that #190 adds gate two's implementation
+  push to the pushes where this change rewrites the description. This change does not edit
+  #190.
+- **Bug-hunter's open decisions are model text, published unsigned.** Decision 2 signs every text
+  a model writes for an Igor to publish, but #150 places the open decisions in the opening block
+  at gate two, and the code assembles that block and does not sign it (decision 9). #140 then posts them as numbered questions a
+  person answers. Sign them, or accept them unsigned because #140 matches an answer against
+  the options Igor recorded, never against the text?
+- **Whether Igor still runs `prose start`.** Under #174's reset nothing in a worker checks the
+  gate it opens (reconciled above). Dropping it would remove `prose start` from task 0.13. It
+  would also remove the reason that #174's decision 14, and decision 15 of #175, give for
+  keeping the session mark in the worker's home, since both rest on a hook that reads the mark. *Recommendation:* drop it; the
+  token from prose's first call, which only that call issues, is what shows the pass ran.
+- **A triage skip is the step's own word.** Whether a commit needs `Bug-hunter-Tree:` depends on
+  bug-hunter's report that its first triage found nothing to hunt, and nothing in Igor's code
+  checks that report (decision 1 says the model's word is not proof). *Recommendation:* mint
+  `Bug-hunter-Tree:` on every commit, against the tree Igor stages as the other trailers are, so
+  the tree check never rests on the report.
+- **`Refs #N` or #150's `Answers #n`.** Decision 6 ends gate one's commits with `Refs #N`; #150
+  names `Answers #n` as GitHub's reference that links without closing, and has the adapter
+  supply it. The spec now takes the form from the item's tracker adapter, and gives decision 6's
+  `Refs #N` as the GitHub example; under #150 that example would be `Answers #n`.
+  *Recommendation:* one form for both, the one #150's adapter supplies.
+- **When bug-hunter runs, stated twice.** #150 runs it at gate two "where the role configures
+  bug-hunter as a pipeline step" and says gate-one commits carry `Bug-hunter: skipped at triage
+  (spec only)`; this change runs it on every commit where the role lists `bug-hunter`. #150's
+  "skipped at triage" also assumes triage skips a spec-only change, which task 0.11 has not
+  measured. *Recommendation:* #150 cites this change's rule instead of stating its own.
+- **An unknown skill on a person's machine.** `skills_dir` names a server path (#174), so where
+  it does not exist every role whose org base lists `prose` is refused at load, which breaks
+  `igor role explain`, the dry run and same-user `igor run`. #174 lists the missing directory as
+  open. *Recommendation:* check names against `skills_dir` only in a command that runs a model
+  step, and only where the directory exists, naming it when it does not.
 - A conflicted catch-up's resolution is a merge, so it carries model-written code with no
   trailers.
-- #174 loads every pinned skill into every role's worker, while decision 4 has a role list the
-  skills it uses. And #174's reset template installs no hooks, so prose's first-write gate, which
-  design item 1 opens with `prose start`, would never run in a worker. Which holds, and whether
-  Igor still runs `prose start`, is for Adam.
 - Listing a skill grants its scripts outside the role's `commands`, which the in-force
-  `role-config` says is the only grant.
+  `role-config` says is the only grant; this change adds `skills` to that requirement's keys but
+  leaves its sentence on `commands` as it is. *Recommendation:* name the exception in that
+  requirement, since the grant is by path into a root-owned directory the worker cannot write.
 - Signed text is published exactly, so model text quoting untrusted content can carry
   @-mentions or markup the code cannot neutralise.
 - Nobody has defined the reader goals Igor passes to `prose start` for an item. Task 0.5 waits on

@@ -23,7 +23,8 @@ this capability. Each skill's check SHALL be defined in Igor's code, not in conf
 
 #### Scenario: A role listing bug-hunter has its commits checked
 
-- **WHEN** a role's `skills` is `[bug-hunter]` and it publishes a commit
+- **WHEN** a role's `skills` is `[bug-hunter]`, it publishes a commit, and bug-hunter's first
+  triage finds something to hunt
 - **THEN** the commit is made only with a `Bug-hunter:` trailer, and a `Bug-hunter-Tree:`
   trailer bound to the staged tree
 - **AND** its posts are published without a footer check
@@ -77,23 +78,12 @@ messages. `graceful-handoff` stays as it is.
 
 For a role whose `skills` lists `prose`, the code that publishes a model-written text SHALL run
 `prose verify-post` on the exact text it is about to send, and MUST NOT publish text that
-fails. The code verifies because the model's word is not
-proof.
+fails.
 
 The code SHALL publish the verified text exactly. A pull request body is the one place the
-code adds lines around it. Before the signed text comes the opening block. Once `review-evidence` (#190) ships, it defines the block. Until then,
-the block is the line linking the pull request to its item, preceded for a role under the
-two-gate workflow (#150) by the text #150 places first (gate one's "specification only" opening and the paths gate one
-refused to publish; at gate two, the note that the issue changed after the spec was approved,
-and bug-hunter's open decisions). After
-the signed text, every
-line the code adds starts at the marker `<!-- igor:evidence -->`: the evidence section of
-`review-evidence` (#190). The code assembles both the opening block and the evidence section,
-so neither is signed or part of the signed text.
-
-In a pull request body, the signed text is exactly the span between that opening block and the
-marker, apart from the whitespace that separates it from each, or from the opening block to the
-end of the body where there is no marker. `prose verify-post` SHALL run on exactly that span.
+code adds lines around it, and `task-execution`'s *The pull request description is written for
+a reviewer and signed* sets out where they go and which span of the body `prose verify-post`
+runs on.
 
 #### Scenario: Signed text is published unchanged
 
@@ -115,9 +105,11 @@ end of the body where there is no marker. `prose verify-post` SHALL run on exact
 ### Requirement: A failed check goes back to the model step, a bounded number of times
 
 When a check fails, the code SHALL return the text to the model step that wrote it, with the
-reason, and that step SHALL redo its check and sign again. A commit's tree or message mismatch is
-the exception: it goes back to no step, as `task-execution` requires, because Igor's code made
-both bindings: the trailers to the tree, and the `Prose:` trailer to the message. After two failed
+reason, and that step SHALL redo its check and sign again. A commit is signed by Igor's code,
+not by the prose pass, so where prose's second call refuses the token the prose pass reported,
+the prose pass SHALL run prose's first call again and report a new token. A commit's tree or message mismatch, and a
+refused minting call, are the exceptions: each goes back to no step, as `task-execution`
+requires. After two failed
 attempts the code SHALL publish none of the text and SHALL record the failure, with each reason,
 to the state branch. On a claimed item, the handoff the code assembles is still posted, as
 `graceful-handoff` requires.
