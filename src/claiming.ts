@@ -96,11 +96,17 @@ export interface ClaimResult {
   announced?: true
   /**
    * Set beside `announced` where the claim message's own post threw or was not confirmed, so
-   * nobody knows whether it is on the item. Only the refusal returned where the claim window
-   * throws carries it. There the withdrawal is the run's only answer to the claim message, and
-   * `silenceWarning` in src/loop.ts words its warning from this flag.
+   * nobody knows whether it is on the item: a surface can accept a write and still throw. Every
+   * result `takeClaim` returns after the claim message carries it, the claim window's refusal
+   * included. `silenceWarning` in src/loop.ts words its warning from this flag.
    */
   unconfirmed?: true
+  /**
+   * Set on the refusal `takeClaim` returns where its claim window, the guarded span from the
+   * assignment call to the settle check, threw after the claim message. On that refusal the
+   * withdrawal `takeClaim` posts is the run's only answer to the claim message.
+   */
+  withdrew?: true
   /**
    * Whether the message answering the claim message landed. Set on a refusal, where the answer
    * is the withdrawal `takeClaim` posts when its claim window threw after announcing, and on a
@@ -379,8 +385,12 @@ export async function takeClaim(
     // cancelled.
     const verdict = await tracker.verifyClaim(candidate, identity, since, { liftable: options.directed !== true })
 
-    // Every return from here on carries whether the claim message was posted or attempted.
-    const told = announced ? { announced: true as const } : {}
+    // Every return from here on carries whether the claim message was posted or attempted, and
+    // whether its post was confirmed.
+    const told = {
+      ...(announced ? { announced: true as const } : {}),
+      ...(announced && !claimLanded ? { unconfirmed: true as const } : {}),
+    }
     if (verdict.status === 'held') {
       return {
         outcome: 'held', candidate, claimedAt, verdict, reason: 'claim stands', ...told,
@@ -455,6 +465,7 @@ export async function takeClaim(
       surfaceFailed: true,
       ...(announced ? { announced: true as const } : {}),
       ...(announced && !claimLanded ? { unconfirmed: true as const } : {}),
+      ...(announced ? { withdrew: true as const } : {}),
       ...answer,
       reason:
         releaseRefused === undefined

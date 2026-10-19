@@ -820,6 +820,17 @@ describe('a run reports what landed on the item, not what it tried to say', () =
     expect(silenceWarning(r)).toBe('WARNING: a claim message may have been posted, and its withdrawal was not confirmed')
   })
 
+  it('says no later message reached the item where an unconfirmed claim message was followed by posts that all failed', async () => {
+    // The claim held, so the run went on past the claim window to provisioning, which throws.
+    // Its answer is a handoff, not a withdrawal.
+    const { d } = deps({ provisionThrows: true, unconfirms: (m) => m.includes('<!-- igor:claim -->'), rejects: afterClaim })
+    const r = await runItem(d, candidate(), role(), 'igor-bot', noWait)
+
+    expect(silenceWarning(r)).toBe(
+      'WARNING: a claim message may have been posted, and no later message reached the item: tracker returned 503',
+    )
+  })
+
   it('never reports a loss that tried no post as silent', async () => {
     // The release took, and the holder field lists several names, so nothing needs handing back.
     // The run posts nothing and owes nothing, because somebody else is visibly on the item.

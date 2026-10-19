@@ -107,6 +107,10 @@ export interface ItemRun {
    */
   unconfirmed?: true
   /**
+   * Set where the run's answer to its claim message was a withdrawal; see `ClaimResult.withdrew`.
+   */
+  withdrew?: true
+  /**
    * Why the answer the run owed did not land: the tracker's error from the last post that failed.
    * Present only beside `spoke: false`. The tracker refused the answer, so the reason cannot go on
    * the item either, and travels out to whoever watches the run instead.
@@ -171,24 +175,35 @@ export function wentSilent(run: ItemRun): boolean {
 
 /**
  * The line every report of a run prints where it went silent. Undefined where the run did not go
- * silent. Every line but one ends with the tracker's reason, where there is one, so whoever reads
- * it can tell whether the tracker was down.
+ * silent. The tracker's reason ends the line where there is one, so whoever reads it can tell
+ * whether the tracker was down. The one exception is the line for an unconfirmed withdrawal,
+ * whose reason would only say again that the post was not confirmed.
  *
- * Only a run whose every post failed outright is called a bug. Where a post came back unconfirmed
- * it may be on the item, so the line says it is not confirmed:
- * - The claim message's own post threw or was not confirmed, so nobody knows whether anybody was
- *   told to stand off. The line says the claim message may have been posted. Where the withdrawal
- *   came back unconfirmed, the line adds that it was not confirmed, and gives no reason, which
- *   would only repeat that. Otherwise it adds that the claim message could not be withdrawn.
- * - A later post came back unconfirmed. The line says no message on the item is confirmed.
+ * A post that threw may still have landed, since a surface can accept a write and then throw. So
+ * the claim message's own post counts as unsure where it threw or was not confirmed. A later post
+ * that threw counts as failed outright, and one that came back unconfirmed as unsure.
+ *
+ * - The claim message's own post was unsure (`unconfirmed`), so nobody knows whether anybody was
+ *   told to stand off. The line says the claim message may have been posted, then:
+ *   - on the claim window's refusal (`withdrew`), that the withdrawal was not confirmed, where it
+ *     came back unconfirmed, or else that the claim message could not be withdrawn;
+ *   - on every other exit, where the run went on past the claim window and every later post
+ *     failed outright, that no later message reached the item.
+ * - A later post came back unconfirmed (`answerUnconfirmed`). The line says no message on the
+ *   item is confirmed.
+ * - Otherwise the claim message was confirmed and every later post failed outright. Only this
+ *   line calls the run a bug.
  */
 export function silenceWarning(run: ItemRun): string | undefined {
   if (!wentSilent(run)) return undefined
   const reason = run.silence === undefined ? '' : `: ${run.silence}`
-  if (run.unconfirmed === true) {
+  if (run.unconfirmed === true && run.withdrew === true) {
     return run.answerUnconfirmed === true
       ? 'WARNING: a claim message may have been posted, and its withdrawal was not confirmed'
       : `WARNING: a claim message may have been posted and could not be withdrawn${reason}`
+  }
+  if (run.unconfirmed === true && run.answerUnconfirmed !== true) {
+    return `WARNING: a claim message may have been posted, and no later message reached the item${reason}`
   }
   return run.answerUnconfirmed === true
     ? `WARNING: held a claim and no message on the item is confirmed${reason}`
@@ -239,8 +254,12 @@ export async function runItem(
     ...(options.catchUp === undefined ? {} : { catchUp: true }),
     onSettle: () => step('settling'),
   })
-  // Spread into every return below, so no exit drops the fact that the item was told to stand off.
-  const told = claim.announced === true ? { announced: true as const } : {}
+  // Spread into every return below, so no exit drops the fact that the item was told to stand off,
+  // or that the claim message saying so was not confirmed.
+  const told = {
+    ...(claim.announced === true ? { announced: true as const } : {}),
+    ...(claim.unconfirmed === true ? { unconfirmed: true as const } : {}),
+  }
   if (claim.outcome !== 'held') {
     // A claim that is not held owes no handoff. A refusal holds no claim, a lost claim leaves
     // somebody else visibly on the item, and a stop gets a receipt instead, because whoever issued
@@ -270,7 +289,7 @@ export async function runItem(
       ...(claim.silence === undefined ? {} : { silence: claim.silence }),
       ...(claim.answerUnconfirmed === true ? { answerUnconfirmed: true as const } : {}),
       ...told,
-      ...(claim.unconfirmed === true ? { unconfirmed: true as const } : {}),
+      ...(claim.withdrew === true ? { withdrew: true as const } : {}),
       cures: [],
       ...(claim.surfaceFailed === true ? { surfaceFailed: true as const } : {}),
     }
