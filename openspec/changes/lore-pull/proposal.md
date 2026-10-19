@@ -68,9 +68,10 @@ on 2026-10-18. Decision 10 follows the order Adam set in issue #204.
    2026-10-18). Each process keeps a *fetched* ref and an *applied* ref, the last commit whose
    read passed, across restarts. A restarting process reads the fetched commit; where it fails
    the startup checks, the process starts on the applied commit with the refused-read condition
-   open. A failing lore commit refuses a start only where the process has no applied ref: one
-   that has never applied a commit, or whose refs went with a lost checkout or volume. In every
-   case the seats a later commit deleted stay out. Without this, each process that restarted
+   open. A failing lore commit refuses a start in two cases. In the first, the process has no
+   applied ref, because it has never applied a commit or its refs went with a lost checkout or
+   volume. In the second, the applied commit fails too (decision 17). In every case the seats a
+   commit after the applied one deleted stay out. Without this, each process that restarted
    after a bad commit landed, through a crash, a deploy or a reboot, would exit 78 and stay down
    under #82's unit, until the whole fleet was down. #82's requirement *A process that refuses to
    start exits with status 78* already says that a start falling back this way is not a refusal,
@@ -90,7 +91,7 @@ Proposed in this change (2026-10-18 and 2026-10-19), for Adam's review:
     forbids, and a filter or fsmonitor would run a command from the configuration.
 12. **A failed fetch opens no condition.** The process keeps running on a commit that passed,
     and every cycle report until a fetch succeeds says how long ago its last successful fetch
-    was. A fetch never delays #179's heartbeat write, and one still running at the next firing is
+    was. A fetch never delays #179's heartbeat write, and one still running when the next fetch is due is
     ended. *Rejected:* a read-cleared condition, which every network blip would open.
 13. **The condition a refused read opens is per process: `lore:config:<role>-<rank>`.** Every
     Igor appends to one shared execution log, so one condition named `lore:config` would be
@@ -101,11 +102,17 @@ Proposed in this change (2026-10-18 and 2026-10-19), for Adam's review:
 14. **Igor's seat notice goes out at most once per change, and only for a change a process
     applies.** A process compares the seat files of each commit it applies with those of the
     commit its applied ref named before. A refused commit is not announced, since Igor does not
-    read it. The notice mentions the owner the file named before the commit that last changed
-    it, the lender whose token it held, so a merge that changes `owner` cannot redirect it; where
-    the commit the process applied before names another owner, it mentions that one too. An
-    added seat file gets no notice, as #171's workflow mentions nobody for one, since its `owner`
-    is unvetted. Before posting, the process creates a record on the state branch, named by the
+    read it. The notice mentions the seat's owner as the file named it just before the commit
+    that last changed the file: the lender whose token the file held. So a merge that changes
+    `owner` cannot redirect the notice. Where the commit the process applied before names a
+    different owner, the notice mentions that owner as well. It
+    mentions no owner who both opened the pull request and pushed that commit to it, and no
+    `owner` that is not a GitHub login, the two exclusions #171's workflow makes (#171's decision
+    44), so a lender who opened the pull request is told where someone else pushed to it. The
+    workflow's rule of one mention per pull request does not carry over: Igor's notice after the
+    merge is a separate one. An added seat file gets no notice, as #171's workflow mentions
+    nobody for one, since its `owner` is unvetted. A deleted or renamed seat file gets none from
+    Igor either (*Still open*). Before posting, the process creates a record on the state branch, named by the
     seat and the commit that last changed the file, with a call that fails where the record
     exists. A process whose call found the record posts nothing, so a change gets one notice
     however many processes apply it; a call that failed otherwise is tried again at each later
@@ -119,8 +126,10 @@ Proposed in this change (2026-10-18 and 2026-10-19), for Adam's review:
     process derives this from its two refs and the history between them, so nothing else is
     stored.
 16. **A first fetch that fails falls back to the checkout's own remote-tracking ref,** the commit
-    the operator last fetched, so a process that has never fetched can still start while GitHub
-    does not answer.
+    the operator last fetched, so a process that has never fetched still has a commit to read
+    when its fetch fails. That helps only where GitHub's API still answers, since the start's App
+    check needs the API. Where GitHub does not answer at all, the App
+    check fails and the start exits as #82 says of such a check.
 17. **A restart whose applied commit also fails is refused.** After an Igor upgrade the applied
     commit can fail checks it once passed. The process then has nothing that passes, and refuses
     to start, naming both commits.
@@ -171,9 +180,11 @@ that differs changes the named requirement.
   interval*.
 - **Whether a pull can be forced.** *Recommended:* yes. `SIGHUP` makes the process fetch at once,
   and the shipped unit gains `ExecReload=` so that `systemctl reload igor@<role>-<rank>` sends
-  it. Under compose, `docker compose kill -s HUP <service>` does the same; the shipped compose
-  file runs `igor` as the container's main process, and task 1.6 measures that the signal
-  reaches it. A forced fetch is still applied at the next cycle start, except a removed seat.
+  it. Under compose, `docker compose kill -s HUP <service>` does the same where `igor` is the
+  container's main process. That depends on the image, which the repository does not ship: the
+  compose file builds one from a Dockerfile the operator supplies. Task 1.6 measures it with such
+  an image, and the deployment guide says the image must run `igor` as its main process. The commit a forced fetch brings still applies at the next cycle start, except a seat
+  it removes, which applies at once.
   Requirement: *A pull can be forced with SIGHUP*.
 - **Where Igor posts the seat notice** (raised on #176). *Recommended:* on the merged pull
   request that brought the commit last changing the seat file. Where no pull request brought it,
@@ -210,16 +221,26 @@ that differs changes the named requirement.
   how long one fetch takes, which says how often a fetch would be killed when the next is due
   (task 1.5). A lock failure is
   reported as a failed fetch, so the requirement holds either way; the measurement says how
-  often it happens. That `SIGHUP` from `docker compose kill` reaches `igor` under the shipped
-  compose file (task 1.6). And that GitHub's Contents API refuses a `PUT` without a `sha` on an
+  often it happens. That `SIGHUP` from `docker compose kill` reaches `igor` in an image built for
+  the shipped compose file (task 1.6). And that GitHub's Contents API refuses a `PUT` without a `sha` on an
   existing file (task 5.2), which decision 14's record rests on. If it does not refuse, the
   record needs a commit and a ref update that does not force.
-- **Conflict with #175 (`worker-user`), recorded here and not raised on #175.** #175 keeps a
-  worker from writing the lore checkout, so that a worker cannot widen its own role. Under this
-  change Igor reads its configuration from per-process worktrees. `design.md` puts them inside
-  the lore checkout's directory, and decision 8's reset before each read discards any write
-  there, but #175's list names the lore checkout, not the worktrees, and should say it covers
-  them.
+- **GitHub not answering during a lore read.** The startup checks include the App check, which
+  needs GitHub. *Recommended:* a check that fails because GitHub did not answer fails no read:
+  at a cycle start the process stays on the commit it applied and opens no condition, and at
+  start it exits as #82 says of such a check, with status 1, not 78. Otherwise every GitHub blip
+  at a cycle start would open `lore:config:<role>-<rank>`, which decision 12 rejects for a
+  failed fetch. Requirement: *`igor serve` starts on the newest commit that passes*.
+- **A retired rank and the fallback to the applied commit.** #179 retires a rank whose roster
+  entry is gone, and refuses to start a rank in that state. *Recommended:* the roster's declaring the rank is not
+  a startup check on a lore read, so a passing read that drops the rank retires it, and a start
+  whose fetched commit drops it is refused as #179 says, with no fallback to an applied commit
+  that still declares it. Requirement: *`igor serve` starts on the newest commit that passes*.
+- **Deleted and renamed seat files.** #171's workflow mentions a lender on a pull request that
+  deletes or renames their seat file. *Recommended:* Igor posts no notice for either after the
+  merge: the removal takes the token out of use at once, and the notice text, that Igor now
+  reads the change, would be false, since no file is left at that path for Igor to read. Requirement: *Igor posts at most one notice for each
+  seat-file change it applies*.
 
 ## Why
 

@@ -20,10 +20,14 @@ The process keeps a detached worktree of the lore checkout at the commit it appl
 sits inside the lore checkout's directory, at `.igor/worktrees/<role>-<rank>`, and the process
 lists `.igor/` in `.git/info/exclude` so that the shared checkout's status does not show it. Inside the
 checkout, the worktree is on the volume every compose container shares and inside the unit's
-writable paths. Before each lore read the process runs, in its worktree,
+writable paths. The process creates and repairs it with
+`git -c core.hooksPath=/dev/null worktree add --detach` and `worktree repair`, and before each
+lore read runs, in its worktree,
 `git -c core.hooksPath=/dev/null checkout --force --detach <commit>` and then
-`git clean -ffdx`, each with `GIT_CONFIG_NOSYSTEM=1` and `GIT_CONFIG_GLOBAL=/dev/null` so that
-only the checkout's own configuration, which the start has checked, is read. Any change or extra file left there is thereby discarded, and no hook runs.
+`git clean -ffdx`. The forced checkout and the clean discard any change or extra file left in
+the worktree. Every one of these commands runs with no hook and with `GIT_CONFIG_NOSYSTEM=1` and
+`GIT_CONFIG_GLOBAL=/dev/null`, so that only the checkout's own configuration, which the start
+has checked, is read.
 It then loads the configuration from the worktree exactly as `main` loads from a checkout.
 `loadConfig`'s check that the lore store, the directory of lore entries that `destination`
 names, sits at the root of its repository then runs against the worktree, where `destination`
@@ -31,15 +35,20 @@ resolves, and still passes, because a linked
 worktree answers `git rev-parse --show-prefix` with an empty prefix at its root, as a checkout
 does.
 
-A relative path in `igor.config.yaml` resolves against the lore checkout's root, as on `main`.
+A relative path in `igor.config.yaml` resolves against the directory holding `igor.config.yaml`
+in the lore checkout, as `src/config.ts` resolves it on `main` and as #171 says of `seatKey`.
 Where the result lies inside the checkout, the process reads the same path in its worktree;
 where it lies outside, such as `seatKey: ../seat.key`, it reads that file. Resolving against the
 worktree instead would point `../seat.key` at `.igor/worktrees/seat.key`, a file that is not
 there.
 
 After each fetch, even mid-cycle, the process finds the seats to keep out with
-`git log --diff-filter=D <applied>..<fetched> -- seats/`, which lists every seat file a commit
-since the applied one deleted, and reads the object store without touching a working tree.
+`git log --no-renames -m --first-parent --diff-filter=D --name-only <applied>..<fetched> -- seats/`.
+`--no-renames` reports a renamed seat file as deleted, which by default git would report as a
+rename. `-m --first-parent` compares each merge with its first parent, so a deletion a merge
+brings, or one made while resolving a merge, is listed. The command thus lists every seat file
+that some commit since the applied one deleted. Task 4.4 tests a rename and a deletion made only
+in a merge's resolution. The command reads the object store without touching a working tree.
 Finding a removal decrypts nothing, so seat files are still decrypted only on a lore read
 (decision 4). A seat on that list stays out until a read that passes holds its file again
 (decision 15), even where a later commit adds the file back. A process with no applied ref has
