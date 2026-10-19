@@ -49,8 +49,8 @@
    is posted only on a repository that declares checks. A clean merge the code host makes with
    no worker runs no checks. *Rejected:* checking only the opening run, which leaves gate two's
    implementation untested; reporting only through the table #190 rebuilds in the body after
-   every push, since GitHub notifies nobody of an edited body; and a comment on every
-   push of a repository with no checks, which says nothing.
+   every push, which adds nothing to the pull request's timeline for a watcher to see; and a
+   comment on every push of a repository with no checks, which says nothing.
 8. **The checks' result is written only into #190's evidence table**, in #190's wording, with
    each failed check's output in the block #190 lays out under the table (Adam, 2026-10-13). The
    comment in decision 7 is the one exception. *Rejected:* a line of this change's own in the
@@ -62,8 +62,13 @@
 
 **Proposed, for Adam to approve:**
 
-10. **A check is an exact command line, run as its words with no shell, and a role is refused
-    when its `commands` does not permit a check of a repository in its `sources`.** A line
+10. **A check is an exact command line, run as its words with no shell, and a role that may open
+    a pull request is refused when its `commands` does not permit a check of a repository in its
+    `sources`.** The reason: without it, the loop would run on the role's behalf a command the
+    role may not run. The cost, for Adam to accept: granting a check's command also lets the
+    worker run it itself, with the seat's token in its environment, which a check never gets
+    (decision 19). A role whose `allow` lists neither `pr` nor `draft-pr` runs no check and needs no such
+    permission. A line
     holding any of ``; & | < > ( ) ' " \ $ ` * ? [ ] { } ~ # !``, a tab, a newline or two spaces
     in a row, or beginning or ending with a space, is refused at load. So `npm test && curl …`
     cannot pass as a line `npm test:*` permits, and `npm test src/*.ts` cannot pass a `*` its
@@ -82,8 +87,10 @@
     checks different limits.
 12. **Checks run only on work the loop would publish:** after it reads the changed paths and
     their contents, reads the claim, and applies every refusal that reads only the changes
-    (`allow`, path names, conflict markers, undeclared reverts). The claim is read again when the
-    checks end. A worker stopped or killed for a limit runs none. *Rejected:* checks before
+    (`allow`, path names, conflict markers, undeclared reverts, and gate one's drop of everything
+    outside the specification, whose paths are restored before the checks). The second run's
+    changes pass the same refusals before the second round. The claim is read again when the
+    checks end. A worker stopped, or killed for a limit before reporting a result, runs none. *Rejected:* checks before
     those refusals, which spend a round of checks and a second model run on work that is then
     refused; and checks before the read, which would publish what the checks write, such as test
     snapshots and build output.
@@ -91,8 +98,11 @@
     published and where it goes back to the worker. Redacting first means a token the cut would
     split is still found. The loop keeps only the last 64 KiB of a check's output while it runs,
     so a check that prints without end cannot fill the Igor's memory.
-14. **Before the second run, the tree is restored to the changes read before the checks,** so
-    nothing the first round wrote, such as a coverage report, is read as the second run's work.
+14. **Before the second run, the tree is restored to the changes read before the checks, and the
+    outbox is emptied,** so nothing the first round wrote, such as a coverage report or a
+    declarations file, is read as the second run's work. In the failed output given to the second
+    run, every occurrence of the closing delimiter is escaped, so a check cannot end the
+    untrusted span.
 15. **A lost claim, found before or during the first round, starts no second run.** The round
     runs to its end, and the work is offered under *Work finished before a claim is lost is
     offered, not discarded*, with that round's result. A claim found lost during the second run
@@ -100,9 +110,9 @@
     *Rejected:* a second run after the claim is lost, which spends the seat on an item the Igor
     no longer holds.
 16. **A second run that cannot finish keeps the first run's work.** It passes the budget gate as
-    any run does. Where the gate refuses it, or it exits with an error or is killed for a limit,
-    the loop publishes the changes read before it, as a draft with the first round's result and
-    the first run's summary. Where the item is stopped during the second run, nothing is
+    any run does. In four cases the loop publishes the first run's changes, as a draft with the
+    first round's result and the first run's summary: the gate refuses the second run; the second
+    run exits with an error; it is killed for a limit; or a refusal refuses its changes. Where the item is stopped during the second run, nothing is
     published. *Rejected:* publishing nothing on a failed retry, which discards work the worker
     finished.
 17. **After a conflict resolution, the second run's changes join the same merge commit,** which
@@ -117,6 +127,16 @@
 20. **A `repos` key matches a source's repository ignoring case,** as GitHub's names do, and two
     keys that differ only in case are refused. *Rejected:* an exact match, under which `Org/Web`
     silently gives `org/web` no checks.
+21. **Every check of a round runs, even after one fails,** so the worker and the reviewer see every
+    failure at once. *Rejected:* stopping at the first failure, which hides the other failures from
+    the one second run the worker gets.
+22. **A second run that leaves no change publishes nothing,** as any run that changes nothing,
+    even where the first run's work failed a check. On a later push, publishing nothing means the
+    reviewer's requested revision is not pushed; the reviewer learns of it only from the run's
+    outcome, as for any run that changes nothing. *Rejected:* publishing the first run's failing work, which the worker has just undone.
+23. **The execution row keeps, per round, each check's command, result (`passed`, `failed`,
+    `timed-out`, `not-run`), exit code and seconds,** never its output. A check that could not
+    start, or that a signal ended other than at the time limit, is `failed` with no exit code.
 
 **Still open:**
 
@@ -186,10 +206,10 @@ None.
 - **Overlaps `keep-action-log` (#188)**, which defines *credential redaction* and builds its
   function.
 - **Overlaps `worker-user` (#175)**, whose task-execution delta also states that what a check
-  writes is not published, and calls the checks the role's commands. The rule that what a check
-  writes is not published belongs to this change, and #175 needs only to point to it.
-- **#153 and `read-seat-windows-from-the-stream` (#143)** plan their archive merges around a
-  `checks` addition to *Merge semantics differ by field kind*. This change does not modify that
-  requirement, so each needs that addition dropped from its plan, in its own pull request.
+  writes is not published, under a scenario of the same name as this change's. That rule belongs
+  to this change, and #175 needs only to point to it.
+- **#153** plans its archive merge around a `checks` addition to *Merge semantics differ by field
+  kind*. This change does not modify that requirement, so #153 needs that addition dropped from
+  its plan, in #153's own pull request.
 - Code: `src/role.ts`, `src/execute.ts`, and the GitHub adapter (returning a pull request to
   draft). Docs: `README.md` roles section, `templates/org.yaml`.

@@ -6,8 +6,8 @@ The org base SHALL accept `repos`, a mapping from a repository, written `owner/n
 entry holding `checks`, a list of exact command lines, and `check_minutes`, the time limit for
 each round of a run's checks. A round is one pass through every check of the repository; a run
 makes one round, or two where the worker is sent a failure (`task-execution`). A key not of the
-form `owner/name`, two keys that differ only in case, or an entry holding any other key SHALL be
-refused at load, naming that key and the repository. An entry with no `checks` declares none. `repos` SHALL be read from
+form `owner/name`, or an entry holding any other key, SHALL be refused at load, naming that key
+and the repository. Two keys that differ only in case SHALL be refused at load, naming both. An entry with no `checks` declares none. `repos` SHALL be read from
 the org base alone: an intermediate base or a role file naming it SHALL be refused as a key
 nobody reads.
 
@@ -23,8 +23,8 @@ repository.
 `check_minutes` SHALL default to 15, and a value that is not a whole number from 1 to 60 SHALL be
 refused at load, naming the key and the repository.
 
-Every role inherits the org base, so an entry refused at load SHALL refuse every role, whether or
-not its `sources` name that repository.
+An entry refused at load SHALL refuse every role, whether or not its `sources` name that
+repository.
 
 #### Scenario: Every role on a repository gets its checks
 
@@ -46,6 +46,11 @@ not its `sources` name that repository.
 
 - **WHEN** a role file, or an intermediate base it extends, names `repos`
 - **THEN** the role is refused at load, naming `repos` as a key nobody reads
+
+#### Scenario: Malformed repository keys are refused
+
+- **WHEN** `repos` holds the key `web`, or both `org/web` and `Org/Web`
+- **THEN** every role is refused at load, naming `web`, or naming both `org/web` and `Org/Web`
 
 #### Scenario: An unknown key in an entry is refused
 
@@ -73,9 +78,10 @@ not its `sources` name that repository.
 
 ### Requirement: A role's commands permit its repositories' checks
 
-Each check of a repository in a role's `sources` SHALL be a line the role's effective `commands`
-permits, and a role with a check its `commands` does not permit SHALL be refused at load, naming
-the check and the repository. A `cmd:*` entry permits `cmd` alone or followed by a space and
+For a role whose `allow` lists `pr` or `draft-pr`, each check of a repository in its `sources`
+SHALL be a line the role's effective `commands` permits, and a role with a check its `commands`
+does not permit SHALL be refused at load, naming the check and the repository. A role that may
+open no pull request runs no check, and this rule does not apply to it. A `cmd:*` entry permits `cmd` alone or followed by a space and
 arguments; any other entry permits only that exact line.
 
 #### Scenario: A check the role may not run is refused
@@ -84,6 +90,18 @@ arguments; any other entry permits only that exact line.
   narrows its inherited `commands`, as *Merge semantics differ by field kind* lets a role
   restrict a permission, to drop `npm test:*`
 - **THEN** the role is refused at load, naming `npm test` and `org/web`
+
+#### Scenario: A role that may open no pull request needs no permission for checks
+
+- **WHEN** a role allows only `comment`, works `org/web`, and its `commands` does not permit
+  `org/web`'s checks
+- **THEN** the role loads
+
+#### Scenario: An exact entry permits only its own line
+
+- **WHEN** a role's `commands` holds `npm test` and its repository's check is `npm test -- --run`
+- **THEN** the role is refused at load, naming `npm test -- --run`
+- **AND** a role whose `commands` holds `npm test:*` and whose check is `npm test` loads
 
 #### Scenario: A pattern permits a check line
 

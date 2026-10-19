@@ -2,18 +2,20 @@
 
 ### Requirement: The loop runs the repository's checks in the worker's tree
 
-Where the worker exited on its own, neither stopped nor killed for a limit, and changed the tree,
-execution SHALL run each check the org base declares for the tree's repository, in the order
-declared. They SHALL run after execution has read which paths the worker changed and their
-contents, has read the item's claim, and has applied every refusal that reads only those
-changes: `allow`, path names, conflict markers and undeclared reverts. A run refused there runs
-no check. Where `signed-publishing` (#153) stages and signs the tree before the commit, the checks
-SHALL also run after that staging and signing. Every check SHALL run, even after one fails.
-Execution SHALL read the claim again once the checks end.
+A round is one pass through every check the org base declares for the tree's repository, in the
+order declared. Where the worker's run settles with a result, having exited on its own or
+reported its result before a kill, and changed the tree, execution SHALL run a round. It SHALL run
+after execution has read which paths the worker changed and their contents, has read the item's
+claim, and has applied every refusal that reads only those changes: `allow`, path names,
+conflict markers, undeclared reverts, and at gate one under `two-gate-workflow` (#150) the drop
+of every change outside the specification. A run any of those refusals refuses runs no check. A
+path gate one drops SHALL be restored in the tree to the base before the round runs. Where
+`signed-publishing` (#153) stages and signs the tree before the commit, the round SHALL also run
+after that staging and signing. Every check SHALL run, even after one fails. Execution SHALL read
+the claim again once the round ends.
 
 What a check writes SHALL NOT reach the artifact, the commit Igor publishes: the artifact carries
-only the changes execution read before the last round's checks ran, staged where #153 stages
-them.
+only the changes execution read before the last round ran, staged where #153 stages them.
 
 Each check SHALL run as the worker ran: as the same user, in its own process group, and with the
 environment the worker was given, without its model login (`CLAUDE_CODE_OAUTH_TOKEN` or
@@ -49,27 +51,48 @@ defines. Under `igor run` it is the Igor's own account, as it is for the worker.
 
 #### Scenario: A killed or refused run runs no checks
 
-- **WHEN** the worker is killed for a limit after editing files, or the role's `allow` permits no
-  pull request
+- **WHEN** the worker is killed for a limit after editing files without reporting a result, or the
+  role's `allow` permits no pull request
 - **THEN** no check runs
+
+#### Scenario: A run that reported its result before a kill is checked
+
+- **WHEN** the worker reports its result, is killed by a silence window before its process exits,
+  and changed the tree
+- **THEN** its checks run as for a run that exited on its own
+
+#### Scenario: Gate one checks only the specification
+
+- **WHEN** at gate one the worker also changed a file under `src/`
+- **THEN** the file is restored to the base before the checks run, and the checks see only the
+  specification
+
+#### Scenario: A claim lost by the end of the checks is offered
+
+- **WHEN** every check passes, and the claim read when the round ends is lost
+- **THEN** the work is offered with that round's result, requesting no reviewers
 
 ### Requirement: A failed check goes back to the worker once
 
 Where any check failed or timed out, execution SHALL first restore every path git does not
-ignore to the changes it read before the checks, removing any other untracked file, so nothing
-the first round wrote can be read as the second run's work. Ignored files, such as installed
-dependencies, stay, since execution never reads them as changes. It SHALL then start the worker
-once more, in that tree, with the same instructions and item, and with each check that did not
-pass: its command, its result, its exit code, and its output as *The checks' result is published
-and recorded* redacts and cuts it, delimited as untrusted content, as an item's text is. The
-second run SHALL pass the budget gate as any run does. Execution SHALL then read the changed
-paths again, stage and sign them again where #153 stages them, and run every check again, under
-its own `check_minutes` limit.
+ignore to the changes it read before the checks, removing any other untracked file; ignored
+files stay. It SHALL empty the outbox, the directory beside the tree where the worker writes its
+declarations, so nothing a check wrote there is read as the second run's. Where `seat-files`
+(#171) keeps the worker's git index copy in the outbox, execution SHALL make that copy afresh. It SHALL then start the worker once more, in that tree, with
+the same instructions and item, and with each check that did not pass: its command, its result,
+its exit code, and its output as *The checks' result is published and recorded* redacts and cuts
+it. That output SHALL be delimited as untrusted content, as an item's text is, with every
+occurrence of the closing delimiter in it escaped so the output cannot end the delimited span.
+The second run SHALL pass the budget gate as any run does. Execution SHALL then read the changed
+paths and declarations again, apply the refusals of the first requirement to them, stage and sign
+them again where #153 stages them, and run a second round, under its own `check_minutes` limit.
 
-Where the budget gate refuses the second run, or the second run exits with an error or is killed
-for a limit, execution
-SHALL publish the changes read before it, as a draft, with the first round's result and the first
-run's summary. Where the item is stopped during the second run, execution SHALL publish nothing.
+Where the budget gate refuses the second run, the second run exits with an error or is killed
+for a limit, or a refusal refuses its changes, execution SHALL publish the first run's changes, as
+read before the second run, as a draft with the first round's result and the first run's summary.
+Nothing of the second run is published. *A limit does not destroy what the worker already
+produced* still governs the second run's own record: its changes are recorded, not published. Where the item is stopped during the second run,
+execution SHALL publish nothing.
 
 Where the claim is lost when execution reads it before the checks, or while the first round runs,
 the round SHALL run to its end and no second run SHALL start: the work is offered with that
@@ -100,8 +123,14 @@ as for any run that changes nothing.
 
 #### Scenario: A worker given the output is not steered by it
 
-- **WHEN** a failing check prints text phrased as an instruction to the agent
-- **THEN** the second run receives it delimited as untrusted content
+- **WHEN** a failing check's output contains the closing delimiter, followed by text phrased as an
+  instruction to the agent
+- **THEN** the second run receives it delimited as untrusted content, with that delimiter escaped
+
+#### Scenario: A declaration a check writes is not read
+
+- **WHEN** a failing check writes a declarations file into the outbox
+- **THEN** the outbox is emptied before the second run, and that file is never read
 
 #### Scenario: The second round has its own limit
 
@@ -115,8 +144,32 @@ as for any run that changes nothing.
 
 #### Scenario: A second run that cannot finish keeps the first run's work
 
-- **WHEN** a check fails, and the second run is refused by the budget gate or killed for a limit
-- **THEN** the changes read before it are published as a draft with the first round's result
+- **WHEN** a check fails, and the second run is refused by the budget gate, exits with an error,
+  is killed for a limit, or leaves a change the refusals refuse
+- **THEN** the first run's changes are published as a draft with the first round's result and the
+  first run's summary
+- **AND** nothing of the second run is published
+
+#### Scenario: A stop during the second run publishes nothing
+
+- **WHEN** a check fails, and the item is stopped while the second run works
+- **THEN** nothing is published
+
+#### Scenario: A claim lost during the second run is offered after the second round
+
+- **WHEN** a check fails, and the claim is found lost while the second run works
+- **THEN** the second run and the second round run to their end
+- **AND** the work is offered with the second round's result
+
+#### Scenario: A second run after a conflict resolution joins the merge
+
+- **WHEN** a conflict resolution fails a check, and the second run fixes it
+- **THEN** one merge commit carries the resolution and the fix
+
+#### Scenario: The summary is the published run's
+
+- **WHEN** a check fails, and after the second run every check passes
+- **THEN** the pull request's summary is the second run's
 
 #### Scenario: A claim lost during the checks starts no second run
 
@@ -154,13 +207,15 @@ during the checks SHALL kill the running check as it kills a worker.
 
 ### Requirement: The checks' result is published and recorded
 
-Each execution row SHALL record, for every round, each check's command line and result: passed,
-failed, timed out or not run, with its exit code where it exited and how long it ran where it
-started. The row SHALL NOT hold a check's output.
+An execution row is the line that execution appends to `executions.ndjson` for each run. It SHALL
+record, for every round, each check's command line and result: passed, failed, timed out or not run, with
+its exit code where it exited and how long it ran where it started. A check that could not start,
+or that a signal ended other than at the time limit, is failed with no exit code. The row SHALL
+NOT hold a check's output.
 
 A pull request opened after checks SHALL be a draft where any check of the last round did not
-pass, whether or not `allow` lists `draft-pr`: a draft is within `pr`. It SHALL still request the role's
-reviewers, unless the claim was lost. A lost claim falls under *Work finished before a claim is
+pass, whether or not `allow` lists `draft-pr`. It SHALL still request the role's reviewers,
+unless the claim was lost. A lost claim falls under *Work finished before a claim is
 lost is offered, not discarded*, which requests none.
 
 In the pull request body, the last round's result SHALL appear only in the evidence section that
@@ -187,13 +242,23 @@ request to draft.
 
 - **WHEN** a role allows `pr` and `draft-pr`, and a check exits non-zero in both rounds
 - **THEN** the pull request is opened as a draft
-- **AND** the role's reviewers are requested
+- **AND** the role's reviewers are requested, as for a draft opened with no failed check
 - **AND** the evidence section's Tests row gives the check's result
 
 #### Scenario: A draft is within `pr`
 
 - **WHEN** a role allows `pr` and not `draft-pr`, and a check fails in both rounds
 - **THEN** the pull request is opened as a draft
+
+#### Scenario: A missing program is failed with no exit code
+
+- **WHEN** a check names a program the worker's user cannot find
+- **THEN** the row records it as failed with no exit code
+
+#### Scenario: Output is held to its last 64 KiB
+
+- **WHEN** a check prints 10 MiB
+- **THEN** the buffer execution keeps for the check's output never exceeds 64 KiB
 
 #### Scenario: The row holds no output
 
@@ -218,6 +283,13 @@ request to draft.
   published to a ready pull request, and a check fails in both rounds
 - **THEN** the pull request is returned to draft
 - **AND** a comment on it, under the fixed heading, names the failed check
+
+#### Scenario: A refused conversion to draft is reported
+
+- **WHEN** a later push fails a check in both rounds, and the code host refuses to return the
+  pull request to draft
+- **THEN** the comment says Igor could not return the pull request to draft, and does not say it
+  is one
 
 #### Scenario: A later push whose checks pass is reported
 

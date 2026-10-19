@@ -30,25 +30,29 @@
       ``; & | < > ( ) ' " \ $ ` * ? [ ] { } ~ # !``, and a `check_minutes` that is
       not a whole number from 1 to 60. Default `check_minutes` to 15. Name the check or key and
       the repository in each refusal.
-- [ ] 1.3 Refuse a role when a check of a repository in its `sources` is a line no effective
-      `commands` entry permits. A `cmd:*` entry permits `cmd` alone or followed by a space and
-      arguments; any other entry permits only the identical line. Name the check and the
-      repository.
+- [ ] 1.3 Refuse a role whose `allow` lists `pr` or `draft-pr` when a check of a repository in
+      its `sources` is a line no effective `commands` entry permits. A `cmd:*` entry permits
+      `cmd` alone or followed by a space and arguments; any other entry permits only the
+      identical line. Name the check and the repository.
 - [ ] 1.4 Show each of the role's repositories' checks and limit in `igor role explain`.
 - [ ] 1.5 Tests for each scenario in the role-config delta.
 
 ## 2. Running the checks
 
-- [ ] 2.1 In `src/execute.ts`, run the checks where the worker exited on its own and `changed`
-      (each changed path with its contents) is non-empty: after the claim status is read and
-      after every refusal that reads only `changed` (`allow`, path names, conflict markers,
-      undeclared reverts); where `signed-publishing` (#153) is built, also after its staging and
-      signing. Read the claim status again when the checks end. Run each line split on spaces,
-      as an argument list with no shell, with the tree as its working directory, through the
-      code that starts the worker (under `serve`, `sudo` as the worker user; under `run`,
-      directly as the Igor's own user), detached in its own process group.
-- [ ] 2.2 Give each check the worker's environment without the variables `AMBIENT_TOKENS` names,
-      `CLAUDE_CODE_OAUTH_TOKEN` and `ANTHROPIC_API_KEY`.
+- [ ] 2.1 In `src/execute.ts`, run the checks where the worker's run settled with a result
+      (it exited on its own, or reported its result before a kill) and `changed` (each changed
+      path with its contents) is non-empty: after the claim status is read and after every
+      refusal that reads only `changed` (`allow`, path names, conflict markers, undeclared
+      reverts, and at gate one the drop of everything outside the specification, restoring each
+      dropped path to the base in the tree); where `signed-publishing` (#153) is built, also
+      after its staging and signing. Read the claim status again when the checks end. Run each
+      line split on spaces, as an argument list with no shell, with the tree as its working
+      directory, through the code that starts the worker (under `serve`, `sudo` as the worker
+      user; under `run`, directly as the Igor's own user), detached in its own process group.
+- [ ] 2.2 Give each check the worker's environment with `CLAUDE_CODE_OAUTH_TOKEN` and
+      `ANTHROPIC_API_KEY` always removed. The worker's login, including a lent seat's decrypted
+      token under `seat-files` (#171), is passed in one of those two variables, so removing both
+      removes it.
 - [ ] 2.3 Give each round its own deadline of `check_minutes`. At the deadline, kill the running
       check's group, mark it `timed-out` and the rest of the round `not-run`. Register each
       check's group with the code that kills workers on a stop, a stand-down or a termination.
@@ -59,17 +63,21 @@
       stderr as it runs. Redact that with credential redaction, the function `keep-action-log`
       (#188) task 3.1 builds; then keep its last 1,000 characters and discard the rest. Write
       none of the output to disk or to the execution row.
-- [ ] 2.6 Where any check did not pass, restore every path git does not ignore to the changes
-      read before the checks, and remove any other untracked file. Then start the worker once
-      more through the budget gate, with the run's prompt followed by each such check's command,
-      result, exit code and kept output, inside the delimiters an item's untrusted text uses.
-      Then read `changed` again, stage and sign again where #153 is built, and run every check
-      again. On a conflict resolution, add the second run's changes to the same merge commit.
-      Never start a third run for the checks. Where the second run leaves no change (against the
-      base for a new pull request, against the pull request's head for a later push), publish
-      nothing. Where the gate refuses the second run, or it exits with an error or is killed for
-      a limit, publish the changes read before it as a draft with the first round's result and
-      the first run's summary. Otherwise take the summary from the second run.
+- [ ] 2.6 Where any check did not pass, restore every path git does not ignore to the changes read
+      before the checks, remove any other untracked file, and empty the outbox; where #171
+      keeps the worker's git index copy there, make that copy afresh. Then start the worker
+      once more through the budget gate, with the run's prompt followed by each such check's
+      command, result, exit code and kept output, inside the delimiters an item's untrusted
+      text uses, escaping every occurrence of the closing delimiter in the output. Then read
+      `changed` and the declarations again, apply task 2.1's refusals to them, stage and sign
+      again where #153 is built, and run every check again. On a conflict resolution, add the
+      second run's changes to the same merge commit. Never start a third run for the checks.
+      Where the second run leaves no change (against the base for a new pull request, against
+      the pull request's head for a later push), publish nothing. In four cases, publish the
+      first run's changes, as read before the second run, as a draft with the first round's
+      result and the first run's summary: the gate refuses the second run; the second run
+      exits with an error; it is killed for a limit; or a refusal refuses its changes.
+      Otherwise take the summary from the second run.
 
 ## 3. Publishing and recording
 
@@ -95,7 +103,8 @@
       `CodeHost` method backed by GitHub's `convertPullRequestToDraft` mutation.
 - [ ] 3.4 Add `checks: [[{ command, result, exitCode, seconds }]]` to the execution row, one list
       per round, with `result` one of `passed`, `failed`, `timed-out`, `not-run`. `exitCode` is
-      null for `timed-out` and `not-run`; `seconds` is null for `not-run`.
+      null for `timed-out` and `not-run`, and for a `failed` check that could not start or that a
+      signal ended; `seconds` is null for `not-run` and for a check that could not start.
 - [ ] 3.5 Tests for each scenario in the task-execution delta. The worker-user scenario runs
       where `IGOR_TEST_WORKER_USER` is set, as `worker-user`'s task 7.1 does.
 
