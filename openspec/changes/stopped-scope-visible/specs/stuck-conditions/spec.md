@@ -5,51 +5,53 @@
 `igor serve` SHALL NOT exit because of a condition, whatever its scope: the Igor's own
 credential, the role it serves, or every seat that role could spend from. While conditions are
 open it SHALL go on polling, SHALL take no new item in a stopped scope, as `condition-backoff`
-requires, and SHALL state in each cycle's report which scopes are stopped and on which cure keys.
-Each condition SHALL clear while the process runs, in every way the change that opens it says
-it clears. Among them: `condition-backoff`'s probe; for a refused GitHub App credential, a token
-minted again; and, for a read-cleared condition (#171's *A read-cleared condition opens on a
-failing read and clears on a passing one*), a later read that passes. A fix the process does not
-reread SHALL take effect when the process next starts. That covers every fix in the unit's
-environment file. It also covers a fix in the lore repository to a file the process reads only
-at start, as opposed to one it rereads at each cycle such as #179's `igor.config.yaml`. That
-second case lasts until Igor pulling its lore checkout, which #176 is to specify, is built. Refusing to start on a bad setup is not affected, as
-*A process that refuses to start exits with status 78* specifies.
+requires, and SHALL state in each cycle's report which scopes are stopped, on which cure keys,
+and what would cure each. Each condition SHALL clear while the process runs, in every way the
+requirement defining its kind says it clears: `condition-backoff`'s probe; for a refused GitHub
+App credential, a token minted again, as `surface-adapter` says; and, for a read-cleared
+condition, a later read that passes, as #171's *A read-cleared condition opens on a failing read
+and clears on a passing one* says.
+
+A fix the process does not reread SHALL take effect when the process next starts. That covers
+every fix in the environment its supervisor gives it: the unit's environment file, or the
+compose file's `environment:`. A fix in the lore repository SHALL take effect once a person has
+updated the server's lore checkout to hold it: at the next cycle for a file the process rereads
+at each cycle, such as `igor.config.yaml` under #179, and at the next start for a file it reads
+only at start. The lore sentence holds until #208 (`lore-pull`) replaces it. Refusing to start
+on a bad setup is not affected by this requirement, as *A process that refuses to start exits
+with status 78* specifies.
 
 #### Scenario: A condition on the Igor's own credential leaves the service running
 
 - **WHEN** a condition naming the Igor's own credential is open
-- **THEN** the service goes on polling and takes no new item
+- **THEN** the service goes on polling
 - **AND** each cycle's report names the cure key and what would cure it
 
 #### Scenario: A stopped role leaves the service running
 
 - **WHEN** a condition stops the role this process serves
 - **THEN** the service goes on polling, and probes once the condition's cooldown has passed
-- **AND** each cycle's report names the cure key
+- **AND** each cycle's report names the cure key and what would cure it
 
 #### Scenario: Every seat stopped leaves the service running
 
 - **WHEN** a condition has stopped each seat the role this process serves could spend from
-- **THEN** the service goes on polling and reports those cure keys
+- **THEN** the service goes on polling, and each cycle's report names those cure keys and what
+  would cure each
 
 #### Scenario: A cure made while the service runs is picked up without a restart
 
-- **WHEN** a person fixes, while the service is running, a cure that lies outside Igor's own
-  files, such as granting the GitHub App a permission a role needs
+- **WHEN** a condition stops a role because a tool its `commands` need is missing on the server,
+  and a person installs the tool while the service runs
 - **THEN** the service takes work again once its probe finds the fix
 
-#### Scenario: A passing read clears a read-cleared condition
-
-- **WHEN** a read-cleared condition is open and a later read of what it names passes
-- **THEN** the condition clears, with no probe item taken
-
-#### Scenario: A fix in the lore repository waits for a restart
+#### Scenario: A fix in the lore repository while the service runs
 
 - **WHEN** a person merges a fix to the lore repository, in a file the process reads only at
-  start, while the service runs, before Igor pulling its lore checkout is built
+  start, while the service runs, before #208 (`lore-pull`) is built
 - **THEN** the running process keeps the configuration it read at start
-- **AND** the fix takes effect when the process next starts
+- **AND** the fix takes effect when the process next starts after a person has updated the
+  server's lore checkout
 
 #### Scenario: A fix in the environment file waits for a restart
 
@@ -61,19 +63,31 @@ second case lasts until Igor pulling its lore checkout, which #176 is to specify
 ### Requirement: A process that refuses to start exits with status 78
 
 When `igor serve` refuses to start, it SHALL log the reason and exit with status 78. A refusal is
-the failure of a check a requirement says refuses a start, in its run at start: before the first
-cycle, such as config validation, or before the first model call, such as #174's check that the
-pinned skills load. The same check failing on a later reread, such as #179's reread of
-`igor.config.yaml` at a cycle, is not a refusal. It SHALL NOT exit with status 78 for any other
-reason. The systemd unit this repository ships SHALL set `Restart=on-failure` and SHALL list 78,
-and no other status, in `RestartPreventExitStatus=`. The compose file this repository ships SHALL
-set `restart: on-failure:3` on each Igor's service. Task 1.6 measures that systemd then does not
-restart a refusal, shows the unit failed, and keeps Igor's reason in its journal; task 1.8
-measures compose.
+the failure of a check a requirement says refuses a start, when that check runs as the process
+starts: before the first cycle, such as config validation, or before the first model call, such
+as #174's check that the pinned skills load. A check that fails because GitHub or the model
+provider did not answer, or because GitHub refused the App's credential, is not a refusal: the
+process SHALL exit with status 1, which the shipped supervisors restart. The same check failing on a later reread, such as #179's reread of
+`igor.config.yaml` at a cycle, is not a refusal. Nor is a failing check at start where another
+requirement has the process start instead on a configuration that passed before, as #208
+(`lore-pull`) does for a process restarting after a failing lore commit landed. The process
+SHALL NOT exit with status 78 for any other reason.
+
+The systemd unit this repository ships SHALL set `Restart=on-failure` and SHALL list 78, and no
+other status, in `RestartPreventExitStatus=`, so that systemd restarts a crash, leaves a refusal
+down with the unit failed, and leaves a clean exit down with the unit inactive.
+
+The compose file this repository ships SHALL set `restart: unless-stopped` on each Igor's
+service, and SHALL mark the process as running under compose. A process so marked that refuses
+to start SHALL, after logging its reason, wait before it exits 78. The wait SHALL grow with each
+refusal in a row of that container, and SHALL reset once a start passes every check that
+refuses a start. A process not so marked, such as one the systemd unit runs, SHALL exit 78
+without waiting. A signal to stop SHALL end the wait at once, and the process SHALL then exit as
+it does on that signal at any other time.
 
 #### Scenario: A bad setup still refuses to start
 
-- **WHEN** a process starts with a configuration that fails validation
+- **WHEN** a process starts for the first time with a configuration that fails validation
 - **THEN** it logs which check failed and exits with status 78 before its first cycle
 
 #### Scenario: systemd does not restart a refusal
@@ -82,21 +96,48 @@ measures compose.
 - **THEN** systemd does not restart it
 - **AND** the unit shows as failed, and its journal holds the reason Igor logged
 
-#### Scenario: Compose retries a refusal three times, then leaves it down
+#### Scenario: Compose retries a refusal more slowly each time
 
-- **WHEN** `igor serve`, run by the shipped compose file, exits with status 78 each time it starts
-- **THEN** compose restarts it at most three times
-- **AND** the container then stays down, and its log holds the reason Igor logged
+- **WHEN** `igor serve`, run by the shipped compose file, refuses to start each time compose
+  starts it
+- **THEN** each attempt logs its reason, and waits longer than the one before it, before it
+  exits with status 78
+- **AND** compose restarts it after each exit, and `docker compose logs` holds every attempt's
+  reason
+
+#### Scenario: A start that passes resets the wait
+
+- **WHEN** a container under the shipped compose file has refused three starts in a row, and
+  the next start passes every check
+- **THEN** a later refusal of that container waits as long as a first refusal does
+
+#### Scenario: A stop signal ends the wait
+
+- **WHEN** a container under the shipped compose file is waiting after a refusal, and an operator
+  runs `docker compose stop`
+- **THEN** the process stops at once, without waiting out the interval
+
+#### Scenario: A start check GitHub did not answer is not a refusal
+
+- **WHEN** `igor serve` starts while GitHub does not answer `surface-adapter`'s start check that
+  the App can act on the lore repository
+- **THEN** it exits with status 1, and systemd restarts it
+
+#### Scenario: systemd does not wait on a refusal
+
+- **WHEN** `igor serve`, run by the shipped unit, refuses to start
+- **THEN** it exits with status 78 as soon as it has logged the reason
 
 #### Scenario: A clean exit is not restarted
 
 - **WHEN** `igor serve`, run by the shipped unit, exits with status 0
 - **THEN** systemd does not restart it, and the unit shows as inactive, not failed
 
-#### Scenario: A crash is still restarted
+#### Scenario: A crash is restarted
 
 - **WHEN** a running `igor serve` ends on an uncaught error
-- **THEN** its exit status is not 78, and systemd restarts it
+- **THEN** its exit status is not 78, it exits without waiting, and systemd or compose restarts
+  it
 
 #### Scenario: A configuration error raised while running is not a refusal
 
@@ -123,13 +164,19 @@ Every open condition SHALL be readable from a command that takes no argument and
 stating for each one: the cure key, the scope it stops, how many times it has recurred, what would
 cure it, and when its probe is due. Some conditions clear without a probe: a read-cleared
 condition clears on a passing read and keeps no recurrence count, and one on a refused GitHub
-App credential clears when a token is minted again (`condition-backoff`). For such a condition
-the listing SHALL say what clears it in place of a probe time, and SHALL show a count only where
-the condition keeps one. A condition met by several Igors SHALL appear once,
-as the one condition it is. Where no condition is open, the command SHALL say so, and where the
-execution log the conditions are rebuilt from cannot be read, it SHALL say that instead. Reading changes nothing, as `condition-backoff`'s
-*Reporting tells a refused credential from an unreadable one, and clears nothing* requires of
-every report: no condition cleared, no count reset, no cooldown shortened.
+App credential clears when a token is minted again, as `surface-adapter` says. For such a
+condition the listing SHALL say what clears it in place of a probe time. It SHALL show a count
+only for a condition whose kind keeps one, as the requirement defining that kind says. A seat's
+refused credential, unlike the App's, keeps a count and a probe; for it, the count and the probe
+time SHALL be the ones `condition-backoff`'s
+*Reporting tells a refused credential from an unreadable one, and clears nothing* has budget
+reporting print, read from the same conditions.
+
+A condition is one cure key in the execution log every Igor appends to, so a condition several
+Igors met SHALL appear once, with the one count the log holds for its cure key. Where no
+condition is open, the command SHALL say so, and where the execution log the conditions are
+rebuilt from cannot be read, it SHALL say that instead. Reading the listing SHALL change
+nothing: no condition cleared, no count reset, no cooldown shortened.
 
 #### Scenario: A role-scoped stop is visible to somebody who did not know which role
 
