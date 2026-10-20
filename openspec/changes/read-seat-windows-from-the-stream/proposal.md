@@ -182,26 +182,28 @@ weekly (Adam, 2026-09-28). The smallest gap between observed resets is a fallbac
     `2026-10-11-three-call-run-its-one-event.jsonl`, since that run got one event, after its
     first call (task 1.1a); whether ordinary runs do too is task 1.1b.
 
-41. **A probe runs from `/var/lib/igor/probes`, and only where no directory above it can be
-    written by any user but root and the Igor.** This change's choice, fixing a gap the
-    2026-10-19 consistency read found: the probe ran under `/tmp`, which every user can write.
-    The probe's working directory and `HOME` are made there,
-    under the state directory the shipped unit gives Igor, which the container image also
-    creates. Before each probe, every directory from the working directory up to `/` is checked
-    for its owner and mode as well as for a `.claude` or `CLAUDE.md`. Because nobody else can
-    write there, nothing can be planted between the check and the spawn. A probe the check
-    refuses is recorded as one that errored, a spend row with no cost and no event, so the
-    hourly limit and the five-hour back-off space its retries and a crossing probe cannot hold
-    a seat forever.
-    This decision accepts one limit. The guarantee holds against the worker only once #175's (`worker-user`) code runs it as a
-    separate user. Before that, the worker runs as the Igor's own user and can write wherever
-    the Igor can, the probe's directories included.
-    *Rejected:* a directory under the system's temporary directory with only decision 29's
-    check. Any user, the worker user among them, can write `/tmp/.claude`, which fails every
-    probe if it is there at the check, or loads into a call holding a seat token if it is
-    written after. *Rejected:* `~/.local/state/igor`, #174's state directory off the unit: it
-    lies under the Igor user's home, whose `~/.claude`, which Claude Code creates, would fail
-    every probe.
+41. **A probe runs from `/var/lib/igor/probes`, and only where no directory from its own up to `/`
+    can be written by any user but root and the Igor.** This change's choice, which approving the
+    change approves. It fixes a gap the 2026-10-19 consistency read found: the probe ran under
+    `/tmp`, which every user can write. `/var/lib/igor` is the state directory the shipped systemd
+    unit gives Igor, and the container image creates it too. Each probe gets two new directories in
+    `/var/lib/igor/probes`, its working directory and its `HOME`. Immediately before the probe,
+    each directory from the working directory up to `/` must be owned by root or the Igor, writable
+    by no other user, and hold no `.claude` or `CLAUDE.md`. Once #175's (`worker-user`) code runs
+    the worker as a separate user, nobody else can write those directories, so nothing can be
+    planted between the check and the spawn. This decision accepts that until then the worker runs
+    as the Igor's own user, and can write wherever the Igor can, these directories included. A
+    probe the check refuses is recorded as one that errored: a spend row with no cost and no event.
+    The hourly limit on probes and the five-hour back-off after a probe with no event then space
+    out its retries. And the probe made at a seat's crossing, once its line has risen past its last
+    reading, cannot hold the seat forever: once it is refused, the gate decides on the reading it
+    has.
+    *Rejected:* a directory under the system's temporary directory with only decision 29's check,
+    for a `.claude` or `CLAUDE.md` alone. Any user, the worker user among them, can write
+    `/tmp/.claude`, which fails every probe if it is there at the check, or loads into a call
+    holding a seat token if it is written after. *Rejected:* `~/.local/state/igor`, #174's state
+    directory where Igor runs off the shipped unit: it lies under the Igor user's home, whose
+    `~/.claude`, which Claude Code creates, would fail every probe.
 
 **Still open:**
 
