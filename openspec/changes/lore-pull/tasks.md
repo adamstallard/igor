@@ -4,9 +4,12 @@
       (`stopped-scope-visible`) are built: this change uses #171's seat files, read-cleared
       condition and seat removal, #179's per-cycle reread and heartbeat timer, and modifies #82's
       requirement
-- [ ] 0.2 Read Adam's answers to the proposal's *Still open* questions and proposed decisions,
-      which go into the proposal's *Decisions* section and this pull request's body, and change
-      the named requirements where an answer differs from the recommendation
+- [ ] 0.2 Read Adam's answers to the proposal's *Still open* questions, which go into the
+      proposal's *Decisions* section and this pull request's body, and change the named
+      requirements where an answer differs from what they are written to
+
+- [ ] 0.3 Four facts are measured before the code that rests on them is built: tasks 1.5, 1.6,
+      5.2 and 5.4 each record one in `design.md`
 
 ## 1. Fetching
 
@@ -14,7 +17,10 @@
       branch has no upstream, where the upstream's remote URL is not a credential-free
       `https://github.com/` URL, or where the checkout's git config sets a key under `url.`,
       `http.`, `credential.`, `filter.`, `include.` or `includeIf.`, or `core.fsmonitor`,
-      `core.sshCommand` or `core.gitProxy`, naming the checkout and what is wrong
+      `core.sshCommand`, `core.gitProxy` or `core.alternateRefsCommand`, naming the checkout and
+      what is wrong. Check again before each git command in the checkout; where such a key has
+      appeared, run none, count a due fetch as failed and a read as a local fault, and name the
+      key in each cycle report
 - [ ] 1.2 Fetch once per poll interval of the configuration in force, on #179's heartbeat timer at
       every second firing, with the command `design.md` gives: the repository's URL named
       outright, into `refs/igor/lore/<role>-<rank>/fetched`, with no hook, no auto-gc, no
@@ -37,16 +43,22 @@
 - [ ] 1.5 Measure on a Linux host: four processes fetching into their own refs and checking out
       their own worktrees of one repository at the same moment, a hundred times, counting lock
       failures; and how long one fetch of the lore repository takes. Record both in `design.md`
-- [ ] 1.6 Measure with the shipped compose file that `docker compose kill -s HUP <service>`
-      reaches `igor serve`, which fetches and keeps running. Record it in `design.md`
+- [ ] 1.6 Measure with the shipped compose file and #192's image that `docker compose kill -s HUP
+      <service>` reaches `igor serve` through `tini`, and that `igor serve` fetches and keeps
+      running. Record it in `design.md`
+- [ ] 1.7 Pass `-c safe.directory=<checkout>` to every git command in the checkout and the
+      process's worktree, and test it in a checkout owned by another user
 
 ## 2. Reading one commit
 
 - [ ] 2.1 Create or repair the process's own worktree at `.igor/worktrees/<role>-<rank>` inside the
       lore checkout, with hooks disabled and no system-wide or per-user git config, and append `.igor/` to `.git/info/exclude` where that line is missing. Never
       run `git worktree prune`
-- [ ] 2.2 Before each lore read, check out the commit in the worktree with `--force --detach`,
-      hooks disabled and no system-wide or per-user git config, then `git clean -ffdx`
+- [ ] 2.2 Before each cycle start's lore read, check out the commit in the worktree with `--force
+      --detach`, hooks disabled and no system-wide or per-user git config, then `git clean
+      -ffdx`. After a refused read or a local fault, check out the `applied` commit again the
+      same way; where that fails, take no new item that cycle. A read of one file mid-cycle reads
+      the worktree as it stands
 - [ ] 2.3 Load the configuration, role files, seat files and, where `destination` is the lore
       repository, the lore entries, from the worktree. A relative path resolves against the directory
       holding `igor.config.yaml` in the lore checkout; where the result lies inside the checkout, read that path in the
@@ -61,7 +73,8 @@
       seats the fetched commit holds; with no `fetched` ref and a failed fetch, set it
       from the checkout's remote-tracking ref. Where that commit fails and `applied` exists and
       passes, start on `applied` with the condition open; with no `applied`, or an `applied` that
-      fails too, refuse to start, naming the commits read. Judge `applied` with every seat file it holds, so that a
+      fails too, refuse to start, naming the commits read. A first read that fails for a local
+      reason exits with status 1, with no fallback. Judge `applied` with every seat file it holds, so that a
       removed seat cannot make the commit that held it fail, then leave out every seat task 4.1
       leaves out, even where that leaves a role with no seat. A
       fetched commit whose roster drops the rank is refused as #179 says, with no fallback; an App
@@ -74,8 +87,13 @@
       says. An App check GitHub does not answer fails no read: the cycle runs on the applied
       commit with no condition. A passing read moves `applied` to it. A refused read keeps the commit `applied`
       names, with the seats task 4.1 leaves out, and opens the read-cleared condition
-      `lore:config:<role>-<rank>`, whose report names the commit, the file and the check and
-      quotes no value from the file. A passing read clears it
+      `lore:config:<role>` where it is not open, whose report names the commit, the file and the
+      check and quotes no value from the file. A passing read by any rank of the role clears it
+- [ ] 3.3b A read that fails while putting the commit in the worktree or reading a file from it,
+      the stages `design.md` names, is a local fault: run the cycle on `applied`, open or clear
+      no `lore:config:<role>`, and read again at the next cycle start. At the third such cycle
+      start in a row, open `lore:read:<role>-<rank>` naming the error; the process's next read
+      that is not a local fault clears it
 - [ ] 3.4 A fetch never changes the configuration or lore entries of the cycle already running
 - [ ] 3.5 Tests: the scenarios of *`igor serve` starts on the newest commit that passes*, *A lore
       read at each cycle start applies what passes and refuses what fails* and *Processes apply
@@ -83,7 +101,7 @@
 
 ## 4. Removed seat files
 
-- [ ] 4.1 After each fetch, list with the `git log` command `design.md` gives every seat file that some commit since the applied one deleted, and apply each removal at once
+- [ ] 4.1 After each fetch, list with the two commands `design.md` gives every seat file that some commit since the applied one deleted or the fetched commit lacks, and apply each removal at once
       through #171's task 3.7b, which drops the token, kills the workers using the seat and
       hands off their items, even while a worker runs and even where the commit fails. Leave each
       such seat out of the configuration in force until a read that passes holds its file
@@ -91,8 +109,9 @@
 - [ ] 4.2 Drop the seat from the set new workers draw on before killing the workers using it, so
       that no worker started during the removal receives its token
 - [ ] 4.3 Tests: the scenarios of *A removed seat file applies as soon as a fetch brings it*
-- [ ] 4.4 Test that the command lists a seat file renamed in a commit, and one deleted only in a
-      merge commit's resolution
+- [ ] 4.4 Test that the commands list a seat file renamed in a commit, one deleted only in a
+      merge commit's resolution, and one missing after a force-push to a commit that does not
+      descend from `applied`
 
 ## 5. The seat notice
 
@@ -114,7 +133,10 @@
       as #171's decision 44 settles it, so a lender is mentioned where someone else pushed to the
       pull request they opened, and no `owner` without a GitHub login's form; mention an owner even
       where #171's workflow already mentioned them on that pull request; and post nothing where
-      nobody is left. The notice reads as follows, and may be
+      nobody is left. Where a squash or rebase merge made the commit, judge the push that
+      brought the pull request's own last commit changing the file; first measure what GitHub's
+      list of pull requests for a commit returns for such a commit, and record it in
+      `design.md`. The notice reads as follows, and may be
       reworded:
 
       ```text
@@ -139,22 +161,29 @@ and are left alone.
       `MODIFIED` block that drops a scenario the in-force requirement has. If #82 is still open when this is built, also
       rewrite its task 0.3, its decision 6 and the passage in its `design.md` so that none says a
       lore fix waits for a restart
-- [ ] 6.2 #171: in `seat-budget`, *A seat's token travels as ciphertext in its file* decrypts "at
-      start, and at each cycle start", in place of "at start, and at each cycle start once #208
-      is built", #208 being this change's pull request; and *A removed seat file always takes effect* says "When a fetch of the lore
-      repository (`lore-pull`) brings a commit that removes a seat file", in place of "When a
-      pull of the lore checkout (`lore-pull`, #208) removes a seat file", and loses "Until #208 is
-      built, a running process keeps using a removed seat file's token until it restarts." Its scenario *A push runs no notice workflow* says that the
+- [ ] 6.2 #171: in `seat-budget`, *A seat's token travels as ciphertext in its file* says "at
+      start, and at each cycle start, where #179 rereads the configuration and #208 makes its
+      lore read", in place of "at start, and at each cycle start, where #179 rereads the
+      configuration and, once built, #208 makes its lore read", #208 being this change's pull
+      request, and loses "Until #208 pulls the checkout, the seat files change only when someone
+      updates the checkout by hand." *A removed seat file always takes effect* says "When a fetch
+      of the lore repository (`lore-pull`) brings a commit that lacks a seat file", in place of
+      "When a pull of the lore checkout (`lore-pull`, #208) removes a seat file"; says "The
+      removal applies as soon as the fetch brings it, as `lore-pull` specifies", in place of
+      "The removal applies at the next cycle start's lore read."; and loses "Until #208 pulls the
+      lore checkout, a seat file leaves the checkout only when someone updates the checkout by
+      hand." Its scenario *A push runs no notice workflow* says that the
       workflow does not run and Igor's notice comments on the commit once a process applies it,
       in place of "nothing comments on the commit". While #171 is open, also rewrite its task
-      3.7b's wait on #176, the issue this change specifies, or on #208, and the passages in its `proposal.md` and `design.md` that say Igor
+      3.7b where it waits on #176, the issue this change specifies, or on #208, whichever it names, and the passages in its `proposal.md` and `design.md` that say Igor
       does not pull yet
 - [ ] 6.3 #179: while it is open, rewrite its `proposal.md` item that a roster change waits on #176, and
       its `design.md` sentence "Until #176 builds pulling, that checkout changes only when a person
       pulls it on the host"
 - [ ] 6.4 `docs/deployment.md` says how a merged lore change reaches a running Igor: within one
       poll interval, at once with `systemctl reload` or `docker compose kill -s HUP <service>`,
-      and that a refused change shows as the condition `lore:config:<role>-<rank>`. It says local
+      and that a refused change shows as the condition `lore:config:<role>`, and a fault on one
+      server's disk or worktree as `lore:read:<role>-<rank>`. It says local
       edits on the server are not applied by `igor serve`, and that `igor run` on the server
       reads the shared checkout, which nothing updates, so a person pulls it before a run by
       hand. Remove any sentence, including #82's task 4.2 text, saying that a lore change needs a

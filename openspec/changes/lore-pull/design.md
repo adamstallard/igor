@@ -26,8 +26,18 @@ lore read runs, in its worktree,
 `git -c core.hooksPath=/dev/null checkout --force --detach <commit>` and then
 `git clean -ffdx`. The forced checkout and the clean discard any change or extra file left in
 the worktree. Every one of these commands runs with no hook and with `GIT_CONFIG_NOSYSTEM=1` and
-`GIT_CONFIG_GLOBAL=/dev/null`, so that only the checkout's own configuration, which the start
-has checked, is read.
+`GIT_CONFIG_GLOBAL=/dev/null`, so that only the checkout's own configuration, which the process
+checks before each command, is read. Each also passes `-c safe.directory=<checkout>`. git reads
+`safe.directory` only from system, per-user or command-line configuration, and under compose the
+checkout is a host directory owned by a host user, which #192's image allows with a system-wide
+`safe.directory` line these commands skip. Without the flag every fetch and checkout there would
+fail on the checkout's ownership.
+
+A refused read, or one that failed for a local reason, leaves the worktree at the commit it
+tried. Before the cycle runs, the process checks out the commit `applied` names again, the same
+way, so that the lore entries read before each item, and #171's re-read of one seat file, come
+from the commit the cycle applies. Those reads take the file as the worktree holds it and never
+check out another commit.
 It then loads the configuration from the worktree exactly as `main` loads from a checkout.
 `loadConfig`'s check that the lore store, the directory of lore entries that `destination`
 names, sits at the root of its repository then runs against the worktree, where `destination`
@@ -42,13 +52,18 @@ where it lies outside, such as `seatKey: ../seat.key`, it reads that file. Resol
 worktree instead would point `../seat.key` at `.igor/worktrees/seat.key`, a file that is not
 there.
 
-After each fetch, even mid-cycle, the process finds the seats to keep out with
+After each fetch, even mid-cycle, the process finds the seats to keep out of the configuration in force with two commands. The
+first is
 `git log --no-renames -m --first-parent --diff-filter=D --name-only <applied>..<fetched> -- seats/`.
+The second, `git diff --no-renames --diff-filter=D --name-only <applied> <fetched> -- seats/`,
+compares the two trees directly. It catches a seat file the fetched commit lacks where `fetched`
+does not descend from `applied`, as after a force-push of the lore branch, which the range
+of the first command would miss. The seats to keep out are those either command lists.
 `--no-renames` reports a renamed seat file as deleted, which by default git would report as a
 rename. `-m --first-parent` compares each merge with its first parent, so a deletion a merge
-brings, or one made while resolving a merge, is listed. The command thus lists every seat file
-that some commit since the applied one deleted. Task 4.4 tests a rename and a deletion made only
-in a merge's resolution. The command reads the object store without touching a working tree.
+brings, or one made while resolving a merge, is listed. The first command thus lists every seat
+file that some commit since the applied one deleted. Task 4.4 tests a rename and a deletion made only
+in a merge's resolution. Both commands read the object store without touching a working tree.
 Finding a removal decrypts nothing, so seat files are still decrypted only on a lore read
 (decision 4). A seat on that list stays out until a read that passes holds its file again
 (decision 15), even where a later commit adds the file back. A process with no applied ref has
@@ -62,9 +77,11 @@ updated, so processes share no ref. `<owner>/<repo>` and `<branch>` come from th
 checkout's branch, which the start checks is a credential-free `https://github.com/` URL.
 Because the checkout's `.git/config` is still read, the start also refuses any key there under
 `url.`, `http.`, `credential.`, `filter.`, `include.` or `includeIf.`, and `core.fsmonitor`,
-`core.sshCommand` and `core.gitProxy`. A URL rewrite could send the fetch to SSH, an extra header
+`core.sshCommand`, `core.gitProxy` and `core.alternateRefsCommand`, and the process checks the
+file again before each git command, since anyone who can write it could add a key after start. A URL rewrite could send the fetch to SSH, an extra header
 or a credential helper could authenticate it as a person, a proxy could take it elsewhere, an
-include could bring any of these from another file, and a filter or fsmonitor runs a command.
+include could bring any of these from another file, and a filter, an fsmonitor or an alternate
+refs command runs a command.
 
 The fetch runs as a child process, so it never holds up #179's heartbeat timer it rides on: the
 heartbeat is written at each firing whether or not a fetch is running. A fetch rides every second
@@ -109,6 +126,25 @@ loses that way of changing it. Such an edit is the drift `docs/architecture.md` 
 configuration that differs by machine, so the loss is intended; the start reports each such
 change so that it is not silently ignored.
 
+## Telling a refused commit from a local fault (Adam, 2026-10-19)
+
+A lore read has two stages. The first puts the commit in the process's worktree and reads the
+files the commit holds: `worktree add` or `repair`, the forced checkout, the clean, and each read
+of a file that is there. The second runs the startup checks on what was read, including the
+check that each file the configuration needs exists. A failure in the first stage is a local
+fault. A failure in the second is a refused commit, except an App check that GitHub did not
+answer or a credential GitHub refused, neither of which fails the read. The stage, not the error
+text, decides, so a git message worded differently in a later git release does not move a fault
+from one side to the other. A missing role file is therefore a refused commit: the checkout
+succeeded, and the second stage found the file absent.
+
+A refused commit opens `lore:config:<role>`, which a passing read by any rank clears. A local
+fault opens nothing until the third cycle start in a row, then `lore:read:<role>-<rank>`. The
+count lives in the process's memory and starts at zero with the process. A local fault at start
+exits with status 1. That is the proposal's recommendation, still open for Adam, and the
+requirements are written to it. Under it, a fault that outlasts the restart shows in the
+supervisor's log, not as a condition.
+
 ## A restart starts on a commit that passed (Adam, 2026-10-18)
 
 A process that restarts fetches first, then reads the commit `fetched` names; where that fetch
@@ -116,7 +152,7 @@ fails, `fetched` still names what it fetched before stopping. Where that commit 
 checks and `applied` exists, the process reads `applied`. Where that passes, it starts there with
 the refused-read condition open. Where `applied` fails too, as after an Igor upgrade that tightens
 a check, the process has nothing that passes and refuses to start, naming both commits (decision
-17, proposed). A process with no `applied` ref refuses to start on a failing commit: one that has
+17). A process with no `applied` ref refuses to start on a failing commit: one that has
 never applied a commit, or whose checkout or volume was replaced.
 
 `applied` names a commit that may still hold a seat file a later commit deleted. The
@@ -125,10 +161,9 @@ fetch, so a removal survives a restart without any record beyond the two refs an
 between them.
 
 A process that has never fetched, and whose first fetch fails, sets `fetched` to the commit the
-checkout's own remote-tracking ref names, the one the operator last fetched (decision 16,
-proposed).
+checkout's own remote-tracking ref names, the one the operator last fetched (decision 16).
 
-## The seat notice goes out at most once (decision 14, proposed)
+## The seat notice goes out at most once (Adam, 2026-10-19)
 
 Each process applies the newest commit it fetched, and several processes apply most commits, so
 without a guard a seat-file change would be announced once per process. The guard is a record on
@@ -161,7 +196,7 @@ always told. If the state branch is deleted, which `work-discovery` allows since
 cache, a process applying a change late, after another process announced it, would announce it
 again.
 
-## Why no TLA+ model here (decision 19, proposed)
+## Why no TLA+ model here (Adam, 2026-10-19)
 
 The repository owner's rule asks for a TLA+ model beside the spec where a change is about
 concurrency, crashes between writes, or state that several processes share. This change has
@@ -171,8 +206,9 @@ three such places:
   off one item while ranks run on different commits. Those rules and their invariants live in
   #179's model, so a model here would copy #179's heartbeat and claim logic. The gap exists in
   #179 already: a person restarting ranks one at a time after a lore change gives the ranks
-  different rosters and poll intervals for a while. The proposal recommends that #179's model
-  give each process its own view of the roster and the poll interval.
+  different rosters and poll intervals for a while. #179's model holds the roster and the
+  poll interval the same for every process. Decision 21 makes changing that #179's task, reported
+  to #179 and not yet taken up there: its model would give each process its own view of both.
 - **The two refs across a crash.** Each process writes only its own two refs. A crash after
   moving `fetched` and before reading leaves `fetched` ahead of `applied`, which is the state a
   restart already starts from. A crash after a passing read and before moving `applied` reruns
@@ -189,6 +225,8 @@ three such places:
   fetch of the lore repository takes, which says how often a fetch would be killed when the
   next one is due (task 1.5).
 - That `docker compose kill -s HUP <service>` reaches `igor serve` under the shipped compose
-  file, where `igor` is the container's main process, and that the process keeps running (task
-  1.6).
+  file, through the `tini` that #192's image runs as the container's main process, and that the
+  process keeps running (task 1.6).
+- What GitHub's list of pull requests for a commit returns for a commit a squash or rebase merge
+  made, which decision 14's exclusion of the lender's own push relies on (task 5.4).
 - That a Contents API `PUT` without `sha` fails on an existing file (task 5.2).
