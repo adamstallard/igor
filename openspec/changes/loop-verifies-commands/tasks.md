@@ -7,7 +7,8 @@
 - [ ] 0.3 Start after `keep-action-log` (#188) and then `review-evidence` (#190) have merged.
       Archive after both, and after #175 and #179.
 - [ ] 0.4 Measure whether an Igor's GitHub App, with the permissions `docs/deployment.md` lists,
-      may call `convertPullRequestToDraft` on its own pull request. Record the result in this
+      may call `convertPullRequestToDraft` and `markPullRequestReadyForReview` on its own pull
+      request. Record the result in this
       change's proposal, replacing its *Still open* item on it. Where it may not, task 3.3's
       comment leaves out the Tests row's clause `the pull request is a draft because of it`
       (#190's task 2.1), and ends
@@ -15,6 +16,12 @@
 
       ```
       Igor could not return this pull request to draft.
+      ```
+
+      Where it may not mark one ready, task 3.3's comment ends with this line, verbatim:
+
+      ```
+      Igor could not mark this pull request ready for review.
       ```
 
 - [ ] 0.5 Measure whether the code host opens a draft pull request on each kind of repository
@@ -31,6 +38,11 @@
       exits with the same code. Record the result in this change's proposal, replacing its
       *Still open* item on it. Where it can be told apart, count that report as a check that
       could not start; where it cannot, record the check as failed with that exit code.
+
+- [ ] 0.7 Measure whether GitHub's timeline for a pull request names the actor of each
+      conversion to draft and each mark-ready, so Igor can tell its App's own conversion from a
+      person's. Record the result in this change's proposal, replacing its *Still open* item on
+      it. Where it cannot, task 3.3 never marks a pull request ready.
 
 ## 1. The `repos` map
 
@@ -81,22 +93,29 @@
       stderr as it runs. Redact that with credential redaction, the function `keep-action-log`
       (#188) task 3.1 builds; then keep its last 1,000 characters and discard the rest. Write
       none of the output to disk or to the execution row.
-- [ ] 2.6 Where any check did not pass, restore every path git does not ignore to the changes
-      read before the checks, remove any other untracked file, empty the outbox and write back
-      the first run's declarations; under `serve`, emptying the outbox removes #175's git
-      index copy, so make it afresh as #175 makes it for a run. Then start the worker once
+- [ ] 2.6 Where any check did not pass, restore the tree: under `serve` as the worker user,
+      from the tree object #175 records before the checks; under `run` as the Igor's own
+      account. Restore every path git does not ignore to the changes read before the checks
+      (where #153 is built, the first commit's tree), and remove any other untracked file.
+      Empty the outbox and write back the first run's declarations; under `serve`, emptying the
+      outbox removes #175's git index copy, so make it afresh as #175 makes it for a run. Then start the worker once
       more through the budget gate, with the run's prompt followed by each such check's
       command, result, exit code and kept output, inside the delimiters an item's untrusted
       text uses, escaping every occurrence of the closing delimiter in the output. Then read
-      `changed` and the declarations again, apply task 2.1's refusals to them, stage and sign
-      again where #153 is built, and run every check again. On a conflict resolution, add the
-      second run's changes to the same merge commit. Never start a third run for the checks.
-      Where the second run leaves no change (against the base for a new pull request, against
-      the pull request's head for a later push), publish nothing. In four cases, publish the
-      first run's changes, as read before the second run, as a draft with the first round's
-      result and the first run's summary: the gate refuses the second run; the second run
-      exits with an error; it is killed for a limit; or a refusal refuses its changes.
-      Otherwise take the summary from the second run.
+      `changed` and the declarations again, and apply task 2.1's refusals to them. Where #153
+      is built, make the second run's changes a second commit on top of the first run's signed
+      commit, through #153's steps on that commit's diff alone, with its own trailers, also on
+      a conflict resolution, where it goes on top of the merge; make no second commit where
+      the second run changed nothing. Where #153 is not built, publish both runs' changes as
+      one commit, and on a conflict resolution add them to the merge commit. Then run every
+      check again on the tree the second run leaves. Never start a third run for the checks.
+      Where that tree equals the base for a new pull request, or the pull request's head for a
+      later push, publish neither run's changes. In five cases, publish the first run's
+      changes, as read before the second run (where #153 is built, its signed commit alone), as
+      a draft with the first round's result and the first run's summary: the gate refuses the
+      second run; the second run exits with an error; it is killed for a limit before reporting its result; a refusal
+      refuses its changes; or #153 refuses to commit them. Otherwise take the summary from the
+      second run.
 
 ## 3. Publishing and recording
 
@@ -119,11 +138,18 @@
       ```
 
       Where a check of the last round did not pass, return the pull request to draft with a new
-      `CodeHost` method backed by GitHub's `convertPullRequestToDraft` mutation.
+      `CodeHost` method backed by GitHub's `convertPullRequestToDraft` mutation. Where every
+      check passed, the role's `allow` lists `pr`, the claim is held, and the pull request is a
+      draft because Igor made it a draft for a failed check, with no change to its draft state since (the
+      latest draft event on its timeline is the App's own, or it was opened as a draft for a
+      failed check and never marked ready), mark it ready with a `CodeHost` method backed by
+      `markPullRequestReadyForReview`.
 - [ ] 3.4 Add `checks: [[{ command, result, exitCode, seconds }]]` to the execution row, one list
       per round, with `result` one of `passed`, `failed`, `timed-out`, `not-run`. `exitCode` is
       null for `timed-out` and `not-run`, and for a `failed` check that could not start or that a
-      signal ended; `seconds` is null for `not-run` and for a check that could not start.
+      signal ended; `seconds` is null for `not-run` and for a check that could not start. The
+      row also holds each worker run's cost and transcript, and `draftedForChecks`: true where
+      Igor opened the pull request as a draft, or returned it to draft, for a failed check.
 - [ ] 3.5 Tests for each scenario in the task-execution delta. The worker-user scenario runs
       where `IGOR_TEST_WORKER_USER` is set, as `worker-user`'s task 7.1 does.
 
