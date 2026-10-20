@@ -15,7 +15,15 @@
 - [ ] 0.3 Check that #179's retry of a refused write to a state file more than one process
       writes covers appends to `executions.ndjson`, with the ranks a role runs appending
       together. Record the result in `design.md`. If it does not, report it to #179: a lost
-      `pre-worker` row undercounts, and a lost `outage` row lets an outage's failures count
+      `pre-worker` row of a matching failure undercounts, a lost run row of a worker start or a
+      lost row of a different failure joins the failures on either side of it into one count
+      (`model/findings/LateRows.cfg`), and a lost `outage` row lets an outage's failures count
+- [ ] 0.4 Build what Adam decides on the model's three findings (the proposal's *Still open*),
+      and make the model match. If he takes `SetDownOnce`, set it TRUE in every configuration,
+      negatives included, and add `NoDoubleSetDown` to the two-rank configurations. For each
+      other finding he answers with a rule, add a constant for it, TRUE in every configuration,
+      so that the finding's file in `model/findings/` passes and moves to the configurations CI
+      runs
 
 ## 1. The agreement
 
@@ -24,6 +32,9 @@
       on different items in a row end the cycle
 - [x] 1.2 `design.md`: the count rebuilt from `executions.ndjson`, what "identical" means, how an
       outage is excluded, and where the set-down is said
+- [x] 1.3 `model/PreWorkerBreaker.tla`, a TLA+ model of the breaker across ranks, with its
+      configurations, negatives and findings, and `.github/workflows/tla-pre-worker-breaker.yml`,
+      which runs TLC on them (`design.md`, *What the model proves*)
 
 ## 2. Which surface failed
 
@@ -163,3 +174,7 @@
 
 - [ ] 6.1 `npm test` passes; `openspec validate pre-worker-breaker --strict` passes
 - [ ] 6.2 Gate two closes #155
+- [ ] 6.3 In the commit that archives this change, point
+      `.github/workflows/tla-pre-worker-breaker.yml`'s paths and working directory at the
+      archived change's `model/`, or the archive's push runs the workflow against a directory
+      that no longer exists

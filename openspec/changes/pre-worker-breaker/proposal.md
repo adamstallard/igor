@@ -220,6 +220,70 @@ approval:
   state branch, which may be public. Adam chose a readable record knowing other records already
   carry such text (decision 15). Whether the redaction should strip more is for Adam, beside
   #213's open question on the transcript.
+- **The model finds a set-down after fewer than three failures in a row, where a row lands
+  late or is lost** (`model/findings/LateRows.cfg`; `design.md`, *What the model proves*). The
+  breaker counts only rows that have landed. Suppose a worker start's row, or a different
+  failure's row, lands only after the item's next run has counted: it then no longer breaks the
+  sequence. A late `outage` row likewise no longer excludes its pair. Decision 19 accepts that
+  cost, a set-down a reply lifts, for an `outage` row that never lands; the model shows that cost
+  for every row, late as well as lost. The model passes once each row lands before any run next claims its item.
+  *Recommended:* a run waits for its breaker rows to land before it gives the claim back, so the
+  next run of the item reads them. That leaves one late case: the `outage` row is written by the
+  pair's second run, after the first item's claim was given back, so another rank may count the
+  first item's failure before the row lands. That set-down is made before the outage is known,
+  which decision 10 already accepts. For rows that are lost rather than late, decision 19's
+  acceptance is widened to every row kind, at the same cost.
+- **The model finds two set-downs of one item by two ranks** (`model/findings/
+  DoubleSetDown.cfg`). Two ranks read the item as free. One claims it, fails a third time and
+  sets it down, releasing it. The other's claim message then lands on the released item, holds
+  it, fails the same way and posts a second set-down. Each run says so on the run that sets the
+  item down, as the spec requires, and no requirement forbids a second. *Recommended:* a
+  requirement that a run posts no set-down on an item already deferred, with a scenario
+  (`SetDownOnce` in the model; with it, that configuration passes `NoDoubleSetDown`).
+- **The model finds a lone rank's withdrawal releasing the item under a sibling**
+  (`model/findings/WithdrawRace.cfg`). Under decision 22 a rank tests the item's claim messages
+  and then posts its withdrawal, two tracker calls. A sibling whose claim message lands and
+  verifies between them is working the item when the withdrawal releases it, and later sets the
+  item down while no claim message of its own counts. This change's lone-rank set-down makes
+  these two calls, and so does #179's rule for a claim message that failed to post.
+  *Recommended:* the withdrawal releases only the claim messages posted before the rank's test,
+  so a sibling's later message still counts. That is a change to how #179 orders claim messages
+  against a release, so #179 decides it, and this change's withdrawal follows.
+- **Whether a run that records a cure key takes part in the two-in-a-row rules.** The rules name
+  failures before the worker, and a tracker failure can record a cure key, so as written two such
+  runs in a row end a cycle, and one between two identical failures breaks "in a row". The model
+  leaves such a run out of both rules (`design.md`, *What the model proves*). *Recommended:* leave
+  it out, as #101's condition already handles that fault, and say so in *Two identical failures
+  before the worker on different items end the cycle*.
+- **Findings of the 2026-10-20 consistency read, for this change's next revision.** Each is for
+  this change's author unless it names Adam or another change, and none is fixed yet:
+  - The new rule counts a tracker's refusal toward the outage rule, while the in-force
+    `work-claiming` rule says a run ended because a surface did not answer "SHALL be
+    distinguishable from a refusal about the item itself", and the change leaves that rule
+    standing. This is the open question on refusals above, now also a conflict with in-force text.
+  - The in-force rule stops the cycle on two runs whose host did not answer; the new rule tags a
+    clone that the code host did not answer with the source `tree`, which never counts. The open
+    question *A code-host outage seen through clones*, above, meets the same in-force text.
+  - Decision 22's set-down withdrawal by a rank whose verification failed conflicts with #179's
+    rule that such a rank holds nothing and removes no label, and both changes state who posts
+    the set-down. Reported to #179 below.
+  - The spec restates what the redaction strips, where #188's *Credential redaction* is the one
+    rule; as described it would not catch a secret by its exact value, such as a seat token no
+    pattern matches. It belongs with the open question on two redaction rules.
+  - #99 asks that a fault's response or exit status be readable apart from its message. The masks
+    remove that status from `pre-worker` rows as well as `outage` rows, so neither row would meet
+    #99; the open question on status codes above covers only `outage` rows.
+  - *The second surface failure is recorded and does not set its item down* should say both
+    failures came before the worker, since `outage` rows name only those.
+  - `readLog` never throws: a failed read of a day's file reads as an empty one, so *A count that
+    cannot be read sets nothing down* cannot see the failure, and a missing day lets older rows
+    join one count, as `model/findings/LateRows.cfg` shows for a late row. It needs `readLog`
+    to report a failed read, and a rule for a partial read.
+  - `igor run --claim` runs one item outside any cycle, so its `pre-worker` row has no `cycle`,
+    and whether such a run counts as an item alone in its cycle is undecided. A question for
+    Adam.
+  - No scenario covers an outage-excluded failure of another signature between two identical
+    ones, which the count passes over.
 - **The set-down sentence names what lifts a deferral.** #141, which lets only someone with
   write access lift a deferral, changes that sentence if it lands first (task 3.2).
 
@@ -241,6 +305,11 @@ approval:
   whether such failures count, which
   decision 22 has answered. Each of #173 and #179 also says the other owns who posts the
   set-down; this change now states it (`work-claiming`, *Only the holder counts*).
+
+- **#179**, from this change's model: a rank alone on an item in the claim window tests the
+  item's claim messages and then posts its withdrawal, and a sibling's claim that lands and
+  verifies between the two is released under it. #179's rule for a claim message that failed to
+  post makes the same two calls. The proposal's *Still open* above carries the recommendation.
 
 **Conflict with what is in force, recorded and not resolved:** the in-force `graceful-handoff`
 scenario that makes budget the only reason to defer already disagrees with the in-force code,

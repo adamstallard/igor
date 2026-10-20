@@ -290,3 +290,125 @@ items and over catch-ups, defer it with no change to their deferral path. One mo
 not: `igor run --claim`, on an item whose own pull request has fallen behind its base, runs
 `catchUpItem`, which calls neither `shouldDefer` nor `noteHandoff`. A set-down there must defer
 the item too (task 4.1).
+
+## What the model proves
+
+[`model/PreWorkerBreaker.tla`](model/PreWorkerBreaker.tla) models the breaker in TLA+, and CI runs
+TLC, the TLA+ model checker, on it (`.github/workflows/tla-pre-worker-breaker.yml`). It models one
+role run as several ranks, its items, and each run's claim (read, post, verify). It models
+failures in the claim window, and failures after verification that are thrown or returned, each
+with or without a cure key (#101's mark of a
+fault in the Igor's own setup). It also models worker starts, the two two-in-a-row rules with
+their `outage` rows, and lifts of a deferral. Rows reach the execution log only when they land,
+which may be late, in any order, or never. Each set-down is checked against a ghost record of
+every failure, in the order the runs decided them.
+
+**What passes, and under what.** Each rule of the change is a constant, TRUE in the change as
+specified. Of the model's switches, three are not rules of the change: `SetDownOnce` is a rule
+proposed for a finding below, FALSE in every configuration CI runs; `PromptRows` and
+`AtomicWithdraw` are assumptions.
+
+- `PromptRows`: a row about an item lands before any run next claims the item, and before any run
+  already on the item decides its outcome, a failure or a worker start.
+- `AtomicWithdraw`: a rank alone on the item in the claim window tests the item's claim messages
+  and posts its withdrawal in one step (decision 22's test, and the `claimWithdrawn` post that
+  removes the role's label).
+
+Every configuration CI runs passes every invariant it checks. All of them assume
+`AtomicWithdraw`, and all but `PreWorkerBreakerLateRows.cfg` assume `PromptRows`; that one drops
+it and checks the two invariants that hold without it. `NoDoubleSetDown` is checked only with one
+rank, since two ranks violate it (`findings/DoubleSetDown.cfg`). Each file in `model/negative/`
+turns one rule off, keeps `PromptRows`, and checks only the invariant that breaks without the
+rule; TLC finds that violation, which shows the rule is needed. CI checks both kinds: the
+configurations must pass and the negatives must fail. `model/findings/` holds three
+violations of the spec as written, for Adam (*What the model shows the spec gets wrong*, below).
+
+| Invariant or property | Requirement it proves (`work-claiming`) |
+| --- | --- |
+| `NoSetDownByNonHolder`: a set-down comes from the holder, or from a rank in the claim window while no other rank holds the item | *A failure before the worker that repeats sets the item down*, "Only the holder counts" and "In the claim window, a rank alone on the item counts" |
+| `NoSetDownWithoutThree`: at least three recorded failures with the set-down's signature | the same requirement, "When a failure brings the count of identical ones to three or more" |
+| `NoSetDownWithoutThreeInARow`: three that the spec counts in a row, skipping the excluded ones | the same requirement, "In a row", "An outage is not the item's failure" and the cure-key rule; and *Two identical failures before the worker on different items end the cycle*, "Neither run SHALL count" |
+| `NoDoubleSetDown`: one set-down per deferral | none: the spec does not require it, and `findings/DoubleSetDown.cfg` shows two ranks can each set an item down |
+| `NoSetDownForCure`: no set-down for a failure that records a cure key | the same requirement, "A fault in the Igor's own setup is not the item's failure" |
+| `RepeatedFailureSetDown`: an item that fails the same way before the worker on every run is set down | the same requirement, its purpose |
+
+Results on TLC 2.19 (`tla2tools.jar` v1.7.4), four workers, 2026-10-20. `PreWorkerBreaker.cfg` is
+the base: two ranks, two items, a surface signature beside two others, and a claim-window failure. In
+*Checks*, holder, three, in a row and cure stand for `NoSetDownByNonHolder`,
+`NoSetDownWithoutThree`, `NoSetDownWithoutThreeInARow` and `NoSetDownForCure`.
+
+| Configuration | Differs from the base by | Checks | Distinct states | Time | Result |
+| --- | --- | --- | ---: | ---: | --- |
+| `PreWorkerBreaker.cfg` | (the base) | holder, three, in a row | 23,716,321 | 84 s | pass |
+| `PreWorkerBreakerOneRank.cfg` | one rank; returned failures, cure keys, a lifted deferral | every invariant | 36,484,575 | 141 s | pass |
+| `PreWorkerBreakerReturned.cfg` | returned failures and cure keys; no claim-window failure and four runs, to keep it small | holder, three, in a row, cure | 10,750,937 | 37 s | pass |
+| `PreWorkerBreakerLateRows.cfg` | no `PromptRows`: rows late, reordered, one lost | holder, three | 39,987,533 | 145 s | pass |
+| `PreWorkerBreakerLiveness.cfg` | one rank; every run fails; a lost row | liveness, holder, three, in a row, one set-down | 7,267 | 2 s | pass |
+| `PreWorkerBreakerLivenessRanks.cfg` | one item that fails every run; a lost row | liveness, holder, three, in a row | 101,317 | 8 s | pass |
+
+Each negative configuration turns off one rule and finds a violation, as required:
+
+| Negative | Rule turned off | Violation TLC finds |
+| --- | --- | --- |
+| `NoHolderOnly.cfg` | only the holder counts | `NoSetDownByNonHolder` |
+| `NoAloneInWindow.cfg` | a claim-window failure counts only with no other rank's claim on the item | `NoSetDownByNonHolder` |
+| `NoIdenticalOnly.cfg` | only identical failures count in a row | `NoSetDownWithoutThree` |
+| `NoReturnedRetried.cfg` | a returned failure is retried twice (decision 26) | `NoSetDownWithoutThree` |
+| `NoSkipSecondOfPair.cfg` | the run that ends its cycle as the second of a pair is not counted | `NoSetDownWithoutThreeInARow` |
+| `NoOutageExcludes.cfg` | an `outage` row excludes the failures it names | `NoSetDownWithoutThreeInARow` |
+| `NoCureSkipped.cfg` | a failure that records a cure key writes no `pre-worker` row | `NoSetDownForCure` |
+
+**Liveness holds within a bound on runs.** The model bounds the runs of a behaviour, so liveness
+is checked as: an item that fails the same way on every run is set down before the runs run out.
+With one rank, each item takes three runs, plus one for each lost row; a claim-window failure
+costs nothing extra, since a lone rank's counts like any other. With two ranks contending for the
+item, a run that loses verification to its sibling counts nothing, so each counted failure may
+cost two runs. The item needs three counted failures, one more for the lost row, and one more
+for a claim-window failure beside the sibling's claim, which counts nothing either: 2 × (3 + 1 + 1)
+= 10. A smaller `MaxRuns` than that makes the property fail only because
+the runs run out. Both liveness configurations assume `PromptRows`; without it a row in flight
+undercounts, and the bound grows with the rows in flight.
+
+### What the model shows the spec gets wrong
+
+All three are for Adam, in the proposal's *Still open* with a recommendation each. CI does not
+run `model/findings/`, where each keeps finding its violation until the spec changes.
+
+- **A row that lands late, or is lost, can set an item down after fewer than three in a row**
+  (`findings/LateRows.cfg`, which drops `PromptRows`). *Counting* reads only rows that have
+  landed. Suppose a worker start's run row, or a different failure's `pre-worker` row, has not
+  landed when the item's next run counts. It then no longer breaks the sequence, and the failures
+  before and after it join into one count. An `outage` row that has not landed no longer excludes
+  its pair. A late row is possible because `serve` records a run without waiting for the write
+  (*Outages*, above), and a refused write is retried. Decision 19 accepts the cost for an `outage`
+  row that never lands; the model shows the same cost for every row kind, and for a late row as
+  well as a lost one. With `PromptRows` TRUE and no row lost, the same configuration passes (67,737,589 distinct states).
+- **Two ranks can each post a set-down for one item** (`findings/DoubleSetDown.cfg`). Both read
+  the item as free. One claims it, fails a third time and sets it down, which releases it. The
+  other rank's claim message then lands on the released item, so it holds the item and fails the
+  same way. Its count, which includes the three rows already landed, reaches four, so it posts a
+  second set-down. Each run that sets the item down says so, as the spec requires,
+  and nothing in the spec stops a run from setting down an item already deferred. With `SetDownOnce`, which posts no set-down on an item already deferred, the
+  same configuration passes (23,711,713 distinct states); that configuration checks
+  `NoDoubleSetDown` alone.
+- **A lone rank's withdrawal can release the item under a sibling** (`findings/WithdrawRace.cfg`,
+  which drops `AtomicWithdraw`). Decision 22's test of the item's claim messages and the
+  withdrawal are two tracker calls. A sibling whose claim message lands and verifies between them
+  holds the item, and the withdrawal then releases it, so no claim message of the sibling's counts
+  while it works. When it later fails a third time it sets the item down without holding it.
+  This change's own lone-rank set-down makes these two calls, and so does #179's rule for a claim
+  message that failed to post, which removes the label where no other claim counts. With
+  `AtomicWithdraw`, the same configuration passes (23,716,321 distinct states).
+
+**A run that records a cure key takes no part in the two-in-a-row rules in the model.** It forms
+no pair and leaves the previous run in place, so it neither ends a cycle nor separates the two
+runs of a pair.
+The spec does not say either way: its two-in-a-row rules name failures before the worker without
+excepting one that records a cure key. The proposal's *Still open* asks Adam.
+
+**Not modelled:** several roles, since the count is per role and roles share nothing here;
+failures after the worker; the masks, since a signature is a model value; a read of the count
+that fails, which can hide no violation, since the spec has such a run set nothing down; a
+failed read of the item's claim messages in the claim window, which the proposal's *Still open*
+leaves to Adam; and how #179 frees an item that carries claim messages while no running rank is
+working it (`Recover` stands for that).

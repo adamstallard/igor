@@ -1,0 +1,116 @@
+# Runs TLC on the TLA+ model of the OpenSpec change pre-worker-breaker.
+#
+# - "TLC <config>": the change as specified. Each configuration the matrix
+#   below lists must pass, so a failure is a regression in the spec or the
+#   model. A configuration added to model/ runs only once it is listed.
+# - "TLC negative configurations": each rule of the change that guards
+#   safety is a constant in the model, and each file in model/negative/ turns
+#   one of those rules off. TLC must find a violation there; a file that
+#   passes means the model does not show that rule is needed.
+# - No job runs model/findings/. Each file there finds a violation the rules
+#   do not prevent, recorded for the repository's owner to decide on. Each
+#   file keeps finding its violation until the spec's rules change.
+#
+# Every run passes -deadlock, which turns TLC's deadlock check off. The model
+# bounds the runs each behaviour makes, so every behaviour ends in a state
+# with nothing left to do, and that is not an error here.
+#
+# tla2tools.jar v1.7.4 is TLC 2.19. To move to another release, change
+# TLA_TOOLS_VERSION and TLA_TOOLS_SHA256 together: the checksum step rejects
+# any other file. Take the checksum from `sha256sum` of the jar downloaded
+# from that release's page.
+name: TLA+ pre-worker-breaker
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'openspec/changes/pre-worker-breaker/**'
+      - '.github/workflows/tla-pre-worker-breaker.yml'
+  pull_request:
+    paths:
+      - 'openspec/changes/pre-worker-breaker/**'
+      - '.github/workflows/tla-pre-worker-breaker.yml'
+
+permissions:
+  contents: read
+
+env:
+  TLA_TOOLS_VERSION: v1.7.4
+  TLA_TOOLS_SHA256: 936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88
+
+jobs:
+  tlc:
+    name: TLC ${{ matrix.config }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - PreWorkerBreaker.cfg
+          - PreWorkerBreakerOneRank.cfg
+          - PreWorkerBreakerReturned.cfg
+          - PreWorkerBreakerLateRows.cfg
+          - PreWorkerBreakerLiveness.cfg
+          - PreWorkerBreakerLivenessRanks.cfg
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Fetch tla2tools.jar and check its checksum
+        run: |
+          curl -fsSLo "$RUNNER_TEMP/tla2tools.jar" \
+            "https://github.com/tlaplus/tlaplus/releases/download/$TLA_TOOLS_VERSION/tla2tools.jar"
+          echo "$TLA_TOOLS_SHA256  $RUNNER_TEMP/tla2tools.jar" | sha256sum -c -
+      - name: Run TLC
+        working-directory: openspec/changes/pre-worker-breaker/model
+        run: |
+          java -XX:+UseParallelGC -cp "$RUNNER_TEMP/tla2tools.jar" tlc2.TLC \
+            -workers auto -deadlock -cleanup -metadir "$RUNNER_TEMP/states" \
+            -config "${{ matrix.config }}" PreWorkerBreaker.tla
+
+  negative:
+    name: TLC negative configurations
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Fetch tla2tools.jar and check its checksum
+        run: |
+          curl -fsSLo "$RUNNER_TEMP/tla2tools.jar" \
+            "https://github.com/tlaplus/tlaplus/releases/download/$TLA_TOOLS_VERSION/tla2tools.jar"
+          echo "$TLA_TOOLS_SHA256  $RUNNER_TEMP/tla2tools.jar" | sha256sum -c -
+      - name: Run TLC on each negative configuration, expecting a violation
+        working-directory: openspec/changes/pre-worker-breaker/model
+        run: |
+          # TLC 2.19 exits 12 for a broken invariant and 13 for a broken
+          # temporal property; check these codes when moving to another release. Any other code, including 0, fails this step. Each file
+          # runs on one worker, since each is small and finds its violation in
+          # seconds.
+          failed=""
+          for cfg in negative/*.cfg; do
+            echo "::group::TLC $cfg"
+            set +e
+            java -XX:+UseParallelGC -cp "$RUNNER_TEMP/tla2tools.jar" tlc2.TLC \
+              -workers 1 -deadlock -cleanup -metadir "$RUNNER_TEMP/states-$(basename "$cfg")" \
+              -config "$cfg" PreWorkerBreaker.tla
+            code=$?
+            set -e
+            echo "::endgroup::"
+            case $code in
+              12|13) echo "$cfg: violation found, as required" ;;
+              *) echo "::error file=openspec/changes/pre-worker-breaker/model/$cfg::TLC exited $code; a violation was required"
+                 failed="$failed $cfg" ;;
+            esac
+          done
+          if [ -n "$failed" ]; then
+            echo "Failed:$failed"
+            exit 1
+          fi
