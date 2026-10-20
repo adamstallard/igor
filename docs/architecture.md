@@ -311,9 +311,16 @@ and names `propose` as the next step, and `promote --by <you>` repairs one that 
 without a pull request, recording whoever ran it as the approver.
 
 
-Firing is **unbidden**. The worker never issues a query or elects to search; matching
-entries are injected before it runs. This is the property that distinguishes the design
-from RAG, and it sits entirely on the *condition* side — the payload mechanism is ordinary.
+Firing is **unbidden**. The worker never has to issue a query: matching entries are injected
+before it runs. This is the property that distinguishes the design from RAG, and it sits
+entirely on the *condition* side — the payload mechanism is ordinary.
+
+A worker may also be offered a search over the store, to find an entry that firing did not
+inject. That happens when a role's in-scope entries exceed the firing budget: then none are
+injected, as the budget paragraph below explains. Scope binds a search exactly as it binds
+firing: an entry whose scope does not cover the role is never returned (§4.2.2). Status does
+not: a search may return an in-scope `provisional` or `deprecated` entry, labelled as not lore,
+and only `active` entries count as lore. A search hit is not a firing (§3.4.1).
 
 A trigger is `(condition → intervention)`. Interventions come in three kinds:
 
@@ -399,6 +406,17 @@ Neither promotion nor pruning should be automatic. Both change what an Igor know
 the thing review exists to gate, so they belong in the review queue as proposals with the
 firing history attached. The rule is a threshold and a window, and there is no basis for
 choosing either yet: it needs firing history from a real store, which does not exist.
+
+**A search hit is not a firing.** A worker may search the store (§3.3), and so may another
+agent working for an Igor, such as the inquisitor skill, which an agent runs before asking a
+person a question. Search hits are not recorded as firings or counted anywhere.
+
+For deciding whether an entry is used, the event that counts is an agent citing the entry as
+the answer to a question, because then no person had to be asked. The inquisitor skill records
+each such citation, naming the entry, in its question log, which keeps one file per question.
+A review that proposes pruning or promotion counts an entry's citations in question logs beside
+its fire count. An entry can be cited but never fire, for example while its role's in-scope
+entries exceed the firing budget, and it is then not proposed as unused.
 
 Deliberately not built with retrieval. Recording counts is cheap and can begin immediately;
 acting on them requires history to act on, and a threshold guessed before any data would be a
@@ -510,7 +528,7 @@ This also resolves a cost problem: recognition is high-frequency, and moving it 
 model means polling and triage consume electricity rather than a subscription seat's
 rolling allowance, leaving the whole budget for actual work.
 
-**What survives:** unbidden firing, from the worker's perspective — it never elects to
+**What survives:** unbidden firing, from the worker's perspective — it never has to
 search, it receives context that already contains what matters.
 
 **What is lost:** introspective conditions. You can recognize *situations* ("this context
