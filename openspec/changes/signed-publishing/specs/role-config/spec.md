@@ -3,7 +3,7 @@
 ### Requirement: A role declares the skills its worker uses
 
 A role MAY declare `skills: [<name>, …]`, the pinned skills its worker uses, named from the
-skills of the `igor` plugin under `skills_dir` (#174). The list decides which skills' steps Igor
+skills a command loads (#174). The list decides which skills' steps Igor
 runs and which checks Igor's code makes on what it publishes; a listed skill other than `prose`
 and `bug-hunter` gets no step and no check from `signed-publishing`, and another capability may
 give it a use of its own. It does not decide what
@@ -11,10 +11,14 @@ loads: #174 loads every installed skill, as `igor:<name>`, for every role. The o
 `skills` for every role, and the list is inherited by appending, as *Merge semantics differ by
 field kind* sets out.
 
-A command that runs a model step SHALL refuse to start when a role it runs lists a name that is
-not a skill installed under `skills_dir`, naming it and the installed skills. Where `skills_dir`
-is missing, #174's *Igor confirms its skills load before its first model call* refuses first. A
-command that runs no model step, such as `igor role explain`, SHALL NOT check the names.
+Every command that runs a model step, a dry run included, SHALL refuse to start when a role it
+runs lists a name that is not among the skills that command loads, naming it and the skills
+loaded. Under `igor serve` those are the skills installed under `skills_dir`; where
+`skills_dir` is missing, #174 refuses the start first. Under `igor run` they are the skills
+under `skills_dir` or, where it is missing, the skills the shared-skills manager installed in
+the person's home, which #174 passes to each model step; where neither exists, no skill loads,
+and a role that lists one is refused. A command that runs no model step, such as `igor role
+explain`, SHALL NOT check the names.
 
 Listing a skill grants the worker nothing: it adds nothing to `commands`, and Igor's code runs
 every script of a listed skill itself, as `signed-publishing` requires.
@@ -49,6 +53,19 @@ worker may still invoke any skill #174 loads.
 - **WHEN** a person dry-runs a role whose `skills` lists `bughunter`, which is not installed
 - **THEN** the dry run, whose triage of recent items makes a model call (*A role can be dry-run
   without acting*), refuses to start, naming `bughunter`
+
+#### Scenario: A run without the skills directory uses the person's skills
+
+- **WHEN** `skills_dir` does not exist, the person's home holds the skills `prose` and
+  `bug-hunter` installed by the shared-skills manager, and the person runs `igor run` for a role
+  whose `skills` lists `prose`
+- **THEN** the run starts, and its model steps load the person's installed skills
+
+#### Scenario: A run with no skills at all refuses a role that lists one
+
+- **WHEN** neither `skills_dir` nor an installed skill in the person's home exists, and the
+  person runs `igor run` for a role whose `skills` lists `prose`
+- **THEN** the run refuses to start, naming `prose`
 
 #### Scenario: A machine without the skills directory can still explain a role
 

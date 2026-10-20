@@ -12,19 +12,23 @@
       `carry-what-a-tree-holds` (#137) specifies. Equal for a deletion and an executable bit;
       different today for a link and a submodule; equal for every case as #137 carries them, so
       this change builds on #137 (design, item 3 and *Measurements*)
-- [ ] 0.5 After task 0.16, and once the reader goals for an item are defined (proposal, *For
-      Adam* 13): where Igor still runs `prose start` (proposal, *For Adam* 6), before a worker
-      starts, generate its session uuid, run `prose.py start --session <uuid>` with those goals
-      and the worker's `HOME` and `XDG_STATE_HOME`, write the printed rules to a file passed as
-      a system-prompt file, as #175 requires, pass `--session-id <uuid>`, and give the prompt on
-      stdin. No prompt, rule or goal goes on any command line (design, item 1; proposal,
-      decision 15)
+- [ ] 0.5 The worker's prompt asks it to write the item's reader goals to goals files in its
+      outbox: for the change's docs and specs, in `prose check`'s `pattern: goal; goal` form,
+      and for the pull request description, in the form shared-skills PR #27 gives `prose
+      sign` (proposal, decision 32). The goals of the commit message itself wait on the
+      proposal's *For Adam* 2. No prompt, rule or goal goes on any command line (proposal,
+      decision 15). Igor's spawn of the worker runs no `prose start` and writes no session mark
+      in its home (design, item 1; proposal, decision 25); a test checks that no prose script
+      runs as the worker user
 - [ ] 0.6 Grant a role that lists `prose` or `bug-hunter` no prose or bug-hunter script; the
       bug-hunter step's prompt tells it to report only its `Bug-hunter:` value and run no
-      bug-hunter script (design, item 2; proposal, decision 16)
+      bug-hunter script (design, item 2; proposal, decision 16). Grant every model step Read on
+      the directory its skills load from (proposal, decision 33)
 - [ ] 0.7 `skills: [<name>, …]` on a role and the org base, merged by adding (never removing),
-      with an unknown name refused by a command that runs a model step, against what is
-      installed under `skills_dir`, and not by `igor role explain`. Tests for each `role-config`
+      with an unknown name refused by every command that runs a model step, a dry run included,
+      against the skills that command loads: those under `skills_dir`, or under `igor run`
+      without it, the person's installed skills (#174); and not by `igor role explain`
+      (proposal, decision 29). Tests for each `role-config`
       scenario (design, *Which roles*; Adam, 2026-10-11)
 - [ ] 0.8 Run each step, and each check, only for the skills the role lists: the bug-hunter step
       and the `Bug-hunter:` check for `bug-hunter`; the prose pass, the footer check and the
@@ -57,11 +61,12 @@
       vitest run` entries that the `commands` of the role being worked already holds. Record the
       result in design, *Measurements*; if they do not, Adam decides before building which
       commands to grant for them
-- [ ] 0.16 Depends on the shared-skills repository: prose takes every call's reader goals from a
-      file, for `start`, for `sign`, and for `check`'s message as well as its per-file goals, so
-      that Igor's first calls put no goal on a command line (proposal, decision 15). Until it
-      lands, the first calls of tasks 1.1 and 2.1 are not built, unless Adam accepts *For Adam*
-      13, whose fixed goals hold no item text. This change does not edit shared-skills
+- [ ] 0.16 Depends on shared-skills
+      [PR #27](https://github.com/adamstallard/shared-skills/pull/27), which adds
+      `--goals-file` to prose's `sign`, so that a post's first call puts no goal on a command
+      line (proposal, decisions 15 and 32). Until it lands, the first call of task 1.1 is not
+      built. How the commit message's goals reach `prose check` waits on the proposal's *For
+      Adam* 2. This change does not edit shared-skills
 - [ ] 0.17 Measure whether `git write-tree` in Igor's index equals the Git Data API's tree for a
       binary file and for a file under a clean filter (`core.autocrlf`, an `eol=` or `text=auto`
       attribute), with paths carried as #137 specifies. Record the result in design,
@@ -74,17 +79,21 @@
       other than the token, such as a doc with no goals; and whether goals given by path pattern
       cover a doc first changed after the first call. Record the result in design,
       *Measurements*
+- [ ] 0.20 Measure whether sonnet's triage gives the same answer on the same diff from run to
+      run. Record the result in design, *Measurements*
 
 ## 1. Verifying and publishing
 
 
 - [ ] 1.1 One publishing path that runs `prose sign`'s first call, with Igor's own `GIT_DIR`,
-      `GIT_WORK_TREE` and `GIT_INDEX_FILE`, before a model step writes a post, gives the step
-      the rules and the token in its prompt, runs the second call with the cold read, and runs
+      `GIT_WORK_TREE` and `GIT_INDEX_FILE` and the model's reader goals as `--goals-file`, before
+      a model step writes a post, gives the step the rules and the token in its prompt, tells it
+      to quote untrusted text in code spans (proposal, decision 31), runs the second call with the cold read, and runs
       `prose verify-post` on the exact text before publishing it, on every surface;
       code-assembled handoffs, receipts and claim messages pass unsigned
 - [ ] 1.2 The cold read: run the second call without a report, start a fresh model step, as the
-      worker user with Read on the tree and no other tool for a commit, and no tool for a post,
+      worker user with Read on the tree and the skills directory and no other tool for a commit,
+      and Read on the skills directory alone for a post,
       whose whole prompt is the brief exactly as printed, give its report to the step that wrote
       the text to fix and answer, read the report and the answers as #175 reads every file a
       worker wrote, count an answers file that keeps any line as a failed attempt, and run the
@@ -107,34 +116,35 @@
       #175's *The Igor stages only after its checks, and #153's trailers bind the last staging* requires (proposal, decision 19). After bug-hunter, do that, then stage
       the change in Igor's
       own index and run prose's first `prose check` call as the service user, on a draft message
-      holding the issue title, with the goals Igor's code fixes for the message, a changed doc
-      and a changed spec; give the prose pass the rules and the token on stdin (proposal,
-      decisions 12 and 16). Before every model step after the worker, check for a stop and the
-      claim: on a stop, publish nothing; on a lost claim, publish no signed text, and what else
-      is published waits on *For Adam* 19
+      holding the issue title, with the worker's goals file as `--goals-file`; give the prose
+      pass the rules and the token on stdin (proposal, decisions 12, 16 and 32). Before every
+      model step after the worker, check for a stop and the claim: on a stop, publish nothing;
+      on a lost claim, run no further model step and publish the worker's change as a draft
+      pull request whose body the code writes, with no signed text and no skill trailers
+      (proposal, decision 38)
 - [ ] 2.2 A bug-hunter step in caller-commits mode that edits without staging or minting and
       reports its `Bug-hunter:` value and any open decisions; parse both
 - [ ] 2.3 A prose pass step, given the rules, the token, the issue title and number and, under
       #150, the gate, that rewrites the message and the change's prose by those rules. The
       subject drops any closing keyword in the title; the body ends with the adapter's closing
       linkage (on GitHub, `Closes #N`) for a role not using #150 and on every gate-two commit,
-      revisions included, and with its non-closing reference (on GitHub, `Refs #N`) on gate
-      one's commits, its revisions included. A closing keyword for any other issue sends the
+      revisions included, and with the non-closing reference #150's adapter supplies on gate
+      one's commits, its revisions included (proposal, decision 27). A closing keyword for any other issue sends the
       message back, at every gate
-- [ ] 2.4 After the prose pass, run bug-hunter's triage on the prose pass's diff, on the model
-      pinned in Igor's code (proposal, decision 17): no hunt for a diff it skips, one more
+- [ ] 2.4 After the prose pass, run bug-hunter's triage on the prose pass's diff, on sonnet,
+      pinned in Igor's code (proposal, decisions 17 and 21): no hunt for a diff it skips, one more
       bug-hunter iteration for anything else. No prose pass runs after that iteration (decision
       13), apart from the answers to the cold read, whose diff task 1.2 triages
 - [ ] 2.5 After the last model step, stage once more in Igor's own index, then run prose's
-      second call with the token and the cold read of task 1.2, and bug-hunter's
-      `mint-trailer.sh`, both from the pinned skills directory, with `GIT_DIR`, `GIT_WORK_TREE`
+      second call with the token and the cold read of task 1.2, and, on every commit of a role
+      that lists `bug-hunter`, bug-hunter's `mint-trailer.sh` (proposal, decision 26), both from the pinned skills directory, with `GIT_DIR`, `GIT_WORK_TREE`
       and `GIT_INDEX_FILE` set to Igor's git directory, the tree and Igor's index, and with
       `GIT_CONFIG_NOSYSTEM=1` and `GIT_CONFIG_GLOBAL=/dev/null`, which #175 sets for every git
       call in a tree so that no filter the worker names is defined (proposal, decisions 11 and 12; design, *Measurements*, 0.12)
 - [ ] 2.6 In `produce()` and in #150's head push, check that the uploaded tree equals both
       signed trees, that `prose verify-staged` accepts the trailer, and that the subject is the
       issue title with any closing keyword dropped
-- [ ] 2.7 Append the trailers; leave merge commits without them
+- [ ] 2.7 Append the trailers; leave merge commits without them (proposal, decision 30)
 - [ ] 2.8 Tests: a tree mismatch, a message mismatch and a changed subject each refuse the
       commit, and a tree mismatch goes back to no step; a prose-pass edit is in the tree both
       trailers name; a diff the triage skips runs no second bug-hunter iteration and one it does
@@ -146,12 +156,18 @@
       line break or a closing keyword goes back to the bug-hunter step; a refused minting call
       goes back to no step; a linked message file is not read; a hard-linked file stops the run
       before any staging; gate one stages after dropping `src/`; the token is one argument with
-      no shell; an extra iteration that hunts mints `Bug-hunter-Tree:`; answers to the cold read
+      no shell; a change bug-hunter's triage skipped whole still carries `Bug-hunter-Tree:`; answers to the cold read
       that change code fail the attempt; a stop during the signing steps publishes nothing; a
       gate-two description saying `Fixes #999` goes back; the extra iteration's `Bug-hunter:`
       value replaces the first; the message reaches prose only as a `-F` file; an open decision
       saying `Fixes #999` goes back to the bug-hunter step; an answers file that keeps a line
-      fails the attempt; a dry run checks skill names and `igor role explain` does not
+      fails the attempt; a dry run checks skill names and `igor role explain` does not; under
+      `igor run` without `skills_dir`, a role listing `prose` runs with the person's installed
+      skills; a lost claim publishes an unsigned draft and runs no further model step; a second
+      worker run makes a second commit with its own trailers
+- [ ] 2.9 Where #189's checks fail and the worker runs a second time, make that run's edits a
+      second commit on top of the first run's signed commit, running the steps of tasks 2.1 to
+      2.7 on that commit's diff only, with its own trailers (proposal, decision 39)
 
 ## 3. The pull request description
 

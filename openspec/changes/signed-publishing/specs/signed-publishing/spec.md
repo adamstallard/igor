@@ -8,10 +8,10 @@ prose pass's diff that bug-hunter's triage does not skip.
 
 - **`prose`:** every model-written post SHALL carry a valid `prose ✓` footer, and every commit
   a `Prose:` trailer that matches its staged tree and message.
-- **`bug-hunter`:** every commit SHALL carry a `Bug-hunter:` trailer. It SHALL also carry a
-  `Bug-hunter-Tree:` trailer bound to its staged tree whenever a bug-hunter run hunted: its first
-  triage, run on the whole change before any hunt, or an extra iteration. Where none hunted,
-  `Bug-hunter:` alone is checked.
+- **`bug-hunter`:** every commit SHALL carry a `Bug-hunter:` trailer and a `Bug-hunter-Tree:`
+  trailer bound to its staged tree. That holds even where nothing was hunted: where
+  bug-hunter's first triage, run on the whole change, found nothing to hunt, and no extra
+  iteration ran.
 
 A role that does not list a skill SHALL NOT be checked for it, and publishes as it does without
 this capability. A listed skill other than `prose` and `bug-hunter` gets no check from this
@@ -32,11 +32,12 @@ capability.
   trailer bound to the staged tree
 - **AND** its posts are published without a footer check
 
-#### Scenario: A change bug-hunter's triage skipped needs no tree trailer
+#### Scenario: A change bug-hunter's triage skipped still needs the tree trailer
 
 - **WHEN** a role's `skills` is `[bug-hunter]`, bug-hunter's first triage finds nothing to hunt
   in the change, and no extra iteration runs
-- **THEN** the commit is made with its `Bug-hunter:` trailer and no `Bug-hunter-Tree:`
+- **THEN** the commit is made only with its `Bug-hunter:` trailer and a `Bug-hunter-Tree:`
+  trailer bound to the staged tree
 
 #### Scenario: A role listing neither publishes as before
 
@@ -46,7 +47,8 @@ capability.
 ### Requirement: Igor runs prose's calls around the model step that writes
 
 For a role whose `skills` lists `prose`, every text a model step writes for an Igor to publish
-SHALL go through prose's pass. That covers pull request descriptions, replies, questions a model
+SHALL go through prose's pass, apart from the words that code-assembled text quotes, listed
+below. That covers pull request descriptions, replies, questions a model
 step writes, and any other model-written post to GitHub, Discord or Linear. The *prose pass* is
 the model step that writes the text between prose's two calls. The *pass token* is the one-use
 value prose's first call prints, which its second call requires.
@@ -56,8 +58,11 @@ skills directory (#174), with `GIT_DIR`, `GIT_WORK_TREE` and `GIT_INDEX_FILE` se
 directory, tree and index, for a post as for a commit, since prose keeps its token store in the
 git directory:
 
-1. **The first call**, `prose sign` for a post, SHALL run before the step writes. Igor SHALL
-   give the step the rules and the pass token it prints, in the step's prompt on stdin.
+1. **The first call**, `prose sign` for a post, SHALL run before the step writes, with the
+   reader goals a model wrote for that post, passed in a file (`--goals-file`), never on a
+   command line. Igor SHALL give the step the rules and the pass token it prints, in the step's
+   prompt on stdin. That prompt SHALL tell the step to quote untrusted text, such as an item's
+   or a person's words, in code spans, where @-mentions and markup take no effect.
 2. **The second call**, `prose sign --pass <token>`, SHALL run on the text the step hands back,
    given on stdin. Once the cold read below is answered, it appends a `prose ✓ <hash>` footer
    computed over that text.
@@ -65,8 +70,10 @@ git directory:
 Before the second call signs, the text SHALL be read cold: Igor SHALL run a fresh model step
 whose whole prompt is the cold-read brief the second call prints, exactly as printed, and SHALL
 give its report to the step that wrote the text, which fixes what the report names and answers
-each line. The cold reader SHALL run as the worker user, with no tool but Read on the tree for a
-commit, and no tool at all for a post. Igor SHALL then run the second call with that report and
+each line. The cold reader SHALL run as the worker user, with no tool but Read on the tree and
+on the skills directory for a commit, and no tool but Read on the skills directory for a post.
+Every model step SHALL be granted Read on the directory its skills load from, which holds no
+secret. Igor SHALL then run the second call with that report and
 those answers. A step SHALL fix every finding. Igor SHALL count as a failed check an answers
 file that keeps any finding or understood line, that is, answers it with anything but `fixed` or
 `matches`, whatever reason it gives, without passing it to prose, and SHALL count prose's own
@@ -109,8 +116,14 @@ quotes:
 #### Scenario: The cold reader can only read
 
 - **WHEN** Igor starts the cold reader for a commit
-- **THEN** it runs as the worker user, can read the tree, and can run no command and edit no
-  file
+- **THEN** it runs as the worker user, can read the tree and the skills directory, and can run
+  no command and edit no file
+
+#### Scenario: Untrusted text is quoted in a code span
+
+- **WHEN** a model step writes a reply that quotes a commenter's words holding `@someone`
+- **THEN** its prompt told it to quote those words in a code span, where the mention notifies
+  no one
 
 #### Scenario: A kept finding is refused before prose sees it
 

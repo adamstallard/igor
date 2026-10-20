@@ -2,7 +2,10 @@
 
 Each decision names who made it and when. Adam decided 1 to 3, 7, 8 and 18 on 2026-09-30 in
 [#139](https://github.com/adamstallard/igor/issues/139), which holds their reasoning; where
-#139 differs from decisions 12 and 16, they hold (Adam, 2026-10-18).
+#139 differs from decisions 12 and 16, they hold (Adam, 2026-10-18). Decisions 20 to 39 are
+Adam's answers of 2026-10-19 to the twenty questions an earlier revision of this change put to
+him, in the order he was asked them: that revision's *For Adam* 1 is decision 20, and its 20 is
+decision 39. The *For Adam* list at the end of this section holds new questions.
 
 Terms. An *Igor* is one role of the agent, acting under its own GitHub App; the *item* is the
 issue or pull request it works on. Under the two-gate workflow (#150), *gate one* publishes a
@@ -26,7 +29,8 @@ whole change before any hunt. The *state branch* is where Igor records each item
    checked, which text edited after its signature would pass.
 2. **Every text a model writes for an Igor to publish goes through prose's pass and is signed
    (Adam, 2026-09-30)**: pull request descriptions, replies, questions, and any other
-   model-written post to GitHub, Discord or Linear. `prose sign` signs it, appending a
+   model-written post to GitHub, Discord or Linear, apart from the words decision 24 lists,
+   which code-assembled text quotes. `prose sign` signs it, appending a
    `prose ✓ <6 hex>` footer hashed over the text above it. *Rejected:* signing commits only,
    which leaves the posts a reviewer reads first unchecked.
 3. **The code that posts runs `prose verify-post` on the exact text first (Adam, 2026-09-30)**,
@@ -35,11 +39,11 @@ whole change before any hunt. The *state branch* is where Igor records each item
 4. **A role lists the skills its worker uses (Adam, 2026-10-11).** `skills: [<name>, …]` names
    pinned skills from #174's `igor` plugin. The list decides which steps Igor runs and checks,
    not what loads: #174 loads every installed skill for every role. The org base may set it for
-   every role and a role may add to it, never remove; an unknown name is refused at load. Igor's
-   code checks per listed skill: for `prose`, a valid footer on every model-written post and a
-   matching `Prose:` trailer on every commit; for `bug-hunter`, a `Bug-hunter:` trailer, with
-   `Bug-hunter-Tree:` bound to the staged tree whenever a bug-hunter run hunted, its first triage
-   or an extra iteration. A role that lists neither publishes as today.
+   every role and a role may add to it, never remove. An unknown name is refused by any command
+   that runs a model step (decision 29). Igor's code checks per listed skill: for `prose`, a
+   valid footer on every model-written post and a matching `Prose:` trailer on every commit; for
+   `bug-hunter`, a `Bug-hunter:` trailer and a `Bug-hunter-Tree:` trailer bound to the staged
+   tree, on every commit (decision 26). A role that lists neither publishes as today.
    *Rejected:* a switch for "posts" and "commits", which cannot say which skill's check applies.
 5. **Every commit Igor pushes for an item, other than a merge, goes through the steps for the
    skills its role lists, and carries their trailers (Adam, 2026-10-13)**, whether `produce()`
@@ -60,11 +64,12 @@ whole change before any hunt. The *state branch* is where Igor records each item
    - the closing linkage (on GitHub, `Closes #N`) on every commit of a role that does not use
      the two-gate workflow (#150), and on every gate-two commit under #150, the implementation
      and each revision after it;
-   - the reference that links without closing (on GitHub, `Refs #N`) only on gate one's
-     commits, its revisions included, matching #150's rule that gate one closes nothing.
+   - the reference that links without closing, in the form #150's adapter supplies (decision
+     27), only on gate one's commits, its revisions included, matching #150's rule that gate one
+     closes nothing.
 
    *Rejected:* `Closes #N` everywhere, which would close the issue when gate one merges; and
-   `Refs #N` on gate-two revisions, since a squash merge that took its message from the last
+   the non-closing reference on gate-two revisions, since a squash merge that took its message from the last
    commit would then carry no closing keyword, and the issue would stay open.
 7. **A failed check goes back to the model step with the reason (Adam, 2026-09-30)**, to redo.
    After two attempts in total, the code publishes nothing and records the failure. *Rejected:*
@@ -104,18 +109,17 @@ whole change before any hunt. The *state branch* is where Igor records each item
        rules and a pass token.
     3. The prose pass, given those rules and the token, rewrites the message and the change's
        docs and comments.
-    4. Bug-hunter's triage runs on the prose pass's diff, on the one model decision 17 pins
-       (which model is *For Adam* 2). A diff it skips gets no hunt; any other diff gets one more
-       bug-hunter iteration.
+    4. Bug-hunter's triage runs on the prose pass's diff, on sonnet (decisions 17 and 21). A
+       diff it skips gets no hunt; any other diff gets one more bug-hunter iteration.
     5. Igor stages once more and runs both signing calls: prose's second call, with the token
        and the cold read, and bug-hunter's minting script, which writes `Bug-hunter-Tree:`.
 
     The scripts come from the root-owned skills directory (#174), run with Igor's own git
     directory and index, so running them as the service user executes nothing the worker wrote.
     `Bug-hunter-Tree:` attests that bug-hunter's triage saw every change in the tree, and that
-    bug-hunter hunted each change its triage did not skip. Bug-hunter's triage line is wider
-    than comments or docs: it also skips tests, specs, lockfiles, generated files, formatting
-    and renames (task 0.11); whether that line is the one wanted is *For Adam* 1. *Rejected:*
+    bug-hunter hunted each change its triage did not skip. The triage draws bug-hunter's own
+    line, which skips comments and docs and also tests, specs, lockfiles, generated files,
+    formatting and renames (task 0.11; decision 20). *Rejected:*
     the steps running the signing calls themselves, which under #175 they cannot do against
     Igor's index; and bug-hunter running again after every prose pass, which spends a hunt on a
     diff of comments.
@@ -138,8 +142,8 @@ whole change before any hunt. The *state branch* is where Igor records each item
     private source content in it. Each model step's prompt, which holds prose's rules and pass
     token where the step writes, reaches `claude -p` on stdin, and any system prompt reaches it
     through a file, as #175 sets out. Reader goals drawn from the item could hold private text,
-    so they stay off every prose command line too (*For Adam* 13 recommends goals that hold no
-    item text); prose has no way to take all of them from a file yet (task 0.16). #175 specifies
+    so they stay off every prose command line too: they reach prose in a file (decision 32;
+    task 0.16). #175 specifies
     the stdin rule, in its `task-execution` requirement *A prompt reaches claude on stdin, never
     in its arguments*, and #175's systemd unit also sets `ProtectProc=invisible`. *Rejected:*
     relying on `ProtectProc=invisible` alone, which leaves a prompt readable wherever the
@@ -154,7 +158,7 @@ whole change before any hunt. The *state branch* is where Igor records each item
     worker forge a token, since a token is a plain file.
 17. **Igor runs the triage of the prose pass's diff on one pinned model (Adam, 2026-10-18).**
     Haiku and sonnet split on a spec-only diff (task 0.11), so an unpinned triage could hunt one
-    run and skip the next. Which model is *For Adam* 2.
+    run and skip the next. Decision 21 pins it to sonnet.
 18. **No GitHub Action** (Adam, 2026-09-30, #139). Igor runs the checks in its own pipeline, so
     a CI check would only re-verify its work (#139, section 4).
 19. **Igor stages more than once, and every staging follows #175's kill and checks (Adam,
@@ -168,14 +172,130 @@ whole change before any hunt. The *state branch* is where Igor records each item
     staging, the tree Igor publishes. *Rejected:* a single staging after the last model step,
     under which prose's first call could not see the change's docs.
 
+20. **Bug-hunter's triage uses bug-hunter's own line (Adam, 2026-10-19).** Besides comments and
+    docs, it skips a diff of tests, specs, lockfiles, generated or vendored files, formatting or
+    renames (task 0.11). Decision 12's narrower line, comments or docs only, goes. *Rejected:* a
+    line of Igor's own, which would drift from the skill's.
+21. **The triage runs on sonnet (Adam, 2026-10-19).** On the seven measured diffs sonnet drew
+    bug-hunter's line on every one (task 0.11). *Rejected:* haiku, which reviewed a spec-only
+    diff that the line skips.
+22. **Every cold-read finding is fixed (Adam, 2026-10-19).** No person is there to answer a kept
+    finding. So where the writing step's answers to the cold read keep a finding, or keep a
+    line in which the cold reader said what it understood, the attempt fails (`design.md`,
+    *Every signature needs a cold read*).
+23. **Gate two's implementation push rewrites the description, as decision 10 says (Adam,
+    2026-10-19).** #190 rewrites it only on a revision, and is to change its own rule to match
+    (*Reported to other changes*, below).
+24. **Words quoted in a post Igor's code composes are published unsigned (Adam, 2026-10-19).**
+    The code wrote the post, so it is not signed: bug-hunter's open decisions in the opening
+    block, the worker's reason for declining in a handoff, and a person's request in an issue
+    Igor opens for them. Each quotes someone else's words as theirs.
+25. **Igor runs no `prose start` (Adam, 2026-10-19).** Nothing in a worker checks the gate it
+    opens (`design.md`, item 1), and the prose pass gets its rules from the first call Igor
+    runs. Running it would also break #175's rule that no prose script runs as the worker user.
+26. **Igor mints `Bug-hunter-Tree:` on every commit of a role that lists `bug-hunter` (Adam,
+    2026-10-19)**, against the last staging, even where bug-hunter's triage skipped the whole
+    change. The tree check then never rests on the bug-hunter step's own report that nothing
+    needed a hunt. On a change the triage skipped, the trailer attests that the triage saw the
+    tree, not that a hunt did. *Rejected:* minting only where a run hunted, which trusted that
+    report.
+27. **Gate one's commits end with the non-closing reference #150's tracker adapter supplies
+    (Adam, 2026-10-19)**, so that both changes use one form. *Rejected:* a form of this change's
+    own, `Refs #N`.
+28. **#150 cites this change for when bug-hunter runs (Adam, 2026-10-19)** (*Reported to other
+    changes*).
+29. **Skill names are checked by every command that runs a model step, against the skills that
+    command loads (Adam, 2026-10-19).** A person's machine has skills: the shared-skills manager
+    installs them in the person's home, such as `~/.claude/skills`. `/opt/igor/skills` is only
+    the server's path. Under `igor run`, where `/opt/igor/skills` is absent, Igor falls back to
+    the person's installed skills and passes them to each model step explicitly, since each run
+    has a new home; #174 (`pinned-skills`) specifies the fallback. A dry run is checked, since
+    its triage makes a model call; `igor role explain`, which runs none, is not. Decision 4 had
+    refused an unknown name when the role loaded. *Rejected:* checking only against `/opt/igor/skills`, which
+    would refuse, on a person's machine, every role that lists a skill.
+30. **Merge commits carry no skill trailers (Adam, 2026-10-19)**, as bug-hunter's triage, which
+    skips merges, already decides. Whether a model-written conflict resolution gets a bug hunt
+    is issue [#214](https://github.com/adamstallard/igor/issues/214).
+31. **The prose pass quotes untrusted text in a signed post in code spans (Adam, 2026-10-19)**,
+    where @-mentions and markup take no effect. Signed text is published exactly, so the code
+    cannot neutralise them afterwards.
+32. **The model decides the reader goals for each item (Adam, 2026-10-19).** For a commit and
+    its pull request description, the worker writes them to files in its outbox, by path
+    pattern for a commit's docs and specs, and Igor passes each file to prose with
+    `--goals-file`, so no
+    goal reaches a command line (decision 15). `prose check` already takes per-file goals that
+    way. `prose sign` gains `--goals-file` in shared-skills
+    [PR #27](https://github.com/adamstallard/shared-skills/pull/27) (task 0.16). Two
+    questions remain: *For Adam* 1 and 2. *Rejected:* fixed goals per kind of text in Igor's
+    code, which cannot say what this item's reader came for.
+33. **Every model step may read the skills directory (Adam, 2026-10-19).** Bug-hunter's
+    instructions tell the model to read files beside its `SKILL.md`, and `--plugin-dir` grants
+    no Read on them (#174). Reading is not running, and the directory holds no secret.
+    *Rejected:* copying those files into prompts.
+34. **The diff of the answers to the cold read is triaged too (Adam, 2026-10-19).** An attempt
+    whose answers make a diff the triage does not skip fails, since answering a cold read
+    changes prose, not code. Without the triage, `Bug-hunter-Tree:` would name edits no triage
+    saw.
+35. **Igor signs against its own index and builds on #137 (Adam, 2026-10-19)**, reversing design
+    item 3's decision to sign against the API's tree. The two trees differ today only for a
+    symbolic link or a submodule, which `main` uploads wrongly, and are equal once #137 carries
+    both (task 0.4).
+36. **Other commit paths cite this change (Adam, 2026-10-19):** `lore-from-corrections`'s lore
+    proposal and the records `discussion-scribe` (#202) commits (*Reported to other changes*).
+37. **A closing keyword for any issue but the item is refused at every gate (Adam,
+    2026-10-19)**, in a commit body, a `Bug-hunter:` value, an open decision or a description,
+    and the text goes back to the step that wrote it. Model text shaped by the item's untrusted
+    text could otherwise close an unrelated issue on merge.
+38. **A claim lost during the signing steps (Adam, 2026-10-19):** no further model step runs,
+    and Igor publishes the worker's change as a draft pull request whose body its code writes.
+    Nothing is signed by then, so the draft holds no signed text, and its commit carries no
+    skill trailers, an exception to decision 5. The draft is offered as `task-execution` on
+    `main` offers any work finished before a claim is lost; the next Igor to claim the item
+    redoes the work, signed. A stop, unlike a lost claim, publishes nothing.
+39. **A second worker run makes a second commit (Adam, 2026-10-19).** Where one of the
+    repository's checks (`loop-verifies-commands`, #189) fails and the worker runs again, that
+    run's edits become a second commit on top of the first run's signed commit. Bug-hunter and
+    the prose pass run on that commit's diff only, and it carries its own trailers. *Rejected:*
+    putting the second run's edits through every step again together with the first run's, as
+    one commit, which repeats the full pass over work already signed.
+
+**Reported to other changes**, not edited here:
+
+- **#190** (`review-evidence`) rewrites the description only on a revision; it is to rewrite it
+  on gate two's implementation push too (decision 23). It also defines the pull request body's
+  opening block, which this change defines too until #190 is built (decision 9).
+- **#150** (`follow-the-two-gate-workflow`) is to cite this change for when bug-hunter runs
+  (decision 28), and its adapter's non-closing reference is the one gate one's commits end with
+  (decision 27).
+- **`lore-from-corrections`** and **#202** (`discussion-scribe`) are each to cite this change
+  for the commits they push (decision 36). Their commits have no issue, so decision 6's subject
+  rule, the issue title, needs a form for them (*Still open*).
+- **#189** (`loop-verifies-commands`) is to make the second worker run a second commit
+  (decision 39).
+- **#174** (`pinned-skills`) is to fall back to the person's installed skills under `igor run`
+  (decision 29). Its decision 14, and #175's decision 15, keep the session mark that
+  `prose start` writes in the worker's home; with decision 25 nothing writes it.
+- **#175** (`worker-user`) binds the trailers to the API's tree where the two trees differ,
+  which decision 35 reverses, and cites a requirement of this change, *#153's trailers are
+  created once, by the Igor, against the tree it staged*, that no longer exists by that name.
+  It also restates this change's signing order, such as the triage of the prose pass's diff,
+  which belongs here alone.
+- **#188** and **#190** each label a logged model call `worker`, `bug-hunter` or `prose`, in
+  #188's action log and #190's Commands run row. The cold reader's, the answers' and the
+  triages' calls, which this change adds, fit none of the three; both are to add labels.
+- **#190** still refuses an unknown skill name at load, which decision 29 narrows to a command
+  that runs a model step.
+- **#150** runs bug-hunter only at gate two, as a pipeline step, and has no rule on whether its
+  reply after a revision is model-written and signed (*For Adam* 5).
+
 **Still open:**
 
-- **Before building**, five tasks:
+- **Before building**, six tasks:
   - Task 0.15: whether bug-hunter's regression tests run under the commands a role already
     grants.
-  - Task 0.16: prose taking every call's reader goals from a file, a change to the shared-skills
-    repository. The first calls of decision 16 wait on it, and with them the whole change,
-    unless Adam accepts *For Adam* 13, whose goals hold no item text.
+  - Task 0.16: prose's `sign` taking reader goals from a file, in shared-skills
+    [PR #27](https://github.com/adamstallard/shared-skills/pull/27). The first calls of
+    decision 16 wait on it.
   - Task 0.17: whether a binary file and a clean-filtered file give equal trees.
   - Task 0.18: whether bug-hunter's triage runs as its own step on a given diff and model, and
     reports skip or hunt in a form Igor can read.
@@ -183,148 +303,81 @@ whole change before any hunt. The *state branch* is where Igor records each item
     two-hour life, and whether a token survives a second call that refuses for a reason other
     than the token, and whether goals given by path pattern cover a doc first changed after the
     first call. A token prose refuses always gets a new first call.
+  - Task 0.20: whether sonnet's triage gives the same answer on the same diff from run to run.
 - Every other measurement has run; `design.md`, *Measurements*, records what each showed.
 - **Findings of the 2026-10-19 consistency read left for the next pass.** Each is the
-  author's to fix unless it names another change or *For Adam*, and none is built:
-  - `design.md` item 1 and task 0.5 still run `prose start` as the worker user and cite #175's
-    decision 15, which now forbids any prose script as the worker user (*For Adam* 6).
-  - #174 still says a role naming a skill not installed is refused when the role loads, where
-    this change refuses it only in a command that runs a model step. #174 also has its pinned
-    shared-skills commit carry `--goals-file` for `sign` only, not for `check`'s message goals,
-    which task 0.16 needs. Both are #174's to fix.
-  - The pull request body's opening block, the lines Igor's code writes before the
-    description, is defined both here and in #190; the signing order both here and in #175.
-    One side of each should cite the other.
-  - #188 names each logged model call `worker`, `bug-hunter` or `prose`, so the cold reader's
-    and the triage's calls, which this change adds, carry no name.
-  - For a role listing only `bug-hunter`, no staging or minting step is defined, and whether
-    the minting script runs when nothing hunted is not stated (*For Adam* 7).
+  author's to fix unless it names another change, and none is built:
+  - For a role listing only `bug-hunter`, no staging step is defined before the minting call
+    that decision 26 requires.
   - A second bug-hunter iteration's `Bug-hunter:` value replaces the first's, so a commit whose
     first run fixed a bug can read "no bugs found", and no decision covers that.
   - Two choices are not among the decisions: that the cold reader gets only Read, and that
     under `igor run`, where the worker is Igor's own user and can write prose's token store, a
     `Prose:` trailer shows the steps ran but not that none forged a token. Whether a reader with
     only Read can do a commit's brief is unmeasured.
-  - *For Adam* 17 names commit paths, lore entries and discussion records, that have no issue,
-    so decision 6's subject, the issue title, cannot apply to them.
+  - The commits of `lore-from-corrections` and `discussion-scribe` have no issue, so decision
+    6's subject, the issue title, cannot apply to them.
   - Whether an issue Igor opens from chat is model-written and signed is not said.
+  - How the redo after a lost claim (decision 38) treats the unsigned draft commit, since Igor
+    never rebases its branches.
+  - Decision 19 says it does not restate #175's checks, but restates them, without #175's
+    nested-repository check and its rule that every model step has exited.
+  - Where the worker runs a second time before the pull request opens (decision 39), which step
+    writes the description, so that it covers both commits, is not said. More widely, the
+    commit order places no `prose sign` call, cold read or answers for the description.
+  - A role listing `bug-hunter` without #150 has open decisions that the opening block has no
+    place for.
+  - The signing steps have no time limits of their own: `task-execution` bounds a worker by
+    silence on its stream and by an absolute ceiling, but names no such limit for the steps
+    after it. And `main`'s sweep removes a working tree by its age, so a tree held through
+    those steps could be removed while in use; #179's sweep, which goes by rank, not age,
+    would end that risk.
+  - The code-span rule of decision 31 is a prompt instruction no code checks; it does not say
+    how to quote text holding a backtick, and the unsigned quoted words of decision 24 get no
+    neutralising for @-mentions or markup.
+  - Whether sonnet's triage gives the same answer from run to run is unmeasured (task 0.20).
+  - Gate one's commit body rests on #150's non-closing reference closing nothing on merge,
+    which #150's task 1.3 has not measured.
+  - No scenario tests the git configuration variables on the signing calls, a post's `prose
+    sign` calls running with Igor's git variables and a goals file, or the Read grant on the
+    skills directory. *Head push* and *outbox* are defined in no spec this change archives
+    into. Requirement text carries rationale besides the two sentences named in the last
+    item, such as "so that the tree check never rests on the step's report". Two design choices are not among the
+    decisions: one check per skill written in Igor's code, and one attempt bound for every
+    role.
   - *Understood line* and *answers file* are defined only in `design.md`. Three SHALLs lack a
     scenario: a second call refusing a doc as a failed attempt, the claim check before each
-    model step, and a post's cold reader having no tool. Two rationale sentences sit in
-    `task-execution`'s requirement text: that every trailer binds the last staging, and that
-    prose keeps its token store in the git directory.
+    model step, and a post's cold reader having no tool but Read on the skills directory. Two
+    rationale sentences sit in `task-execution`'s requirement text: that every trailer binds
+    the last staging, and that prose keeps its token store in the git directory.
 
-**For Adam,** each a question this change cannot settle alone, with a recommendation. Where the
-spec deltas already state an item's answer, they follow its recommendation; if Adam decides
-otherwise, the requirement that states it changes.
+**For Adam,** each a question this change cannot settle alone, with a recommendation:
 
-1. **Bug-hunter's triage line.** Decision 12 names a prose diff of comments or docs as the one
-   to skip. Bug-hunter's own triage also skips a prose diff that changes tests, specs,
-   lockfiles, generated files, formatting or names (task 0.11), so such an edit is never hunted.
-   *Recommendation:* accept bug-hunter's line; the prose pass is not meant to change code, and a
-   second rule in Igor's code would drift from the skill's.
-2. **Which model the triage is pinned to.** On the seven measured diffs sonnet drew bug-hunter's
-   written line on every one, skipping the spec-only diff as that line says; haiku reviewed that
-   diff. *Recommendation:* sonnet, with item 1's recommendation; haiku if decision 12's narrower
-   line is kept.
-3. **The cold read.** Prose's second call signs only after a cold read. This change has Igor run
-   the cold reader as a fresh model step whose whole prompt is the brief, and the prose pass
-   answer it; with no person to ask, every finding must be fixed, and a kept one is a failed
-   attempt (`design.md`, *Every signature needs a cold read*). *Recommendation:* as written.
-4. **Who rewrites the description on gate two's implementation push.** Decision 10 rewrites it
-   there; #190 rewrites it only on a revision. *Recommendation:* confirm decision 10, so that
-   #190 adds gate two's implementation push. This change does not edit #190.
-5. **Model or person text inside code-assembled posts, published unsigned.** #150 includes
-   bug-hunter's open decisions in gate two's body, which this change puts in the opening block,
-   and #140 posts them as numbered questions; a nothing-to-do handoff carries the worker's own
-   account of why it declined (`src/loop.ts`), which `directed-interaction` publishes as its
-   question; an issue Igor opens from chat (`work-claiming`) or from a mention (#140) quotes the
-   person's request and links it. #140 also places a question in the artifact's description;
-   under this change that question is part of the signed description, not one of these
-   exceptions. The signed-publishing spec states these as the exceptions. *Recommendation:*
-   accept them unsigned: each is someone else's words, quoted as theirs inside text the code
-   assembles, not text the model presents as its own; and #140 acts only on an answer that picks
-   one of the options Igor recorded, so the text cannot make Igor do anything it had not already
-   proposed.
-6. **Whether Igor still runs `prose start`.** Nothing in a worker checks the gate it opens, and
-   under decision 16 the prose pass gets its rules from the first call Igor runs.
-   *Recommendation:* drop it. That also drops `prose start` from task 0.16 and removes the
-   reason #174's decision 14 and #175's decision 15 give for keeping the session mark (the file
-   `prose start` writes to open the gate) in the worker's home. Keeping `prose start` would also
-   break #175's rule that no prose script runs as the worker user, since `prose start` must run
-   as that user to mark its session.
-7. **A triage skip is the step's own word.** Whether a commit needs `Bug-hunter-Tree:` rests on
-   bug-hunter's report that its first triage found nothing to hunt, and nothing checks that
-   report. *Recommendation:* mint `Bug-hunter-Tree:` on every commit, against the tree Igor
-   stages, so the tree check never rests on the report; on a change the triage skipped, the
-   trailer then attests that triage saw the tree, not that a hunt did.
-8. **`Refs #N` or #150's `Answers #n`.** The spec takes the reference that links without closing
-   from the item's tracker adapter, with `Refs #N` as GitHub's example; #150 names `Answers #n`.
-   *Recommendation:* one form for both, the one #150's adapter supplies.
-9. **When bug-hunter runs, stated twice.** #150 runs it at gate two "where the role configures
-   bug-hunter as a pipeline step" and says gate-one commits carry `Bug-hunter: skipped at triage
-   (spec only)`; this change runs it on every commit where the role lists `bug-hunter`.
-   *Recommendation:* #150 cites this change's rule.
-10. **Where `skills_dir` does not exist, every skill is unknown.** `skills_dir` names a server
-    path (#174), so where it does not exist every role whose org base lists `prose` is refused
-    at load, which breaks `igor role explain` on a developer's machine. *Recommendation:* check
-    names only in a command that runs a model step, and only where the directory exists, naming
-    it when it does not. The `role-config` delta is written to this recommendation, which
-    narrows decision 4's "refused at load".
-11. **A conflicted catch-up's resolution is a merge**, so model-written code reaches the branch
-    with no trailers. *Recommendation:* accept the gap for now; signing a merge needs a design of
-    its own.
-12. **Quoted untrusted text.** Signed text is published exactly, so model text quoting untrusted
-    content can carry @-mentions or markup the code cannot neutralise. *Recommendation:* the
-    prose pass's prompt tells it to quote untrusted text in code spans; nothing else is needed
-    before building.
-13. **The reader goals** Igor passes to prose's calls are not chosen yet; task 0.5 waits on
-    them. *Recommendation:* fixed goals per kind of text (the commit message, a changed doc, a
-    changed spec, a description, a reply), written in Igor's code, such as "review the change;
-    check it is safe to merge" for a commit, so that no item text reaches them. That also lifts
-    task 0.16's block: goals holding no item text are not private, so decision 15 does not keep
-    them off a command line.
-14. **Bug-hunter's own files.** `--plugin-dir` gives a step no Read access to a skill's files
-    (#174), and bug-hunter's instructions tell the model to read files beside its `SKILL.md`,
-    such as the triage rule in `reference.md`. Prose's steps need none (`design.md`, *The model
-    writes between prose's two calls*). *Recommendation:* grant every model step Read on
-    `<skills_dir>`, which is root-owned and holds no secret, rather than copying files into
-    prompts.
-15. **The answers to the cold read are model edits after bug-hunter's triage.** Without a rule,
-    `Bug-hunter-Tree:` would name a tree holding edits no triage saw. This change runs the
-    triage on the answers' diff too, and a diff it does not skip fails the attempt, since
-    answering a cold read changes prose, not code. *Recommendation:* as written.
-16. **Signing against Igor's index, building on #137.** Design item 3 decided to sign against
-    the API's tree where the two trees can differ. They differ today only for a symbolic link or
-    a submodule, which `main` uploads wrongly, and are equal once #137 carries both (task 0.4).
-    This change signs against `git write-tree` of Igor's index and builds on #137. Until #137 is
-    built, #175's checks stop a change holding a link or a submodule before it is staged.
-    *Recommendation:* reverse design item 3's decision and sign against Igor's index: today's API
-    tree carries a link or a submodule wrongly, so signing it would sign a wrong upload.
-17. **Commit paths other than `produce()` and #150's head push.** `lore-from-corrections`
-    publishes a model-drafted lore entry as a pull request through the existing propose path,
-    and `discussion-scribe` (#202) commits model-written records and posts chat summaries.
-    *Recommendation:* decision 5 covers every commit Igor pushes, so each of those changes cites
-    this one for its path; this change does not edit them.
-18. **Closing keywords for other issues.** Model text shaped by an item's untrusted text could
-    end a commit body, a `Bug-hunter:` value or a description with `Fixes #999`, which closes an
-    unrelated issue on merge. This change refuses any closing keyword other than the closing
-    linkage decision 6 sets for the item itself, at every gate, and sends the text back to the
-    step that wrote it. *Recommendation:* as written.
-19. **A claim lost during the signing steps.** Igor checks for a stop and its claim before each
-    model step after the worker, as at the checkpoints `surface-adapter` defines during a long
-    execution; a stop publishes nothing, since a stop is a person's word to drop the work. A lost
-    claim is different: another Igor now holds the item, and the work done so far may be worth
-    keeping.
-    `task-execution` on `main` publishes what exists as a draft on a lost claim, but at that
-    point no text is signed. *Recommendation:* run no further model step and publish the
-    worker's change as that draft, with a body the code assembles and no signed text; the next
-    Igor to claim the item redoes it, signed, before it can merge.
-20. **A second worker round after signing.** `loop-verifies-commands` (#189) runs the
-    repository's checks on the signed tree and, where one fails, runs the worker a second time,
-    then stages and signs again. Signing again without the steps would mint `Bug-hunter-Tree:`
-    over code no hunt saw. *Recommendation:* the second run's changes go through every step this
-    change sets out, from bug-hunter on, before they are signed; #189 cites this change.
+1. **Which step writes the reader goals for a post no worker run precedes**, such as a reply to
+   a mention (decision 32). Prose's first call runs before the step writes the post, so the
+   goals must exist before that step has written anything. *Recommendation:* the step that
+   writes the post writes its goals file in a first turn; Igor runs the first call; and the same
+   session continues with the rules and the token (`claude -p --resume`), so no extra step
+   reads the item.
+2. **The commit message's own goals.** `prose check`'s `--goals-file` holds per-file goals only,
+   so the message's goals still need `--goals`, on the command line, and shared-skills PR #27
+   does not change that. *Recommendation:* a second shared-skills change that lets `check` take
+   the message's goals from a file too, so that the model decides them as it decides the rest
+   (decision 32). The alternative, a goal fixed in Igor's code such as "review the change;
+   check it is safe to merge", holds no item text and could go on a command line, but would
+   not be the model's.
+3. **Decision 16 applied to posts.** Decision 16 answers measurement 0.9, which was of a
+   commit's first call; this change applies it to a post's `prose sign` too. A worker running a
+   post's first call would need a token store it can write, and could then forge a token.
+   *Recommendation:* confirm.
+4. **A second worker run after a conflict resolution.** `loop-verifies-commands` (#189) joins
+   such a run's edits to the merge commit, which carries no trailers (decision 30), so its
+   model-written fix would be published unsigned. *Recommendation:* decision 39 applies here
+   too: the second run's edits are a second commit on top of the merge, with its own trailers.
+5. **#150's reply after a revision**, which names each change request answered and says what
+   changed. #150's design files it with the handoff and the claim message, which go unsigned,
+   but "says what changed" reads as model-written. *Recommendation:* where a model writes what
+   changed, the reply is signed; the code-assembled list of answered requests around it is not.
 
 ## Why
 
@@ -384,10 +437,11 @@ governs them. Neither change is edited here: the rule lives in one place, and th
   post adds two: the cold read and the answers. A role pays them only for the skills it lists;
   task 4.1 measures the cost per item.
 - **Depends on the prose and bug-hunter skills** from the shared-skills repository, which is
-  not public yet. Bug-hunter's caller-commits mode is on its `main` (task 0.2). Prose needs a
-  file form for every call's reader goals before decision 16 is built (task 0.16). Igor loads
-  both as the `igor` plugin, with `--plugin-dir`, as `pinned-skills` (#174) builds it.
-- **Builds on `carry-what-a-tree-holds` (#137).** Without it, the tree Igor uploads differs
-  from its staged tree for a symbolic link or a submodule, and such a change fails as a tree
-  mismatch (`design.md`, item 3).
+  not public yet. Bug-hunter's caller-commits mode is on its `main` (task 0.2). Prose's `sign`
+  needs a file form for its reader goals before decision 16 is built (task 0.16). Igor loads
+  both as the `igor` plugin, with `--plugin-dir`, as `pinned-skills` (#174) builds it, or under
+  `igor run` without the server's install, from the person's own (decision 29).
+- **Builds on `carry-what-a-tree-holds` (#137).** Until it is built, #175's checks stop a
+  change holding a symbolic link or a submodule before staging, since the tree Igor would upload
+  differs from its staged tree for either (`design.md`, item 3).
 - **Works whichever of this change and `review-evidence` (#190) lands first** (decision 9).
