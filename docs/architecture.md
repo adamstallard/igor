@@ -426,9 +426,12 @@ push every citation, as below, and the review says so beside the count.
 
 The `questions` branch is an orphan branch of the lore repository, separate from igor's
 `igor-state`, that holds the inquisitor's questions about the organization and its projects
-(shared-skills #25). Each citation is a file on it holding only the cited entry's id, the date
-and an opaque run id. The Igor records the run id with the run's transcript on the state
-branch, so a review can show each citation's run and item.
+(shared-skills #25). The inquisitor and the Igor both write citations there, so a review reads
+one file format, which shared-skills #25 defines for both. A citation file holds the cited
+entry's id, the day it was pushed and, for a citation an Igor pushes from a run, the run's id.
+The run's id is a random identifier, so the citation names no item or repository. The Igor
+records the run's id on `igor-state`, with the run's transcript and the work item the run did,
+so a review can show which item each citation an Igor pushed came from.
 
 During an Igor's run, the worker reports each citation in its output, and the Igor pushes them;
 the worker holds no credential for the lore repository. The push is bookkeeping, like the firing

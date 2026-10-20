@@ -104,12 +104,14 @@ citation, and a refused citation writes nothing to the lore repository.
 
 The `questions` branch is an orphan branch of the lore repository, separate from the state
 branch where the Igor records its runs. The Igor SHALL create it, as an orphan, where it is missing. Each
-citation SHALL be written to it as a file holding only the cited entry's id, the date the Igor
-pushes it, and the run's id. The *run's id* is an opaque identifier the Igor mints for the run
-and records with the run's transcript on the state branch, so a review can find the run and its
-item there; it is derived from nothing in the run. The file's name, its path and the commit's
-message SHALL hold nothing else. Where a push is rejected because the branch moved, the Igor
-SHALL retry it on the branch's new tip.
+citation SHALL be written to it in the format that shared-skills #25's requirement
+[*A citation file has one format*](https://github.com/adamstallard/shared-skills/blob/spec/inquisitor/openspec/changes/inquisitor/specs/inquisitor/spec.md)
+sets for a citation an Igor pushes from a run. The link points to #25's unmerged branch; the
+proposal's Still open says when it moves. The value of the format's `run` key is the *run's
+id*: a random identifier the Igor mints for the run, which names neither the item nor its
+repository. The Igor records the run's id on the state branch, with the run's transcript and the
+run's item. Where a push is rejected because the branch moved, the Igor SHALL retry it on the
+branch's new tip.
 
 A citation SHALL go to no place more visible than the repository the question concerns, where
 private is less visible than internal and internal less than public. During a run, the
@@ -145,11 +147,13 @@ other text the worker wrote, and SHALL NOT say why a citation was refused.
   secret or personal
 - **THEN** the Igor pushes no citation for it
 
-#### Scenario: A citation holds the entry's id, the date and the run's id, and nothing else
+#### Scenario: A citation takes the one citation-file format, with the run's id
 
 - **WHEN** the Igor writes a citation to the `questions` branch
-- **THEN** the file holds the cited entry's id, the date it was pushed and the run's id
-- **AND** neither the file, its name, its path nor the commit's message holds anything else
+- **THEN** the file's path, its keys, and its commit's message, author, committer and date are
+  those shared-skills #25's *A citation file has one format* sets for a citation an Igor pushes
+  from a run
+- **AND** its `run` is the run's id
 
 #### Scenario: A citation's run can be found from its run id
 

@@ -13,7 +13,10 @@ request; Adam answered the questions each read raised. He made:
 - the second paragraphs of decisions 3, 6 and 8, and decisions 9 to 11, on 2026-10-20,
   answering the questions that this change's second to fourth consistency reads raised;
 - decision 12 on 2026-10-20. The agent that wrote this change proposed it, and Adam approved
-  it without changes.
+  it without changes;
+- later on 2026-10-20, after decisions 9 to 11, that a citation file takes the format
+  shared-skills #25 defines (decisions 110 and 111 in #25's proposal, both Adam's). Decision 10
+  now points to that format instead of stating its own.
 
 Terms used here:
 - An *Igor* is a teammate agent that runs one role. A *worker* is the agent an Igor starts to do
@@ -104,8 +107,11 @@ Terms used here:
    bookkeeping, like the firing record and the transcripts on the state branch, so the role's
    `allow` list does not govern it; `task-execution`'s *Only reversible artifacts are produced*
    says so. *Rejected:* a new `allow` action for citations.
-10. **A citation file holds only the entry's id, the date and the run's id,** with no text or
-    hash of the question and no person's identity. The run's id is an opaque identifier the Igor
+10. **A citation file takes the one format shared-skills #25 defines,** in its requirement
+    *A citation file has one format* (#25's decisions 110 and 111). This change points to that
+    requirement and does not state a format of its own. As #25 states it, the file holds the
+    cited entry's id, the date and, for a citation an Igor pushes from a run, the run's id, with no text or hash of
+    the question and no person's identity. The run's id is an opaque identifier the Igor
     records with the run's transcript on the state branch, so a review can find the run and its
     item there (decision 11). A question categorized as a vulnerability, a secret or personal
     sends no citation at all, to match shared-skills #25, which sends none for such questions.
@@ -156,17 +162,16 @@ Terms used here:
   the inquisitor's search during a run, and task 4.1 checks whether a worker can run that search
   before anyone does. Citations made outside a run are not written until then, so a review's
   count misses them.
-- Shared-skills #25's citation file differs from the one this change's requirement sets for
-  the citations an Igor pushes during a run, though both go to the same `questions` branch. #25
-  puts its file under `citations/`, names it by the date and six random hex digits, holds only
-  the entry's id and the date, and commits it with the message `inquisitor: log <file>`. This
-  change's requirement adds the run's id, and allows nothing else in the file's name, its path
-  or the commit's message. A citation the inquisitor writes outside a run carries no run's id,
-  so a review cannot show its run and item (decision 11). The branch needs one format that a
-  review reads; this change does not edit #25.
+- The citation-file format is defined only in shared-skills #25, in its requirement *A
+  citation file has one format*, and #25 has not merged. This change's requirement *An Igor
+  publishes the citations its worker reports* links to it on #25's branch. Until #25 merges,
+  gate two builds the format as #25's branch states it, and follows any change #25 makes to it.
+  Archive this change only after #25 merges, and then point the link at the requirement in
+  shared-skills' `openspec/specs/inquisitor/spec.md`.
 - [#153](https://github.com/adamstallard/igor/pull/153) (`signed-publishing`) requires skill
   trailers on every commit an Igor makes for a role that lists those skills. A citation commit
-  is bookkeeping, like a commit to the state branch, and carries none. Reported to #153, which
+  is bookkeeping, like a commit to the state branch, and carries none: shared-skills #25's
+  format, which also fixes the citation's commit, gives it no trailer. Reported to #153, which
   may want to exempt bookkeeping commits; this change does not edit it.
 - `lore-from-corrections` adds provenance to an existing entry when a correction restates its
   rule, rather than proposing a duplicate. Under decision 6, a duplicate check during a run
@@ -217,8 +222,8 @@ reading the codebase. Two cases contradict that:
   who writes a citation during a run, which citations it accepts, what the file holds, where it
   may go, and that a citation it refuses, withholds or cannot push is reported. It sits in
   `lore-firing` beside *What fired is recorded on the state branch*, the other record of an
-  entry's use. The citation file's name and path are left to gate two, within the requirement's
-  limit that they hold nothing but the entry's id, the date and the run's id.
+  entry's use. For the file's format, it points to shared-skills #25's *A citation file has one
+  format* instead of stating its own.
 - `task-execution`'s *Only reversible artifacts are produced* exempts pushing a run's citations
   from the role's `allow` list, with one new scenario.
 - `lore-review`'s *An entry already in the store is never overwritten by proposing* reports an

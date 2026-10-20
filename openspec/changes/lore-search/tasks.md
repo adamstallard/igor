@@ -40,11 +40,11 @@
 - [ ] 3.1 Define where in its output a worker reports a citation and its question's category.
       The Igor reads the citations from there and, only when the run publishes an artifact or
       ends in its handoff comment on the item, pushes each to the lore repository's `questions`
-      branch as a file holding only the cited entry's id, the date and the run's id. Tests for
-      *A worker's citation is published by its Igor*, *A run that publishes nothing pushes no
-      citations*, *A citation for a categorized question is not pushed*, *A citation holds the
-      entry's id, the date and the run's id, and nothing else* and *A citation push needs no
-      allow action*
+      branch, in the format shared-skills #25's *A citation file has one format* sets for a
+      citation an Igor pushes from a run. Tests for *A worker's citation is published by its
+      Igor*, *A run that publishes nothing pushes no citations*, *A citation for a categorized
+      question is not pushed*, *A citation takes the one citation-file format, with the run's
+      id* and *A citation push needs no allow action*
 - [ ] 3.2 The Igor mints an opaque run id for each run and records it with the run's transcript
       on the state branch. A test for *A citation's run can be found from its run id*
 - [ ] 3.3 The Igor creates the `questions` branch as an orphan where it is missing, and retries
