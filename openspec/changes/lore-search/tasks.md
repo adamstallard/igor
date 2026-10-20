@@ -66,8 +66,9 @@
       `~/.config/shared-skills/inquisitor.json` from the environment Igor writes out for it.
       Check after [#174](https://github.com/adamstallard/igor/pull/174), which decides which
       skills a worker loads, [#175](https://github.com/adamstallard/igor/pull/175), which
-      changes what the worker may touch, and shared-skills #25's next push, which carries the
-      firing scope rule inside an Igor, have all landed
+      changes what the worker may touch, and shared-skills #25, which carries the firing scope
+      rule inside an Igor, have all landed. Gate two's code does not wait for this check; using
+      the inquisitor during a run does, as this section's heading says.
 - [ ] 4.2 Whether a worker can read the lore checkout's files directly. #175 requires only that
       it cannot write them. If it can read them, file an issue: a worker could then see entries outside its role's
       scope with no search at all.

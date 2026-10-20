@@ -2,16 +2,18 @@
 
 ## Decisions
 
-Decisions 1 to 11 are Adam's, recorded in
-[#215](https://github.com/adamstallard/igor/issues/215):
+All twelve decisions are Adam's, and
+[#215](https://github.com/adamstallard/igor/issues/215) records each one. A *consistency read*
+is a check, by a fresh agent, of this change against every other spec, change and open pull
+request; Adam answered the questions each read raised. He made:
 - decisions 1, 2 and 7 on 2026-10-19, while reviewing
   [shared-skills #25](https://github.com/adamstallard/shared-skills/pull/25);
 - decisions 3 to 6 on 2026-10-20, answering this change's first consistency read;
 - the first paragraph of decision 8 on 2026-10-20, while reviewing shared-skills #25;
-- the rest of decisions 8 to 11, and the second paragraphs of decisions 3 and 6, on 2026-10-20,
-  answering this change's second, third and fourth consistency reads.
-
-Decision 12 is not Adam's yet: it lists choices this change's author made, for him to approve.
+- the second paragraphs of decisions 3, 6 and 8, and decisions 9 to 11, on 2026-10-20,
+  answering the questions that this change's second to fourth consistency reads raised;
+- decision 12 on 2026-10-20. The agent that wrote this change proposed it, and Adam approved
+  it without changes.
 
 Terms used here:
 - An *Igor* is a teammate agent that runs one role. A *worker* is the agent an Igor starts to do
@@ -44,10 +46,10 @@ Terms used here:
 4. **During an Igor's run, a search uses firing's scope rule for the run's role.** That is
    `scopeMatches` in `src/firing.ts`: `global`, `role:` naming the running role, and `project:`
    naming any repository the role works. This holds when the inquisitor skill runs inside an
-   Igor. Shared-skills #25 adopts the same rule for that case in its next push; its head,
-   6de9930, does not have it yet. A search outside an Igor's run, such as the inquisitor in a
-   person's own session, has no run's role to filter by, and this change sets no rule for it;
-   the inquisitor's own spec does.
+   Igor, and shared-skills #25 adopts the same rule for that case (its decision 64). A search
+   outside an Igor's run, such as the inquisitor in a person's own session, has no run's role to
+   filter by, and this change sets no rule for it; the inquisitor's own spec, in shared-skills
+   #25, does.
 5. **A search hit is not a firing.** It is not recorded as one and gets no counter of its own.
    For deciding whether an entry is used, the event that counts is an agent citing the entry as
    the answer to a question, because then no person had to be asked. A review that proposes
@@ -77,11 +79,11 @@ Terms used here:
 8. **A review reads an entry's citations from the lore repository's `questions` branch.** That
    branch is an orphan branch of the lore repository, separate from igor's `igor-state`, holding
    the inquisitor's questions about the organization and its projects. Shared-skills #25 moves
-   those questions there, and writes citations, in its next push; its head, 6de9930, keeps them
-   under `questions/` on the default branch, by pull request. Each time the inquisitor finds the
-   answer to a question in a lore entry, so that nobody is asked, a citation is written to that
-   branch, as decisions 9 and 10 say. *Rejected:* counting citations in the inquisitor's question
-   logs, which are scattered across repositories, some of them worked by no Igor role.
+   those questions there (its decision 42), and writes citations there. When the inquisitor
+   finds the answer to a question in a lore entry, so that nobody is asked, a citation of that
+   entry goes to that branch, within the limits decisions 9 and 10 set. *Rejected:* counting
+   citations in the inquisitor's per-repository question logs, which are scattered across
+   repositories, some of them worked by no Igor role.
 
    Where the branch is missing or holds no citation, the review reports citations as not
    checked, never as zero, and proposes no entry as unused. Otherwise its count is a lower bound,
@@ -106,14 +108,13 @@ Terms used here:
     hash of the question and no person's identity. The run's id is an opaque identifier the Igor
     records with the run's transcript on the state branch, so a review can find the run and its
     item there (decision 11). A question categorized as a vulnerability, a secret or personal
-    sends no citation at all, to match what shared-skills #25's next push does for such
-    questions.
+    sends no citation at all, to match shared-skills #25, which sends none for such questions.
 
     No citation goes to a place more visible than the repository the question concerns, where
     private is less visible than internal and internal less than public. A citation tells its
     readers that work on that repository needed the entry, and when; the cited entry also shows
-    what the question was about. Adam gave this rule as
-    the inquisitor's; #25's head, 6de9930, states it only for proposing lore. A lore repository
+    what the question was about. This rule is Adam's, given for the inquisitor and for this
+    change alike; shared-skills #25 states it for the inquisitor's citations. A lore repository
     whose visibility cannot be read counts as public, and a concerned repository whose
     visibility cannot be read counts as private. During a run, the repository the question
     concerns is the repository of the item the run works, never one the worker names.
@@ -124,8 +125,8 @@ Terms used here:
     entry's id, the date and the run's id. A review shows each citation's run and item, so the
     person reviewing a prune proposal can judge it. Prune proposals are always reviewed by a
     person, and nothing else guards against a forged citation.
-12. **Adopt the citation mechanics this change's author chose, for Adam's approval.** These are
-    not yet Adam's decisions:
+12. **How the Igor dates, pushes and records citations.** Approved by Adam (2026-10-20), as
+    the agent that wrote this change proposed it:
     - The citation's date is the date the Igor pushes it, since the worker's output is
       untrusted.
     - The Igor creates the `questions` branch, as an orphan, where it is missing. Shared-skills
@@ -146,15 +147,23 @@ Terms used here:
   worker rather than letting it inherit the server's. Open pull request
   [#174](https://github.com/adamstallard/igor/pull/174) decides which skills a worker loads, and
   [#175](https://github.com/adamstallard/igor/pull/175) changes what the worker may touch. Task
-  4.1 checks, after both settle and shared-skills #25's next push lands.
+  4.1 checks once both and shared-skills #25 have landed.
 - Whether a worker can read the lore checkout's files directly. If it can, it can see entries
   outside its role's scope without any search, and the filter above does not stop that. #175
   requires only that the worker cannot write the checkout, so task 4.2 still checks reading.
-- Shared-skills #25 has to carry the firing scope rule inside an Igor (decision 4), the
-  `questions` branch and citations (decision 8). Its next push does. Until it lands, nobody
-  should rely on the inquisitor's search during a run, and task 4.1 checks it before anyone
-  does. Citations made outside a run are not written until then, so a review's count misses
-  them.
+- Shared-skills #25 carries the firing scope rule inside an Igor (decision 4), the `questions`
+  branch and citations (decision 8), and has not merged. Until it merges, nobody should rely on
+  the inquisitor's search during a run, and task 4.1 checks whether a worker can run that search
+  before anyone does. Citations made outside a run are not written until then, so a review's
+  count misses them.
+- Shared-skills #25's citation file differs from the one this change's requirement sets for
+  the citations an Igor pushes during a run, though both go to the same `questions` branch. #25
+  puts its file under `citations/`, names it by the date and six random hex digits, holds only
+  the entry's id and the date, and commits it with the message `inquisitor: log <file>`. This
+  change's requirement adds the run's id, and allows nothing else in the file's name, its path
+  or the commit's message. A citation the inquisitor writes outside a run carries no run's id,
+  so a review cannot show its run and item (decision 11). The branch needs one format that a
+  review reads; this change does not edit #25.
 - [#153](https://github.com/adamstallard/igor/pull/153) (`signed-publishing`) requires skill
   trailers on every commit an Igor makes for a role that lists those skills. A citation commit
   is bookkeeping, like a commit to the state branch, and carries none. Reported to #153, which
