@@ -27,9 +27,14 @@ holds as an entry and the branch as a rejection is the case worth stopping for.
 During an Igor's run, the gate and minting SHALL still check an id against every entry and
 rejection, but where the one holding it is an entry, or a rejected candidate, whose scope does
 not cover the run's role, they SHALL report only that the id is taken. That report MUST NOT name
-what holds the id, say whether it is an entry or a rejection, or say what it claims. *Covers* is
-as `lore-firing`'s *Lore reaches the worker unbidden* defines it, and so is *during an Igor's
-run*. A rejection that records no scope counts as outside the run's role's scope.
+what holds the id, say whether it is an entry or a rejection, or say what it claims. The
+candidate SHALL then not be proposed during that run, under that id or any other, and the run
+SHALL report that it was not proposed; a person may propose it outside a run. The "id taken"
+report and the refusal to propose hold even where the checkout holds the same name in the same
+kind. Minting's silence about such a name, set out above, applies only outside a run, or to a
+holder whose scope covers the run's role. *Covers* is
+as `lore-firing`'s *Lore reaches the worker unbidden* defines it, and so are *during an Igor's
+run* and how a rejection that records no scope counts.
 
 This governs the id space and nothing else. A checkout that is behind is still behind on the
 configuration committed beside the store, and on where in the repository the store is read from;
@@ -53,6 +58,8 @@ correct in general.
 
 - **WHEN** an id is created for a claim whose slug names an entry on the default branch, and the
   checkout does not have it
+- **AND** either the id is not created during an Igor's run, or what holds the name has a
+  scope that covers the run's role
 - **THEN** the id handed out is not that one
 - **AND** the entry is written under an id that was free on that branch when it was read
 - **AND** it is reported that an entry on that branch holds the name the claim derives, since the
@@ -62,6 +69,8 @@ correct in general.
 
 - **WHEN** an id is created for a claim whose slug names a rejection on the default branch, and
   the checkout does not have it
+- **AND** either the id is not created during an Igor's run, or what holds the name has a
+  scope that covers the run's role
 - **THEN** the id handed out is not that one
 - **AND** it is reported that the name is rejected there and that such a claim is not proposed
   again, which proposing cannot refuse under the id that was handed out
@@ -70,6 +79,8 @@ correct in general.
 
 - **WHEN** an id is created for a claim whose slug names an entry the checkout has, whether or
   not the default branch has it as well
+- **AND** either the id is not created during an Igor's run, or what holds the name has a
+  scope that covers the run's role
 - **THEN** the id handed out is not that one
 - **AND** nothing is reported about the default branch, that entry being in front of the person
   already
@@ -102,3 +113,10 @@ correct in general.
 - **AND** the report says only that the id is taken
 - **AND** it does not name what holds the id, say whether it is an entry or a rejection, or say
   what it claims
+
+#### Scenario: A candidate whose id is taken out of scope is not proposed during a run
+
+- **WHEN** during an Igor's run, a candidate's id is reported only as taken
+- **THEN** the candidate is not proposed in that run, under that id or another one minting
+  could hand out
+- **AND** the run reports that the candidate was not proposed

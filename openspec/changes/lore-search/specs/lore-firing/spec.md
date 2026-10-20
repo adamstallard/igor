@@ -31,7 +31,8 @@ A check that compares a candidate entry against the store, to avoid proposing a 
 curation and not a search. It MAY compare against `provisional` entries, and against
 candidates a reviewer has already rejected. During an Igor's run, it MUST NOT compare against an
 entry or a rejected candidate whose scope does not cover the run's role, and a rejection that
-records no scope counts as outside it. Checking that a candidate's id is free is not
+records no scope counts as outside it. A rejection *records a scope* when its file holds the
+rejected candidate's `scope`. Checking that a candidate's id is free is not
 such a check: *An entry already in the store is never overwritten by proposing* governs it.
 
 A search's results MUST NOT be recorded as firings.
@@ -104,8 +105,13 @@ credential but its seat's*), and the role's `allow` list does not govern the pus
 reversible artifacts are produced*).
 
 The Igor SHALL push a citation only when its id names an entry that is `active`, with a scope
-that covers the run's role, in the lore store as the run read it. It SHALL refuse any other
-citation, and a refused citation writes nothing to the lore repository.
+that covers the run's role, in the lore store as the run read it. The Igor SHALL refuse any
+other citation, and a refused citation writes nothing to the lore repository.
+
+During a run, a search, including the inquisitor's first filter, which looks for an answer
+already recorded, SHALL read only the lore store the Igor injects from: the lore repository
+the Igor's configuration names as its destination. So a citation's entry id names one entry
+in one lore repository.
 
 The `questions` branch is an orphan branch of the lore repository, separate from the state
 branch where the Igor records its runs. The Igor SHALL create it, as an orphan, where it is
@@ -113,9 +119,9 @@ missing. Each citation SHALL be written to it in the format that shared-skills #
 requirement
 [*A citation file has one format*](https://github.com/adamstallard/shared-skills/blob/spec/inquisitor/openspec/changes/inquisitor/specs/inquisitor/spec.md)
 sets for a citation an Igor pushes from a run. That format has a `run` key, whose value is the
-*run's id*: a random identifier the Igor mints for the run. The Igor records the run's id on the state
-branch, with the run's transcript and the run's item. Where a push is rejected because the
-branch moved, the Igor SHALL retry it on the branch's new tip, at most three times; a citation
+*run's id*: a random identifier the Igor mints for the run. The *run's record* is the run's row
+in the execution ledger, `executions.ndjson` on the state branch, which has one row per run. The Igor records the run's id there,
+with the run's item, time and outcome. Where a push is rejected because the branch moved, the Igor SHALL retry it on the branch's new tip, at most three times; a citation
 still not pushed after the third retry counts as failed to push.
 
 A citation SHALL go to no place more visible than the repository the question concerns, where
@@ -125,7 +131,7 @@ takes it from the worker's output. A lore repository whose visibility the Igor c
 counts as public, and a repository the question concerns whose visibility it cannot read counts
 as private. A citation that this rule withholds is not pushed.
 
-The Igor SHALL record, with the run's transcript on the state branch, how many of the run's
+The Igor SHALL record, in the run's record on the state branch, how many of the run's
 citations it did not push, by reason: refused, withheld by the visibility rule, failed to push,
 or the run published neither an artifact nor a handoff. That record SHALL NOT repeat a refused
 citation's id or any other text the worker wrote, and SHALL NOT say why a citation was refused.
@@ -179,11 +185,25 @@ citation's id or any other text the worker wrote, and SHALL NOT say why a citati
   from a run
 - **AND** its `run` is the run's id
 
+#### Scenario: A search during a run reads only the Igor's lore store
+
+- **WHEN** an agent searches lore during an Igor's run, whether directly or through the
+  inquisitor's filter 1
+- **AND** other lore repositories are configured for the inquisitor
+- **THEN** the search reads only the lore store the Igor injects from
+
+#### Scenario: A citation is checked against the store as the run read it
+
+- **WHEN** a worker cites an entry that was `active` and in the run's role's scope when the run
+  read the store
+- **AND** that entry is deprecated or rescoped on the lore repository before the Igor pushes
+- **THEN** the Igor still pushes the citation, if the run's other rules allow it
+
 #### Scenario: A citation's run can be found from its run id
 
 - **WHEN** a review reads a citation's run id
-- **THEN** the state branch that holds that run's transcript records the same id, with the run's
-  item
+- **THEN** the run's row in the execution ledger on the state branch holds the same id, with
+  the run's item, time and outcome
 
 #### Scenario: A missing questions branch is created as an orphan
 

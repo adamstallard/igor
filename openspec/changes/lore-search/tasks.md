@@ -31,8 +31,10 @@
 - [ ] 2.6 `lore-review`'s id gate and minting take the run's role, when they run during a run,
       and then report a collision with an entry or rejected candidate outside that role's scope,
       or with a rejection that records no scope, only as "id taken": without naming it, saying
-      which kind it is, or saying what it claims. A test for *An out-of-scope collision during a
-      run is reported only as taken*, built now, though no Igor proposes during its run until
+      which kind it is, or saying what it claims. The candidate is then not proposed in that
+      run, under any id, and the run reports that. Tests for *An out-of-scope collision during
+      a run is reported only as taken* and *A candidate whose id is taken out of scope is not
+      proposed during a run*, built now, though no Igor proposes during its run until
       lore-from-corrections' `propose-lore` lands
 
 ## 3. Citations made during a run
@@ -48,8 +50,8 @@
       needs no allow action*. *A worker reports no citation for a question with a category*
       is the inquisitor skill's behaviour inside the worker, which the Igor cannot check, so
       gate two has no Igor-side test for it
-- [ ] 3.2 The Igor mints an opaque run id for each run and records it with the run's transcript
-      on the state branch. A test for *A citation's run can be found from its run id*
+- [ ] 3.2 The Igor mints an opaque run id for each run and records it in the run's record on
+      the state branch. A test for *A citation's run can be found from its run id*
 - [ ] 3.3 The Igor creates the `questions` branch as an orphan where it is missing, and retries
       a push that was rejected because the branch moved, at most three times. Tests for *A
       missing questions branch is created as an orphan*, *A push that loses a race is retried*
@@ -59,7 +61,9 @@
       repository, counting an unreadable visibility as the rule says. Tests for *A citation of
       an entry that cannot be cited is refused*, *A citation is not pushed somewhere more
       visible than its question*, *The worker cannot choose the repository a question concerns*
-      and *An unreadable visibility counts against pushing*
+      and *An unreadable visibility counts against pushing*. Also tests for *A citation is
+      checked against the store as the run read it* and *A search during a run reads only the
+      Igor's lore store*
 - [ ] 3.5 The run's record on the state branch counts the citations the Igor did not push, by
       reason, with no worker text and no reason for a refusal. A test for *A citation that
       cannot be pushed is counted*
@@ -68,6 +72,17 @@
       as 3.1 to 3.5. Tests for *A citation from the Igor's own
       inquisitor run is pushed under the same rules* and *The Igor's own inquisitor run makes
       no citation for a question with a category*
+
+- [ ] 3.7 Define the bare flag a worker reports when its run met a question with a category,
+      naming nothing about it, on the same channel as 3.1. For that run, execution writes no
+      transcript, only its outcome, cost and ledger row; `prBody` in `src/execute.ts` puts no
+      excerpt of the worker's result and no transcript link in the pull request body; and the
+      refusal record keeps only the refusal's reason. Tests for *Transcript persisted off the
+      main line*, *A run that met a categorized question stores no transcript*, *A run that
+      met a categorized question publishes no excerpt of its result*, *A refusal on such a
+      run keeps only its reason*, *The worker's report of a categorized question names
+      nothing* and, once 3.6 can be built, *The Igor's own inquisitor run that met a
+      categorized question stores no transcript*
 
 ## 4. Facts to check before anyone relies on a search or a citation in a run
 

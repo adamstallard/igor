@@ -433,9 +433,15 @@ The `questions` branch is an orphan branch of the lore repository, separate from
 (shared-skills #25). The inquisitor and the Igor both write citations there, so a review reads
 one file format, which shared-skills #25 defines for both. A citation file holds the cited
 entry's id, the day it was pushed and, for a citation an Igor pushes from a run, the run's id.
-The run's id is a random identifier that the Igor records on `igor-state`, with the run's
-transcript and the work item the run did. It links each citation an Igor pushed to that
-transcript, so a review can show which item the citation came from.
+The run's id is a random identifier that the Igor records on `igor-state`, in the run's row in
+the execution ledger, with the work item, time and outcome. That row is written once per run,
+so the id links each citation an Igor pushed to its run, and a review can show which item the
+citation came from. The run's transcript cannot serve as that link: there is one per item, and
+each run overwrites it.
+
+An entry id is unique within one lore repository, while the inquisitor can be configured with
+several. During a run, a search reads only the lore store the Igor injects from, so a
+citation's entry id names one entry.
 
 During an Igor's run, the worker reports each citation by the entry's id alone, and the Igor
 pushes them; the worker holds no credential for the lore repository. The push is bookkeeping,
@@ -445,6 +451,14 @@ item, and only of an `active` entry in the run's role's scope, since the worker'
 untrusted. The inquisitor gives a question one of three categories when it is sensitive:
 `vulnerability`, `secret` or `personal`. No citation is made for such a question, since the
 cited entry would show what the question was about.
+
+A run that meets such a question stores no transcript on `igor-state`. It keeps only its row
+in the execution ledger and its counts of citations not pushed, described below. Its pull
+request body carries no excerpt of the worker's result and no transcript link, and a record
+of the provider refusing it keeps only the refusal's reason. Free text cannot be redacted
+reliably, and personal details should not reach everyone who can read the item or the lore
+repository, which holds `igor-state`. The worker's report carries a bare flag that its run met
+such a question, naming nothing about it.
 
 An Igor whose work is stopped by a question it cannot settle runs the inquisitor skill itself,
 with no worker (#211). It pushes that run's citations by the same rules as a worker's.
@@ -460,8 +474,8 @@ at each push.
 
 A review never sees a citation the Igor did not push, so none of these reaches its count:
 refused, withheld by visibility, failed to push, or from a run that published neither an
-artifact nor a handoff. The Igor tallies each of these kinds in the record it writes with the
-run's transcript on the state branch.
+artifact nor a handoff. The Igor tallies each of these kinds in the run's row in the
+execution ledger.
 
 A worker steered by text in its item could report forged citations, which would keep an entry
 from being proposed as unused. That is a known limit: a review shows each citation's run and
