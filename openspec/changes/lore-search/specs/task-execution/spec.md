@@ -47,7 +47,8 @@ request body SHALL carry no excerpt of the worker's result and no link to a tran
 record of the provider refusing the run SHALL keep only the refusal's reason, never the
 provider's text. The reason is the limit Igor read from the provider's reply and the time
 that limit resets, where Igor read them; where it read neither, the record says only that the
-provider refused the run.
+provider refused the run. A record of the provider refusing any other run SHALL keep the
+provider's whole reply.
 
 During a run, the worker SHALL report a bare flag that the run met such a question, with no
 category, question or answer. When the Igor runs the inquisitor skill itself and that skill gives a
@@ -84,6 +85,11 @@ question a category, every rule of this paragraph and the one above SHALL apply 
 - **WHEN** the provider refuses a run whose worker reported meeting a question with a category
 - **THEN** the record of the refusal on the state branch holds the refusal's reason
 - **AND** it holds none of the provider's text
+
+#### Scenario: A refusal on any other run keeps the provider's reply
+
+- **WHEN** the provider refuses a run that met no question with a category
+- **THEN** the record of the refusal on the state branch holds the provider's whole reply
 
 #### Scenario: The worker's report of a categorized question names nothing
 

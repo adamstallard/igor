@@ -319,11 +319,16 @@ A worker may also be offered a search over the store, for example to find an ent
 firing did not inject, as when a role's in-scope entries exceed the firing budget: then none are
 injected, as the budget paragraph below explains. During an Igor's run, scope binds a search
 exactly as it binds firing: an entry whose scope does not cover the role is never returned
-(§4.2.2). Status does not bind a search: it may return an in-scope `provisional` or
-`deprecated` entry, labelled as not lore, and only `active` entries count as lore. A search
-outside an Igor's run, such as a person running the inquisitor skill in their own session,
-follows the inquisitor's own rules. A search's results come back as search output, never
-in the trusted channel that carries injected lore. A search hit is not a firing (§3.4.1).
+(§4.2.2). The inquisitor's search also reads the lore repository's `questions` branch, which
+holds question files, each logging a question an agent asked, and miss files, each logging a
+question a person said should have been settled without asking them. Scope binds those files
+too: a file is never returned unless its `repository` key names a repository the role works.
+Status does not bind a search: it may return an in-scope `provisional` or `deprecated` entry,
+labelled as not lore, and only `active` entries count as lore. A search outside an Igor's
+run, such as a person running the inquisitor skill in their own session, has no role to
+filter by, so igor sets no rule for it; the inquisitor skill's own spec, in shared-skills
+#25, sets its scope rule. A search's results come back as search output, never in the trusted
+channel that carries injected lore. A search hit is not a firing (§3.4.1).
 
 A trigger is `(condition → intervention)`. Interventions come in three kinds:
 
@@ -454,11 +459,15 @@ cited entry would show what the question was about.
 
 A run that meets such a question stores no transcript on `igor-state`. It keeps only its row
 in the execution ledger and its counts of citations not pushed, described below. Its pull
-request body carries no excerpt of the worker's result and no transcript link, and a record
-of the provider refusing it keeps only the refusal's reason. Free text cannot be redacted
-reliably, and personal details should not reach everyone who can read the item or the lore
-repository, which holds `igor-state`. The worker's report carries a bare flag that its run met
-such a question, naming nothing about it.
+request body carries no excerpt of the worker's result and no transcript link. If the
+provider refuses the run over a usage limit, the record of that refusal keeps only the limit
+and reset time Igor read from the provider's reply. Free text cannot be redacted reliably, and personal details should not reach everyone
+who can read the item or the lore repository, which holds `igor-state`. The worker's report
+carries a bare flag that its run met such a question, naming nothing about it.
+
+Every other refusal record keeps the provider's whole reply, because those replies are how
+igor's patterns for reading a limit and its reset time get checked. A refused run that met a
+sensitive question keeps no reply, so it gives that check nothing to work with.
 
 An Igor whose work is stopped by a question it cannot settle runs the inquisitor skill itself,
 with no worker (#211). It pushes that run's citations by the same rules as a worker's.
@@ -471,6 +480,12 @@ a role's repositories would expose those names too. #212, decided and not yet bu
 refuse to start when the team's lore repository is more visible than the least visible
 repository any role works. That check runs only at startup, so the citation rule still applies
 at each push.
+
+The Igor learns the lore repository's visibility by asking GitHub once, at startup, which
+returns `private`, `internal` or `public`; both #212's check and the citation rule use that
+answer until the Igor restarts. The `publicStore` setting cannot serve: it says only whether the store is public, so
+an internal lore repository would pass for private. A lore repository whose visibility
+GitHub does not return counts as public.
 
 A review never sees a citation the Igor did not push, so none of these reaches its count:
 refused, withheld by visibility, failed to push, or from a run that published neither an

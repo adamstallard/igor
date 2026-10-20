@@ -2,7 +2,7 @@
 
 ## Decisions
 
-All fourteen decisions are Adam's, and
+All eighteen decisions are Adam's, and
 [#215](https://github.com/adamstallard/igor/issues/215) records each one. A *consistency read*
 is a check, by a fresh agent, of this change against every other spec, change and open pull
 request; Adam answered the questions each read raised. He made:
@@ -33,7 +33,9 @@ request; Adam answered the questions each read raised. He made:
   decision 12, which the agent that wrote this change proposed; decisions 13 and 14; and a
   new reason for the run id in decisions 10 and 12. The reason first given, a link to the
   run's transcript, fails because a transcript is kept per item, not per run; the new reason
-  is answer 1 above.
+  is answer 1 above;
+- decisions 15 to 18 on 2026-10-20, answering four questions a later consistency read
+  raised.
 
 Terms used here:
 - An *Igor* is a teammate agent that runs one role. A *worker* is the agent an Igor starts to do
@@ -158,7 +160,8 @@ Terms used here:
     private is less visible than internal and internal less than public. A citation tells its
     readers that work on that repository needed the entry, and when; the cited entry also shows
     what the question was about. This rule is Adam's, given for the inquisitor and for this
-    change alike; shared-skills #25 states it for the inquisitor's citations. A lore repository
+    change alike; shared-skills #25 states it for the inquisitor's citations. The Igor reads
+    the lore repository's visibility from GitHub at startup (decision 16). A lore repository
     whose visibility cannot be read counts as public, and a concerned repository whose
     visibility cannot be read counts as private. During a run, the repository the question
     concerns is the repository of the item the run works, never one the worker names.
@@ -224,6 +227,35 @@ Terms used here:
     proposing under another id could put a lesson a reviewer already rejected in front of a
     reviewer again (Adam, 2026-10-20).
 
+15. **During a run, scope also filters the question and miss files a search finds.** The
+    inquisitor's first filter searches the `questions` branch's question and miss files as
+    well as lore entries, and those files can concern projects the run's role does not work.
+    Decision 3's hard filter applies to them: a worker never sees a question or miss file
+    about a repository its role does not work, nor any count or mention of one. A file's
+    scope is read from its `repository` key, the repository the question concerns as
+    `owner/repo`. Shared-skills #25 calls a question file a *log file*, and sets both formats
+    in its *A log file and a miss file have one format*. The file is in scope when that key names a repository the
+    run's role works; a file whose `repository` key is missing or unreadable counts as out of
+    scope (Adam, 2026-10-20).
+16. **The Igor learns the lore repository's visibility from GitHub, once, at startup.** One
+    API call returns the exact visibility: `private`, `internal` or `public`. #212's startup
+    check and the citation visibility rule in decision 10 both use it, and `publicStore` no
+    longer decides it. `publicStore` says only whether the store is public, so an internal
+    lore repository would read as private, and a private item's citation would go to a
+    repository everyone in the enterprise can read. A lore repository whose visibility GitHub
+    does not return counts as public. Read only at startup, the lore repository's
+    visibility is not read again until the Igor restarts (Adam, 2026-10-20).
+17. **A citation is checked against the lore store as the run read it, not at push time.**
+    The check is decision 9's: that the cited entry is `active` and in the run's role's scope.
+    The citation then records what the run actually used, even when #208's lore pull
+    deprecates or rescopes the entry while the run is under way (Adam, 2026-10-20).
+18. **A refused run that met a question with a category keeps no provider reply.** Its
+    refusal record, under decision 13, keeps only the limit and reset time Igor parsed from
+    the reply. Every other refused run keeps the provider's whole reply, as today: nobody yet
+    knows where the provider puts its reset time, and those replies are how igor's limit
+    patterns get checked. Adam accepted that runs under decision 13 add nothing to that check
+    (2026-10-20).
+
 **Still open:**
 - Whether gate two builds a search command for workers. Either way, gate two builds and tests
   the filter a search must use (tasks.md, section 2).
@@ -271,24 +303,32 @@ Terms used here:
   [#153](https://github.com/adamstallard/igor/pull/153) has a model write the body. Whether
   those changes carry decision 13's exception, and leave the commands and a model-written body
   free of that run's text, is theirs; this change does not edit them.
-- Shared-skills #25 still says the run's id is recorded with the run's transcript (its
-  decision 110), and has an Igor worker blocked by a `personal` question report its category,
-  where decision 13's flag names none. Both are #25's to change.
-- **Questions for Adam, raised by the last consistency read:**
-  - During a run, the inquisitor's filter 1 also returns question and answer files from the
-    `questions` branch, which can concern projects the run's role does not work. Decision 3's
-    hard filter covers entries only. Should those files be filtered by scope too?
-  - Where the lore repository's visibility comes from `publicStore`, which says only whether
-    it is public, an internal lore repository reads as private, and a private item's citation
-    would be pushed to it. Should the Igor ask GitHub, or count `publicStore: false` as
-    internal?
-  - The Igor checks a citation against the store as the run read it, not at push time, so an
-    entry deprecated mid-run (as #208's lore pull allows) can still be cited. Should the
-    check use the store at push time instead?
-  - Today's refusal record keeps the provider's whole reply, because nobody yet knows where
-    in it the provider puts the time its limit resets (`src/execute.ts:2077`); the records are
-    collected to find out. Under decision 13 a refusal keeps only the limit and reset time
-    Igor read, so such runs add nothing to that search. Is that loss acceptable?
+- Shared-skills #25 has an Igor worker blocked by a `personal` question report its category,
+  where decision 13's flag names none. That is #25's to change.
+- Shared-skills #25's filter 1 hides out-of-scope lore entries inside an Igor, but not
+  question or miss files on the `questions` branch, which decision 15 filters by their
+  `repository` key. That is #25's to change.
+- `lore-review`'s *A public destination refuses privately-sourced entries* is built to
+  take the lore repository's visibility from `publicStore` when it is set
+  (`src/propose.ts:297`). Decision 16 covers #212's check and the citation rule only. The two
+  can disagree on an internal lore repository: with `publicStore: false`, `lore-review`
+  treats it as not public and lets a privately-sourced entry into it, while the citation rule
+  withholds a private item's citation from it. Whether `lore-review` should ask GitHub too is
+  for a change to `lore-review`; this change does not edit it.
+- #212's issue body records decision 16 for its startup check. #212 has no change yet; the
+  change that specifies it must read the lore repository's visibility as decision 16 says.
+  This change's requirement binds only the citation rule.
+- [#188](https://github.com/adamstallard/igor/pull/188)'s *What the action log keeps follows
+  who can read the store* asks GitHub, at each write, whether the store is private, and rejects
+  a cached value as possibly stale. Decision 16 reads the lore repository's visibility once, at
+  startup, with all three values. Reported to #188; this change does not edit it.
+- **Question for Adam, raised by the last consistency read:** a run the provider refuses over
+  a usage limit may end before its worker reports decision 13's flag. The refusal record is
+  written from the provider's reply whether or not the flag arrived
+  (`src/execute.ts:2077`), so such a run would keep the provider's whole reply and its
+  transcript. Nobody has checked whether the flag
+  reaches the Igor on such a run (task 4.4). Should a refused run with no completed report be
+  treated as flagged?
 - A worker's report of a citation for a question with a category is the worker's to withhold;
   the Igor cannot see a category, so a worker that reports one anyway gets it pushed (decision
   11).
@@ -349,17 +389,21 @@ reading the codebase. Two cases contradict that:
 - `lore-firing`'s *Lore reaches the worker unbidden* keeps injection, now saying it happens
   whenever the entries fit the firing budget, and drops the ban on a search.
 - The same requirement defines a search, a search during a run, and when a scope covers a role.
-  It holds a search during a run to firing's scope rule, lets it return in-scope entries that
+  It holds a search during a run to firing's scope rule, for lore entries and for the question
+  and miss files on the `questions` branch, lets it return in-scope entries that
   are not `active` with a label, keeps its results out of the injected-lore channel and out of
   the firing record, and says what a duplicate check may compare against.
-- The scenario *No search affordance offered* is removed. Six are added: *Injection does not
-  wait on a search*, *A search never shows an out-of-scope entry*, *A search labels in-scope
+- The scenario *No search affordance offered* is removed. Eight are added: *Injection does not
+  wait on a search*, *A search never shows an out-of-scope entry*, *A search never shows
+  another project's question file*, *A search shows a question file about a repository the
+  role works*, *A search labels in-scope
   entries that are not active*, *Search results never arrive as injected lore*, *A search hit
   is not a firing*, and *A duplicate check is curation, not a search*.
 - A new `lore-firing` requirement, *An Igor publishes the citations its worker reports*, says
   who writes a citation during a run, including one from an inquisitor run the Igor starts
   itself, which citations the Igor accepts, what the file holds, where it may go, and that a
-  citation it refuses, withholds or cannot push is counted. It is the one statement of the
+  citation it refuses, withholds or cannot push is counted. It has the Igor read the lore
+  repository's visibility from GitHub at startup. It is the one statement of the
   Igor's push rules, which shared-skills #25 points to. It sits in
   `lore-firing` beside *What fired is recorded on the state branch*, the other record of an
   entry's use. For the file's format, it points to shared-skills #25's *A citation file has one
@@ -368,8 +412,9 @@ reading the codebase. Two cases contradict that:
   from the role's `allow` list, with one new scenario.
 - `task-execution`'s *Transcripts and outcomes are captured to the state branch* writes no
   transcript for a run that met a question with a category, and for such a run puts no excerpt
-  of the worker's result in the pull request body and keeps only the reason of a refusal. It
-  gains five scenarios, and
+  of the worker's result in the pull request body, and has a refusal record keep only the
+  limit and reset time Igor read, while any other refused run keeps the provider's whole
+  reply. It gains six scenarios, and
   *Transcript persisted off the main line* applies only to a run that met none (decision 13).
 - `lore-review`'s *An entry already in the store is never overwritten by proposing* reports an
   out-of-scope collision during a run only as "id taken", and then proposes nothing for that

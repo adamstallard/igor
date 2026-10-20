@@ -36,6 +36,11 @@
       a run is reported only as taken* and *A candidate whose id is taken out of scope is not
       proposed during a run*, built now, though no Igor proposes during its run until
       lore-from-corrections' `propose-lore` lands
+- [ ] 2.7 2.1's function, or one beside it, filters the question and miss files a search finds
+      on the `questions` branch by their `repository` key: it keeps a file only when that key
+      names a repository the run's role works, and drops a file with no readable key. Tests
+      for *A search never shows another project's question file*, which covers a miss file
+      too, and *A search shows a question file about a repository the role works*
 
 ## 3. Citations made during a run
 
@@ -77,12 +82,19 @@
       naming nothing about it, on the same channel as 3.1. For that run, execution writes no
       transcript, only its outcome, cost and ledger row; `prBody` in `src/execute.ts` puts no
       excerpt of the worker's result and no transcript link in the pull request body; and the
-      refusal record keeps only the refusal's reason. Tests for *Transcript persisted off the
+      refusal record keeps only the refusal's reason, while any other run's refusal record
+      keeps the provider's whole reply. Tests for *Transcript persisted off the
       main line*, *A run that met a categorized question stores no transcript*, *A run that
       met a categorized question publishes no excerpt of its result*, *A refusal on such a
-      run keeps only its reason*, *The worker's report of a categorized question names
+      run keeps only its reason*, *A refusal on any other run keeps the provider's reply*,
+      *The worker's report of a categorized question names
       nothing* and, once 3.6 can be built, *The Igor's own inquisitor run that met a
       categorized question stores no transcript*
+- [ ] 3.8 At startup, the Igor asks GitHub once for the lore repository's visibility
+      (`private`, `internal` or `public`), counting an answer it cannot read as public, and the
+      citation rule uses that answer until the Igor restarts, never `publicStore`. Tests for
+      *The lore repository's visibility comes from GitHub, not publicStore* and *The lore
+      repository's visibility is read once, at startup*
 
 ## 4. Facts to check before anyone relies on a search or a citation in a run
 
@@ -99,3 +111,7 @@
 - [ ] 4.3 Whether the lore repository's rulesets or branch protection let an Igor's App create
       and push the orphan `questions` branch. If they do not, file an issue: until then every
       citation made during a run is counted as not pushed.
+- [ ] 4.4 Whether a worker's flag that its run met a question with a category reaches the Igor
+      on a run the provider refuses over a usage limit. Gate two builds nothing for this case
+      until Adam answers the question in the proposal's *Still open*; as the code stands,
+      such a run's refusal record and transcript are kept in full.

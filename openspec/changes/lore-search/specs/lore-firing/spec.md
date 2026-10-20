@@ -19,6 +19,17 @@ that role, or `project:` naming a repository that role works.
 A search during a run SHALL apply that rule for the run's role. It MUST NOT return an entry
 whose scope does not cover that role, nor give any count or mention of one.
 
+A search may also find the question and miss files on the lore repository's `questions`
+branch, as the inquisitor's first filter does; *An Igor publishes the citations its worker
+reports* defines that repository and branch. A *question file* logs a question an agent asked,
+and a *miss file* logs a question a person said should have been settled without asking them,
+both in the format shared-skills #25 sets. Each such file names the repository its
+question concerns, as `owner/repo`, in its `repository` key. The file's scope covers a role
+when that key names a repository the role works. A file whose `repository` key is missing or
+unreadable counts as outside every role's scope. A search during a run MUST NOT return a
+question or miss file whose scope does not cover the run's role, nor give any count or
+mention of one.
+
 A search during a run SHALL present only `active` entries as lore or as answers. It MAY also
 return an in-scope `provisional` or `deprecated` entry, and SHALL label each one with its
 status, as not lore.
@@ -55,6 +66,20 @@ A search's results MUST NOT be recorded as firings.
   run's role does not work
 - **THEN** that entry is not returned
 - **AND** the results give no count or mention of it
+
+#### Scenario: A search never shows another project's question file
+
+- **WHEN** a search during a run matches a question file on the `questions` branch whose
+  `repository` key names a repository the run's role does not work, and a miss file with no
+  `repository` key
+- **THEN** neither file is returned
+- **AND** the results give no count or mention of either
+
+#### Scenario: A search shows a question file about a repository the role works
+
+- **WHEN** a search during a run matches a question file whose `repository` key names a
+  repository the run's role works
+- **THEN** that file may be returned
 
 #### Scenario: A search labels in-scope entries that are not active
 
@@ -131,10 +156,17 @@ takes it from the worker's output. A lore repository whose visibility the Igor c
 counts as public, and a repository the question concerns whose visibility it cannot read counts
 as private. A citation that this rule withholds is not pushed.
 
+The Igor SHALL learn the lore repository's visibility by asking GitHub once, at startup, for
+its exact visibility: `private`, `internal` or `public`, and the citation rule above SHALL use
+that answer until the Igor restarts. The `publicStore` setting SHALL NOT decide it. When
+GitHub's answer cannot be read, the lore repository counts as public.
+
 The Igor SHALL record, in the run's record on the state branch, how many of the run's
 citations it did not push, by reason: refused, withheld by the visibility rule, failed to push,
-or the run published neither an artifact nor a handoff. That record SHALL NOT repeat a refused
-citation's id or any other text the worker wrote, and SHALL NOT say why a citation was refused.
+or the run published neither an artifact nor a handoff. These counts SHALL NOT repeat a
+refused citation's id or any other text the worker wrote, and SHALL NOT say why a citation was
+refused, since a reason such as "out of scope" would tell readers that an entry outside the
+role's scope exists.
 
 #### Scenario: A worker's citation is published by its Igor
 
@@ -246,9 +278,23 @@ citation's id or any other text the worker wrote, and SHALL NOT say why a citati
 
 #### Scenario: An unreadable visibility counts against pushing
 
-- **WHEN** the Igor cannot read the visibility of the lore repository, or of the repository of
-  the item the run works
+- **WHEN** the Igor could not read the lore repository's visibility at startup, or cannot read
+  the visibility of the repository of the item the run works
 - **THEN** it treats the lore repository as public and the item's repository as private
+
+#### Scenario: The lore repository's visibility comes from GitHub, not publicStore
+
+- **WHEN** the team's configuration sets `publicStore: false`
+- **AND** GitHub reports the lore repository as `internal` at startup
+- **AND** the repository of the item the run works is private
+- **THEN** the Igor withholds the run's citations
+- **AND** the run's record counts each as withheld
+
+#### Scenario: The lore repository's visibility is read once, at startup
+
+- **WHEN** GitHub reported the lore repository as `private` when the Igor started
+- **AND** the lore repository has since been made public
+- **THEN** the Igor's citation rule still treats it as `private` until the Igor restarts
 
 #### Scenario: A citation that cannot be pushed is counted
 
