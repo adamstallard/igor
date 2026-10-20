@@ -315,14 +315,28 @@ Firing is **unbidden**. The worker never has to issue a query: matching entries 
 before it runs. This is the property that distinguishes the design from RAG, and it sits
 entirely on the *condition* side — the payload mechanism is ordinary.
 
-A worker may also be offered a search over the store, for example to find an entry that
-firing did not inject, as when a role's in-scope entries exceed the firing budget: then none are
-injected, as the budget paragraph below explains. During an Igor's run, scope binds a search
-exactly as it binds firing: an entry whose scope does not cover the role is never returned
-(§4.2.2). The inquisitor's search also reads the lore repository's `questions` branch, which
-holds question files, each logging a question an agent asked, and miss files, each logging a
-question a person said should have been settled without asking them. Scope binds those files
-too: a file is never returned unless its `repository` key names a repository the role works.
+Every worker is also offered a search over the store, `igor lore-search`, for example to find
+an entry that firing did not inject because the role's in-scope entries exceed the firing
+budget (see the budget paragraphs below). The worker passes the command a question's text or
+search terms on its standard input. Its Igor runs the search over the lore store it injects
+from and returns the results. igor runs the search because the worker cannot: its shell may
+run only the commands its role lists, which do not include the inquisitor skill's script, and
+the open pull request #175 designs a worker that cannot read the lore checkout under `igor
+serve`. The command is offered whatever the role's `commands` say, and it is read-only: it
+gives the worker no file access, command or credential it lacked.
+
+During an Igor's run, scope binds a search exactly as it binds firing: an entry whose scope
+does not cover the role is never returned (§4.2.2). `igor lore-search` also reads the lore
+repository's `questions` branch, as the inquisitor skill's own search does. That branch holds
+question files (the inquisitor calls them log files), each logging a question an agent asked
+or decided for itself, and miss files, each logging a question a person said should have been
+settled without asking them. Each file names the repository it was asked from, but its
+question concerns the organization or project, so scoping it by that repository would hide an
+organization-wide answer from every other role. Every file on the branch is therefore in scope
+for every role whose Igor uses that lore repository. `igor lore-search` still returns a file
+only when the repository of the item the run works is no more visible than the repository the
+file names. A worker could carry what it read into its pull request, and filtering what it is
+given is the only certain guard.
 Status does not bind a search: it may return an in-scope `provisional` or `deprecated` entry,
 labelled as not lore, and only `active` entries count as lore. A search outside an Igor's
 run, such as a person running the inquisitor skill in their own session, has no role to
@@ -430,8 +444,9 @@ who judges the proposal.
 The review reads citations from the lore repository's `questions` branch. Where that branch is
 missing or holds no citation at all, the review shows citations as not checked, never as zero.
 Otherwise it shows each count as a lower bound, because the Igor does not push every citation:
-the paragraphs below list the ones it holds back. A citation missing from the count can only fail to hold back an entry, and the person
-reviewing the proposal judges that entry.
+the paragraphs below list the ones it holds back. Since citations only hold an entry back, a
+citation missing from the count can only fail to hold back an entry that was cited, and the
+person reviewing the proposal judges that entry.
 
 The `questions` branch is an orphan branch of the lore repository, separate from igor's
 `igor-state`, that holds the inquisitor's questions about the organization and its projects
@@ -445,8 +460,8 @@ citation came from. The run's transcript cannot serve as that link: there is one
 each run overwrites it.
 
 An entry id is unique within one lore repository, while the inquisitor can be configured with
-several. During a run, a search reads only the lore store the Igor injects from, so a
-citation's entry id names one entry.
+several. During a run, `igor lore-search` reads only the Igor's own checkout, the lore store
+it injects from, so a citation's entry id names one entry.
 
 During an Igor's run, the worker reports each citation by the entry's id alone, and the Igor
 pushes them; the worker holds no credential for the lore repository. The push is bookkeeping,
@@ -457,20 +472,43 @@ untrusted. The inquisitor gives a question one of three categories when it is se
 `vulnerability`, `secret` or `personal`. No citation is made for such a question, since the
 cited entry would show what the question was about.
 
-A run that meets such a question stores no transcript on `igor-state`. It keeps only its row
-in the execution ledger and its counts of citations not pushed, described below. Its pull
+A run that meets such a question stores no transcript on `igor-state`. It still writes its row
+in the execution ledger, which holds its counts of citations not pushed (described below). It
+also writes its firing record and, if the provider refused it, the refusal record described
+next. Its pull
 request body carries no excerpt of the worker's result and no transcript link. If the
 provider refuses the run over a usage limit, the record of that refusal keeps only the limit
 and reset time Igor read from the provider's reply. Free text cannot be redacted reliably, and personal details should not reach everyone
 who can read the item or the lore repository, which holds `igor-state`. The worker's report
-carries a bare flag that its run met such a question, naming nothing about it.
+carries a bare flag that its run met such a question, naming nothing about it. A run the
+provider refuses over a usage limit before the Igor has its worker's completed report is
+treated the same way, since the Igor cannot tell whether its worker met such a question.
 
-Every other refusal record keeps the provider's whole reply, because those replies are how
-igor's patterns for reading a limit and its reset time get checked. A refused run that met a
-sensitive question keeps no reply, so it gives that check nothing to work with.
+In these rules a run is a whole execution of an item, which can start more than one worker
+run. When any of its worker runs raises the flag or is refused before its completed report,
+none of them keeps a transcript, and the pull request carries no summary of any of them.
+
+A refusal record keeps the provider's whole reply only for a run whose worker completed its
+report without the flag. Those replies are how igor's patterns for reading a limit and its
+reset time get checked, so the check works from those runs alone.
 
 An Igor whose work is stopped by a question it cannot settle runs the inquisitor skill itself,
 with no worker (#211). It pushes that run's citations by the same rules as a worker's.
+
+The inquisitor also puts question and miss files on the `questions` branch: a question file
+for a question about an organization or project, including one recording an agent's own
+choice, and a miss file. A worker cannot push these either. It reports each one, and the Igor pushes it under the citation rules: only
+when the run publishes an artifact or hands off, only when the file's `repository` key names a
+repository the role works, and never to a lore repository more visible than that repository
+or the item's. A worker asks a person only in its handback comment, so the run that asks
+a question never holds its answer. The answer can reach only a later run on the same item,
+once someone has replied to the handback, and it is then a comment on that item. The Igor
+therefore pushes only an unanswered question file, one recording the agent's own choice, a miss
+file, or a question file whose answer links to a comment on the run's item; anything else
+claiming a person's answer could be forged. It never pushes one at a path the branch already
+holds, so an answered question file goes beside the unanswered one. The Igor pushes nothing to the `questions` branch from a run treated as having met a
+sensitive question, citations included. It refuses a file holding a string shaped like a
+credential, and counts each file it does not push, by reason.
 
 No citation goes to a lore repository more visible than the repository the question concerns,
 which during a run is the repository of the item the run works. A citation tells its readers
@@ -488,8 +526,8 @@ an internal lore repository would pass for private. A lore repository whose visi
 GitHub does not return counts as public.
 
 A review never sees a citation the Igor did not push, so none of these reaches its count:
-refused, withheld by visibility, failed to push, or from a run that published neither an
-artifact nor a handoff. The Igor tallies each of these kinds in the run's row in the
+refused, withheld by visibility, failed to push, from a run that published neither an
+artifact nor a handoff, or from a flagged run. The Igor tallies each of these kinds in the run's row in the
 execution ledger.
 
 A worker steered by text in its item could report forged citations, which would keep an entry
