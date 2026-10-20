@@ -17,10 +17,13 @@
 - [x] 1.1a In the same capture, and on the next few ordinary worker runs, record **when** in a run
       each `rate_limit_event` arrives relative to the run's first and last API call. This bounds how
       far past its line one run can carry a seat (`design.md`, *How far past the line one Igor can
-      go*); record the answer there. Measured 2026-10-11 on the two captured calls only, one of one
-      turn and one of three: one event per run, right after the first API call's response, none
+      go*); record the answer there. Measured 2026-10-11 on two captured runs only, one of one API
+      call and one of three: one event per run, right after the first API call's response, none
       after later calls; so the bound is about two runs per process (`design.md`). Ordinary worker
-      runs were not captured; 1.1b covers them
+      runs were not captured; 1.1b covers them. The captures keep only their events and five
+      `init` fields (decision 40), so this task, not the captures, records when each event
+      arrived: right after the first API call's response, in both runs. Both captured events read
+      the five-hour window at 43% and the week at 11%, with the same resets
 - [ ] 1.1b On several ordinary worker runs, including one that crosses a warning threshold
       mid-run, record how many `rate_limit_event`s arrive and when. If a run carries an event
       after its first call, the two-run bound of decision 4 goes back to Adam
@@ -38,7 +41,11 @@
 - [ ] 1.4 Capture an event with `isUsingOverage: true` and record in `design.md` what it means
       beside `overageStatus` and `overageDisabledReason`. Task 4.2 is not built until this
       confirms the flag means extra usage is being spent; if it means something else, 4.2 reads
-      the field that does
+      the field that does. If there is still no capture when the rest of gate two, this change's
+      implementation, is built, file
+      *A seat spending extra usage has no headroom* as a follow-up issue, move the requirement out
+      of this change's `seat-budget` delta, and tick 4.2 and this task with a pointer to the issue
+      (decision 38)
 - [ ] 1.5 Capture a `rejected` event from a real refusal (#57), worker run and triage call, and
       check *A refusal the stream reports is not recorded twice* and 3.3 against it, including
       which window a per-model refusal names
@@ -174,7 +181,10 @@
       hours got an event. Where a reading expired at a reset the server knows of and 8.1's post-reset
       probe is due at that reset, the probe is that post-reset probe, not a second one, unless it
       was excluded. Build
-      the overage exclusion only once 1.4 confirms what `isUsingOverage` means
+      the overage exclusion only once 1.4 confirms what `isUsingOverage` means. Until #171's code
+      lands, skip a seat that names no token (decision 39). #171's code refuses such a seat, so the
+      skip never fires after that. The change that removes the live read removes it too,
+      and task 16.4's issue names it
 - [ ] 6.2 Spawn the probe with the environment written out as `claudeWorker` writes a
       worker's (§6.3.2), as the Igor's own Unix user, not through #175's worker user: `sudo` to the
       worker user resets `HOME` to that user's home, which would undo the empty `HOME` below,
@@ -247,9 +257,8 @@
       `r` > 0, with its own verdict and reason, not `no-figure`. A refusal (`bound.spent`) still
       blocks as it does, and its reset still reaches the handoff
 - [ ] 7.3 **Live path.** The live `/usage` read stays (`design.md`, *What is not removed*; task
-      9.1). Whether any seat can still get a window from it, now that every seat's credential is a
-      `setup-token` (decision 14), is open in the proposal. Replace the reserve line that does not
-      move toward the reset, in `seatStatus` / `hasHeadroom`
+      9.1) until the first change built after #171's code lands removes it (decision 37). Replace today's fixed reserve line with
+      decision 1's line, which rises toward the reset, in `seatStatus` / `hasHeadroom`
       (`src/budget.ts`): `headroomPercent = line × 100 − percentUsed`, with the live
       reading's reset resolved through `resolveRecentReset` and `remaining` = 1 where it does not
       resolve. Its callers: `chooseSeat`'s live path (its passed-over and chosen reasons),
@@ -341,7 +350,8 @@
 
 - [ ] 9.1 Remove the `observe` command from `src/cli.ts`, and `observeSeat`, `seatToObserve` and
       `reported` from `src/capacity.ts`. Keep `readUsage`, `parseUsage`, `runUsage` and
-      `hasSubscription` in `src/budget.ts`: `readAllSeats` still reads live through them
+      `hasSubscription` in `src/budget.ts`: `readAllSeats` still reads live through them, until
+      the first change built after #171's code lands removes them (decision 37)
 - [ ] 9.2 Remove `test/observe.test.ts`. Keep the `source: 'usage'` fixtures in the other tests:
       they are existing rows, which must still be read
 - [ ] 9.3 Reword the remedies in `src/budget.ts` that send an operator to `igor observe`
@@ -489,5 +499,10 @@ requirements are in force:
       scenario with no tagged test. Tag a test for each scenario this change adds
 - [ ] 16.3 Before archiving, check that every other change modifying role-config's *A role
       declares its sources, lane, behaviour, permissions, and reviewers* or *Merge semantics
-      differ by field kind* (among open changes, #153, #189 and `lore-from-corrections`)
+      differ by field kind* (among open changes, #153 and `lore-from-corrections`)
       carries `reserve` in its copy, since a later block replaces this change's
+- [ ] 16.4 Before archiving, file as an issue the removal of the live `/usage` read in the first
+      change built after #171's code lands (decision 37), naming the functions it removes, the
+      edits to `runUsage` in #174's and #175's tasks that go with them, and task 6.1's skip of a
+      seat with no token, and tick this task with a
+      pointer to it

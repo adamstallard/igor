@@ -28,8 +28,8 @@ seat. #174 (`pinned-skills`) gives every model call one shared set of arguments,
 4. **Each Igor process may pass the line by about two runs, and processes do not coordinate.**
    On 2026-09-28 Adam accepted one run, or two where a run's reading comes early in the run. In
    the two calls task 1.1a captured, the reading came right after the first call, so the figure
-   approved here is two. Task 1.1b checks ordinary worker runs, and sends the figure back to Adam
-   if a run carries a later event. *Rejected for now:* a coordination marker across Igors, taken up once a reserved
+   approved here is two, and Adam kept it on 2026-10-19 until task 1.1b reports. Task 1.1b checks
+   ordinary worker runs, and sends the figure back to Adam if a run carries an event after its first call. *Rejected for now:* a coordination marker across Igors, taken up once a reserved
    seat is actually shared by several.
 5. **A role may declare a `reserve`**, applied to every seat it draws on, raised by inheritance and
    never lowered (Adam, 2026-09-28).
@@ -108,10 +108,9 @@ weekly (Adam, 2026-09-28). The smallest gap between observed resets is a fallbac
 23. **A role *has a seat it can spend* when the gate would choose one for it now** (Adam,
     2026-10-18, for #179): when the gate, deciding now, would choose a seat for it under every
     rule it applies. Adam decided it for #179's heartbeat, which says a rank is available only
-    while it is free and its role has a seat it can spend. #179's branch does not carry that rule
-    or the term; adding them is #179's work. A role whose seats are all past their reserve lines, or
+    while it is free and its role has a seat it can spend. #179's branch already cites the term. A role whose seats are all past their reserve lines, or
     passed over for any other reason, has none. This change defines the term once, in *A role has a seat it can spend when
-    the gate would choose one now*, for #179 to cite.
+    the gate would choose one now*, which #179 cites.
 
 24. **One run contributes one reading, the last event it received.** This change's choice.
     *Rejected:* a row per event, which grows the log by the run's length for no new information.
@@ -153,6 +152,36 @@ weekly (Adam, 2026-09-28). The smallest gap between observed resets is a fallbac
     decision 9. *Rejected:* removing the derivation, which would drop the figure `igor budget`
     shows.
 
+37. **The live `/usage` read is removed in the first change built after #171's code lands, not in
+    this change** (Adam, 2026-10-19). With a token, `/usage` reports no window (`design.md`, *What
+    is not removed*), and once #171's code lands every seat has a token, so the read returns a window
+    for no seat while still spawning `claude` twice per seat at each gate. That change removes
+    `readUsage`, `runUsage`, `hasSubscription`, `parseUsage` and the live paths of `chooseSeat`,
+    `budgetGate` and `renderBudget`. This change's code is built before #171's, so it keeps the
+    read and gives it decision 1's line, which rises toward the reset (task 7.3). When that later
+    change removes `runUsage`, the edits #174's and #175's tasks make to it go too.
+38. **If task 1.4 has no capture of `isUsingOverage: true` when the rest of gate two is built,
+    *A seat spending extra usage has no headroom* moves to a follow-up issue** (Adam, 2026-10-19),
+    so this change and #171 can archive. The two archive in one commit, this change's archive step
+    first (decision 16, task 16.1), so a requirement left unbuilt here holds #171 back too. The captures so far are of seats whose overage is
+    disabled for the organization, so a true value may never be seen, and a requirement whose code
+    is not built would keep this change from archiving.
+39. **Until #171's code lands, the probe skips a seat that names no token** (Adam, 2026-10-19).
+    This change's code is built first, since #171 builds on it, and until #171's code lands the
+    in-force `seat-budget` still lets a seat name no token and run on a stored login. This is the
+    one rule here for such a seat, a narrowing of decision 14 for that interval. The probe
+    requirement states it with no scenario of its own. #171's `MODIFIED` block on that
+    requirement replaces it at archive, so a scenario added here would be missing from #171's
+    copy, and openspec refuses a block that drops a scenario the requirement has. *Rejected:* holding this change's code
+    until #171's merges.
+40. **The two captures under `captures/` keep only their `rate_limit_event` lines and, from the
+    `init` line, `type`, `subtype`, `claude_code_version`, `model` and `apiKeySource`** (Adam,
+    2026-10-19). The rest was the operator's local setup (session ids, the skills and plugins
+    loaded), which a public repository should not hold. When each event arrived in its run is
+    recorded in task 1.1a. The capture of a three-call run is named
+    `2026-10-11-three-call-run-its-one-event.jsonl`, since that run got one event, after its
+    first call (task 1.1a); whether ordinary runs do too is task 1.1b.
+
 **Still open:**
 
 - **A guaranteed per-role share.** Not specified; added only if a role's reserve proves too weak a
@@ -173,34 +202,40 @@ weekly (Adam, 2026-09-28). The smallest gap between observed resets is a fallbac
   `--output-format json`, carries the reading as `rate_limit_info` (task 11.1), which decides
   whether a triage call yields a reading. The overage rule is not built until 1.4
   confirms it.
-- **For Adam, from a consistency read of 2026-10-18, each with a recommendation:**
-  - **Whether to remove the live `/usage` read.** Measured on 2026-10-18 (`design.md`, *What is
-    not removed*): with a token, `/usage` prints a cost summary and no window, so `readUsage`
-    reports the seat unmeasurable. Every seat holds a token, so after #171's code lands the live
-    read returns a window for no seat, and still spawns `claude` twice per seat at each gate. The
-    design and task 9.1 keep it, and task 7.3 gives it the moving reserve line.
-    *Recommended:* remove it in gate two, with `readUsage`, `runUsage`, `hasSubscription`,
-    `parseUsage` and the live paths of `chooseSeat`, `budgetGate` and `renderBudget`, if gate two
-    is built after #171's code; otherwise remove it in the change that follows #171's code. That
-    also drops `runUsage`, the function that spawns the live read, from #174's and #175's tasks,
-    which change it.
-  - **What happens if task 1.4 never captures `isUsingOverage: true`.** The only captures are of
-    seats whose overage is disabled at the organization level, so a true value may never be seen,
-    and the overage rule is not built until 1.4 confirms it. *Recommended:* if 1.4 has no capture
-    when the rest of gate two is built, move *A seat spending extra usage has no headroom* to a
-    follow-up change filed as an issue. A change archives only once every requirement is met,
-    and an unbuilt one is not, so otherwise this change and #171 could not archive.
-  - **The two stream captures committed under `captures/`** for task 1.1a keep the operator's
-    local setup metadata (session ids, the skill and plugin list) in a public repository.
-    *Recommended:* trim each to its `rate_limit_event` lines and the stream's first `init` line
-    with its fields emptied, before merge.
-- **For Adam: this change's code is built before #171's.** The two archive in one commit
-  (decision 16), but archiving a spec and building its code are separate steps, and this
-  change's code comes first. Until #171's code lands, the in-force `seat-budget` still lets a
-  seat name no token and run on a stored login, and this change says nothing of how its probe
-  treats such a seat. Delay merging this change's code until #171's merges, or have the probe
-  skip a seat with no token until #171's code lands? *Recommended:* have the probe skip such a
-  seat until #171's code lands.
+- **Whether `/usage` reports a window to a stored login** is unmeasured. Until #171's code
+  lands, a reserved seat that names no token is read only by the live read (decision 39); if
+  that read gets no window either, such a seat stays idle. Task 5.4's message assumes a seat
+  with a token, saying `/usage` reports no window to the seat's token, so it would be wrong for
+  such a seat.
+- **Findings of the 2026-10-19 consistency read, for this change's next revision.** Each is for
+  this change's author to fix, unless it names another change or Adam, and none is fixed yet:
+  - A refusal the stream reports for one model's weekly window is recorded as a per-model row,
+    which the gate does not read, so the refused seat is chosen again. Whether such a refusal
+    should hold the seat, or fall back to the envelope, is a question for Adam, and which window
+    a per-model refusal names is unmeasured (task 1.5).
+  - The probe runs from a directory under the system's temporary directory, after a check that
+    no `.claude` or `CLAUDE.md` sits in a directory above it, because Claude Code loads settings
+    from every directory above the one it runs in. A worker can write `/tmp/.claude` or
+    `/tmp/CLAUDE.md`. Present at the check, it fails every probe; written between the check and
+    the spawn, it loads into a call holding a seat token. The probe needs a parent directory no
+    other user can write.
+  - That the probe runs as the Igor's own user, which holds every seat token, is a choice not
+    among the decisions.
+  - The in-force *A seat shut in both windows returns on the later of the two* still speaks of
+    a seat with no reading that is bounded by its recorded spend, the dollar bound decision 1
+    rejected, and no block here modifies it.
+  - #82 (`stopped-scope-visible`) shows a seat as unread using only the seat's own reserve, where
+    this change uses the larger of the seat's and the role's.
+  - #171's copy of the probe requirement drops "In a deployment that declares seats".
+  - A post-reset probe's scenario omits that it is due only until the window is measured, then
+    about weekly.
+  - The instant a handoff names is not when the seat admits work, since a crossing probe comes
+    first.
+  - `docs/architecture.md` presents what two captured calls showed as true of every run.
+  - "Probe" also names #101's (`condition-backoff`) cooldown item, the one item a stopped scope
+    is allowed to test whether its fault recurs; "seat probe" throughout would avoid that.
+  - Some SHALLs lack scenarios, one rule sits in both `graceful-handoff` and `seat-budget`, and
+    some rationale sits in requirement text.
 
 ## Why
 
@@ -311,8 +346,9 @@ Explicitly out of scope:
 
 - `role-config`: a role file accepts `reserve`, which a child role may raise and never lower,
   as a monotonic field. This modifies *A role declares its sources, lane, behaviour, permissions,
-  and reviewers* and *Merge semantics differ by field kind*. #153, #189 and
-  `lore-from-corrections` modify the same two, and their blocks must carry `reserve` (task 16.3).
+  and reviewers* and *Merge semantics differ by field kind*. #153
+  (`signed-publishing`) and `lore-from-corrections` modify the same two, and their `MODIFIED` blocks, which replace this
+  change's when they archive later, must carry `reserve` (task 16.3).
 - `surface-adapter`: `observe` leaves the list of commands that take no role, in *On GitHub,
   every call an Igor makes acts as its App*, since this change removes the command. #171 modifies
   the same requirement after this change, adding `seat` to that list.

@@ -73,9 +73,10 @@ The worker's environment is written out, and carries exactly the token of the se
 having paid. Every seat has a token of its own, and Igor never uses a stored Claude login, the
 credentials `claude` keeps in a home directory (Adam, 2026-10-18; proposal, decision 14), so the
 token that ran is always the chosen seat's. `seat-files` (#171) refuses a seat file that names no
-token. It archives in the same commit as this change, but its code is built after this change's;
-until it is, the in-force spec still allows a seat with no token, which the proposal lists for
-Adam.
+token. The two changes' spec text archives into the in-force specs in one commit, once both
+are built, but #171's code is built after this change's. Until #171's code is built, a seat may
+still name no token, and the seat probe described below skips such a seat (proposal, decision
+39).
 
 ### The record: the existing shape, and a third source, `stream`
 
@@ -189,7 +190,9 @@ says nothing about the week, and shutting the week for it could hold a seat out 
 carries `overageStatus` and `overageDisabledReason`. If the flag meant overage is enabled rather
 than being spent, this rule would shut every such seat window after window. So the rule is not
 built until task 1.4 captures a true value, and if the flag means something else the rule reads
-the field that does.
+the field that does. Gate two is this change's implementation. If the rest of it is built and
+still no capture has come, *A seat spending extra usage has no headroom* moves to a follow-up
+issue (proposal, decision 38).
 
 **No opt-in (decided by Adam, 2026-09-27).** No configuration key lets an owner allow the fleet
 to spend extra usage. Overage costs real money, and a key for it is added only when somebody asks
@@ -284,8 +287,10 @@ on the current release. Every seat holds a token (decision 14), so once #171's c
 read can return a window for no seat. Until then the only seat it might return one for is a seat
 that names no token and runs on the server's stored login; a stored login was not measured, so
 whether `/usage` still prints percentages to one is unknown. Each live read still costs two
-`claude` processes per seat per gate, `/usage` and `claude auth status`. Whether to remove it is
-open in the proposal.
+`claude` processes per seat per gate, `/usage` and `claude auth status`. The first change built
+after #171's code lands removes the live read (proposal, decision 37); task 16.4 files that
+removal as an issue before this change archives, so it is not lost. Until then the read stays, and this
+change gives it the reserve line that rises toward the reset (task 7.3).
 
 **The `usage` source.** Only `igor observe` wrote observations with `source: "usage"`; the live
 read never records what it reads. After gate two nothing writes it. Existing `capacity.ndjson`

@@ -221,7 +221,10 @@ config. The post-reset probe that *A window's length is measured, and so is whet
 first use* specifies is a seat probe too, and every limit and exclusion here applies to it.
 
 A seat probe SHALL run only on the server that runs the Igors, never on a person's machine, and
-nothing SHALL be installed anywhere else for it.
+nothing SHALL be installed anywhere else for it. A seat that names no token SHALL NOT be probed.
+Such a seat can exist only until #171's (`seat-files`) code lands, which refuses one; until then
+the seat's calls run on a login stored on the host, which no probe uses. It is read only by the
+live `/usage` read, if at all, and a reserved one with no reading is not drawn on.
 
 A seat probe is not free. Every probe SHALL be recorded on a spend row against the seat it read,
 marked as a seat probe, with its cost (0 where it reported none, as after an error exit) and with
@@ -962,7 +965,8 @@ checked is invisible to them until their own work is refused.
 
 The seat's own credential receives a reading on the stream of every run made with it, and the
 seat probe reads a seat nothing has run on, so no machine with an interactive login is required.
-Apart from the probe, no call is made on a seat passed over this way. Being passed over means no
+Apart from the probe, and the live `/usage` read that `igor budget` and the gate make while it
+exists, no call is made on a seat passed over this way. Being passed over means no
 work is charged to the seat; it does not mean the seat is never read.
 
 #### Scenario: A reserved seat is not spent from on a guess
