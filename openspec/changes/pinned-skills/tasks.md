@@ -9,9 +9,10 @@
       Igor never passes `--bare`. Whether a linked skill gets the same base directory is task
       0.3's. See `design.md`, *Measured with a model, 2026-10-11*
 - [ ] 0.2 Confirm the shared-skills commit to pin carries bug-hunter's caller-commits mode
-      (`caller-result.sh`), prose's `start`, `check`, `sign`, `verify-staged` and `verify-post`,
-      and `--goals-file` on prose's `sign` as well as `check`, and on `start` if #153 keeps Igor's
-      `prose start`. #153 needs `--goals-file` on both (its task list); shared-skills does not have it yet
+      (`caller-result.sh`), prose's `check`, `sign`, `verify-staged` and `verify-post`, and
+      `--goals-file` on prose's `sign` as well as `check`. #153 needs it on `sign`, and drops
+      `prose start`, the call that opened prose's editing hook in a worker's session (Adam, 2026-10-19, on #153). Shared-skills #27 adds it; pin a commit at or
+      after its merge
 - [x] 0.3 Before building, measure on the Claude Code version the server runs, and record in
       `design.md`. Done 2026-10-18 on Claude Code 2.1.303. The version the server runs is not
       known, so it was not measured on, and `design.md` gives the results for 2.1.303 alone.
@@ -51,16 +52,33 @@
 - [ ] 1.2 Tests: no `IGOR_SKILLS_DIR` gives `/opt/igor/skills`; `IGOR_SKILLS_DIR` overrides
       it; a relative one refuses the start; `skills_dir` in `igor.config.yaml` is refused as an
       unknown key
-- [ ] 1.3 Where `skills_dir` does not exist, `igor serve` refuses to start, exiting 78, and
-      `igor run` passes no `--plugin-dir`, makes no startup check, and prints this as it starts
-      (may be reworded):
+- [ ] 1.3 Where `skills_dir` does not exist, `igor serve` refuses to start, exiting 78. `igor
+      run` instead reads the entries holding a `SKILL.md` in `~/.claude/skills` of the `HOME` it
+      started with, before it sets the worker's `HOME`, and assembles a plugin directory for the
+      run in its state directory, such as `~/.local/state/igor/plugin/<role>-<run>`: a
+      `.claude-plugin/plugin.json` of
+      `{"name": "igor", "version": "0.0.0", "description": "the person's installed skills"}`,
+      and under `skills/` one symbolic link per entry, to its resolved path. That directory is the
+      run's `skills_dir` for every rule here, and the run removes it when it ends, on an error
+      too. It prints this as it starts, where `<configured path>` is `/opt/igor/skills` or the
+      path `IGOR_SKILLS_DIR` names, not the assembled directory (may be reworded):
 
       ```
-      ! <skills_dir> does not exist, so this run loads no skills
+      ! <configured path> does not exist, so this run loads the skills installed in ~/.claude/skills
       ```
 
-      Tests: `serve` refuses with that path named and exits 78; `run` starts, prints the line,
-      and no call's arguments carry `--plugin-dir`
+      Where `~/.claude/skills` is missing or holds no such entry, the run passes no
+      `--plugin-dir`, makes no startup check, and prints this as it starts (may be reworded):
+
+      ```
+      ! neither <configured path> nor ~/.claude/skills holds a skill, so this run loads no skills
+      ```
+
+      Tests: `serve` refuses with that path named and exits 78; `run` with a person's
+      `~/.claude/skills` holding two linked skills assembles a directory whose `skills/` links
+      to their resolved paths, every call but the usage read carries `--plugin-dir` naming it,
+      the startup check runs against it, and it is gone once the run ends; `run` with neither
+      prints the second line, and no call's arguments carry `--plugin-dir`
 
 ## 2. The flag on every call
 
@@ -69,7 +87,8 @@
       `runUsage` `--plugin-dir <skills_dir>`. Use it in `claudeWorker` (`src/execute.ts`),
       `runClaude` (`src/triage.ts`), `runUsage` (`src/budget.ts`) and the startup check (3.1).
       #143's seat probe and #153's steps, built in those changes, call it as well. Under `igor
-      run` where `skills_dir` does not exist, it gives no call `--plugin-dir` (1.3). Where #143's
+      run` where `skills_dir` does not exist, it names the run's assembled directory, and where
+      neither exists it gives no call `--plugin-dir` (1.3). Where #143's
       removal of the usage read (#143's decision 37) has been built, `runUsage` is gone and
       needs no change
 - [ ] 2.2 Tests: the worker's and triage's arguments carry `--plugin-dir <skills_dir>`; the

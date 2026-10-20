@@ -17,9 +17,23 @@ SHALL use `igor:<name>`.
 `IGOR_SKILLS_DIR` SHALL be an absolute path, and a relative one SHALL refuse the start.
 
 Where `skills_dir` does not exist, `igor serve` SHALL refuse to start, naming the path, and exit
-with status 78. `igor run` SHALL then load no skills: no call it makes SHALL carry
-`--plugin-dir`, it SHALL make no startup check (*Igor confirms its skills load before its first
-model call*), and it SHALL say as it starts that the skills were not loaded, naming the path.
+with status 78.
+
+Where `skills_dir` does not exist, `igor run` SHALL use the skills the person installed: the
+entries holding a `SKILL.md` in `~/.claude/skills` of the `HOME` Igor starts with, read before
+Igor sets the worker's `HOME` to the run's home. Igor SHALL assemble a plugin directory for the
+run in its state directory, at a path of Igor's choosing named by the run's id (for example
+`~/.local/state/igor/plugin/<role>-<run>`), holding a `.claude-plugin/plugin.json` naming the plugin `igor` and, under `skills/`, one symbolic link
+per such entry, to the entry's resolved path. For that run, that directory SHALL be
+`skills_dir`, and every rule of this capability that names `skills_dir` applies to it. The run
+SHALL remove the directory when it ends, and SHALL say as it starts that it loaded the person's
+skills, naming `~/.claude/skills`. These skills are not pinned, and the worker can write them;
+both are limits of `igor run`.
+
+Where `~/.claude/skills` is missing or holds no such entry either, `igor run` SHALL load no
+skills: no call it makes SHALL carry `--plugin-dir`, it SHALL make no startup check (*Igor
+confirms its skills load before its first model call*), and it SHALL say as it starts that the
+skills were not loaded, naming `skills_dir` and `~/.claude/skills`.
 
 #### Scenario: serve refuses a missing skills directory
 
@@ -27,10 +41,21 @@ model call*), and it SHALL say as it starts that the skills were not loaded, nam
 - **THEN** it refuses to start, naming `skills_dir`
 - **AND** the process exits with status 78
 
-#### Scenario: run loads no skills where the directory is missing
+#### Scenario: run uses the skills the person installed
 
-- **WHEN** `igor run` starts on a machine where `skills_dir` does not exist
-- **THEN** it says as it starts that the skills were not loaded, naming `skills_dir`
+- **WHEN** `igor run` starts on a machine where `skills_dir` does not exist, and the person's
+  `~/.claude/skills` holds `prose` and `bug-hunter`, each a link into their shared-skills clone
+- **THEN** each call that carries `--plugin-dir` names a directory the run assembled, whose
+  `skills/` links to those two skills, and they load as `igor:prose` and `igor:bug-hunter`
+- **AND** the run says as it starts that it loaded the skills in `~/.claude/skills`
+- **AND** the startup check runs against that directory
+- **AND** the directory is gone once the run ends
+
+#### Scenario: run loads no skills where neither is installed
+
+- **WHEN** `igor run` starts on a machine where `skills_dir` does not exist and the person's
+  `~/.claude/skills` holds no skill
+- **THEN** it says as it starts that the skills were not loaded, naming both paths
 - **AND** no call it makes carries `--plugin-dir`, and it makes no startup check
 
 #### Scenario: The default directory is used
@@ -65,10 +90,11 @@ model call*), and it SHALL say as it starts that the skills were not loaded, nam
 
 Every `claude -p` process Igor spawns SHALL carry `--plugin-dir <skills_dir>`, with two
 exceptions. The usage read (`runUsage`, which the budget gate and `igor budget` run) only reads a
-seat's usage and SHALL NOT carry it. And under `igor run` where `skills_dir` does not exist, no
-call carries it (*Skills come from one plugin directory the server names*). Otherwise, the calls
-that carry it are the worker, triage and every other model step. A *model step* is any call in
-which a model does Igor's work. No call SHALL pass `--bare`.
+seat's usage and SHALL NOT carry it. And under `igor run` where neither `skills_dir` nor the
+person's installed skills exist, no call carries it (*Skills come from one plugin directory the
+server names*). Otherwise, the calls that carry it are the worker, triage, the startup check,
+#143's seat probe and every other model step. A *model step* is any call in which a model does
+Igor's work. No call SHALL pass `--bare`.
 
 The worker invokes an `igor:<name>` skill itself, through the Skill tool, when its task calls
 for it.
@@ -89,7 +115,7 @@ The flag loads every skill installed under `skills_dir` for every role. A role's
 #### Scenario: Every other model call names the directory
 
 - **WHEN** Igor spawns a `claude -p` that is neither the worker, triage nor the usage read, such
-  as #143's seat probe or the startup check
+  as #143's seat probe or the startup check, and `skills_dir` exists
 - **THEN** its arguments include `--plugin-dir` followed by `skills_dir`
 
 #### Scenario: The usage read names no plugin directory
@@ -150,8 +176,9 @@ SHALL hold:
 The template SHALL sit in Igor's installation, the directory Igor's own code is installed in.
 With a worker user, #175's start check confirms that user cannot write it.
 
-`igor run` has no sandbox. In same-user mode the worker can write the template and
-`skills_dir`, and it can make `~/.claude` or `~/.claude.json` a link to a file the person owns,
+`igor run` has no sandbox. In same-user mode the worker runs as the user Igor runs as, so it can
+write whatever that user can: the template and `skills_dir` where that user owns them, as on a
+developer's machine, and the person's installed skills always. It can also make `~/.claude` or `~/.claude.json` a link to a file the person owns,
 which a reset may then follow, removing or overwriting that file. These are limits of `igor
 run`, a developer at their own terminal.
 
@@ -266,8 +293,9 @@ word, such as `ok`, on stdin, as #175's (`worker-user`) *A prompt reaches claude
 in its arguments* requires. The call SHALL be an ordinary spend on that seat, run to its end and
 recorded as any other call is.
 
-Under `igor run` where `skills_dir` does not exist, no check is made (*Skills come from one
-plugin directory the server names*). Where the gate names no seat when Igor starts, no call is made, as #171's *A spend with no seat
+Under `igor run` where neither `skills_dir` nor the person's installed skills exist, no check is
+made (*Skills come from one plugin directory the server names*); where the run assembled a
+plugin directory from the person's skills, the check runs against it. Where the gate names no seat when Igor starts, no call is made, as #171's *A spend with no seat
 behind it is not made* requires. Igor starts, and runs the check before its first model call
 once the gate names a seat.
 

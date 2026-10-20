@@ -244,10 +244,50 @@ Which skills Igor expects is read from the directory itself: every entry under
 `<skills_dir>/skills/`.
 
 **Where `skills_dir` does not exist (Adam, 2026-10-19),** `igor serve` refuses to start,
-naming the path, and exits with status 78. `igor run`, as on a developer's machine without the
-server's install, passes no `--plugin-dir`, makes no startup check, and says as it starts that
-the skills were not loaded. What `claude -p` does with a plugin directory that does not exist is
-unmeasured, so no call is given one.
+naming the path, and exits with status 78.
+
+**Where `skills_dir` does not exist, `igor run` uses the skills the person installed (Adam,
+2026-10-19, answering question 10 of #153's *For Adam* list; proposal, decision 20).** `/opt/igor/skills` is the server's path, but a person's machine
+has skills too: the shared-skills manager installs each one in the person's home as an entry of
+`~/.claude/skills`, a link into the person's shared-skills clone. The manager's own skill,
+`manage-skills`, is a copied directory instead. A run's `HOME` is its own home (decision 23), so Claude Code does not find them there,
+and Igor passes them explicitly:
+
+1. Igor reads `~/.claude/skills` from the `HOME` it started with, the person's own, before it
+   sets the worker's `HOME` to the run's home. A skill is an entry that holds a `SKILL.md`.
+2. `--plugin-dir` takes a plugin directory, which `~/.claude/skills` is not: it has no
+   `.claude-plugin/plugin.json` and no `skills/` level. So Igor assembles one for the run, in
+   its state directory beside the run's home, such as
+   `~/.local/state/igor/plugin/<role>-<run>`. It holds `.claude-plugin/plugin.json`, as
+   `{"name": "igor", "version": "0.0.0", "description": "the person's installed skills"}`, and
+   under `skills/` one link per skill, to the entry's resolved path, so each link goes straight
+   to a directory, as the manager's own links do.
+3. For the run, that directory is `skills_dir`. Every call that carries `--plugin-dir` names it,
+   each skill loads as `igor:<name>`, and the startup check runs against it, including its refusal of a
+   directory holding anything but `.claude-plugin/plugin.json` and `skills/`. #153's check of a role's skill names reads it too.
+4. The run removes the directory when it ends, with its home.
+
+The startup check reports each skill's commit as it does on a server. The person's clone is
+owned by the user Igor runs as, so Igor reads its commit without the `-c safe.directory` option
+it passes for a root-owned clone (proposal, decision 19). The copy of `manage-skills` is in no
+clone, and its commit is reported as not checked. The run says as it starts
+that it loaded the person's skills, naming `~/.claude/skills`.
+
+Where `~/.claude/skills` is missing or holds no skill either, the run loads none: no call
+carries `--plugin-dir`, no startup check is made, and the run says so as it starts, naming
+`skills_dir` and `~/.claude/skills`. #153 refuses a role that lists a skill not installed, in every command that runs a model
+step, a dry run included, so such a run starts only for a role whose `skills` list is empty.
+
+Two limits of `igor run` come with the fallback. The skills are not pinned: they are at the
+commit the person's clone is at, which the manager's `update` moves by pulling the clone. And the worker, running as
+the person, can write them (proposal, decision 25).
+
+*Rejected:* loading no skills under `igor run`, as this decision first had, under which #153
+refuses every role whose `skills` lists `prose`; copying the skills into the run's
+`~/.claude/skills`, which the reset before every call replaces, and where a skill loads as
+`prose`, not the `igor:prose` #153's steps name; writing a `plugin.json` into the person's
+install; and passing `--plugin-dir` to a directory that does not exist, which no measurement
+covers.
 
 The plugin is named `igor` (decided by Adam, 2026-10-11), so skills load as `igor:prose` and
 `igor:bug-hunter`. The deployment writes the one-line `plugin.json`; the startup check fails if
@@ -459,7 +499,10 @@ skills are (task 4.1).
 ### With #153 (`signed-publishing`, branch `spec-signed-replies`)
 
 - **#153 works per skill in a role's `skills` list.** A name in the list must be installed
-  under `skills_dir`, or the role is refused at load. This change states no second refusal.
+  under `skills_dir`, or #153 refuses to start any command that runs a model step for the role,
+  a dry run included; `igor role explain` checks no name. This change states no second refusal.
+  Under `igor run`'s fallback, the installed skills are those of the directory the run
+  assembled from the person's install.
 - **`<skills>` in #153's design is `<skills_dir>/skills`.** Igor's code runs prose's calls from
   `<skills>/prose/scripts`, and for a role that lists `bug-hunter` it runs `git add` and the
   script that mints bug-hunter's commit trailer. The worker is granted none of these scripts,
@@ -471,8 +514,11 @@ skills are (task 4.1).
   2026-10-18).
 - **The model cannot Read a skill's files.** `--plugin-dir` grants no Read access (measured
   2026-10-18), so a skill whose instructions tell the model to Read a file in its own directory
-  meets a permission refusal unless #153 grants that path. Whether prose's or bug-hunter's
-  instructions Read such a file is #153's to check.
+  meets a permission refusal unless #153 grants that path. #153 grants every model step Read on
+  `<skills_dir>` (Adam, 2026-10-19, on #153), since bug-hunter's instructions Read files beside
+  its `SKILL.md`. A skill's entry, on a server and under `igor run`'s fallback alike, is a link
+  into a clone outside `<skills_dir>`; whether a Read grant on `<skills_dir>` reaches the files
+  behind the link is #153's to measure.
 - **Each step invokes its skills through the Skill tool**, as `igor:prose` or `igor:bug-hunter`,
   since no call passes `--bare`.
 - **Hooks.** The install wires none, and the startup check refuses a plugin that could declare
@@ -482,8 +528,8 @@ skills are (task 4.1).
   user and gives the rules and the pass token to the step in its prompt. Nothing of prose's
   lives in the worker's home, so the reset needs no exception for it.
 - **The pinned commit must carry what #153 calls.** #153 needs prose's `sign` to take
-  `--goals-file`, as `check` already does, and `start` too if #153 keeps Igor's `prose start`
-  (task 0.2).
+  `--goals-file`, as `check` already does, which shared-skills #27 adds; and #153 drops
+  `prose start`, the call that opened prose's editing hook in a worker's session (Adam, 2026-10-19, on #153; task 0.2).
 
 ### With #144 (`--bare` as the default)
 
