@@ -76,6 +76,12 @@ the set-down, and that every other rank drops out silently, is #179's *Only the 
 claim gives it back*. The count is kept per role and item, so it carries on when another rank
 of the role later holds the item.
 
+**In the claim window, a rank alone on the item counts,** as an exception to the holder rule
+above. A rank whose run fails in the claim window SHALL count the failure, and post the
+set-down, only where at that moment the item carries no claim message of another rank of its
+role that counts under #179's rules. Where it carries one, the rank SHALL count nothing, record
+nothing toward the breaker, and leave the role's label on the item.
+
 **Identical** means the same source and the same message. The source is one of the tracker, the
 code host, the working tree or the Igor's own code. The message is compared with its variable
 parts masked: digit runs, hexadecimal identifiers and the working tree's path. The working trees
@@ -90,15 +96,14 @@ SHALL NOT. So once the deferral lifts, an identical failure sets the item down a
 **The count SHALL survive a restart.** It is rebuilt from the execution log
 (`executions.ndjson`), never held only in memory.
 
-**The breaker's row SHALL hold no failure's text.** A failure before the worker whose run
-records no cure key (*A fault in the Igor's own setup is not the item's failure*, below) appends a row to the execution log, which lives on the state branch where
-Igor keeps its records. That row SHALL hold the failure's source (`tracker`, `code-host`, `tree`
-or `igor`), which stands for its class in place of its text, and a short hash of its masked
-message. Identical failures are those whose sources and hashes match. The raw and masked
-messages SHALL go only to the process's own log, the server's journal under systemd or the
-standard error of an `igor run`, as one line
-with the item, role, source and hash, encoded so that no message can break the line or forge
-another.
+**The breaker's row SHALL hold the failure's masked message, redacted.** A failure before the
+worker whose run records no cure key (*A fault in the Igor's own setup is not the item's
+failure*, below) appends a row to the execution log, which lives on the state branch where Igor
+keeps its records. That row SHALL hold the failure's source (`tracker`, `code-host`, `tree` or
+`igor`) and its masked message as text. Identical failures are those whose sources and masked
+messages match. Before it is masked, the message SHALL pass through the redaction Igor applies
+to every write to the state branch, which strips token-shaped strings and credentials in URLs
+([#213](https://github.com/adamstallard/igor/issues/213)).
 
 **An outage is not the item's failure.** A run that failed in a cycle the outage rule then ended
 SHALL NOT count toward any item's breaker, and neither SHALL either of the two runs whose
@@ -106,7 +111,9 @@ failures end a cycle under *Two identical failures before the worker on differen
 cycle*.
 
 The breaker SHALL decide, and post, during the failing run, without waiting for a later run to
-show whether one of those two rules ends the cycle. A set-down posted for a failure that then
+show whether one of those two rules ends the cycle. Where the failing run is itself the second
+of the two runs that end the cycle, that is known during the run, and the breaker SHALL NOT
+count it or set its item down. A set-down posted for a failure that then
 turns out to be part of an outage stands, and lifts like any other.
 
 **A fault in the Igor's own setup is not the item's failure.** A failure whose run records a
@@ -142,11 +149,24 @@ row is still written.
 
 #### Scenario: A repeated failure in the claim window sets the item down
 
-- **WHEN** one process of a role runs, with no `igor run` beside a serving rank, and a tracker
-  call in the claim window gets no answer, the same way, on three consecutive runs of an item,
-  in cycles that continued to other items
+- **WHEN** a tracker call in the claim window gets no answer, the same way, on three
+  consecutive runs of an item, in cycles that continued to other items, and each time the item
+  carries no other rank's claim message that counts
 - **THEN** the third run releases the claim and says the Igor has stopped retrying
 - **AND** the item is not claimed next cycle
+
+#### Scenario: The set-down is said even where the claim message never landed
+
+- **WHEN** the third identical failure in the claim window is the failure to post the claim
+  message
+- **THEN** the run still posts the withdrawal, saying the Igor has stopped retrying
+
+#### Scenario: A claim-window failure beside another rank's claim does not count
+
+- **WHEN** a rank's run fails in the claim window, and the item carries a claim message of
+  another rank of the role, one that counts under #179's rules
+- **THEN** the rank records nothing toward the item's breaker
+- **AND** it leaves the role's label on the item
 
 #### Scenario: Failures that differ only in their variable parts are identical
 
@@ -203,6 +223,13 @@ row is still written.
 - **THEN** the third run sets the item down
 - **AND** that failure does not count toward the item's breaker once the deferral lifts
 
+#### Scenario: The run that ends the cycle does not set its item down
+
+- **WHEN** an item has failed before the worker twice the same way, in cycles that continued,
+  and its third identical failure is the second of two identical failures on different items
+  in a row
+- **THEN** the cycle ends, and the item is not set down
+
 #### Scenario: A failure that records a cure key does not count
 
 - **WHEN** an item fails before the worker three times in a row, alone in its cycle each time,
@@ -233,19 +260,13 @@ row is still written.
   run that records a cure key, then fails the first way again
 - **THEN** that last run sets the item down
 
-#### Scenario: A failure's text stays off the state branch
+#### Scenario: A failure's row holds its masked message, redacted
 
-- **WHEN** an item's clone fails before the worker with a message that quotes a private
-  repository's response
-- **THEN** the row the failure appends to the execution log holds the source and a hash of the
-  masked message, and no part of the raw or the masked message
-- **AND** the process's own log holds both messages on one line with that hash
-
-#### Scenario: A message cannot break the process's log line
-
-- **WHEN** an item fails before the worker with a message holding a newline and a quote
-- **THEN** the process's own log holds the failure on one line, with the newline and the quote
-  escaped, and no second line
+- **WHEN** an item's clone fails before the worker with a message that holds a token and a URL
+  with a user name and password in it
+- **THEN** the row the failure appends to the execution log holds the source and the masked
+  message
+- **AND** that message holds neither the token nor the user name and password
 
 #### Scenario: A returned failure carries its step's source
 
@@ -272,6 +293,10 @@ failed, as a cycle the outage rule ends is. **Identical** has the meaning *A fai
 worker that repeats sets the item down* gives it: the same source and the same masked message.
 Neither run SHALL count toward its item's breaker.
 
+The record of a cycle ended by this rule, or by the outage rule, SHALL carry the source and the
+masked message of each failure it names, redacted as *A failure before the worker that repeats
+sets the item down* requires of the breaker's row.
+
 An item that meets such a failure alone in its cycle, with no second run to compare, SHALL count
 it toward its breaker, once per cycle, unless its run records a cure key (*A failure before the
 worker that repeats sets the item down*).
@@ -282,6 +307,13 @@ worker that repeats sets the item down*).
   the same way
 - **THEN** the cycle ends, is recorded as failed, and the remaining items are not attempted
 - **AND** neither failure counts toward its item's breaker
+
+#### Scenario: The cycle's record carries each failure, redacted
+
+- **WHEN** two items in a row fail to clone the same way, with a message that holds a token
+- **THEN** the record of the cycle names both items, with each failure's source and masked
+  message
+- **AND** neither message holds the token
 
 #### Scenario: Two items failing in different ways do not end the cycle
 

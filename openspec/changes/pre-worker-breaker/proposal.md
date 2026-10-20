@@ -11,8 +11,7 @@
    that can count (a failure that records a cure key writes its run row instead, decision 11).
    *Rejected:* a count in memory, which a restart loses; and a store of its own, which two Igors
    can overwrite and which can disagree with the log (`design.md`).
-3. **Identical means the same source and the same masked message,** compared through the
-   message's hash (decision 15). The source is which surface's call threw. *Rejected:* the source
+3. **Identical means the same source and the same masked message.** The source is which surface's call threw. *Rejected:* the source
    alone, and the raw message, which names the working tree's path, a path that differs between
    ranks and between runs. *Accepted risk* (Adam, 2026-10-11): `HTTP 404` and `HTTP 500` from
    the same call count as identical.
@@ -53,16 +52,13 @@
     [#179](https://github.com/adamstallard/igor/pull/179)). Where a role runs as several ranks,
     only the rank holding the item's claim counts a failure before the worker, and #179's *Only
     the rank holding a claim gives it back* has that rank post the set-down while any other rank
-    drops out silently. How this applies in the claim window is open question 1. The mask on
+    drops out silently. Decision 22 says how this applies in the claim window. The mask on
     the tree's path keeps working under #179's naming of trees by role and rank.
     `igor run <role>` runs as rank 0 (Adam, 2026-10-18): a rank no roster declares. It starts
     without waiting for any serving rank, runs beside them, and contends for items as any rank
     does, its claim messages carrying `Igor-Rank: 0`. So a run by hand is one of the role's ranks while it runs.
     It counts a failure and sets an item down only where it holds the claim, its rows carry
     rank 0, and its failures count toward the role's count for the item like any rank's.
-    #179 records this decision in a revision not yet pushed; until it is, #179's text on GitHub
-    still runs `igor run` as rank 1, refusing to start beside a serving rank 1. That text is out
-    of date, not a second choice for Adam.
     Decision 12's reasons for holding the watermark back go, by task 5.0, into #101's watermark
     rule, *Watermarks reduce reconsideration without governing it*: #179 cites that rule, so it is
     the one place every reason lives. *Rejected:* a count per rank, and a set-down any rank could
@@ -73,15 +69,20 @@
     a two-in-a-row rule would let the watermark pass them. The breaker also reads #101's
     `workerless` mark and cure keys, and relies on #101's rule that readers skip rows carrying a
     `kind`. *Rejected:* building them first and accepting that loss until then.
-15. **The state branch never gets a failure's text** (Adam, 2026-10-18). A `pre-worker` row
-    holds the failure's source, which surface's call threw, as the error class Adam asked for in
-    place of its text, and a hash of its masked message, the first twelve hexadecimal digits of
-    its SHA-256. Two failures are identical when their sources and hashes match. The raw and
-    masked messages go only to the process's own log, the server's journal under systemd, as one
-    line of JSON with the item, role, source and hash, so a person can find a row's text by its
-    hash. *Rejected:* the masked message as text in the row, and the raw message beside it. The
-    state branch may be public, and a tracker's error can carry the response text of a private
-    repository.
+15. **A failure's row holds its masked message, readable, after the shared redaction** (Adam,
+    2026-10-19, replacing his decision of 2026-10-18 to record only a hash). A `pre-worker` row
+    holds the failure's source, which surface's call threw, and its masked message as text. Two
+    failures are identical when their sources and masked messages match. Before the masks run,
+    the message passes through the redaction function that
+    [#213](https://github.com/adamstallard/igor/issues/213) decides Igor applies to every write
+    to the state branch, which strips token-shaped strings and credentials in URLs (decision 27).
+    Redacting first keeps the masks from breaking up a token's shape before the redaction can
+    match it. The masks stay, because they are what make repeats compare equal: they replace the
+    timestamps, process ids, tree ids and temporary paths that differ between two runs of one
+    failure. *Rejected:* a hash of the masked message in place of its text, keyed or not. Other
+    records on the state branch already carry failure text (decision 27), so hiding only this
+    change's text protected little, and it cost a record a person can read. *Rejected:* the raw
+    message, which names the working tree's path (decision 3).
 16. **A count that cannot be read sets nothing down** (proposed: this decision and the next
     five are the change's own, which Adam has not yet approved). Where the log cannot be read,
     the run is refused. It still tries to write its `pre-worker` row, since an append can
@@ -95,7 +96,8 @@
 18. **An `outage` row excludes failures by role, rank and cycle** (proposed), not by where the
     failures' rows sit in the log, since `serve` does not wait for a run's row to land.
     *Rejected:* excluding the rows written before the outage row.
-19. **An `outage` row that never lands gets no retry of its own** (proposed). That cycle's
+19. **An `outage` row that never lands gets no retry of its own** (proposed), beyond the one
+    #179 gives every state write. That cycle's
     failures then count, at the cost of a set-down that an answer lifts.
 20. **An `outage` row written for two identical failures names only those two items**
     (proposed), not every failure in the cycle. The rule matched only that pair, so nothing
@@ -106,6 +108,61 @@
     set-downs. *Rejected:* skipping such rows, which could join failures from either side of a
     run that worked.
 
+Adam answered the change's seven open questions on 2026-10-19, approving each one's
+recommendation except the one to key the hash, which decision 15 now replaces. Decisions 22 to
+27 are those answers. Decisions 16 to 21 were not among the questions, and still wait for his
+approval:
+
+22. **A failure in the claim window counts only where no other rank's claim is on the item**
+    (Adam, 2026-10-19). Where a role may run several ranks, a claim-window failure counts, and
+    the set-down is posted, only where at that moment the item carries no claim message of
+    another rank of the role that counts under #179's rules. A rank alone on the item then
+    sets it down. A rank that may have lost to a sibling counts nothing and, as #179 requires of
+    a rank that does not hold the item, leaves the role's label on it. #179 says a process whose
+    claim failed in the window holds nothing, so without this test no claim-window failure
+    would count wherever several ranks run. The test reads the item, not the roster, because an
+    `igor run` joins any role as rank 0 (decision 13), so the roster cannot say whether one
+    process or several are running. It misses two `igor run`s of one role at once: both run as
+    rank 0, so each reads the other's claim message as its own rank's, sees itself alone, and
+    may count and set the item down. Both work the item then too, a gap #179 lists for Adam;
+    if #179 answers it with a run id in the claim message, this test compares that id too.
+23. **A withdrawal is posted on the third identical failure in the claim window even where the
+    claim message never landed** (Adam, 2026-10-19). It is the only word the item gets about
+    being set down. If the tracker is still failing, the post fails too, at no cost. Under
+    decision 22 it is posted only where no sibling's claim counts.
+24. **#101's rule that an item is never suppressed for a fault in the Igor covers faults that
+    record a cure key** (Adam, 2026-10-19). #101's `work-triage` rule says "where the cause was a
+    fact about the Igor — a seat whose token is unset, a command its allowlist refuses, a
+    capacity never observed — the item SHALL NOT be suppressed". Decision 11 reads that as
+    faults that record a cure key. Others, such as a full disk, count toward the breaker. A full
+    disk then sets down only an item alone in its cycle, once per cycle: two items failing alike
+    end the cycle uncounted (decision 5). #101's text is to say so; see *Reported to other
+    changes*.
+25. **The count is per role and item** (Adam, 2026-10-19), so with several roles each may post
+    three times before setting an item down. Each role is a separate Igor with its own label
+    and its own deferral, and a fault in one role's setup says nothing about another's.
+26. **A failure `execute` returns before the worker is retried twice and set down on the
+    third** (Adam, 2026-10-19), like every other failure before the worker. In the in-force
+    code such a failure, for example a catch-up whose merge fails, is handed off as a `failure`
+    and deferred at once. One rule for every failure before the worker is simpler to read off
+    an item's history, and two extra retries of a cheap step cost little. *Rejected:* deferring
+    returned failures at once and counting only thrown ones.
+27. **One shared redaction applies to everything Igor writes to the state branch** (Adam,
+    2026-10-19; [#213](https://github.com/adamstallard/igor/issues/213)). The state branch is as
+    visible as its repository, and failure text reaches it through records this change does not
+    otherwise touch: the in-force run row's `reason` in `executions.ndjson`, the transcript and
+    the refusal envelope beside it (the response Igor keeps when the provider refuses a run for
+    a spent usage window), and `deferred.json`, where `noteHandoff` stores a handoff's `reason`.
+    A failure that records a cure key (decision 11) and one that `execute` returns (decision 26)
+    keep their ordinary run row, so their text reaches the branch that way, and a set-down's
+    text reaches `deferred.json`. #213 records the decision and is the work of building the function,
+    which does not exist yet; this change's `pre-worker` and `outage` rows are to pass through
+    it. An `outage` row carries the source
+    and the masked, redacted message of each failure it names, so it meets #99's
+    (`structured-failure-record`) rule that a cycle's record of its own faults carry the fault's
+    identity and origin, with no exception for rows carrying a `kind`; but see *Still open* on
+    the status codes the masks remove.
+
 **Still open:**
 
 - **The masks are unmeasured.** Nobody has checked that real repeated failures give one masked
@@ -114,89 +171,55 @@
 - **A refused App credential inside a clone is unmeasured** (task 0.1). The tree provider mints
   its clone token from the App's credential. Whether a refusal there reaches #101's App
   condition, and so records a cure key, or is tagged `tree` and counted per item, is not known.
+- **#213's redaction function is not built.** Tasks 3.1, 4.1 and 4.2 call it. Whether this
+  change's code waits for #213, as it waits for #101 (decision 14), or builds the function
+  itself, as #213 describes it, is for Adam. Nothing says what a row holds if this change's
+  code lands first; without a fallback, such as writing only `source` until the function
+  exists, its rows would carry unredacted text.
+- **Two redaction rules.** #188 (`keep-action-log`) already decides that its *Credential
+  redaction* is "one rule, applied wherever this or another change says text is redacted"
+  (Adam, 2026-10-13), redacting seat tokens by their exact value and the values of
+  secret-named environment variables. #213 strips token-shaped strings and credentials in URLs.
+  Whether #213 adopts #188's rule, adds its patterns to it, or stands beside it is for Adam;
+  with two rules, a seat token in a clone error would be stripped by #188's and not by #213's.
+- **The masks remove status codes that #99 asks for.** Mask 3 turns every digit run into `#`,
+  so an `outage` row's message loses a response status or exit status. #99 asks that such an
+  identity be "separately readable from the sentence a person reads". Whether the `failures`
+  entries gain a field holding it, unmasked, is for Adam.
+- **A claim-window read that fails.** Under decision 22 a rank reads the item's claim messages
+  before it counts a claim-window failure. Where the tracker is not answering, that read
+  probably fails too. Whether the rank then counts, counts nothing, or leaves the label is for
+  Adam; the spec says nothing yet.
+- **A code-host outage seen through clones.** A clone's failure is tagged `tree` (decision 17),
+  so it never counts toward the outage rule. Where a code-host outage fails each clone with a
+  different masked message, neither rule ends the cycle, and each item counts one failure per
+  cycle. Whether that needs a rule is for Adam.
+- **Private text in a readable message.** The redaction strips credentials, not content. A
+  tracker's error quoting a private repository's or a Linear workspace's text would reach the
+  state branch, which may be public. Adam chose a readable record knowing other records already
+  carry such text (decision 15). Whether the redaction should strip more is for Adam, beside
+  #213's open question on the transcript.
 - **The set-down sentence names what lifts a deferral.** #141, which lets only someone with
   write access lift a deferral, changes that sentence if it lands first (task 3.2).
 
-**Open questions for Adam**, each with a recommendation; none is decided. The spec and tasks are
-written on each recommendation, and change where Adam answers otherwise; a task that cannot be
-built before his answer says it waits on it:
+**Reported to other changes:**
 
-1. **A failure in the claim window, where a role runs several ranks.** #179's *Only the rank
-   holding a claim gives it back* says a process whose claim message failed to post holds
-   nothing, and one whose verification (the re-read after posting that shows whose claim message
-   holds the item) fails counts as not holding it. Every claim-window failure is one of those
-   two, so where a role runs several ranks, decision 13 lets no claim-window failure count. The
-   scenario *A repeated failure in the claim window sets the item down* is written for a role
-   with one process running, where the holder rule does not apply. Because `igor run` runs as
-   rank 0 beside any serving rank (decision 13), the roster cannot say which case a role is in:
-   a role whose roster declares one rank runs two whenever someone starts `igor run` for it.
-   Tasks 3.3 and 3.4 build the claim window only once this is answered.
-   *Recommendation:* count a claim-window failure, and post the set-down, only where, at the
-   moment of the failure, the item carries no claim message of another rank of the role among
-   the messages #179 counts. A rank alone on the item then sets it down. A rank that may have
-   lost to a sibling counts nothing and, as #179 requires of a rank that does not hold the item,
-   leaves the role's label on it. The test reads the item, not the roster, so it covers an
-   `igor run` beside any serving rank: rank 0's claim message names its rank, as every rank's
-   does. It does not cover two `igor run`s of one role at once: both run as rank 0, so each
-   reads the other's message as its own rank's, sees itself alone, and may count and set the
-   item down. Both also work the item then, a gap #179's next revision lists for Adam; if #179
-   answers it with a process id in the claim message, this test compares that id too.
-2. **The withdrawal posted where no claim message landed.** As drafted, on the third identical
-   failure in the claim window, the withdrawal carrying the set-down sentence is posted even
-   where the claim message never landed (`design.md`, *Where the set-down is said*; task 3.3).
-   *Recommendation:* keep it. It is the only word the item gets about being set down, and if the
-   tracker is still failing the post fails too, at no cost. Under recommendation 1 it is posted
-   only where no sibling's claim counts.
-3. **Which faults #101's no-suppression rule covers.** #101's `work-triage` rule says "where the
-   cause was a fact about the Igor — a seat whose token is unset, a command its allowlist
-   refuses, a capacity never observed — the item SHALL NOT be suppressed". Decision 11 reads
-   that as covering faults that record a cure key. Read literally, it also covers a fault with
-   no cure key, such as a full disk, which this change counts toward the breaker.
-   *Recommendation:* keep decision 11's reading, and have #101's rule say "a fault that records
-   a cure key". A full disk then still sets items down, but only an item alone in its cycle,
-   once per cycle: two items failing alike end the cycle uncounted.
-4. **The count is per role and item**, so with several roles each may post three times before
-   setting an item down.
-   *Recommendation:* keep it. Each role is a separate Igor with its own label and its own
-   deferral, and a fault in one role's setup says nothing about another's.
-5. **A hash of a guessable message can be confirmed.** Decision 15's hash is unkeyed, so anyone
-   reading a public state branch who can guess a failure's masked message, such as a clone's
-   "not found" naming a private branch, can hash the guess and confirm it.
-   *Recommendation:* key the hash with a secret only the server holds (HMAC-SHA-256 under a key
-   in the role's environment file), so a guess cannot be checked offline. Changing the key
-   restarts every count, which costs at most three more failures per item.
-6. **A returned failure before the worker is retried twice before it defers.** In the in-force
-   code, a failure `execute` returns before the worker, such as a catch-up whose merge fails, is
-   handed off as a `failure` and deferred at once. This change counts it like a thrown failure:
-   refused on the first two, set down on the third.
-   *Recommendation:* keep it. One rule for every failure before the worker is simpler to read
-   off an item's history, and two extra retries of a cheap step cost little. The alternative is
-   to keep deferring returned failures at once and count only thrown ones.
-7. **#99's failure record and the `outage` row.** #99 (`structured-failure-record`) requires a
-   cycle's record of its own faults on the state branch to carry the fault's identity and
-   origin, its descriptions included. An `outage` row records a cycle that a failing tracker or
-   code host ended, and
-   decision 15 keeps any failure's text off it.
-   *Recommendation:* the `outage` row is a marker that excludes failures from the count, not
-   the cycle's record of its fault, so have #99 say its rule does not reach rows carrying a
-   `kind`, and keep the row free of text.
+- **#101 (`condition-backoff`)**, under review: its rule that an item is never suppressed for a
+  fact about the Igor should say it covers "a fault that records a cure key" (decision 24). As
+  written it says "where the cause was a fact about the Igor — a seat whose token is unset, a
+  command its allowlist refuses, a capacity never observed — the item SHALL NOT be suppressed",
+  which reads as covering a full disk too. This change does not edit #101.
+- **#179 (`concurrent-instances`)**: its *Only the rank holding a claim gives it back* says "a
+  process whose verification fails cannot tell whether it holds the item, so it counts as not
+  holding it", and such a process drops out silently, leaving the label. Decision 22 has a rank
+  alone on the item post the set-down withdrawal, which removes the label, even where the
+  failure was in its verification, the re-read after posting that shows whose claim message
+  holds the item. #179's rule should allow that case, as it already lets a
+  process whose claim message failed to post remove its label where no other claim counts.
 
-**Conflict with what is in force, recorded and not resolved:** decision 15 keeps a failure's
-text out of this change's rows, but the in-force run row in `executions.ndjson` carries the
-run's `reason`, and the transcript and the refusal envelope (the provider's response, kept when
-it refuses a run for a spent usage window) beside it carry the worker's text, all on the same
-state branch. Two kinds of failure before the worker keep that run row: one that records a cure
-key (decision 11), and one that `execute` returns, whose row stays beside its `pre-worker` row
-(`design.md`, *Counting*). A returned catch-up merge failure's `reason` quotes git's error. So
-their text still reaches the branch. So does a set-down's own: the third failure's handoff goes
-through the in-force `noteHandoff`, which stores the run's `reason`, holding the failure's
-message, in `deferred.json` on the same branch. Whether decision 15 reaches those records is for
-Adam; this change does not touch them. This change's `pre-worker` and `outage` rows name the
-item, and so its repository,
-as the in-force run rows do; decision 15 keeps the failure's text off the branch, not the
-item's name. Separately, the in-force `graceful-handoff` scenario that makes budget the only
-reason to defer already disagrees with the in-force code, which defers failures; a set-down is
-one more such deferral.
+**Conflict with what is in force, recorded and not resolved:** the in-force `graceful-handoff`
+scenario that makes budget the only reason to defer already disagrees with the in-force code,
+which defers failures; a set-down is one more such deferral.
 
 ## Why
 
@@ -204,7 +227,7 @@ When a claimed run fails **before the worker starts**, the item is refused and t
 cycle ([#155](https://github.com/adamstallard/igor/issues/155)). Examples are a clone that fails,
 a catch-up whose merge fails, a full disk, or a tracker call during the claim. Retrying such a
 failure is cheap, so a thrown one defers nothing. (A failure `execute` returns before the worker
-is deferred at once; open question 6.)
+is deferred at once, which decision 26 changes.)
 
 A deterministic failure therefore repeats forever. Every poll claims the item (its `igor:<role>`
 label and a claim comment), fails, posts a handoff ending "It will try again next cycle", and
@@ -230,7 +253,7 @@ first two failures are refused and retried.
   host, the working tree or the Igor's own code. The message is compared with its variable parts
   masked: numbers, hexadecimal identifiers and the working tree's path.
 - **In a row means nothing broke the sequence.** A run of the item that reached the worker, or a
-  failure before the worker that was not identical, starts the count again. An edit or a reply
+  failure before the worker that counts and was not identical, starts the count again. An edit or a reply
   does not. So once a deferral lifts, an identical failure sets the item down again at once.
 - **An outage is not the item's failure.** A failure in a cycle that the outage rule then ended
   does not count toward any item's breaker. The breaker decides during the failing run, before
