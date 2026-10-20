@@ -282,7 +282,8 @@ ciphertext does not decrypt, or the plaintext does not name the file's own seat 
 pick it, and #143's probe SHALL skip it. It is under a read-cleared condition
 (`stuck-conditions`' *A read-cleared condition opens on a failing read and clears on a passing
 one*): what is read is the seat's file, on a lore read; failing is any of the decryption failures
-above; the condition is on the seat, with cure key `seat:<id>:decrypt`. What a role does when this leaves it
+above, and the first such read opens the condition; the condition is on the seat, with cure key
+`seat:<id>:decrypt`. What a role does when this leaves it
 no eligible seat is *A role draws on the seat with the most headroom*.
 
 Where the key is read but the seat's ciphertext does not decrypt with it, because it was
@@ -1325,13 +1326,13 @@ monotonically like every other permission, and needs no coordination when the fl
 The server running the Igors SHALL make a seat probe of a seat that has no unexpired reading of a window: no `usage` or `stream` observation of that
 window whose reset has not passed. A seat with an unexpired refusal is not probed at all (below).
 The probe is one minimal `claude -p` call with that seat's own configured token, on the cheapest model, with a trivial prompt and no tools, and with `--output-format
-stream-json --verbose`, run from an empty temporary directory with no `.claude` directory or
-`CLAUDE.md` in any directory above it, so that no project's settings, skills, hooks or `CLAUDE.md`
-load beside the seat's token. Claude Code loads these from every directory above the one it
-runs in. Its environment SHALL be written out as task-execution
-requires of a worker's, holding no credential but the seat's token, with `HOME` set to an empty
-temporary directory, so that no user-level settings or hooks of the account running Igor load
-either. It SHALL read the call's `rate_limit_event` and record
+stream-json --verbose`, run from an empty directory that *A seat probe runs where only the Igor
+can write* places and checks, so that no project's settings, skills, hooks or `CLAUDE.md` load
+beside the seat's token. Its environment SHALL be built entry by entry, not inherited from the
+Igor's, as task-execution
+requires of a worker's, holding no credential but the seat's token, with `HOME` set to a second
+empty directory that *A seat probe runs where only the Igor can write* places, so that no user-level settings or hooks of the account
+running Igor load either. It SHALL read the call's `rate_limit_event` and record
 it as a `stream` reading of that seat, exactly as a worker run's event is recorded. Where the seat's
 last reading of the window expired at the reset that reading stated, and a post-reset probe is due
 ten minutes after that reset (*A window's length is measured, and so is whether it starts at first
@@ -1378,8 +1379,9 @@ no headroom left for Igor. The one exception is the crossing probe below, which 
 gate decides for a role and checks that role's line.
 
 Nor SHALL a probe be made on a seat whose token Igor could not decrypt (*A seat's token travels as
-ciphertext in its file*). That seat is under a read-cleared condition, which only a later read of
-the seat files clears, and no run may use it. And `igor run` SHALL make no seat probe at all: it
+ciphertext in its file*), or whose file is malformed (*A malformed seat file takes only its own
+seat out*). Each such seat is under a read-cleared condition, `seat:<id>:decrypt` or
+`seat:<id>:file`, which only a later lore read of its file clears, and no run may use it. And `igor run` SHALL make no seat probe at all: it
 spends only its own token and decrypts no lent seat (*`igor run` spends its own token as an
 implicit local seat* and *A lent seat is decrypted only where the worker has a user of its own*).
 
@@ -1434,9 +1436,9 @@ its credential were cleared, so it stays unprobed until it could be used.
 #### Scenario: A probe loads no project's settings
 
 - **WHEN** a seat is probed
-- **THEN** the call runs from an empty temporary directory, with `HOME` set to a second empty
-  temporary directory
-- **AND** no directory above the first holds a `.claude` directory or a `CLAUDE.md`
+- **THEN** the call runs from an empty directory, with `HOME` set to a second empty directory
+- **AND** no directory above the first holds a `.claude` directory or a `CLAUDE.md`, as *A seat
+  probe runs where only the Igor can write* checks
 
 #### Scenario: A probe is minimal
 

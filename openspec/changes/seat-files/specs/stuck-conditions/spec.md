@@ -3,8 +3,9 @@
 ### Requirement: A read-cleared condition opens on a failing read and clears on a passing one
 
 A read-cleared condition SHALL be a condition on something Igor reads, such as a file, that
-opens when a read of it fails and clears when a later read of it passes. It SHALL open on that
-first failing read, with no recurrence count. It SHALL clear only on a passing read: never by a
+opens when a read of it fails and clears when a later read of it passes. It SHALL open on the
+number of failing reads in a row that the rule using it sets, and on the first where that rule
+sets none. It SHALL clear only on a passing read: never by a
 probe item, and with no cooldown, since *A condition clears by not recurring, and a probe is what
 observes that* does not apply to it. It SHALL stop nothing by itself. What the failed read could
 not supply, such as a seat's token, is still missing, and the rule for that thing says what
@@ -14,16 +15,26 @@ condition. A read SHALL append a condition row only where it opens or clears the
 every read.
 
 A rule that opens a condition of this kind cites this requirement and states only what is read,
-what counts as failing, and what the condition is on. Seat-budget's *A seat's token travels as
-ciphertext in its file* is one such rule, for a seat file Igor fails to decrypt.
+what counts as failing, how many failing reads in a row open it, and what the condition is on.
+Seat-budget's *A seat's token travels as ciphertext in its file*, for a seat file Igor fails to
+decrypt, and its *A malformed seat file takes only its own seat out* are two such rules, and
+each opens its condition on the first failing read.
 
 A read is its own observation of the cure. A probe item takes work to find out whether a fault
 recurs; a file that reads cleanly has already shown it.
 
 #### Scenario: A failing read opens the condition at once
 
-- **WHEN** a read of a file that a read-cleared condition watches fails for the first time
+- **WHEN** a read of a file that a read-cleared condition watches fails for the first time, and
+  the rule using the condition sets no count
 - **THEN** the condition opens, without waiting for a recurrence
+
+#### Scenario: A rule that sets a count opens the condition on that count
+
+- **WHEN** the rule using a read-cleared condition sets three failing reads in a row, and two
+  reads in a row have failed
+- **THEN** the condition is not open
+- **AND** it opens when the third read in a row fails
 
 #### Scenario: A passing read clears it, with no probe
 
@@ -132,12 +143,15 @@ Recurrence is the trigger, except for the two conditions below. A first occurren
 carries the diff, and a handoff naming the missing command is how the cure gets found at all.
 The twentieth is waste, whatever the cause.
 
-Two kinds of condition open on their first occurrence. The first is a refused GitHub App
-credential, which stops the Igor itself. An Igor whose App is refused can do nothing on GitHub,
+Two kinds of condition are exceptions to recurrence. The first is a refused GitHub App
+credential, which opens on its first occurrence and stops the Igor itself. An Igor whose App is refused can do nothing on GitHub,
 so no item it takes could find the cure, and `app-identity` already requires that it take no new
-item while refused. The second is a read-cleared condition, such as the one on a seat file Igor
-fails to decrypt, which seat-budget's *A seat's token travels as ciphertext in its file* opens,
-or on a malformed seat file, which its *A malformed seat file takes only its own seat out* opens.
+item while refused. The second is a read-cleared condition, which opens on the number of failing
+reads in a row its rule sets, and on the first where the rule sets none, rather than on a cure key
+recurring. Two examples are the condition on a seat file Igor fails to decrypt, which
+seat-budget's *A seat's token travels as ciphertext in its file* opens, and the one on a
+malformed seat file, which seat-budget's *A malformed seat file takes only its own seat out*
+opens.
 Unlike the first, it stops nothing (*A read-cleared condition opens on a failing read and clears
 on a passing one*). Such a seat is never chosen and never probed, so no run or probe item ever
 uses it, and reading the file again is the only observation of its cure.

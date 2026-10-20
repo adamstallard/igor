@@ -205,7 +205,12 @@
     process's lore read, and #82 (`stopped-scope-visible`) lists a passing read among the ways a
     condition clears. This change's block on #101's *A condition clears by not recurring, and a
     probe is what observes that* exempts the kind from the probe item. Decision 31's condition,
-    on a seat, has the cure key `seat:<id>:decrypt`. *Rejected:* each change restating how its condition opens and clears.
+    on a seat, has the cure key `seat:<id>:decrypt`. Each rule that uses the kind says how many
+    failing reads in a row open its condition (Adam, 2026-10-20). A decrypt failure opens it on
+    the first. #208's lore read that fails on one server, from a git lock or a full disk rather
+    than from what the commit holds, opens its own condition on the third in a row, since such a
+    fault often clears by itself. *Rejected:* each
+    change restating how its condition opens and clears.
 39. **`igor run` spends a token from its own environment, `IGOR_RUN_TOKEN`, as an implicit local
     seat** (Adam, 2026-10-18). Nothing about it goes in the lore repository, no seat file needs
     to list the role, and lent seats are never used. Without the variable, `igor run` refuses to
@@ -227,7 +232,7 @@
     whose tokens decrypt equal, which catches a copy only while the original file still exists.
 41. **This change carries #143's probe exclusions** (Adam, 2026-10-18), as a `MODIFIED` block on
     #143's *A seat nothing has read is probed on the Igor server with its own token*, copied
-    from #143's latest text (b387034) with its scenarios kept. It also adds two scenarios that
+    from #143's latest text (9fc23a8) with its scenarios kept. It also adds two scenarios that
     #143 chose to leave to this block rather than add itself: a probe's environment holds only the seat's token, and a probe that exits
     with an error is not retried at once. The probe skips a seat Igor could not decrypt,
     and `igor run` makes no probe. This change archives after #143 (decision 32), so the block

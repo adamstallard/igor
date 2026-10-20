@@ -688,13 +688,17 @@ of its requirements. Build each against #101's code:
       where only some seats are under conditions, and the rest are at their lines, hands off
       rather than stops, naming each condition in the handoff (Adam, 2026-10-17). Test each of its seat scenarios
 
-- [ ] 11.4 *A condition that recurs stops the affected scope from taking new work*: a seat file
-      Igor fails to decrypt opens the seat's condition on its first occurrence, and a later read
+- [ ] 11.4 *A condition that recurs stops the affected scope from taking new work*, in the
+      exception to recurrence it states: a seat file Igor fails to decrypt opens the seat's
+      condition on its first occurrence, and a later read
       that decrypts the file clears it, with no cooldown and no probe item (proposal, decision
-      32; task 3.9). It is a read-cleared condition, built once as *A read-cleared condition opens
-      on a failing read and clears on a passing one* states, so #179's refused-configuration
-      condition reuses the same code (proposal, decision 38). Tests: the first failed read opens
-      it; a good read clears it; no probe item is ever taken for it; it stops no scope by itself
+      31; task 3.9). It is a read-cleared condition, built once as *A read-cleared condition opens
+      on a failing read and clears on a passing one* states, so the conditions #179 and #208 open
+      on a refused configuration reuse the same code (proposal, decision 38). The code takes, from the rule using
+      it, how many failing reads in a row open it, one by default. Tests: the first failed read
+      opens it; with a count of three, the third failed read in a row opens it and the first two
+      do not; a good read clears it; no probe item is ever taken for it; it stops no scope by
+      itself
 - [ ] 11.5 *A condition clears by not recurring, and a probe is what observes that*: a read-cleared
       condition takes no probe item and waits for no cooldown; it clears only on a passing read
       (proposal, decision 38). Test: the scenario *A read-cleared condition takes no probe item*
