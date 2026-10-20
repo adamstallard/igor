@@ -8,30 +8,38 @@ Each is the reviewer's to decide, except where marked **Decided**.
    text; the artifact carries what was written. A shell command's output is kept, even where
    the command printed a file. *Rejected:* saving the stream whole. It holds every file the
    worker read, in full.
-2. **Redact the credentials the Igor knows, by exact value as well as by pattern, as each call
-   is collected.** The rule, *credential redaction*, is stated in this change's spec. Matching
-   seat tokens by exact value matters because the Igor gives the worker its seat token (`src/execute.ts:868`), so `env`
-   prints it, and until #163 is fixed by `worker-user` (#175) the worker can read the Igor's own credentials too.
-   Redacting at collection means `review-evidence` (#190), which lists the worker's commands in
-   the pull request body, reads them already redacted.
-   *Rejected:* patterns alone, which miss a token whose shape no pattern names. *Rejected:*
-   matching variables by name alone, which misses a seat whose `token_env` names a variable such
-   as `SEAT_A`.
+2. **Redact each call as it is collected.** The rule is *credential redaction*, the one
+   redaction rule, which `redact-state-branch` (#213) defines along with what it matches and
+   the alternatives it rejected. #213 also builds its function, `redact` in `src/redact.ts`,
+   which this change calls. Redacting at collection means no later step holds a call
+   unredacted: `review-evidence` (#190), which lists the worker's commands in the pull request
+   body, reads them already redacted.
 
-   **Decided (Adam, 2026-10-13): this is the only redaction rule.** `loop-verifies-commands`
+   This log depends on the rule matching known secrets by their exact value, not only by
+   pattern. A seat token is the model-subscription credential an Igor gives its worker
+   (`src/execute.ts:868`), so `env` prints it, and no pattern need fit its shape. Until
+   `worker-user` (#175) fixes #163, the worker can also read the Igor's own credentials, and a
+   command it runs can print them too.
+
+   **Decided (Adam, 2026-10-13): there is one redaction rule.** `loop-verifies-commands`
    (#189) redacts published check output by it, and `review-evidence` (#190) redacts every
    command, path and output in the evidence table it adds to the pull request body. Neither
-   restates the rule. *Rejected:* each change stating its own set of values and patterns to
-   redact, which lets the sets drift apart, so a value one change redacts another could
-   publish.
+   #189 nor #190 restates the rule. *Rejected:* each change stating its own set of values and
+   patterns to redact, which lets the sets drift apart, so a value one change redacts another
+   could publish.
+
+   **Decided (Adam, 2026-10-19): the rule's definition moves to #213.** #213 defines it,
+   extended with the `user:pass@` part of a URL, and builds its function before this change.
+   This change cites the rule rather than stating it.
 3. **What is kept depends on who can read the store, asked of GitHub at write time.** A private
    store keeps the whole log. A public store keeps no output text. It keeps commands and paths
    only where the worked repository is public too; otherwise it keeps only which tools ran and
    whether they failed. Each unknown resolves toward keeping the least: a store whose visibility cannot be read is
-   treated as public, and a worked repository whose visibility cannot be read as private, since a
-   public store with a private worked repository is the tier that keeps the least.
+   treated as public, and a worked repository whose visibility cannot be read as private, since
+   a public store with a private worked repository is the tier that keeps the least: only which
+   tools ran and whether they failed.
    *Rejected:* one rule for both, which is either useless in a private store or leaks in a public
-   one. *Rejected:* trusting `publicStore`, the cached flag #91 shows can be stale.
+   one. *Rejected:* trusting `publicStore`, a cached config flag that can be out of date (#91).
 
    **Open question for the reviewer:** a private store is readable by its own collaborators,
    who need not be able to read the worked repository. Under this decision they can read the
@@ -40,8 +48,8 @@ Each is the reviewer's to decide, except where marked **Decided**.
    not all readers of the worked repository like a public one, which needs a collaborator
    comparison on every write.
 4. **Capped at 512 KiB, trimmed from the start.** A run's end, where it failed or finished, is
-   what an auditor opens the log for. *Rejected:* dropping the latest calls, which loses exactly
-   that.
+   what an auditor opens the log for. *Rejected:* dropping the latest calls, which loses the run's
+   end.
 5. **Kept for every run that started the worker**, whatever its outcome, the worker killed
    included. *Rejected:* keeping it only beside an artifact. A run that failed is where somebody
    most needs to see what was done.
@@ -82,8 +90,9 @@ None.
 
 ### Modified Capabilities
 
-- `task-execution`: the tool calls of every model step in a run, the worker's and #153's
-  bug-hunter step's and prose pass's, are recorded to the state branch, redacted, capped, and
+- `task-execution`: the tool calls of every model step in a run (the worker, and the
+  bug-hunter step and prose pass that the open change `signed-publishing` (#153) adds) are
+  recorded to the state branch, redacted, capped, and
   cut according to who can read the store.
 
 ## Impact
@@ -99,8 +108,9 @@ None.
   the store's.
 - Build order: this change, then `review-evidence` (#190), then `scope-check` (#187) and
   `loop-verifies-commands` (#189), in either order; archive order follows the same sequence.
-  This change builds credential redaction's function, which #189 and #190 call. #187 and #189
-  write only into #190's evidence table, so they follow #190.
+  `redact-state-branch` (#213) builds credential redaction's function before this change, and
+  this change, #189 and #190 all call it. `scope-check` (#187) and `loop-verifies-commands`
+  (#189) write only into the evidence table #190 adds, so they follow #190.
 - **Decided (Adam, 2026-10-13): the log covers every model step Igor runs**, not the worker
   alone. `signed-publishing` (#153) adds two model steps after the worker, a bug-hunter step and
   a prose pass, for a role whose `skills` list names them. Each entry is labelled with its

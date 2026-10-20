@@ -97,38 +97,29 @@ SHALL leave an error result with its error status and no code, never with a wron
 - **WHEN** a shell call's result is an error whose text does not begin `Exit code`
 - **THEN** the entry records the error and no exit code
 
-### Requirement: Credential redaction replaces every credential the Igor knows
+### Requirement: The action log is redacted as each call is collected
 
-*Credential redaction* is one rule, applied wherever this or another change says text is
-redacted. It replaces each of these with `[redacted]`:
-
-- the token of every seat the Igor has read, whatever its source and whatever its variable's
-  name;
-- the value of every variable in the worker's environment, and in the Igor's own, whose name
-  contains `TOKEN`, `KEY`, `SECRET`, `PASSWORD` or `CREDENTIAL`, matched exactly, where the value
-  is at least 8 characters long;
-- a private key block (`-----BEGIN … PRIVATE KEY-----` to its `END` line), an `age` encryption
-  secret key (`AGE-SECRET-KEY-1…`), and a token by its prefix: GitHub (`ghp_`, `gho_`, `ghu_`,
-  `ghs_`, `ghr_`, `github_pat_`), Anthropic (`sk-ant-`), an AWS access key ID (`AKIA` and 16
-  capital letters or digits), and Slack (`xoxa-`, `xoxb-`, `xoxp-`, `xoxr-`, `xoxs-`).
-
-The action log SHALL apply credential redaction to each string as the call is collected, before
-anything reads or writes it.
+The action log SHALL apply credential redaction to each string as the call is collected,
+before any later step, such as `review-evidence` (#190), reads it, so that no copy of a call,
+in memory or in the log, holds a credential. The rule is the requirement *Credential redaction
+replaces every credential the Igor knows* in the change `redact-state-branch` (#213). It
+matches seat tokens, and the values of environment variables whose names hold a credential word
+such as `TOKEN`, by their exact values, and tokens, private keys and URL credentials by
+pattern.
 
 #### Scenario: The seat token is redacted
 
-- **WHEN** the worker runs `env` in a store that keeps output
-- **THEN** the logged output holds `[redacted]` where the seat token was
+- **WHEN** the worker runs `env` in a private store, whose log keeps command output
+- **THEN** the calls the run collects in memory, which `review-evidence` (#190) reads, hold
+  `[redacted]` where the seat token was
+- **AND** so does the log written to the state branch
 
 #### Scenario: A seat token read from a file is redacted
 
-- **WHEN** a seat's token comes from its `token_file`, and a command the worker runs prints it
-- **THEN** the logged output holds `[redacted]` where the token was
-
-#### Scenario: A short value is not a credential
-
-- **WHEN** a variable named `DEPLOY_KEY` holds a 3-character value
-- **THEN** credential redaction leaves that value in place
+- **WHEN** a seat's token is read from the file named by the seat's `token_file` key, and a
+  command the worker runs prints it
+- **THEN** the calls the run collects in memory, and the log written to the state branch, hold
+  `[redacted]` where the token was
 
 ### Requirement: What the action log keeps follows who can read the store
 
