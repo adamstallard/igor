@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
 import type { NoFigure, Observation, SeatBound, SeatBounds } from './capacity.js'
 import { keyCheck } from './keys.js'
+import { rememberSecret } from './redact.js'
 import { resolveRecentReset } from './reset.js'
 
 /**
@@ -125,6 +126,17 @@ export async function resolveToken(
   source: TokenSource,
   env: NodeJS.ProcessEnv,
   commandTimeoutMs = TOKEN_COMMAND_TIMEOUT_MS,
+): Promise<string | undefined> {
+  const token = await readToken(source, env, commandTimeoutMs)
+  // Remembered before anyone can quote it, so credential redaction knows it by value.
+  if (token !== undefined) rememberSecret(token)
+  return token
+}
+
+async function readToken(
+  source: TokenSource,
+  env: NodeJS.ProcessEnv,
+  commandTimeoutMs: number,
 ): Promise<string | undefined> {
   if (source.tokenEnv !== undefined) {
     const token = env[source.tokenEnv]

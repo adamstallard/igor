@@ -344,6 +344,11 @@ which it was, and `matched` which fields named the limit — `result` alone is t
 prose, which a crash on an item about rate limits trips too. Readable with `git show`, no
 checkout needed.
 
+Igor replaces credentials with `[redacted]` in every file and commit message before writing it
+to the branch: tokens, `user:pass@` in URLs, and the values of variables whose names hold
+`TOKEN`, `KEY`, `SECRET`, `PASSWORD` or `CREDENTIAL`. On a public lore repository, anyone can
+read the branch.
+
 ## When something is wrong
 
 | symptom | cause |

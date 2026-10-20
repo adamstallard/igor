@@ -2044,9 +2044,12 @@ export async function complete(
  *   small enough to read whole.
  * - The transcript, one file per item: why the worker did what it did. Far larger, and only
  *   wanted for one item at a time.
- * - A refusal envelope in `refusals/`, where the run's envelope named a usage limit: kept whole,
- *   because no pattern has yet been fitted to a real one.
+ * - A refusal envelope in `refusals/`, where the run's envelope named a usage limit: kept whole
+ *   but for credentials, because the patterns that detect a limit have not yet been checked
+ *   against a real envelope.
  * - A capacity observation, on a budget stop that has a seat.
+ *
+ * Each passes through credential redaction (`redact.ts`) in `writeState` or `appendRecord`.
  */
 export async function recordExecution(
   destination: string,
@@ -2066,25 +2069,25 @@ export async function recordExecution(
   const wroteTranscript = result.transcript.trim() !== ''
 
   // **The only write that is caught**, and it goes first. The other writes are ordered so the
-  // most valuable lands before one fails (see the observation at the end); this one is caught
-  // instead, because if it threw it would take the run's ledger row, transcript and capacity
-  // observation with it. It goes first because nobody has yet seen what this provider returns
+  // most valuable lands before one fails (see the comment on the capacity observation, written
+  // last); this one is caught instead, because if it threw it would take the run's ledger row,
+  // transcript and capacity observation with it. It goes first because nobody has yet seen what this provider returns
   // when it refuses a run for a spent window: `usageLimit`'s patterns, `resetFrom`'s, and where
   // the reset phrase sits are all guesses, and this envelope is the first chance to check them.
   // A lost ledger row is one run nobody can account for; a lost envelope means waiting for the
   // next exhausted window, hours or a week away.
   //
-  // Nothing is redacted. `envelope.result` is worker prose about an item and could say
-  // anything, but it is also where the reset phrase is believed to be, so redacting it removes
-  // the thing being captured. The transcript below writes the same text to the same branch,
-  // except on the path where the worker threw, which has no transcript.
+  // Kept whole apart from credentials, which `writeState` redacts from every state-branch
+  // write. `envelope.result` is worker prose about an item and could say anything, but it is
+  // also where the reset phrase is believed to be, so nothing beyond credential redaction may
+  // cut it: that would remove the thing being captured.
   //
   // Captured on any run whose envelope named a limit in a field the provider fills, not only a
   // budget stop: a seat can refuse after the worker has edited files, and that run publishes as
   // `produced`. A limit named only in the worker's prose is captured only on a budget stop,
   // where the run's outcome already says it was refused. On any other run that prose is as
-  // likely a crash on an item about rate limits, and those would bury the refusals this
-  // directory is for.
+  // likely to come from a worker that crashed while working an item about rate limits, and
+  // those would bury the refusals this directory is for.
   const captured = result.limitEnvelope
   if (captured !== undefined && (result.outcome === 'budget' || structuralLimit(captured))) {
     await writeState(
