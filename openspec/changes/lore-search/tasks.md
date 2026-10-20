@@ -37,19 +37,23 @@
 
 ## 3. Citations made during a run
 
-- [ ] 3.1 Define where in its output a worker reports a citation and its question's category.
-      The Igor reads the citations from there and, only when the run publishes an artifact or
-      ends in its handoff comment on the item, pushes each to the lore repository's `questions`
-      branch, in the format shared-skills #25's *A citation file has one format* sets for a
-      citation an Igor pushes from a run. Tests for *A worker's citation is published by its
-      Igor*, *A run that publishes nothing pushes no citations*, *A citation for a categorized
-      question is not pushed*, *A citation takes the one citation-file format, with the run's
-      id* and *A citation push needs no allow action*
+- [ ] 3.1 Define how a worker reports a citation, by the entry's id alone, in its output or
+      through #175's outbox, as #175 settles. The Igor reads the citations from there and,
+      only when the run publishes an artifact or ends in its handoff comment on the item,
+      pushes each to the lore repository's `questions` branch, in the format shared-skills
+      #25's *A citation file has one format* sets for a citation an Igor pushes from a run.
+      Tests for *A worker's citation is published by its Igor*, *A worker's report of a
+      citation holds only the entry's id*, *A run that publishes nothing pushes no citations*,
+      *A citation takes the one citation-file format, with the run's id* and *A citation push
+      needs no allow action*. *A worker reports no citation for a question with a category*
+      is the inquisitor skill's behaviour inside the worker, which the Igor cannot check, so
+      gate two has no Igor-side test for it
 - [ ] 3.2 The Igor mints an opaque run id for each run and records it with the run's transcript
       on the state branch. A test for *A citation's run can be found from its run id*
 - [ ] 3.3 The Igor creates the `questions` branch as an orphan where it is missing, and retries
-      a push that was rejected because the branch moved. Tests for *A missing questions branch is created as
-      an orphan* and *A push that loses a race is retried*
+      a push that was rejected because the branch moved, at most three times. Tests for *A
+      missing questions branch is created as an orphan*, *A push that loses a race is retried*
+      and *A push that keeps losing the race is counted as failed*
 - [ ] 3.4 The Igor refuses a citation of an id that names no `active` entry in the run's role's
       scope, and withholds one whose item's repository is less visible than the lore
       repository, counting an unreadable visibility as the rule says. Tests for *A citation of
@@ -59,6 +63,11 @@
 - [ ] 3.5 The run's record on the state branch counts the citations the Igor did not push, by
       reason, with no worker text and no reason for a refusal. A test for *A citation that
       cannot be pushed is counted*
+- [ ] 3.6 Once #211 specifies how an Igor runs the inquisitor skill itself, with no worker, and
+      where that run's transcript goes, the Igor pushes that run's citations by the same rules
+      as 3.1 to 3.5. Tests for *A citation from the Igor's own
+      inquisitor run is pushed under the same rules* and *The Igor's own inquisitor run makes
+      no citation for a question with a category*
 
 ## 4. Facts to check before anyone relies on a search or a citation in a run
 

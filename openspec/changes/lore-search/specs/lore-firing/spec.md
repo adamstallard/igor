@@ -86,32 +86,37 @@ A search's results MUST NOT be recorded as firings.
 ### Requirement: An Igor publishes the citations its worker reports
 
 A *citation* is an agent's record that a lore entry answered a question, so that no person was
-asked. The *lore repository* is the repository the run's lore store is read from. During an
-Igor's run, the worker SHALL report each citation it makes in its output, with the category it
-gave the question, if any.
+asked. The *lore repository* is the repository the run's lore store is read from. A question
+has a *category* when shared-skills #25's inquisitor gives it one: `vulnerability`, `secret`
+or `personal`.
+
+During an Igor's run, the worker SHALL report each citation it makes, by the cited entry's id
+and nothing else, and the Igor reads only that id from a report. The worker SHALL NOT report a
+citation for a question with a category. When the Igor runs the inquisitor skill itself, with
+no worker, each citation that run makes SHALL be handled as a worker's report is below, and
+none SHALL be made for a question with a category.
 
 When the run publishes an artifact, or ends in the Igor's handoff comment on the item
 (*graceful-handoff*), the Igor SHALL push the run's citations to the lore repository's
-`questions` branch. A run that publishes neither SHALL push no citations. A citation reported
-for a question categorized as a vulnerability, a secret or personal SHALL NOT be pushed. The
-worker holds no credential for the lore repository (*The worker is given an explicit environment
-holding no credential but its seat's*), and the role's `allow` list does not govern the push
-(*Only reversible artifacts are produced*).
+`questions` branch. A run that publishes neither SHALL push no citations. The worker holds no
+credential for the lore repository (*The worker is given an explicit environment holding no
+credential but its seat's*), and the role's `allow` list does not govern the push (*Only
+reversible artifacts are produced*).
 
 The Igor SHALL push a citation only when its id names an entry that is `active`, with a scope
 that covers the run's role, in the lore store as the run read it. It SHALL refuse any other
 citation, and a refused citation writes nothing to the lore repository.
 
 The `questions` branch is an orphan branch of the lore repository, separate from the state
-branch where the Igor records its runs. The Igor SHALL create it, as an orphan, where it is missing. Each
-citation SHALL be written to it in the format that shared-skills #25's requirement
+branch where the Igor records its runs. The Igor SHALL create it, as an orphan, where it is
+missing. Each citation SHALL be written to it in the format that shared-skills #25's
+requirement
 [*A citation file has one format*](https://github.com/adamstallard/shared-skills/blob/spec/inquisitor/openspec/changes/inquisitor/specs/inquisitor/spec.md)
-sets for a citation an Igor pushes from a run. The link points to #25's unmerged branch; the
-proposal's Still open says when it moves. The value of the format's `run` key is the *run's
-id*: a random identifier the Igor mints for the run, which names neither the item nor its
-repository. The Igor records the run's id on the state branch, with the run's transcript and the
-run's item. Where a push is rejected because the branch moved, the Igor SHALL retry it on the
-branch's new tip.
+sets for a citation an Igor pushes from a run. That format has a `run` key, whose value is the
+*run's id*: a random identifier the Igor mints for the run. The Igor records the run's id on the state
+branch, with the run's transcript and the run's item. Where a push is rejected because the
+branch moved, the Igor SHALL retry it on the branch's new tip, at most three times; a citation
+still not pushed after the third retry counts as failed to push.
 
 A citation SHALL go to no place more visible than the repository the question concerns, where
 private is less visible than internal and internal less than public. During a run, the
@@ -120,32 +125,51 @@ takes it from the worker's output. A lore repository whose visibility the Igor c
 counts as public, and a repository the question concerns whose visibility it cannot read counts
 as private. A citation that this rule withholds is not pushed.
 
-The Igor SHALL record, with the run's transcript on the state branch, how many of the citations
-the worker reported it did not push, by reason: refused, for a categorized question, withheld
-by the visibility rule, failed to push, or the run published neither an artifact nor a
-handoff. That record SHALL NOT repeat a refused citation's id or any
-other text the worker wrote, and SHALL NOT say why a citation was refused.
+The Igor SHALL record, with the run's transcript on the state branch, how many of the run's
+citations it did not push, by reason: refused, withheld by the visibility rule, failed to push,
+or the run published neither an artifact nor a handoff. That record SHALL NOT repeat a refused
+citation's id or any other text the worker wrote, and SHALL NOT say why a citation was refused.
 
 #### Scenario: A worker's citation is published by its Igor
 
-- **WHEN** a worker reports in its output that an `active` entry in the run's role's scope
-  answered a question
+- **WHEN** a worker reports that an `active` entry in the run's role's scope answered a
+  question
 - **AND** the run publishes an artifact or ends in the Igor's handoff comment on the item
 - **AND** the lore repository is no more visible than the repository of the item the run works
 - **THEN** the Igor pushes a citation of that entry to the lore repository's `questions` branch
 - **AND** the worker held no credential for the lore repository
+
+#### Scenario: A worker's report of a citation holds only the entry's id
+
+- **WHEN** a worker reports a citation
+- **THEN** the report holds the cited entry's id and nothing else: no category, for example
+- **AND** the Igor reads only that id from it
+
+#### Scenario: A worker reports no citation for a question with a category
+
+- **WHEN** an `active` entry in the run's role's scope answers a worker's question that has a
+  category
+- **THEN** the worker reports no citation for it
+
+#### Scenario: A citation from the Igor's own inquisitor run is pushed under the same rules
+
+- **WHEN** the Igor runs the inquisitor skill itself, with no worker, and an `active` entry in its
+  role's scope answers a question with no category
+- **AND** the run ends in the Igor's handoff comment on the item
+- **AND** the lore repository is no more visible than the repository of the item the run works
+- **THEN** the Igor pushes a citation of that entry to the lore repository's `questions` branch
+
+#### Scenario: The Igor's own inquisitor run makes no citation for a question with a category
+
+- **WHEN** the Igor runs the inquisitor skill itself and an entry answers a question with a category
+- **THEN** the Igor makes and pushes no citation for that question
 
 #### Scenario: A run that publishes nothing pushes no citations
 
 - **WHEN** a worker reports a citation
 - **AND** the run publishes no artifact and does not end in the Igor's handoff comment
 - **THEN** the Igor pushes no citation for that run
-
-#### Scenario: A citation for a categorized question is not pushed
-
-- **WHEN** a worker reports a citation for a question it categorized as a vulnerability, a
-  secret or personal
-- **THEN** the Igor pushes no citation for it
+- **AND** the run's record counts that citation as from a run that published neither
 
 #### Scenario: A citation takes the one citation-file format, with the run's id
 
@@ -169,7 +193,15 @@ other text the worker wrote, and SHALL NOT say why a citation was refused.
 #### Scenario: A push that loses a race is retried
 
 - **WHEN** the Igor's push of a citation is rejected because the `questions` branch moved
+- **AND** it has retried that push fewer than three times
 - **THEN** it pushes the citation again on the branch's new tip
+
+#### Scenario: A push that keeps losing the race is counted as failed
+
+- **WHEN** the Igor's third retry of a citation's push is rejected because the `questions`
+  branch moved
+- **THEN** it does not retry again
+- **AND** the run's record counts one citation that could not be pushed
 
 #### Scenario: A citation of an entry that cannot be cited is refused
 
@@ -180,7 +212,8 @@ other text the worker wrote, and SHALL NOT say why a citation was refused.
 
 #### Scenario: A citation is not pushed somewhere more visible than its question
 
-- **WHEN** the repository of the item the run works is private and the lore repository is
+- **WHEN** the run publishes an artifact or ends in the Igor's handoff comment on the item
+- **AND** the repository of the item the run works is private and the lore repository is
   internal or public, or the item's repository is internal and the lore repository is public
 - **THEN** the Igor does not push the citation
 - **AND** the run's record counts one withheld citation
@@ -199,5 +232,6 @@ other text the worker wrote, and SHALL NOT say why a citation was refused.
 
 #### Scenario: A citation that cannot be pushed is counted
 
-- **WHEN** the Igor cannot push a citation to the `questions` branch
+- **WHEN** the run publishes an artifact or ends in the Igor's handoff comment on the item
+- **AND** the Igor cannot push a citation to the `questions` branch
 - **THEN** the run's record counts one citation that could not be pushed

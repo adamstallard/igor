@@ -319,9 +319,10 @@ A worker may also be offered a search over the store, for example to find an ent
 firing did not inject, as when a role's in-scope entries exceed the firing budget: then none are
 injected, as the budget paragraph below explains. During an Igor's run, scope binds a search
 exactly as it binds firing: an entry whose scope does not cover the role is never returned
-(§4.2.2). A search outside an Igor's run, such as a person running the inquisitor skill in
-their own session, follows the inquisitor's own rules. Status does not: a search may return an in-scope `provisional` or `deprecated` entry, labelled as not lore,
-and only `active` entries count as lore. A search's results come back as search output, never
+(§4.2.2). Status does not bind a search: it may return an in-scope `provisional` or
+`deprecated` entry, labelled as not lore, and only `active` entries count as lore. A search
+outside an Igor's run, such as a person running the inquisitor skill in their own session,
+follows the inquisitor's own rules. A search's results come back as search output, never
 in the trusted channel that carries injected lore. A search hit is not a firing (§3.4.1).
 
 A trigger is `(condition → intervention)`. Interventions come in three kinds:
@@ -413,48 +414,58 @@ choosing either yet: it needs firing history from a real store, which does not e
 running the inquisitor skill for an Igor. The inquisitor is a shared skill that an agent runs
 before asking a person a question. Search hits are not recorded as firings or counted anywhere.
 
-For deciding whether an entry is used, the event that counts is an agent citing the entry as
-the answer to a question, because then no person had to be asked. A review that proposes
-pruning or promotion counts an entry's citations beside its fire count. An entry can be cited
-but never fire, for example while its role's in-scope entries exceed the firing budget, and it
-is then not proposed as unused.
+A review that proposes pruning picks the entries it calls unused by fire count alone; a count
+of zero citations is never a reason to call one unused. Citations can only hold an entry back.
+A citation records that an agent found the entry answered a question, so no person had to be
+asked, and an entry that has one is never proposed as unused, even if it never fires, for
+example while its role's in-scope entries exceed the firing budget. Whether a review proposes
+pruning or promotion, it shows each entry's citations beside its fire count, for the person
+who judges the proposal.
 
 The review reads citations from the lore repository's `questions` branch. Where that branch is
-missing or holds no citation, the review reports citations as not checked, never as zero, and
-proposes no entry as unused. Otherwise the count is a lower bound, because the Igor does not
-push every citation, as below, and the review says so beside the count.
+missing or holds no citation at all, the review shows citations as not checked, never as zero.
+Otherwise it shows each count as a lower bound, because the Igor does not push every citation:
+the paragraphs below list the ones it holds back. A citation missing from the count can only fail to hold back an entry, and the person
+reviewing the proposal judges that entry.
 
 The `questions` branch is an orphan branch of the lore repository, separate from igor's
 `igor-state`, that holds the inquisitor's questions about the organization and its projects
 (shared-skills #25). The inquisitor and the Igor both write citations there, so a review reads
 one file format, which shared-skills #25 defines for both. A citation file holds the cited
 entry's id, the day it was pushed and, for a citation an Igor pushes from a run, the run's id.
-The run's id is a random identifier, so the citation names no item or repository. The Igor
-records the run's id on `igor-state`, with the run's transcript and the work item the run did,
-so a review can show which item each citation an Igor pushed came from.
+The run's id is a random identifier that the Igor records on `igor-state`, with the run's
+transcript and the work item the run did. It links each citation an Igor pushed to that
+transcript, so a review can show which item the citation came from.
 
-During an Igor's run, the worker reports each citation in its output, and the Igor pushes them;
-the worker holds no credential for the lore repository. The push is bookkeeping, like the firing
-record, so the role's `allow` list does not govern it. The Igor pushes a run's citations only
-when the run publishes an artifact or ends in the Igor's handoff comment on the item. It does
-not push:
-- a citation of anything but an `active` entry in the run's role's scope, since the worker's
-  output is untrusted;
-- a citation for a question the worker categorized as a vulnerability, a secret or personal,
-  as the inquisitor categorizes questions. The cited entry shows what the question was about,
-  and such a question leaves no trace;
-- a citation to a lore repository more visible than the repository the question concerns, which
-  during a run is the repository of the item the run works. A citation tells its readers that
-  work on that repository needed the entry, and when.
+During an Igor's run, the worker reports each citation by the entry's id alone, and the Igor
+pushes them; the worker holds no credential for the lore repository. The push is bookkeeping,
+like the firing record, so the role's `allow` list does not govern it. The Igor pushes a run's
+citations only when the run publishes an artifact or ends in the Igor's handoff comment on the
+item, and only of an `active` entry in the run's role's scope, since the worker's output is
+untrusted. The inquisitor gives a question one of three categories when it is sensitive:
+`vulnerability`, `secret` or `personal`. No citation is made for such a question, since the
+cited entry would show what the question was about.
 
-A review never sees a citation the Igor did not push, so none of these reaches its count, and
-neither does a citation the Igor could not push, or one from a run that published neither an
+An Igor whose work is stopped by a question it cannot settle runs the inquisitor skill itself,
+with no worker (#211). It pushes that run's citations by the same rules as a worker's.
+
+No citation goes to a lore repository more visible than the repository the question concerns,
+which during a run is the repository of the item the run works. A citation tells its readers
+that work on that repository needed the entry, and when. `igor-state` is also a branch of the
+lore repository, and its records name each run's item, so a lore repository more visible than
+a role's repositories would expose those names too. #212, decided and not yet built, has Igor
+refuse to start when the team's lore repository is more visible than the least visible
+repository any role works. That check runs only at startup, so the citation rule still applies
+at each push.
+
+A review never sees a citation the Igor did not push, so none of these reaches its count:
+refused, withheld by visibility, failed to push, or from a run that published neither an
 artifact nor a handoff. The Igor tallies each of these kinds in the record it writes with the
 run's transcript on the state branch.
 
-A worker steered by text in its item could report forged citations, which would keep an entry from being proposed
-as unused. That is a known limit: a review shows each citation's run and item, and a person
-reviews every prune proposal.
+A worker steered by text in its item could report forged citations, which would keep an entry
+from being proposed as unused. That is a known limit: a review shows each citation's run and
+item, and a person reviews every prune proposal.
 
 Deliberately not built with retrieval. Recording counts is cheap and can begin immediately;
 acting on them requires history to act on, and a threshold guessed before any data would be a
