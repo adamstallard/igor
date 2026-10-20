@@ -71,9 +71,9 @@ item back. It SHALL say so only on the run that sets the item down.
 **Only the holder counts.** A role's *ranks* are its numbered processes, as
 `concurrent-instances` (#179) defines them; rank 0 is an `igor run`'s, while it runs. Where a
 role runs as several ranks, only the rank whose claim message holds the item under #179's rules
-SHALL count a failure before the worker or record it. A rank that does not hold the claim records nothing toward any breaker. Who posts
-the set-down, and that every other rank drops out silently, is #179's *Only the rank holding a
-claim gives it back*. The count is kept per role and item, so it carries on when another rank
+SHALL count a failure before the worker or record it. A rank that does not hold the claim records nothing toward any breaker. The rank that
+holds the item SHALL post the set-down, and every other rank drops out silently, as #179's
+*Only the rank holding a claim gives it back* requires. The count is kept per role and item, so it carries on when another rank
 of the role later holds the item.
 
 **In the claim window, a rank alone on the item counts,** as an exception to the holder rule
@@ -209,6 +209,16 @@ row is still written.
 - **WHEN** an item failed before the worker twice, the Igor restarts, and the item fails the same
   way again
 - **THEN** the item is set down
+
+#### Scenario: The second surface failure is recorded and does not set its item down
+
+- **WHEN** an item has failed before the worker twice the same way, in cycles that continued,
+  and its third identical failure is a surface failure that comes right after another item's
+  surface failure, so the item's failure is the second of the pair and the outage rule ends
+  the cycle during its run
+- **THEN** the item is not set down
+- **AND** the cycle's `outage` record names both items, with each failure's source and masked
+  message
 
 #### Scenario: An outage does not count
 

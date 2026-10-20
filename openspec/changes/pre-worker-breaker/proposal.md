@@ -8,7 +8,8 @@
    #101, which makes its own threshold configurable, with a default of three; the breaker keeps
    three fixed.
 2. **The count is rebuilt from `executions.ndjson`**, one `kind: "pre-worker"` row per failure
-   that can count (a failure that records a cure key writes its run row instead, decision 11).
+   that can count (a failure that records a *cure key*, the label #101 records for a fault in the Igor's own setup
+   naming what would cure it, writes its run row instead, decision 11).
    *Rejected:* a count in memory, which a restart loses; and a store of its own, which two Igors
    can overwrite and which can disagree with the log (`design.md`).
 3. **Identical means the same source and the same masked message.** The source is which surface's call threw. *Rejected:* the source
@@ -66,9 +67,10 @@
 14. **This change's code waits for #101** (Adam, 2026-10-18). Sections 2 to 4 of `tasks.md` are
     built only after `condition-backoff` (#101) merges. #101's watermark rule is what holds the
     mark below the items a cycle never reached (decision 12), so without it a cycle ended early by
-    a two-in-a-row rule would let the watermark pass them. The breaker also reads #101's
-    `workerless` mark and cure keys, and relies on #101's rule that readers skip rows carrying a
-    `kind`. *Rejected:* building them first and accepting that loss until then.
+    a two-in-a-row rule would let the watermark pass them. The breaker also reads two things #101
+    adds: the `workerless` mark on a run row whose run started no worker, and cure keys. And it
+    relies on #101's rule that readers counting runs skip rows carrying a `kind`, so that no
+    reader takes a `pre-worker` or `outage` row for a run. *Rejected:* building them first and accepting that loss until then.
 15. **A failure's row holds its masked message, readable, after the shared redaction** (Adam,
     2026-10-19, replacing his decision of 2026-10-18 to record only a hash). A `pre-worker` row
     holds the failure's source, which surface's call threw, and its masked message as text. Two
@@ -157,11 +159,11 @@ approval:
     keep their ordinary run row, so their text reaches the branch that way, and a set-down's
     text reaches `deferred.json`. #213 records the decision and is the work of building the function,
     which does not exist yet; this change's `pre-worker` and `outage` rows are to pass through
-    it. An `outage` row carries the source
-    and the masked, redacted message of each failure it names, so it meets #99's
-    (`structured-failure-record`) rule that a cycle's record of its own faults carry the fault's
-    identity and origin, with no exception for rows carrying a `kind`; but see *Still open* on
-    the status codes the masks remove.
+    it. An `outage` row carries the source and the masked, redacted message of each failure it
+    names, as the record #99 (`structured-failure-record`) asks a cycle to keep of its own
+    faults; #99's rule makes no exception for rows carrying a `kind`. Whether the row fully
+    meets #99 is open (*Still open*): #99 asks for a fault's status, such as an HTTP status or
+    exit code, to be readable apart from its message, and the masks remove it.
 
 **Still open:**
 
@@ -176,12 +178,13 @@ approval:
   itself, as #213 describes it, is for Adam. Nothing says what a row holds if this change's
   code lands first; without a fallback, such as writing only `source` until the function
   exists, its rows would carry unredacted text.
-- **Two redaction rules.** #188 (`keep-action-log`) already decides that its *Credential
-  redaction* is "one rule, applied wherever this or another change says text is redacted"
-  (Adam, 2026-10-13), redacting seat tokens by their exact value and the values of
-  secret-named environment variables. #213 strips token-shaped strings and credentials in URLs.
-  Whether #213 adopts #188's rule, adds its patterns to it, or stands beside it is for Adam;
-  with two rules, a seat token in a clone error would be stripped by #188's and not by #213's.
+- **Two redaction rules.** #188 (`keep-action-log`), an open change, carries Adam's decision of
+  2026-10-13 that its *Credential redaction* is the only redaction rule, applied wherever any
+  change redacts text, and that no change restates it. That rule already strips tokens by their
+  prefixes, GitHub's and Anthropic's among them, as well as known secrets by their exact value.
+  What #213 adds is `user:pass@` credentials in URLs. Under that decision, #213's function is
+  #188's rule extended with URL credentials; a separate rule beside it would need Adam to reopen
+  the 2026-10-13 decision. Which it is, is for Adam.
 - **The masks remove status codes that #99 asks for.** Mask 3 turns every digit run into `#`,
   so an `outage` row's message loses a response status or exit status. #99 asks that such an
   identity be "separately readable from the sentence a person reads". Whether the `failures`
@@ -194,6 +197,24 @@ approval:
   so it never counts toward the outage rule. Where a code-host outage fails each clone with a
   different masked message, neither rule ends the cycle, and each item counts one failure per
   cycle. Whether that needs a rule is for Adam.
+- **The text posted on the item.** The set-down run, like every failure handoff in the
+  in-force code, posts the raw error message on the item, which may be public. #213's
+  redaction covers state-branch writes only. Whether it covers what Igor posts too is for Adam.
+- **A refusal is a surface failure.** The source tag does not tell a tracker that did not
+  answer from one that answered and refused, such as an App without permission to add the
+  claim label. Two such refusals in a row end the cycle as an outage, and decision 12 then
+  holds the watermark below every item the cycle never reached, each cycle. #101's watermark
+  rule avoids that cost for a claim the tracker refused: it tells a refusal from no answer by
+  the response's status (`passesMark`), and lets the watermark pass a refused item. Whether
+  this change classifies failures the same way is for Adam.
+- **Two roles lift each other's set-downs.** A deferral lifts on a reply from anyone but the
+  Igor, or an edit to the item (`work-triage`). Where two roles both meet one failure, one role's
+  label and posts lift the other's set-down, and each then sets the item down again on its next
+  failure (decision 6). Each role would claim and post every cycle with no bound. Whether that
+  needs a rule is for Adam.
+- **Two choices not in the decisions.** Approving the change would approve two things not
+  listed as decisions: the set-down sentence's wording (task 3.2), and that a rank dropping out
+  because another holds the item leaves the two-in-a-row comparison as it was (`design.md`).
 - **Private text in a readable message.** The redaction strips credentials, not content. A
   tracker's error quoting a private repository's or a Linear workspace's text would reach the
   state branch, which may be public. Adam chose a readable record knowing other records already
@@ -215,7 +236,11 @@ approval:
   alone on the item post the set-down withdrawal, which removes the label, even where the
   failure was in its verification, the re-read after posting that shows whose claim message
   holds the item. #179's rule should allow that case, as it already lets a
-  process whose claim message failed to post remove its label where no other claim counts.
+  process whose claim message failed to post remove its label where no other claim counts. Its TLA+ model assumes the opposite ("a verification read that errors ... removes
+  nothing"), and its *Still open* still lists, as an open question of this change (#173),
+  whether such failures count, which
+  decision 22 has answered. Each of #173 and #179 also says the other owns who posts the
+  set-down; this change now states it (`work-claiming`, *Only the holder counts*).
 
 **Conflict with what is in force, recorded and not resolved:** the in-force `graceful-handoff`
 scenario that makes budget the only reason to defer already disagrees with the in-force code,

@@ -20,8 +20,10 @@ strips token-shaped strings and credentials in URLs, and then through the masks 
 is what keeps a credential off it.
 
 A failure that records a cure key (#101's name for a fault in the Igor's own setup) writes no
-`pre-worker` row. It keeps the ordinary run row, the row without a `kind` that the log holds for
-each run (*A failure that records a cure key never counts*, below).
+`pre-worker` row. It writes the ordinary run row instead, carrying `cures`: the row without a
+`kind` that the log holds for each run. For a thrown failure, the in-force code writes no run
+row, so this change writes one. #101 builds how `runItem` learns a throw's cure key. Whether a
+refused token mint inside a clone records one at all is unmeasured (task 0.1) (*A failure that records a cure key never counts*, below).
 
 Three places could hold the count. Two are rejected.
 
@@ -283,5 +285,8 @@ likely while the tracker is not answering, nothing yet says what the rank does (
 *Still open*).
 
 The run then returns `handed-off` with `handoff: 'failure'`. That is what `shouldDefer` already
-defers on, so `serve` and both loops of `igor run`'s cycle in `src/cli.ts`, over claimed items
-and over catch-ups, defer it with no change to their deferral path.
+defers on, so `serve`, and `igor run`'s cycle in `src/cli.ts` in both its loops, over claimed
+items and over catch-ups, defer it with no change to their deferral path. One more path does
+not: `igor run --claim`, on an item whose own pull request has fallen behind its base, runs
+`catchUpItem`, which calls neither `shouldDefer` nor `noteHandoff`. A set-down there must defer
+the item too (task 4.1).

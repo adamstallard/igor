@@ -10,6 +10,8 @@
       is refused. Record whether, during the run of the item whose clone failed, the failure
       reaches #101's App condition and so records a cure key.
 - [ ] 0.2 Sections 2 to 4 wait until `condition-backoff` (#101) merges (Adam, 2026-10-18).
+      Tasks 3.1, 4.1 and 4.2 also need #213's redaction function; whether they wait for #213 or
+      build it here waits on Adam (the proposal's *Still open*)
 - [ ] 0.3 Check that #179's retry of a refused write to a state file more than one process
       writes covers appends to `executions.ndjson`, with the ranks a role runs appending
       together. Record the result in `design.md`. If it does not, report it to #179: a lost
@@ -96,7 +98,8 @@
 - [ ] 4.1 Append a `kind: 'pre-worker'` row for each failure before the worker, with `item`,
       `role`, `rank`, the cycle's start as `cycle`, `source` and `message`, the signature of
       3.1, wherever a run is recorded: `serve`'s event handler, and the two loops of `igor
-      run`'s cycle in `src/cli.ts`, over the items it claims and over its catch-ups. Tests check
+      run`'s cycle in `src/cli.ts`, over the items it claims and over its catch-ups, and
+      `igor run --claim`'s catch-up path, which must also defer a set-down item. Tests check
       that a token and a URL's credentials in the raw message do not reach the row. A
       failure that records one of #101's cure keys keeps its ordinary run row, with its
       `cures`, so #101's conditions still see it, and writes no `pre-worker` row. A failure
