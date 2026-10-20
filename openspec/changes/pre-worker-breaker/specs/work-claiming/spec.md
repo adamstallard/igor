@@ -3,10 +3,18 @@
 ### Requirement: Only a tracker or code host failing counts as the surface failing
 
 The cycle stops on two surface failures in a row (*A claim that cannot be kept is given back, out
-loud*); this capability calls that the *outage rule*. A run SHALL count toward it only where the
-call that threw was the tracker's or the code host's. A run that failed in its working tree, such
-as a clone, a branch set up or a full disk, or in the Igor's own code SHALL NOT count, whether it
-failed before or after the worker ran.
+loud*); this capability calls that the *outage rule*. A run SHALL count toward it only where a call
+to the tracker or the code host got no answer. *No answer* has the meaning #101
+(`condition-backoff`) gives it for a claim, which its `passesMark` reads from the response's
+status: no status at all, a 5xx, a 408, a 429, or a 403 for a rate limit. A call the surface
+answered and refused, such as a 403 for a missing permission, SHALL NOT count toward the outage
+rule.
+
+A run that failed in its working tree, such as a branch set up or a full disk, or in the Igor's
+own code SHALL NOT count either, whether it failed before or after the worker ran. One working-tree
+call is the code host's: a clone that fails because the code host did not answer SHALL count as a
+code-host failure. A clone whose failure the tree provider cannot tell was unanswered, and a token
+mint that fails inside a clone, SHALL count as working-tree failures.
 
 Which surface's call threw SHALL be known from the call itself, and SHALL NOT be read back out of
 the error's wording.
@@ -15,14 +23,32 @@ The outage rule SHALL apply in every cycle, including the single cycle `igor run
 
 #### Scenario: A working tree that cannot be provisioned is not a surface failure
 
-- **WHEN** an item's run fails because its working tree could not be cloned, and the next item's
-  run fails in its working tree in a different way
+- **WHEN** an item's run fails because its working tree could not be cloned onto a full disk, and
+  the next item's run fails in its working tree in a different way
 - **THEN** the cycle continues to the remaining items and is not recorded as failed
 
 #### Scenario: A tracker that does not answer is still a surface failure
 
 - **WHEN** two runs in a row fail because a call to the tracker failed
 - **THEN** the cycle is recorded as failed and the remaining items are not attempted
+
+#### Scenario: A refusal is not an outage
+
+- **WHEN** two runs in a row fail because the tracker answered and refused a call, each with a
+  403 that is not a rate limit, and with different messages
+- **THEN** the outage rule does not end the cycle
+- **AND** each failure counts toward its own item's breaker
+
+#### Scenario: A clone the code host does not answer is a surface failure
+
+- **WHEN** two runs in a row fail to clone because the code host did not answer
+- **THEN** the cycle is recorded as failed and the remaining items are not attempted
+
+#### Scenario: A token mint that fails inside a clone is not a surface failure
+
+- **WHEN** two runs in a row fail to clone because the token mint inside the clone failed, with
+  different messages
+- **THEN** the outage rule does not end the cycle
 
 #### Scenario: A working tree that fails after the worker ran is not a surface failure
 
@@ -66,7 +92,12 @@ The Igor SHALL count an item's failures before the worker, for its own role, in 
 is the item's *breaker*. When a failure brings the count of identical ones to three or more, the
 Igor SHALL hand the item back deferred instead of refusing it, which is to *set the item down*.
 What it posts on the item on that run SHALL say that it has stopped retrying and what brings the
-item back. It SHALL say so only on the run that sets the item down.
+item back. It SHALL say so only on the run that sets the item down. That post SHALL name the kind
+of failure in plain words: where it failed, and its HTTP status or exit code where it has one. It
+SHALL NOT quote the error message.
+
+**One set-down per deferral.** A run SHALL NOT post a set-down on an item whose set-down by its
+role has not lifted (*What lifts a set-down*, below). It gives the claim back without one.
 
 **Only the holder counts.** A role's *ranks* are its numbered processes, as
 `concurrent-instances` (#179) defines them; rank 0 is an `igor run`'s, while it runs. Where a
@@ -80,12 +111,16 @@ of the role later holds the item.
 above. A rank whose run fails in the claim window SHALL count the failure, and post the
 set-down, only where at that moment the item carries no claim message of another rank of its
 role that counts under #179's rules. Where it carries one, the rank SHALL count nothing, record
-nothing toward the breaker, and leave the role's label on the item.
+nothing toward the breaker, and leave the role's label on the item. Where the rank cannot read
+the item's claim messages, it SHALL do the same, and post nothing.
 
 **Identical** means the same source and the same message. The source is one of the tracker, the
 code host, the working tree or the Igor's own code. The message is compared with its variable
-parts masked: digit runs, hexadecimal identifiers and the working tree's path. The working trees
-of different ranks of one role SHALL mask to the same text. A failure the run returns, rather
+parts masked: ids, timestamps, the working tree's path and other temporary paths, hexadecimal
+identifiers and runs of four or more digits.
+The masks SHALL keep runs of three digits or fewer, which hold HTTP statuses and exit codes, so
+two failures that differ in their status are not identical. The working trees of different ranks
+of one role SHALL mask to the same text. A failure the run returns, rather
 than throws, SHALL carry the source of the step that failed; one that carries none has the
 source of the Igor's own code.
 
@@ -96,14 +131,23 @@ SHALL NOT. So once the deferral lifts, an identical failure sets the item down a
 **The count SHALL survive a restart.** It is rebuilt from the execution log
 (`executions.ndjson`), never held only in memory.
 
-**The breaker's row SHALL hold the failure's masked message, redacted.** A failure before the
-worker whose run records no cure key (*A fault in the Igor's own setup is not the item's
-failure*, below) appends a row to the execution log, which lives on the state branch where Igor
-keeps its records. That row SHALL hold the failure's source (`tracker`, `code-host`, `tree` or
-`igor`) and its masked message as text. Identical failures are those whose sources and masked
-messages match. Before it is masked, the message SHALL pass through the redaction Igor applies
-to every write to the state branch, which strips token-shaped strings and credentials in URLs
-([#213](https://github.com/adamstallard/igor/issues/213)).
+**The breaker's row SHALL hold no message text.** Each failure before the worker appends a row
+to the execution log, which lives on the state branch where Igor keeps its records. That row
+SHALL hold only these fields:
+- the item, the role, the rank, and whether the rank held the claim;
+- the cycle and the time;
+- the row's kind;
+- the source (`tracker`, `code-host`, `tree` or `igor`);
+- the HTTP status or exit code, where the failure has one;
+- whether the run recorded a cure key (*A fault in the Igor's own setup is not the item's
+  failure*, below);
+- an unkeyed fingerprint of the masked message.
+
+Identical failures are those whose sources and fingerprints match. The failure's full message
+SHALL go to the Igor process's own log on its server, never to the state branch, after
+`task-execution`'s *Credential redaction replaces every credential the Igor knows*
+([#213](https://github.com/adamstallard/igor/issues/213)). The masks run on that redacted
+message.
 
 **An outage is not the item's failure.** A run that failed in a cycle the outage rule then ended
 SHALL NOT count toward any item's breaker, and neither SHALL either of the two runs whose
@@ -117,21 +161,23 @@ count it or set its item down. A set-down posted for a failure that then
 turns out to be part of an outage stands, and lifts like any other.
 
 **A fault in the Igor's own setup is not the item's failure.** A failure whose run records a
-*cure key* SHALL NOT count toward any item's breaker. A cure key is what #101's
-`condition-backoff` change records for a fault in the Igor's own setup, such as a seat whose
-token is unset, naming what would cure it.
+*cure key* SHALL NOT count toward any item's breaker; its row says that it recorded one. A cure
+key is what #101's `condition-backoff` change records for a fault in the Igor's own setup, such as
+a seat whose token is unset, naming what would cure it.
 
 A failure before the worker that does not count, because an outage or the rule on two identical
 failures excluded it or because its run records a cure key, SHALL NOT start the count again
 either: the count passes over it. A run that started the worker starts the count again whether
 or not it records a cure key.
 
-**The deferral SHALL lift exactly as any handed-back item's does** (`work-triage`, *An item handed
-back is not re-worked until something answers*). The breaker adds no rule of its own about what
-lifts it.
+**What lifts a set-down.** A set-down SHALL lift on a person's change to the item, such as a
+reply or an edit, or on another role's successful run on it, such as a pull request that role
+opened for the item. An Igor's other posts on the item, such as another role's set-down or
+comment, and its label edits, SHALL NOT lift it. This is narrower than what lifts other
+handed-back items (`work-triage`, *An item handed back is not re-worked until something answers*).
 
-**A count that cannot be read SHALL set nothing down.** The run is refused, and its failure's
-row is still written.
+**A count that cannot be read SHALL set nothing down.** That includes a read where any part of the
+execution log failed to read. The run is refused, and its failure's row is still written.
 
 #### Scenario: The first two identical failures are retried
 
@@ -171,8 +217,33 @@ row is still written.
 #### Scenario: Failures that differ only in their variable parts are identical
 
 - **WHEN** an item's clone fails three runs in a row with messages that differ only in the
-  working tree's temporary path and a number
+  working tree's temporary path and a timestamp
 - **THEN** the third run sets the item down
+
+#### Scenario: Failures with different HTTP statuses are not identical
+
+- **WHEN** an item's tracker call fails before the worker twice with HTTP 404, then once with
+  HTTP 500, with messages otherwise the same
+- **THEN** the item is not set down, and the newest failure is the first of its count
+
+#### Scenario: A claim-window failure whose read of the claim messages fails does not count
+
+- **WHEN** a rank's run fails in the claim window, and its read of the item's claim messages fails
+- **THEN** the rank records nothing toward the item's breaker and posts nothing
+- **AND** it leaves the role's label on the item
+
+#### Scenario: An item already deferred is not set down again
+
+- **WHEN** two ranks of one role claim an item one after the other, and the first's third
+  identical failure sets it down while the second's claim message lands on it
+- **AND** the second rank then holds the item and fails the same way
+- **THEN** the second rank posts no set-down, and the item stays deferred
+
+#### Scenario: The set-down post names the failure without quoting it
+
+- **WHEN** the third identical failure is a clone that exits 128 with a message quoting a path
+- **THEN** the set-down post says the working tree failed, with exit code 128
+- **AND** it quotes no part of the message
 
 #### Scenario: Only the holder counts and sets down
 
@@ -213,12 +284,12 @@ row is still written.
 #### Scenario: The second surface failure is recorded and does not set its item down
 
 - **WHEN** an item has failed before the worker twice the same way, in cycles that continued,
-  and its third identical failure is a surface failure that comes right after another item's
-  surface failure, so the item's failure is the second of the pair and the outage rule ends
-  the cycle during its run
+  and its third identical failure is a surface failure before the worker that comes right after
+  another item's surface failure before the worker, so the item's failure is the second of the
+  pair and the outage rule ends the cycle during its run
 - **THEN** the item is not set down
-- **AND** the cycle's `outage` record names both items, with each failure's source and masked
-  message
+- **AND** the cycle's `outage` record names both items, with each failure's source, status and
+  fingerprint
 
 #### Scenario: An outage does not count
 
@@ -248,8 +319,7 @@ row is still written.
 
 #### Scenario: The deferral lifts as a handoff's does
 
-- **WHEN** an item was set down by its breaker and it is then answered the way that lifts a
-  handed-back item
+- **WHEN** an item was set down by its breaker and a person then replies on it
 - **THEN** it is claimed again
 
 #### Scenario: An identical failure after the deferral lifts sets it down at once
@@ -270,13 +340,31 @@ row is still written.
   run that records a cure key, then fails the first way again
 - **THEN** that last run sets the item down
 
-#### Scenario: A failure's row holds its masked message, redacted
+#### Scenario: An excluded failure of another kind does not break the sequence
+
+- **WHEN** an item fails before the worker the same way twice, then fails another way in a cycle
+  the outage rule ended, then fails the first way again
+- **THEN** that last run sets the item down
+
+#### Scenario: A failure's row holds no message text
 
 - **WHEN** an item's clone fails before the worker with a message that holds a token and a URL
   with a user name and password in it
-- **THEN** the row the failure appends to the execution log holds the source and the masked
-  message
-- **AND** that message holds neither the token nor the user name and password
+- **THEN** the row the failure appends to the execution log holds its fields and fingerprint, and
+  no part of the message
+- **AND** the Igor process's own log holds the message, with neither the token nor the user name
+  and password
+
+#### Scenario: Another role's post does not lift a set-down
+
+- **WHEN** one role has set an item down, and another role posts its own set-down or a comment on
+  the item, or adds its label
+- **THEN** the first role's set-down stays
+
+#### Scenario: Another role's successful run lifts a set-down
+
+- **WHEN** one role has set an item down, and another role's run on the item opens a pull request
+- **THEN** the first role's set-down lifts
 
 #### Scenario: A returned failure carries its step's source
 
@@ -294,6 +382,12 @@ row is still written.
 - **THEN** the run is refused and the item is tried again next cycle
 - **AND** the run still appends its failure's row
 
+#### Scenario: A count with one day's file unread sets nothing down
+
+- **WHEN** a run fails before the worker and one day's file of the execution log fails to read
+  while the others read
+- **THEN** the run is refused and the item is tried again next cycle
+
 ### Requirement: Two identical failures before the worker on different items end the cycle
 
 A failure every item meets, such as a full disk or an expired clone token, is not a surface
@@ -303,9 +397,12 @@ failed, as a cycle the outage rule ends is. **Identical** has the meaning *A fai
 worker that repeats sets the item down* gives it: the same source and the same masked message.
 Neither run SHALL count toward its item's breaker.
 
-The record of a cycle ended by this rule, or by the outage rule, SHALL carry the source and the
-masked message of each failure it names, redacted as *A failure before the worker that repeats
-sets the item down* requires of the breaker's row.
+**A run that records a cure key SHALL take no part in this rule or the outage rule.** It is
+never one of the two runs that end a cycle, and it does not separate two runs that are.
+
+The record of a cycle ended by this rule, or by the outage rule, SHALL carry, for each failure it
+names, the fields *A failure before the worker that repeats sets the item down* requires of the
+breaker's row, and no message text.
 
 An item that meets such a failure alone in its cycle, with no second run to compare, SHALL count
 it toward its breaker, once per cycle, unless its run records a cure key (*A failure before the
@@ -318,12 +415,25 @@ worker that repeats sets the item down*).
 - **THEN** the cycle ends, is recorded as failed, and the remaining items are not attempted
 - **AND** neither failure counts toward its item's breaker
 
-#### Scenario: The cycle's record carries each failure, redacted
+#### Scenario: The cycle's record carries each failure's fields
 
 - **WHEN** two items in a row fail to clone the same way, with a message that holds a token
-- **THEN** the record of the cycle names both items, with each failure's source and masked
-  message
-- **AND** neither message holds the token
+- **THEN** the record of the cycle names both items, with each failure's source, exit code and
+  fingerprint
+- **AND** it holds no part of either message
+
+#### Scenario: A run that records a cure key does not join or split a pair
+
+- **WHEN** an item fails before the worker, the next item's run records a cure key, and the item
+  after that fails before the worker the same way as the first
+- **THEN** the cycle ends, and neither the first nor the third failure counts toward its item's
+  breaker
+
+#### Scenario: Two runs that record a cure key do not end the cycle
+
+- **WHEN** two runs in a row fail before the worker on a tracker call that gets no answer, and
+  each records a cure key
+- **THEN** neither the outage rule nor this rule ends the cycle
 
 #### Scenario: Two items failing in different ways do not end the cycle
 

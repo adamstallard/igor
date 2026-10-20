@@ -7,8 +7,10 @@
 (* The tracker holds, per item, the ranks of the claim messages that      *)
 (* count since the item's latest release, in storage order; the earliest  *)
 (* holds the item, as `concurrent-instances` (#179) says. It also holds   *)
-(* whether the item is deferred, that is set down. A person may lift a    *)
-(* deferral by replying (`Lift`).                                          *)
+(* whether the item is deferred, that is set down. A set-down lifts on a *)
+(* person's change to the item or on another role's successful run on it  *)
+(* (`Lift`). Another role's other posts on the item lift nothing; with    *)
+(* IgorPostsLiftNothing FALSE they do (`OtherPost`).                      *)
 (*                                                                         *)
 (* A run of rank r: reads an item as free and claims it (`Claim`), posts  *)
 (* its claim message (`Post`), and re-reads to verify (`Verify`). In the  *)
@@ -16,7 +18,8 @@
 (* (`WindowFail`). A rank that verifies as holder either starts the       *)
 (* worker (`StartWorker`) or fails before it (`HeldFail`), the failure    *)
 (* thrown or returned by `execute`. A failure may record a cure key, #101's *)
-(* mark of a fault in the Igor's own setup.                                *)
+(* mark of a fault in the Igor's own setup. Its `pre-worker` row says so,  *)
+(* and the count skips it.                                                 *)
 (*                                                                         *)
 (* Rows are not written when decided. Each goes into `pending` and lands   *)
 (* at the end of the log later (`Land`), in any order when Reorder is      *)
@@ -40,18 +43,20 @@
 (* Each rule of the change is a constant, TRUE in the change as specified. *)
 (* The configurations in negative/ each set one FALSE and must find a     *)
 (* violation, which shows that rule is needed. PromptRows and             *)
-(* AtomicWithdraw are assumptions, not rules: findings/LateRows.cfg drops *)
-(* the first, and findings/WithdrawRace.cfg the second.                   *)
-(* SetDownOnce is a rule the change does not have, FALSE as specified,    *)
-(* which findings/DoubleSetDown.cfg proposes.                             *)
+(* AtomicWithdraw are assumptions, not rules. findings/LateRows.cfg drops *)
+(* PromptRows; what late rows then cause is a limit Adam accepted.        *)
+(* findings/WithdrawRace.cfg drops                                        *)
+(* AtomicWithdraw, which stands for #179's mechanism: the withdrawal      *)
+(* releases only claim messages posted before the rank's test.            *)
 (*                                                                         *)
 (* Not modelled: several roles (the count is per role, so roles share     *)
-(* nothing here); failures after the worker; the masks (a signature is a  *)
-(* model value); a read of the count that fails (the spec has it set      *)
-(* nothing down, which only removes set-downs); a failed read of the      *)
-(* item's claim messages in the claim window, which the spec leaves open; *)
-(* and how #179 frees an item whose claim messages no running rank works  *)
-(* (`Recover` stands for it).                                             *)
+(* nothing here, and `OtherPost` and `Lift` stand for another role's     *)
+(* posts and successful runs); failures after the worker; the masks (a    *)
+(* signature is a model value); a read of the count that fails, and a     *)
+(* failed read of the item's claim messages in the claim window (the spec *)
+(* has each count nothing and post no set-down, which only removes        *)
+(* set-downs); and how #179 frees an item whose claim messages no running *)
+(* rank works (`Recover` stands for it).                                  *)
 (***************************************************************************)
 EXTENDS Integers, Sequences, FiniteSets, TLC
 
@@ -62,7 +67,10 @@ CONSTANTS
     SurfaceSigs,       \* signatures of tracker or code-host failures
     MaxRuns,           \* runs started, summed over ranks
     MaxLosses,         \* pending rows that may be lost
-    MaxLifts,          \* deferrals people may lift
+    MaxLifts,          \* deferrals lifted by a person's change to the item
+                       \* or by another role's successful run on it
+    MaxOtherPosts,     \* other roles' posts on a deferred item, which lift
+                       \* it only with IgorPostsLiftNothing FALSE
     MaxWindowFails,    \* claim-window failures, summed over ranks
     Returned,          \* `execute` may return a failure rather than throw it
     Cures,             \* a failure may record a cure key
@@ -88,11 +96,12 @@ CONSTANTS
                        \* is not counted; FALSE: it is
     OutageExcludes,    \* an `outage` row excludes the rows it names;
                        \* FALSE: those rows count
-    CureSkipped,       \* a failure that records a cure key writes no
-                       \* `pre-worker` row; FALSE: it writes one, and counts
-    \* A rule the change does not have, proposed in model/findings/.
-    SetDownOnce        \* a run posts no set-down where its item is already
-                       \* deferred
+    CureSkipped,       \* the count skips a failure that records a cure key;
+                       \* FALSE: it counts
+    SetDownOnce,       \* a run posts no set-down where its item is already
+                       \* deferred; FALSE: it posts another
+    IgorPostsLiftNothing \* another role's posts on the item, other than a
+                       \* successful run, lift no set-down; FALSE: they lift it
 
 ASSUME Sigs \cap SurfaceSigs = {}
 
@@ -122,13 +131,15 @@ VARIABLES
     deferred,    \* whether each item is set down
     log,         \* the landed rows of executions.ndjson, oldest first
     pending,     \* rows decided and not yet landed
-    runs, losses, lifts, wfails,
+    runs, losses, lifts, wfails, others,
+    answers,     \* ghost: each item's lifts by a person or a successful run
     hist,        \* ghost: each item's failures and worker starts, in order
     downs,       \* ghost: one record per set-down posted
     downsSince   \* ghost: set-downs of each item since its deferral last lifted
 
 vars == <<pc, it, cyc, tried, prev, cfails, msgs, deferred, log, pending,
-          runs, losses, lifts, wfails, hist, downs, downsSince>>
+          runs, losses, lifts, wfails, others, answers, hist, downs,
+          downsSince>>
 
 Range(s) == {s[k] : k \in DOMAIN s}
 
@@ -150,7 +161,8 @@ Walk(L, i, s, n) ==
              rest == SubSeq(L, 1, Len(L) - 1)
          IN  IF row.item # i THEN Walk(rest, i, s, n)
              ELSE IF row.t = "pw" THEN
-                    IF Excluded(row) THEN Walk(rest, i, s, n)
+                    IF Excluded(row) \/ (row.cure /\ CureSkipped)
+                      THEN Walk(rest, i, s, n)
                     ELSE IF row.sig = s \/ ~IdenticalOnly
                          THEN Walk(rest, i, s, n + 1)
                          ELSE n
@@ -187,7 +199,8 @@ Init ==
     /\ deferred = [i \in Items |-> FALSE]
     /\ log = <<>>
     /\ pending = <<>>
-    /\ runs = 0 /\ losses = 0 /\ lifts = 0 /\ wfails = 0
+    /\ runs = 0 /\ losses = 0 /\ lifts = 0 /\ wfails = 0 /\ others = 0
+    /\ answers = [i \in Items |-> 0]
     /\ hist = [i \in Items |-> <<>>]
     /\ downs = <<>>
     /\ downsSince = [i \in Items |-> 0]
@@ -216,14 +229,14 @@ Claim(r) ==
          /\ tried' = [tried EXCEPT ![r] = @ \cup {i}]
     /\ runs' = runs + 1
     /\ UNCHANGED <<cyc, prev, cfails, msgs, deferred, log, pending, losses,
-                   lifts, wfails, hist, downs, downsSince>>
+                   lifts, wfails, others, answers, hist, downs, downsSince>>
 
 Post(r) ==
     /\ pc[r] = "post"
     /\ msgs' = [msgs EXCEPT ![it[r]] = Append(@, r)]
     /\ pc' = [pc EXCEPT ![r] = "window"]
     /\ UNCHANGED <<it, cyc, tried, prev, cfails, deferred, log, pending, runs,
-                   losses, lifts, wfails, hist, downs, downsSince>>
+                   losses, lifts, wfails, others, answers, hist, downs, downsSince>>
 
 Verify(r) ==
     LET i == it[r] IN
@@ -234,7 +247,7 @@ Verify(r) ==
          THEN pc' = [pc EXCEPT ![r] = "idle"]   \* drops out silently
          ELSE pc' = [pc EXCEPT ![r] = "outranked"]   \* counts as if it held
     /\ UNCHANGED <<it, cyc, tried, prev, cfails, msgs, deferred, log, pending,
-                   runs, losses, lifts, wfails, hist, downs, downsSince>>
+                   runs, losses, lifts, wfails, others, answers, hist, downs, downsSince>>
 
 (* A run ends, and gives the claim back where `release` says so.          *)
 GiveBack(r, release) ==
@@ -254,7 +267,7 @@ StartWorker(r) ==
     /\ GiveBack(r, TRUE)
     /\ prev' = [prev EXCEPT ![r] = None]
     /\ UNCHANGED <<it, cyc, tried, cfails, deferred, log, runs, losses, lifts,
-                   wfails, downs, downsSince>>
+                   wfails, others, answers, downs, downsSince>>
 
 (***************************************************************************)
 (* A failure before the worker that the rank does not drop out of: a       *)
@@ -300,18 +313,18 @@ Fail(r, s, returned, cure, window) ==
                                 ELSE h[k]]
                          ELSE h]
         pwRow    == [t |-> "pw", item |-> i, rank |-> r, cyc |-> cyc[r],
-                     sig |-> sig]
+                     sig |-> sig, cure |-> cure]
         wlRow    == [t |-> "run", item |-> i, rank |-> r, cyc |-> cyc[r],
                      worker |-> FALSE]
         outRow   == [t |-> "out", item |-> 0, rank |-> r, cyc |-> cyc[r],
                      items |-> outItems]
         \* A thrown failure writes its `pre-worker` row only. A returned one
         \* also keeps the run row `execute`'s result produces. One that
-        \* records a cure key, thrown or returned, writes a run row and no
-        \* `pre-worker` row, so #101 still sees the cure key. Both run rows are marked workerless, and Walk skips them.
-        rows1    == IF cure /\ CureSkipped THEN <<wlRow>>
-                    ELSE IF returned THEN <<pwRow, wlRow>>
-                    ELSE <<pwRow>>
+        \* records a cure key, thrown or returned, also writes a run row, so
+        \* #101 still sees the cure key, and its `pre-worker` row says it
+        \* recorded one. Both run rows are marked workerless, and Walk skips
+        \* them.
+        rows1    == IF returned \/ cure THEN <<pwRow, wlRow>> ELSE <<pwRow>>
         rows     == IF pair THEN rows1 \o <<outRow>> ELSE rows1
         otherHolds == \E k \in Ranks \ {r} : pc[k] = "held" /\ it[k] = i
     IN
@@ -349,7 +362,7 @@ HeldFail(r) ==
     /\ \E s \in FailSigs(r), returned \in (IF Returned THEN BOOLEAN ELSE {FALSE}),
           cure \in (IF Cures /\ ~Det THEN BOOLEAN ELSE {FALSE}) :
          Fail(r, s, returned, cure, FALSE)
-    /\ UNCHANGED <<it, log, runs, losses, lifts, wfails>>
+    /\ UNCHANGED <<it, log, runs, losses, lifts, wfails, others, answers>>
 
 \* A failure in the claim window: the claim message failed to post ("post")
 \* or was posted and the item not yet verified ("window").
@@ -362,13 +375,13 @@ WindowFail(r) ==
     /\ wfails' = wfails + 1
     /\ IF alone \/ ~AloneInWindow
          THEN /\ \E s \in FailSigs(r) : Fail(r, s, FALSE, FALSE, TRUE)
-              /\ UNCHANGED <<it, log, runs, losses, lifts>>
+              /\ UNCHANGED <<it, log, runs, losses, lifts, others, answers>>
          ELSE \* Another rank's claim is on the item: count nothing, record
               \* nothing, leave the label and the messages.
               /\ pc' = [pc EXCEPT ![r] = "idle"]
               /\ UNCHANGED <<it, cyc, tried, prev, cfails, msgs, deferred, log,
-                             pending, runs, losses, lifts, hist, downs,
-                             downsSince>>
+                             pending, runs, losses, lifts, others, answers,
+                             hist, downs, downsSince>>
 
 EndCycle(r) ==
     /\ pc[r] = "idle"
@@ -376,14 +389,14 @@ EndCycle(r) ==
     /\ Avail(r) = {} \/ runs = MaxRuns
     /\ EndCycleVars(r)
     /\ UNCHANGED <<pc, it, msgs, deferred, log, pending, runs, losses, lifts,
-                   wfails, hist, downs, downsSince>>
+                   wfails, others, answers, hist, downs, downsSince>>
 
 \* A lone claim-window rank's withdrawal, a step after its test.
 Withdraw(r) ==
     /\ pc[r] = "withdrawing"
     /\ GiveBack(r, TRUE)
     /\ UNCHANGED <<it, cyc, tried, prev, cfails, deferred, log, pending, runs,
-                   losses, lifts, wfails, hist, downs, downsSince>>
+                   losses, lifts, wfails, others, answers, hist, downs, downsSince>>
 
 Land ==
     \E k \in DOMAIN pending :
@@ -392,7 +405,7 @@ Land ==
       /\ pending' = [j \in 1..Len(pending) - 1 |->
                        IF j < k THEN pending[j] ELSE pending[j + 1]]
       /\ UNCHANGED <<pc, it, cyc, tried, prev, cfails, msgs, deferred, runs,
-                     losses, lifts, wfails, hist, downs, downsSince>>
+                     losses, lifts, wfails, others, answers, hist, downs, downsSince>>
 
 Lose ==
     /\ losses < MaxLosses
@@ -401,16 +414,33 @@ Lose ==
                           IF j < k THEN pending[j] ELSE pending[j + 1]]
          /\ losses' = losses + 1
     /\ UNCHANGED <<pc, it, cyc, tried, prev, cfails, msgs, deferred, log, runs,
-                   lifts, wfails, hist, downs, downsSince>>
+                   lifts, wfails, others, answers, hist, downs, downsSince>>
 
+\* A person's change to a deferred item, or another role's successful run on
+\* it, lifts the set-down.
 Lift(i) ==
     /\ deferred[i]
     /\ lifts < MaxLifts
     /\ deferred' = [deferred EXCEPT ![i] = FALSE]
     /\ downsSince' = [downsSince EXCEPT ![i] = 0]
     /\ lifts' = lifts + 1
+    /\ answers' = [answers EXCEPT ![i] = @ + 1]
     /\ UNCHANGED <<pc, it, cyc, tried, prev, cfails, msgs, log, pending, runs,
-                   losses, wfails, hist, downs>>
+                   losses, wfails, others, hist, downs>>
+
+\* Another role's post on a deferred item that is not a successful run, such
+\* as its own set-down or a comment. Under IgorPostsLiftNothing it changes
+\* nothing the model tracks, so the step exists only with the rule off, where
+\* it lifts the set-down.
+OtherPost(i) ==
+    /\ ~IgorPostsLiftNothing
+    /\ deferred[i]
+    /\ others < MaxOtherPosts
+    /\ deferred' = [deferred EXCEPT ![i] = FALSE]
+    /\ downsSince' = [downsSince EXCEPT ![i] = 0]
+    /\ others' = others + 1
+    /\ UNCHANGED <<pc, it, cyc, tried, prev, cfails, msgs, log, pending, runs,
+                   losses, lifts, wfails, answers, hist, downs>>
 
 \* #179 frees an item whose claim messages no running rank is working.
 Recover(i) ==
@@ -418,14 +448,14 @@ Recover(i) ==
     /\ ~\E r \in Ranks : it[r] = i /\ pc[r] # "idle"
     /\ msgs' = [msgs EXCEPT ![i] = <<>>]
     /\ UNCHANGED <<pc, it, cyc, tried, prev, cfails, deferred, log, pending,
-                   runs, losses, lifts, wfails, hist, downs, downsSince>>
+                   runs, losses, lifts, wfails, others, answers, hist, downs, downsSince>>
 
 Step(r) == Claim(r) \/ Post(r) \/ Verify(r) \/ StartWorker(r) \/ HeldFail(r)
            \/ WindowFail(r) \/ EndCycle(r) \/ Withdraw(r)
 
 Next == \/ \E r \in Ranks : Step(r)
         \/ Land \/ Lose
-        \/ \E i \in Items : Lift(i) \/ Recover(i)
+        \/ \E i \in Items : Lift(i) \/ OtherPost(i) \/ Recover(i)
 
 Fairness ==
     /\ \A r \in Ranks : WF_vars(Claim(r) \/ Post(r) \/ Verify(r)
@@ -446,6 +476,7 @@ TypeOK ==
     /\ deferred \in [Items -> BOOLEAN]
     /\ runs \in 0..MaxRuns
     /\ losses \in 0..MaxLosses
+    /\ others \in 0..MaxOtherPosts
 
 \* *A failure before the worker that repeats sets the item down*, "Only the
 \* holder counts" and "In the claim window, a rank alone on the item counts":
@@ -473,12 +504,20 @@ NoSetDownWithoutThree ==
 NoSetDownWithoutThreeInARow ==
     \A k \in DOMAIN downs : downs[k].inARow >= Threshold
 
-\* One set-down per deferral. No requirement states it: each run that sets an
-\* item down says so, as the requirement asks, and findings/DoubleSetDown.cfg
-\* shows two ranks can both do that. The model checks it because a second
-\* set-down repeats the post on the item.
+\* *A failure before the worker that repeats sets the item down*, "One
+\* set-down per deferral": no run posts a set-down on an item already
+\* deferred. Without SetDownOnce two ranks can each post one
+\* (negative/NoSetDownOnce.cfg).
 NoDoubleSetDown ==
     \A i \in Items : downsSince[i] <= 1
+
+\* *A failure before the worker that repeats sets the item down*, "What lifts
+\* a set-down": every set-down of an item after its first follows a person's
+\* change to it or another role's successful run on it, so two roles' posts
+\* cannot keep setting each other's deferrals down and lifting them.
+NoSetDownWithoutAnswer ==
+    \A i \in Items :
+        Cardinality({k \in DOMAIN downs : downs[k].item = i}) <= 1 + answers[i]
 
 \* *A failure before the worker that repeats sets the item down*, "A fault in
 \* the Igor's own setup is not the item's failure".

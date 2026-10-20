@@ -6,24 +6,27 @@
       causes give different ones, and record the captures in `design.md`. If a pair does not
       match, change the masks; a breaker whose signatures never match never trips, and every
       failure is retried as in the in-force code.
-      Also capture a clone whose token mint the code host refuses because the App's credential
-      is refused. Record whether, during the run of the item whose clone failed, the failure
-      reaches #101's App condition and so records a cure key.
-- [ ] 0.2 Sections 2 to 4 wait until `condition-backoff` (#101) merges (Adam, 2026-10-18).
-      Tasks 3.1, 4.1 and 4.2 also need #213's redaction function; whether they wait for #213 or
-      build it here waits on Adam (the proposal's *Still open*)
+      Check too that a tracker call answered 404 and one answered 500 give different
+      signatures. Also capture a clone whose token mint the code host refuses because the App's
+      credential is refused. Record whether, during the run of the item whose clone failed, the
+      failure reaches #101's App condition and so records a cure key. Also capture a clone the
+      code host does not answer, and record how the tree provider can tell it from a clone the
+      code host refused: git exits 128 for both
+- [ ] 0.2 Sections 2 to 4 wait until `condition-backoff` (#101) merges (Adam, 2026-10-18), and
+      until #213's redaction function merges (pull request #217; Adam, 2026-10-20). Tasks 3.1
+      and 4.1 call that function
 - [ ] 0.3 Check that #179's retry of a refused write to a state file more than one process
       writes covers appends to `executions.ndjson`, with the ranks a role runs appending
       together. Record the result in `design.md`. If it does not, report it to #179: a lost
       `pre-worker` row of a matching failure undercounts, a lost run row of a worker start or a
       lost row of a different failure joins the failures on either side of it into one count
       (`model/findings/LateRows.cfg`), and a lost `outage` row lets an outage's failures count
-- [ ] 0.4 Build what Adam decides on the model's three findings (the proposal's *Still open*),
-      and make the model match. If he takes `SetDownOnce`, set it TRUE in every configuration,
-      negatives included, and add `NoDoubleSetDown` to the two-rank configurations. For each
-      other finding he answers with a rule, add a constant for it, TRUE in every configuration,
-      so that the finding's file in `model/findings/` passes and moves to the configurations CI
-      runs
+- [x] 0.4 Make the model match Adam's answers to its three findings (2026-10-20): `SetDownOnce`
+      TRUE in every configuration but its negative, `negative/NoSetDownOnce.cfg`, with
+      `NoDoubleSetDown` checked in every configuration CI runs; `findings/LateRows.cfg` kept as
+      an accepted limit; `findings/WithdrawRace.cfg` kept to show what `AtomicWithdraw`, #179's
+      mechanism, rests on. Also `IgorPostsLiftNothing`, the lifting rule, with
+      `NoSetDownWithoutAnswer` and `negative/NoIgorPostsLiftNothing.cfg`
 
 ## 1. The agreement
 
@@ -39,12 +42,16 @@
 ## 2. Which surface failed
 
 - [ ] 2.1 In `runItem`, pass `execute` the tracker, code host and tree provider through wrappers
-      that tag an error thrown out of any call with `tracker`, `code-host` or `tree`. An untagged
-      error is `igor`
+      that tag an error thrown out of any call with `tracker`, `code-host` or `tree`, and with
+      its HTTP status or exit code and whether the surface answered, as `passesMark` reads a
+      status (`design.md`). An untagged error is `igor`. A clone the code host did not answer is
+      tagged `code-host`, by what task 0.1 finds; a failed token mint inside a clone stays
+      `tree`
 - [ ] 2.2 `execute` reports, with a failure it returns rather than throws, the source of the step
       that failed: `tracker`, `code-host`, `tree` or `igor`. A returned failure with no source is
       `igor`
-- [ ] 2.3 Set `surfaceFailed` on a run only where the tag is `tracker` or `code-host`, in the
+- [ ] 2.3 Set `surfaceFailed` on a run only where the tag is `tracker` or `code-host` and the
+      surface did not answer, in the
       claimed-run handler and in `takeClaim`'s claim window (whose calls are all the tracker's).
       Update the `surfaceFailed` doc comment in `ItemRun` and the comment above `abandon` in
       `src/serve.ts`, which say every throw counts
@@ -53,17 +60,20 @@
       failing on a tracker call do; two working-tree failures after the worker ran do not; two
       failures in the Igor's own code do not; a working-tree failure whose message names a
       GitHub API error is not a surface failure; a code-host failure after the worker ran
-      counts; `igor run` stops on two tracker failures with different messages
+      counts; `igor run` stops on two tracker failures with different messages; two refusals
+      with different messages do not end the cycle; two clones the code host did not answer do;
+      two failed token mints inside clones do not
 
 ## 3. The breaker
 
 - [ ] 3.1 `provision` reports the path it made with a failure it throws, so the caller can mask
-      it. A pure `signature(message, treePath)` that passes the message through the shared
-      state-branch redaction of [#213](https://github.com/adamstallard/igor/issues/213) and then
-      applies the masks in `design.md` in order, and a pure
-      `trailing(rows, item, role, source, message)` counting as `design.md` *Counting* says.
-      Tests for each mask, for a token and a URL's credentials stripped before the masks run,
-      for each way the count stops, and for the outage exclusion
+      it. A pure `signature(message, treePath)` that passes the message through the credential
+      redaction of [#213](https://github.com/adamstallard/igor/issues/213), applies the masks in
+      `design.md` in order, and returns the masked text's unkeyed SHA-256 as the fingerprint;
+      and a pure `trailing(rows, item, role, source, fingerprint)` counting as `design.md`
+      *Counting* says. Tests for each mask, for three-digit statuses and exit codes kept, for a
+      token and a URL's credentials stripped before the masks run, for each way the count stops,
+      for a `cured` row skipped, and for the outage exclusion
 - [ ] 3.2 A `failure` handoff's `next` gains `'set-down'`, whose tail is, exactly, with `<N>` the
       number of identical failures in a row, 3 or more:
 
@@ -73,18 +83,25 @@
 
       If `defer-a-closed-pull-request` (#141) has landed, `somebody` becomes `someone with write
       access`, so the sentence names what lifts a deferral as `work-triage` then states it. It
-      may otherwise be reworded only to keep it true of that rule. An undirected handoff's "It
+      may otherwise be reworded only to keep it true of *What lifts a set-down* (Adam approved the
+      sentence as written, 2026-10-20). An undirected handoff's "It
       will try again next cycle" becomes this sentence. A directed handoff, whose tail is its
-      relabel sentence alone, gets this sentence first and keeps the relabel sentence after it
+      relabel sentence alone, gets this sentence first and keeps the relabel sentence after it.
+      In place of the raw error message the in-force handoff quotes, a set-down's post names the
+      failure from the row's `source` and status, such as "Setting up the working tree failed
+      (exit code 128)", and quotes no part of the message (Adam, 2026-10-20). That example may be
+      reworded
 - [ ] 3.3 On the third identical failure in the claim window, whichever message `takeClaim`
       posts carries the same sentence: `claimWithdrawn`, right after "Nothing was done, so there
       is nothing to clean up.", or `claimStuck`, where the release did not clear the label, right
       after "Nothing was done.". Either way it comes before a directed claim's relabel sentence.
       Post it even where the claim message never landed (Adam, 2026-10-19). Count the failure,
       and post the set-down, only where the item carries no claim message of another rank of
-      the role that counts under #179's rules (Adam, 2026-10-19); where it carries one, count
-      nothing and leave the role's label on the item. Tests for both cases, and for a set-down
-      posted where the claim message never landed
+      the role that counts under #179's rules (Adam, 2026-10-19); where it carries one, or where
+      the read of the claim messages fails, count nothing, post nothing and leave the role's
+      label on the item (Adam, 2026-10-20). The withdrawal releases only claim messages posted
+      before that test, by the mechanism #179 decides (Adam, 2026-10-20). Tests for each case,
+      and for a set-down posted where the claim message never landed
 - [ ] 3.4 In `runItem`, on a failure before the worker (a refused claim window, a throw raised
       before `execute` spawned the worker, or a failure `execute` returns before spawning it;
       #101's `workerless` mark on a run row tells that last kind apart from a worker that
@@ -98,30 +115,45 @@
       `pre-worker` row is still written. Where a role runs several ranks under #179, only the
       rank holding the claim does any of this; a rank that another rank's claim outranks drops
       out silently, writing no `pre-worker` row. Rank 0, `igor run`'s, is one of those ranks.
-      In the claim window, 3.3's test of the item's claim messages decides instead
+      In the claim window, 3.3's test of the item's claim messages decides instead. Before
+      posting a set-down, read the item's record in `deferred.json`; where it holds a set-down by
+      this role that has not lifted, post no set-down, and give the claim back with the refusal,
+      leaving out its "It will try again next cycle" (Adam, 2026-10-20). `deferred.json` is
+      keyed by item alone, so a set-down's record names its role
 - [ ] 3.5 The threshold is a named constant, 3, with a comment saying why three
 - [ ] 3.6 Tests, one per scenario in *A failure before the worker that repeats sets the item
       down*, including a restart (a fresh loop reading the same rows) and a deferral lifted by
       a reply followed by an identical failure
+- [ ] 3.7 A set-down's record in `deferred.json` says it is a set-down. The check that decides
+      whether a deferral has lifted lifts a set-down only on a person's reply or edit, or on
+      another role's successful run on the item, such as a pull request that role opened for it;
+      an Igor's other posts and label edits lift nothing (Adam, 2026-10-20). Decide how a role
+      tells another role's successful run from its other posts, and record it in `design.md`
 
 ## 4. The record
 
 - [ ] 4.1 Append a `kind: 'pre-worker'` row for each failure before the worker, with `item`,
-      `role`, `rank`, the cycle's start as `cycle`, `source` and `message`, the signature of
-      3.1, wherever a run is recorded: `serve`'s event handler, and the two loops of `igor
+      `role`, `rank`, `held`, the cycle's start as `cycle`, `source`, `httpStatus` or
+      `exitCode`, `cured`, and the fingerprint of 3.1, and no message text, wherever a run is
+      recorded: `serve`'s event handler, and the two loops of `igor
       run`'s cycle in `src/cli.ts`, over the items it claims and over its catch-ups, and
-      `igor run --claim`'s catch-up path, which must also defer a set-down item. Tests check
-      that a token and a URL's credentials in the raw message do not reach the row. A
-      failure that records one of #101's cure keys keeps its ordinary run row, with its
-      `cures`, so #101's conditions still see it, and writes no `pre-worker` row. A failure
+      `igor run --claim`'s catch-up path, which must also defer a set-down item. Write the full
+      message, after #213's redaction, to the process's own log. Tests check that no part of the
+      message reaches the row, and that a token and a URL's credentials do not reach the log. A
+      failure that records one of #101's cure keys writes its `pre-worker` row with `cured:
+      true`, and keeps its ordinary run row, with its `cures`, so #101's conditions still see
+      it. A failure
       `execute` returns keeps its run row too, which #101's code marks `workerless`, so #101's
       probe, the one item it lets through to test whether a fault has cleared, still ends on
       it. *Counting* reads #101's `workerless` mark; no second marker is added
 - [ ] 4.2 Each cycle, `serve`'s and `igor run`'s, appends a `kind: 'outage'` row when it ends on
       two surface failures, with `role`, `rank`, the cycle's start as `since`, every item whose
-      run failed before the worker in that cycle as `items`, and each named failure's `source`
-      and redacted, masked `message` as `failures`, as `design.md` says
-- [ ] 4.3 Supply the count reader through `wiring.ts`: it reads `executions.ndjson` with `readLog`
+      run failed before the worker in that cycle as `items`, and as `failures` each named
+      failure's fields from 4.1, with no message text, as `design.md` says
+- [ ] 4.3 Supply the count reader through `wiring.ts`: it reads `executions.ndjson` with `readLog`.
+      `readLog` reports a failed listing of the day files and each day file it failed to read
+      (in the in-force code `listPartitions` and `readStateRaw` return an empty result for either), and the count
+      reader treats such a read as one that failed, so the run sets nothing down
 - [ ] 4.4 Check that every reader of `executions.ndjson` that counts runs skips `pre-worker` and
       `outage` rows. #101's `stuck-conditions` requires readers to skip rows carrying a `kind`,
       and its task 2.3 builds that
@@ -134,7 +166,8 @@
       appends the `outage` row of 4.2; one that ends on two identical failures appends an
       `outage` row naming only those two items. Where the two identical failures are also
       surface failures, the cycle ends on the surface rule and writes 4.2's row. A rank that
-      drops out because another rank holds the item leaves the previous run in place
+      drops out because another rank holds the item, and a run that records a cure key, leave
+      the previous run in place
 - [ ] 4.6 Tests through both `serve` and `igor run`: one per scenario in *Two identical failures
       before the worker on different items end the cycle* (the cycle ends and neither count
       moves; different failures continue and both count; an item alone in its cycle counts once),

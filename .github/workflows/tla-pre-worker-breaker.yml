@@ -7,9 +7,9 @@
 #   safety is a constant in the model, and each file in model/negative/ turns
 #   one of those rules off. TLC must find a violation there; a file that
 #   passes means the model does not show that rule is needed.
-# - No job runs model/findings/. Each file there finds a violation the rules
-#   do not prevent, recorded for the repository's owner to decide on. Each
-#   file keeps finding its violation until the spec's rules change.
+# - No job runs model/findings/. Each file there drops one of the model's two
+#   assumptions, PromptRows or AtomicWithdraw, and fails by design;
+#   design.md, "What the assumptions leave out", says what each shows.
 #
 # Every run passes -deadlock, which turns TLC's deadlock check off. The model
 # bounds the runs each behaviour makes, so every behaviour ends in a state
@@ -18,7 +18,8 @@
 # tla2tools.jar v1.7.4 is TLC 2.19. To move to another release, change
 # TLA_TOOLS_VERSION and TLA_TOOLS_SHA256 together: the checksum step rejects
 # any other file. Take the checksum from `sha256sum` of the jar downloaded
-# from that release's page.
+# from that release's page. Also check the exit codes the negative job
+# expects for a violation, which its own comment names.
 name: TLA+ pre-worker-breaker
 
 on:
