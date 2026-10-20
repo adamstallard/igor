@@ -198,13 +198,12 @@ In a deployment that declares seats, the server running the Igors SHALL make a s
 seat that has no unexpired reading of a window: no `usage` or `stream` observation of that
 window whose reset has not passed. A seat with an unexpired refusal is not probed at all (below).
 The probe is one minimal `claude -p` call with that seat's own configured token, on the cheapest model, with a trivial prompt and no tools, and with `--output-format
-stream-json --verbose`, run from an empty temporary directory with no `.claude` directory or
-`CLAUDE.md` in any directory above it, so that no project's settings, skills, hooks or `CLAUDE.md`
-load beside the seat's token. Claude Code loads these from every directory above the one it
-runs in. Its environment SHALL be written out as task-execution
-requires of a worker's, holding no credential but the seat's token, with `HOME` set to an empty
-temporary directory, so that no user-level settings or hooks of the account running Igor load
-either. It SHALL read the call's `rate_limit_event` and record
+stream-json --verbose`, run from an empty directory that *A seat probe runs where only the Igor
+can write* places and checks, so that no project's settings, skills, hooks or `CLAUDE.md` load
+beside the seat's token. Its environment SHALL be written out as task-execution
+requires of a worker's, holding no credential but the seat's token, with `HOME` set to a second
+empty directory that *A seat probe runs where only the Igor can write* places, so that no user-level settings or hooks of the account
+running Igor load either. It SHALL read the call's `rate_limit_event` and record
 it as a `stream` reading of that seat, exactly as a worker run's event is recorded. Where the seat's
 last reading of the window expired at the reset that reading stated, and a post-reset probe is due
 ten minutes after that reset (*A window's length is measured, and so is whether it starts at first
@@ -304,9 +303,9 @@ its credential were cleared, so it stays unprobed until it could be used.
 #### Scenario: A probe loads no project's settings
 
 - **WHEN** a seat is probed
-- **THEN** the call runs from an empty temporary directory, with `HOME` set to a second empty
-  temporary directory
-- **AND** no directory above the first holds a `.claude` directory or a `CLAUDE.md`
+- **THEN** the call runs from an empty directory, with `HOME` set to a second empty directory
+- **AND** no directory above the first holds a `.claude` directory or a `CLAUDE.md`, as *A seat
+  probe runs where only the Igor can write* checks
 
 #### Scenario: A probe is minimal
 
@@ -401,6 +400,52 @@ its credential were cleared, so it stays unprobed until it could be used.
 - **WHEN** a seat is probed
 - **THEN** the call is made by the server running the Igors, with the seat's token as the server
   holds it
+
+### Requirement: A seat probe runs where only the Igor can write
+
+For each seat probe, the Igor SHALL create two new, empty directories of mode `0700` in
+`/var/lib/igor/probes`: the probe's working directory and its `HOME`. The shipped systemd unit
+SHALL give Igor `/var/lib/igor` with `StateDirectory=igor`, and the container image SHALL create
+it for the user Igor runs as. The Igor SHALL remove both directories once the probe
+exits, and `igor serve` SHALL remove any left in `/var/lib/igor/probes` when it starts.
+
+Immediately before each seat probe, the Igor SHALL check every directory from the probe's working
+directory up to the root. Each SHALL be owned by root or by the Igor's own user, SHALL have
+neither the group nor the other write bit set, and SHALL hold no `.claude` directory and no
+`CLAUDE.md`. Where any directory fails, or the two directories cannot be created, the probe SHALL
+NOT be spawned. It is then recorded as a probe that errored: a spend row with no cost and no
+event, so the hourly limit and the five-hour back-off hold off the next attempt, and a crossing
+probe refused this way counts as one that recorded no observation. It records no observation and
+no check row. The Igor's own log names the directory and the condition it failed.
+
+A directory checked only for what it holds could gain a `.claude` between the check and the
+spawn; one that no user but root and the Igor can write cannot.
+
+#### Scenario: A probe runs under the Igor's state directory
+
+- **WHEN** `igor serve` probes a seat
+- **THEN** the probe's working directory and its `HOME` are new directories of mode `0700` in
+  `/var/lib/igor/probes`
+- **AND** neither is under the system's temporary directory
+
+#### Scenario: A probe's directories do not outlive it
+
+- **WHEN** a seat probe exits, or `igor serve` starts after a crash left a probe's directories
+  behind
+- **THEN** no directory of that probe remains in `/var/lib/igor/probes`
+
+#### Scenario: A directory others could write stops the probe
+
+- **WHEN** a directory above the probe's working directory is owned by a user other than root
+  and the Igor's own, or has its group or other write bit set
+- **THEN** no probe is spawned, and no observation or check row is recorded
+- **AND** a spend row records the probe with no cost and no event
+- **AND** the Igor's log names that directory and the condition it failed
+
+#### Scenario: A refused crossing probe does not shut the seat out
+
+- **WHEN** the probe made at a crossing is refused by the directory check
+- **THEN** the gate decides on the reading it already had
 
 ### Requirement: A role has a seat it can spend when the gate would choose one now
 

@@ -189,12 +189,8 @@
       worker's (§6.3.2), as the Igor's own Unix user, not through #175's worker user: `sudo` to the
       worker user resets `HOME` to that user's home, which would undo the empty `HOME` below,
       and the probe runs no repository code that needs a separate user.
-      Give it only that seat's token. Run it from a fresh empty temporary directory, made under
-      the system's temporary directory and never under a home, with `HOME` set to a second empty
-      temporary directory, not the home a worker is given. Fail the probe, and
-      record nothing, where any directory above the first holds a `.claude` directory or
-      `CLAUDE.md`.
-      Remove both directories once the probe exits.
+      Give it only that seat's token. Run it from the working directory 6.9 makes and checks,
+      with `HOME` set to the second directory 6.9 makes, not the home a worker is given.
       Use `TRIAGE_MODEL`, a trivial prompt, tools denied and `--output-format stream-json
       --verbose`. Where #174 (`pinned-skills`) is built, take the arguments every call gets from
       its shared argument builder, `--setting-sources user` and `--strict-mcp-config` among them:
@@ -217,7 +213,8 @@
       five-hour back-off hold; a probe's cost is recorded as a probe; a probe with no event
       records nothing and is not retried in a loop; another Igor's probe within the hour holds
       this one off; the probe's cost appears in `igor budget`'s spend; the probe runs from an
-      empty directory, and refuses one with a `.claude` directory above it
+      empty directory, and refuses one with a `.claude` directory above it (6.9 tests the rest of
+      the directory check)
 - [ ] 6.5 `igor budget` names a figure that came from a probe, or says a seat was probed and
       returned nothing, so an operator can tell a probed seat from an unread one. **May be
       reworded**
@@ -241,7 +238,27 @@
       holds a seat probed within the hour. Tests: the three crossing scenarios in *A seat nothing
       has read is probed on the Igor server with its own token*, and a seat probed within the hour
       before its crossing staying held until the hour has passed
-
+- [ ] 6.9 **The probe's directories** (*A seat probe runs where only the Igor can write*). For
+      each probe, make two new directories of mode `0700` with `mkdtemp` in
+      `/var/lib/igor/probes`, creating `probes/` with mode `0700` where it is missing: one is the
+      probe's working directory, the other its `HOME`. Remove both once the probe exits, and
+      remove whatever is left in `probes/` when `igor serve` starts. Immediately before
+      spawning, resolve the working directory's real path and walk from it to `/`. Using
+      `lstat`, refuse the probe where any directory is owned by neither root nor the Igor's
+      user, has the group or other write bit set, or holds an entry named `.claude` or
+      `CLAUDE.md`, and refuse it where the directories cannot be made. A refused probe spawns
+      nothing, writes a spend row with cost 0 and no event (6.3), writes no observation and no
+      check row, and logs the directory and the condition it failed. 6.8 treats a refused
+      crossing probe as one that recorded nothing.
+      Where #179's (`concurrent-instances`) task 1.8 has not landed, add `StateDirectory=igor`
+      to `deploy/igor.service`. Where the container image exists (#192, `deploy-image`), its
+      `Dockerfile` creates `/var/lib/igor` owned by the user Igor runs as, mode `0755`.
+      Tests: both directories are in `/var/lib/igor/probes` and neither is under the system's
+      temporary directory; both are gone after the probe exits, and a start removes ones a crash
+      left; an ancestor that is group-writable, one that is world-writable with the sticky bit as
+      `/tmp` is, one owned by another user, and one holding a `CLAUDE.md` each refuse the probe;
+      a refused probe writes the spend row and nothing else, is not retried within the hour, and
+      lets the crossing gate decide on its old reading; a refusal's log line names the directory
 ## 7. The line, in `src/budget.ts`'s gate (replaces the dollar bound)
 
 - [ ] 7.1 `lineFor(reserve, resetsAt, length, now)` — pure, the only place the line is computed:

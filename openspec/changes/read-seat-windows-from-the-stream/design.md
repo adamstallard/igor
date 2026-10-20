@@ -613,15 +613,54 @@ the hour is counted from the most recent probe of the seat any Igor recorded in 
 that start a probe in the same moment can both make it. That costs one extra probe, which is
 accepted as the overshoot is.
 
-**From an empty directory.** A probe carries a seat token. Run from a directory holding a project's
-`.claude/settings.json` or `CLAUDE.md`, it would load that project's hooks beside the token, and
-"no tools" does not stop a hook. So it runs from a fresh empty temporary directory, as the Igor's own Unix user. Where #175
-(`worker-user`) is built, a worker runs as a separate user through `sudo`, which resets `HOME` to
-that user's home and would undo the probe's empty `HOME`. The probe runs no repository code, so it
-needs no separate user. Claude Code
-also loads `.claude` from every directory above the one it runs in, so that directory must not sit
-under a home: in task 6.0's measurement, below, the same call run from a directory under
-`/Users/adam` loaded that home's skills, though its own `HOME` was empty.
+**From an empty directory that only root and the Igor can write above.** A probe carries a seat token. Run from a
+directory holding a project's `.claude/settings.json` or `CLAUDE.md`, it would load that project's
+hooks beside the token, and "no tools" does not stop a hook. Claude Code also loads `.claude` from
+every directory above the one it runs in: in task 6.0's measurement, below, the same call run from
+a directory under `/Users/adam` loaded that home's skills, though its own `HOME` was empty.
+
+So each probe runs from a fresh empty directory, with `HOME` a second one, both in
+`/var/lib/igor/probes` (*A seat probe runs where only the Igor can write*). Before each probe the
+Igor checks every directory from the probe's working directory up to the root: owned by root or the
+Igor, writable by neither group nor others, and holding no `.claude` or `CLAUDE.md`. `HOME` sits
+beside the working directory, so the directories above it are the same ones. The ownership and mode
+conditions are what close the gap between the check and the spawn. A content check alone would
+not: a `.claude` planted after it would still load. With no ancestor writable by anyone but root
+and the Igor, nobody else can plant one.
+
+Why `/var/lib/igor`. `igor serve` runs under the shipped systemd unit or in the container image
+(#175's decision 20), and the probe runs only under `serve`. The unit's `StateDirectory=igor` makes
+`/var/lib/igor`, whose ancestors `/var/lib`, `/var` and `/` are root's; #179's task 1.8 adds that
+line, and task 6.9 adds it where #179's task 1.8 has not landed. The image creates the same directory for the
+user Igor runs as (task 6.9). #174's state directory off the unit, `~/.local/state/igor`, would
+not do: it lies under the Igor user's home, which holds the `~/.claude` that Claude Code creates
+there, so every probe would fail. #175 (`worker-user`) keeps the worker from writing the Igor
+user's home, and lets it write its tree and outbox, which sit in `/var/lib/igor/trees`, so
+`probes/` is a sibling of `trees/`, never inside it. The ownership check holds even if #175's layout
+changes: a directory the worker could write fails it.
+
+Until #175's code is built, the worker runs as the Igor's own user, and so can write anything the
+Igor can, these directories included. The check then still refuses a `.claude` present when it
+runs; it cannot stop one written after it. Decision 41 accepts that limit: until then the worker
+can also write the Igor's home and credential files, so these directories expose nothing more.
+
+**A refused probe is recorded as one that errored.** It writes a spend row with no cost and no
+event, so the hourly limit and the five-hour back-off apply to it as to any probe that got no
+event. Recording nothing would leave nothing to limit it: it would be retried at every gate, and a
+seat held at its crossing would wait forever, since a probe the check refuses every time never
+runs and never records anything. A crossing probe refused this
+way counts as one that recorded no observation, so the gate decides on the reading it has.
+
+*Rejected:* a directory under the system's temporary directory with a content check alone. Every
+user can write `/tmp`, the worker user among them, so a worker could defeat it either way: a
+`/tmp/.claude` present at the check fails every probe, and one written after the check loads into
+the call. `PrivateTmp=true` does not help, since it makes `/tmp` private to the unit's instance and
+the worker runs inside that instance. *Rejected* too: a `0700` directory made under `/tmp`, since
+its own mode stops nobody writing `/tmp/.claude` above it.
+
+The probe runs as the Igor's own Unix user. Where #175 is built, a worker runs as a separate user
+through `sudo`, which resets `HOME` to that user's home and would undo the probe's empty `HOME`.
+The probe runs no repository code, so it needs no separate user.
 
 **Measured 2026-10-18 (task 6.0): the probe as specified gets a reading.** On Claude Code
 2.1.303, `echo ok | env -i PATH=… USER=… HOME=<empty> CLAUDE_CODE_OAUTH_TOKEN=… claude -p --model

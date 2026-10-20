@@ -125,8 +125,8 @@ weekly (Adam, 2026-09-28). The smallest gap between observed resets is a fallbac
     the seat's credential condition, a probe that succeeds clears it, and the five-hour back-off
     does not follow a 401, so a stopped seat is re-checked hourly. Decision 13 moves these rules
     into a `stuck-conditions` delta once #101 is in force.
-29. **A probe whose directory has a `.claude` directory or `CLAUDE.md` above it fails and records
-    nothing.** This change's choice, from task 6.0's measurement that a probe run under a home
+29. **A probe whose directory has a `.claude` directory or `CLAUDE.md` above it is not spawned,
+    and is recorded as a probe that errored** (decision 41 says how it is recorded). This change's choice, from task 6.0's measurement that a probe run under a home
     loaded that home's skills. *Rejected:* probing anyway and relying alone on `--setting-sources user`,
     the flag that limits which settings files Claude Code loads: checking the directory costs
     nothing, and the probe holds a seat token.
@@ -182,6 +182,27 @@ weekly (Adam, 2026-09-28). The smallest gap between observed resets is a fallbac
     `2026-10-11-three-call-run-its-one-event.jsonl`, since that run got one event, after its
     first call (task 1.1a); whether ordinary runs do too is task 1.1b.
 
+41. **A probe runs from `/var/lib/igor/probes`, and only where no directory above it can be
+    written by any user but root and the Igor.** This change's choice, fixing a gap the
+    2026-10-19 consistency read found: the probe ran under `/tmp`, which every user can write.
+    The probe's working directory and `HOME` are made there,
+    under the state directory the shipped unit gives Igor, which the container image also
+    creates. Before each probe, every directory from the working directory up to `/` is checked
+    for its owner and mode as well as for a `.claude` or `CLAUDE.md`. Because nobody else can
+    write there, nothing can be planted between the check and the spawn. A probe the check
+    refuses is recorded as one that errored, a spend row with no cost and no event, so the
+    hourly limit and the five-hour back-off space its retries and a crossing probe cannot hold
+    a seat forever.
+    This decision accepts one limit. The guarantee holds against the worker only once #175's (`worker-user`) code runs it as a
+    separate user. Before that, the worker runs as the Igor's own user and can write wherever
+    the Igor can, the probe's directories included.
+    *Rejected:* a directory under the system's temporary directory with only decision 29's
+    check. Any user, the worker user among them, can write `/tmp/.claude`, which fails every
+    probe if it is there at the check, or loads into a call holding a seat token if it is
+    written after. *Rejected:* `~/.local/state/igor`, #174's state directory off the unit: it
+    lies under the Igor user's home, whose `~/.claude`, which Claude Code creates, would fail
+    every probe.
+
 **Still open:**
 
 - **A guaranteed per-role share.** Not specified; added only if a role's reserve proves too weak a
@@ -213,12 +234,6 @@ weekly (Adam, 2026-09-28). The smallest gap between observed resets is a fallbac
     which the gate does not read, so the refused seat is chosen again. Whether such a refusal
     should hold the seat, or fall back to the envelope, is a question for Adam, and which window
     a per-model refusal names is unmeasured (task 1.5).
-  - The probe runs from a directory under the system's temporary directory, after a check that
-    no `.claude` or `CLAUDE.md` sits in a directory above it, because Claude Code loads settings
-    from every directory above the one it runs in. A worker can write `/tmp/.claude` or
-    `/tmp/CLAUDE.md`. Present at the check, it fails every probe; written between the check and
-    the spawn, it loads into a call holding a seat token. The probe needs a parent directory no
-    other user can write.
   - That the probe runs as the Igor's own user, which holds every seat token, is a choice not
     among the decisions.
   - The in-force *A seat shut in both windows returns on the later of the two* still speaks of
@@ -226,7 +241,14 @@ weekly (Adam, 2026-09-28). The smallest gap between observed resets is a fallbac
     rejected, and no block here modifies it.
   - #82 (`stopped-scope-visible`) shows a seat as unread using only the seat's own reserve, where
     this change uses the larger of the seat's and the role's.
-  - #171's copy of the probe requirement drops "In a deployment that declares seats".
+  - #174's task 5.3 note to operators says the service user's home "reaches every triage
+    call and seat probe". A seat probe runs with its own `HOME` in `/var/lib/igor/probes`
+    (decision 41), so the note is wrong for the probe.
+  - #171's copy of the probe requirement drops "In a deployment that declares seats". It also
+    still says the probe runs from "an empty temporary directory", which decision 41 replaces
+    with a pointer to *A seat probe runs where only the Igor can write*. #204, the issue that
+    sets the order every open change archives in, puts #171 after this change, so #171's copy
+    replaces this change's text, and #171 must copy the requirement again.
   - A post-reset probe's scenario omits that it is due only until the window is measured, then
     about weekly.
   - The instant a handoff names is not when the seat admits work, since a crossing probe comes
