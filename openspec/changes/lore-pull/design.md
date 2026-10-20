@@ -38,7 +38,14 @@ tried. Before the cycle runs, the process checks out the commit `applied` names 
 way, so that the lore entries read before each item, and #171's re-read of one seat file, come
 from the commit the cycle applies. Those reads take the file as the worktree holds it and never
 check out another commit.
-It then loads the configuration from the worktree exactly as `main` loads from a checkout.
+
+Where that checkout fails too, the worktree is stuck (Adam, 2026-10-20). Each passing read keeps
+its configuration and lore entries in memory, so a stuck cycle runs on those and reads nothing
+from the worktree. A seat file's re-read during that cycle uses the copy in memory too. The
+process tries the checkout again at the next cycle start, and each cycle start where it fails is
+a local fault toward `lore:read:<role>-<rank>`.
+After a checkout that succeeds, the process loads the configuration from the worktree exactly as
+`main` loads from a checkout.
 `loadConfig`'s check that the lore store, the directory of lore entries that `destination`
 names, sits at the root of its repository then runs against the worktree, where `destination`
 resolves, and still passes, because a linked
@@ -76,9 +83,13 @@ supplied for that command by the one-command credential helper that `src/worktre
 updated, so processes share no ref. `<owner>/<repo>` and `<branch>` come from the upstream of the
 checkout's branch, which the start checks is a credential-free `https://github.com/` URL.
 Because the checkout's `.git/config` is still read, the start also refuses any key there under
-`url.`, `http.`, `credential.`, `filter.`, `include.` or `includeIf.`, and `core.fsmonitor`,
-`core.sshCommand`, `core.gitProxy` and `core.alternateRefsCommand`, and the process checks the
-file again before each git command, since anyone who can write it could add a key after start. A URL rewrite could send the fetch to SSH, an extra header
+`url.`, `http.`, `credential.`, `filter.`, `include.`, `includeIf.` or `submodule.`, and
+`core.fsmonitor`, `core.sshCommand`, `core.gitProxy`, `core.askPass`,
+`core.alternateRefsCommand` and `extensions.worktreeConfig`. That last key would make git read a
+per-worktree config file the check never sees. A fetch never recurses into submodules, whose URLs
+the config could choose. The process checks the file again before each git command, and where
+such a key has appeared it runs no git command in the checkout: a due fetch counts as failed and
+a read as a local fault. It checks before each command because anyone who can write the file could add a key after start. A URL rewrite could send the fetch to SSH, an extra header
 or a credential helper could authenticate it as a person, a proxy could take it elsewhere, an
 include could bring any of these from another file, and a filter, an fsmonitor or an alternate
 refs command runs a command.
@@ -138,12 +149,16 @@ text, decides, so a git message worded differently in a later git release does n
 from one side to the other. A missing role file is therefore a refused commit: the checkout
 succeeded, and the second stage found the file absent.
 
-A refused commit opens `lore:config:<role>`, which a passing read by any rank clears. A local
-fault opens nothing until the third cycle start in a row, then `lore:read:<role>-<rank>`. The
-count lives in the process's memory and starts at zero with the process. A local fault at start
-exits with status 1. That is the proposal's recommendation, still open for Adam, and the
-requirements are written to it. Under it, a fault that outlasts the restart shows in the
-supervisor's log, not as a condition.
+A refused commit opens `lore:config:<role>`. A passing read by any rank clears it, where the
+commit read is the refused one or descends from it (Adam, 2026-10-20): `git merge-base
+--is-ancestor <refused> <read>` tells. The condition's record names the commit whose refusal
+opened it; a refusal of another commit while the condition is open changes nothing. A
+local fault opens nothing until the third cycle start in a row, then `lore:read:<role>-<rank>`.
+#171's read-cleared kind lets each rule that uses it choose how many failing reads in a row open
+its condition, and this rule chooses three. The count lives in the process's memory
+and starts at zero with the process. A local fault at start exits with status 1, with no
+fallback (Adam, 2026-10-20), so a fault that outlasts the restart shows in the supervisor's log,
+not as a condition.
 
 ## A restart starts on a commit that passed (Adam, 2026-10-18)
 

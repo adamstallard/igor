@@ -16,11 +16,13 @@
 - [ ] 1.1 `igor serve` refuses to start where the lore checkout has no branch checked out or its
       branch has no upstream, where the upstream's remote URL is not a credential-free
       `https://github.com/` URL, or where the checkout's git config sets a key under `url.`,
-      `http.`, `credential.`, `filter.`, `include.` or `includeIf.`, or `core.fsmonitor`,
-      `core.sshCommand`, `core.gitProxy` or `core.alternateRefsCommand`, naming the checkout and
-      what is wrong. Check again before each git command in the checkout; where such a key has
-      appeared, run none, count a due fetch as failed and a read as a local fault, and name the
-      key in each cycle report
+      `http.`, `credential.`, `filter.`, `include.`, `includeIf.` or `submodule.`, or
+      `core.fsmonitor`, `core.sshCommand`, `core.gitProxy`, `core.askPass`,
+      `core.alternateRefsCommand` or `extensions.worktreeConfig`, naming the checkout and what is
+      wrong, and a key by its section and last part only (`url.*.insteadOf`). Fetch with
+      `--no-recurse-submodules`. Check again before each git command in the checkout; where such
+      a key has appeared, run none, count a due fetch as failed and a read as a local fault, and
+      name the key the same way in each cycle report
 - [ ] 1.2 Fetch once per poll interval of the configuration in force, on #179's heartbeat timer at
       every second firing, with the command `design.md` gives: the repository's URL named
       outright, into `refs/igor/lore/<role>-<rank>/fetched`, with no hook, no auto-gc, no
@@ -57,8 +59,10 @@
 - [ ] 2.2 Before each cycle start's lore read, check out the commit in the worktree with `--force
       --detach`, hooks disabled and no system-wide or per-user git config, then `git clean
       -ffdx`. After a refused read or a local fault, check out the `applied` commit again the
-      same way; where that fails, take no new item that cycle. A read of one file mid-cycle reads
-      the worktree as it stands
+      same way. Where that fails too, run the cycle on the configuration and lore entries of the
+      last passing read, kept in memory, read nothing from the worktree, and try the checkout
+      again at the next cycle start; each cycle start where it fails is a local fault toward task
+      3.3b's count. A read of one file mid-cycle reads the worktree as it stands
 - [ ] 2.3 Load the configuration, role files, seat files and, where `destination` is the lore
       repository, the lore entries, from the worktree. A relative path resolves against the directory
       holding `igor.config.yaml` in the lore checkout; where the result lies inside the checkout, read that path in the
@@ -88,11 +92,14 @@
       commit with no condition. A passing read moves `applied` to it. A refused read keeps the commit `applied`
       names, with the seats task 4.1 leaves out, and opens the read-cleared condition
       `lore:config:<role>` where it is not open, whose report names the commit, the file and the
-      check and quotes no value from the file. A passing read by any rank of the role clears it
+      check and quotes no value from the file, and records the refused commit. A passing read by
+      any rank of the role clears it where the commit read is the refused one or descends from it
+      (`git merge-base --is-ancestor`); a passing read of an older commit leaves it open
 - [ ] 3.3b A read that fails while putting the commit in the worktree or reading a file from it,
       the stages `design.md` names, is a local fault: run the cycle on `applied`, open or clear
       no `lore:config:<role>`, and read again at the next cycle start. At the third such cycle
-      start in a row, open `lore:read:<role>-<rank>` naming the error; the process's next read
+      start in a row, open `lore:read:<role>-<rank>` naming the failed operation and the kind of
+      fault, with no path outside the checkout and no text of git's error; the process's next read
       that is not a local fault clears it
 - [ ] 3.4 A fetch never changes the configuration or lore entries of the cycle already running
 - [ ] 3.5 Tests: the scenarios of *`igor serve` starts on the newest commit that passes*, *A lore
@@ -118,7 +125,9 @@
 - [ ] 5.1 When a lore read passes, compare its commit's seat files with those of the commit the
       applied ref names, before moving the ref; a process with no applied ref compares nothing
 - [ ] 5.2 Add to `src/state.ts` a create-only write: a Contents API `PUT` without a `sha`, which
-      reports whether it created the file, found it existing, or failed otherwise. First
+      reports whether it created the file, found it existing, or failed otherwise. It passes its
+      content and commit message through the credential redaction `writeState` and
+      `appendRecord` apply (pull request #217, for issue #213). First
       measure that GitHub refuses such a `PUT` on an existing file, and record the result in
       `design.md`
 - [ ] 5.3 For each seat file changed and still at the same path, never one added, deleted or

@@ -12,7 +12,8 @@ Terms used here:
   fetch and the lore read that follows it.
 - The *startup checks* on a lore read are every check a starting `igor serve` makes on the
   configuration it reads: validation of the configuration files, and the check that the App can
-  act on every repository the configuration names.
+  act on every repository the role works and on the lore repository. The check that the roster
+  declares the process's rank is not one of them (decision 30).
 - A *read-cleared condition* is the kind #171 defines in `stuck-conditions`: a failing read opens
   it, a later passing read clears it, it takes no probe item, and it stops nothing by itself.
 - A *rank* is one of several processes running one role, and the *roster* in `igor.config.yaml`
@@ -23,13 +24,15 @@ Terms used here:
 - [#176](https://github.com/adamstallard/igor/issues/176) is the issue this change specifies.
 
 Every decision below is Adam's. Decisions 8 and 9 were this change's proposals, which Adam
-accepted on 2026-10-18, and decisions 11 to 31 were its proposals and open questions, which Adam
-answered on 2026-10-19. Decision 13 is his replacement for the one proposed. Decision 10 follows
-the order Adam set in issue #204.
+accepted on 2026-10-18; decisions 11 to 31 were its proposals and open questions, which Adam
+answered on 2026-10-19; and decisions 32 to 35 are Adam's answers, given on 2026-10-20, to the
+open questions this change listed on 2026-10-19. Decision 13 is his replacement for the one proposed, narrowed on 2026-10-20. Decision
+10 follows the order Adam set in issue #204.
 
 1. **A pull whose configuration fails the startup checks is refused** (Adam, 2026-10-18). The
    process keeps the last configuration that passed and opens a read-cleared condition naming the
-   commit, the failing file and the check it failed. A later passing read clears it. The
+   commit, the failing file and the check it failed. A later passing read of that commit, or of
+   one that descends from it, clears it (decision 13). The
    condition takes nothing out of use: the process goes on working under the configuration it
    kept. This holds at every read of pulled configuration, the per-cycle reread #179 adds
    included: a refused read also keeps the roster of the configuration that passed.
@@ -85,8 +88,10 @@ the order Adam set in issue #204.
     2026-10-19). That is a
     checkout with no branch or no upstream, an upstream remote that is not a credential-free
     `https://github.com/` URL, or a checkout configuration setting a key under `url.`, `http.`,
-    `credential.`, `filter.`, `include.` or `includeIf.`, or `core.fsmonitor`, `core.sshCommand`,
-    `core.gitProxy` or `core.alternateRefsCommand`; the process checks again before each git
+    `credential.`, `filter.`, `include.`, `includeIf.` or `submodule.`, or `core.fsmonitor`,
+    `core.sshCommand`, `core.gitProxy`, `core.askPass`, `core.alternateRefsCommand` or
+    `extensions.worktreeConfig` (`submodule.`, `core.askPass` and `extensions.worktreeConfig`
+    added on 2026-10-20, after a consistency read); the process checks again before each git
     command, and runs none where such a key has appeared since start. Without this, an SSH remote, a URL rewrite, an extra header or a proxy
     would let the fetch authenticate as something other than the App, which `surface-adapter`
     forbids, and a filter, an fsmonitor or an alternate refs command would run a command from the
@@ -101,10 +106,14 @@ the order Adam set in issue #204.
     - **A configuration that fails the startup checks** opens one read-cleared condition shared
       by the role, `lore:config:<role>`, keyed as #101 (`condition-backoff`) keys a condition, by
       what would cure it: one commit that passes cures every rank. A refused read by any rank
-      opens it, and the next passing read by any rank of the role clears it. A rank still on the
-      refused commit fetches the passing one within one poll interval and applies it at its next
-      cycle start. A rank retired by a passing read is no exception: that read clears the condition
-      too. The report names the commit, the file and the check, and quotes no value from the
+      opens it. Only a passing read, by any rank of the role, of the refused commit or a commit
+      that descends from it clears it (Adam, 2026-10-20). A rank that has not yet fetched the refused
+      commit, and passes on an older one, has not seen the cure, so its read clears nothing;
+      otherwise the condition could open and clear repeatedly until every rank had fetched. A
+      rank still on the refused commit fetches the passing one within one poll interval and
+      applies it at its next cycle start. A passing read that retires the rank, because its
+      roster drops that rank, also clears the condition where its commit is the refused one or
+      descends from it. The report names the commit, the file and the check, and quotes no value from the
       file, since the execution log may sit in a public repository.
     - **A read that fails for a local reason** opens no configuration condition. A local reason
       is a git or filesystem operation failing while the commit is put in the process's working
@@ -115,7 +124,8 @@ the order Adam set in issue #204.
       on its applied commit and reads again at the next cycle start. After three cycle starts in
       a row fail this way, it opens the per-process read-cleared condition
       `lore:read:<role>-<rank>`, naming the failed operation and the kind of fault but no path
-      outside the checkout, which its own next read that is not a local fault clears.
+      outside the checkout, which its own next read that is not a local fault clears. A worktree
+      that cannot be put back counts the same way (decision 33).
     - **A check GitHub did not answer, or a credential GitHub refused,** fails no read (decision
       29), so neither opens `lore:config:<role>`.
 14. **Igor's seat notice goes out at most once per change, and only for a change a process
@@ -129,9 +139,8 @@ the order Adam set in issue #204.
     `owner` that is not a GitHub login, the two exclusions #171's workflow makes (#171's decision
     44), so a lender who opened the pull request is told where someone else pushed to it. Where a
     squash or rebase merge made the commit, that exclusion looks at who pushed the pull request's
-    own last commit changing the file. The
-    workflow's rule of one mention per pull request does not carry over: Igor's notice after the
-    merge is a separate one. An added seat file gets no notice, as #171's workflow mentions
+    own last commit changing the file. Igor's
+    notice after the merge is separate from the workflow's mentions on the pull request. An added seat file gets no notice, as #171's workflow mentions
     nobody for one, since its `owner` is unvetted. A deleted or renamed seat file gets none from
     Igor either (decision 31). Before posting, the process creates a record on the state branch, named by the
     seat and the commit that last changed the file, with a call that fails where the record
@@ -229,42 +238,71 @@ the order Adam set in issue #204.
     use at once, and the notice text, that Igor now reads the change, would be false, since no
     file is left at that path for Igor to read.
 
-**Still open.** Each has a recommendation. For the first, the requirements follow decision 13 as
-Adam gave it, and the recommendation would narrow it. For the others, the requirements follow the
-recommendation.
+32. **A lore read that fails for a local reason at process start exits 1, with no fallback**
+    (Adam, 2026-10-20). The supervisor restarts the process, as for a start GitHub does not
+    answer. The applied commit would sit in the same worktree, so falling back to it does not
+    help. *Rejected:* exiting 78, which tells the supervisor not to restart, so a full disk or a
+    held lock would leave the rank down after the fault cleared.
+33. **A rank whose lore worktree cannot be put back keeps working, from memory** (Adam,
+    2026-10-20). After a refused read or a local fault the process checks out its applied commit
+    again; where that fails too, the worktree is stuck. Each passing read keeps its configuration
+    and lore entries in memory, and a cycle whose worktree is stuck runs on those, reads nothing
+    from the worktree, and tries the repair again at the next cycle start. Each cycle start whose
+    repair fails is a local fault, so after three in a row `lore:read:<role>-<rank>` opens.
+    *Rejected:* taking no new item while the worktree is stuck, which stops a rank's work for a
+    fault on its own disk.
+34. **Each rule using #171's read-cleared kind says when it opens** (Adam, 2026-10-20). #171's
+    definition lets the rule set how many failing reads in a row open the condition. A seat file
+    that fails to decrypt opens `seat:<id>:decrypt` on the first; a local fault opens
+    `lore:read:<role>-<rank>` on the third.
+35. **An App that loses access to a repository the role works, or to the lore repository, refuses
+    the read** (Adam,
+    2026-10-20). Every rank's read is then refused under `lore:config:<role>`, though installing
+    the App again cures it with no new commit. A commit that stops naming the repository cures it
+    too. Either cure clears the condition at the next passing read, since the refused commit
+    read again counts as one that descends from itself (decision 13).
 
-- **Which passing read clears `lore:config:<role>`.** Under decision 13 any rank's passing read
-  clears it, including a rank that has not yet fetched the refused commit and passes on the
-  commit before it. That rank clears the condition, and a sibling still on the refused commit
-  opens it again at its next cycle start, so the condition can open and clear more than once in
-  the poll interval before every rank has fetched. *Recommended:* only a passing read of a commit
-  that holds the refused one, its descendant, clears it; a rank behind the refused commit has not
-  seen the cure. An answer that agrees adds that clause to *A lore read at each cycle start
-  applies what passes and refuses what fails*.
-- **A local fault at start.** Decision 13 covers a cycle start. *Recommended:* a start whose first
-  read fails for a local reason exits with status 1, which the supervisor restarts, as for a
-  start GitHub does not answer, and does not fall back to the applied commit, which the same
-  worktree would hold. A full disk or a held lock is not a bad setup, so 78, which tells the
-  supervisor not to restart, would leave the rank down after the fault cleared. Requirement:
-  *`igor serve` starts on the newest commit that passes*.
-- **A cycle whose working tree cannot be put back.** After a refused read or a local fault the
-  process checks out its applied commit again, so that the cycle's lore entries come from it.
-  *Recommended:* where that checkout fails too, the cycle takes no new item, since it could not
-  read the lore entries its items need. Requirement: *A process applies one lore commit at a
-  time, whole*.
-- **Three local faults before `lore:read:<role>-<rank>` opens, against #171's read-cleared
-  kind,** which opens on the first failing read with no recurrence count. *Recommended:* #171's
-  *A read-cleared condition opens on a failing read and clears on a passing one* gains a clause
-  letting a rule set how many failing reads in a row open it. That is #171's to decide, and is
-  reported to it. Until #171 has the clause, this change defines the failing read as the third
-  local fault in a row. Requirement: *A lore read at each
-  cycle start applies what passes and refuses what fails*.
-- **An App that loses access to a repository the configuration names.** The App check then
-  fails on a commit that passed before, so every rank's read is refused under
-  `lore:config:<role>`, though installing the App again cures it with no new commit.
-  *Recommended:* keep it a refused read: a commit that stops naming the repository cures it too,
-  and the next passing read after either cure clears the condition. Requirement: *`igor serve`
-  starts on the newest commit that passes*.
+**Still open.** Two for Adam, each with a recommendation; the requirements follow decision 13 as
+written.
+
+- **A force-pushed branch that drops the refused commit.** Under decision 13 only a passing read
+  of the refused commit, or of one that descends from it, clears `lore:config:<role>`. A force-push that
+  replaces the refused commit with a passing one that does not descend from it cures every rank,
+  but no read then clears the condition. *Recommended:* a passing read of a commit that is not an
+  ancestor of the refused one clears it too; only a commit older than the refused one does not.
+- **A rank that rereads the refused commit after the fix cleared it.** Every cycle start rereads
+  the commit the fetched ref names. Rank 1 passes on the fix and clears `lore:config:<role>`;
+  rank 2's next cycle start comes before its next fetch, so it refuses the refused commit again
+  and reopens the condition, until its fetch brings the fix. So, as written, the condition can
+  still open and clear more than once, which decision 13 meant to prevent. *Recommended:* a refused read of a commit that is an ancestor of the one whose
+  read last cleared the condition does not reopen it.
+
+**Findings of the 2026-10-20 consistency reads, for this change's next revision,** none fixed
+yet (the reads' other findings are fixed in this revision):
+- For Adam: anyone who can write `.git/config` can usually write the fetched ref too, or point the
+  upstream at another public `https://github.com/` repository after start, which the checks
+  allow; the threat model needs stating, or the upstream fixed at start. A key file one server
+  cannot read fails a startup check, so it opens the role's `lore:config:<role>` rather than
+  counting as a local fault: a fault on one server opens the role-wide condition meant for a bad
+  commit, and every other server's passing read clears it. Each condition's scope may also be
+  wrong, since #101 keys a condition by what cures it: `lore:config:<role>` opens once per role
+  although one commit cures every role, and `lore:read:<role>-<rank>` once per rank although a
+  full disk is shared by every rank on the server. A deleted
+  state branch would let a late process announce a seat change again (`design.md`). Whether two
+  ranks on different poll intervals can put two workers on one item waits on #179's model
+  (decision 21).
+- For the author: a force-push followed by a refused commit that adds a removed seat back escapes
+  decision 15's derivation; a notice whose record call failed before a clean restart is never
+  posted, against "exactly one"; #171's single-file re-read is called a lore read, which this
+  change's definition excludes; #171's reason for refusing an in-checkout `seatKey` names a reset
+  this change never makes (task 6.2 should rewrite both #171 passages); the removal's timing and the
+  commit-comment scenario still contradict #171 until task 6.2 lands there before #171 archives;
+  the failing file's path in `lore:config`'s report needs a form check; "the most recent commit
+  that changed" a seat file is undefined for merge commits; nobody has measured that GitHub
+  records who pushed a commit to a pull request; whether the image's user can write the checkout
+  under compose is unmeasured; the dependency on #192 is not listed under *Impact*; the *applied
+  ref* is used before it is defined; and the scenarios do not cover the rename case, the
+  re-checkout after a local fault, or a config key added after start counting as a local fault.
 
 **Measurements**, each a task: that fetches into distinct refs and checkouts of distinct
 worktrees, from several processes sharing one object store, do not fail on each other's git
