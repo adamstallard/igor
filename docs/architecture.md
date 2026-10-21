@@ -336,7 +336,13 @@ organization-wide answer from every other role. Every file on the branch is ther
 for every role whose Igor uses that lore repository. `igor lore-search` still returns a file
 only when the repository of the item the run works is no more visible than the repository the
 file names. A worker could carry what it read into its pull request, and filtering what it is
-given is the only certain guard.
+given is the only certain guard. The rule ranks visibility, not readership, so a file about
+one private repository can reach a worker on another. That is a known limit: a team's lore
+repository serves one team, whose private repositories usually share readers, and comparing
+collaborator lists on each search would be costly and brittle.
+
+The Igor fetches the `questions` branch once, when a run starts, and every search in that run
+reads that copy, so a run's results do not change while it works.
 Status does not bind a search: it may return an in-scope `provisional` or `deprecated` entry,
 labelled as not lore, and only `active` entries count as lore. A search outside an Igor's
 run, such as a person running the inquisitor skill in their own session, has no role to
@@ -443,6 +449,12 @@ who judges the proposal.
 
 The review reads citations from the lore repository's `questions` branch. Where that branch is
 missing or holds no citation at all, the review shows citations as not checked, never as zero.
+People's own sessions of the inquisitor also push citations there, so the branch can hold
+some while every Igor push has failed, for example while rulesets refuse the Igor's App. The
+review then also shows citations as not checked: when the run records on `igor-state` count at
+least one citation that failed to push, and the branch holds no citation an Igor pushed. A
+count there would leave out every citation from Igor runs, and would look like a lower bound
+when it is not one.
 Otherwise it shows each count as a lower bound, because the Igor does not push every citation:
 the paragraphs below list the ones it holds back. Since citations only hold an entry back, a
 citation missing from the count can only fail to hold back an entry that was cited, and the
@@ -498,17 +510,21 @@ with no worker (#211). It pushes that run's citations by the same rules as a wor
 The inquisitor also puts question and miss files on the `questions` branch: a question file
 for a question about an organization or project, including one recording an agent's own
 choice, and a miss file. A worker cannot push these either. It reports each one, and the Igor pushes it under the citation rules: only
-when the run publishes an artifact or hands off, only when the file's `repository` key names a
-repository the role works, and never to a lore repository more visible than that repository
-or the item's. A worker asks a person only in its handback comment, so the run that asks
+when the run publishes an artifact or hands off, and never to a lore repository more visible
+than the item's repository or the one the file's `repository` key names. An Igor of any role
+pushes such a file whatever repository its key names, since organization and project
+questions are shared by every role. A worker asks a person only in its handback comment, so the run that asks
 a question never holds its answer. The answer can reach only a later run on the same item,
 once someone has replied to the handback, and it is then a comment on that item. The Igor
 therefore pushes only an unanswered question file, one recording the agent's own choice, a miss
-file, or a question file whose answer links to a comment on the run's item; anything else
-claiming a person's answer could be forged. It never pushes one at a path the branch already
+file, or a question file whose answer links to a comment on the run's item and whose question
+is one the Igor posted in the handback that comment replies to. Anything else claiming a
+person's answer could be forged, or pair a real answer with another question. It never pushes one at a path the branch already
 holds, so an answered question file goes beside the unanswered one. The Igor pushes nothing to the `questions` branch from a run treated as having met a
-sensitive question, citations included. It refuses a file holding a string shaped like a
-credential, and counts each file it does not push, by reason.
+sensitive question, citations included. It refuses a file holding a credential. It finds one with
+the matcher that redacts every write to `igor-state` (#217). That matcher also matches the
+seat token, the model-provider credential in the worker's environment, which a matcher of
+token prefixes would miss. The Igor counts each file it does not push, by reason.
 
 No citation goes to a lore repository more visible than the repository the question concerns,
 which during a run is the repository of the item the run works. A citation tells its readers

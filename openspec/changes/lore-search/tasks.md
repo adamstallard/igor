@@ -53,6 +53,8 @@
       Gate two chooses how the command reaches the Igor, and the command grants the worker no
       file access, command or credential. Tests for each scenario of *An Igor runs its worker's
       lore searches*, and for role-config's *Declared commands bound what the worker may run*
+      and *Listing the search command is no widening*, which also needs role validation's
+      monotonic check to treat `igor lore-search` as outside it
 
 ## 3. Citations made during a run
 
@@ -116,7 +118,10 @@
 - [ ] 3.9 On the channel of 3.1, the worker reports each question and miss file it would put
       on the `questions` branch, and the Igor pushes it under the rules of *An Igor publishes
       the questions-branch files its worker reports*, reusing 3.3's branch creation and retries
-      and 3.5's counts. Tests for each of that requirement's scenarios but two: *A worker
+      and 3.5's counts. The credential check calls #217's credential redaction, never a
+      copy of it, so #217 merges before this is built. The check that an answer's question is
+      one the Igor asked reads the Igor's own handback comment on the item from GitHub. Tests
+      for each of that requirement's scenarios but two: *A worker
       reports no questions-branch file for a question with a category*, which is the inquisitor
       skill's behaviour inside the worker, as in 3.1, and *The Igor's own inquisitor run pushes its questions-branch files under the same rules*,
       which waits on 3.6; and for *A questions-branch file push needs no allow action*
@@ -140,5 +145,9 @@
       reply. If none ever does, file an issue: no refusal record then keeps a reply, and
       nothing checks igor's limit patterns.
 - [ ] 4.5 Whether a worker allowed only `Bash(igor lore-search)` can feed the command its
-      standard input, through a heredoc or otherwise. If it cannot, give the command another
+      standard input, through a heredoc or otherwise, in a form that keeps the text out of
+      shell expansion, such as a quoted heredoc. If it cannot, give the command another
       way to take the text before any worker relies on it.
+- [ ] 4.6 Whether the Igor can read back, from its handback comment on an item, each question it
+      posted there, in a form decision 30's match can compare. If it cannot, file an issue:
+      until then every log file holding a person's answer is refused.
