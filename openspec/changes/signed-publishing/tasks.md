@@ -85,9 +85,9 @@
 - [ ] 0.20 Measure whether sonnet's triage gives the same answer on the same diff from run to
       run. Record the result in design, *Measurements*
 - [ ] 0.21 Measure whether `claude -p --resume` continues the session of decision 40's first
-      turn when #174 resets the step's home before each `claude -p`. Record the result in design,
-      *Measurements*; if it does not, Adam decides between the options of the proposal's *For
-      Adam* 4 before task 1.1 is built
+      turn, given that #174 resets the step's `~/.claude` before each step and not between the
+      step's first turn and its resumed call (proposal, decision 48). Record the result in design, *Measurements*; if it does
+      not, the resume goes back to Adam before task 1.1 is built
 
 ## 1. Verifying and publishing
 

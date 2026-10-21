@@ -63,7 +63,9 @@ git directory:
    command line. Where no worker run precedes the post, such as a reply to a mention, the step
    that writes the post SHALL write its goals file in a first turn, before the first call, into
    an outbox Igor gives it, and Igor SHALL resume that session (`claude -p --resume`) after the
-   first call. Igor SHALL read every goals file a model step writes, for a post or a commit, as
+   first call, with the same `HOME` as the first turn. #174's *Every model step in the worker's
+   home starts from Igor's template* resets that home before each step, not between the first
+   turn and the resumed call. Igor SHALL read every goals file a model step writes, for a post or a commit, as
    #175's *The Igor reads no file on the worker's behalf through a link* requires of every file
    the worker user wrote, and SHALL count a missing or empty goals file as a failed attempt. Igor SHALL give the step the rules and the pass token the first
    call prints, in the step's prompt on stdin. That prompt SHALL tell the step to quote

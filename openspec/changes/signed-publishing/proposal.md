@@ -7,10 +7,10 @@ Adam's answers of 2026-10-19 to the twenty questions an earlier revision of this
 him, in the order he was asked them: that revision's *For Adam* 1 is decision 20, and its 20 is
 decision 39. The next revision asked him five more questions. Decisions 40 to 43 are his
 answers of 2026-10-20 to its questions 1, 2, 3 and 5, in that order. Decision 44 is one he
-made the same day, reviewing #216. Decisions 45 and 46 are his answers of 2026-10-21: 45 to question 4 of
-the revision that asked five, and 46 to the question of #216's question files, which the next
-revision added. That revision's other question, decision 40's resume, waits on another decision
-of his (*For Adam* 4). Decision
+made the same day, reviewing #216. Decisions 45, 46 and 48 are his answers of 2026-10-21. Decision 45
+answers question 4 of the revision that asked five; decisions 46 and 48 answer the two
+questions the revision after that one added, on #216's question files and on decision 40's
+resume. Decision
 47 records that he merged shared-skills PR #27 the same day.
 
 Terms. An *Igor* is one role of the agent, acting under its own GitHub App; the *item* is the
@@ -312,6 +312,16 @@ whole change before any hunt. The *state branch* is where Igor records each item
     `prose check` takes `--message-goals-file`; Igor runs only `sign` and `check`. Each such
     file holds goals separated by `;`, with no path pattern, unlike the `pattern: goal; goal`
     lines of `check`'s `--goals-file`. Task 0.16, which waited on PR #27, is ticked.
+48. **#174's reset leaves decision 40's resume its session (Adam, 2026-10-21).** #174
+    (`pinned-skills`) resets the step's `~/.claude`, where Claude Code keeps the session log,
+    before each model step, and not between a step's first turn and its resumed call. So the
+    first turn's session log is still there when Igor runs `claude -p --resume`. Adam chose that
+    per-step reset, with #174 copying the worker's session log out before a reset deletes it,
+    over giving each run a Claude Code configuration directory of its own (`CLAUDE_CONFIG_DIR`),
+    which #216 had proposed. Whether the resume then continues the session is still measured,
+    by task 0.21.
+    *Rejected:* a second step given the first turn's goals file, with no resume, the fallback
+    this change had kept for a reset that deleted the session.
 
 **Reported to other changes**, not edited here:
 
@@ -354,8 +364,9 @@ whole change before any hunt. The *state branch* is where Igor records each item
     than the token, and whether goals given by path pattern cover a doc first changed after the
     first call. A token prose refuses always gets a new first call.
   - Task 0.20: whether sonnet's triage gives the same answer on the same diff from run to run.
-  - Task 0.21: whether `claude -p --resume` continues the session of decision 40's first turn
-    when #174 resets the step's home before each `claude -p` (*For Adam* 4).
+  - Task 0.21: whether `claude -p --resume` continues the session of decision 40's first turn,
+    given that #174 resets the step's `~/.claude` before each step and not between its first
+    turn and its resumed call (decision 48).
 - Every other measurement has run; `design.md`, *Measurements*, records what each showed.
 - **Findings of the 2026-10-19 consistency read left for the next pass.** Each is the
   author's to fix unless it names another change, and none is built:
@@ -425,8 +436,7 @@ whole change before any hunt. The *state branch* is where Igor records each item
     rationale sentences sit in `task-execution`'s requirement text: that every trailer binds
     the last staging, and that prose keeps its token store in the git directory.
 
-**For Adam.** Questions 1 to 3 come from the 2026-10-21 consistency read and have no
-recommendation yet; question 4 waits on another decision of his:
+**For Adam,** from the 2026-10-21 consistency read, none with a recommendation yet:
 
 1. **The description after a second run that follows a conflict resolution.** Decision 45 puts
    that run's commit on top of the merge. A conflict resolution leaves the description as it
@@ -441,12 +451,6 @@ recommendation yet; question 4 waits on another decision of his:
    model calls after the worker, and nothing says what happens when the gate names no seat, or
    the provider refuses, partway through them: a failed attempt, a handoff, or an unsigned
    draft as after a lost claim.
-4. **Decision 40's resume, which waits on a decision of Adam's.** #174 (`pinned-skills`) resets
-   the step's `~/.claude` before every `claude -p`, which deletes the first turn's session log,
-   so `claude -p --resume` would find no session. Adam is choosing between #216's per-run
-   `CLAUDE_CONFIG_DIR` (#216's decision 87) and #174's per-run home with its template reset,
-   and this question waits on that choice. If the resume cannot work, the fallback is a second
-   step given the first turn's goals file, with no resume. Task 0.21 measures the resume.
 
 ## Why
 

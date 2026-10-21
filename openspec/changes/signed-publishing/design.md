@@ -180,7 +180,9 @@ option. None of these goals reaches a command line, which every user on the serv
 A post that no worker run precedes, such as a reply to a mention, gets its goals from the step
 that writes it: that step writes its goals file in a first turn, Igor runs the first call with
 it, and resumes the same session (`claude -p --resume`) with the rules and the token (proposal,
-decision 40).
+decision 40). #174 resets the step's `~/.claude`, where Claude Code keeps the session log,
+before each model step, and not between the step's first turn and its resumed call. So the
+first turn's session log is still there to resume (proposal, decision 48).
 
 ### A lost claim stops the signing steps
 
