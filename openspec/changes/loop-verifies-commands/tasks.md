@@ -4,8 +4,9 @@
       user, its kill, and its removal of what the worker user wrote.
 - [ ] 0.2 Start after `concurrent-instances` (#179) has merged. Its sweep goes by rank, so the
       checks need no change to `src/sweep.ts`.
-- [ ] 0.3 Start after `keep-action-log` (#188) and then `review-evidence` (#190) have merged.
-      Archive after both, and after #175 and #179.
+- [ ] 0.3 Start after `redact-state-branch` (#217), `keep-action-log` (#188) and then
+      `review-evidence` (#190) have merged. Archive after #217, #188 and #190, and after #175
+      and #179.
 - [ ] 0.4 Measure whether an Igor's GitHub App, with the permissions `docs/deployment.md` lists,
       may call `convertPullRequestToDraft` and `markPullRequestReadyForReview` on its own pull
       request. Record the result in this
@@ -90,8 +91,9 @@
       once, and on `stopped` kill the running check and return the stop outcome. On a lost
       claim, finish the round, start no second run, and offer the work with that round's result.
 - [ ] 2.5 Keep each check's exit code, duration, and the last 64 KiB of its combined stdout and
-      stderr as it runs. Redact that with credential redaction, the function `keep-action-log`
-      (#188) task 3.1 builds; then keep its last 1,000 characters and discard the rest. Write
+      stderr as it runs. Redact that with credential redaction, `redact` in `src/redact.ts`,
+      which `redact-state-branch` (#217) implements; then keep its last 1,000 characters and discard
+      the rest. Write
       none of the output to disk or to the execution row.
 - [ ] 2.6 Where any check did not pass, restore the tree: under `serve` as the worker user,
       from the tree object #175 records before the checks; under `run` as the Igor's own

@@ -60,7 +60,11 @@
    (`review-evidence`)** (Adam, 2026-10-13). It also follows #175, under decision 5, and #179,
    whose sweep it relies on (*Impact*). #153 may land before or after it. Issue #204, the only
    place the whole archive order is stated, lists #188, #190 and then this change, all after
-   #175 and #179 (Adam, 2026-10-19).
+   #175 and #179 (Adam, 2026-10-19). It also follows `redact-state-branch` (#217), because it
+   cites #217's requirement *Credential redaction replaces every credential the Igor knows*
+   and calls the function #217 implements. That requirement is the one redaction rule: Adam
+   decided on 2026-10-19 that #217 defines it, and `keep-action-log` (#188), which first
+   defined it, now cites #217 too.
 10. **The second run's changes are a second commit, on top of the first run's signed commit**
     (Adam, 2026-10-19, on #153's *For Adam* 20). Where #153 is built, the first run's changes
     are a signed commit before the first round runs (decision 4). The second run's edits become
@@ -300,7 +304,7 @@ None.
   only into its table, while decision 7 adds a comment after a later push. And its failed Tests
   row says the pull request is a draft, which is false where GitHub refuses the conversion
   (task 0.4) or the draft (task 0.5); it needs a wording for that case.
-- **Overlaps `keep-action-log` (#188)**, which defines *credential redaction* and builds its
-  function.
+- **Overlaps `redact-state-branch` (#217)**, which defines *credential redaction* and
+  implements its function, `redact` in `src/redact.ts`. Decision 9 puts this change after it.
 - Code: `src/role.ts`, `src/execute.ts`, and the GitHub adapter (returning a pull request to
   draft). Docs: `README.md` roles section, `templates/org.yaml`.

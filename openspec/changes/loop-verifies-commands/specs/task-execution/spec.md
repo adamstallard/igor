@@ -297,8 +297,11 @@ In the pull request body, the last round's result SHALL appear only in the evide
 check that failed or timed out in the block #190 lays out under its table.
 
 Before a check's output is published or given to the worker, it SHALL be redacted by
-*credential redaction*, the rule `keep-action-log` (#188) defines, and then cut to its last 1,000
-characters. While a check runs, execution SHALL hold at most the last 64 KiB of its output.
+*credential redaction*, the requirement *Credential redaction replaces every credential the Igor
+knows* in the change `redact-state-branch` (#217), which matches seat tokens and credential-named
+variables' values by value and tokens, private keys and URL credentials by pattern. It SHALL
+then be cut to its last 1,000 characters, both where it is published and where it is given to
+the worker. While a check runs, execution SHALL hold at most the last 64 KiB of its output.
 
 Execution SHALL also run the checks, with the same second run where one does not pass, before
 every later push of the worker's changes onto an existing pull request: a conflict resolution,
