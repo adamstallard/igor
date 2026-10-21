@@ -26,12 +26,9 @@ environment the worker was given, without its model login (`CLAUDE_CODE_OAUTH_TO
 `ANTHROPIC_API_KEY`). Under `igor serve` that user is the worker user `worker-user` (#175)
 defines. Under `igor run` it is the Igor's own account, as it is for the worker.
 
-A check's environment SHALL also hold each credential its repository's entry declares
-(`role-config`'s *The org base declares each repository's checks*), under its declared name.
-Execution registers each such value for credential redaction, with #217's `rememberSecret`,
-before the first check that gets it starts, as #175's *A worker gets a secret only
-through the Igor, which registers it* requires. A worker run SHALL NOT get it in its environment
-(*The worker is given an explicit environment holding no credential but its seat's*).
+Execution SHALL add no variable to a check's environment beyond the worker's environment, less
+its model login. Execution SHALL NOT run a `ci_only` line (`role-config`'s *The org base
+declares each repository's checks*).
 
 #### Scenario: A check runs as the worker user
 
@@ -39,12 +36,17 @@ through the Igor, which registers it* requires. A worker run SHALL NOT get it in
 - **THEN** the test runs as the worker user
 - **AND** its environment holds neither `CLAUDE_CODE_OAUTH_TOKEN` nor `ANTHROPIC_API_KEY`
 
-#### Scenario: A check gets its declared credential, and the worker does not
+#### Scenario: A CI-only check is left to the repository's CI
 
-- **WHEN** `org/web` declares `credentials: [NPM_TOKEN]`, and a check's output quotes the value
-- **THEN** the check's environment holds `NPM_TOKEN`
-- **AND** the worker's environment, in both runs, does not
-- **AND** the value is `[redacted]` wherever execution stores or publishes that output
+- **WHEN** `org/web` lists `npm test` under `checks` and `npm run test:e2e` under `ci_only`, and
+  a worker changes `org/web`
+- **THEN** execution runs `npm test` and not `npm run test:e2e`
+- **AND** the pull request's Tests row names `npm run test:e2e` as a check Igor did not run
+
+#### Scenario: A CI-only check makes no draft
+
+- **WHEN** every check Igor ran on `org/web` passed, and `org/web` lists a `ci_only` line
+- **THEN** the pull request opens ready, without waiting for any CI result
 
 #### Scenario: A check under igor run runs as the Igor
 
@@ -321,14 +323,14 @@ it SHALL request the role's reviewers, unless the claim was lost.
 
 In the pull request body, the last round's result SHALL appear only in the evidence section that
 `review-evidence` (#190) adds, in the wording #190 gives its Tests row, with the output of each
-check that failed or timed out in the block #190 lays out under its table.
+check that failed or timed out in the block #190 lays out under its table. The Tests row SHALL
+also name each `ci_only` line as a check Igor did not run, in #190's wording where #190 gives
+one and otherwise in the wording of this change's task 3.2. Execution SHALL NOT wait for or read
+any CI result, and a `ci_only` line makes no pull request a draft.
 
-Before a check's output is published or given to the worker, it SHALL be redacted by
-*credential redaction*, the requirement *Credential redaction replaces every credential the Igor
-knows* in the change `redact-state-branch` (#217), which matches seat tokens and credential-named
-variables' values of at least 8 characters by value, and tokens, private keys and URL
-credentials by pattern. It SHALL
-then be cut to its last 1,000 characters, both where it is published and where it is given to
+Before a check's output is published or given to the worker, it SHALL be redacted as
+`redact-state-branch` (#217)'s *Credential redaction replaces every credential the Igor knows*
+requires. It SHALL then be cut to its last 1,000 characters, both where it is published and where it is given to
 the worker. While a check runs, execution SHALL hold at most the last 64 KiB of its output.
 
 Execution SHALL also run the checks, with the same second run where one does not pass, before
