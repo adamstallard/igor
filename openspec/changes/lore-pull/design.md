@@ -152,10 +152,22 @@ succeeded, and the second stage found the file absent.
 A refused commit opens `lore:config:<role>`. A passing read by any rank clears it, where the
 commit read is the refused one or descends from it (Adam, 2026-10-20): `git merge-base
 --is-ancestor <refused> <read>` tells. A passing read of the branch head the rank fetched also
-clears it where neither `--is-ancestor <refused> <head>` nor `--is-ancestor <head> <refused>`
-holds, so a force-push that dropped the refused commit clears it (Adam, 2026-10-21). The head
-counts only where the rank's last successful fetch finished after the time the condition's
-record gives for its opening; the rank keeps that fetch's time in memory. The condition's
+clears it where `--is-ancestor <refused> <head>` does not hold, so a force-push that dropped the
+refused commit clears it (Adam, 2026-10-21).
+
+That head counts only where the fetch that brought it started after the rank first knew the
+condition was open, from its own refusal or from the condition's record read at a cycle start.
+A head from an earlier fetch is usually just older than the refused commit, and says nothing
+about whether the branch still holds it. The rank keeps that order in memory, as "this fetch
+began after I knew", rather than comparing a fetch time with the time on the condition's
+record: that time comes from another server's clock, which nothing keeps in step with this
+one's. A restarted rank learns the condition again at its first cycle start.
+
+The rank's object store must also hold the refused commit; where it does not,
+`--is-ancestor` exits 128 rather than 1, and the rank cannot tell whether the head holds it, so
+its read clears nothing by this rule. That costs little: the rank that refused the commit holds
+it, as does every rank sharing its server's object store, and one of them clears the condition
+once its own fetch brings the new head. The condition's
 record names the commit whose refusal opened it; a refusal of another commit while the
 condition is open changes nothing. The record that clears it names the commit whose read
 cleared it, the *clearing commit*.

@@ -267,14 +267,14 @@ and Adam narrowed it on 2026-10-20. Decision 10 follows the order Adam set in is
 
 36. **A force-push that drops the refused commit clears `lore:config:<role>`** (Adam,
     2026-10-21). A passing read of the lore branch's head also clears it where the refused commit
-    is no longer in that head's history. A rank whose head is an ancestor of the refused commit
-    has not fetched it yet, so its passing read still clears nothing (decision 13). Nor does a
-    head whose fetch finished before the condition opened. Such a head is usually an ancestor of
-    the refused commit, but it need not be: a fetched ref taken from the checkout's own
-    remote-tracking ref (decision 16), or one from before an earlier force-push, can hold an
-    unrelated history. Without that limit, a rank whose fetches had failed could clear the
-    condition while the refused commit is still the branch's tip, and decision 37 would then
-    keep it clear.
+    is no longer in that head's history, including a force-push back to the refused commit's
+    parent. The head counts only where the fetch that brought it started after the rank first
+    knew the condition was open, an order the rank keeps for itself rather than comparing its
+    clock with the time another server wrote on the condition's record. A head from an earlier
+    fetch is usually just older than the refused commit: its rank has not fetched the refused
+    commit yet, so its passing read clears nothing (decision 13).
+    Without that limit, a rank whose fetches had failed could clear the condition while the
+    refused commit is still the branch's tip, and decision 37 would then keep it clear.
 37. **A commit already known does not reopen `lore:config:<role>`** (Adam, 2026-10-21). A
     refused read of the commit the condition refused, or of the commit whose read cleared it or
     one of its ancestors, leaves the condition clear. A rank whose fetch has not yet brought the fix would
@@ -289,6 +289,33 @@ and Adam narrowed it on 2026-10-20. Decision 10 follows the order Adam set in is
     replaces decision 14's rule that an added seat file gets no notice.
 
 **Still open:** the findings below, for this change's next revision.
+
+**Findings of a later 2026-10-21 consistency read, run after this revision's first fixes, for the
+next revision.** This revision fixes four: the head rule compared one server's clock with a time
+another wrote; a rank lacking the refused commit's object; a seat file deleted and added back
+between two applies; and two missing scenarios. None of the items below is fixed:
+- For Adam: some startup checks depend on the server, not the commit, such as an unreadable App
+  key or a broken `destination` checkout, so a fault on one server opens the role-wide condition,
+  another server's passing read clears it, and decision 37 then keeps it clear while the broken
+  server refuses the clearing commit, so that server runs on its old commit with no condition
+  open and nobody told; `design.md`'s premise that a running process's checks
+  never change is false in general. #216 needs this change to fetch a separate `destination`
+  repository, which decision 18 forbids, and its `igor run` fetches the `questions` branch, which
+  decision 28 forbids. #216 is `lore-search`. The checkout must now be writable by the service
+  user, since each process's worktree, refs and objects live in its `.git`, which #192's guide
+  says it need not be, and no decision states that move.
+- For the author: the scenarios *A rotated token is announced once* and *A token changed back is
+  announced again* promise one notice without saying who pushed, while the rule excludes a lender
+  who opened the pull request and pushed the change, as in a lender's own rotation; the condition
+  a refused cycle-start read raises is defined both here and in #179's *A retired rank does not
+  hold its items forever*; the `stuck-conditions` delta leaves no way for a fix in a separate
+  `destination` repository to arrive; a merged symlink or committed `.igor` path in a worktree is
+  not refused; `SIGHUP` "from its first moment" is unmeasured for the window before Node installs
+  the handler; `git worktree repair` with no path rewrites the links of every linked worktree, other processes'
+  included, so it needs the process's own path; the report of local changes
+  to the checkout names no destination; `GIT_CONFIG_COUNT` entries in the environment still
+  apply to the fetch; and the rule excluding a lender who pushed says nothing of when the pusher
+  cannot be learned.
 
 **Findings of the 2026-10-21 consistency read, for this change's next revision.** This revision
 fixes five: a stale head clearing the condition, a restart on a stricter Igor, notices for files

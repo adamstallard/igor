@@ -93,17 +93,20 @@
       names, with the seats task 4.1 leaves out, and opens the read-cleared condition
       `lore:config:<role>` where it is not open, whose report names the commit, the file and the
       check and quotes no value from the file, and records the refused commit. A passing read by
-      any rank of the role clears it where the commit read is the refused one or descends from it
-      (`git merge-base --is-ancestor`), or is the rank's fetched head, neither descending from the
-      refused commit nor its ancestor, from a fetch that finished after the time the condition's
-      record gives for its opening (keep the last successful fetch's time in memory); a passing
-      read of an older commit leaves it open. The clearing record names the commit read. A
-      refused read of the refused commit, or of the clearing commit or one of its ancestors, does
-      not reopen it, unless the App check refused it or the read is at process start. Task 3.5
-      covers every scenario of the requirement; these five are the ones this rule adds: *A
-      force-push that drops the refused commit clears it*, *A head fetched before the refusal
-      clears nothing*, *A rank that rereads the refused commit does not reopen it*, *A commit
-      before the fix does not reopen it* and *A new bad commit after the fix reopens it*
+      any rank of the role clears it in two cases. One: the commit read is the refused one or
+      descends from it (`git merge-base --is-ancestor`). Two: the commit read is the rank's
+      fetched head, it does not descend from the refused commit, the fetch that brought it
+      started after the rank first knew the condition was open (keep, in memory, whether each
+      fetch began after that; compare no clock with another process's), and the rank's object
+      store holds the refused commit. A passing read of any other commit leaves it open. The
+      clearing record names the commit read. A refused read of the refused commit, or of the
+      clearing commit or one of its ancestors, does not reopen it, unless the App check refused
+      it or the read is at process start. Task 3.5 writes the tests for every scenario of the
+      requirement; the six this rule adds are *A force-push that drops the refused commit clears
+      it*, *A force-push back to the refused commit's parent clears it*, *A head fetched before
+      the refusal clears nothing*, *A rank that rereads the refused commit does not reopen it*,
+      *A commit before the fix does not reopen it* and *A new bad commit after the fix reopens
+      it*
 - [ ] 3.3b A read that fails while putting the commit in the worktree or reading a file from it,
       the stages `design.md` names, is a local fault: run the cycle on `applied`, open or clear
       no `lore:config:<role>`, and read again at the next cycle start. At the third such cycle

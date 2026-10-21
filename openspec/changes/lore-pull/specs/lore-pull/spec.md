@@ -284,12 +284,18 @@ passing one* defines, keyed by its cure as `condition-backoff`'s *A condition's 
 cure's scope* requires. A refused read by any rank of the role SHALL open it
 where it is not open. The condition is on the role's configuration at the refused commit and
 after it: a passing read by any rank of the role, of the refused commit or of a commit that
-descends from it, SHALL clear it. A passing read of the lore branch's head SHALL also clear it
-where the refused commit is no longer in that head's history: the head neither descends from the
-refused commit nor is an ancestor of it, as after a force-push that dropped the refused commit.
-The head counts only where the rank's own last successful fetch, which brought it, finished
-after the time the condition's record gives for its opening. A passing read of an
-ancestor of the refused commit SHALL NOT clear it. The condition names the commit whose refusal opened it, and a refusal of another commit while it is
+descends from it, SHALL clear it. A passing read of the rank's fetched head, the commit the
+rank's own fetch last brought into its fetched ref, SHALL also clear it where the refused commit
+is not in that head's history, as after a force-push that dropped the refused commit. Two limits
+apply to this second case:
+- The rank's fetch that brought the head SHALL have started after the rank first knew the
+  condition was open, from its own refusal or from reading the condition's record at a cycle
+  start. A rank that restarts learns it again at its first cycle start.
+- The rank's object store SHALL hold the refused commit. The rank that refused the commit always
+  holds it, and so does every rank sharing that server's object store.
+
+A passing read of any other commit that does not descend from the refused one, such as an older
+commit a rank reads before its fetch brings the refused one, SHALL NOT clear it. The condition names the commit whose refusal opened it, and a refusal of another commit while it is
 open SHALL NOT change that commit. The record that clears the condition names the commit whose
 read cleared it. A rank whose last read was refused applies the passing commit at its own next
 cycle start after its fetch brings that commit.
@@ -399,12 +405,27 @@ startup checks, so the read is refused under `lore:config:<role>`.
 - **AND** a rank whose fetch brought B but not yet F reads B
 - **THEN** the rank refuses B, and `lore:config:backend` stays clear
 
+#### Scenario: A force-push back to the refused commit's parent clears it
+
+- **WHEN** `lore:config:backend` is open on commit R, and the lore branch is force-pushed back to
+  R's parent, which passes
+- **AND** a rank that holds R, and that knew the condition was open before its fetch started,
+  fetches that commit
+- **THEN** the rank's read of it passes, and `lore:config:backend` clears
+
 #### Scenario: A head fetched before the refusal clears nothing
 
-- **WHEN** the lore branch was force-pushed, commit R then landed on it and was refused, opening
-  `lore:config:backend`, and a rank whose fetches have failed since before the force-push reads
-  its old head, which passes and is neither an ancestor nor a descendant of R
+- **WHEN** `lore:config:backend` is open on commit R, still the branch's tip, and rank 2, on the
+  server where rank 1 refused R, holds R's object through the shared object store
+- **AND** rank 2's fetches have failed since before R landed, and it reads its own older head,
+  which passes
 - **THEN** `lore:config:backend` stays open
+
+#### Scenario: A restart on a stricter Igor reopens it
+
+- **WHEN** `lore:config:backend` cleared on a read of commit F, and a process whose applied
+  commit is E, older than F, restarts on an Igor whose startup checks refuse F but pass E
+- **THEN** `lore:config:backend` opens, naming F, and the process starts on E
 
 #### Scenario: A new bad commit after the fix reopens it
 
@@ -563,8 +584,11 @@ process the same way.
 When an `igor serve` process's lore read passes, it SHALL compare the seat files of the commit it
 reads with those of the commit its applied ref named until then, before moving the ref. For each
 seat file the new commit changes and still holds at the same path, and for each seat file it adds,
-Igor SHALL post one notice @-mentioning the seat's owner, saying that the change has landed and is
-the one Igor now reads. For a changed file, the owner is the one the file names just before the
+Igor SHALL post one notice @-mentioning the seat's owner, saying that the change has landed and
+is the one Igor now reads. A seat file counts as *added* where the most recent commit that
+changed it created it, its first parent holding no file at that path. That holds even where the
+commit the process applied before held a file at that path, as when the file was deleted and
+added back between two of the process's reads. For a changed file, the owner is the one the file names just before the
 most recent commit that changed it, in that commit's first parent; where the commit the process
 applied before names another owner, Igor SHALL mention that one too. For an added file, the owner
 is the one the added file names. A seat file added again with ciphertext from the lore
@@ -657,6 +681,12 @@ posted for each change a process applies that leaves someone to mention.
 - **WHEN** `seats/bob.yaml` was deleted, and someone other than `bob` opens and pushes a pull
   request that adds it again with the ciphertext it held before, which is merged
 - **THEN** Igor's notice after the merge mentions `@bob`, the owner the added file names
+
+#### Scenario: A file under `seats/` whose name is not a seat id gets no notice
+
+- **WHEN** a merged commit adds `seats/Bob_1.yaml`, whose name is not a seat id's form (lowercase
+  letters, digits and hyphens)
+- **THEN** Igor posts no notice for it
 
 #### Scenario: An owner that is not a GitHub login gets no notice
 
