@@ -64,12 +64,12 @@
       vitest run` entries that the `commands` of the role being worked already holds. Record the
       result in design, *Measurements*; if they do not, Adam decides before building which
       commands to grant for them
-- [ ] 0.16 Depends on shared-skills
+- [x] 0.16 Depends on shared-skills
       [PR #27](https://github.com/adamstallard/shared-skills/pull/27), which adds
       `--goals-file` to prose's `sign` and `--message-goals-file` to its `check`, so that no
-      first call puts a goal on a command line (proposal, decisions 15, 32 and 41). Until it
-      lands, the first calls of tasks 1.1 and 2.1 are not built. This change does not edit
-      shared-skills
+      first call puts a goal on a command line (proposal, decisions 15, 32 and 41). Adam merged
+      it into shared-skills `main` on 2026-10-21, accepting its file format (proposal, decision
+      47). This change does not edit shared-skills
 - [ ] 0.17 Measure whether `git write-tree` in Igor's index equals the Git Data API's tree for a
       binary file and for a file under a clean filter (`core.autocrlf`, an `eol=` or `text=auto`
       attribute), with paths carried as #137 specifies. Record the result in design,
@@ -87,12 +87,12 @@
 - [ ] 0.21 Measure whether `claude -p --resume` continues the session of decision 40's first
       turn when #174 resets the step's home before each `claude -p`. Record the result in design,
       *Measurements*; if it does not, Adam decides between the options of the proposal's *For
-      Adam* 2 before task 1.1 is built
+      Adam* 4 before task 1.1 is built
 
 ## 1. Verifying and publishing
 
 
-- [ ] 1.1 Waits on tasks 0.16 and 0.21. One publishing path that runs `prose sign`'s first call, with Igor's own `GIT_DIR`,
+- [ ] 1.1 Waits on task 0.21. One publishing path that runs `prose sign`'s first call, with Igor's own `GIT_DIR`,
       `GIT_WORK_TREE` and `GIT_INDEX_FILE` and the model's reader goals as `--goals-file`, before
       a model step writes a post. Where no worker run precedes the post, such as a reply to a
       mention, the step that writes it writes its goals file in a first turn into an outbox Igor
@@ -159,11 +159,12 @@
 - [ ] 2.6 In `produce()` and in #150's head push, check that the uploaded tree equals both
       signed trees, that `prose verify-staged` accepts the trailer, and that the subject is the
       issue title with any closing keyword dropped
-- [ ] 2.7 Append the trailers; leave merge commits and citation commits without them (proposal,
-      decisions 30 and 44)
+- [ ] 2.7 Append the trailers; leave merge commits, citation commits and the commits that push
+      #216's question log files and miss files without them (proposal, decisions 30, 44 and 46)
 - [ ] 2.8 Tests: a tree mismatch, a message mismatch and a changed subject each refuse the
       commit, and a tree mismatch goes back to no step; a prose-pass edit is in the tree both
-      trailers name; a citation commit carries no skill trailer; a diff the triage skips runs
+      trailers name; a citation commit and a commit pushing a question log file or a miss file carry no skill
+      trailer; a diff the triage skips runs
       no second bug-hunter iteration and one it does
       not skip runs one, after which no prose pass runs; the signing calls run in Igor's code,
       from the pinned skills directory, and a planted `.git` in the tree runs nothing; a
@@ -181,10 +182,13 @@
       fails the attempt; a dry run checks skill names and `igor role explain` does not; under
       `igor run` without `skills_dir`, a role listing `prose` runs with the person's installed
       skills; a lost claim publishes an unsigned draft and runs no further model step; a second
-      worker run makes a second commit with its own trailers
+      worker run makes a second commit with its own trailers, and where it follows a conflict
+      resolution, that commit goes on top of the merge commit
 - [ ] 2.9 Where #189's checks fail and the worker runs a second time, make that run's edits a
       second commit on top of the first run's signed commit, running the steps of tasks 2.1 to
-      2.7 on that commit's diff only, with its own trailers (proposal, decision 39)
+      2.7 on that commit's diff only, with its own trailers (proposal, decision 39). After a
+      conflict resolution, that commit goes on top of the merge commit, which stays unsigned
+      (proposal, decision 45)
 
 ## 3. The pull request description
 

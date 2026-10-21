@@ -160,6 +160,10 @@ against the first commit: bug-hunter, the prose pass with a new first call, the 
 the triages. The second commit carries its own trailers, bound to its own last staging, and the
 first commit's trailers still verify against the first commit.
 
+After a conflict resolution the second run's commit goes on top of the merge commit instead,
+with its own diff, steps and trailers, and the merge commit stays unsigned (Adam, 2026-10-21;
+proposal, decision 45).
+
 ### The reader goals come from the worker
 
 The model decides each item's reader goals (Adam, 2026-10-19; proposal, decision 32). For a
@@ -372,7 +376,7 @@ design.
   Under decision 16 Igor runs those calls, so the goals would sit on Igor's command line.
   Shared-skills PR #27 adds a file form for each: `--goals-file` for `prose sign`, and
   `--message-goals-file` for the commit message's own goals in `prose check` (proposal, decision
-  41). Task 0.16 waits on that pull request.
+  41). Adam merged it on 2026-10-21 (proposal, decision 47).
 - **0.14, caller-commits mode as the worker user.** With nothing staged, `caller-result.sh`
   minted HEAD's tree, not the change; after the worker wrote to the copy of the index that #175
   keeps in the worker's outbox (a directory the worker shares with Igor, for `git rm` and `git

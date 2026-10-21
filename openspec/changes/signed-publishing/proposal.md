@@ -6,9 +6,12 @@ Each decision names who made it and when. Adam decided 1 to 3, 7, 8 and 18 on 20
 Adam's answers of 2026-10-19 to the twenty questions an earlier revision of this change put to
 him, in the order he was asked them: that revision's *For Adam* 1 is decision 20, and its 20 is
 decision 39. The next revision asked him five more questions. Decisions 40 to 43 are his
-answers of 2026-10-20 to its questions 1, 2, 3 and 5, in that order. Its question 4 has no
-answer yet, and is the first item under *For Adam* at the end of this section. Decision 44 is
-one he made the same day, reviewing #216.
+answers of 2026-10-20 to its questions 1, 2, 3 and 5, in that order. Decision 44 is one he
+made the same day, reviewing #216. Decisions 45 and 46 are his answers of 2026-10-21: 45 to question 4 of
+the revision that asked five, and 46 to the question of #216's question files, which the next
+revision added. That revision's other question, decision 40's resume, waits on another decision
+of his (*For Adam* 4). Decision
+47 records that he merged shared-skills PR #27 the same day.
 
 Terms. An *Igor* is one role of the agent, acting under its own GitHub App; the *item* is the
 issue or pull request it works on. Under the two-gate workflow (#150), *gate one* publishes a
@@ -227,8 +230,8 @@ whole change before any hunt. The *state branch* is where Igor records each item
     its pull request description, the worker writes them to files in its outbox, by path
     pattern for a commit's docs and specs, and Igor passes each file to prose, so no
     goal reaches a command line (decision 15). `prose check` already takes per-file goals that
-    way. `prose sign` gains `--goals-file` in shared-skills
-    [PR #27](https://github.com/adamstallard/shared-skills/pull/27) (task 0.16). Decision 40
+    way. `prose sign` takes them with `--goals-file`, which shared-skills
+    [PR #27](https://github.com/adamstallard/shared-skills/pull/27) added (decision 47). Decision 40
     says who writes the goals for a post no worker run precedes, and decision 41 how a commit
     message's own goals reach prose. *Rejected:* fixed goals per kind of text in Igor's
     code, which cannot say what this item's reader came for.
@@ -273,7 +276,7 @@ whole change before any hunt. The *state branch* is where Igor records each item
     change's docs and specs, and Igor passes it with `--message-goals-file`. `check`'s
     `--goals-file` holds per-file `pattern: goal; goal` lines and cannot carry the message's
     goals, so shared-skills [PR #27](https://github.com/adamstallard/shared-skills/pull/27)
-    adds the option, in the format it gives `prose sign`'s file (task 0.16). *Rejected:* a goal
+    added the option, in the format it gives `prose sign`'s file (decision 47). *Rejected:* a goal
     fixed in Igor's code, such as "review the change; check it is safe to merge", which would
     hold no item text but would not be the model's.
 42. **Igor runs a post's first call too (Adam, 2026-10-20)**, confirming decision 16 for
@@ -288,6 +291,27 @@ whole change before any hunt. The *state branch* is where Igor records each item
     that a lore entry answered a question. It is a machine record with no trailer
     (shared-skills #25's decisions 90 and 110). So it is exempt, as a merge is, from decision
     5's rule that every commit Igor pushes carries its skills' trailers.
+45. **A second worker run after a conflict resolution makes a signed commit on top of the merge
+    (Adam, 2026-10-21).** After Igor merges the base in and resolves a conflict, #189 may run
+    the worker again. That run's edits become a commit of their own on top of the merge commit,
+    with their own diff, steps and trailers, as decision 39 has it for a second run on the first
+    run's commit, and as #189's decision 22 has it. The merge commit stays unsigned (decision
+    30). *Rejected:* folding the fix into the merge commit, which would publish model-written
+    text unsigned.
+46. **#216's question log files and miss files are not signed (Adam, 2026-10-21)**, as decision
+    44 exempts citation commits. The inquisitor skill (shared-skills #25) writes both: a
+    question log file records a question a worker asked or settled itself, and a miss file
+    records a question a person said should have been settled without asking them. The Igor
+    that #216 (`lore-search`) specifies pushes them to the lore repository's `questions`
+    branch. A later Igor reads them, not a person, so the commits that push them
+    carry no skill trailers. *Rejected:* putting each through the prose pass and signing it with
+    a `Prose:` trailer.
+47. **Prose's goals files are in force (Adam, 2026-10-21).** Adam merged shared-skills
+    [PR #27](https://github.com/adamstallard/shared-skills/pull/27) into shared-skills `main`,
+    which accepts its file format. `prose start` and `prose sign` take `--goals-file`, and
+    `prose check` takes `--message-goals-file`; Igor runs only `sign` and `check`. Each such
+    file holds goals separated by `;`, with no path pattern, unlike the `pattern: goal; goal`
+    lines of `check`'s `--goals-file`. Task 0.16, which waited on PR #27, is ticked.
 
 **Reported to other changes**, not edited here:
 
@@ -301,8 +325,7 @@ whole change before any hunt. The *state branch* is where Igor records each item
   for the commits they push (decision 36). Their commits have no issue, so decision 6's subject
   rule, the issue title, needs a form for them (*Still open*).
 - **#174** (`pinned-skills`) is to fall back to the person's installed skills under `igor run`
-  (decision 29). Its decision 14, and #175's decision 15, keep the session mark that
-  `prose start` writes in the worker's home; with decision 25 nothing writes it.
+  (decision 29).
 - **#175** (`worker-user`) binds the trailers to the API's tree where the two trees differ,
   which decision 35 reverses, and cites a requirement of this change, *#153's trailers are
   created once, by the Igor, against the tree it staged*, that no longer exists by that name.
@@ -323,10 +346,6 @@ whole change before any hunt. The *state branch* is where Igor records each item
 - **Before building**, six tasks:
   - Task 0.15: whether bug-hunter's regression tests run under the commands a role already
     grants.
-  - Task 0.16: prose's `sign` and `check` taking reader goals from a file, in shared-skills
-    [PR #27](https://github.com/adamstallard/shared-skills/pull/27): `sign` with
-    `--goals-file`, and `check` with `--message-goals-file` for the message's goals (decision
-    41). The first calls of decision 16 wait on it.
   - Task 0.17: whether a binary file and a clean-filtered file give equal trees.
   - Task 0.18: whether bug-hunter's triage runs as its own step on a given diff and model, and
     reports skip or hunt in a form Igor can read.
@@ -336,9 +355,7 @@ whole change before any hunt. The *state branch* is where Igor records each item
     first call. A token prose refuses always gets a new first call.
   - Task 0.20: whether sonnet's triage gives the same answer on the same diff from run to run.
   - Task 0.21: whether `claude -p --resume` continues the session of decision 40's first turn
-    when #174 resets the step's home before each `claude -p` (*For Adam* 2).
-- Whether the question log files and miss files that #216's Igor pushes to the lore
-  repository are model-written text that prose must sign (*For Adam* 3).
+    when #174 resets the step's home before each `claude -p` (*For Adam* 4).
 - Every other measurement has run; `design.md`, *Measurements*, records what each showed.
 - **Findings of the 2026-10-19 consistency read left for the next pass.** Each is the
   author's to fix unless it names another change, and none is built:
@@ -380,31 +397,56 @@ whole change before any hunt. The *state branch* is where Igor records each item
     item, such as "so that the tree check never rests on the step's report". Two design choices are not among the
     decisions: one check per skill written in Igor's code, and one attempt bound for every
     role.
+  - **From the 2026-10-21 consistency read:**
+    - Task 5.1 omits #216, which also modifies *A role declares its sources* and *Merge
+      semantics differ by field kind*.
+    - The opening block this change defines until #190 is built would carry `main`'s
+      `Closes #N`, a closing keyword, into a gate-one body, which #150 forbids because merging
+      gate one must not close the issue. It also repeats #190's definition.
+    - The `signed-publishing` requirement states its trailers with no exception, while this
+      change publishes merges, citation commits, question-file commits and lost-claim drafts
+      without them.
+    - `design.md` says the footer proves a token was issued. The footer is a hash of the text,
+      which anyone can compute, so it cannot show that a token was issued.
+    - Under `igor run`'s fallback the worker can rewrite the scripts Igor signs with, so a
+      signature there does not show the steps ran.
+    - No task measures whether a Read grant on the skills directory reaches the files behind a
+      link.
+    - The staging rule restates #175's checks without its exited-steps and nested-repository
+      conditions.
+    - *Service user*, *worker user* and `skills_dir` are defined only in unarchived changes.
+    - #216 counts every model step after the worker as a worker run that must send a completed
+      report. These steps send none, so #216 would treat every run of a role listing `prose` as
+      having met a sensitive question, and withhold its transcript and description. That is
+      reported to #216.
   - *Understood line* and *answers file* are defined only in `design.md`. Three SHALLs lack a
     scenario: a second call refusing a doc as a failed attempt, the claim check before each
     model step, and a post's cold reader having no tool but Read on the skills directory. Two
     rationale sentences sit in `task-execution`'s requirement text: that every trailer binds
     the last staging, and that prose keeps its token store in the git directory.
 
-**For Adam,** each a question this change cannot settle alone, with a recommendation. The first
-was asked on 2026-10-20 and has no answer yet; the second and third are new:
+**For Adam.** Questions 1 to 3 come from the 2026-10-21 consistency read and have no
+recommendation yet; question 4 waits on another decision of his:
 
-1. **A second worker run after a conflict resolution.** After Igor merges the base in and
-   resolves a conflict, `loop-verifies-commands` (#189) may run the worker again. A merge
-   commit carries no trailers (decision 30), so if that run's fix were folded into the merge
-   commit, it would be published unsigned. *Recommendation:* decision 39 applies here
-   too: the second run's edits are a second commit on top of the merge, with its own trailers.
-   #189 now proposes the same, as its decision 22.
-2. **The resumed session of decision 40 under #174.** #174 (`pinned-skills`) replaces the
-   step's `~/.claude` with a fresh template before every `claude -p`, which deletes the first
-   turn's session log, so `--resume` would find no session. *Recommendation:* #174 keeps the
-   home between the two calls of one step, resetting it only before a new step. If that
-   cannot hold, the fallback is a second step given the first turn's goals file, with no
-   resume.
-3. **#216's question log files and miss files.** The inquisitor skill writes them (shared-skills
-   #25), a model step, and #216's Igor pushes them to the lore repository's `questions` branch. *Recommendation:* exempt them as decision 44 exempts citation commits, since
-   they are records a later Igor reads, not text a person reviews. The alternative is to put
-   each through the prose pass and sign it with a `Prose:` trailer.
+1. **The description after a second run that follows a conflict resolution.** Decision 45 puts
+   that run's commit on top of the merge. A conflict resolution leaves the description as it
+   is, so the description would not describe that commit, while #189 says a pull request's
+   summary is the last published run's. Should that commit's push rewrite the description?
+2. **A missing or empty goals file the worker wrote.** The `signed-publishing` spec counts it
+   as a failed attempt, and a failed attempt goes back to the model step that wrote the failing
+   text. A commit's goals files come from the worker, which is no step this change sends work
+   back to. Does the worker run again, or does the item fail?
+3. **No seat partway through the signing steps.** A *seat* is a model subscription a call is
+   charged to, and the budget gate chooses it for each call. The signing steps add six to eight
+   model calls after the worker, and nothing says what happens when the gate names no seat, or
+   the provider refuses, partway through them: a failed attempt, a handoff, or an unsigned
+   draft as after a lost claim.
+4. **Decision 40's resume, which waits on a decision of Adam's.** #174 (`pinned-skills`) resets
+   the step's `~/.claude` before every `claude -p`, which deletes the first turn's session log,
+   so `claude -p --resume` would find no session. Adam is choosing between #216's per-run
+   `CLAUDE_CONFIG_DIR` (#216's decision 87) and #174's per-run home with its template reset,
+   and this question waits on that choice. If the resume cannot work, the fallback is a second
+   step given the first turn's goals file, with no resume. Task 0.21 measures the resume.
 
 ## Why
 
@@ -466,8 +508,8 @@ governs them. Neither change is edited here: the rule lives in one place, and th
   task 4.1 measures the cost per item.
 - **Depends on the prose and bug-hunter skills** from the shared-skills repository, which is
   not public yet. Bug-hunter's caller-commits mode is on its `main` (task 0.2). Prose's `sign`
-  and `check` need file forms for their reader goals, which shared-skills PR #27 adds, before
-  decision 16 is built (task 0.16). Igor loads
+  and `check` take their reader goals from files since shared-skills PR #27 merged (decision
+  47). Igor loads
   both as the `igor` plugin, with `--plugin-dir`, as `pinned-skills` (#174) builds it, or under
   `igor run` without the server's install, from the person's own (decision 29).
 - **Builds on `carry-what-a-tree-holds` (#137).** Until it is built, #175's checks stop a

@@ -89,7 +89,8 @@ back to the bug-hunter step with the reason, counting toward the two attempts.
 Where `loop-verifies-commands` (#189) runs the worker a second time after one of the
 repository's checks fails, that run's edits SHALL become a second commit on top of the first
 run's signed commit. The steps above SHALL run on the second commit's diff only, and the second
-commit SHALL carry its own trailers, bound to its own last staging.
+commit SHALL carry its own trailers, bound to its own last staging. Where the second run follows
+a conflict resolution, its commit SHALL go on top of the merge commit, which carries no trailers.
 
 Igor SHALL stage after every filter that drops paths from what it publishes, such as #150's
 gate-one confinement to `openspec/changes/`, so that the staged tree is the tree it uploads.
@@ -112,8 +113,11 @@ description, a reply, a cold-read report and its answers, as #175's *The Igor re
 the worker's behalf through a link* requires of every file the worker wrote, and SHALL pass
 prose only copies it read that way. The commit SHALL carry the message, then the `Bug-hunter:`,
 `Bug-hunter-Tree:` and `Prose:` trailers of the steps that ran. Merge commits carry none of
-these trailers, and neither do citation commits: the commits that record, on the lore
-repository's `questions` branch, that a lore entry answered a question (#216).
+these trailers, and neither do the commits that the Igor #216 (`lore-search`) specifies pushes
+to the lore repository's `questions` branch: a citation commit, which records that a lore entry
+answered a question; and a commit pushing a question log file, the inquisitor's record of a
+question a worker asked or settled itself, or a miss file, its record of a question a person
+said should have been settled without asking.
 
 #### Scenario: A closing keyword in a gate-one commit body goes back
 
@@ -291,6 +295,14 @@ repository's `questions` branch, that a lore entry answered a question (#216).
   and the cold read have run on that commit's diff alone
 - **AND** each commit carries its own trailers, bound to its own tree
 
+#### Scenario: A second worker run after a conflict resolution commits on top of the merge
+
+- **WHEN** Igor merges the base in and resolves a conflict, a check then fails, and the worker
+  runs a second time
+- **THEN** its edits are committed on top of the merge commit, after bug-hunter, the prose pass
+  and the cold read have run on that commit's diff alone
+- **AND** that commit carries its own trailers, and the merge commit carries none
+
 #### Scenario: The goals reach prose in a file
 
 - **WHEN** Igor runs prose's first `prose check` call
@@ -331,6 +343,12 @@ repository's `questions` branch, that a lore entry answered a question (#216).
 #### Scenario: Citation commits carry no trailers
 
 - **WHEN** Igor commits a citation to the lore repository's `questions` branch
+- **THEN** the commit carries no `Bug-hunter:` or `Prose:` trailer
+
+#### Scenario: Question log and miss file commits carry no trailers
+
+- **WHEN** Igor commits a question log file or a miss file its worker reported to the lore
+  repository's `questions` branch
 - **THEN** the commit carries no `Bug-hunter:` or `Prose:` trailer
 
 ### Requirement: The pull request description is written for a reviewer and signed
