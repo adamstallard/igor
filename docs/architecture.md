@@ -383,8 +383,10 @@ lore checkout, so lore entries are still read as the checkout holds them.
 A question file holding an answer is labelled an answer only when it passes the authority
 checks the inquisitor skill's spec states, such as that the person who answered has write
 access to the destination repository. Those checks read GitHub, and the worker has no GitHub login,
-so the Igor runs them itself, as its App. They also read the relay files on the destination
-repository's default branch as the Igor's checkout last fetched it, never its working tree. A
+so the Igor runs them itself, as its App. They also read the relay files in the destination
+repository as of the last commit that open pull request #208's lore read applied. That read
+checks each fetched configuration commit and applies only one that passes, so a refused
+commit's relay files never count, and neither does the checkout's working tree. A
 person's relay file, `relays/<login>.yaml`, lists the Apps that post that person's answers in
 comments starting `User says: `, and counts only when its last change came from that person:
 a merged pull request they authored, or a commit GitHub verifies as theirs. The checks never
@@ -571,8 +573,15 @@ item's transcript path. Facts igor records itself, such as a budget's reset time
 in that comment. A flagged run, one that met or may have met a sensitive question, including
 one that ended before its completed report, posts a handoff that asks no question, even when
 the run stopped on one it could not settle: its reason reads `needs a person`, and the
-question's text never reaches the item. The person who picks the item up learns only that it
-needs one; how they could learn the question is open in #216. The ledger row's changed paths
+question's text never reaches the item. The handoff gets no `igor:question` label, so
+nothing routes the item to an inquisitor role. The Igor keeps the question in a file on its own
+host, `flagged-questions/<tracker>/<repo>/<item>.md` under its state directory
+(`$STATE_DIRECTORY` under a unit that sets `StateDirectory=igor`, as open pull request #179's
+does, making it `/var/lib/igor`, or else `~/.local/state/igor`), readable only by its own user,
+and never pushes it. Today's unit sets no state directory, and what the Igor does when the file
+cannot be written is open in #216. A reply on the item does not rerun the item: the operator
+reads the question and decides. An edit to the item still lets it be worked again, and who may
+make that edit is open in #216 too. The ledger row's changed paths
 and refused actions stay in full. Open pull request #188, not yet built, adds a log of each
 run's tool calls; for a flagged run, that
 log keeps only names and numbers: tool names, command names, exit codes, counts and timings.
@@ -606,7 +615,8 @@ is one the Igor recorded posting in its handback. For that last kind, the Igor s
 file's `authority` key, which says whether the answer is a person's decision or only input,
 itself, by the same checks its search runs. When the answer is a relay App's comment, it also
 sets the file's `answered_by` to the person whose relay file lists that App. It records the
-comment's whole text, word for word, as the answer, however many sentences it holds: the answer line the worker wrote only
+comment's whole text, word for word, as the answer, however many sentences it holds, in the
+inquisitor's quote-line form (each line prefixed `> `, its line breaks kept): the answer line the worker wrote only
 identifies which comment holds the answer, so a worker that reports "merge it." against a
 comment reading "Do not merge it." cannot record the opposite of what the person said. It
 never keeps the `authority` or `answered_by` the worker wrote, under `igor serve` or `igor run`: a worker

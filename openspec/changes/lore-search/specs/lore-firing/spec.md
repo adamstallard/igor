@@ -472,10 +472,11 @@ before the answering comment.
 The Igor SHALL NOT trust the `authority` a worker's log file holds. Before it pushes a log
 file holding `authority: decision` or `input`, the Igor SHALL first write under the file's
 `## Answer` the text of the comment its `answer_link` points to, word for word, a leading
-`User says: ` included, with each line break written as one space so that it fits on one line
-as #25's format requires, in place of the answer line the worker wrote. It SHALL write the whole
-comment, even when it holds several sentences or quotes the question first, and even while
-#25's format still says one sentence (the proposal's Still open, for #25). The worker's answer line only identifies which comment holds the answer,
+`User says: ` included, as the quote lines #25's
+[*A log file and a miss file have one format*](https://github.com/adamstallard/shared-skills/blob/spec/inquisitor/openspec/changes/inquisitor/specs/inquisitor/spec.md) sets for an answer with an
+`answer_link`, in place of the answer line the worker wrote. It SHALL keep the comment's own
+line breaks, turning none into a space. It SHALL write the whole comment, even when
+it holds several sentences or quotes the question first. The worker's answer line only identifies which comment holds the answer,
 and the Igor SHALL NOT record it as anyone's answer. The Igor SHALL then set the file's
 `authority` itself, on the file as rewritten, by the checks of #25's *Only an answer with
 authority stops a question* that prove a questions-branch `decision` file's writer through its
@@ -488,8 +489,8 @@ fails it is refused. Which comments count as a
 person's relayed answer is #25's rule (its decision 216), and so is which relay file counts: a
 person's relay file is `relays/<login>.yaml` in the destination repository, counted only when its last
 change came from that person (its decision 225). This requirement does not restate those
-rules. For those checks the Igor SHALL read #25's relay files from the destination repository's
-default branch as its checkout last fetched it, never from the checkout's working tree, and
+rules. For those checks the Igor SHALL read #25's relay files from the commit *An Igor runs
+its worker's lore searches* names, and
 SHALL make each GitHub read as the installation of its App that covers the repository that
 read is from, as
 *An Igor runs its worker's lore searches* has its search do. A log file holding an answer is pushed
@@ -605,15 +606,19 @@ that requirement sets. These counts SHALL NOT repeat any text the worker wrote.
 - **THEN** the pushed file's answer reads "Do not merge it."
 - **AND** "merge it." is recorded nowhere as that person's answer
 
-#### Scenario: A long answer is recorded whole
+#### Scenario: A long answer is recorded whole, as quote lines
 
 - **WHEN** a worker reports a log file holding `authority: decision`, for a question the Igor
   asked, whose answer line is "Yes."
-- **AND** its `answer_link` is a comment, by a person with write access, that quotes the
-  question and then answers it in three sentences, the first of them "Yes."
+- **AND** its `answer_link` is a comment, by a person with write access, whose first line
+  quotes the question as a Markdown quote line, followed by a blank line and then an answer of
+  three sentences over two lines, whose first sentence is "Yes."
 - **AND** the file passes the other rules
-- **THEN** the pushed file's answer holds the whole comment, the quoted question and all three
-  sentences
+- **THEN** the pushed file's `## Answer` holds the whole comment as quote lines: the quoted
+  question's line as `> ` and that line, so starting `> >`, then `>`, then each of the two
+  answer lines as `> ` and that line
+- **AND** the Igor sets the file's `authority` by #25's checks on the file as rewritten
+- **AND** no line break of the comment is turned into a space
 
 #### Scenario: A credential in the linked comment keeps the file off the branch
 
@@ -655,8 +660,8 @@ that requirement sets. These counts SHALL NOT repeat any text the worker wrote.
   a question the Igor asked, whose `answer_link` is a comment on the item starting
   `User says: ` that holds the file's answer
 - **AND** the comment was posted by the App `alice-relay`, which #25's rule counts as
-  `alice`'s GitHub relay App from her relay file on the Igor's checkout of the destination
-  repository's default branch
+  `alice`'s GitHub relay App from her relay file in the destination repository as of the commit
+  #208 last applied
 - **AND** the question concerns the organization the destination repository serves, and `alice` has
   write access to the destination repository, which #25 counts as write access to that organization
 - **AND** GitHub reports which App wrote the comment, as #25's task 0.21 checks
@@ -681,8 +686,17 @@ that requirement sets. These counts SHALL NOT repeat any text the worker wrote.
   the lore checkout's working tree
 - **AND** a log file it reports answers a question the Igor asked through a `User says: `
   comment by that App
-- **THEN** the Igor reads the relay files only from the default branch as the checkout last
-  fetched it, and does not count that App as anyone's relay App
+- **THEN** the Igor reads no relay file from the checkout's working tree, and does not count
+  that App as anyone's relay App
+
+#### Scenario: A relay file in a commit #208 refused does not count
+
+- **WHEN** the destination repository's newest fetched commit adds a relay file listing an App,
+  and #208's lore read refused that commit
+- **AND** a log file a worker reports answers a question the Igor asked through a `User says: `
+  comment by that App
+- **THEN** the Igor reads the relay files as of the commit #208 last applied, which lacks that
+  file, and does not count the App as anyone's relay App
 
 #### Scenario: The Igor sets input for an answer an Igor's App posted
 
@@ -792,8 +806,9 @@ them. One is whether the comment a file's `answer_link` points to holds the answ
 defines as the comment, reduced, equalling the recorded answer, reduced the same way (#25's
 rule, decided by Adam on 2026-10-21); the Igor applies that rule in code, with no model call. Which comments count as a person's relayed answer is #25's rule (its
 decision 216), and so is which relay file counts (its decision 225). For those checks the Igor
-SHALL read #25's relay files from the destination repository's default branch as its checkout last
-fetched it, never from the checkout's working tree, and the worker SHALL read no relay file
+SHALL read #25's relay files from the destination repository as of the commit #208's lore read
+last applied (open pull request #208 checks each commit it fetches and applies only one that
+passes), never from a commit #208 refused and never from the checkout's working tree, and the worker SHALL read no relay file
 for them. Each read those checks make from GitHub SHALL authenticate as the installation of the
 Igor's App that covers the repository that read is from (`surface-adapter`'s *On GitHub,
 every call an Igor makes acts as its App*); the worker makes none of them. A check cannot be run when, for
@@ -884,7 +899,7 @@ inheritance cannot remove it (`role-config`'s *Merge semantics differ by field k
   and passes the visibility rule
 - **AND** the comment its `answer_link` points to starts with `User says: ` and was posted by
   the App `alice-relay`, which #25's rule counts as `alice`'s GitHub relay App from her relay
-  file on the Igor's checkout of the destination repository's default branch
+  file in the destination repository as of the commit #208 last applied
 - **AND** GitHub reports which App wrote the comment, as #25's task 0.21 checks
 - **AND** every other check of #25's *Only an answer with authority stops a question* passes
 - **THEN** the results show the file labelled as an answer

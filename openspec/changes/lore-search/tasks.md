@@ -71,8 +71,9 @@
       whose check fails or cannot be run, such as with GitHub unreachable or no installation
       covering the repository, is shown as input, labelled as unconfirmed. Whether a linked
       comment matches the answer is checked in code by #25's reduced equality (decision 72):
-      both texts are reduced as #25's rule says and must be equal, with no model call. The checks read #25's relay files from the Igor's checkout of the destination
-      repository's default branch and apply #25's relay rule, under which an Igor's App is
+      both texts are reduced as #25's rule says and must be equal, with no model call. The checks read #25's relay files from the destination repository as of the
+      commit #208's lore read last applied, never a commit it refused (the case where #208 applied
+      none waits on Adam; see the proposal's Still open), and apply #25's relay rule, under which an Igor's App is
       never a person's relay. They also apply a separate rule: during a run, a file keyed to
       another repository than the item's is input. Tests for *A question file that passes
       #25's authority checks is labelled as an answer*, *An authority check that cannot be run
@@ -172,7 +173,12 @@
       words, quotes no worker or provider text about why it stopped, and points to the item's
       transcript path, which holds the transcript-withheld note. A flagged run that stopped on
       a question it could not settle posts that handoff asking nothing, with the reason
-      `needs a person`, and the ledger row's `reason` is `needs a person` too. Once
+      `needs a person`, and the ledger row's `reason` is `needs a person` too. It adds no
+      `igor:question` label, writes the question to `flagged-questions/<tracker>/<repo>/<item>.md`
+      under its state directory, mode 0600 in directories of mode 0700, replaced by a later
+      flagged run's question, and pushes nothing of it (what to do when the write fails waits on
+      Adam); and work triage counts
+      only an edit, never a reply, as answering that handoff. Once
       #188's action log is built, a
       flagged run's log keeps names only. Tests for *Transcript persisted
       off the main line*, *A run that met a categorized question stores no transcript*, *A run that
@@ -189,7 +195,11 @@
       report flags the execution*, *A flagged run's handoff quotes no failure detail*, *A flagged
       run that declined quotes none of the worker's reason*, *A flagged run's handoff still
       names the setting that would let it proceed*, *A flagged run that stopped on a question
-      posts no question* (its handoff asks nothing and gives the reason `needs a person`),
+      posts no question* (its handoff asks nothing and gives the reason `needs a person`), *A
+      flagged run that stops on a question adds no question label*, *A flagged run's question is kept on the
+      host, never pushed*, *A later flagged run's question replaces the kept one*, *Outside systemd the question goes
+      under the XDG state directory*,
+      *A reply does not rerun a flagged item*,
       *A flagged run's budget handoff still gives the reset time*, *Any
       other run's ledger row keeps a denied command whole*, *A flagged run's action log keeps
       names only* once #188 is built, *An execution counts as flagged
@@ -210,7 +220,7 @@
       repository. It sets an answered log file's `authority` itself by 2.9's checks, reading
       the relay files as 2.9 does, whatever the worker wrote, and for a relay App's comment
       sets `answered_by` to the person whose relay file lists that App. It writes the linked
-      comment's whole text, word for word, as the file's answer, never the worker's answer
+      comment's whole text, word for word, as quote lines, as the file's answer, never the worker's answer
       line.
       When it posts a handback comment, it
       records on `igor-state`, under the item, the hash of each question it posted there,
