@@ -1,15 +1,18 @@
-Build after five changes:
+Build after four changes:
 - `condition-backoff` (#101);
 - `read-seat-windows-from-the-stream` (#143);
-- `worker-user` (#175);
 - `check-a-lore-repository` (#113), which adds `igor doctor`;
-- `redact-state-branch` (#217), whose `rememberSecret` task 3.3a calls.
+- `redact-state-branch` (#217), whose `rememberSecret` tasks 3.3a and 3.3b call.
 
-`pinned-skills` (#174) is built after this change (Adam, 2026-10-21, #174's decision 30). Task
+`worker-user` (#175) is built after this change (Adam, 2026-10-21, decision 11). Task 8.4
+extends #175's start-up probe, so it is built with #175 and ticked then; gate two of this change
+does not wait for it. `worker-user`'s `GIT_INDEX_FILE` rule, which this change's task-execution
+spec keeps, is #175's to build too. `pinned-skills` (#174) is built after #175 (Adam,
+2026-10-21, #174's decision 30). Task
 3.10 is built with this change, and the part of its test that covers #174's startup skills
 check is added once #174 is built, before task 3.10 is ticked.
 
-Line numbers below are a rough guide: they are `main`'s from before those five changes, which
+Line numbers below are a rough guide: they are `main`'s from before those four changes, which
 move them. The names are what to find. *Gate two* is the review of the implementation, after Adam approves this
 specification. Where a task quotes text in a fenced block, that text is the deliverable: unless the
 task itself says who may reword it, it may be reworded only where a measurement in section 1
@@ -124,10 +127,15 @@ contradicts it, and then `design.md` records the measurement.
 
       Credential redaction is a backstop on the state branch. The requirement *A decrypted seat
       token never touches the server's disk* still forbids the token in any record, log or
-      message. A token stays registered after its seat is removed (3.7b), since `src/redact.ts`
-      has no way to forget one; whether it should is open, for Adam. Test: a seat token quoted
-      in an error message that the state branch records has the literal text `[redacted]` in
-      its place there.
+      message. A seat removed by 3.7b leaves its token registered: #217's *Credential redaction
+      replaces every credential the Igor knows* keeps a seat's token for the life of the
+      process, and 3.7b does not unregister it. Test: a seat token quoted in an error message
+      that the state branch records has the literal text `[redacted]` in its place there.
+- [ ] 3.3b Register the `age` identity that `seatKey` names with credential redaction (proposal,
+      decision 77). Every lore read reads the key file to decrypt the seats (3.3); at each one,
+      pass each `AGE-SECRET-KEY-1…` line of the file, trimmed, to `rememberSecret`. Test: the identity
+      quoted in an error message that the state branch records has the literal text `[redacted]`
+      in its place there.
 - [ ] 3.4 Decryption failures report the seat unreadable, worded so, after the existing `seat
       "<id>"` subject:
 
@@ -429,7 +437,7 @@ first (Adam, 2026-10-17).
       ```
       seats/<id>.yaml carries an encrypted token, and igor.config.yaml names no seatKey, so Igor cannot read that seat. Set seatKey to the private key whose public half is seats/recipient.txt.
       ```
-- [ ] 8.4 Add `seatKey` to worker-user's (#175) start-up probe, which is built first: the worker
+- [ ] 8.4 Add `seatKey` to worker-user's (#175) start-up probe, once #175 is built: the worker
       user cannot read the file `seatKey` names, and a start where it can is refused, naming the
       path. Test it with the probe's other paths. #175's task 0.1 lists the same path; where #175
       already added it, this task is the test alone

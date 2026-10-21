@@ -5,9 +5,12 @@ reaches the server, how a seat is chosen without pools, and what a lender's cont
 seat rests on.
 
 Build order, one after another: `condition-backoff` (#101), `read-seat-windows-from-the-stream`
-(#143), `worker-user` (#175), `check-a-lore-repository` (#113), `redact-state-branch` (#217),
-this change, and then `pinned-skills` (#174), which Adam placed after this change on 2026-10-21
-(#174's decision 30).
+(#143), `check-a-lore-repository` (#113), `redact-state-branch` (#217), this change, then
+`worker-user` (#175), then `pinned-skills` (#174). Adam placed #175's and #174's code after this
+change's on 2026-10-21: this change removes the token sources that could hand the GitHub App's key
+to a worker (proposal, decision 11), and #174's startup check assumes this change's rule that
+every call spends a seat (#174's decision 30). Both still archive before this change, so this
+change's specs are written over their text.
 
 Two terms come from #143, *line* and *reading*. A seat's *line* for a usage window is the share of the window Igor
 may spend: it rises from `1 − reserve` just after a reset to 100% at the next reset, using the

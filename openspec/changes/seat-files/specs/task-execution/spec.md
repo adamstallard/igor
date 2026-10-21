@@ -86,8 +86,9 @@ the Igor. It lets
 seat file names no token file or command (*A seat file names its token only by ciphertext or its own
 variable*). openspec will not archive a `MODIFIED` block that drops an in-force scenario. The
 requirement is therefore removed and re-added under its full name: the in-force name stops at "its
-seat's", and the new one ends "its seat's token". The re-added requirement is written over
-worker-user's (#175) text, which is built first, and keeps its `GIT_INDEX_FILE` rule and scenario.
+seat's", and the new one ends "its seat's token". #175 (`worker-user`) archives before this
+change, so the re-added requirement is written over #175's text, and keeps #175's `GIT_INDEX_FILE`
+rule and scenario. #175's code builds that rule, after this change's code.
 It has a scenario for a lent seat's decrypted token in place of the dropped one.
 
 **Migration**: *The worker is given an explicit environment holding no credential but its seat's

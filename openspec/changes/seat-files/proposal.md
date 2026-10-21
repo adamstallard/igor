@@ -44,10 +44,15 @@
     nor `token_env` is refused; since decision 67 that takes its seat out rather than failing the
     configuration. *Rejected:* allowing it behind a flag the operator sets.
     Such a file would spend whatever login the server holds, which can be a pay-per-use API key.
-11. **Worker-user (#175) is built before this change** (Adam, 2026-10-17). A worker running as
-    the server's own user could read `seatKey` and decrypt every lender's token. #175's start-up
-    probe checks, as the worker user, that the worker cannot read the Igor's credentials; this
-    change adds the file `seatKey` names to what it checks (task 8.4).
+11. **This change's code is built before worker-user's (#175)** (Adam, 2026-10-21; on
+    2026-10-17 he had placed #175 first). The reason is the GitHub App's key: on `main`, a seat's
+    token sources (`token_env` with any variable name, `token_file` and `token_command`) could
+    route it to a worker, and this change removes all but `token_env: IGOR_SEAT_<ID>` (decision
+    4). The cost is `seatKey`: until #175 is built, every worker runs as the same Unix user as the
+    Igor process, so it could read `seatKey`, and with it every lent token. So no seat is to be lent with `encrypted_token` until then; `igor-lore`'s one seat
+    names `token_env` (task 6.1). Nothing in the code enforces that yet (*Still open*). Once #175
+    is built, its start-up probe checks, as the worker user, that the worker cannot read the
+    Igor's credentials, and task 8.4 adds the file `seatKey` names to what it checks.
 12. **`igor seat add` and `igor doctor` check that `owner` is a GitHub login**, with
     `gh api users/<owner>` (Adam, 2026-10-17), because the notice workflow can mention only a
     GitHub login.
@@ -403,8 +408,23 @@ Adam's answers of 2026-10-21:
     decision 12). With `enforce_admins` off, an administrator can push a seat-file change straight
     to the default branch, with no notice before it, so #113 reports that rather than reporting
     the branch as protected.
+77. **The `age` identity `seatKey` names is registered with credential redaction** (Adam,
+    2026-10-21), so text quoting the key is redacted (task 3.3b), as text quoting a seat's token
+    is (task 3.3a). A seat's token stays registered after its seat is removed (Adam, 2026-10-21);
+    #217's *Credential redaction replaces every credential the Igor knows* states that rule.
 
 **Still open.** The smaller choices 47 to 56 await Adam's approval with the change. Besides them:
+
+- **For Adam: should the code refuse lent seats until #175 is built?** Decision 11 builds this
+  change's code first. Until #175 is built, `igor serve` runs every worker as the same Unix user
+  as the Igor process, so a worker could read `seatKey` and every lent token. The requirement
+  *A lent seat is decrypted only where the worker has a user of its own* applies only to `igor
+  run`, the one command where #175 keeps the worker on the Igor's user. So nothing in the code
+  stops `igor serve` decrypting a lent seat in that window; only decision 11's rule that no seat
+  is lent with `encrypted_token` until #175 is built does. The lender guide and `igor-agent`,
+  which invite lending, ship with this change. Recommended: widen that requirement to every
+  command whose worker runs as the Igor's own user, which before #175 is `igor serve` too, so
+  Igor decrypts no lent seat until #175 is built.
 
 - **Findings of a consistency read on 2026-10-21, for whoever next edits this change.** None is
   decided, and none blocks approving the rules above, except where an item says so:
@@ -444,10 +464,33 @@ Adam's answers of 2026-10-21:
     whatever was last published. A `seatKey` that a later lore commit changes is never probed by
     #175's start-up check, so a merge could point it at a file the worker can read.
     `budget_share`, a role's ceiling on its spend, now bounds what the role takes of each seat
-    rather than of its pool, which no decision lists. Task 3.3a's open question, whether a token
-    is forgotten when its seat file goes, sits only in tasks.md, and a token of 1 to 7 characters
-    in a seat file is accepted but never registered by #217's redaction, which matches only tokens
-    of 8 or more.
+    rather than of its pool, and no decision lists that change. A token of 1 to 7 characters in a seat file is
+    accepted but never registered by #217's redaction, which matches only tokens of 8 or more.
+- **Findings of a third consistency read on 2026-10-21, after decision 77, for the next
+  revision.** None is fixed here, and none blocks approving the rules above.
+  - A lender's login "SHALL appear only in `igor doctor` and `igor budget`" (`seat-budget`),
+    but the notice workflow and #208's notice post it in public comments, and the seat file
+    holds it. The rule is true only of condition reports and handoffs, which never name the
+    login, and should say so.
+  - In `seat-budget`'s probe requirement, the scenario for a probe that exits with an error
+    gives it the five-hour back-off. A probe refused for authentication also exits with an
+    error, and the requirement's text forbids that back-off after an authentication failure.
+  - *Startup checks* is defined here and in #208 with different scopes; one should cite the
+    other.
+  - No scenario covers `igor budget` showing a malformed file's refusal, or `igor budget`
+    showing a lent seat as "not checked" (decision 51) while `seat:<id>:decrypt` is open on it.
+  - Rationale and rejected alternatives sit inside `seat-budget` requirement text, such as why
+    the variable name is fixed; they belong in `design.md`.
+  - `igor doctor`'s check that the notice workflow's most recent run passed says little about
+    whether lenders are told. Nearly every run is on a pull request with no seat file, which
+    passes having mentioned nobody, so the next such pull request hides a failed run on a
+    seat-file one. A workflow that has never run passes where it should read "not checked",
+    and a disabled workflow or Actions turned off is in no decision.
+  - On a push, the notice workflow compares the pull request's head before the push with its
+    head after it. Nobody has measured whether it can fetch the head before the push of a
+    pull request from a fork. If it never can, every push to such a pull request compares
+    against the base, and *A push that leaves the seat files alone mentions nobody* fails for
+    forks. It needs a measurement task.
   - For the author: "lore read" is used for the gate's single-file re-read, which #208's
     definition excludes; the reason given for refusing a `seatKey` inside the checkout names a
     reset #208 never makes; `igor doctor` and `igor budget` print a seat file's `owner` and
@@ -595,10 +638,10 @@ it archives first.
   `igor.config.example.yaml`, `deploy/`.
 - `adamstallard/igor-lore`: `seats/adam.yaml`.
 - Build order, one after another: `condition-backoff` (#101), `read-seat-windows-from-the-stream`
-  (#143), `worker-user` (#175), `check-a-lore-repository` (#113), `redact-state-branch` (#217),
-  this change, and then `pinned-skills` (#174), whose code Adam placed after this change's on
-  2026-10-21 (#174's decision 30). Build order and archive order differ for #174 alone: it is
-  built after this change but archives before it. The archive order is the
+  (#143), `check-a-lore-repository` (#113), `redact-state-branch` (#217), this change, and then
+  `worker-user` (#175) and `pinned-skills` (#174), whose code Adam placed after this change's on
+  2026-10-21 (decision 11, and #174's decision 30). Build order and archive order differ for
+  #175 and #174: each is built after this change but archives before it. The archive order is the
   one issue #204 holds (decision 32). This change and #143 archive in one commit (Adam,
   2026-10-17), so the changes #204 places between them, #175, #174 and #113, archive in that commit too. No commit then
   leaves one of the two archived without the other, so no in-force requirement text names
@@ -610,5 +653,6 @@ it archives first.
   order; this change depends on that. The `MODIFIED` blocks here are
   written against #143's text where #143 modifies the same requirement.
 - worker-user (#175) modifies the same worker-environment requirement, to let `GIT_INDEX_FILE`
-  reach the worker. #175 is built first, so this change's block is written over #175's text and
-  keeps that rule.
+  reach the worker. #175 archives first, so this change's block is written over #175's text and
+  keeps that rule. #175's code is built after this change's, so this change's code does not
+  pass `GIT_INDEX_FILE`, and that rule and its scenario are met when #175 is built.
