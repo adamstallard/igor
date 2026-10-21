@@ -18,12 +18,15 @@
    caller, because a caller that forgets publishes the token.
 
    Redaction on write also changes records the Igor reads back, such as `deferred.json`,
-   which is keyed by item. No item id or seat name is expected to hold a secret's exact value;
-   one that did would be read back as `[redacted]`, and its deferral would no longer match its
-   item.
+   which is keyed by item. An item id holding a registered value is read back as
+   `[redacted]`, so its deferral no longer matches its item, and the item is worked again each
+   poll. A seat token or a variable's secret is random, so no item id is expected to hold one.
+   A proxy login that decision 14's rule takes for a token can equal a GitHub owner, and so
+   appear in item ids; that case is under Still open.
 
-   Only new writes are redacted. Records already on the branch, and its history, are not
-   rewritten.
+   A file the Igor rewrites whole, such as `deferred.json`, is redacted whole. An appended
+   file, such as `executions.ndjson`, keeps the lines it already had as they were, and the
+   branch's history is not rewritten.
 3. **The refusal envelope is redacted like every other record.** It is kept so the patterns
    that detect a usage limit and read its reset time can be checked later against what the
    provider said. The reset phrase, the provider's words for when the limit resets, is expected
@@ -37,10 +40,12 @@
 6. *Superseded by decision 12 (Adam, 2026-10-21):* finding a key block's body under the prefix
    its lines carry, such as a diff's `-` or a `cat -n` line number.
 7. **A seat's token is remembered for the life of the process, after its seat is removed
-   too** (Adam, 2026-10-21). A removed seat's token may still be live, so text quoting it is
-   still a leak. *Rejected:* forgetting a token when its seat leaves the configuration. An
-   installation token or JWT the App mints is dropped once it expires, since GitHub no longer
-   accepts it and the Igor mints a new one every hour.
+   too; a minted installation token or JWT leaves the registry when it expires** (Adam,
+   2026-10-21). A removed seat's token may still be live, so text quoting it is still a leak.
+   *Rejected:* forgetting a token when its seat leaves the configuration. An installation
+   token or JWT the App mints is dropped once it expires, since GitHub no longer accepts it,
+   and the Igor mints a replacement before each expires, so a long-running Igor would
+   otherwise keep a new one every half hour.
 8. **Credential redaction covers what an Igor posts, as well as what it writes to the state
    branch** (Adam, 2026-10-21). Every comment, issue, pull request title and body, and commit
    message it sends to a tracker or a code host passes through `redact`. It is applied in the
@@ -59,9 +64,10 @@
     (`resolveToken`); the App's private key, whole and line by line (`readCredentials`); the
     App's JWT and each installation token it mints (`appJwt`, `mint`); every credential
     `workerEnv` hands a worker, including the user info, password and whole URL of a forwarded
-    proxy; and the value of every credential-named variable. Each is matched as written,
-    JSON-escaped and URL-encoded, longest first, by a plain loop over the values; there are
-    few enough that no multi-pattern matcher is needed. The registry lives only in memory and
+    proxy, within decision 14's limit on a user name with no password; and the value of every
+    credential-named variable. Each is matched as written, JSON-escaped and URL-encoded,
+    longest first, by a plain loop over the values; there are few enough that no
+    multi-pattern matcher is needed. The registry lives only in memory and
     is never written or logged. A variable is credential-named where its name holds `TOKEN`,
     `KEY`, `SECRET`, `PASSWORD` or `CREDENTIAL`, case-sensitively and anywhere in the name, the
     list `keep-action-log` (#188) defined.
@@ -75,10 +81,32 @@
     removed patterns over-redacted ordinary text, and they kept growing: three bug-hunter
     passes each found another way of writing a key that the scan of decisions 5 and 6 missed.
     GitHub documents only the fine-grained token's prefix; its 82-character body is the length
-    gitleaks' `github-fine-grained-pat` rule matches.
+    gitleaks' `github-fine-grained-pat` rule matches, and no real token has been measured
+    (task 3.8).
 13. **An acceptance test runs `redact` over real text and expects no change**: this
     repository's commit messages, docs and specs, and state-branch records taken from
     `adamstallard/igor-throwaway-lore`. The patterns decision 12 removes changed three of those texts.
+14. **A proxy URL's user name with no password is registered only where it looks like a
+    token** (Adam, 2026-10-21): once percent-decoded, 20
+    characters or more and not a plain name. A Kerberos or NTLM proxy takes a user name with no
+    password (`http://adamstallard@proxy:3128`), or with an empty one (`adamstallard:`, as curl
+    writes it for Negotiate), and the rule treats the two alike. The 20 is the shortest token
+    GitHub, Anthropic and most other providers issue; a shorter token used as a user name is
+    missed. Such a name is usually a person's login, often equal to a GitHub owner, and registering it would redact that owner from item ids,
+    state-branch keys and posted links. A token used as the user name (`http://<token>@proxy`)
+    is still registered.
+
+    A plain name is words joined by `.`, `-`, `_`, `@` or `\`, with at least one letter. Each
+    word holds at least one character: optional digits, then optionally one run of letters in a single case pattern
+    (`doe`, `DOE` or `Doe`, in any script that has case), then optional digits. So
+    `ci-runner-2024`, `jdoe-3rd-party` and `CORP\jane.doe` are plain names. A token's random
+    characters almost always break the shape: letters resume after digits inside a word
+    (`a3f9…`), or a run of letters changes case midway (`eIdz…`). Measured on random
+    20-character tokens: no base62 token in 200,000 is taken for a name, 2 base64url tokens are,
+    and so are 0.3% of lowercase base36 or hex tokens and 2.6% of uppercase base32 tokens, where
+    case gives no signal in either of those last two alphabets. Each alphabet was sampled
+    200,000 times. *Rejected:* registering every such user name, which redacts the owner;
+    and exempting every one, which lets a token used as the user name through.
 
 **Still open:**
 
@@ -99,25 +127,34 @@
   outside the credential words, such as `DATABASE_URL` holding `postgres://u:pw@…` or a
   lower-case `_authToken`, is not matched either. No pattern catches these since decision 12.
   Whether to accept that exposure, or how to close it, is for Adam.
+- Decision 14's shape rule errs both ways. It takes some logins for tokens, which are then
+  redacted wherever they appear, where they are 20 characters or more: camelCase
+  (`JaneDoeContractor2024`), letters after digits inside a word (`team-infra-k8s-runners`), an
+  apostrophe (`patrick.o'brien.contractor`), and a script without case
+  (`li.wei@公司.example.com`). It also takes some single-case tokens for names, as measured
+  under decision 14. A rule with neither of those errors would register such a user name only
+  together with its host: the whole URL, `<user>@<host>` and `<user>@<host>:<port>`, never
+  the bare name. No item id or link holds `<user>@<host>`, and a tool that echoes a proxy's
+  credential echoes its host too. It would miss a bare token quoted without its host. Whether
+  to replace decision 14's rule with that is for Adam. A login the rule takes for a token is
+  also redacted from item ids, so a deferral keyed by such an id no longer matches its item
+  (decision 2).
+- Branch names and state-branch file paths are not redacted. A branch whose name holds a
+  token is pushed under that name, while only its merge commit's message is redacted, and a
+  transcript path holding a registered value is written as it is while the pull request's link
+  to it is redacted, which breaks the link. Whether to redact names and paths is for Adam.
+- The state branch lives in the lore destination, which can be public while the repository
+  the worker works on is private. A secret read from the private repository, such as a `.env`
+  value the worker quotes in its closing summary, is in no registry and has no token's shape,
+  so it reaches the public branch. Whether to accept that, or how to close it, is for Adam.
+- The in-force task-execution requirement on what a worker's environment holds says the
+  network settings it forwards are not credentials ("None of those is a credential"), while
+  this change registers a forwarded proxy URL's credentials. `seat-files` (#171) replaces that
+  requirement, so the sentence is #171's to change; reported to #171, not modified here.
 - A credential-named variable can hold a value that is no secret: `GITHUB_APP_PRIVATE_KEY_FILE`
   holds a path, which is then redacted from every record and post that names it, including the
   error saying which key file failed to read. `KEY` also matches inside a word such as
   `MONKEY`. Nobody has measured which such variables a deployed Igor has.
-- A proxy URL with a user name and no password, as a Kerberos or NTLM proxy takes
-  (`http://adamstallard@proxy:3128`), registers that user name, since decision 11 registers a
-  proxy URL's whole user info. A user name is usually no secret and often equals a GitHub
-  owner, so it is then redacted from item ids, state-branch keys and posted links. Exempting a
-  user name with no password would let a token used as the user name (`http://<token>@proxy`)
-  through. Whether to exempt it is for Adam.
-- `seat-files` (#171) gives the Igor the `age` private key that decrypts seat files. #171
-  registers the decrypted tokens; it must register that key too, since no pattern for it
-  remains.
-- Claude Code sets `CLAUDE_CODE_MESSAGING_TOKEN` inside the worker, and the Igor never sees
-  its value, so the registry cannot hold it, and a worker that prints it reaches the
-  transcript unredacted. Whether `worker-user` (#175) closes that is for Adam.
-- `lore-search` (#216) records Adam accepting, on 2026-10-20, that a refused run keeps "the
-  provider's whole reply". This change replaces the credentials in that reply, so the reply is
-  no longer kept whole. One of the two texts needs rewording, and which is for Adam.
 
 ## Why
 
@@ -158,12 +195,19 @@ None.
   its action log, written to the state branch, is redacted twice: by #188's own call to
   `redact` as the log collects each of the worker's tool calls, and by `writeState` on the way
   out.
-- `loop-verifies-commands` (#189) and `review-evidence` (#190) name #188 as the rule's owner;
-  they cite this change instead.
+- `pre-worker-breaker` (#173), `loop-verifies-commands` (#189) and `review-evidence` (#190)
+  cite this change's requirement rather than restate the rule.
+- `lore-search` (#216) keeps a refused run's whole reply, redacted by this rule (its decision
+  96, Adam, 2026-10-21).
+- `worker-user` (#175) registers each secret it hands a worker by calling `rememberSecret`.
 - `pre-worker-breaker` (#173) masks a failure message's digit and hexadecimal runs, and
   requires redaction to run first, since masking can break up a secret. `appendRecord`
   redacts after the mask, too late for that, so #173's own code must call `redact` before
   masking, as #173's spec requires.
 - A new seat token source, such as the encrypted seat file in `seat-files` (#171), registers
-  its tokens as the requirement says. #171's tests need a fixture token of 8 characters or
-  more, since a shorter one is not registered.
+  its tokens as the requirement says. #171 also registers the `age` private key that decrypts
+  seat files, as a task in its `tasks.md`, since no pattern for that key remains. #171's tests
+  need a fixture token of 8 characters or more, since a shorter one is not registered.
+- Claude Code sets `CLAUDE_CODE_MESSAGING_TOKEN` inside the worker, and the Igor never sees
+  its value, so the registry cannot hold it. `worker-user` (#175) gives it no rule of its
+  own either (Adam, 2026-10-21).

@@ -16,9 +16,16 @@ message can quote it. The registered secrets are:
 - the GitHub App's private key, whole and each of its base64 lines;
 - the App's signed JWT and each installation token it mints, each until it expires;
 - every credential the Igor puts in a worker's environment, including a forwarded proxy URL's
-  user info, password and whole URL;
+  user info, password and whole URL. A proxy URL's user name with no password, or with an
+  empty one (`user:`), is registered, with the whole URL, only where it looks like a token:
+  once percent-decoded, 20 characters or more and not a plain name. A plain name is words
+  joined by `.`, `-`, `_`, `@` or `\`, with at least one letter, where each word holds at least
+  one character: optional digits, then optionally one run of letters that is all lower case,
+  all upper case, or one capital and then lower case, then optional digits;
 - the value of every variable in the Igor's environment whose name contains `TOKEN`, `KEY`,
-  `SECRET`, `PASSWORD` or `CREDENTIAL`, matched case-sensitively anywhere in the name.
+  `SECRET`, `PASSWORD` or `CREDENTIAL`, matched case-sensitively anywhere in the name;
+- every other secret the Igor obtains; a change that adds a way of obtaining one SHALL register
+  it.
 
 A value shorter than 8 characters is not registered. Each registered value is matched as
 written, JSON-escaped and URL-encoded, wherever it appears, longest first so that a value
@@ -45,6 +52,17 @@ Nothing else is matched by pattern.
 - **WHEN** a seat's token comes from a variable named `SEAT_A`, and text quotes the token
 - **THEN** credential redaction replaces it with `[redacted]`
 
+#### Scenario: A removed seat's token is still redacted
+
+- **WHEN** a seat whose token was read is removed from the configuration, and text later
+  quotes that token
+- **THEN** credential redaction replaces it with `[redacted]`
+
+#### Scenario: The longer of two registered secrets is replaced whole
+
+- **WHEN** one registered secret holds another, and text quotes the longer one
+- **THEN** credential redaction replaces the longer one whole with one `[redacted]`
+
 #### Scenario: A short seat token is not matched by value
 
 - **WHEN** a seat's token is `igor`, and text holds the item id `github:adamstallard/igor#12`
@@ -66,6 +84,24 @@ Nothing else is matched by pattern.
 - **WHEN** `HTTPS_PROXY` is `http://user:<password>@proxy:3128`, and text quotes the password
 - **THEN** credential redaction replaces it with `[redacted]`
 
+#### Scenario: A proxy's plain user name is not registered
+
+- **WHEN** `HTTPS_PROXY` is `http://build-agent.proxy-user01@proxy:3128`, with no password,
+  and text holds the item id `github:build-agent.proxy-user01/igor#3`
+- **THEN** credential redaction leaves the id unchanged
+
+#### Scenario: A proxy's plain user name with an empty password is not registered
+
+- **WHEN** `HTTPS_PROXY` is `http://build-agent.proxy-user01:@proxy:3128`, and text holds
+  `@build-agent.proxy-user01: approved`
+- **THEN** credential redaction leaves the text unchanged
+
+#### Scenario: A proxy's user name that looks like a token is registered
+
+- **WHEN** `HTTPS_PROXY` is `http://eIdzgfAshpjKnBZECmsq@proxy:3128`, with no password, and
+  text quotes `eIdzgfAshpjKnBZECmsq`
+- **THEN** credential redaction replaces it with `[redacted]`
+
 #### Scenario: A minted token is no longer matched once it expires
 
 - **WHEN** a secret was registered with an expiry, and that time has passed
@@ -80,6 +116,11 @@ Nothing else is matched by pattern.
 #### Scenario: A GitHub token with a right checksum is redacted
 
 - **WHEN** text holds a `ghp_` token whose last 6 characters are its checksum
+- **THEN** credential redaction replaces it with `[redacted]`
+
+#### Scenario: A fine-grained GitHub token is redacted
+
+- **WHEN** text holds `github_pat_` and 82 letters, digits or `_`
 - **THEN** credential redaction replaces it with `[redacted]`
 
 #### Scenario: A token-shaped string with a wrong checksum is left alone
@@ -100,9 +141,9 @@ Nothing else is matched by pattern.
 
 ### Requirement: Every write to the state branch, and every text the Igor posts, is redacted
 
-Every file the Igor writes to the state branch, and every commit message it writes there,
-SHALL pass through credential redaction first. This covers each string in the record, its
-object keys included.
+Everything the Igor writes to the state branch, each document it writes whole, each record it
+appends and each commit message, SHALL pass through credential redaction first. This covers
+each string in the record, its object keys included.
 
 Every text the Igor posts to a tracker or a code host SHALL pass through credential redaction
 before it is sent: a comment on an item, an issue's title and body, a pull request's title and

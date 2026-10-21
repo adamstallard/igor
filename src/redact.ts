@@ -9,8 +9,8 @@ import { crc32 } from 'node:zlib'
  * message (`createBranchWithFiles`, `commitOnBranch`, `mergeIntoBranch`). The files a commit
  * carries are the work itself and are posted as written.
  *
- * **Why:** the state branch is as visible as its repository, and so is everything posted there;
- * on a public repository anyone can read them. An error message can quote a token: a git
+ * **Why:** the state branch is as visible as the repository that holds it, and a post is as
+ * visible as the repository it is posted to; on a public repository anyone can read either. An error message can quote a token: a git
  * command echoing its remote, or a provider's response.
  *
  * The rule matches **by value**: every secret the Igor holds or gives a worker is registered as
@@ -22,7 +22,8 @@ import { crc32 } from 'node:zlib'
  * - the App's signed JWT and each installation token it mints (`src/app.ts`), each until it
  *   expires;
  * - every credential `workerEnv` puts in a worker's environment, the credentials in a forwarded
- *   proxy URL included (`rememberUrlCredentials`);
+ *   proxy URL included (`rememberUrlCredentials`), and a proxy's user name with no password
+ *   where it looks like a token;
  * - the value of every variable in the Igor's environment whose name contains `TOKEN`, `KEY`,
  *   `SECRET`, `PASSWORD` or `CREDENTIAL` (case-sensitively, anywhere in the name).
  *
@@ -92,25 +93,75 @@ export function rememberKey(pem: string): void {
 }
 
 /**
+ * A user name with no password that is shorter than this is taken for a name, never a token.
+ * GitHub, Anthropic and most other providers issue tokens of 20 characters or more; a shorter
+ * token used as a proxy's user name is missed, by decision 14 of `redact-state-branch`.
+ */
+const MIN_TOKEN_USER_LENGTH = 20
+
+/**
+ * A plain name: words joined by `.`, `-`, `_`, `@` or `\`, holding at least one letter, such as
+ * `build-agent.proxy-user01`, `ci-runner-2024`, `jdoe-3rd-party`, `jane.doe@corp.example` or
+ * `CORP\jane.doe`. A word is not empty: optional digits, then optionally one run of letters in a
+ * single case pattern (`doe`, `DOE` or `Doe`, in any script that has case), then optional digits.
+ *
+ * A token's random characters break this almost every time: letters resume after digits within a
+ * word (`a3f9…`), or a run of letters changes case midway (`eIdz…`, `ejQ5`). So a user name that is
+ * not this shape is taken for a token.
+ */
+const LETTER_RUN = String.raw`(?:\p{Lu}?\p{Ll}+|\p{Lu}+)`
+// Each word has one way to match. Don't write a word as `[0-9]+`, optional letters, then
+// `[0-9]*`: with no letters between them, the two could split a run of digits many ways, and a
+// failed match would retry every split of every word, taking minutes on 80 characters.
+const WORD = String.raw`(?:[0-9]+(?:${LETTER_RUN}[0-9]*)?|${LETTER_RUN}[0-9]*)`
+const PLAIN_NAME = new RegExp(String.raw`^(?=.*\p{L})${WORD}(?:[._@\\-]${WORD})*$`, 'u')
+
+/**
  * Registers the credentials in a URL such as a proxy's, `http://user:pass@proxy:3128`: the whole
- * URL, its user info (`user:pass`), and its password, decoded too. The scheme is optional, since
+ * URL, its user info (`user:pass`), and its password, the password percent-decoded as well. The scheme is optional, since
  * `gh` and `git` read `user:pass@proxy:3128` as an `http://` proxy. The user info runs to the last
  * `@` before the host, since a password can hold a raw `@`. A URL naming no user info registers
  * nothing.
+ *
+ * A Kerberos or NTLM proxy takes a user name with no password, or with an empty one (`user:`, as
+ * curl writes it for Negotiate). Such a user name is registered only where it looks like a token
+ * (`http://<token>@proxy`): once percent-decoded, 20 characters or more and not a `PLAIN_NAME`.
+ * Then the whole URL, the user info, and the user name as written and decoded are registered. **Don't register every such user name:** it is usually a person's login, often
+ * equal to a GitHub owner, and would then be redacted from item ids, state-branch keys and
+ * posted links.
  */
 export function rememberUrlCredentials(url: string): void {
   const userinfo = /^(?:[a-z][a-z0-9+.-]*:\/\/)?([^/?#]*)@/i.exec(url)?.[1]
   if (userinfo === undefined || userinfo === '') return
+  const colon = userinfo.indexOf(':')
+  const password = colon === -1 ? '' : userinfo.slice(colon + 1)
+  if (password === '') {
+    const user = colon === -1 ? userinfo : userinfo.slice(0, colon)
+    if (!looksLikeToken(user)) return
+    rememberSecret(url)
+    rememberSecret(userinfo)
+    rememberSecret(user)
+    rememberSecret(decoded(user))
+    return
+  }
   rememberSecret(url)
   rememberSecret(userinfo)
-  const colon = userinfo.indexOf(':')
-  if (colon === -1) return
-  const password = userinfo.slice(colon + 1)
   rememberSecret(password)
+  rememberSecret(decoded(password))
+}
+
+/** A user name with no password that is taken for a token, by the rule `rememberUrlCredentials` gives. */
+function looksLikeToken(user: string): boolean {
+  const name = decoded(user)
+  return name.length >= MIN_TOKEN_USER_LENGTH && !PLAIN_NAME.test(name)
+}
+
+/** Percent-decoded, or as written where a malformed escape cannot be decoded. */
+function decoded(text: string): string {
   try {
-    rememberSecret(decodeURIComponent(password))
+    return decodeURIComponent(text)
   } catch {
-    // A malformed escape cannot be decoded, and is registered as written above.
+    return text
   }
 }
 
