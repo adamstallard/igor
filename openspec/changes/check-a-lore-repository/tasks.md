@@ -50,7 +50,11 @@ merged:** 3.7 checks Apps only, with no check of a claiming account's write acce
       branch rules, classic protection, ruleset definitions with their bypass actors, and
       repository permission for the authenticated account. Record what the reading actually
       said in `design.md`, including where it contradicts what that file assumed
-- [ ] 3.2 Direct pushes to the default branch are prevented — a pull request is required
+- [ ] 3.2 Direct pushes to the default branch are prevented — a pull request is required, and
+      administrators cannot bypass it: classic protection has `enforce_admins` on, and no ruleset
+      lists the administrator role among its bypass actors. Where they can, the finding says that
+      an administrator can push straight to the default branch. Test: *Direct pushes to the
+      default branch are possible* and *Administrators can push past the pull-request rule*
 - [ ] 3.3 Approvals are not required, graded on whether a second person could approve, since
       an Igor's approval never counts; unchecked where the account list cannot be read
 - [ ] 3.4 The reconciliation workflow is present **on the default branch**, not merely in the

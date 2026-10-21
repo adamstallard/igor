@@ -19,9 +19,15 @@ it does not, that role's App check is unchecked. It SHALL inspect at least:
   are declared, resolving the role also fails; the role SHALL still be reported once.
 - **A removal is permitted.** That the org-level `commands` list permits removing a tracked
   file.
-- **Direct pushes to the default branch are prevented.** An entry pushed straight to the default
-  branch is never promoted, as lore-review's *Lore reaches the default branch by pull request*
-  says.
+- **Direct pushes to the default branch are prevented.** The default branch requires a pull
+  request before merging, and administrators are bound by that rule too. An entry pushed straight
+  to the default branch is never promoted, as lore-review's *Lore reaches the default branch by
+  pull request* says. Where administrators may bypass the rule, as classic branch protection lets
+  them with `enforce_admins` off, or a ruleset whose bypass list holds the administrator role,
+  an administrator can still push straight to the default branch. That SHALL be a finding, and
+  the report SHALL say that administrators can bypass the rule, not that the branch is protected
+  against direct pushes. For the check of the workflow's push, below, the branch still counts as
+  protected: the bypass is administrators' alone, so the rule still blocks the workflow's actor.
 - **Approval is not required on a pull request.** Where fewer than two people with write access
   could approve, requiring approvals blocks promotion outright, for the reasons lore-review's
   *Lore reaches the default branch by pull request* and task-execution's *A person approves every
@@ -57,6 +63,16 @@ SHALL begin with `::` because of such text.
 - **WHEN** the destination's default branch does not require a pull request before merging
 - **THEN** it is reported as a finding
 - **AND** the finding states that an entry committed directly stays provisional and never fires
+
+#### Scenario: Administrators can push past the pull-request rule
+
+- **WHEN** the default branch requires a pull request before merging
+- **AND** administrators may bypass that rule, as with `enforce_admins` off
+- **THEN** it is reported as a finding, and the report does not call the branch protected
+  against direct pushes
+- **AND** the finding states that an administrator can push straight to the default branch
+- **AND** where the reconciliation workflow is present, the check that its actor may bypass the
+  protection still runs
 
 #### Scenario: Approvals are required
 

@@ -36,6 +36,14 @@ Choices this change makes, which Adam approves with it:
     *Rejected:* requiring only that at least one role names one, which lets a role with none
     pass silently.
 
+Adam's decision of 2026-10-21:
+
+12. **A pull-request rule that administrators can bypass is a finding** (Adam, 2026-10-21). With
+    `enforce_admins` off in branch protection, an administrator can push straight to the default
+    branch, so the report says so and does not call the branch protected against direct pushes.
+    A ruleset whose bypass list holds the administrator role is the same case. Under #171 (`seat-files`), seat files live in the lore repository, and a lender hears of a
+    change to theirs from a notice on its pull request, which a direct push skips. Task 3.2.
+
 **Still open, for Adam, each with a recommendation:**
 
 - **When decision 3 takes effect.** The in-force `seat-budget` spec lets a deployment that
@@ -63,6 +71,36 @@ Choices this change makes, which Adam approves with it:
   reports every role with no seat, because a seat is what `igor serve` spends. On such a
   repository `doctor` always exits non-zero, so a CI step there is always red. *Recommended:*
   keep the finding; such a repository can skip `doctor` in CI.
+
+**Found by the 2026-10-21 consistency read, for the next revision.** A consistency read is a
+fresh agent's check of this change against every other spec, change and open pull request. None
+of its findings is fixed here, and none concerns decision 12.
+
+- To fix, by whoever next revises this change:
+  - *What Changes* still says at least one role must name a source, against decision 11.
+  - Decision 1 describes one claiming repository and two permissions, while the start-up check
+    it invokes covers every repository the role works, and the lore repository.
+  - A role that claims on Linear still acts on GitHub as its App, so its App check is not "not
+    applicable".
+  - A fresh repository has no state branch until an Igor first runs, which the state-branch check
+    needs to tell apart from one it cannot read.
+  - The approvals rule assumes one required approval, and leaves out code owners.
+  - The seat check defines a role's seat by "resolving its seats", which only #171 defines.
+  - The removal check reads the org-level `commands` list, though a role may narrow it.
+  - The rule that no report line begins with `::` misses an indented line, and GitHub's other
+    workflow-command form, `##[`.
+  - Several requirements carry their rationale in the requirement text.
+  - *What Changes* quotes `role.ts` as printing `sources: (none)`; it prints `(none)` on a line of
+    its own.
+  - #171's scenario on ciphertext with no key repeats this change's validation scenario, whose
+    seat-file example cannot be tested before #171 is built.
+- For Adam, next round:
+  - Decision 8 passes a branch that requires approvals wherever two or more people with write
+    access could approve, while lore-review says "Require approvals" SHALL NOT be recommended.
+  - Under the open question on the state-branch principal: in CI, `GITHUB_TOKEN` reads as having
+    no push permission, so that check would always fail there.
+  - The endpoint permissions `design.md` assumes are unmeasured (task 3.1).
+  - Which identity `doctor` acts as is stated only in #171's `surface-adapter` delta.
 
 **Conflict, recorded and not resolved:** #150's task 2.5 relies on `igor doctor` reporting a role
 whose identity is not an App, which decision 2 rules out; #150 is to drop or replace it.
