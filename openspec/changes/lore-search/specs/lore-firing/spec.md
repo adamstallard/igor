@@ -368,8 +368,11 @@ The Igor SHALL push a questions-branch file only when:
 The Igor SHALL refuse any questions-branch file that does not meet every condition above, and
 a refused file writes nothing to the lore repository.
 
-Before it checks and pushes a file, the Igor SHALL set the file's `asked_from` key to the
-repository of the item the run works, as `owner/repo`, replacing any value the worker wrote.
+Once a file passes the checks above, and before it pushes the file, the Igor SHALL set the
+file's `asked_from` key to the repository of the item the run works, as `owner/repo`. The format
+check reads the file as the worker wrote it, and #25's format has no `asked_from` key, so a
+worker's file that holds one is refused. If #25 adds the key, the Igor still refuses a worker's
+file that holds it, since only the Igor may write it.
 
 A *handback comment* is the Igor's handoff comment on the item (*graceful-handoff*) when it
 asks a question the run could not settle. When the Igor posts one, it SHALL record the
@@ -484,7 +487,7 @@ that requirement sets. These counts SHALL NOT repeat any text the worker wrote.
 #### Scenario: The Igor records where a questions-branch file came from
 
 - **WHEN** a worker on an item in repository A reports a log file whose `repository` key names
-  repository B, and which holds an `asked_from` key naming B
+  repository B, and which holds no `asked_from` key
 - **AND** the Igor pushes the file
 - **THEN** the pushed file's `asked_from` names A
 
@@ -572,7 +575,9 @@ on each question file it returns that holds an answer, and label the file by the
 reaches the worker unbidden* sets. #25 states the checks; this requirement does not restate
 them. One is whether the comment a file's `answer_link` points to holds the answer, which #25
 defines as a containment after both texts are normalized; the Igor applies that rule in code,
-with no model call. Each read those checks make from GitHub SHALL authenticate as the installation of the
+with no model call. A *relay* is an App that posts a person's
+answer for them, in a comment starting `User says: `. An Igor's App is never a person's relay:
+a comment it posts, even one starting `User says: `, proves no person's answer. Each read those checks make from GitHub SHALL authenticate as the installation of the
 Igor's App that covers the repository that read is from (`surface-adapter`'s *On GitHub,
 every call an Igor makes acts as its App*); the worker makes none of them. A check cannot be run when, for
 example, GitHub cannot be reached, no installation of the Igor's App covers the repository the
@@ -632,9 +637,18 @@ inheritance cannot remove it (`role-config`'s *Merge semantics differ by field k
 
 - **WHEN** a question file's answer line is "Back off, capped at a minute."
 - **AND** the comment its `answer_link` points to reads "User says: **Back off**, capped at a
-  minute." over two lines, with the prefix #25 puts before an answer it relays for a person
+  minute." over two lines
 - **THEN** the Igor finds that the comment holds the answer, as #25's rule reduces both texts
 - **AND** no model reads the comment
+
+#### Scenario: An answer relayed by an Igor's App proves no person answered
+
+- **WHEN** a worker runs `igor lore-search`
+- **AND** a question file holding `authority: decision` matches the text and passes the
+  visibility rule
+- **AND** the comment its `answer_link` points to starts with `User says: ` and was posted by an
+  Igor's App
+- **THEN** the results show the file as input, labelled as unconfirmed, never as an answer
 
 #### Scenario: A question file keyed to another repository is shown as input
 
@@ -676,8 +690,9 @@ inheritance cannot remove it (`role-config`'s *Merge semantics differ by field k
 
 #### Scenario: A malformed repository key is never looked up
 
-- **WHEN** a worker runs `igor lore-search`
-- **AND** a `questions`-branch file whose `asked_from` key is `o/../../user` matches the text
+- **WHEN** a worker on an item in a public repository runs `igor lore-search`
+- **AND** a `questions`-branch file whose `asked_from` key is `o/../../user`, which counts as a
+  repository whose visibility cannot be read and so as private, matches the text
 - **THEN** the Igor makes no GitHub call with that value
 - **AND** the results neither include that file nor count or mention it
 

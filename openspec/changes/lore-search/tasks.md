@@ -64,11 +64,14 @@
       whose check fails or cannot be run, such as with GitHub unreachable or no installation
       covering the repository, is shown as input, labelled as unconfirmed. Whether a linked
       comment holds the answer is checked in code by #25's normalized containment, with no
-      model call. Tests for *A question file that passes
+      model call. Until #25's branch states them, 2.9 builds two rules the spec states itself: an
+      Igor's App is never a person's relay, and, during a run, a file keyed to another
+      repository than the item's is input. Tests for *A question file that passes
       #25's authority checks is labelled as an answer*, *An authority check that cannot be run
       labels the file as input*, *A failing authority check labels the file as input*, *A
-      linked comment is judged by #25's normalized containment, with no model* and *A question
-      file keyed to another repository is shown as input*
+      linked comment is judged by #25's normalized containment, with no model*, *An answer
+      relayed by an Igor's App proves no person answered* and *A question file keyed to another
+      repository is shown as input*
 
 ## 3. Citations made during a run
 

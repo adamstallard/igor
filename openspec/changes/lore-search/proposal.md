@@ -2,7 +2,7 @@
 
 ## Decisions
 
-[#215](https://github.com/adamstallard/igor/issues/215) records all forty-four decisions,
+[#215](https://github.com/adamstallard/igor/issues/215) records all forty-five decisions,
 and all are Adam's. Where the agent that wrote this change fitted one of them to the spec, the
 list under *Still open* says so. A *consistency read*
 is a check, by a fresh agent, of this change against every other spec, change and open pull
@@ -50,7 +50,7 @@ request; Adam answered the questions each read raised. He made:
   #25's authority checks during igor's search;
 - decisions 35 to 42 on 2026-10-20 and 2026-10-21, choosing among offered options for
   questions that this change's consistency reads had left open;
-- decisions 43 and 44 in those same two days, in the session reviewing shared-skills #25.
+- decisions 43 to 45 in those same two days, in the session reviewing shared-skills #25.
 
 Terms used here:
 - An *Igor* is a teammate agent that runs one role. A *worker* is the agent an Igor starts to do
@@ -445,7 +445,10 @@ Terms used here:
     nothing, as [#208](https://github.com/adamstallard/igor/pull/208)'s decision 28 has it,
     and it reads the `questions` branch the same way. `igor serve` fetches the branch at the
     start of each run. Either way a run reads one copy of the branch throughout, as decision
-    31 says (Adam, 2026-10-20/21).
+    31 says (Adam, 2026-10-20/21). The search's results also say when that copy was last fetched.
+    Adam did not decide that reporting; the spec takes it from #25, whose own search reports
+    when each source was last fetched, so that a search of a stale copy is not mistaken for a
+    fresh one.
 36. **A flagged run's ledger row keeps each denied command's name, without its arguments.**
     The execution ledger row records each shell command the worker's sandbox denied, so the
     operator can see what to allow in the role's `commands`. For a flagged run, that row keeps
@@ -504,8 +507,8 @@ Terms used here:
 43. **A linked comment holds the recorded answer by #25's normalized containment.** #25
     defines the rule once, in the check that proves who wrote a file's answer: both texts are
     reduced as a question is for its hash (no list markers or inline markup, each run of
-    whitespace one space), a leading `User says: `, which #25 puts before an answer it relays
-    for a person, is dropped from the comment, and the comment must contain the file's answer
+    whitespace one space), a leading `User says: `, the prefix of an answer relayed for a
+    person, is dropped from the comment, and the comment must contain the file's answer
     line. No model call judges it. The Igor applies that rule (Adam, in the
     session reviewing shared-skills #25, 2026-10-20/21).
 44. **Adam intends that a file keyed to another repository than the item's shows as input.**
@@ -516,6 +519,14 @@ Terms used here:
     is input by that rule. During a run on B, its `answer_link`, a comment on A, proves no
     writer, since #25 accepts only a comment in B or in the lore repository (Adam, in the
     session reviewing shared-skills #25, 2026-10-20/21).
+45. **An Igor's App never relays a person's answer.** A *relay* is an App that posts a
+    person's answer for them, in a comment starting `User says: `. Adam decided, for #25, that
+    such a comment counts as that person's answer only when its author is an App listed as the
+    person's relay in a file on the lore repository's default branch that went through review,
+    and that an Igor's App never counts (Adam, in the session reviewing shared-skills #25,
+    2026-10-21). #25 is to define that file. Decision 34's checks apply the rule, so a question
+    file whose `answer_link` is such a comment by an Igor's App shows as input. #25's branch
+    does not state the rule yet (Still open).
 
 **Still open:**
 - Whether an Igor's worker that runs the inquisitor skill reaches its filter 1 through `igor
@@ -595,6 +606,35 @@ Terms used here:
   [#208](https://github.com/adamstallard/igor/pull/208) fetches only the lore repository's
   default branch, into a ref and a worktree per process, so the `questions` branch needs a ref
   of its own beside them.
+- Decision 45 is Adam's, given for shared-skills #25, whose branch still counts any App that
+  GitHub reports as owned by a person's account as that person's relay, and names no reviewed
+  relay list. #25 should carry decision 45; until it does, the spec states that an Igor's App
+  is never a relay here, and once #25 carries it, the spec should point to #25 instead. The
+  spec also restates #25's rule for a file keyed to another repository, which should become a
+  pointer the same way.
+- What an `igor serve` run reads after its fetch of the `questions` branch fails at the start
+  of the run: the copy last fetched, or nothing. The results say the fetch failed either way,
+  and no scenario covers that case yet.
+- During an Igor's own inquisitor run, #25's script can read several lore repositories, so a
+  citation from that run could carry an id from another store that happens to name an
+  `active` entry in the Igor's own. The Igor would then push a citation of the wrong entry,
+  holding that entry back from pruning. This is left to whatever specifies how the Igor runs
+  the inquisitor itself (#211).
+- **A question for Adam: lore entries about a more private repository.** Decision 27 filters
+  only `questions`-branch files by visibility. A `project:X` entry, X private, is in scope for
+  a role that also works public repository Y, and a search returns it to a worker on Y, whether
+  the entry is `active` or an unreviewed `provisional` one. Decision 27's reason, that a worker
+  could carry what it read into a more public place, applies to such entries too. Filter them,
+  or name it as a known limit?
+- [#140](https://github.com/adamstallard/igor/pull/140) and this change each define an Igor's
+  record of the questions it posted, with the same rule that the record, never the posted
+  text, decides. One should own the record and the other point to it; whichever merges second
+  does that.
+- Two cases have no scenario yet, for the next round of this change to add. `lore-review`'s rule
+  that, during a run, a collision outside the role's scope is reported only as "id taken" also
+  holds where the lore checkout already holds an entry or rejection of the same name; no
+  scenario tests that case. Nor does a questions-branch scenario test the `repository` key's
+  visibility changing between the run's start and the push.
 - Whether a worker allowed only `Bash(igor lore-search)` can feed the command its standard
   input, since a pipe from `echo` needs `echo` allowed (`src/execute.ts:1607`). Task 4.5
   checks; if it cannot, gate two gives the command another way to take the text before any
@@ -624,8 +664,10 @@ Terms used here:
   person's answer is refused.
 - Once #211's inquisitor role posts an answer given in chat onto the item as a comment by its
   App, decision 24 would accept that comment as proof, and a chat answer could be pushed as a
-  `decision` file, where shared-skills #25 keeps a chat answer as `input`. A question for Adam
-  once #211 specifies the role.
+  `decision` file, where shared-skills #25 keeps a chat answer as `input`. Under decision 45
+  the search shows such a file as input, since an Igor's App relays no one's answer, but the
+  file is still pushed. Whether to refuse the push is a question for Adam once #211 specifies
+  the role.
 - The visibility filter of decision 27 binds `igor lore-search`. An inquisitor run the Igor
   starts itself searches through #25's script, which relies on this change to filter by
   visibility, and *Lore reaches the worker unbidden* sets no such filter for it. Whether
@@ -694,7 +736,7 @@ Terms used here:
   at each push; #212's body should say so.
 - This change's `lore-firing` and `task-execution` deltas call the execution ledger
   `executions.ndjson`, while `appendRecord` writes new rows to `executions/<yyyy-mm-dd>.ndjson`
-  (`src/state.ts:146`). The next round of this change should rename it in both deltas.
+  (`partitionPath`, `src/state.ts:146`, which `appendRecord` calls). Renaming it in both deltas is decided; the next revision of this change does it.
 - `lore-firing`'s *An entry arrives with what a reader needs to judge it* uses "citations" for an
   entry's provenance, while this change uses it for a record that an entry answered a question.
   One of the two should be renamed.
@@ -817,8 +859,8 @@ reading the codebase. Two cases contradict that:
   question file that holds no answer as unanswered. The Igor runs #25's authority checks
   before it labels a file an answer, and shows the file as input, labelled as unconfirmed,
   when a check fails or cannot be run, judging a linked comment by #25's normalized
-  containment with no model call. The requirement has twenty-three scenarios (decisions 15, 23,
-  27, 29, 31, 34, 35, 42, 43 and 44).
+  containment with no model call. The requirement has twenty-four scenarios (decisions 15, 23,
+  27, 29, 31, 34, 35, 42, 43, 44 and 45).
 - `role-config`'s *A role declares its sources, lane, behaviour, permissions, and reviewers*
   makes `igor lore-search` the one command a worker may run that its role's `commands` need
   not list, and its scenario *Declared commands bound what the worker may run* says so.
