@@ -23,7 +23,14 @@
 - [x] 3.3 The forms a quoted credential takes: a key block JSON-escaped, quoted behind `> `,
       indented, encrypted, or cut off; URL credentials holding an `@`; and a token straight
       after `\n`, `\t` or `%3A`.
-- [x] 3.4 What must survive redaction: a deferral for an item whose id holds `highs_`, read
-      back under the same key; and the text after a key header that is only mentioned, even
-      where a checksum as long as a key's line, such as a SHA-256 digest, or a later whole
-      block follows it.
+- [x] 3.4 What must survive redaction: a deferral (the record that an item was handed back)
+      for an item whose id holds `highs_`, read back from `deferred.json` under the same item
+      id; and the text after a key header that is only mentioned, even where a checksum as long
+      as a key's line, such as a SHA-256 digest, follows it, or a later whole key block, which
+      is itself redacted.
+- [x] 3.5 A PGP private key block, whole and cut off, is redacted; a seat token of 8
+      characters is redacted by value, and a 4-character one is not.
+- [x] 3.6 Three tests: a key block JSON-escaped with `\r\n` is redacted; for a header
+      mentioned in padded table rows, redaction finishes quickly and the text after the header
+      is kept; and the text after a header is kept where `Name: value` lines that are not
+      armour headers (the header lines PEM and PGP put before a key's body) follow it.

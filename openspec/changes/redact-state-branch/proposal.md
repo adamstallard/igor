@@ -3,8 +3,9 @@
 ## Decisions
 
 1. **This change owns credential redaction, the one redaction rule.** It is the rule
-   `keep-action-log` (#188) defined, which Adam made the only one on 2026-10-13, extended with
-   the `user:pass@` part of a URL. `pre-worker-breaker` (#173), `keep-action-log` (#188),
+   `keep-action-log` (#188) defined, which Adam made the only redaction rule on 2026-10-13,
+   extended with the `user:pass@` part of a URL. The OpenSpec changes in pull requests
+   `pre-worker-breaker` (#173), `keep-action-log` (#188),
    `loop-verifies-commands` (#189), `review-evidence` (#190) and every other change that
    redacts text cite this change's requirement and call its function, `redact` in `src/redact.ts`,
    rather than state a rule of their own. Decided by Adam, 2026-10-19.
@@ -22,7 +23,7 @@
    redacted too, since anyone who can read the file can read it. *Rejected:* redacting at each
    caller, because a caller that forgets publishes the token.
 
-   Redaction by value also applies to records the Igor reads back, such as `deferred.json`,
+   Redaction on write also changes records the Igor reads back, such as `deferred.json`,
    which is keyed by item. No item id or seat name is expected to hold a credential's exact
    value; one that did would be read back as `[redacted]`, and its deferral would no longer
    match its item.
@@ -34,18 +35,41 @@
    provider said. The reset phrase, the provider's words for when the limit resets, is expected
    to hold no credential. Wherever redaction does replace text, the envelope shows `[redacted]`
    in its place, so a damaged capture is recognisable.
+4. **PGP private key blocks are redacted, and a seat token is matched by value only at 8
+   characters or more** (Adam, 2026-10-20). The minimum is the one variable values already
+   have. *Rejected:* matching every seat token by value, because a short placeholder token such
+   as `igor` would rewrite every item id that contains it.
+5. **A key block is found by a bounded scan, not one pattern.** A `BEGIN` line starts a block
+   only where a key's body follows within 8 lines and 1 KiB, after blank lines and the PEM and
+   PGP armour header lines only. The block then runs to its `END` line within 16 KiB, or else to
+   the end of the text. *Rejected:* one pattern, which backtracked for seconds on a header
+   followed by padding. *Rejected:* allowing any `Name: value` line before the body, because a
+   hex digest after such a line reads as a key body and the text after it is lost. *Rejected:*
+   an unbounded search for `END`, which costs time in proportion to the text for every header.
+   Redacting to the end of the text where `END` is not within 16 KiB loses the text after a
+   long block; keeping it could keep the block's body. The reviewer approves that trade-off with
+   this decision.
 
 **Still open:**
 
 - Whether the transcript needs more than this rule, since it holds the worker's whole closing
   summary rather than an error message (#213).
-- Whether the rule also covers what the Igor posts: a failure handoff's comment on the item,
-  and the transcript excerpt in a pull request body. This change covers the state branch only.
-- Credentials the rule does not name: the GitHub App's signed JWT, held only in memory, and a
+- Whether credential redaction also covers what an Igor posts: a failure handoff's comment on
+  the item, and the transcript excerpt in a pull request body. This change covers the state
+  branch only.
+- Credentials the rule does not name: the GitHub App's signed JWT, which is in no variable
+  and has no prefix the rule knows, so an error that quoted it would reach the branch; and a
   token used as a URL's user name with no password (`https://<token>@host`).
+- A known gap, open for Adam to decide whether to close: key blocks quoted with a line prefix
+  other than indentation or `> ` are not redacted beyond their `BEGIN` line: a diff's deleted
+  lines (`-`), line-numbered output (`cat -n`), `#` or `//` comments, or a key split across
+  concatenated string literals.
+- Whether `src/redact.ts` should forget a seat's token once its seat is removed from the Igor's
+  configuration while it runs. It keeps every
+  token it has read for the life of the process.
 - `lore-search` (#216) records Adam accepting, on 2026-10-20, that a refused run keeps "the
-  provider's whole reply". This change redacts that reply's credentials. One of the two needs
-  rewording, and which is for Adam.
+  provider's whole reply". This change replaces the credentials in that reply, so the reply is
+  no longer kept whole. One of the two texts needs rewording, and which is for Adam.
 
 ## Why
 
@@ -78,13 +102,18 @@ None.
 - `src/redact.ts`, `src/state.ts`, `src/budget.ts`, and `docs/deployment.md`, which says what
   the branch holds.
 - `keep-action-log` (#188) cites this change's requirement instead of defining the rule, and
-  its action log, written to the state branch, is redacted twice: as the log collects each of
-  the worker's tool calls, and on the way out.
+  its action log, written to the state branch, is redacted twice: by #188's own call to
+  `redact` as the log collects each of the worker's tool calls, and by `writeState` on the way
+  out.
 - `loop-verifies-commands` (#189) and `review-evidence` (#190) name #188 as the rule's owner;
   they cite this change instead.
 - `pre-worker-breaker` (#173) masks a failure message's digit and hexadecimal runs, and
   requires redaction to run first, since masking can break up a token's shape. `appendRecord`
-  redacts after the mask, too late for that, so #173 still calls `redact` before masking.
-- A seat token is known by value only where it passes through `resolveToken`. A new token
-  source, such as the encrypted seat file in `seat-files` (#171), calls `rememberSecret` or
-  goes through `resolveToken`.
+  redacts after the mask, too late for that, so #173's own code must call `redact` before
+  masking, as #173's spec requires.
+- A new seat token source, such as the encrypted seat file in `seat-files` (#171), registers
+  its tokens as the requirement says. #171's tests need a fixture token of 8 characters or
+  more, since a shorter one is not registered.
+- `keep-action-log` (#188), `loop-verifies-commands` (#189) and `review-evidence` (#190) summarise
+  the rule as matching seat tokens by value. Their summaries omit the 8-character minimum,
+  which the requirement they cite now states.

@@ -195,3 +195,71 @@ describe('credential redaction keeps the text around a private key header that i
     expect(redact(text)).toBe('Scanner flags `[redacted]`. Keep this note. Fixture:\n[redacted]\nTail.')
   })
 })
+
+describe('credential redaction of a PGP private key block', () => {
+  const line = `${body}${body}`.slice(0, 64)
+
+  it('a whole block, armour headers and checksum included', () => {
+    const block = `-----BEGIN PGP PRIVATE KEY BLOCK-----\nComment: release key\n\n${line}\n${line}\n=abcd\n-----END PGP PRIVATE KEY BLOCK-----`
+    expect(redact(`key:\n${block}\ndone`)).toBe('key:\n[redacted]\ndone')
+  })
+
+  it('a block cut off before its END line', () => {
+    expect(redact(`-----BEGIN PGP PRIVATE KEY BLOCK-----\n\n${line}\n${line}`)).toBe('[redacted]')
+  })
+})
+
+describe('credential redaction of a seat token by value has a minimum length', () => {
+  it('a seat token of 8 characters or more is redacted', async () => {
+    await resolveToken({ tokenEnv: 'SEAT_B' }, { SEAT_B: 'eightchr' })
+    expect(redact('printed eightchr here', {})).toBe('printed [redacted] here')
+  })
+
+  it('a seat token shorter than 8 characters is not matched by value', async () => {
+    await resolveToken({ tokenEnv: 'SEAT_C' }, { SEAT_C: 'igor' })
+    expect(redact('github:adamstallard/igor#12', {})).toBe('github:adamstallard/igor#12')
+  })
+})
+
+describe('credential redaction of a key header followed by padding takes little time', () => {
+  it('a table of headers padded to a column width', () => {
+    const row = `| -----BEGIN RSA PRIVATE KEY-----${' '.repeat(40)}| PEM header of a private key, flagged by the scanner |\n`
+    const text = `${row.repeat(4)}Your limit will reset at 5pm (UTC).`
+    const started = performance.now()
+    const out = redact(text, {})
+    expect(performance.now() - started).toBeLessThan(200)
+    expect(out).toContain('Your limit will reset at 5pm (UTC).')
+  })
+})
+
+describe('credential redaction of a JSON-escaped key with CRLF line breaks', () => {
+  const line = `${body}${body}`.slice(0, 64)
+
+  it('a whole block', () => {
+    const text = `"key":"-----BEGIN RSA PRIVATE KEY-----\\r\\n${line}\\r\\n${line}\\r\\n-----END RSA PRIVATE KEY-----\\r\\n"`
+    expect(redact(text, {})).toBe('"key":"[redacted]\\r\\n"')
+  })
+
+  it('a PGP block with armour headers', () => {
+    const text = `"-----BEGIN PGP PRIVATE KEY BLOCK-----\\r\\nVersion: GnuPG v2\\r\\n\\r\\n${line}\\r\\n=abcd\\r\\n-----END PGP PRIVATE KEY BLOCK-----"`
+    expect(redact(text, {})).toBe('"[redacted]"')
+  })
+})
+
+describe('credential redaction keeps the text after a mentioned header followed by a digest', () => {
+  const reset = 'Your limit will reset at 5pm (UTC).'
+  const hex = '9f86d081'.repeat(8)
+
+  it('aligned name: value lines', () => {
+    expect(redact(`Match: -----BEGIN RSA PRIVATE KEY-----\nFile:  key.pem\nHash:  ${hex}\n${reset}`, {})).toContain(reset)
+  })
+
+  it('a digest on a line of its own name', () => {
+    expect(redact(`-----BEGIN RSA PRIVATE KEY-----\nDigest: sha256 ${hex}\n${reset}`, {})).toContain(reset)
+  })
+
+  it('a note and then an integrity string', () => {
+    const sri = `${'A1b2C3d4'.repeat(11)}==`
+    expect(redact(`Header: -----BEGIN RSA PRIVATE KEY-----\nNote: digest follows\n\n${sri}\n${reset}`, {})).toContain(reset)
+  })
+})

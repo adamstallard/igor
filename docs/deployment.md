@@ -334,20 +334,25 @@ igor run <role> --plan      # what it would claim right now, claiming nothing
 consume it, so this is safe to run when something is already wrong. `--claim` is not a preview
 and the two are refused together, so the claim lines a preview prints are run without `--plan`.
 
-Everything an Igor did is on the `igor-state` branch of the lore repository:
+Everything an Igor did is on the `igor-state` branch of the lore repository, the repository
+holding the Igor's lore and state:
 `executions/` for what it worked and what that cost, one `.ndjson` file per UTC day,
 `discovery.json` for the watermarks, `transcripts/` for why it did what it did, and
 `refusals/` for the whole envelope behind a limit — one JSON file each, which is what a reset
-phrase can be read off later. Most are seats that ran out; the rest are runs that met a limit
-the provider named in a field of its own and did not stop for it. Each file's `outcome` says
-which it was, and `matched` which fields named the limit — `result` alone is the worker's own
-prose, which a crash on an item about rate limits trips too. Readable with `git show`, no
+phrase can be read off later. Most are runs the provider stopped because their seat's usage
+ran out; the rest are runs that met a limit named in one of the provider's own response fields
+and did not stop for it. Each file's `outcome` says which it was, and `matched` which fields
+named the limit. A file matched on `result` alone may be no refusal at all: `result` is the
+worker's own prose, which also mentions a limit when a worker crashes on an item about rate
+limits. Readable with `git show`, no
 checkout needed.
 
 Igor replaces credentials with `[redacted]` in every file and commit message before writing it
-to the branch: tokens, `user:pass@` in URLs, and the values of variables whose names hold
-`TOKEN`, `KEY`, `SECRET`, `PASSWORD` or `CREDENTIAL`. On a public lore repository, anyone can
-read the branch.
+to the branch: seat tokens, private key blocks, tokens with a known prefix, `user:pass@` in
+URLs, and the values of variables whose names hold `TOKEN`, `KEY`, `SECRET`, `PASSWORD` or
+`CREDENTIAL`. The full rule, with its limits, is the comment at the top of `src/redact.ts`.
+Anything the rule does not name is written as it is, and on a public lore repository anyone can
+read the branch, so keep other secrets out of what Igor's runs print.
 
 ## When something is wrong
 
