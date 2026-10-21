@@ -55,6 +55,13 @@
       lore searches*, and for role-config's *Declared commands bound what the worker may run*
       and *Listing the search command is no widening*, which also needs role validation's
       monotonic check to treat `igor lore-search` as outside it
+- [ ] 2.9 Before `igor lore-search` labels a question file as an answer, the Igor runs every
+      check of shared-skills #25's *Only an answer with authority stops a question* on it,
+      reading GitHub as the installation of its App that covers each repository read. A file
+      whose check fails or cannot be run, such as with GitHub unreachable or no installation
+      covering the repository, is shown as input, labelled as unconfirmed. Tests for *A question file that passes
+      #25's authority checks is labelled as an answer*, *An authority check that cannot be run
+      labels the file as input* and *A failing authority check labels the file as input*
 
 ## 3. Citations made during a run
 

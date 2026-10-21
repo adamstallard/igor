@@ -2,9 +2,8 @@
 
 ## Decisions
 
-All thirty-three decisions are Adam's, except two readings in decision 30 that he has not
-yet confirmed, and
-[#215](https://github.com/adamstallard/igor/issues/215) records each one. A *consistency read*
+[#215](https://github.com/adamstallard/igor/issues/215) records all thirty-four decisions,
+and all are Adam's, except two readings in decision 30 that he has not yet confirmed. A *consistency read*
 is a check, by a fresh agent, of this change against every other spec, change and open pull
 request; Adam answered the questions each read raised. He made:
 - decisions 1, 2 and 7 on 2026-10-19, while reviewing
@@ -45,7 +44,9 @@ request; Adam answered the questions each read raised. He made:
 - decisions 24 to 26 on 2026-10-20, answering three questions the next consistency read
   raised, and decision 27 that day, answering the next read's one question;
 - decisions 28 to 32 on 2026-10-20, answering the five questions the next read raised, and
-  decision 33 that day, answering the last read's question about decision 20.
+  decision 33 that day, answering the last read's question about decision 20;
+- decision 34 on 2026-10-20, in the session reviewing shared-skills #25, settling who runs
+  #25's authority checks during igor's search.
 
 Terms used here:
 - An *Igor* is a teammate agent that runs one role. A *worker* is the agent an Igor starts to do
@@ -424,6 +425,17 @@ Terms used here:
     Adam dropped that condition: organization and project questions are shared by every role
     (decision 25), so any role may log one. Decision 27's search rule and the push visibility
     rule still apply (Adam, 2026-10-20, amending decision 20).
+34. **igor's search runs #25's authority checks before it labels a file an answer.**
+    Shared-skills #25 states the checks once, in its requirement *Only an answer with
+    authority stops a question*, and this change points to it rather than restating them.
+    `igor lore-search` runs them on an answered questions-branch file before labelling it an
+    answer. Whenever a check fails or cannot be run, it shows the file as input, labelled as
+    #25 labels such a file, unconfirmed. The worker cannot run the checks, since they read
+    GitHub and it has no `gh` login, so the Igor does. Each read authenticates as the
+    installation of the Igor's App that covers the repository that read is from, as the
+    `surface-adapter` spec requires of every Igor call to GitHub. When no installation covers
+    that repository, or GitHub cannot be reached, the check cannot be run and the file is
+    input (Adam, 2026-10-20, in the session reviewing shared-skills #25).
 
 **Still open:**
 - Whether an Igor's worker that runs the inquisitor skill reaches its filter 1 through `igor
@@ -558,13 +570,24 @@ Terms used here:
   Decision 30's match reads the posted handback comment from GitHub (task 3.9). The two
   changes take "a question the Igor asked" from opposite sources; decision 30's readings are
   still open, and this change does not edit #140.
-- For an answered questions-branch file, *Lore reaches the worker unbidden* labels it as #25's
-  filter 1 does, and #25 says igor labels what its search returns. Neither says who runs #25's
-  authority checks, such as the answer comment's author having write access. Those checks
-  need reads from GitHub, which no task builds and which the worker, having no `gh` login,
-  cannot make. A file whose checks igor cannot make
-  should be labelled as input, never as an answer. This is for #25 and this change to settle
-  together; tasks 2.7 and 2.8 build the labels once it is settled.
+- **A question for Adam: how the Igor tells that a comment holds an answer.** Decision 34
+  has the Igor run #25's authority checks in code. One of them is that the comment a file's
+  `answer_link` points to holds the answer the file records. Inside an agent, #25's filter
+  judges that; nothing here says how the Igor's code compares the two: exact containment, a
+  normalized match, or a model call, which would read untrusted comment text. Until a
+  comparison is chosen, decision 34 already settles the outcome: the check cannot be run,
+  so every file whose writer that comment would prove is shown as input.
+- Decision 34's checks spend the Igor's App installation's GitHub rate limit, which claiming
+  and [#179](https://github.com/adamstallard/igor/pull/179)'s heartbeats also use. A worker
+  steered by item text could call `igor lore-search` in a loop and exhaust it. #179 runs
+  several Igor processes, each a *rank*, and stops every one of them when their heartbeats
+  to GitHub fail. Nothing caps or caches the checks' reads per run. Whether to
+  cap them, cache them, or accept the limit is open, and #179 should hear of it.
+- Under decisions 24 and 33, a run on an item in repository A can push a log file holding an
+  answer whose `repository` key names another repository, B. Its `answer_link` is a comment on
+  A, while #25 proves a writer only by a comment in the repository the key names or in the
+  lore repository, so decision 34's checks always show that file as input. The push succeeds
+  and the answer never counts. Whether to refuse such a push, or accept the limit, is open.
 - Decision 21 counts each refusal by reason, while the spec counts every refused
   questions-branch file under one "refused" reason, as it counts citations. Whether to split
   the count by format, credential, path and unasked question is open.
@@ -669,7 +692,9 @@ reading the codebase. Two cases contradict that:
   listing it and no role can remove it, it returns no `questions`-branch file about a more
   private repository than the item's, judged by visibility alone, and it is read-only. The
   command labels each question and miss file it returns as #25's filter 1 does, labelling a
-  question file that holds no answer as unanswered. The requirement has fourteen scenarios (decisions 15, 23, 27, 29 and 31).
+  question file that holds no answer as unanswered. The Igor runs #25's authority checks
+  before it labels a file an answer, and shows the file as input, labelled as unconfirmed,
+  when a check fails or cannot be run. The requirement has seventeen scenarios (decisions 15, 23, 27, 29, 31 and 34).
 - `role-config`'s *A role declares its sources, lane, behaviour, permissions, and reviewers*
   makes `igor lore-search` the one command a worker may run that its role's `commands` need
   not list, and its scenario *Declared commands bound what the worker may run* says so.

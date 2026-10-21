@@ -343,6 +343,14 @@ collaborator lists on each search would be costly and brittle.
 
 The Igor fetches the `questions` branch once, when a run starts, and every search in that run
 reads that copy, so a run's results do not change while it works.
+
+A question file holding an answer is labelled an answer only when it passes the authority
+checks the inquisitor skill's spec states, such as that the person who answered has write
+access to the lore repository. Those checks read GitHub, and the worker has no GitHub login,
+so the Igor runs them itself, as its App. Whenever a check fails or cannot be run, the file is
+shown as input, something the worker may weigh but which does not settle the question,
+labelled as unconfirmed.
+
 Status does not bind a search: it may return an in-scope `provisional` or `deprecated` entry,
 labelled as not lore, and only `active` entries count as lore. A search outside an Igor's
 run, such as a person running the inquisitor skill in their own session, has no role to

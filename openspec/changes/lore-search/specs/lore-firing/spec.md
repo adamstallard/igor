@@ -33,10 +33,13 @@ A search during a run SHALL present only `active` entries as lore. It MAY also r
 in-scope `provisional` or `deprecated` entry, and SHALL label each one with its status, as not
 lore. It SHALL label each question file it returns as the inquisitor's first filter (filter 1
 in shared-skills #25) labels it. A question file whose frontmatter holds no `authority` key
-holds no answer, and is labelled as unanswered. One that holds an answer is labelled as an
-answer or as input, by the conditions of #25's *Only an answer with authority stops a
-question*. A miss file, which #25's format tells apart from a question file, is labelled as
-a miss. Neither kind of file is labelled as lore.
+holds no answer, and is labelled as unanswered. One that holds an answer is labelled as #25's
+*Only an answer with authority stops a question* labels it: as an answer only when it passes
+every check of that requirement, and otherwise shown as input, which does not settle the
+question, labelled as unconfirmed. A check
+that cannot be run counts as failed. A miss
+file, which #25's format tells apart from a question file, is labelled as a miss. Neither kind
+of file is labelled as lore.
 
 A search's results SHALL come back to the agent as search output, delimited as data, as
 `task-execution` delimits a work item's text. They MUST NOT be placed in the trusted channel
@@ -520,6 +523,16 @@ repository whose visibility it cannot read counts as private, so either counts a
 returning the file. Visibility alone decides this: the Igor does not compare
 who can read the two repositories.
 
+The Igor SHALL itself run the checks of shared-skills #25's requirement
+[*Only an answer with authority stops a question*](https://github.com/adamstallard/shared-skills/blob/spec/inquisitor/openspec/changes/inquisitor/specs/inquisitor/spec.md)
+on each question file it returns that holds an answer, and label the file by them as *Lore
+reaches the worker unbidden* sets. #25 states the checks; this requirement does not restate
+them. Each read those checks make from GitHub SHALL authenticate as the installation of the
+Igor's App that covers the repository that read is from (`surface-adapter`'s *On GitHub,
+every call an Igor makes acts as its App*); the worker makes none of them. A check cannot be run when, for
+example, GitHub cannot be reached, no installation of the Igor's App covers the repository the
+check reads, or that installation cannot read a collaborator's permission there.
+
 The command SHALL be available to a worker whether or not its role's `commands` list it, and
 listing it SHALL grant nothing more. It SHALL be read-only: it writes nothing to the lore
 repository or the state branch, records no firing, and makes no citation. Offering it SHALL
@@ -541,6 +554,34 @@ inheritance cannot remove it (`role-config`'s *Merge semantics differ by field k
 - **THEN** the results show the question file labelled as unanswered and the miss file
   labelled as a miss
 - **AND** neither is labelled as an answer or as lore
+
+#### Scenario: A question file that passes #25's authority checks is labelled as an answer
+
+- **WHEN** a worker runs `igor lore-search`
+- **AND** a question file holding an answer matches the text and passes the visibility rule
+- **AND** the Igor, as its App's installation, runs every check of #25's *Only an answer with
+  authority stops a question* on the file, and each passes
+- **THEN** the results show the file labelled as an answer
+- **AND** every GitHub read those checks made authenticated as that installation, and the
+  worker made none of them
+
+#### Scenario: An authority check that cannot be run labels the file as input
+
+- **WHEN** a worker runs `igor lore-search`
+- **AND** a question file holding an answer matches the text and passes the visibility rule
+- **AND** a check of #25's *Only an answer with authority stops a question* cannot be run on
+  it, because GitHub cannot be reached, or because no installation of the Igor's App can read
+  the permission of the file's `answered_by` on the repository the check reads
+- **THEN** the results show the file as input, labelled as unconfirmed, never as an answer
+
+#### Scenario: A failing authority check labels the file as input
+
+- **WHEN** a worker runs `igor lore-search`
+- **AND** a question file holding `authority: decision` matches the text and passes the
+  visibility rule
+- **AND** its `answered_by` has no write access to the lore repository, which #25 counts as
+  write access to what a `questions`-branch file's question concerns
+- **THEN** the results show the file as input, labelled as unconfirmed, never as an answer
 
 #### Scenario: The search command needs no role listing
 
