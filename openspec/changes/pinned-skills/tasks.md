@@ -1,5 +1,8 @@
 ## 0. Before building
 
+**Build order:** #171's (`seat-files`) code is built before this change's (proposal, decision
+30), although issue #204's archive order puts this change first.
+
 - [x] 0.1 Run `claude -p --plugin-dir <dir>` against a plugin and ask the model to use
       `igor:<name>`. Record in `design.md` whether the skill runs, and which directory Claude
       Code reports to the model. **If the skill does not run, stop: the choice of flag goes back
@@ -11,8 +14,8 @@
 - [ ] 0.2 Confirm the shared-skills commit to pin carries bug-hunter's caller-commits mode
       (`caller-result.sh`), prose's `check`, `sign`, `verify-staged` and `verify-post`, and
       `--goals-file` on prose's `sign` as well as `check`. #153 needs it on `sign`, and drops
-      `prose start`, the call that opened prose's editing hook in a worker's session (Adam, 2026-10-19, on #153). Shared-skills #27 adds it; pin a commit at or
-      after its merge
+      `prose start`, the call that opened prose's editing hook in a worker's session (Adam, 2026-10-19, on #153). Shared-skills #27 added
+      `--goals-file` to `sign` and merged on 2026-10-21; pin a commit at or after that merge
 - [x] 0.3 Before building, measure on the Claude Code version the server runs, and record in
       `design.md`. Done 2026-10-18 on Claude Code 2.1.303. The version the server runs is not
       known, so it was not measured on, and `design.md` gives the results for 2.1.303 alone.
@@ -114,12 +117,13 @@
       ```json
       {"hasCompletedOnboarding": true}
       ```
-- [ ] 2.5 Before every `claude -p` Igor starts in the worker's home (`claudeWorker` in
-      `src/execute.ts`), replace `~/.claude` and `~/.claude.json` with a fresh copy of the
-      template, keeping nothing of what was there, `~/.claude/.credentials.json` included.
-      Reset nothing else in the home. With a
-      worker user, the reset runs as that user, through #175's `sudo` spawn. Each of #153's model
-      steps calls the same reset first, built in #153, as it calls 2.1's argument builder
+- [ ] 2.5 Build the reset here, in `claudeWorker` (`src/execute.ts`): before every model step
+      Igor starts in the worker's home, and never between the calls of one step, such as a
+      `claude -p --resume` of the step's session (proposal, decision 31), replace `~/.claude`
+      and `~/.claude.json` with a fresh copy of the template, keeping nothing of what was
+      there, `~/.claude/.credentials.json` included. Reset nothing else in the home. With a
+      worker user, the reset runs as that user, through #175's `sudo` spawn. #153 wires each of
+      its model steps to call this reset first, as it calls 2.1's argument builder
 - [ ] 2.6 With a worker user, before every reset, kill every
       process that user owns, by user or by the user's systemd slice, whichever the
       implementer finds works (Adam left the means open). Not by process group: each command a
@@ -131,31 +135,40 @@
       under `~/.cache` survive; with a worker user the reset runs as that user; in same-user mode
       `HOME` is the run's home under the state directory, two runs of one role get different
       homes, and a run's home is gone once it ends; the kill names the worker user and runs before
-      every reset, including the one before #153's first step after the worker
+      every reset, including the one before #153's first step after the worker; a step's
+      `claude -p --resume` runs with no reset before it and finds the step's session
 - [ ] 2.8 When the worker exits, copy its session log, the file under `~/.claude/projects/` for
       its session id, into Igor's state directory (`/var/lib/igor` under the unit,
       `~/.local/state/igor` elsewhere) before any reset of that home, mode `0600`. With a worker
       user, read it as that user through #175's spawn, opened without following a link and only
       where `fstat` shows a regular file whose hard-link count is 1. The run's record in `executions.ndjson`
-      names the copy's path beside its session id, or says the log was not copied. Tests: after
+      names the copy's path beside its session id, or says the log was not copied. Redact the
+      log as it is copied, with `redact` from #217's `src/redact.ts` (proposal, decision 29).
+      Tests: a seat token the worker printed reads `[redacted]` in the copy; after
       the worker exits and a later call resets the home, the record names a file that still
       exists and holds the log; a log replaced by a link to a file only Igor can read is not
       copied, and the record says so
 
 ## 3. Startup check
 
-Runs before the first model call: in `wire` (`src/wiring.ts`) when the gate names a seat at
-start, otherwise just before the first model call once it does. A failing check exits 78
-wherever it runs.
+Runs before the first model call: in `wire` (`src/wiring.ts`) when a seat can be probed or
+the gate names one at start, otherwise just before the first model call, once a seat can be
+probed or the gate names one. A failing
+check exits 78 wherever it runs.
 
 - [ ] 3.1 Run `claude -p --model haiku --plugin-dir <skills_dir> --setting-sources user
       --strict-mcp-config --output-format stream-json --verbose`
-      with the one-word prompt `ok` on stdin (#175), from an empty temporary directory, and an
+      with the one-word prompt `ok` on stdin (#175), from an empty directory, and an
       environment of `PATH`, the host's network settings, a `HOME` that is another empty
-      temporary directory, and the token of the seat the budget gate chose (under `igor run`,
-      the one in `IGOR_RUN_TOKEN`). Let the call run to its `result` event and record its cost
-      against that seat as any call's is. Where the gate names no seat, make no call, and run the
-      check before the first model call once one is named. Read
+      directory, and one seat's token. Under `igor serve`, make it the first seat probe after
+      the start, through #143's probe code, in the two directories #143 places under
+      `/var/lib/igor/probes`, recording its `rate_limit_event` as that seat's reading; where no
+      seat is due a probe, spend the seat the budget gate chose. Under `igor run`, spend the
+      implicit local seat, with the token in `IGOR_RUN_TOKEN`, from two new temporary
+      directories (proposal, decision 28). Let the call run to its `result` event and record its
+      cost against that seat as any call's is. Where no seat can be probed and the gate names
+      none, make no call, and run the check before the first model call, once a seat can be
+      probed or the gate names one. Read
       the `system/init` event's `skills`. Refuse to start when
       `igor:<name>` is missing for a skill under `<skills_dir>/skills/`, or when no init event
       arrives. Each refusal exits with status 78, as #82's *A process that refuses to start
@@ -209,9 +222,11 @@ wherever it runs.
       `skills_dir`, each refuse the start before any call; the check runs from an empty
       directory with an empty `HOME`; an unreadable commit starts with the not-checked
       line; the check's
-      environment holds the chosen seat's token and no other seat's, and no `ANTHROPIC_API_KEY`
+      environment holds one seat's token and no other seat's, and no `ANTHROPIC_API_KEY`
       even when the process has one; its `HOME` is not the service user's; its spend is recorded
-      against that seat; and with no seat from the gate it is not made
+      against that seat; under `igor serve` with one reserved seat and no reading, the check is
+      that seat's probe and its reading is recorded; with every seat read, it spends the seat
+      the gate chose; and with no seat to probe or spend it is not made
 
 ## 4. The pinned shared-skills commit
 
@@ -242,14 +257,13 @@ wherever it runs.
       a worker:
 
       ```
-      Keep the service user free of Claude Code hooks, a CLAUDE.md, and skills in ~/.claude/skills. Igor runs claude -p in normal mode, which loads all three into every call, and the service user's home is not reset, so anything there reaches every triage call and seat probe. A worker user's ~/.claude is replaced from Igor's template before every call, so what is there never reaches a worker.
+      Keep the service user free of Claude Code hooks, a CLAUDE.md, and skills in ~/.claude/skills. Igor runs claude -p without --bare, which loads all three into every call, and the service user's home is not reset, so anything there reaches every triage call. A worker user's ~/.claude is replaced from Igor's template before every model step, so what is there never reaches a worker.
       ```
 - [ ] 5.4 `docs/deployment.md`, in the same section, this note (decision 17). It may be
       reworded, but it must say that Igor uses no stored login, that the reset deletes one, and
       where a person creates a token. The section it points at, "Getting the token", is #171's
-      task 9.5; if #171 is not built yet, replace only that reference, `docs/seats.md, "Getting
-      the token"`, with a link to #171's pull request:
+      task 9.5, built before this change (proposal, decision 30):
 
       ```
-      Igor never uses a stored Claude login. Every seat has a token, and each call gets only its seat's token, in its environment; docs/seats.md, "Getting the token", shows how to create one. Before every call in a worker's home Igor replaces ~/.claude and ~/.claude.json from its template, which deletes any login stored there, so don't log the service user or a worker user in to Claude.
+      Igor never uses a stored Claude login. Every seat has a token, and each call gets only its seat's token, in its environment; docs/seats.md, "Getting the token", shows how to create one. Before every model step in a worker's home Igor replaces ~/.claude and ~/.claude.json from its template, which deletes any login stored there, so don't log the service user or a worker user in to Claude.
       ```

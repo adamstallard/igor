@@ -284,7 +284,7 @@ the person, can write them (proposal, decision 25).
 
 *Rejected:* loading no skills under `igor run`, as this decision first had, under which #153
 refuses every role whose `skills` lists `prose`; copying the skills into the run's
-`~/.claude/skills`, which the reset before every call replaces, and where a skill loads as
+`~/.claude/skills`, which the reset before every model step replaces, and where a skill loads as
 `prose`, not the `igor:prose` #153's steps name; writing a `plugin.json` into the person's
 install; and passing `--plugin-dir` to a directory that does not exist, which no measurement
 covers.
@@ -312,7 +312,7 @@ skills and `CLAUDE.md` (measured). Namespacing keeps every `igor:<name>` skill f
 replaced, but the rest reaches the model. On a dedicated Igor server the service user has no
 hooks, `CLAUDE.md` or home skills, as long as the operator follows task 5.3's note. Two decisions
 of 2026-10-17, below, keep the repository's files out of every call and reset the worker's
-`~/.claude` and `~/.claude.json` before each call in its home.
+`~/.claude` and `~/.claude.json` before each model step in its home.
 
 **Decided by Adam, 2026-10-11: Igor makes no startup check of the users' hooks, `CLAUDE.md` or
 home skills.** `docs/deployment.md` tells the operator to keep the service user and the worker
@@ -327,10 +327,11 @@ settings and not the project's or local ones, and `--strict-mcp-config`, which i
 configuration not passed with `--mcp-config`. Measured on 2026-10-18, the two keep all four out,
 and the repository's local and nested files as well.
 
-### The worker's home, and its reset before every call
+### The worker's home, and its reset before every model step
 
-**Decided by Adam, 2026-10-17: the worker runs in a home that lasts, and before each
-`claude -p` there Igor resets `~/.claude` and `~/.claude.json` from a built-in template.**
+**Decided by Adam, 2026-10-17: the worker runs in a home that lasts, and Igor resets that
+home's `~/.claude` and `~/.claude.json` from a built-in template before each model step.** Adam set the
+reset per step, not per `claude -p`, on 2026-10-21 (proposal, decision 31).
 `--setting-sources user` still loads the user's settings, skills and `CLAUDE.md` from
 `~/.claude`, and the worker writes its home, so without a reset a worker steered by an item's text could
 plant hooks, a `CLAUDE.md`, skills or an MCP server for every later call. Task 5.3's note to the
@@ -359,9 +360,13 @@ confirms the worker user cannot write:
 
 How the reset works:
 
-- **When:** before every `claude -p` Igor starts in the worker's home. Those calls are the
-  worker and #153's later model steps (the prose pass and the bug hunt), which run in the same
-  home. Prose's first call, which prints the rules and issues the token that prose's signing
+- **When:** before every model step Igor starts in the worker's home, and never between the
+  calls of one step. The steps are the worker and #153's later model steps (the prose pass and
+  the bug hunt), which run in the same home. A step can make two calls. #153's step that writes
+  a post first writes, in one call, the goals of the post's reader, which prose's first call
+  needs. Igor then runs prose's first call itself, and resumes the step's session with
+  `claude -p --resume` to write the post. The resume reads the session log the first call left,
+  so a reset between the two would leave it nothing to resume. Prose's first call, which prints the rules and issues the token that prose's signing
   call later checks, is Igor's own and runs as the service user (Adam, 2026-10-18, on #153). It
   writes nothing in the worker's home, so the reset has nothing of prose's to keep.
 - **Who:** with a worker user, Igor resets as that user, through #175's `sudo` spawn, since only
@@ -380,7 +385,9 @@ How the reset works:
 - **What it deletes that Igor reads:** the worker's session log, under `~/.claude/projects/`.
   `projects/` cannot be kept out of the reset, since Claude Code's memory for a project lives
   there too. So when the worker exits, Igor copies the log into its state directory, before any
-  reset, and the execution record points at the copy (Adam, 2026-10-19).
+  reset, and the execution record points at the copy (Adam, 2026-10-19). It redacts the copy as
+  it writes it, with #217's `redact` (Adam, 2026-10-21; proposal, decision 29): a worker that
+  runs `env` prints its seat's token into the log.
 - **What persists:** everything else in the home: `~/.gitconfig`, where #175's start check sets
   `safe.directory` so the worker's git trusts a tree the service user owns, and the files a
   repository's tests cache in the home. A file a run leaves there, such as `~/.npmrc`, can steer
@@ -423,21 +430,41 @@ unwritable. Under #179 `igor run` is rank 0 and runs beside serving ranks with n
 wait (Adam, 2026-10-18). A serving rank never uses a run's home, so a run beside serving
 ranks shares no home with them, and two `igor run`s of one role at once each have their own.
 
-### The startup check spends a seat through the gate
+### The startup check spends a seat
 
-**Decided by Adam, 2026-10-18.** The startup check confirms that every pinned skill loads, by
+**Decided by Adam, 2026-10-18; the seat it spends under `igor serve` amended on 2026-10-21.** The startup check confirms that every pinned skill loads, by
 reading the skill list from the `system/init` event of one call. Issue #152 suggests reading that
 list from #144's startup self-test, which #144 proposes to run once per seat and which is not yet
 specified. The check here runs once per start:
 `claude -p --model haiku --plugin-dir <skills_dir>`, from an empty temporary directory, with an
 environment holding only `PATH`, the host's network settings, a `HOME` that is another empty
-temporary directory, and the token of the seat the budget gate chose for Igor's first model call;
-where the gate names no seat at start, the check waits until it does. Its prompt is one word, such
+temporary directory, and one seat's token. Its prompt is one word, such
 as `ok`, and goes on stdin, as #175 requires of every call's prompt. It is an ordinary call: it
 spends that seat and is recorded like any other, and that it authenticates shows the seat's token
 works. The empty `HOME` keeps the service user's home skills out of the list the check reads, and
 `--setting-sources user` keeps out project skills above the working directory (measured
 2026-10-18). Adam accepted keeping the check separate from #144's.
+
+**Under `igor serve`, the check is a seat's first probe** (Adam, 2026-10-21; proposal, decision
+28). A seat's `reserve` (#143) is the share of each usage window held back from Igors, and
+#171's gate draws on a seat with a reserve only once #143's probe has read how full it is. A
+probe is a model call, and the check runs before every other model call, so under the
+rule Adam set on 2026-10-18, under which the check always went through the gate, the probe
+waited for the check while the check waited for the gate. A deployment whose only seats hold a
+reserve and have no reading would then never make a model call.
+
+A seat is due a probe when no unexpired reading covers it, as #143's *A seat nothing has read
+is probed on the Igor server with its own token* says. So where a seat is due a probe when Igor
+starts, the check's call is that first probe: it spends
+the seat it reads, needs no choice by the gate, and its `rate_limit_event` is the seat's first
+reading. It runs from the working directory and the `HOME` that #143 creates under
+`/var/lib/igor/probes` and checks for every probe. Both are empty, so the check still runs
+with an empty `HOME`, as the paragraph above requires. The check keeps its own arguments,
+`--model haiku` and `--plugin-dir`; whether #143's probe, which runs with no tools on its own
+model, may differ in that way is a question for Adam in the proposal's *Still open*. Where every seat already has an unexpired reading at start, no probe is due, and the
+check spends the seat the gate chooses. `igor run` makes no probe (#171), so there the check
+spends the run's implicit local seat, the one seat `igor run` makes from the token in
+`IGOR_RUN_TOKEN`, through the gate, from two new temporary directories.
 
 **It runs on haiku** (Adam, 2026-10-18): the skill list does not depend on the model, and
 haiku costs about a twentieth of the default model's price for the same call.
@@ -472,8 +499,9 @@ credential*, above), such a call prints `system/init` and then fails with `Not l
 cost. But it needed its own exception from #171's *A spend with no seat behind it is not made*,
 and where it finds a stored login, such as the macOS Keychain under `igor run`, a call with no
 token spends that login without the gate seeing it, and rewrites it (measured 2026-10-18). With
-the check spending through the gate, no exception is added: the only calls whose seat the gate
-does not choose stay #143's seat probe and a usage read, each of which spends the seat it reads.
+the check made as a probe or through the gate, no exception is added. The gate still chooses
+the seat of every call but two kinds, each of which spends the seat it reads: #143's seat probe,
+which under `igor serve` can be the check, and a usage read.
 
 ### No guard against a same-named skill
 
@@ -528,8 +556,10 @@ skills are (task 4.1).
   user and gives the rules and the pass token to the step in its prompt. Nothing of prose's
   lives in the worker's home, so the reset needs no exception for it.
 - **The pinned commit must carry what #153 calls.** #153 needs prose's `sign` to take
-  `--goals-file`, as `check` already does, which shared-skills #27 adds; and #153 drops
-  `prose start`, the call that opened prose's editing hook in a worker's session (Adam, 2026-10-19, on #153; task 0.2).
+  `--goals-file`, as `check` already does; shared-skills #27 added that option to `sign`, and
+  merged on 2026-10-21. `prose start` still exists in shared-skills, but #153 no longer calls
+  it, so the pinned commit need not carry the editing hook `prose start` opens in a session
+  (Adam, 2026-10-19, on #153; task 0.2).
 
 ### With #144 (`--bare` as the default)
 
@@ -539,7 +569,10 @@ stops running as a seat.
 
 ### With #143 (`seat-from-stream`)
 
-The seat probe is a `claude -p` and carries the flag like any other call. #143's switch of
+The seat probe is a `claude -p` and carries `--plugin-dir` like any other call. Under `igor
+serve`, where a seat is due a probe, the startup check is the first probe Igor makes (proposal,
+decision 28), so the check's
+reading is recorded as #143 records a probe's, and #143's limits on probes count it. #143's switch of
 triage to `stream-json --verbose` changes the output flags, not this one. One argument builder
 for every call keeps the probe's arguments and every other call's from drifting apart (task
 2.1). That builder also gives the probe

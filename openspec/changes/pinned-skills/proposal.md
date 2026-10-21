@@ -11,14 +11,16 @@
 4. **The pinned shared-skills commit is at or after `075a73a`** (Adam, 2026-10-11), where every
    skill finds its scripts from its base directory. *Rejected:* a line in the worker's system
    prompt telling it where the pinned skills' scripts are.
-5. **The startup check is an ordinary call that spends a seat through the budget gate,
-   separate from the startup self-test #144 proposes to run once per seat** (Adam, 2026-10-11;
-   amended 2026-10-18). It runs once per start, on the seat the gate chose for Igor's first
-   model call. That it authenticates also shows the seat's token works. The gate still chooses
+5. **The startup check is an ordinary call that spends a seat, separate from the startup
+   self-test #144 proposes to run once per seat** (Adam, 2026-10-11; amended 2026-10-18 and
+   2026-10-21). It runs once per start. Under `igor serve`, where a seat is due a probe at
+   start, it is that seat's first probe (decision 28). Otherwise it spends the seat the budget
+   gate chooses for it, as the rest of this decision says. That it authenticates also shows the seat's token works. The gate still chooses
    the seat of every call but two: #143's seat probe and the usage read, each of which spends
    the seat it is reading about. Where the gate names no seat at start, Igor starts, runs its
    cycles without a model call, and runs the check before its first one; if that check fails,
-   the running process exits with status 78 then. *Rejected:* a call with no token, which
+   the running process exits with status 78 then. Igor waits this way only where the check
+   cannot be a probe, since a probe spends its seat without the gate (decision 28). *Rejected:* a call with no token, which
    printed the skill list and then failed to authenticate, at no cost. It needed an exception
    from #171's *A spend with no seat behind it is not made*, and a call with no token uses and
    rewrites a stored login where it finds one (measured 2026-10-18, `design.md`).
@@ -38,8 +40,9 @@
    repository it is working". Measured on 2026-10-18: the two flags keep all four out, with or
    without `--add-dir <tree>`, and the repository's local settings, `CLAUDE.local.md`, nested
    `CLAUDE.md` files, commands and agents too.
-9. **The worker runs in a home that lasts, and before each `claude -p` Igor resets its `~/.claude`
-   and `~/.claude.json` from a built-in template** (Adam, 2026-10-17). With a worker user (#175),
+9. **The worker runs in a home that lasts, and before each model step Igor resets its `~/.claude`
+   and `~/.claude.json` from a built-in template** (Adam, 2026-10-17; before each step rather
+   than each `claude -p` since 2026-10-21, decision 31). With a worker user (#175),
    the home is that user's own. With none, each `igor run` has a home of its own under Igor's
    state directory, removed when the run ends (decision 23), and Igor sets `HOME` to it; that is
    #175's same-user mode, `igor run`, where the worker runs as the user Igor runs as. The template ships with Igor
@@ -84,7 +87,7 @@
     `igor run`, the person's own processes. It is a limit of same-user mode, which runs only on a
     developer's machine.
 14. **#153's later model steps, the prose pass and the bug hunt, run in the worker's home, with
-    the same reset before each `claude -p`** (Adam, 2026-10-17). Prose's first call, which prints
+    the same reset before each step** (Adam, 2026-10-17; per step, decision 31). Prose's first call, which prints
     the rules and issues the token that prose's signing call later checks, is Igor's own and runs
     as the service user (Adam, 2026-10-18, on #153), so nothing of prose's is written in the
     worker's home and the reset has nothing of it to keep.
@@ -159,14 +162,17 @@
     machine without `/opt/igor/skills`; loading no skills under `igor run`, which the first
     half of this decision had, and under which #153 refuses every role whose `skills` lists
     `prose`; copying the skills into the run's `~/.claude/skills`, which the reset before every
-    call replaces, and where they would load as `prose`, not the `igor:prose` #153's steps name;
+    model step replaces, and where they would load as `prose`, not the `igor:prose` #153's steps name;
     writing a `plugin.json` into the person's install; and passing `--plugin-dir` to a
     directory that does not exist, whose handling by `claude -p` is unmeasured.
 21. **Citations ahead of the archive order are accepted** (Adam, 2026-10-19). This change cites
     #171's *A spend with no seat behind it is not made*, #82's *A process that refuses to start
     exits with status 78*, #179's ranks, and #153's `skills` list, prose pass and bug hunt, and
     issue [#204](https://github.com/adamstallard/igor/issues/204) archives all four after this
-    one. Until they archive, the in-force text cites rules not yet in force; every cited change
+    one. Decision 29 adds a fifth citation: the session log's copy is redacted with the function
+    #217 builds for its *Credential redaction replaces every credential the Igor knows*, and
+    #204 archives #217 after this change too. Whether this decision's acceptance covers that
+    fifth citation, as it covers the four Adam accepted, is his to confirm (*Still open*). Until they archive, the in-force text cites rules not yet in force; every cited change
     archives in the same series.
 22. **In same-user mode the reset may follow a link** (Adam, 2026-10-19). The worker can make
     `~/.claude` or `~/.claude.json` a link to a file the person owns, and a reset run as the
@@ -194,31 +200,97 @@
     the execution record points at the copy** (Adam, 2026-10-19). The log lies under
     `~/.claude/projects/`, which the next reset deletes, and `projects/` cannot be kept out of
     the reset, since Claude Code's memory for a project lives there and would load into later
-    calls.
+    calls. Decision 29 redacts the copy.
 27. **Task 5.1 installs `spec-trace` with `prose` and `bug-hunter`** (Adam, 2026-10-19). #190
     (`review-evidence`) adds to each pull request a table of what the loop checked, and fills its
     *Spec scenarios* row by running
     `<skills_dir>/skills/spec-trace/scripts/spec_trace.py`, and without it that row would read
     `not checked` on every pull request.
+28. **Under `igor serve`, the startup check's call is a seat's first probe** (Adam, 2026-10-21).
+    Where a seat is due a probe when Igor starts, the check's call is the first seat probe Igor
+    makes. #143's *A seat nothing has read is probed on the Igor server with its own token* says
+    which seats are due one. Like any probe, the call spends the seat it reads, so the gate
+    makes no decision for it, and its `rate_limit_event` is recorded as that seat's first
+    reading. A probe's limits and exclusions, such as the hourly limit and the skip of a refused
+    seat, apply to it, and it runs where #143's *A seat probe
+    runs where only the Igor can write* places a probe.
+
+    Without this, a deployment whose only seats keep a reserve, a share of each usage window
+    held back from Igors (#143), and have no reading would never make a model call. #171's gate
+    draws on such a seat only once a probe has read it. A probe is a model call, and the check
+    runs before every other model call. So under the rule of 2026-10-18, which sent every check
+    through the gate, the probe waited for the check, and the check for the gate.
+
+    Where no seat is due a probe when Igor starts, because each has an unexpired reading, the
+    check spends the seat the gate chooses, as decision 5 has it. Under `igor run`, which makes
+    no probe (#171), it spends the run's implicit local seat, the one seat `igor run` makes from
+    the token in `IGOR_RUN_TOKEN`, through the gate.
+29. **Igor redacts the session log's copy as it copies it** (Adam, 2026-10-21), with `redact`,
+    the function #217 (`redact-state-branch`) builds for its *Credential redaction replaces
+    every credential the Igor knows*. A worker that runs `env` writes its seat's token into the
+    log, and #171 forbids Igor writing a token to any file. *Rejected:* keeping no copy, which
+    loses the record decision 26 keeps; and keeping the copy unredacted.
+30. **#171's code is built before this change's** (Adam, 2026-10-21), although #204's archive
+    order puts this change first. The seat-budget code this change's code meets is then #171's,
+    under which every model call spends a seat's token. An organization with no seats then
+    makes no model call until it adds one, and never runs on the login stored on the host, which
+    today's in-force `seat-budget` allows.
+31. **The reset runs before each model step, not between a step's own calls** (Adam,
+    2026-10-21). A model step can make two calls: under #153's decision 40, the step that writes
+    a post writes its reader goals in a first turn, and Igor then resumes that session with
+    `claude -p --resume`. A reset between the two would delete the session log the resume
+    reads. The kill of decision 13 runs before each reset, so it too runs per step. Adam chose
+    this per-step reset of the run's home, with the session log's copy of decision 26, over
+    giving each run a Claude Code configuration directory of its own (`CLAUDE_CONFIG_DIR`),
+    which #216 had proposed. #216 is to cite this change for the reset.
 
 **Still open:**
 
 - **The ambient login until #171 archives.** Until #171 archives, the in-force `seat-budget`
   lets a seat name no token and run on the login stored on the host, which decision 17 forbids;
   an organization with no seats runs its calls that way too. Under this change no call runs
-  without a seat: the startup check waits for one the gate names, and every other call comes
-  after it. Nothing is asked of Adam: what is built follows decision 17, and the item stays open
-  only until #171 archives.
+  without a seat: the startup check spends a seat it probes or one the gate names (decision
+  28), and every other call comes after it. Nothing in this item is for Adam to decide: #171's
+  code is built first (decision 30), so the code never runs on the ambient login. The item
+  records only that the archived specs allow it until #171 archives.
 - **A home a crashed `igor run` left.** Decision 23 removes a run's home when the run ends, and
   a run that crashes leaves it under Igor's state directory, holding no token, since the seat's
   token reaches a call only through its environment. The plugin directory a run assembles from
   the person's skills (decision 20) is left beside it. Nothing removes either but the person.
   #175 asks Adam the same of a crashed run's trees, and recommends leaving both to the person,
   with the docs for `igor run` saying where they are.
-- **#153's citation of the refusal of a missing directory.** #153 names this change's *Igor
-  confirms its skills load before its first model call* as the refusal of a missing
-  `skills_dir`, but that refusal is in *Skills come from one plugin directory the server
-  names*. That citation is #153's to correct.
+- **Questions from the 2026-10-21 consistency read, for Adam:**
+  - **Decision 21's fifth citation.** Whether Adam's acceptance of citations ahead of the
+    archive order covers this change's citation of #217, added by decision 29.
+  - **The check as a probe denies no tools.** #143's probe runs with no tools and on
+    `TRIAGE_MODEL`; the check carries `--plugin-dir` and `--model haiku`, and whether a call
+    with no tools still lists its skills in `system/init` is unmeasured. Either the check keeps
+    its own arguments as an exception to #143's minimal probe, or it denies tools once a
+    measurement shows the list survives.
+  - **A probe #143 refuses to spawn.** Where #143's check of the probe's two directories (*A
+    seat probe runs where only the Igor can write*) fails, the probe is
+    recorded as errored and held off by the hourly limit and the five-hour back-off. Whether
+    the check has then failed, exiting 78, or waits for the next probe, is unsaid; waiting can
+    hold a one-seat deployment's first model call for five hours.
+  - **A dry run** makes a triage call but is neither `igor serve` nor `igor run`, so which
+    skills it loads where `/opt/igor/skills` is missing is unsaid, and #153's name check needs
+    that set.
+  - **Igor's state directory** is defined here as `/var/lib/igor` under the unit or
+    `~/.local/state/igor`, and in #216 through `$STATE_DIRECTORY` and `$XDG_STATE_HOME`; one
+    change should own the definition. Under the shipped unit on `main`, `/var/lib/igor` is not
+    writable: the unit gains `StateDirectory=` only
+    in #179's task 1.8, which this change does not cite.
+- **Other findings of the 2026-10-21 consistency read, for this change's authors:** the session
+  log's copy reads the log without following a link and only as a regular file with one link,
+  but #175's *The Igor reads no file on the worker's behalf through a link* also has an `lstat`
+  before the open, a non-blocking open and a kill before reading, which the copy lacks, so a worker that makes its log a FIFO hangs the copy; task 0.2 does not list
+  bug-hunter's `mint-trailer.sh` or prose's `--message-goals-file`, which #153 calls; decision 20
+  still cites question 10 of #153's *For Adam* list, which #153 has since renumbered as its
+  decision 29; whether a Read grant on `skills_dir` reaches the files behind a link is left by
+  each of this change and #153 to the other; under `igor run`'s fallback, #190's spec-trace row
+  rests on a script the worker can write, a limit decision 20 does not name; and several
+  refusals and choices lack a scenario or a decision (an extra file in `.claude-plugin/`, a
+  hard-linked or FIFO log, fsmonitor off, exit 78 for a relative `IGOR_SKILLS_DIR`).
 - **Findings of the 2026-10-19 consistency read left for the next pass.** Task 5.3's note says
   the service user's home reaches every seat probe, but #171 gives the probe an empty `HOME`.
   Four rules are each stated in two or three changes, which will drift apart unless one states
@@ -229,27 +301,13 @@
   `.claude-plugin/`, a `plugin.json` key other than the `hooks` key a scenario already covers,
   and any refusal under `igor run`. A skill's `SKILL.md` can
   declare `allowed-tools`, which the check does not read; no pinned skill declares one today.
-  Task 0.3 is ticked but did not run on the version the server runs, which is not known. The
-  shared-skills commit to pin, with `--goals-file` on prose's `sign`, does not exist until
-  shared-skills #27 merges. And
+  Task 0.3 is ticked but did not run on the version the server runs, which is not known. And
   decision 19 does not list the keys `plugin.json` may hold, `name`, `version` and
   `description`, though the spec fixes them, so a reviewer approving the decisions does not see
   that choice.
-- **Findings of a second consistency read the same day, left for the next pass.** Three are
-  questions for Adam:
-  - **A deployment whose only seats hold a reserve, and have not been read yet, may never make
-    a model call.** #171's gate draws on a seat with a `reserve` (#143) only once #143's seat
-    probe has read its usage. The probe is a model call,
-    so it waits for the startup check, and the check waits for the gate to name a seat.
-    Either the probe runs before the check, or the check may use a seat a probe has not read.
-  - **The session log's copy can hold a seat's token.** A worker that runs `env` puts its
-    token in the log, and decision 26 keeps a copy of the log after the reset deletes the
-    original. #171 forbids Igor writing a token to any file. Nothing redacts the copy.
-  - **Between this change's archive and #171's**, the in-force `seat-budget` lets an
-    organization with no seats run on the ambient login, but this change's startup check
-    waits for a seat the gate never names, so every model call waits.
-
-  The rest are for this change's authors to fix. #204's rule places a change that only cites
+- **Findings of a second consistency read the same day, left for the next pass.** Adam
+  answered its three questions in decisions 28, 29 and 30. The rest are for this change's
+  authors to fix, except the first, whose gap decision 21 accepts. #204's rule places a change that only cites
   another change's requirement after that change, which would put this change after #171, #179
   and #82; #204's list puts it before them. The kill before a reset may go by the worker user's systemd slice here, which #175 says
   a process started through `sudo` is not in. Decision 6 rests on no skill replacing an
@@ -287,13 +345,15 @@ replaces it.
   repository does not load (decision 8). Every installed skill loads for every role; a role's
   `skills` list (#153) decides which skills its worker is told to use and whose results Igor's
   code verifies.
-- **No call loads the worked repository's settings** (decision 8), **and every call in the
-  worker's home starts from a reset `~/.claude` and `~/.claude.json`** (decision 9). With a
+- **No call loads the worked repository's settings** (decision 8), **and every model step in
+  the worker's home starts from a reset `~/.claude` and `~/.claude.json`** (decisions 9 and
+  31). With a
   worker user, Igor kills every process that user owns before every reset (decision 13).
 - **Before its first model call, Igor confirms each installed skill loads.** It reads the skill
   list from the `system/init` event of a `claude -p --model haiku` call made with an empty
-  `HOME` and the token of the seat the budget gate chose, spent like any other call (decisions 5
-  and 18).
+  `HOME` and one seat's token. Under `igor serve`, where a seat is due a probe at start, that
+  call is the seat's first probe, and its reading is the seat's first (decisions 5, 18 and
+  28).
 - **The pinned shared-skills commit is at or after `075a73a`** (shared-skills #19), where every
   skill finds its scripts from its base directory, `<skills_dir>/skills/<name>`.
 
@@ -321,11 +381,12 @@ every call, so they live in one place, `pinned-skills`.
   worker is granted none of them (#153). Its role-config requirement refuses a role that lists
   a skill not installed under `skills_dir`, in every command that runs a model step; this change
   refuses nothing on that account. Under `igor run`'s fallback (decision 20), the installed
-  skills that check reads are the person's. #153 drops `prose start`, the call that opened prose's editing hook in a worker's session, and needs prose's `sign` to take
-  `--goals-file`, as `check` already does (Adam, 2026-10-19, on #153). Shared-skills #27 adds it,
-  so the pinned commit must be at or after its merge (task 0.2).
-- **#171** (`seat-files`) archives after this change, in issue #204's order. Decision 17 rests
-  on it (*Still open*, the ambient login).
+  skills that check reads are the person's. #153 runs no `prose start`, the call that opened prose's editing hook in a worker's session,
+  and needs prose's `sign` to take `--goals-file`, as `check` already does (Adam, 2026-10-19,
+  on #153). Shared-skills #27 added that option to `sign` and merged on 2026-10-21, so the
+  pinned commit must be at or after that merge (task 0.2).
+- **#171** (`seat-files`) archives after this change, in issue #204's order, but its code is
+  built first (decision 30). Decision 17 rests on it (*Still open*, the ambient login).
 - **#143** withdraws `scheduled-observation`, whose `igor observe` reads usage under a stored
   login, which decision 17 forbids. This change assumes #143 has archived. With a token in its
   environment, the usage read printed no window percentages on 2026-10-18 (`design.md`), and
@@ -337,7 +398,9 @@ every call, so they live in one place, `pinned-skills`.
   *A process that refuses to start exits with status 78* requires.
 - **#143's seat probe**, the call that reads a seat's windows from its `rate_limit_event`, and
   **#144's startup self-test** are `claude -p` calls, so they carry the flag. The skills check
-  here differs from both: it reads no usage, and runs once per start, not once per seat.
+  runs once per start, not once per seat. Under `igor serve`, where a seat is due a probe, it
+  is that seat's first probe (decision 28): its reading is recorded as the probe's, and #143's
+  limits on probes count it.
 - `docs/deployment.md` gains the install procedure: a root-owned plugin directory outside the
   service's writable paths, filled by the manager from a clone at a fixed commit.
 - **#144's risk stands:** if `--bare` becomes the default for `claude -p`, Igor must opt out

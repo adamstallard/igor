@@ -93,8 +93,10 @@ exceptions. The usage read (`runUsage`, which the budget gate and `igor budget` 
 seat's usage and SHALL NOT carry it. And under `igor run` where neither `skills_dir` nor the
 person's installed skills exist, no call carries it (*Skills come from one plugin directory the
 server names*). Otherwise, the calls that carry it are the worker, triage, the startup check,
-#143's seat probe and every other model step. A *model step* is any call in which a model does
-Igor's work. No call SHALL pass `--bare`.
+#143's seat probe and every other model step. A *model step* is one part of Igor's work done by
+a model: one `claude -p`, alone or with the `claude -p --resume` calls that continue its session,
+as #153's step that writes a post resumes the session in which it wrote its reader goals. No
+call SHALL pass `--bare`.
 
 The worker invokes an `igor:<name>` skill itself, through the Skill tool, when its task calls
 for it.
@@ -148,7 +150,7 @@ to keep them out.
 - **AND** that hook does not run
 - **AND** the worker is not given that `CLAUDE.md`
 
-### Requirement: Every call in the worker's home starts from Igor's template
+### Requirement: Every model step in the worker's home starts from Igor's template
 
 With a worker user (#175), the worker's home SHALL be that user's own home, and it SHALL last
 across runs. With none, each `igor run` SHALL have a home of its own in Igor's state directory, the
@@ -160,11 +162,13 @@ remove it when the run ends. No two runs share a home, and within one run the ho
 its tasks. Running with no worker user, so that the worker runs as the user Igor runs as, is
 same-user mode; `igor run` is the one command that runs that way (#175).
 
-Before every `claude -p` Igor starts in that home, Igor SHALL replace `~/.claude` and
+Before every model step Igor starts in that home, Igor SHALL replace `~/.claude` and
 `~/.claude.json` with a fresh copy of a template that ships with Igor, keeping nothing of what
-was there, a stored login in `~/.claude/.credentials.json` included. The calls Igor starts in
-that home are the worker and each model step Igor starts after it in the same home, such as
-#153's prose pass and bug hunt. Under `igor run`, Igor SHALL neither hide nor refuse a login the
+was there, a stored login in `~/.claude/.credentials.json` included. The steps Igor starts in
+that home are the worker and the model steps #153 runs after it, such as the prose pass and the
+bug hunt. Triage and the startup check do not run there. Igor SHALL NOT reset the home between the calls of one step, so
+a `claude -p --resume` finds the session its step's first call left. Under `igor run`, Igor
+SHALL neither hide nor refuse a login the
 developer keeps where setting `HOME` does not move it, such as the macOS Keychain. The template
 SHALL hold:
 
@@ -196,8 +200,8 @@ task.
 - **WHEN** a worker writes a hook, a `CLAUDE.md` or a skill under `~/.claude`, and an MCP server
   into `~/.claude.json`
 - **AND** no process the worker started is still running
-- **AND** Igor later starts another `claude -p` in that home
-- **THEN** that call's `~/.claude` and `~/.claude.json` hold only what the template holds
+- **AND** Igor later starts another model step in that home
+- **THEN** that step's `~/.claude` and `~/.claude.json` hold only what the template holds
 - **AND** the hook does not run, and neither that `CLAUDE.md`, that skill nor that MCP server
   loads
 
@@ -232,7 +236,14 @@ task.
 - **WHEN** Igor runs a worker as the worker user of role `generalist`, rank 1
 - **THEN** each `claude -p` it starts for that worker's task has `HOME` set to that user's own
   home
-- **AND** that home is reset before each of those calls
+- **AND** that home is reset before each model step of the task
+
+#### Scenario: A step's resumed call finds its session
+
+- **WHEN** a model step writes its reader goals in a first `claude -p`, and Igor then runs
+  `claude -p --resume` for that step's session in the same home
+- **THEN** Igor does not reset the home between the two calls
+- **AND** the resumed call continues the first call's session
 
 #### Scenario: Each igor run has a home of its own
 
@@ -259,6 +270,9 @@ task.
 
 When the worker exits, Igor SHALL copy its session log, the file Claude Code writes for the
 session under `~/.claude/projects/`, into Igor's state directory, before any reset of that home.
+Igor SHALL redact the log as it copies it, with credential redaction, as #217's
+(`redact-state-branch`) *Credential redaction replaces every credential the Igor knows* defines
+it, so that the copy never holds a credential the worker printed, such as its seat's token.
 The state directory is `/var/lib/igor` under the shipped unit, and `~/.local/state/igor`
 elsewhere. Only the user Igor runs as SHALL be able to read the copy. With a worker user, Igor
 SHALL read the log as that user, without following a link and only where it is a regular file
@@ -274,6 +288,11 @@ beside the session id it already records.
   user alone
 - **AND** the run's record names that copy, which the reset left in place
 
+#### Scenario: A token the worker printed is redacted in the copy
+
+- **WHEN** a worker runs `env`, which prints its seat's token into the session log, and exits
+- **THEN** the copy in Igor's state directory holds `[redacted]` where the log held the token
+
 #### Scenario: A session log the worker replaced with a link is not copied
 
 - **WHEN** a worker running as a worker user replaces its session log with a link to a file only
@@ -283,21 +302,37 @@ beside the session id it already records.
 
 ### Requirement: Igor confirms its skills load before its first model call
 
-Before its first other model call, Igor SHALL run `claude -p --model haiku --plugin-dir
+The startup check is itself a model call. Before any other model call, Igor SHALL run `claude -p --model haiku --plugin-dir
 <skills_dir> --setting-sources user --strict-mcp-config --output-format stream-json --verbose`.
-It runs from an empty temporary directory, with an environment holding only `PATH`, the network
-settings the host is configured with, a `HOME` that is another empty temporary directory, and
-the token of the seat the budget gate chose for Igor's first model call (under `igor run`, the
-token in `IGOR_RUN_TOKEN`). Its prompt is one
-word, such as `ok`, on stdin, as #175's (`worker-user`) *A prompt reaches claude on stdin, never
-in its arguments* requires. The call SHALL be an ordinary spend on that seat, run to its end and
-recorded as any other call is.
+It runs from an empty directory, with an environment holding only `PATH`, the network settings
+the host is configured with, a `HOME` that is another empty directory, and one seat's token. Its
+prompt is one word, such as `ok`, on stdin, as #175's (`worker-user`) *A prompt reaches claude on
+stdin, never in its arguments* requires. The call SHALL run to its end, and its spend SHALL be
+recorded against that seat as any call's is.
+
+Which seat it spends:
+
+- **Under `igor serve`, where a seat is due a probe when Igor starts,** the call SHALL be the
+  first seat probe Igor makes, of a
+  seat that #143's (`read-seat-windows-from-the-stream`) *A seat nothing has read is probed on
+  the Igor server with its own token* calls a probe for. It spends that seat, as any probe does,
+  so the budget gate chooses no seat for it. Igor SHALL record its `rate_limit_event` as that
+  seat's reading. Every limit and exclusion of a probe applies to it, such as #143's hourly
+  limit and its skip of a refused seat, but the call keeps the arguments above. Its two directories
+  are the ones #143's *A seat probe runs where only the Igor can write* places and checks.
+- **Under `igor serve` where no seat is due a probe when Igor starts,** because each has an
+  unexpired reading, the call spends the seat the gate chooses for it, as for any call.
+- **Under `igor run`,** which makes no probe (#171), the call spends the run's implicit local
+  seat, the one seat `igor run` makes from the token in `IGOR_RUN_TOKEN` (#171), through the
+  gate; its two directories are new temporary directories.
 
 Under `igor run` where neither `skills_dir` nor the person's installed skills exist, no check is
 made (*Skills come from one plugin directory the server names*); where the run assembled a
-plugin directory from the person's skills, the check runs against it. Where the gate names no seat when Igor starts, no call is made, as #171's *A spend with no seat
-behind it is not made* requires. Igor starts, and runs the check before its first model call
-once the gate names a seat.
+plugin directory from the person's skills, the check runs against it. Where Igor can neither
+probe a seat nor spend one the gate names when it starts, as when the gate has found every seat
+refused by the provider, no call
+is made, as #171's *A spend with no seat behind it is not made* requires. Igor starts, and runs
+the check before its first model call, once a probe or the gate allows one.
 
 Igor SHALL read the `skills` list of the `system/init` event and confirm that `igor:<name>` is in
 it for every entry under `<skills_dir>/skills/`. A call that fails after printing the event
@@ -311,7 +346,7 @@ and `description`. These checks run before the call, and each refusal exits with
 
 Igor SHALL refuse to start when an installed skill is missing from the list, or when no
 `system/init` event arrives. That holds whenever the check runs, including a check that waited
-for the gate to name a seat.
+for a probe or the gate to allow it.
 
 Every refusal in this requirement exits with status 78, under `igor serve` as #82's
 (`stopped-scope-visible`) *A process that refuses to start exits with status 78* requires, and
@@ -376,22 +411,35 @@ checked, and the check still passes on the list alone.
 - **WHEN** the call exits without a `system/init` event
 - **THEN** Igor refuses to start, saying it could not confirm its skills load
 
-#### Scenario: The check spends the seat the gate chose, on haiku
+#### Scenario: The check runs on haiku, with one seat's token
 
 - **WHEN** Igor runs the check
 - **THEN** its arguments include `--model haiku`
-- **AND** it runs from an empty temporary directory, with `HOME` set to another empty
-  temporary directory
-- **AND** the call's environment holds the token of the seat the budget gate chose, and no
-  other seat's token and no API key
+- **AND** it runs from an empty directory, with `HOME` set to another empty directory
+- **AND** the call's environment holds one seat's token, and no other seat's token and no API
+  key
 - **AND** its `HOME` holds no stored login
 - **AND** the spend is recorded against that seat
 
-#### Scenario: No seat, no check yet
+#### Scenario: Under igor serve, the check is a reserved seat's first probe
 
-- **WHEN** the budget gate names no seat for the role when Igor starts
+- **WHEN** `igor serve` starts, and its only seat keeps a reserve, a share of each usage window
+  held back from Igors (#143), and has no reading
+- **THEN** the check's call is that seat's probe, made with no choice by the gate
+- **AND** its `rate_limit_event` is recorded as the seat's first reading, from which the gate
+  then decides whether to draw on the seat
+
+#### Scenario: Under igor serve, a seat with a reading is spent through the gate
+
+- **WHEN** `igor serve` starts, and every seat has an unexpired reading
+- **THEN** the check spends the seat the gate chooses for it
+
+#### Scenario: No seat to spend, no check yet
+
+- **WHEN** Igor starts, and no seat can be probed and the gate names none, as when every seat
+  is refused
 - **THEN** Igor starts, makes no model call, and runs the check before its first model call once
-  the gate names a seat
+  a probe or the gate allows one
 - **AND** if that check fails, the process exits with status 78 then
 
 #### Scenario: A call that fails after the init event is still judged on its list

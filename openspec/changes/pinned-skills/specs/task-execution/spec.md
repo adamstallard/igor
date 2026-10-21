@@ -9,7 +9,7 @@ tasks or is shared with another task. The tree SHALL be released when the task e
 its outcome.
 
 Nothing a worker writes SHALL reach a later task, except three kinds of file: files in the
-worker's home that the reset leaves alone, which `pinned-skills`' *Every call in the worker's
+worker's home that the reset leaves alone, which `pinned-skills`' *Every model step in the worker's
 home starts from Igor's template* defines; files the worker's user writes outside its home,
 wherever it can write; and, in same-user mode, where no worker user exists, files written in
 the home after a reset by a process the worker started that left the worker's process group.
