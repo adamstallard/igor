@@ -9,15 +9,18 @@ Each is the reviewer's to decide, except where marked **Decided**.
    the command printed a file. *Rejected:* saving the stream whole. It holds every file the
    worker read, in full.
 2. **Redact each call as it is collected.** The rule is *credential redaction*, the one
-   redaction rule, which `redact-state-branch` (#213) defines along with what it matches and
-   the alternatives it rejected. #213 also builds its function, `redact` in `src/redact.ts`,
+   redaction rule, which `redact-state-branch` (#217) defines along with what it matches and
+   the alternatives it rejected. #217 also builds its function, `redact` in `src/redact.ts`,
    which this change calls. Redacting at collection means no later step holds a call
    unredacted: `review-evidence` (#190), which lists the worker's commands in the pull request
    body, reads them already redacted.
 
-   This log depends on the rule matching known secrets by their exact value, not only by
-   pattern. A seat token is the model-subscription credential an Igor gives its worker
-   (`src/execute.ts:868`), so `env` prints it, and no pattern need fit its shape. Until
+   This log depends on the rule matching a known secret by its exact value, not only by its
+   shape. A seat token is the model-subscription credential an Igor puts in its worker's
+   environment (`src/execute.ts:868`), where `env` prints it, and no pattern need fit its
+   shape. The rule matches a seat token, and the value of an environment variable whose name
+   holds a credential word such as `TOKEN`, only where it is at least 8 characters long; a
+   shorter one is not redacted by value. Until
    `worker-user` (#175) fixes #163, the worker can also read the Igor's own credentials, and a
    command it runs can print them too.
 
@@ -28,7 +31,7 @@ Each is the reviewer's to decide, except where marked **Decided**.
    patterns to redact, which lets the sets drift apart, so a value one change redacts another
    could publish.
 
-   **Decided (Adam, 2026-10-19): the rule's definition moves to #213.** #213 defines it,
+   **Decided (Adam, 2026-10-19): the rule's definition moves from this change to #217.** #217 defines it,
    extended with the `user:pass@` part of a URL, and builds its function before this change.
    This change cites the rule rather than stating it.
 3. **What is kept depends on who can read the store, asked of GitHub at write time.** A private
@@ -59,6 +62,33 @@ Each is the reviewer's to decide, except where marked **Decided**.
    for an error beginning that way, and no code for any other error. A change to that text's
    format degrades the entry to its error status, never to a wrong code.
    *Rejected:* dropping the exit code, which loses what tells a test failure from a crash.
+
+**Still open:**
+
+- **For Adam:** whether a private store keeps the commands' output, the part of decision 3
+  this pull request asks about.
+- **For whoever next edits this change,** from a consistency read on 2026-10-21. None is
+  decided, and none is fixed in this text:
+  - **The row and the log's path.** `appendRecord` writes the run's row in `executions.ndjson`,
+    and sets its `at` time, before execution writes the transcript, so a log written after the
+    transcript does not exist yet when the row that must name it is written.
+  - **Exit codes.** A result that is not an error but carries no exit code, such as a shell
+    command run in the background, would be recorded as exit 0. And keeping a long output's
+    last 2,000 characters drops the `Exit code <n>` prefix at its start.
+  - **Labels and kept input.** The level of decision 3 that keeps only tools and error status
+    drops the label naming which model step made each call, which every entry must carry. An
+    edit or write tool that the spec does not list among the file tools keeps its whole input,
+    and so does a subagent call's prompt.
+  - **Other changes.** #153 adds model steps of its own, a cold read, its answers and triages,
+    that none of the three labels fits. #216 keeps only names for a run it withholds, even in a
+    private store. #190 decides what this log keeps before this change reads the stores'
+    visibility. #171 removes the `token_file` source one scenario tests.
+  - **A token the Igor never sees.** Claude Code sets `CLAUDE_CODE_MESSAGING_TOKEN` itself. The
+    Igor never learns its value, so redaction cannot match it by value, and a private store
+    keeps it wherever `env` output is kept.
+  - **The spec itself.** Several SHALLs have no scenario, "the store" is not defined, and the
+    redaction requirement summarises #217's rule where decision 2 says this change only cites
+    it.
 
 ## Why
 
@@ -108,7 +138,7 @@ None.
   the store's.
 - Build order: this change, then `review-evidence` (#190), then `scope-check` (#187) and
   `loop-verifies-commands` (#189), in either order; archive order follows the same sequence.
-  `redact-state-branch` (#213) builds credential redaction's function before this change, and
+  `redact-state-branch` (#217) builds credential redaction's function before this change, and
   this change, #189 and #190 all call it. `scope-check` (#187) and `loop-verifies-commands`
   (#189) write only into the evidence table #190 adds, so they follow #190.
 - **Decided (Adam, 2026-10-13): the log covers every model step Igor runs**, not the worker

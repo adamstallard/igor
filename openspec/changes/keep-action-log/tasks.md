@@ -1,6 +1,6 @@
 ## 0. Order
 
-- [ ] 0.1 Build this change after `redact-state-branch` (#213), since this change calls #213's
+- [ ] 0.1 Build this change after `redact-state-branch` (#217), since this change calls #217's
       redaction function. Then `review-evidence` (#190), since #190 reads the calls this change
       collects. Then `scope-check` (#187) and `loop-verifies-commands` (#189), in either order:
       both write only into the evidence table #190 adds to the pull request body, and neither
@@ -34,8 +34,8 @@
 
 ## 3. Write
 
-- [ ] 3.1 Redact each collected string with `redact` from `src/redact.ts`, the function
-      `redact-state-branch` (#213) builds. This change adds no patterns or values of its own;
+- [ ] 3.1 The redaction of 2.1, which runs once, as each call is collected: `redact` from
+      `src/redact.ts`, the function `redact-state-branch` (#217) builds. This change adds no patterns or values of its own;
       `loop-verifies-commands` (#189) and `review-evidence` (#190) call the same function.
 - [ ] 3.2 Read the store's and the worked repository's visibility with `isPublic`, treating an
       error on the store as public and on the worked repository as private, and cut the entries to the tier that applies.
