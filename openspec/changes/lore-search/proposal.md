@@ -2,9 +2,10 @@
 
 ## Decisions
 
-[#215](https://github.com/adamstallard/igor/issues/215) records all ninety-nine decisions,
-and all are Adam's. Where the agent that wrote this change fitted one of them to the spec, that
-decision says so. A *consistency read*
+[#215](https://github.com/adamstallard/igor/issues/215) records all one hundred decisions, as this list does too,
+and all are Adam's. Where the agent that wrote this change fitted
+details Adam had not stated, that decision says so, and where Adam has since confirmed them,
+a later decision records it. A *consistency read*
 is a check, by a fresh agent, of this change against every other spec, change and open pull
 request; Adam answered the questions each read raised. He made:
 - decisions 1, 2 and 7 on 2026-10-19, while reviewing
@@ -78,7 +79,7 @@ request; Adam answered the questions each read raised. He made:
 - decisions 91 to 96 on 2026-10-21, answering the four questions this change then had for
   him, confirming more fitted details, and settling how a refused run's reply is kept;
 - decisions 97 to 99 on 2026-10-21, answering the three questions the reads of decisions 91 to
-  96 raised.
+  96 raised, and decision 100 that day, confirming the details fitted to decision 97.
 
 Terms used here:
 - The *destination repository* is the repository the configuration key `destination` names,
@@ -520,8 +521,10 @@ Terms used here:
     refused, it is withheld by the visibility rule, or it failed to push. Adam set the order
     as flagged run, category, scope, visibility, push failure, to be fitted to the reasons the
     spec has (2026-10-20/21). The agent that wrote this change fitted it so: the spec has no
-    reason of its own for a category, since the Igor cannot see one, so a category shows as a
-    flagged run; scope is the refused reason; and a run that published nothing goes second,
+    reason of its own for a category: the Igor sees categories only in a flagged run's flag,
+    so every category comes with a flagged run, which is already the first reason; and it
+    cannot tell which category, if any, a citation's question had. So a category shows as a
+    flagged run; scope is the refused reason, since a citation is refused when its entry is not in the role's scope; and a run that published nothing goes second,
     beside the other reason that applies to the whole run. Questions-branch files are counted
     by the same reasons, in the same order.
 41. **The questions an answered file must match come from the Igor's own record.** When the
@@ -821,7 +824,7 @@ Terms used here:
 83. **A held item's hold record never expires, and a lost record leaves it held.** Unlike
     today's handed-back record, which expires after 30 days (`src/deferred.ts:43`), and unlike any other item's missing record, which
     lets it be worked again (Adam, 2026-10-21). The agent that wrote this change fitted how a
-    held item is known when its record is lost, for Adam to check: from its file under
+    held item is known when its record is lost, which Adam confirmed (decision 95): from its file under
     `flagged-questions` on the host, or from a ledger row whose `reason` starts
     `needs a person`. It also fitted what decision 84's `igor release <item>` does: its `<item>` is
     `<tracker>/<repo>/<item>`, and it marks the hold record released, appends a `released` ledger row
@@ -836,8 +839,8 @@ Terms used here:
     `condition-backoff`, beside #101's refused credential, and stops no work, since
     the item is already held (Adam, 2026-10-21). This change does not modify that requirement,
     so the exception is an item for `condition-backoff` and #101. One new scenario. The agent
-    that wrote this change fitted, for Adam to check, that a later failed write, for any item,
-    reuses a condition already open rather than opening another.
+    that wrote this change fitted, and Adam confirmed (decision 95), that a later failed write,
+    for any item, reuses a condition already open rather than opening another.
 86. **A relayed answer pushed as `input` names its actual author.** Where decision 78 makes the
     relay check unrunnable, the file's `answered_by` is the comment's actual author, the relay
     App's login without GitHub's `[bot]` suffix (Adam, 2026-10-21, a gap shared-skills #25's
@@ -911,17 +914,19 @@ Terms used here:
 97. **The flag lists every category met, and marks the stopped question's.** A flagged worker's
     flag lists each #25 category met in the run (`vulnerability`, `secret`, `personal`), each at
     most once, and marks which belong to the question or questions the run stopped on; the host
-    question file records both. Where several questions stopped one run, the file lists each
-    with its category, or its text when it has none (Adam, 2026-10-21, amending decision 92).
+    question file records both. Where several questions stopped one run, the file lists their
+    categories and the texts of those without one, unpaired, as decision 100 confirms (Adam, 2026-10-21, amending decision 92).
     igor writes a category word only when it is exactly one of the three; any other value,
     which a steered worker could supply, counts as no category, and the run stays flagged.
-    The agent that wrote this change fitted three details, for Adam to check: since the flag
+    The agent that wrote this change fitted three details, which Adam confirmed (decision
+    100): since the flag
     gives each category once, the file keeps two separate lists, the marked categories and the
     texts of stopped questions without one, and neither pairs them nor counts questions that
     share a category;
     a value outside the three words counts as no category, so the file leaves it out if
     unmarked and, if marked, says a stopped question's category could not be read;
-    and the Igor never follows a link under `flagged-questions`. `task-execution` and
+    and the Igor never follows a symbolic link under `flagged-questions`, which a same-user
+    worker could plant (decisions 94 and 99) to redirect the Igor's writes, moves or deletes. `task-execution` and
     `graceful-handoff` gain five new scenarios between them, and four change.
 98. **Every step's session log is kept for a flagged execution.** #174 is to copy each step's
     session log before the next reset, which it does not do yet, #153's later model steps and #189's second worker run
@@ -932,6 +937,12 @@ Terms used here:
     binds only where workers have users of their own, which is `igor serve` once #175 lands;
     `igor run` is the developer's own trusted machine, as decisions 50 and 68 say (Adam,
     2026-10-21).
+100. **The details fitted to decision 97 are Adam's.** He confirmed them as written (Adam,
+    2026-10-21): the question file keeps two unpaired lists, the marked categories and the
+    texts of uncategorized stopped questions, and no entry pairs a question with its category; a value outside
+    #25's three words is dropped if unmarked, and if marked the file notes that a stopped
+    question's category could not be read; and the Igor never follows a symbolic link under
+    `flagged-questions`.
 
 
 **Alignments with shared-skills #25.** These follow from Adam's decisions above and #25's
@@ -976,6 +987,14 @@ decisions 216, 221, 225, 229 and 235 (#25 at 9247d3c), and add no decision:
   would never update and the `questions` branch would never be fetched. #208 should fetch the
   destination repository too; this change does not edit it. This change's `surface-adapter`
   delta has the startup check require the App on the destination repository as well.
+- **For Adam: how far the no-follow rule reaches** (decision 100). Adam confirmed that the Igor
+  never follows a symbolic link under `flagged-questions`. `graceful-handoff` also refuses a
+  hard-linked or non-regular file there, and counts that refusal as a failed write, which
+  records `question not kept`; neither is in a decision yet. Nor does the rule cover the
+  `flagged-questions` directory itself or the state directory above it: until #175, and always
+  under `igor run`, a same-user worker could replace `flagged-questions` with a link to a working
+  tree that is later published, and the Igor would write a question's text and session logs
+  there. Should the rule cover the directory and its parents, and are the stricter checks his?
 - **For gate two: when several Igor processes for one role (#179's ranks) each record which
   commit #208 last applied, whose record governs the relay-file read** of decision 77; the
   processes
