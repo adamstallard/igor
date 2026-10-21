@@ -187,7 +187,11 @@
       `igor:question` label, writes a file to `flagged-questions/<tracker>/<repo>/<item>.md`
       under its state directory, mode 0600 in directories of mode 0700, recording the flag's
       categories with their marks and, for each question the run stopped on, its category or
-      else its text, and listing every session log of the execution; the Igor moves #174's
+      else its text, and listing every session log of the execution; for every create, move
+      and delete under `flagged-questions`, the Igor opens each path component from the state
+      directory down to the file without following a link, and a link, a hard-linked file or
+      a non-regular file makes it refuse, a refused create or move counting as a failed write;
+      the Igor moves #174's
       redacted copy of each step's log beside the file. A later flagged run's
       question replaces the file, and the Igor pushes nothing of the file (when the write fails, the handoff still posts,
       the ledger row's `reason` reads `needs a person, question not kept`, a condition, once `condition-backoff`
@@ -206,7 +210,7 @@
       only its category*, *A reported category reaches only the host file*, *A value outside
       #25's list is no category*, *A run stopped on two questions lists both*, *A category met
       but not stopped on is recorded unmarked*, *A step's log #174 did not copy is named as
-      missing*, *A link under flagged-questions is not followed*, *A refusal Igor could not parse says only that the provider refused*, *A report
+      missing*, *A link under flagged-questions is not followed*, *A flagged-questions directory replaced by a link is refused*, *A hard-linked file under flagged-questions is refused*, *A pipe planted as the question file is refused without blocking*, *A link below flagged-questions is refused*, *A refusal Igor could not parse says only that the provider refused*, *A report
       the Igor cannot tell is whole counts as cut short*, *A refused run with no completed report counts as flagged*,
       *A worker run that ends without its completed report, for any reason, counts as
       flagged*, *A flagged run's ledger row keeps each denied command by name only*, *A flagged run's
@@ -303,3 +307,10 @@
 - [ ] 4.11 Whether Claude Code keeps any per-user state or session under `HOME` outside
       `~/.claude` and `~/.claude.json`, which #174 resets. If it does, one run could read
       another's there despite decision 87; file an issue against #174 before relying on it.
+- [ ] 4.12 How igor, a Node program, opens each path component under `flagged-questions`
+      without following a link (decision 101). Node's `fs` has no `openat2` and no
+      directory-relative calls, and its `O_NOFOLLOW` guards only the last component; a walk
+      of `lstat` then `open` races the same-user worker the rule defends against. Choose a
+      mechanism that does not race, such as a native helper, or #175's `O_NOFOLLOW` with a
+      check that the real path stays inside the tree, and open a file with `O_NONBLOCK` and
+      check it with `fstat` before writing.

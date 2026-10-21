@@ -2,7 +2,7 @@
 
 ## Decisions
 
-[#215](https://github.com/adamstallard/igor/issues/215) records all one hundred decisions, as this list does too,
+[#215](https://github.com/adamstallard/igor/issues/215) records all one hundred and one decisions, as this list does too,
 and all are Adam's. Where the agent that wrote this change fitted
 details Adam had not stated, that decision says so, and where Adam has since confirmed them,
 a later decision records it. A *consistency read*
@@ -79,7 +79,8 @@ request; Adam answered the questions each read raised. He made:
 - decisions 91 to 96 on 2026-10-21, answering the four questions this change then had for
   him, confirming more fitted details, and settling how a refused run's reply is kept;
 - decisions 97 to 99 on 2026-10-21, answering the three questions the reads of decisions 91 to
-  96 raised, and decision 100 that day, confirming the details fitted to decision 97.
+  96 raised, and decision 100 that day, confirming the details fitted to decision 97;
+- decision 101 on 2026-10-21, answering the question the reads of decision 100 raised.
 
 Terms used here:
 - The *destination repository* is the repository the configuration key `destination` names,
@@ -942,7 +943,20 @@ Terms used here:
     texts of uncategorized stopped questions, and no entry pairs a question with its category; a value outside
     #25's three words is dropped if unmarked, and if marked the file notes that a stopped
     question's category could not be read; and the Igor never follows a symbolic link under
-    `flagged-questions`.
+    `flagged-questions`. Decision 101 extends that rule to the whole path.
+101. **The no-follow rule covers the whole path, and the stricter checks are Adam's.** The Igor
+    opens every component from its state directory down through `flagged-questions` to each
+    file it creates, moves or deletes there without following a link, so `flagged-questions` itself and every directory above it,
+    up to the state directory, are covered; Linux's `openat2` with `RESOLVE_NO_SYMLINKS`, or
+    `O_NOFOLLOW` on each component, is an example, and gate two picks. It refuses where any
+    component is a link. It also refuses an existing file under `flagged-questions` that has
+    more than one hard link or is not a regular file, both checks the agent that wrote this
+    change had added, since a planted hard link or special file there could carry a write
+    elsewhere just as a link could. A refused write is a failed write under decision 80:
+    the ledger row records `question not kept`, and decision 80's notice condition opens once
+    `condition-backoff` defines conditions (Adam, 2026-10-21). How the rule treats the state
+    directory itself, a refused move and a refused delete is open (Still open). Four new
+    `graceful-handoff` scenarios.
 
 
 **Alignments with shared-skills #25.** These follow from Adam's decisions above and #25's
@@ -987,14 +1001,28 @@ decisions 216, 221, 225, 229 and 235 (#25 at 9247d3c), and add no decision:
   would never update and the `questions` branch would never be fetched. #208 should fetch the
   destination repository too; this change does not edit it. This change's `surface-adapter`
   delta has the startup check require the App on the destination repository as well.
-- **For Adam: how far the no-follow rule reaches** (decision 100). Adam confirmed that the Igor
-  never follows a symbolic link under `flagged-questions`. `graceful-handoff` also refuses a
-  hard-linked or non-regular file there, and counts that refusal as a failed write, which
-  records `question not kept`; neither is in a decision yet. Nor does the rule cover the
-  `flagged-questions` directory itself or the state directory above it: until #175, and always
-  under `igor run`, a same-user worker could replace `flagged-questions` with a link to a working
-  tree that is later published, and the Igor would write a question's text and session logs
-  there. Should the rule cover the directory and its parents, and are the stricter checks his?
+- **For Adam: three edges of decision 101's rule.** The consistency read of decision 101 raised
+  them; the agent that wrote this change left each open rather than fit it.
+  - *The state directory itself.* `flagged-questions` sits directly in the Igor's state
+    directory, so the rule covers `flagged-questions` and everything below it. Under `igor run`
+    the state directory is `~/.local/state/igor`, and a same-user worker could replace it, or
+    `~/.local/state`, with a link to a working tree, the redirect decision 101 closes one level
+    down. Checking the state directory and its parents too would close that, but would refuse
+    every write where a legitimate `$XDG_STATE_HOME` or `$HOME` passes through a link. Which
+    should apply?
+  - *A refused move of a log copy.* When the question file is written but moving one of
+    #174's session-log copies beside it is refused, should the ledger read `question not
+    kept`, or should the file note that copy as missing, as it notes a log #174 did not copy?
+    And should the move's source, #174's copy outside `flagged-questions`, be opened without
+    following a link too? Before #175 a same-user worker can replace it with a link, which a
+    rename would carry into `flagged-questions`.
+  - *A refused delete under `igor release`.* The spec leaves the path in place and writes it to
+    the Igor's own log. A file left in place can hold the item again if its hold record is
+    later lost, which undoes `work-triage`'s reason for deleting it. Should `igor release`
+    report the refusal as a failure, and should it still mark the record released?
+- **For gate two: how a Node program opens a path without following a link** (decision 101,
+  task 4.12). Node's `fs` has no `openat2` and no directory-relative calls, and its
+  `O_NOFOLLOW` guards only the last component, so the mechanism is unmeasured.
 - **For gate two: when several Igor processes for one role (#179's ranks) each record which
   commit #208 last applied, whose record governs the relay-file read** of decision 77; the
   processes
@@ -1447,7 +1475,7 @@ reading the codebase. Two cases contradict that:
   has a flagged run's handoff state why it stopped only in the ledger row's fixed words, quote
   no failure detail or worker's reason and point to the item's transcript path, and has a
   flagged run's handoff ask no question, add no question label and keep its question on the
-  host, with seventeen new scenarios (decisions 71, 73, 75, 76, 80, 85, 88, 89 and 97).
+  host, with twenty-one new scenarios (decisions 71, 73, 75, 76, 80, 85, 88, 89, 97 and 101).
 - `work-triage`'s *An item handed back is not re-worked until something answers* stops a reply
   from rerunning an item a flagged run handed back, and lets only an edit by someone with
   write access release it, keeps a held item held whatever its handoff carries and with a

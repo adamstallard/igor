@@ -41,10 +41,19 @@ log of the execution that open pull request #174 copies: this change depends on 
 each step's log before the next reset, the worker's, those of #153's later model steps and
 #189's second worker run included (the proposal's Still open). When the execution ends the Igor
 SHALL move every such copy into the same directory beside the file, mode 0600. Where #174 made
-no copy of a step's log, the file SHALL say so in place of that path. The Igor SHALL create,
-move and delete files under `flagged-questions` without following a link, and SHALL refuse to
-act on any path there that is not a directory or a regular file whose hard-link count is 1; a
-refused write counts as a file it cannot write, below. Once workers run as users of their own (#175),
+no copy of a step's log, the file SHALL say so in place of that path. Whenever the Igor
+creates, moves or deletes a file under `flagged-questions`, the question file and the session
+log copies alike, it SHALL open every component of that path below its state directory, `flagged-questions`
+itself and each directory under it down to the file, without following a link, such as with
+Linux's `openat2` and `RESOLVE_NO_SYMLINKS` or with `O_NOFOLLOW` on each component, as gate two
+chooses (task 4.12). Whether the state directory itself, and the directories above it, are
+opened the same way is open (the proposal's Still open). The Igor SHALL refuse the action when
+any such component is a link, or when the file already exists and either is not a regular file
+or has more than one hard link, a file a later question would replace included; checking a
+file SHALL NOT block on it, so a planted pipe is refused, not waited on. A refused create counts
+as a file it cannot write, below. A refused move or delete leaves the path in place, and the
+Igor writes the path to its own log on the host; what else it records is open (the proposal's
+Still open). Once workers run as users of their own (#175),
 no worker run SHALL be able to reach the `flagged-questions` directory; #175 builds that, not
 this change. Until then, and always under `igor run`, another worker running as the same user can
 read it, its logs and categories included, and plant or delete a file in it, which Adam
@@ -130,6 +139,36 @@ NOT push, post or publish the file, or its text, anywhere.
 
 - **WHEN** the item's path under `flagged-questions` is a symbolic link a worker planted
 - **THEN** the Igor writes, moves and deletes nothing through it
+
+#### Scenario: A flagged-questions directory replaced by a link is refused
+
+- **WHEN** a worker running as the Igor's user replaces the `flagged-questions` directory with a
+  symbolic link to a working tree that a pull request is later pushed from
+- **AND** a flagged run then stops on a question
+- **THEN** the Igor writes nothing through the link
+- **AND** it counts the write as failed: the handoff still posts, the ledger row's `reason` is
+  `needs a person, question not kept`, and a notice condition opens where conditions exist
+
+#### Scenario: A hard-linked file under flagged-questions is refused
+
+- **WHEN** the item's question file under `flagged-questions` has more than one hard link
+- **AND** a later flagged run of the item stops on a question
+- **THEN** the Igor writes nothing to that file and counts the write as failed
+
+#### Scenario: A pipe planted as the question file is refused without blocking
+
+- **WHEN** a worker running as the Igor's user replaces the item's question file under
+  `flagged-questions` with a named pipe
+- **AND** a later flagged run of the item stops on a question
+- **THEN** the Igor writes nothing to the pipe, counts the write as failed, and posts the
+  handoff without waiting on the pipe
+
+#### Scenario: A link below flagged-questions is refused
+
+- **WHEN** a worker running as the Igor's user replaces `flagged-questions/github` with a
+  symbolic link
+- **AND** a flagged run of a GitHub item then stops on a question
+- **THEN** the Igor writes nothing through the link and counts the write as failed
 
 #### Scenario: A kept question without a category holds its text
 

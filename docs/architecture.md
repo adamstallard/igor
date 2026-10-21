@@ -617,6 +617,12 @@ their own (#175).
 Until then, and always under `igor run`, the developer's own trusted machine, every worker runs
 as the same user, so one can read another's home and read or write `flagged-questions`, its
 logs and categories included; Adam accepts that.
+A worker could use that access to plant a link that sends igor's own writes elsewhere, such as
+into a working tree a pull request is pushed from. So whenever igor creates, moves or deletes a
+file under `flagged-questions`, it opens `flagged-questions` and every path component below it
+without following a link. It refuses when any of them is a link, or when the file already
+exists and is hard-linked or not a regular file. A refused write counts as a question not
+kept.
 
 For a flagged run's ledger row, the changed paths, and the actions the role's `allow` list
 refused, which differ from the sandbox's denied commands kept by name above, stay in full. Open pull request #188, not yet built, adds a log of each
