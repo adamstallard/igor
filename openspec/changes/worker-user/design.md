@@ -313,12 +313,10 @@ the last staging, which the Igor records and publishes. The signing scripts are 
 wrote. The start check tries to write each script the Igor runs from there, as well as the
 directory's top level (*What each start checks*).
 
-The trailers bind the index's tree unless #153 binds them to the tree the Git Data API builds
-from the same files (#153's design item 3); #153's task 0.4 found the two differ only for a
-link or a submodule. A changed link or submodule stops the run until #137 lands, so for
-everything this change publishes the two trees are equal. Either way the Igor publishes the
-tree the trailers name. The worker cannot change the recorded tree object, and a copy
-the worker could change, the index copy included, is never what a trailer is bound to.
+The trailers bind the tree of the Igor's own index, as #153's decision 35 has it, and the Igor
+publishes the tree the trailers name. The worker cannot change the recorded tree object, and no
+copy the worker could change is ever what a trailer is bound to, the worker's index copy in its
+outbox included.
 
 A staging that did not wait for the kill and the checks would run `git add` over the worker's
 files before the checks see them. And the trailers bind the last staging because binding an
@@ -443,6 +441,20 @@ Before the first cycle, `serve` checks in this order, stopping at the first fail
    (Adam, 2026-10-19). Without it sudo writes the seat token to the journal on every worker
    start (measurement 6.5).
 8. As the worker, `git config --global safe.directory '*'` is set if missing.
+9. As the worker, an HTTP `GET /` to port 80 of `169.254.169.254` and of `[fd00:ec2::254]`,
+   each with a 2-second limit, made by the `node` the Igor runs on: directly, and again through
+   the proxy where the worker is given `HTTP_PROXY` or `http_proxy`. Any HTTP response is a
+   refusal. A connection refused, unreachable, blocked, timed out, or accepted and closed with
+   no response passes, so a network stack that accepts every connection, as Docker Desktop's
+   does, is not taken for the endpoint (Adam, 2026-10-21; *Secrets reach the worker only
+   through the Igor*, below).
+10. The worker user's groups, from `id -Gn` as the worker, include none of `docker`, `lxd`,
+    `incus` and `disk`; `sudo -n -l` as the worker lists no command; and, as the worker,
+    `test -w` fails on `/run/docker.sock`, `/var/run/docker.sock`, `/run/podman/podman.sock` and
+    `/run/containerd/containerd.sock`. A socket that does not exist passes, unlike the paths in
+    check 5, since a host without it is the safe case.
+11. The Igor's own process is not dumpable: the native addon's read of `PR_GET_DUMPABLE`
+    returns 0, and `/proc/sys/fs/suid_dumpable` reads 0 (*The Igor cannot be dumped*, below).
 
 A file the check has no path for is reported as not checked, never as passed (Adam,
 2026-10-19). Where `IGOR_ENV_FILES` is unset, as in #192's container, which loads no
@@ -462,6 +474,87 @@ Igor's `/proc/<pid>` at all, so the `environ` probe in check 5 finds nothing to 
 It passes because the worker cannot read the Igor's environment, which is the property it
 checks. On a kernel where the setting has no effect, `environ` is readable by its owner alone,
 so the probe passes for the same reason, and fails if the worker can read it some other way.
+
+### Secrets reach the worker only through the Igor (Adam, 2026-10-21)
+
+A worker gets a secret only from the Igor, and the Igor registers each one with
+`rememberSecret`, which #217 (`redact-state-branch`) adds, before handing it over.
+Credential redaction then matches the secret by its value in every record, transcript and check
+output the Igor stores. A secret that reaches the worker any other way is one the registry never
+saw, so redaction stores it as it stands. A secret shorter than 8 characters, which
+`rememberSecret` does not register, is never handed over. Adam named five such routes, side
+channels, and this table says how each is closed under `serve`:
+
+| side channel | how it is closed |
+|---|---|
+| the cloud metadata endpoint, `169.254.169.254` and `fd00:ec2::254`, which hands any caller the instance's cloud credentials | the unit's `IPAddressDeny=` (below), and start check 9 |
+| an SSH agent | `workerEnv` builds the environment from a list, which holds no `SSH_AUTH_SOCK`, in both modes; a test proves no agent variable passes (task 1.9) |
+| the `docker`, `lxd`, `incus` or `disk` group, a container engine's socket, or a sudo right, each of which reads `/etc/igor` as root | start check 10 |
+| a credential in the tree's git configuration or a remote URL, which the worker can read in `<tree>-git` | `gitEnv` on `main` already gives each git command its token in that command's environment and writes none to a file; a test proves `<tree>-git/config` holds none (task 2.7) |
+| credentials an operator put in the worker's home, such as `~/.npmrc` | the deployment guide says not to (task 8.4); a credential a worker needs is declared in the Igor's configuration, as #189 declares a check's |
+
+**The metadata endpoint is blocked for the whole unit** (proposed 2026-10-21, for Adam;
+proposal, decision 42). The unit sets `IPAddressDeny=169.254.169.254 fd00:ec2::254`. systemd
+enforces it with a BPF program on the unit's control group, and every process in the group
+inherits it. A process `sudo` starts in the unit stays in that group unless `pam_systemd` in
+sudo's PAM stack opens a session for it and moves it into the worker user's slice; measurement
+6.2 did not record the group, and task 6.15 does. Debian's `/etc/pam.d/sudo` includes
+`common-session-noninteractive`, which holds no `pam_systemd`; other distributions are task
+6.15's to check. The line also blocks the Igor, which needs no cloud credential: see the
+proposal's *Still open* for a `token_command` that reads a cloud secret store. On a kernel without
+cgroup BPF, systemd warns and enforces nothing, and start check 9 then refuses. A worker given
+a proxy could ask it to fetch the endpoint, which the unit's line does not stop, so check 9 also
+asks through the proxy. On Google Compute Engine and Oracle Cloud the same address is also the
+DNS resolver. A host whose `/etc/resolv.conf` names that address, with no local resolver in
+between, would lose DNS in the unit under the line (task 6.15). #192's container
+has no unit, so its host must block the endpoint; check 9 refuses there until it does.
+
+*Rejected:* a host firewall rule by owner, such as nftables' `meta skuid`, one per worker user.
+It needs a host step outside the unit, kept across reboots, and a new rule for every instance.
+It is the fallback should task 6.15 find `sudo` moving the worker out of the unit's group.
+
+**The `gh` and `git` children get a list too** (Adam, 2026-10-21; proposal, decision 44).
+They hold no worker secret, but on `main` they inherit the Igor's whole environment, every seat
+token from `/etc/igor/env` among them. Each now gets `PATH`, `HOME`, the worker's network
+settings and its own token, and nothing else.
+
+**Lore picks a seat, never its secret** (Adam, 2026-10-21; proposal, decision 45). Only the
+Igor's code and the server's own configuration decide which secret goes to which process. #171
+fixes a seat's variable to `IGOR_SEAT_<ID>` and binds its ciphertext to its id; #189 fixes a
+check credential's variable by its repository and name. The proposal checks every token source
+against the rule, and lists the one that breaks it on `main`.
+
+`igor run` passes no agent socket either, but closes none of the other four. Its worker runs as
+the person, who may hold an agent, a Docker
+group and a home full of credentials, and the notice says so (task 5.4).
+
+### The Igor cannot be dumped (Adam, 2026-10-21)
+
+The Igor's memory holds the registry, the App's key and every seat token it has read. A crash
+dump writes that memory to disk. On a host running systemd-coredump, root and the process's own
+user can then read it with `coredumpctl`. Two settings stop it:
+
+- **`LimitCORE=0` in the unit**, so the kernel writes no core file for any process in it.
+- **`prctl(PR_SET_DUMPABLE, 0)` in the Igor's own process**, made as it starts, before it reads
+  any credential file or token source. The environment the unit loads is in the Igor's memory
+  from its first instruction, before the call; under the unit, `LimitCORE=0` covers a crash in
+  that moment, and in #192's container nothing does. While `fs.suid_dumpable` is 0, a
+  process that is not dumpable writes no core whatever the limit, its
+  `/proc/<pid>` entries become root's, and no process of the same user can `ptrace` it. The flag
+  is not inherited across `execve`, so it changes nothing for the worker or any program the Igor
+  starts. At `fs.suid_dumpable=2`, as Ubuntu sets it with apport, the kernel still dumps such a
+  process, owned by root, to a pipe handler, so start check 11 refuses unless it reads 0.
+- **`setrlimit(RLIMIT_CORE, 0)` by the Igor itself**, so `serve` in #192's container, which has
+  no unit, writes no core either.
+
+Node has no `prctl` and no `setrlimit`, and none of Igor's four dependencies is native. So Igor
+ships a small native addon of three calls: `prctl(PR_SET_DUMPABLE, 0)`, `setrlimit(RLIMIT_CORE,
+0)`, and `prctl(PR_GET_DUMPABLE)` to read the flag back. The proposal's *Still open* recommends
+Rust through `napi-rs`, with prebuilt Linux binaries for x64 and arm64, so installing needs no
+compiler. Under `serve`, an addon that fails to load, a call that fails, or a flag that reads
+back as anything but 0 refuses the start with status 78 (start check 11). Under `igor run` the
+Igor makes both calls where it ships the addon, Linux on x64 and arm64, and elsewhere, such as
+on macOS, starts without them.
 
 ### Every seat has a token, and no call uses a stored login (Adam, 2026-10-18)
 
@@ -576,6 +669,11 @@ compose file runs, and their sudoers lines, and moves the compose file's trees v
   the service user's home and so cannot run `~igor/.local/bin/claude`.
 - `ProtectProc=invisible` hides every other user's processes from each process in the unit
   (*Prompts go on stdin*, above).
+- `IPAddressDeny=169.254.169.254 fd00:ec2::254` keeps every process in the unit, the worker's
+  among them, from the cloud metadata endpoint (*Secrets reach the worker only through the
+  Igor*, above).
+- `LimitCORE=0` writes no core file for any process in the unit (*The Igor cannot be dumped*,
+  above).
 - `Restart=on-failure`, `RestartPreventExitStatus=78` and `RestartSec=30s`, all three #82's
   lines: Adam decided the first two on 2026-10-18 and the third on 2026-10-19. A refused start exits 78 (#82's *A process that refuses to start exits with
   status 78*), and systemd leaves the instance failed, with Igor's reason in the journal,
@@ -597,6 +695,10 @@ compose file runs, and their sudoers lines, and moves the compose file's trees v
   `ProtectProc=invisible` hides only other users' processes, so it does not stop that read. A
   worker can spend or leak its own seat. That was true before, and the comment on `npm test` in
   `templates/org.yaml` already says so.
+- **Other clouds' metadata addresses are not blocked.** The line names the two Adam listed:
+  `169.254.169.254`, which AWS, Google Cloud, Azure and Oracle use, and EC2's IPv6
+  `fd00:ec2::254`. A cloud that serves metadata elsewhere, such as Alibaba Cloud's
+  `100.100.100.200`, stays reachable.
 - **The worker can still reach the network.** It can send out its seat token and anything in
   its tree, which is the repository it was given.
 - **Under `igor run`, a command the worker started can outlive the run.** Claude Code starts

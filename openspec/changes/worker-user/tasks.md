@@ -97,6 +97,17 @@
 - [ ] 1.8 Every temporary file the Igor creates under `/tmp` goes in a `0700` directory only it
       can read, never directly in `/tmp`, which the workers share with it under the unit. Test: each
       temporary file's directory has mode `0700` and the Igor's owner.
+- [ ] 1.9 Every secret a process running as the worker user gets is registered with
+      `rememberSecret` (#217) before the spawn: the seat's token, which #217's `resolveToken`
+      already registers, so only a test is owed for it, and #189's check credentials where
+      #189 is built (proposal, decision 41). Keep `SSH_AUTH_SOCK`, `GPG_AGENT_INFO` and any
+      other agent socket variable out of every environment the Igor builds for a worker, a
+      model step or a check; `workerEnv` on `main` already passes neither. A secret shorter than 8 characters fails the run, naming its source, and nothing is
+      spawned. If #217 has not merged, stop and ask Adam: this task calls its code. Tests: with
+      `SSH_AUTH_SOCK` and `GPG_AGENT_INFO` set in the Igor's environment, neither is in the
+      environment of a worker, a model step or a check, in either mode; a seat token quoted in
+      the worker's output is `[redacted]` in the stored transcript; a 7-character seat token
+      starts no worker.
 
 ## 2. The tree and the outbox
 
@@ -149,6 +160,9 @@
       signing calls run as the service user from `skills_dir`, never from the tree; with a
       `.git` directory the worker made in the tree, holding a hook and a `core.fsmonitor`
       setting, the signing calls run neither and write no token into it.
+- [ ] 2.7 Test on a real clone that fetches through `gitEnv` with a token: after the clone and a
+      later fetch, `<tree>-git/config` holds no credential helper and no token, and no remote
+      URL in it holds user information (proposal, decision 41).
 
 ## 3. Nothing run, nothing followed
 
@@ -257,6 +271,21 @@
       `.gitattributes`, neither the checkout, the status read nor the staging runs it, and the
       published file is what the tree holds.
 
+- [ ] 3.7 `ghEnv` (`src/gh.ts`) and `gitEnv` and `networkEnv` (`src/worktree.ts`) build their
+      environments from a list, as `workerEnv` does, never from `process.env` (proposal,
+      decision 44). Share the `PATH`, `HOME` and `FORWARDED` part with `workerEnv`. `gh` adds
+      `GH_TOKEN`. `git` adds the helper's `GIT_CONFIG_*` entries, numbered from 0, the token
+      variable and `GIT_TERMINAL_PROMPT=0` where it reaches a remote, and in every call 3.6's
+      variables, `GIT_SSL_CAINFO` and `GIT_SSL_CAPATH` where set, and the `GIT_DIR`,
+      `GIT_WORK_TREE` and `GIT_INDEX_FILE` the call names. A git call with no token, which
+      inherits `process.env` on `main`, gets all of that but no token, helper entries or
+      `GIT_TERMINAL_PROMPT`. A `gh` call as a person's own login
+      (`actAs(undefined)` on `main`) gets the list and `GH_TOKEN`, `GITHUB_TOKEN`, `GH_HOST`,
+      `GH_CONFIG_DIR` and `XDG_CONFIG_HOME` where set. Build after 6.17. Tests:
+      with `IGOR_SEAT_ADAM`, `GITHUB_APP_PRIVATE_KEY` and an operator's `GIT_CONFIG_COUNT=1`
+      in the Igor's environment, no `gh` or `git` child gets any of them; each gets
+      `HTTPS_PROXY` where set; `gh` gets `GH_TOKEN`, and a fetch still authenticates.
+
 ## 4. Kill, release, sweep
 
 - [ ] 4.1 Under `serve`, `killTree` and `killLiveWorkers` run
@@ -362,6 +391,31 @@
       fs.protected_hardlinks is not 1 on this host, so a worker could hard-link a file only this Igor can read into its tree. Set it with `sysctl fs.protected_hardlinks=1` and in /etc/sysctl.d, then restart.
       ```
 
+      As the worker, an HTTP request to port 80 of `169.254.169.254` or `[fd00:ec2::254]`, made
+      directly and through the worker's proxy where it has one, that gets an HTTP response
+      within 2 seconds (proposal, decision 41). `<through>` is empty for a direct response, and
+      `, through the proxy <proxy>` for one that came through the proxy:
+
+      ```
+      the worker user "<worker>" can reach <address>, the cloud metadata endpoint<through>, which hands any caller this host's cloud credentials. Block it: the unit's IPAddressDeny= line does on a host; in a container, block it on the host the container runs on; a proxy must refuse it.
+      ```
+
+      The worker user in `docker`, `lxd`, `incus` or `disk`, able to write
+      `/run/docker.sock`, `/var/run/docker.sock`, `/run/podman/podman.sock` or
+      `/run/containerd/containerd.sock` where it exists, or holding a sudo right; a missing
+      socket passes:
+
+      ```
+      the worker user "<worker>" <is in the <group> group | can write <path>, a container engine's socket | may run commands through sudo>, so it can act as root and read every credential this Igor holds. <Remove "<worker>" from the group | Make the socket unwritable to it | Remove its sudoers lines>.
+      ```
+
+      The Igor's own process still dumpable after 5.6's call, the call failed, or
+      `fs.suid_dumpable` not 0:
+
+      ```
+      this Igor could not make itself undumpable (<why>), so a crash could write its memory, seat tokens included, to disk. See docs/deployment.md, "A separate user for the worker".
+      ```
+
       Each refusal above exits with status 78 (0.9), which the unit's
       `RestartPreventExitStatus=` keeps from restarting.
 
@@ -373,16 +427,29 @@
 - [ ] 5.4 `run` prints this first, before discovery (verbatim; Adam may reword):
 
       ```
-      ! workers run as <igor-user>, the same user as this Igor, so a worker can read every credential this Igor holds. igor serve runs them as a separate worker user: docs/deployment.md, "A separate user for the worker".
+      ! workers run as <igor-user>, the same user as this Igor, so a worker can read every credential this Igor holds, and use whatever <igor-user> can: an SSH agent, Docker, a cloud's metadata endpoint, credentials in its home. igor serve runs them as a separate worker user: docs/deployment.md, "A separate user for the worker".
       ```
 
 - [ ] 5.5 Tests with an injected probe: each refusal, in order, the `claude`, `skills_dir`,
-      template, script, missing-path and `!log_allowed` checks among them; `IGOR_ENV_FILES`
+      template, script, missing-path, `!log_allowed`, metadata, `docker` and dumpable checks
+      among them; a missing Docker socket passes; `IGOR_ENV_FILES`
       unset is reported as not checked, and its files are never reported as passed; `fs.protected_hardlinks` at `0` refuses; the file the `skills_dir`
       probe created is deleted; the first failure
       stops the check; every refusal exits with status 78; `serve` refuses with no worker user, and refuses `--same-user` as an
       unknown flag; `run` runs as the same user and prints the notice; `serve` never prints
       it.
+- [ ] 5.6 A native addon makes the Igor not dumpable (proposal, decision 43; design, *The Igor
+      cannot be dumped*). It exports one function that calls `prctl(PR_SET_DUMPABLE, 0)` and
+      `setrlimit(RLIMIT_CORE, 0)`, then returns what `prctl(PR_GET_DUMPABLE)` reads. Build it in
+      the language Adam picks (proposal, *Still open*; recommended: Rust through `napi-rs`), with
+      prebuilt binaries for Linux on x64 and arm64 in the package. `serve` and `run` call it
+      first in `src/cli.ts`, before anything reads a credential. Under `serve`, an addon that
+      will not load, a call that fails or a read-back other than 0 is 5.1's dumpable refusal.
+      Under `run` on a platform the addon has no binary for, such as macOS, Igor starts without
+      it and says nothing. Build after 6.16. Tests: the read-back is 0 after the call on Linux;
+      `serve` refuses, with status 78, where an injected addon fails to load, or where
+      `fs.suid_dumpable` reads 2; `run` on a platform with no binary starts, and `run` on
+      Linux x64 or arm64 makes the call and reads back 0.
 
 ## 6. Measurements
 
@@ -458,6 +525,36 @@ file in the service user's home. Each holds a random string and nothing else. Ne
       it reaches anything else, the design's handling of it goes back to Adam.
 - [ ] 6.14 Once section 3 is built, repeat 6.1's attack through Igor's own code and check that
       no canary string is in the published artifact. Record the result in `design.md`.
+- [ ] 6.15 Before 8.2 ships, on a cloud virtual machine (such as EC2) whose metadata endpoint
+      answers, with the shipped unit and 8.2's `IPAddressDeny=` line, on Debian and on each other
+      distribution `docs/deployment.md` targets: read `/proc/<pid>/cgroup` of the worker `sudo`
+      started and of a command it runs, and record whether both name the unit's group or a user
+      slice; then, as the worker through that `sudo`, connect to port 80 of `169.254.169.254` and
+      `[fd00:ec2::254]`, and record that each fails. Repeat without the line and record that
+      start check 9 then refuses. Time check 9 on a host with no endpoint, and run it under Docker
+      Desktop and behind an intercepting proxy, recording that neither is taken for the endpoint.
+      On Google Compute Engine, with Debian and with Ubuntu images, record what
+      `/etc/resolv.conf` names and whether DNS still works in the unit under the line. Never print a
+      credential the endpoint returns: record only whether a reply came. If either process is in
+      a user slice, or a connection succeeds under the line, the mechanism goes back to Adam,
+      with the uid firewall rule as the fallback (proposal, decision 42). Record the result in
+      `design.md`.
+- [ ] 6.16 Before 5.6 is built, on section 6's host under the shipped unit with 8.2's
+      `LimitCORE=0`, using a throwaway C or Rust program, or a prototype of 5.6's addon loaded
+      into `node`, that makes 5.6's two calls: with the call made, `prctl(PR_GET_DUMPABLE)` reads 0, the owner of
+      `/proc/<igor pid>/status` and `/proc/<igor pid>/environ` is root, `gdb -p <igor pid>` or any
+      other `ptrace` attach run as the service user is refused, and `kill -SEGV <igor pid>` leaves
+      no core in `coredumpctl list` or the working directory. Without the call, record what
+      `coredumpctl list` shows, to confirm the measurement can tell the two apart. Also record
+      whether the call changes anything the Igor reads in its own `/proc/self`. Repeat with
+      `fs.suid_dumpable=2` and a pipe `core_pattern`, such as apport's or systemd-coredump's,
+      and record whether a core is written and whether `LimitCORE=0` stops it. Record the result
+      in `design.md`.
+- [ ] 6.17 Before 3.7 is built, on Debian's git and on each other distribution
+      `docs/deployment.md` targets: with a private CA, record which of `SSL_CERT_FILE`,
+      `SSL_CERT_DIR`, `GIT_SSL_CAINFO` and `GIT_SSL_CAPATH` lets a fetch through an
+      intercepting proxy succeed. If git needs one 3.7's list lacks, the list goes back to Adam.
+      Record the result in `design.md`.
 
 ## 7. An automated end-to-end test
 
@@ -527,12 +624,17 @@ file in the service user's home. Each holds a random string and nothing else. Ne
       Add these lines, with this comment (may be reworded; the restart lines come from 0.9 and
       replace `Restart=always`, and `RestartSec=30` becomes `RestartSec=30s`, the same interval as
       #82 writes it; where #82's task 1.5 has already added the three restart lines, keep #82's
-      lines as they are and add only `ProtectProc=`):
+      lines as they are and add only `ProtectProc=`, `IPAddressDeny=` and `LimitCORE=`):
 
       ```
       # A process sees only its own user's processes, so no worker can read another's command
       # line or environment through /proc.
       ProtectProc=invisible
+      # No process in the unit, a worker's included, can reach the cloud metadata endpoint,
+      # which hands any caller this host's cloud credentials.
+      IPAddressDeny=169.254.169.254 fd00:ec2::254
+      # No crash writes a process's memory, seat tokens included, to disk.
+      LimitCORE=0
       # A crash is restarted; a clean exit (status 0) is not. A process that refuses to start,
       # such as on a missing worker user, exits 78 (EX_CONFIG) and is not restarted: fix what
       # the journal names, then start it again. A start GitHub or the model provider did not
@@ -563,7 +665,9 @@ file in the service user's home. Each holds a random string and nothing else. Ne
         leaves no prompt in any argument list, so neither the worker nor anything else in the
         container can read the Igor's or the worker's prompt from `/proc`. The container loads
         no environment file and sets no `IGOR_ENV_FILES`, so the start check reports the
-        environment files as not checked. Add `node` to each
+        environment files as not checked. The container has no `IPAddressDeny=`, so the header
+        comment says that on a cloud host the host must block the metadata endpoint, and that
+        start check 9 refuses until it does. Add `node` to each
         worker user's group, which the unit's `SupplementaryGroups=` does on a host; without it
         start check 3 refuses every start.
       - Run 5.1's start check in the container, on Linux and under Docker Desktop on macOS, and
@@ -622,6 +726,15 @@ file in the service user's home. Each holds a random string and nothing else. Ne
       Then restart the Igors. Each one checks the arrangement as it starts and refuses, naming
       the path, if the worker can read a credential or write the lore checkout. To see it for
       yourself, `sudo -u igor-worker-maintenance-1 cat /etc/igor/env` must say `Permission denied`.
+
+      **Put no credential in a worker user's home, and add it to no `docker` group.** A
+      registry token in `~/.npmrc` or a key under `~/.ssh` there reaches whatever the worker
+      runs, and Igor never learns of it, so it cannot redact it. A credential a repository's
+      checks need is declared in the `repos` map of `roles/org.yaml`, and its value goes in
+      `/etc/igor/env`. The `docker` group lets the
+      worker start a container as root, so the start check refuses it. The check also refuses
+      the `lxd`, `incus` and `disk` groups, and any sudo right for the worker user. On a cloud host, the
+      unit blocks the metadata endpoint; the start check refuses where it is reachable anyway.
 
       **Neither user logs in to Claude.** Igor never uses a stored login: every seat has a
       token, and each worker gets its seat's token in its environment. [Lending a

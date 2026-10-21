@@ -105,8 +105,7 @@
        naming its own git directory, the tree and its own index.
 
     Each trailer that binds a tree, `Prose:` and #153's `Bug-hunter-Tree:`, then names the tree
-    the Igor records and publishes (decision 17), unless #153 binds them to the Git Data API's
-    tree instead (#153's design item 3). It never names the worker's index copy or any
+    the Igor records and publishes (decision 17). It never names the worker's index copy or any
     other copy the worker could change. prose keeps its tokens in the git directory, which the
     worker cannot write, so the worker cannot forge one. The signing scripts come from the
     root-owned `skills_dir` (decision 11), and the three variables keep their git calls in the
@@ -352,8 +351,156 @@
     #171's code lands** (Adam, 2026-10-19, #143's decision 37). Task 1.7's change to `runUsage`
     applies only while it exists.
 
+Decisions 41 and 43 to 45 are Adam's, made on 2026-10-21. Decision 42 is a mechanism proposed
+for 41's first point, which waits for his approval.
+
+41. **A worker gets a secret only through the Igor, which registers every secret it hands
+    over** (Adam, 2026-10-21). Registering means calling `rememberSecret`, so that #217's
+    (`redact-state-branch`) *Credential redaction replaces every credential the Igor knows*
+    matches the secret by its value wherever the Igor stores text. So no secret may reach a
+    worker by a side channel. Under `serve` the worker user's setup closes five:
+    1. **The cloud metadata endpoint**, `169.254.169.254` and `fd00:ec2::254`: the worker user
+       cannot reach it, and the start check refuses with status 78 where it can (decision 42
+       says how).
+    2. **No SSH agent:** the Igor passes no agent socket, `SSH_AUTH_SOCK` or any other, to a
+       worker, a model step or a check, under `run` too.
+    3. **No `docker` group:** the start check refuses where the worker user is in it or can
+       write the Docker socket. A consistency read on 2026-10-21 found the same hole in other
+       groups and sockets, so the check also refuses `lxd`, `incus` and `disk`, podman's and
+       containerd's sockets, and any sudo right the worker user holds (proposed with this
+       record, for Adam to confirm).
+    4. **No credential in a clone's git configuration:** the Igor stores none in `<tree>-git` or
+       a remote URL, which the worker can read, and passes it to each git command that needs it
+       for that command alone. `gitEnv` in `src/worktree.ts` on `main` already does this.
+    5. **No credentials an operator put in the worker's home**, such as a registry token in
+       `~/.npmrc`. A credential a worker needs is declared in the Igor's configuration and handed
+       over by the Igor, which registers it. Today those are the seat's token and, under #189,
+       the credentials a repository's checks need, which #189 declares in its `repos` map.
+
+    It follows that a secret shorter than 8 characters, which `rememberSecret` does not
+    register, is never handed over: the run fails naming its source. One secret is an exception
+    the Igor cannot close: `CLAUDE_CODE_MESSAGING_TOKEN`, which Claude Code itself sets for the
+    commands the worker runs, never passing through the Igor (*Still open*).
+
+    `igor run` runs the worker as the person's own user and can prevent none of these, so its
+    notice says so (task 5.4).
+42. **The unit sets `IPAddressDeny=169.254.169.254 fd00:ec2::254`** (proposed 2026-10-21, for
+    Adam to approve). systemd applies `IPAddressDeny=` to the unit's whole control group, which a
+    process started through `sudo` stays in unless sudo's PAM stack moves it out, so one line covers the Igor, the worker and everything the worker
+    runs, with no host step. It blocks the Igor too, which needs no cloud credential
+    (*Still open*). Task 6.15 measures that the line reaches a process `sudo` started, on a
+    cloud host. #192's container has no unit, so there the host must block the endpoint, and
+    the start check refuses until it does (task 8.3). *Rejected:* a host firewall rule matching
+    the worker user's uid, which needs one rule per worker user and a host step outside the unit
+    on every server; it stays the fallback if task 6.15 finds that `sudo` moves the worker out of
+    the unit's group.
+43. **The Igor's memory, which holds every secret registered with #217's `rememberSecret`, is
+    never written to disk by a crash dump** (Adam, 2026-10-21). The unit sets `LimitCORE=0`. At
+    start, before it reads any credential file or token source, the Igor marks itself not
+    dumpable with `prctl(PR_SET_DUMPABLE, 0)`, which also stops processes of its own user
+    attaching to it, and sets its own core limit to 0, which also covers `serve` in #192's
+    container, where no unit runs. A non-dumpable process is still dumped where
+    `fs.suid_dumpable` is 2, as Ubuntu sets it with apport, so the start check also refuses
+    unless it reads 0 (proposed with this record; task 6.16 measures it). Node has no call for either, so a small
+    native addon shipped with Igor makes both calls and reads the flag back (design, *The Igor
+    cannot be dumped*; task 5.6). A start check refuses with status 78 where the Igor is still
+    dumpable. `igor run` makes the same calls where Igor ships the addon, Linux on x64 and arm64,
+    and starts without them elsewhere, such as on macOS. Task 6.16 measures that the flag took effect.
+
+44. **The `gh` and `git` children get environments built from a list, as the worker's is**
+    (Adam, 2026-10-21). Each gets `PATH`, `HOME`, the network settings `FORWARDED` lists in
+    `src/execute.ts`, and its own token: `GH_TOKEN` for `gh`, and for `git` the credential
+    helper's `GIT_CONFIG_*` entries and the token they read. On `main`, `ghEnv` (`src/gh.ts`)
+    and `gitEnv` (`src/worktree.ts`) start from the Igor's whole `process.env`, so every `gh`
+    and `git` child holds every seat token `/etc/igor/env` loads. A `gh` call made as a person's
+    own login, which `main` makes with no token of the Igor's, also keeps that login's
+    variables, such as `GH_CONFIG_DIR`. Git also gets `GIT_SSL_CAINFO` and `GIT_SSL_CAPATH`. A
+    `GIT_CONFIG_*` entry an operator set in the Igor's environment, which `gitEnv` keeps today,
+    no longer reaches git; a proxy still does, through the proxy variables.
+45. **Which secret reaches which process is decided only by the Igor's code and the server's
+    own configuration, never by lore, an item or a worker's output** (Adam, 2026-10-21). Lore
+    may choose which seat a role spends, never which secret that seat resolves to. #171
+    (`seat-files`) is what makes that hold for seats: a seat's `token_env` is fixed to
+    `IGOR_SEAT_<ID>`, its own id, and its ciphertext's plaintext must name its own seat id.
+    Each token source, checked on 2026-10-21:
+    - **Seat tokens:** hold under #171. They do not hold on `main`, where a seat names any
+      variable, file or command (*Still open*).
+    - **The App's key:** holds. Its path or value comes from the server's environment files.
+    - **`IGOR_RUN_TOKEN`:** holds. It comes from the environment of the person running `igor
+      run`.
+    - **#189's check credentials:** hold as #189 now proposes them. Lore names only the
+      variable a repository's checks need, and the server variable is fixed by the repository
+      and that name.
+    - **Proxy URLs:** hold. They come from the Igor's own environment, though one can carry a
+      password that is never registered (*Still open*).
+    - **`seatKey`:** `igor.config.yaml`, a lore file, names the path of the key that decrypts
+      seat files. The Igor reads that key and hands it to no process, so no secret is routed by
+      it. A lore commit can point it at another file on the server, which then fails to
+      decrypt every seat; #171 refuses a path inside the lore checkout.
+
 **Still open:** an item marked *for Adam* waits on his decision; the rest wait on a measurement
 or on another change.
+
+- **Seat tokens break decision 45 until #171's code lands, for Adam.** On `main` a seat in lore
+  names its token by `token_env`, `token_file` or `token_command`, any of them free. So a lore
+  commit can set a seat's `token_env` to `GITHUB_APP_PRIVATE_KEY`, or its `token_file` to the
+  App's key file, and the worker gets the key as its seat token. `token_command` runs a command
+  lore names, as the service user. Decision 26 builds this change on those seats, and #204
+  builds #171 after it. *Recommendation:* build #171's seat code before this change's, as #204
+  already does for #174, so the worker spawn never meets a seat whose source lore chose.
+
+- **Decision 42 waits for Adam's approval.** If he turns it down, the uid firewall rule it
+  rejects is the alternative.
+- **#217 archives after this change, which now cites it and calls its code, for Adam.**
+  Decision 41 cites #217's *Credential redaction replaces every credential the Igor knows* and
+  calls `rememberSecret`, but #204 places #217 ninth and this change sixth. Building this
+  change's code first would leave no `rememberSecret` to call, and #204 builds in archive order.
+  *Recommendation:* move #217 to just before this change in #204, fifth after #137. #217 cites no
+  other change's requirement, so nothing holds it later. If #217 stays ninth instead, decision
+  35's list of citations Adam accepted ahead of the order needs #217 added, since it does not
+  name it.
+- **#217's requirement matches by value only seat tokens and credential-named variables.**
+  Its *Credential redaction replaces every credential the Igor knows* lists those two, while its
+  `rememberSecret` redacts every value registered. Decision 41 relies on the second, so #217's
+  requirement needs widening to every registered value; #189's check credentials rely on the
+  same. Reported to #217, not edited here.
+- **`CLAUDE_CODE_MESSAGING_TOKEN` against decision 41, for Adam.** Claude Code hands it to every
+  command the worker runs, and the Igor never sees it to register it. The spec names it as the
+  one exception. *Recommendation:* decide after task 6.13; if it reaches beyond the worker's own
+  session, ask whether Claude Code can be started without it.
+- **The metadata block also blocks the Igor, for Adam** (decision 42). The Igor needs no cloud
+  credential today, but a seat's `token_command` that reads its token from a cloud secret store,
+  authenticating with the instance's own role, would fail under the unit. *Recommendation:* keep
+  the unit-wide line and say in the deployment guide that a `token_command` cannot use the
+  instance's role; the uid firewall rule is the way out for a host that needs one.
+- **A proxy URL holding a password reaches the worker unregistered, for Adam.** The in-force
+  *The worker is given an explicit environment holding no credential but its seat's* passes the
+  host's network settings, `HTTPS_PROXY` among them (`FORWARDED` in `src/execute.ts`), and
+  says none is a credential. A proxy URL can hold `user:pass@`, which then reaches the worker
+  without being registered, against decision 41. #217's rule redacts a URL's credentials by
+  pattern, but not the password quoted on its own. *Recommendation:* register the user
+  information of each forwarded proxy URL with `rememberSecret` before handing it over, and
+  amend that requirement to say a proxy URL may hold a credential.
+- **Credential files in the worker's home, for Adam.** Decision 41's fifth point binds the
+  operator, and nothing checks it. *Recommendation:* have the start check refuse, naming the
+  file, where the worker's home holds `~/.npmrc`, `~/.netrc`, `~/.git-credentials`,
+  `~/.docker/config.json`, `~/.aws/credentials` or `~/.config/gh/hosts.yml`. No Igor run needs
+  any of them, and since the home lasts across runs (decision 14), the refusal also catches one
+  a worker left.
+- **The language of the native addon, for Adam** (decision 43). *Recommendation:* Rust, through
+  `napi-rs`, with prebuilt binaries for Linux on x64 and arm64 shipped in the package, so that
+  installing Igor needs no compiler. A C addon built by `node-gyp` would need one on every host.
+- **The metadata block and DNS.** On Google Compute Engine and Oracle Cloud, `169.254.169.254`
+  is also the resolver. A host whose `/etc/resolv.conf` names it directly, with no local
+  resolver such as systemd-resolved in between, would lose every DNS lookup in the unit under
+  decision 42. Task 6.15 measures it.
+- **The git children's certificate settings.** Git gets `SSL_CERT_FILE` and `SSL_CERT_DIR`
+  among the network settings `FORWARDED` lists, and `GIT_SSL_CAINFO` and `GIT_SSL_CAPATH` from
+  decision 44. Which of them Debian's git, built on
+  GnuTLS, honours is not measured (task 6.17); a host whose CA reaches git another way would
+  fail after decision 44 where it works by inheritance on `main`.
+- **Reported to #179:** a crash leaves `<tree>-prompt` beside a tree, and #179's sweep removes
+  only the outbox and the git directory beside it.
 
 - **A tree a crashed `igor run` left, for Adam.** Its release never ran, and its run id is one no
   later run has, and #179 gives `igor run` no startup sweep, so nothing removes it (decision
@@ -375,8 +522,7 @@ or on another change.
 - **Findings of the 2026-10-19 consistency read left for the next pass.** The signing order is
   still stated here and in #153; this change should keep only what it owns (when a staging may
   happen, the kill, the checks, and no trailer bound to a copy the worker can change) and cite
-  #153 for the order. The escape clause letting the trailers bind the Git Data API's tree waits
-  on #153's *For Adam* 16. A `seatKey` or `token_file` path that a lore commit brings after
+  #153 for the order. A `seatKey` or `token_file` path that a lore commit brings after
   start (#208) is never probed. The lore checkout and the installation are probed only at
   their top directories. #188 redacts from the worker's action log the values of variables
   whose names hold `TOKEN`, which it takes from the environment the Igor built, so it cannot
@@ -472,7 +618,14 @@ that doesn't depend on Claude Code enforcing anything.
   installation, #174's home template, `skills_dir` or any script the Igor runs from it. It also
   refuses if a path the check is given does not exist, if sudo logs the commands it allows the
   service user, or if `fs.protected_hardlinks` is not `1` (decisions 37 and 38). A file it has no path for is
-  reported as not checked. A refused start exits with status 78 (decision 23).
+  reported as not checked. It refuses if the worker user can reach the cloud metadata
+  endpoint, is in a root-equivalent group such as `docker`, can write a container engine's
+  socket or holds a sudo right, or if the Igor is still dumpable (decisions 41 to 43). A refused start exits with status 78 (decision 23).
+- **A secret reaches the worker only through the Igor, which registers it with #217's
+  `rememberSecret`** (decision 41). The Igor passes no agent socket, stores no credential in a
+  tree's git directory, and the deployment guide puts none in the worker's home. The unit blocks
+  the metadata endpoint and sets `LimitCORE=0`, and the Igor makes itself not dumpable
+  (decisions 42 and 43).
 - **`serve` always has a worker user, and `run` never does.** `run` runs the worker as the same
   user with a notice.
 - **Deployment:** `deploy/igor.service` sets `User=` and `Group=` to the service user and its group, passes
@@ -498,13 +651,15 @@ None.
 
 ### Modified Capabilities
 
-- `task-execution`: ten requirements added. The worker, and every model step in its tree,
+- `task-execution`: fourteen requirements added. The worker, and every model step in its tree,
   runs as a separate user. That user can write nothing the Igor depends on, and
   the Igor runs nothing it writes. The Igor reads no file through a link, and publishes the tree
   it recorded before #189's checks. The Igor runs prose's first call, stages only after the kill
   and the checks, and makes #153's trailers itself, against the last staging. A kill and a release reach what the worker owns. The
-  isolation is checked before any work. Every `claude -p` takes its prompt on stdin. And `serve` always has a worker user, while `run` never
-  does. Four are modified: *The worker is given an explicit environment holding no
+  isolation is checked before any work. Every `claude -p` takes its prompt on stdin. A secret reaches the worker only through the Igor,
+  which registers it, and only the Igor's code and its server decide which secret goes where.
+  `gh` and `git` get environments built from a list, and the Igor's memory is never dumped. And `serve` always has a worker
+  user, while `run` never does. Four are modified: *The worker is given an explicit environment holding no
   credential but its seat's* also passes `GIT_INDEX_FILE`, naming the worker's index copy, and
   names the surfaces whose credential is kept out; *A kill reaches the worker's whole process
   tree* and *Igor forwards the termination it is sent* kill by worker user under `serve`; and
@@ -516,6 +671,8 @@ None.
 - `src/execute.ts` (`claudeWorker`, `workerEnv`'s caller, the kill), `src/worktree.ts`
   (provision, release, `changes()`), `src/sweep.ts`, `src/cli.ts` (`run`, `serve`), and a new
   module for the start-up probe.
+- `src/gh.ts` (`ghEnv`) and `src/worktree.ts` (`gitEnv`, `networkEnv`), for decision 44.
+- A native addon that makes the Igor not dumpable (decision 43), and its build and packaging.
 - `src/triage.ts` (`runClaude`) and, while it exists, `src/budget.ts` (`runUsage`), for the
   prompt on stdin (decision 40).
 - `deploy/igor.service`, `Dockerfile` (#192), `deploy/docker-compose.yml`, a new `deploy/sudoers.example`,
