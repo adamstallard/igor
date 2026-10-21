@@ -24,12 +24,14 @@
    (Adam, 2026-10-11). Which surface failed is known from which surface's call threw. Whether it
    answered is read from the response's status, as #101's `passesMark` reads it (Adam,
    2026-10-20): a refused call, such as a 403 for a missing permission, is not an outage, and
-   counts toward its item's breaker like any other failure before the worker. *Rejected:*
+   counts toward its item's breaker like any other failure before the worker. It takes no part
+   in the identical-failure rule either (decision 34). *Rejected:*
    reading the surface from the error's wording; and counting every tracker or code-host
    failure, which would end a cycle on two refusals and conflict with the in-force rule that a
    surface not answering "SHALL be distinguishable from a refusal about the item itself".
 5. **Two identical failures before the worker, on different items in a row, end the cycle**
-   (Adam, 2026-10-11), and neither counts toward its item's breaker.
+   (Adam, 2026-10-11), and neither counts toward its item's breaker. Two refused calls never end
+   the cycle (decision 34).
 6. **After a deferral lifts, one identical failure sets the item down again** (Adam,
    2026-10-11), not three. The answer that lifted it did not cure the failure.
 7. **An item alone in its cycle counts a failure every item would meet, once per cycle** (Adam,
@@ -134,8 +136,8 @@
     set-downs. *Rejected:* skipping such rows, which could join failures from either side of a
     run that worked.
 
-Decisions 22 to 27 are Adam's answers of 2026-10-19 to the change's open questions, and 28 to 32
-his answers of 2026-10-20:
+Decisions 22 to 27 are Adam's answers of 2026-10-19 to the change's open questions, 28 to 32
+his answers of 2026-10-20, and 33 to 38 his answers of 2026-10-21:
 
 22. **A failure in the claim window counts only where no other rank's claim is on the item**
     (Adam, 2026-10-19). Where a role may run several ranks, a claim-window failure counts, and
@@ -151,7 +153,8 @@ his answers of 2026-10-20:
     may count and set the item down. Both work the item then too, a gap #179 lists for Adam;
     if #179 answers it with a run id in the claim message, this test compares that id too.
     Where the read of the item's claim messages fails, the rank counts nothing, posts nothing
-    and leaves the label (Adam, 2026-10-20).
+    and leaves the label (Adam, 2026-10-20), and reads them again in its next cycle
+    (decision 35).
 23. **A withdrawal is posted on the third identical failure in the claim window even where the
     claim message never landed** (Adam, 2026-10-19). It is the only word the item gets about
     being set down. If the tracker is still failing, the post fails too, at no cost. Under
@@ -202,6 +205,39 @@ his answers of 2026-10-20:
     approved with the change as written). The sentence is task 3.2's. A rank that drops out
     because another holds the item counts as neither a failure nor a success for either
     two-in-a-row rule.
+33. **`igor run --claim` counts like any run** (Adam, 2026-10-21). Its failure before the worker
+    counts as rank 0's toward the item's per-role count. It runs outside any cycle, so it ends no
+    cycle and trips no outage rule, and no `outage` row excludes it. *Rejected:* giving each
+    `--claim` run a cycle of its own, which would only add a `cycle` for `outage` rows that can
+    never be written for it.
+34. **A refused call never ends a cycle** (Adam, 2026-10-21). The in-force scenario *A refusal
+    about the item does not stop the cycle* wins: a refusal about the item counts toward that
+    item's set-down only, never toward ending the cycle or holding the watermark. Two identical
+    refused calls on different items, such as a 403 on adding the claim label to every item, no
+    longer end the cycle under the identical-failure rule, so decision 12 never holds the
+    watermark below the items after them. Like any failure that is not identical to the one
+    before it, a refused call separates the runs on either side of it. `NoCycleEndOnRefusal` in
+    the model.
+35. **A failed read of the item's claim messages is retried next cycle, then given back out
+    loud** (Adam, 2026-10-21, amending decision 22). On the failing run the rank counts nothing,
+    posts nothing and leaves the label. In its next cycle it reads the item's claim messages
+    again. Where it then finds another rank's claim that counts, it drops out silently; where it
+    finds none, or still cannot read, it gives the claim back with the refusal post, the one a
+    run makes when it gives the claim back to be tried again next cycle. So a claim never ends in
+    silence, as the in-force *A claim that cannot be kept is given back, out loud* requires. The
+    claim-window failure whose read failed never counts toward the breaker, and nor does a
+    second failed read.
+36. **The refusals before a set-down name the failure in plain words** (Adam, 2026-10-21), like
+    the set-down post (decision 31): where the run failed and its HTTP status or exit code, with
+    no quote of the error. The full text goes to the process's own log.
+37. **#99's record of a breaker failure is the state-branch rows' fields with the process's log
+    entry** (Adam, 2026-10-21). The `pre-worker` row, and the `outage` row where one names the
+    failure, keep the structured fields on the state branch, and the console text goes to the
+    process's own log. #99 is told so (*Reported to other changes*).
+38. **Approved as proposed** (Adam, 2026-10-21): the second run on an item already deferred gives
+    the claim back without "It will try again next cycle" (decision 28); and a failure that
+    records a cure key writes a `pre-worker` row marked `cured: true` beside its run row
+    (decision 2).
 
 **Still open:**
 
@@ -213,34 +249,6 @@ his answers of 2026-10-20:
   condition, and so records a cure key, or is tagged `tree` and counted per item, is not known.
 - **How a clone tells that the code host did not answer is unmeasured** (task 0.1). git exits 128
   for most failures, so the tree provider may need git's own report of the HTTP exchange.
-- **`igor run --claim`, for Adam.** It runs one item outside any cycle, so its `pre-worker` row
-  has no `cycle` for an `outage` row to match, and whether it counts as an item alone in its cycle
-  is undecided. *Recommended:* it counts as an item alone in a cycle of its own, whose start is
-  the run's start.
-- **The first two failures' posts, for Adam.** Decision 31 covers the set-down post. The refusals
-  before it, "It will try again next cycle", post the raw error message on the item as every
-  failure handoff in the in-force code does, and the item may be public. *Recommended:* they name
-  the failure in plain words too.
-- **Identical refusals end the cycle, for Adam.** Under decision 4 a refusal is not an outage, but
-  two identical refusals on different items, such as a 403 on adding the claim label to every
-  item, end the cycle under the identical-failure rule. Decision 12 then holds the watermark
-  below every item the cycle never reached, so discovery considers them again each cycle, the
-  cost #101 avoids for a refused claim. It also contradicts the in-force `work-claiming` scenario
-  *A refusal about the item does not stop the cycle*, which #179 keeps. Where #101 records a cure
-  key for that refusal, decision 30 takes it out of the rule and the cost goes. *Recommended:*
-  a refusal takes no part in the identical-failure rule either, so the in-force scenario holds.
-- **A failed read of the claim messages leaves the claim in silence, for Adam.** Decision 22 has
-  the rank count nothing, post nothing and leave the label. The in-force *A claim that cannot be
-  kept is given back, out loud* says a run "SHALL NOT end such a run holding the claim in
-  silence", and #179 allows silence only to a rank whose claim message does not hold the item.
-  Decision 22's rule applies to a lone process too. *Recommended:* a rank whose read fails posts nothing
-  only where the role runs several ranks; a process alone in its role withdraws, as before.
-- **#99's record and no message text, for Adam.** Decision 15 keeps message text off the state
-  branch, and its `outage` row is offered as the record #99 (`structured-failure-record`) asks a
-  cycle to keep. #99 asks that record to hold "no less than printing the caught fault to a
-  console would have", which the process's log holds and the row does not. *Recommended:* #99's
-  record for a breaker row is the row's fields together with the process's log entry; #99 is told
-  so.
 - **The set-down sentence names what lifts a deferral.** #141, which lets only someone with
   write access lift a deferral, changes that sentence if it lands first (task 3.2).
 - **Findings of the 2026-10-20 consistency read, for this change's next revision,** none fixed
@@ -256,6 +264,31 @@ his answers of 2026-10-20:
   - The meaning of *no answer* is restated from #101's `design.md`; #101's spec does not state it.
   - How a role tells another role's successful run from its other posts is undecided (task 3.7).
   - The in-force `graceful-handoff` conflict below is not a numbered decision.
+
+- **For Adam to confirm or change: two consequences of decision 35.** A role that runs one process now stays silent for one
+  cycle after a failed read of the claim messages, which the in-force scenario on a failed
+  verification does not allow. The recommendation this change made on 2026-10-20, to limit the
+  silence to roles with several ranks, was not taken. And a restart between the two reads loses the rank's memory
+  of the item, so the claim then waits for #179 to free it.
+- **Findings of the 2026-10-21 consistency read, for this change's next revision.** The ones on
+  decisions 33 to 38 are fixed here; these are not:
+  - `deferred.json` keeps one record per item, so a second role's set-down replaces the first
+    role's record, even though each record names its role, and the model's claim that roles share nothing is wrong there.
+  - The set-down's deferral record and the run rows this change keeps carry the raw error text
+    in `reason`, which decision 15 keeps off the state branch only for `pre-worker` rows.
+  - The run row a thrown cure-key failure now writes is not marked `workerless`, so *Counting*
+    would read it as a worker start.
+  - "Each failure before the worker appends a row" is stated without the cases that write none,
+    and a pair's first run may already have counted, and set its item down, during its own run,
+    so its "SHALL NOT count" needs "toward a later count".
+  - The set-down sentence's "somebody replies" omits the successful-run lift, and the scenario
+    *The deferral lifts as a handoff's does* names the opposite of its rule.
+  - The restated credential-redaction rule is older than #217's, and should only cite it.
+  - Task 0.1 should capture failures from two different items, since the identical-failure rule
+    compares across items, and the masks keep repository slugs and issue paths, so two items'
+    otherwise identical messages might never match.
+  - Missing scenarios: a 429 or rate-limit 403 counting toward the outage rule, a clone whose
+    failure cannot be told unanswered, and masking after redaction.
 
 **Reported to other changes:**
 
@@ -274,12 +307,19 @@ his answers of 2026-10-20:
     the opposite ("a verification read that errors ... removes nothing").
   - Its *Still open* still lists, as an open question of this change, whether claim-window
     failures count, which decision 22 has answered.
+  - Decision 35: a rank rereads the item's claim messages a cycle after a failed read, and gives
+    the claim back out loud where the reread finds no other claim or fails. #179's rule that a
+    re-read later than one poll interval stands down silently, leaving the label, forbids that
+    post; #179's rule should allow it.
   - Decision 29: a withdrawal releases only the claim messages posted before the rank's test.
     #179 decides how, for this change's withdrawal and for its own rule for a claim message that
     failed to post, which makes the same two calls.
 - **#99 (`structured-failure-record`)**: an `outage` row's failures carry their source, HTTP
   status and exit code as fields apart from any message (decision 15), which is what #99 asks of
-  a cycle's record of its faults.
+  a cycle's record of its faults. #99 also asks that record to hold no less than printing the
+  fault to a console would. For a breaker failure, the console text goes to the Igor process's
+  own log, and the state-branch row keeps the structured fields; together they are #99's record
+  (decision 37).
 - **#141 (`closed-pr-defers`)**: under decision 8 a set-down lifts only on a person's change or
   another role's successful run. If #141 lands, the person's change counts only from someone with
   write access.

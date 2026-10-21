@@ -38,7 +38,10 @@
 (* SurfaceSigs) or both identical. The second run of such a pair    *)
 (* ends the cycle and appends an `outage` row, which excludes the pair's  *)
 (* rows (or, for surface failures, every failure before the worker in the *)
-(* cycle) by rank, cycle and item.                                        *)
+(* cycle) by rank, cycle and item. A refused call (sigs in RefusalSigs)   *)
+(* counts toward its item's breaker but is never one of a pair, so it     *)
+(* never ends a cycle; like any failure that differs from the one before  *)
+(* it, it separates the runs on either side of it.                        *)
 (*                                                                         *)
 (* Each rule of the change is a constant, TRUE in the change as specified. *)
 (* The configurations in negative/ each set one FALSE and must find a     *)
@@ -55,8 +58,11 @@
 (* signature is a model value); a read of the count that fails, and a     *)
 (* failed read of the item's claim messages in the claim window (the spec *)
 (* has each count nothing and post no set-down, which only removes        *)
-(* set-downs); and how #179 frees an item whose claim messages no running *)
-(* rank works (`Recover` stands for it).                                  *)
+(* set-downs; the reread a cycle later, whatever it finds, counts nothing *)
+(* either); `igor run --claim`, whose failure counts like a rank's and    *)
+(* never pairs, since it runs outside any cycle, and so only removes      *)
+(* cycle ends; the discovery watermark; and how #179 frees an item whose claim messages   *)
+(* no running rank works (`Recover` stands for it).                       *)
 (***************************************************************************)
 EXTENDS Integers, Sequences, FiniteSets, TLC
 
@@ -64,7 +70,11 @@ CONSTANTS
     NRanks,            \* serving ranks 1..NRanks of one role
     NItems,            \* items 1..NItems
     Sigs,              \* signatures of failures that are not surface failures
-    SurfaceSigs,       \* signatures of tracker or code-host failures
+                       \* or refused calls: the working tree's or the Igor's
+    SurfaceSigs,       \* signatures of tracker or code-host calls that got no
+                       \* answer
+    RefusalSigs,       \* signatures of tracker or code-host calls that were
+                       \* answered and refused
     MaxRuns,           \* runs started, summed over ranks
     MaxLosses,         \* pending rows that may be lost
     MaxLifts,          \* deferrals lifted by a person's change to the item
@@ -100,14 +110,17 @@ CONSTANTS
                        \* FALSE: it counts
     SetDownOnce,       \* a run posts no set-down where its item is already
                        \* deferred; FALSE: it posts another
-    IgorPostsLiftNothing \* another role's posts on the item, other than a
+    IgorPostsLiftNothing, \* another role's posts on the item, other than a
                        \* successful run, lift no set-down; FALSE: they lift it
+    RefusalsUnpaired   \* a refused call is never one of a pair; FALSE: two
+                       \* identical refused calls end the cycle
 
 ASSUME Sigs \cap SurfaceSigs = {}
+ASSUME RefusalSigs \cap (Sigs \cup SurfaceSigs) = {}
 
 Ranks == 1..NRanks
 Items == 1..NItems
-AllSigs == Sigs \cup SurfaceSigs
+AllSigs == Sigs \cup SurfaceSigs \cup RefusalSigs
 CureSig == "cure"
 None == [item |-> 0, sig |-> "none"]
 Threshold == 3
@@ -261,7 +274,8 @@ StartWorker(r) ==
     /\ PromptRows => ~Unlanded(i)
     /\ hist' = [hist EXCEPT ![i] = Append(@, [k |-> "w", sig |-> "none",
                                               counts |-> FALSE,
-                                              recorded |-> FALSE])]
+                                              recorded |-> FALSE,
+                                              endsOn |-> "none"])]
     /\ pending' = Append(pending, [t |-> "run", item |-> i, rank |-> r,
                                    cyc |-> cyc[r], worker |-> TRUE])
     /\ GiveBack(r, TRUE)
@@ -279,6 +293,7 @@ Fail(r, s, returned, cure, window) ==
     LET i        == it[r]
         p        == prev[r]
         pair     == /\ ~cure
+                    /\ ~(RefusalsUnpaired /\ s \in RefusalSigs)
                     /\ p # None
                     /\ p.item # i
                     /\ \/ p.sig = s
@@ -300,7 +315,8 @@ Fail(r, s, returned, cure, window) ==
                     /\ ~(SetDownOnce /\ deferred[i])
         entry    == [k |-> "pw", sig |-> sig, counts |-> specCounts,
                      recorded |-> ~cure /\ (holder \/ window),
-                     rank |-> r, cyc |-> cyc[r]]
+                     rank |-> r, cyc |-> cyc[r],
+                     endsOn |-> IF pair THEN s ELSE "none"]
         \* The ghost history, with the pair's failures marked as not counting.
         h1       == Append(hist[i], entry)
         newHist  == [j \in Items |->
@@ -523,6 +539,14 @@ NoSetDownWithoutAnswer ==
 \* the Igor's own setup is not the item's failure".
 NoSetDownForCure ==
     \A k \in DOMAIN downs : ~downs[k].cure
+
+\* *Two identical failures before the worker on different items end the
+\* cycle*, "A refused call SHALL take no part in this rule either": no cycle
+\* ends on a pair whose second run is a refused call. A pair's two signatures
+\* are equal unless both are surface failures, so checking the second run's
+\* signature also checks the first's.
+NoCycleEndOnRefusal ==
+    \A i \in Items : \A k \in DOMAIN hist[i] : hist[i][k].endsOn \notin RefusalSigs
 
 (* Liveness, for the configurations where Det is TRUE.                     *)
 

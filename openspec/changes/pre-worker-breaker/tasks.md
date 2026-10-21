@@ -89,8 +89,11 @@
       relabel sentence alone, gets this sentence first and keeps the relabel sentence after it.
       In place of the raw error message the in-force handoff quotes, a set-down's post names the
       failure from the row's `source` and status, such as "Setting up the working tree failed
-      (exit code 128)", and quotes no part of the message (Adam, 2026-10-20). That example may be
-      reworded
+      (exit code 128)", and quotes no part of the message (Adam, 2026-10-20). The refused runs
+      before a set-down name the failure the same way, before their "It will try again next
+      cycle" (Adam, 2026-10-21). For the other sources, the plain words are "A call to the
+      tracker failed (HTTP 403)", "A call to the code host failed (HTTP 502)" and "Igor met an
+      internal error". These examples may be reworded
 - [ ] 3.3 On the third identical failure in the claim window, whichever message `takeClaim`
       posts carries the same sentence: `claimWithdrawn`, right after "Nothing was done, so there
       is nothing to clean up.", or `claimStuck`, where the release did not clear the label, right
@@ -99,7 +102,10 @@
       and post the set-down, only where the item carries no claim message of another rank of
       the role that counts under #179's rules (Adam, 2026-10-19); where it carries one, or where
       the read of the claim messages fails, count nothing, post nothing and leave the role's
-      label on the item (Adam, 2026-10-20). The withdrawal releases only claim messages posted
+      label on the item (Adam, 2026-10-20). Where the read failed, keep the item in memory and
+      read its claim messages again in the rank's next cycle: drop out silently where another
+      rank's claim message counts, and otherwise, or where the read fails again, give the claim
+      back with a refused run's post, counting nothing (Adam, 2026-10-21). The withdrawal releases only claim messages posted
       before that test, by the mechanism #179 decides (Adam, 2026-10-20). Tests for each case,
       and for a set-down posted where the claim message never landed
 - [ ] 3.4 In `runItem`, on a failure before the worker (a refused claim window, a throw raised
@@ -135,7 +141,8 @@
 - [ ] 4.1 Append a `kind: 'pre-worker'` row for each failure before the worker, with `item`,
       `role`, `rank`, `held`, the cycle's start as `cycle`, `source`, `httpStatus` or
       `exitCode`, `cured`, and the fingerprint of 3.1, and no message text, wherever a run is
-      recorded: `serve`'s event handler, and the two loops of `igor
+      recorded (an `igor run --claim` row, which runs outside any cycle, has no `cycle`, and
+      counts as rank 0's: Adam, 2026-10-21): `serve`'s event handler, and the two loops of `igor
       run`'s cycle in `src/cli.ts`, over the items it claims and over its catch-ups, and
       `igor run --claim`'s catch-up path, which must also defer a set-down item. Write the full
       message, after #213's redaction, to the process's own log. Tests check that no part of the
@@ -167,11 +174,15 @@
       `outage` row naming only those two items. Where the two identical failures are also
       surface failures, the cycle ends on the surface rule and writes 4.2's row. A rank that
       drops out because another rank holds the item, and a run that records a cure key, leave
-      the previous run in place
+      the previous run in place. A refused call, one the tracker or code host answered and
+      refused, is never one of a pair, but becomes the previous run (Adam, 2026-10-21).
+      `igor run --claim` does not call the function
 - [ ] 4.6 Tests through both `serve` and `igor run`: one per scenario in *Two identical failures
       before the worker on different items end the cycle* (the cycle ends and neither count
-      moves; different failures continue and both count; an item alone in its cycle counts once),
-      and two tracker failures in a row with different messages ending the cycle
+      moves; different failures continue and both count; an item alone in its cycle counts once;
+      two identical refused calls continue and both count), two tracker failures in a row with
+      different messages ending the cycle, and an `igor run --claim` failure counting toward the
+      breaker and ending nothing
 
 ## 5. After #101 merges
 

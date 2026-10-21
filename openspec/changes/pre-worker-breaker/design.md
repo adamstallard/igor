@@ -142,9 +142,13 @@ decision 4). The wrapper also records whether the surface answered, by the respo
 message says it is a rate limit is no answer. GitHub answers both its primary and secondary rate
 limits with a 403 as often as a 429, so a 403 needs its message read. Only a `tracker` or
 `code-host` failure with no answer sets `surfaceFailed`, the mark on a run that the outage rule
-counts. A refusal, such as a 403 for a missing
-permission, is a failure before the worker like any other: it counts toward the breaker, and two
-identical ones on different items end the cycle under the identical-failure rule.
+counts. A refused call, such as a 403 for a missing permission, counts toward its own item's
+breaker and toward nothing else (Adam, 2026-10-21; the proposal's decision 34): two identical
+ones on different items do not end the cycle under the identical-failure rule either, so the
+in-force scenario *A refusal about the item does not stop the cycle* holds. Since a refused
+call never ends a cycle, it leaves no item unreached on its account. So the discovery watermark,
+which the proposal's decision 12 holds below the items an early-ended cycle never reached, is
+never held back for one.
 
 **A clone is the one working-tree call that can be the code host's.** A clone that fails because
 the code host did not answer is tagged `code-host`, with no answer, so two in a row end the cycle
@@ -199,8 +203,10 @@ before masking.
 
 ## Outages: an `outage` row excludes the cycle's failures
 
-Either cycle, `serve`'s or `igor run`'s, ends on the second surface failure in a row. When it
-does, it appends:
+Either cycle, `serve`'s or `igor run`'s, ends on the second surface failure in a row. `igor run
+--claim` works one item outside any cycle, so it ends nothing and no `outage` row excludes its
+failure, which counts as rank 0's (Adam, 2026-10-21; the proposal's decision 33). Its
+`pre-worker` row has no `cycle`. When a cycle does end, it appends:
 
 ```json
 {"at": "…", "kind": "outage", "role": "web", "rank": 1, "since": "<cycle start>",
@@ -293,7 +299,9 @@ signature and whether it was a surface failure for the length of one cycle, whic
 no cost: the next cycle starts comparing afresh. Two kinds of run leave the previous run in place,
 neither joining a pair nor separating one: a rank that drops out because another rank holds the
 item, which has no failure of its own (Adam approved this with the change, 2026-10-20); and a run
-that records a cure key (the proposal's decision 30).
+that records a cure key (the proposal's decision 30). A refused call is never one of a pair
+(decision 34), but it becomes the previous run, so it separates the runs on either side of it,
+as a failure that is not identical does.
 
 ## Where the set-down is said
 
@@ -301,7 +309,10 @@ that records a cure key (the proposal's decision 30).
 decision 31). The item may be public. In the in-force code a failure handoff posts the raw error
 message; a set-down's post instead says in plain words where the run failed, from the row's
 `source`, and gives its HTTP status or exit code, such as "Setting up the working tree failed
-(exit code 128)". The full message is in the process's log.
+(exit code 128)". The full message is in the process's log. A *refused run* is one that gives
+the claim back for the item to be tried again next cycle, as the two failures before a set-down
+do. Its post, the *refusal post*, gives the same plain words in place of the raw message,
+followed by "It will try again next cycle" (Adam, 2026-10-21; the proposal's decision 36).
 
 **A failure after the claim** is given back through `handOffFrom`, as in the in-force code. On
 the third identical failure, its `failure` reason carries `next: 'set-down'`. An undirected
@@ -328,6 +339,19 @@ claim as another rank's; #179 lists that gap for Adam. Where that read itself fa
 likely while the tracker is not answering, the rank counts nothing, posts nothing and leaves the
 label (Adam, 2026-10-20; the proposal's decision 22), as it would beside a sibling's claim.
 
+**A failed read is tried again next cycle** (Adam, 2026-10-21; the proposal's decision 35). The
+rank keeps the item in memory and reads its claim messages again in its next cycle. Where it
+finds another rank's claim message that counts, it drops out silently. Where it finds none, or
+the read fails again, it gives the claim back with the refusal post, so the claim
+does not end in silence, as the in-force *A claim that cannot be kept is given back, out loud*
+requires. `igor run` runs no next cycle, so it makes the second read before it exits.
+
+The claim-window failure whose read failed is never counted, whatever the reread finds, and a
+second failed read is not a failure that counts either. Counting the first would mean writing
+its row a cycle late, by when the item's claim messages may have changed. A restart between the
+two reads loses the memory, and the claim then waits for #179 to free an item that no running
+rank works.
+
 **The withdrawal releases only claim messages posted before the test** (Adam, 2026-10-20; the
 proposal's decision 29). The test and the withdrawal are two tracker calls, and a sibling's claim
 message that lands and verifies between them must still count after the withdrawal. #179 decides
@@ -339,7 +363,7 @@ read an item as free; one sets it down and releases it, and the other's claim me
 on the released item. Before it posts a set-down, the run reads the item's record in `deferred.json`, and asks
 whether a set-down of its role there has lifted. Where one has not, the run posts no set-down and gives the
 claim back with the refusal, leaving out its "It will try again next cycle", which the deferral
-makes untrue.
+makes untrue (Adam approved this on 2026-10-21; the proposal's decision 38).
 
 The run then returns `handed-off` with `handoff: 'failure'`. That is what `shouldDefer` already
 defers on, so `serve`, and `igor run`'s cycle in `src/cli.ts` in both its loops, over claimed
@@ -401,20 +425,23 @@ one for each assumption (*What the assumptions leave out*, below), and CI does n
 | `NoDoubleSetDown`: one set-down per deferral | the same requirement, "One set-down per deferral" |
 | `NoSetDownWithoutAnswer`: each set-down of an item after its first follows a person's change or another role's successful run | the same requirement, "What lifts a set-down" |
 | `NoSetDownForCure`: no set-down for a failure that records a cure key | the same requirement, "A fault in the Igor's own setup is not the item's failure" |
+| `NoCycleEndOnRefusal`: no cycle ends on a pair of refused calls | *Two identical failures before the worker on different items end the cycle*, "A refused call SHALL take no part in this rule either" |
 | `RepeatedFailureSetDown`: an item that fails the same way before the worker on every run is set down | the same requirement, its purpose |
 
-Results on TLC 2.19 (`tla2tools.jar` v1.7.4), four workers, 2026-10-20. `PreWorkerBreaker.cfg` is
-the base: two ranks, two items, a surface signature beside two others, and a claim-window failure.
-In *Checks*, holder, three, in a row, once, answer and cure stand for `NoSetDownByNonHolder`,
-`NoSetDownWithoutThree`, `NoSetDownWithoutThreeInARow`, `NoDoubleSetDown`,
-`NoSetDownWithoutAnswer` and `NoSetDownForCure`.
+Results on TLC 2.19 (`tla2tools.jar` v1.7.4), four workers, 2026-10-21. `PreWorkerBreaker.cfg` is
+the base: two ranks, two items, three signatures (a surface failure, a refused call and a failure
+of the working tree), and a claim-window failure. The first four configurations in the table below
+use those signatures; the liveness ones give each item its own signature and have no refused call.
+In *Checks*, holder, three, in a row, once, answer, cure and refusal stand for
+`NoSetDownByNonHolder`, `NoSetDownWithoutThree`, `NoSetDownWithoutThreeInARow`,
+`NoDoubleSetDown`, `NoSetDownWithoutAnswer`, `NoSetDownForCure` and `NoCycleEndOnRefusal`.
 
 | Configuration | Differs from the base by | Checks | Distinct states | Time | Result |
 | --- | --- | --- | ---: | ---: | --- |
-| `PreWorkerBreaker.cfg` | (the base) | holder, three, in a row, once, answer | 23,711,713 | 95 s | pass |
-| `PreWorkerBreakerOneRank.cfg` | one rank; returned failures, cure keys, a lifted deferral | every invariant | 38,889,471 | 160 s | pass |
-| `PreWorkerBreakerReturned.cfg` | returned failures and cure keys; no claim-window failure and four runs, to keep it small | holder, three, in a row, once, answer, cure | 11,437,049 | 45 s | pass |
-| `PreWorkerBreakerLateRows.cfg` | no `PromptRows`: rows late, reordered, one lost | holder, three, once, answer | 39,987,533 | 164 s | pass |
+| `PreWorkerBreaker.cfg` | (the base) | holder, three, in a row, once, answer, refusal | 24,204,541 | 101 s | pass |
+| `PreWorkerBreakerOneRank.cfg` | one rank; returned failures, cure keys, a lifted deferral | every invariant | 40,795,299 | 186 s | pass |
+| `PreWorkerBreakerReturned.cfg` | returned failures and cure keys; no claim-window failure and four runs, to keep it small | holder, three, in a row, once, answer, cure, refusal | 11,672,449 | 47 s | pass |
+| `PreWorkerBreakerLateRows.cfg` | no `PromptRows`: rows late, reordered, one lost | holder, three, once, answer, refusal | 40,026,709 | 169 s | pass |
 | `PreWorkerBreakerLiveness.cfg` | one rank; every run fails; a lost row | liveness, holder, three, in a row, once, answer | 7,267 | 1 s | pass |
 | `PreWorkerBreakerLivenessRanks.cfg` | one item that fails every run; a lost row | liveness, holder, three, in a row, once, answer | 97,125 | 3 s | pass |
 
@@ -431,6 +458,7 @@ Each negative configuration turns off one rule and finds a violation, as require
 | `NoCureSkipped.cfg` | the count skips a failure that records a cure key | `NoSetDownForCure` |
 | `NoSetDownOnce.cfg` | no set-down on an item already deferred (decision 28) | `NoDoubleSetDown` |
 | `NoIgorPostsLiftNothing.cfg` | another role's posts lift no set-down (decision 8) | `NoSetDownWithoutAnswer` |
+| `NoRefusalsUnpaired.cfg` | a refused call is never one of a pair (decision 34) | `NoCycleEndOnRefusal` |
 
 **Liveness holds within a bound on runs.** The model bounds the runs of a behaviour, so liveness
 is checked as: an item that fails the same way on every run is set down before the runs run out.
@@ -456,7 +484,7 @@ CI does not run `model/findings/`: each file there drops one assumption and fail
   (*Outages*, above), and a refused write is retried. Adam accepted this as a known limit
   (2026-10-20; the proposal's decision 19): the cost is an early set-down, which a person's change
   lifts. `findings/LateRows.cfg` with `PromptRows` TRUE and no row lost, rows still reordered,
-  passes (67,720,885 distinct states, in a run made for this check; CI does not run it).
+  passes (70,446,985 distinct states, in a run made for this check on 2026-10-21; CI does not run it).
 - **A lone rank's withdrawal can release the item under a sibling** (`findings/WithdrawRace.cfg`,
   which drops `AtomicWithdraw`). Decision 22's test of the item's claim messages and the
   withdrawal are two tracker calls. A sibling whose claim message lands and verifies between them
@@ -468,11 +496,15 @@ CI does not run `model/findings/`: each file there drops one assumption and fail
 
 **A run that records a cure key takes no part in the two-in-a-row rules** (the proposal's
 decision 30). In the model it forms no pair and leaves the previous run in place, so it neither
-ends a cycle nor separates the two runs of a pair.
+ends a cycle nor separates the two runs of a pair. **A refused call** forms no pair either
+(decision 34), but becomes the previous run, so it separates the runs on either side of it. A
+refused call's signatures are `RefusalSigs`.
 
 **Not modelled:** several roles, since the count is per role and roles share nothing here; `Lift`
 and `OtherPost` stand for what another role does on the item. Also failures after the worker; the
 masks, since a signature is a model value; a read of the count that fails, and a failed read of
 the item's claim messages in the claim window, since the spec has each count nothing and post no
-set-down, which can only remove set-downs; and how #179 frees an item that carries claim messages
-while no running rank is working it (`Recover` stands for that).
+set-down, which can only remove set-downs (the reread a cycle later counts nothing either);
+`igor run --claim`, whose failure counts like a rank's and never pairs, since it runs outside any
+cycle, so leaving it out can only add cycle ends; the discovery watermark; and how #179 frees an item that carries
+claim messages while no running rank is working it (`Recover` stands for that).
