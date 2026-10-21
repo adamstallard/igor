@@ -10,8 +10,10 @@ after execution has read which paths the worker changed and their contents, has 
 claim, and has applied every refusal that reads only those changes, among them `allow`, path names,
 conflict markers, undeclared reverts, and at gate one under `two-gate-workflow` (#150) the drop
 of every change outside the specification. A run any of those refusals refuses runs no check, and
-so does a run whose claim, read before the checks, reports a stop. A
-path gate one drops SHALL be restored in the tree to the base before the round runs. Where
+so does a run whose claim, read before the checks, reports a stop. Before the round runs, each
+path gate one drops SHALL be restored to its content in the base's tree. Under `igor serve` the
+worker user SHALL make that restore, since Igor's own account cannot remove a file the worker
+user made inside a directory the worker user made; under `igor run` Igor's own account makes it. Where
 `signed-publishing` (#153) stages and signs the tree before the commit, the round SHALL also run
 after that staging and signing, on the signed commit's tree. Every check SHALL run, even after
 one fails. Execution SHALL read the claim again once the round ends.
@@ -73,6 +75,13 @@ defines. Under `igor run` it is the Igor's own account, as it is for the worker.
 - **WHEN** at gate one the worker also changed a file under `src/`
 - **THEN** the file is restored to the base before the checks run, and the checks see only the
   specification
+
+#### Scenario: The worker user restores gate one's dropped paths
+
+- **WHEN** under `igor serve` at gate one the worker made a directory outside the specification
+  and wrote a file in it
+- **THEN** the worker user removes that directory and the file in it, which the base does not
+  hold, before the first round runs
 
 #### Scenario: A claim lost by the end of the checks is offered
 
@@ -288,8 +297,12 @@ NOT hold a check's output.
 
 A pull request opened after checks SHALL be a draft where any check of the last round did not
 pass, whether or not `allow` lists `draft-pr`. Where the code host's call to create a draft
-fails because it does not offer drafts there, execution SHALL create the pull request again,
-ready, with its Tests row saying Igor could not open it as a draft. Whether opened as a draft or ready,
+fails because it does not offer drafts there, what execution does depends on the role's `allow`.
+Where `allow` lists `pr`, execution SHALL create the pull request again, ready, with its Tests
+row saying Igor could not open it as a draft. Where it lists `draft-pr` and not `pr`, execution
+SHALL publish nothing and hand the item off, with a comment on the item saying that a check
+failed, that the code host refused a draft, and that the role may not open a ready pull
+request. Whether opened as a draft or ready,
 it SHALL request the role's reviewers, unless the claim was lost.
 
 In the pull request body, the last round's result SHALL appear only in the evidence section that
@@ -299,7 +312,8 @@ check that failed or timed out in the block #190 lays out under its table.
 Before a check's output is published or given to the worker, it SHALL be redacted by
 *credential redaction*, the requirement *Credential redaction replaces every credential the Igor
 knows* in the change `redact-state-branch` (#217), which matches seat tokens and credential-named
-variables' values by value and tokens, private keys and URL credentials by pattern. It SHALL
+variables' values of at least 8 characters by value, and tokens, private keys and URL
+credentials by pattern. It SHALL
 then be cut to its last 1,000 characters, both where it is published and where it is given to
 the worker. While a check runs, execution SHALL hold at most the last 64 KiB of its output.
 
@@ -332,6 +346,14 @@ to mark it ready, the comment SHALL say Igor could not mark the pull request rea
 
 - **WHEN** a role allows `pr` and not `draft-pr`, and a check fails in both rounds
 - **THEN** the pull request is opened as a draft
+
+#### Scenario: A draft-only role publishes nothing where the host refuses a draft
+
+- **WHEN** a role allows `draft-pr` and not `pr`, a check fails in both rounds, and the code
+  host refuses to create a draft
+- **THEN** no pull request is opened
+- **AND** the item is handed off with a comment on the item saying the host refused a draft and
+  the role may not open a ready pull request
 
 #### Scenario: A missing program is failed with no exit code under igor run
 
@@ -369,7 +391,8 @@ to mark it ready, the comment SHALL say Igor could not mark the pull request rea
 
 #### Scenario: A refused draft opens the pull request ready
 
-- **WHEN** a check fails in both rounds, and the code host refuses to open a draft
+- **WHEN** a role allows `pr`, a check fails in both rounds, and the code host refuses to open
+  a draft
 - **THEN** the pull request is opened ready, and its Tests row says Igor could not open it as a
   draft
 

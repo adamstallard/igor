@@ -27,11 +27,20 @@
 
 - [ ] 0.5 Measure whether the code host opens a draft pull request on each kind of repository
       Igor works, including a private repository on a plan that offers no drafts, and how a
-      refusal shows. Where the code host refuses, open the pull request ready, with this
-      clause in the Tests row in place of #190's draft clause, verbatim:
+      refusal shows. Where the code host refuses and the role's `allow` lists `pr`, open the
+      pull request ready, with this clause in the Tests row in place of #190's draft clause,
+      `the pull request is a draft because of it`, verbatim:
 
       ```
       Igor could not open this pull request as a draft.
+      ```
+
+      Where the role's `allow` lists `draft-pr` and not `pr`, open nothing and hand the item
+      off with this comment, which may be reworded so long as it says all three things
+      (proposal, decision 31):
+
+      ```
+      A check failed, so Igor would have opened this work as a draft pull request, but the code host refused a draft here, and this role may not open a pull request that is ready for review. Nothing was published.
       ```
 
 - [ ] 0.6 Measure what a check naming a missing program reports under `serve`, started through
@@ -72,7 +81,8 @@
       path with its contents) is non-empty: after the claim status is read and is not
       `stopped`, and after every refusal that reads only `changed` (`allow`, path names,
       conflict markers, undeclared reverts, and at gate one the drop of everything outside the
-      specification, restoring each dropped path to the base in the tree); where
+      specification, after which each dropped path gets back its content in the base's tree,
+      restored as the worker user under `serve` and as the Igor's own user under `run`); where
       `signed-publishing` (#153) is built, also after its staging and signing. Read the claim status
       again when the checks end. Run each line split on spaces, as an argument list with no
       shell, with the tree as its working directory, through the code that starts the worker
