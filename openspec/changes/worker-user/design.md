@@ -420,7 +420,8 @@ Before the first cycle, `serve` checks in this order, stopping at the first fail
 5. As the worker, one `sudo` call runs `test -r`, `test -w` or `test -x` on each path below and reports
    which ones succeed. Every path that succeeds is a refusal, and the refusal names it.
    - not readable: `/proc/<igor pid>/environ` (Linux); the file
-     `GITHUB_APP_PRIVATE_KEY_FILE` names; the path `seatKey` names; each seat's `token_file`;
+     `GITHUB_APP_PRIVATE_KEY_FILE` names; the file holding #171's age key that decrypts seat
+     files, whose path the `seatKey` setting names;
      each environment file the unit names in `IGOR_ENV_FILES`, which is `/etc/igor/env` on
      the shipped unit; `/etc/igor/<role>.env`, once #179 has the Igor read it itself;
      the Igor user's home, which must also fail `test -x`, so the worker cannot enter it; and a canary the check
@@ -443,7 +444,8 @@ Before the first cycle, `serve` checks in this order, stopping at the first fail
 8. As the worker, `git config --global safe.directory '*'` is set if missing.
 9. As the worker, an HTTP `GET /` to port 80 of `169.254.169.254` and of `[fd00:ec2::254]`,
    each with a 2-second limit, made by the `node` the Igor runs on: directly, and again through
-   the proxy where the worker is given `HTTP_PROXY` or `http_proxy`. Any HTTP response is a
+   each proxy the worker is given in `HTTP_PROXY`, `http_proxy`, `HTTPS_PROXY` or
+   `https_proxy`, the last two by a `CONNECT` to port 80. Any HTTP response is a
    refusal. A connection refused, unreachable, blocked, timed out, or accepted and closed with
    no response passes, so a network stack that accepts every connection, as Docker Desktop's
    does, is not taken for the endpoint (Adam, 2026-10-21; *Secrets reach the worker only
@@ -482,16 +484,21 @@ A worker gets a secret only from the Igor, and the Igor registers each one with
 Credential redaction then matches the secret by its value in every record, transcript and check
 output the Igor stores. A secret that reaches the worker any other way is one the registry never
 saw, so redaction stores it as it stands. A secret shorter than 8 characters, which
-`rememberSecret` does not register, is never handed over. Adam named five such routes, side
-channels, and this table says how each is closed under `serve`:
+`rememberSecret` does not register, is never handed over. Under `serve` the only secret handed
+over is the seat's token. #189's checks get none, because they run code the worker has just
+written (Adam, 2026-10-21). `CLAUDE_CODE_MESSAGING_TOKEN`, which Claude Code sets for the
+commands the worker runs, is outside the rule, since the Igor never holds it.
 
-| side channel | how it is closed |
+Adam named five side channels, routes by which a secret could reach the worker without passing
+through the Igor. This table says how `serve` deals with each:
+
+| side channel | how `serve` deals with it |
 |---|---|
 | the cloud metadata endpoint, `169.254.169.254` and `fd00:ec2::254`, which hands any caller the instance's cloud credentials | the unit's `IPAddressDeny=` (below), and start check 9 |
 | an SSH agent | `workerEnv` builds the environment from a list, which holds no `SSH_AUTH_SOCK`, in both modes; a test proves no agent variable passes (task 1.9) |
 | the `docker`, `lxd`, `incus` or `disk` group, a container engine's socket, or a sudo right, each of which reads `/etc/igor` as root | start check 10 |
 | a credential in the tree's git configuration or a remote URL, which the worker can read in `<tree>-git` | `gitEnv` on `main` already gives each git command its token in that command's environment and writes none to a file; a test proves `<tree>-git/config` holds none (task 2.7) |
-| credentials an operator put in the worker's home, such as `~/.npmrc` | the deployment guide says not to (task 8.4); a credential a worker needs is declared in the Igor's configuration, as #189 declares a check's |
+| credentials an operator put in the worker's home, such as `~/.npmrc` | not closed by Igor: it rests on the operator. The deployment guide says to put none there (task 8.4), and nothing checks it (proposal, *Still open*) |
 
 **The metadata endpoint is blocked for the whole unit** (proposed 2026-10-21, for Adam;
 proposal, decision 42). The unit sets `IPAddressDeny=169.254.169.254 fd00:ec2::254`. systemd
@@ -500,8 +507,10 @@ inherits it. A process `sudo` starts in the unit stays in that group unless `pam
 sudo's PAM stack opens a session for it and moves it into the worker user's slice; measurement
 6.2 did not record the group, and task 6.15 does. Debian's `/etc/pam.d/sudo` includes
 `common-session-noninteractive`, which holds no `pam_systemd`; other distributions are task
-6.15's to check. The line also blocks the Igor, which needs no cloud credential: see the
-proposal's *Still open* for a `token_command` that reads a cloud secret store. On a kernel without
+6.15's to check. The line also blocks the Igor, which needs no cloud credential. A seat's
+`token_command` that read a cloud secret store with the instance's role would fail, but #171's
+seat code removes `token_command`, and it is built before this change's (proposal, decision
+46). On a kernel without
 cgroup BPF, systemd warns and enforces nothing, and start check 9 then refuses. A worker given
 a proxy could ask it to fetch the endpoint, which the unit's line does not stop, so check 9 also
 asks through the proxy. On Google Compute Engine and Oracle Cloud the same address is also the
@@ -520,9 +529,10 @@ settings and its own token, and nothing else.
 
 **Lore picks a seat, never its secret** (Adam, 2026-10-21; proposal, decision 45). Only the
 Igor's code and the server's own configuration decide which secret goes to which process. #171
-fixes a seat's variable to `IGOR_SEAT_<ID>` and binds its ciphertext to its id; #189 fixes a
-check credential's variable by its repository and name. The proposal checks every token source
-against the rule, and lists the one that breaks it on `main`.
+fixes a seat's variable to `IGOR_SEAT_<ID>`, binds its ciphertext to its id, and removes
+`token_file` and `token_command`; #189's checks get no secret. The proposal checks every token
+source against the rule. Seats break the rule on `main`, where a seat names its variable, file
+or command freely, so #171's seat code is built before this change's (proposal, decision 46).
 
 `igor run` passes no agent socket either, but closes none of the other four. Its worker runs as
 the person, who may hold an agent, a Docker
@@ -549,9 +559,9 @@ user can then read it with `coredumpctl`. Two settings stop it:
 
 Node has no `prctl` and no `setrlimit`, and none of Igor's four dependencies is native. So Igor
 ships a small native addon of three calls: `prctl(PR_SET_DUMPABLE, 0)`, `setrlimit(RLIMIT_CORE,
-0)`, and `prctl(PR_GET_DUMPABLE)` to read the flag back. The proposal's *Still open* recommends
-Rust through `napi-rs`, with prebuilt Linux binaries for x64 and arm64, so installing needs no
-compiler. Under `serve`, an addon that fails to load, a call that fails, or a flag that reads
+0)`, and `prctl(PR_GET_DUMPABLE)` to read the flag back. It is written in Rust through
+`napi-rs`, with prebuilt Linux binaries for x64 and arm64, so installing needs no compiler
+(Adam, 2026-10-21; proposal, decision 43). Under `serve`, an addon that fails to load, a call that fails, or a flag that reads
 back as anything but 0 refuses the start with status 78 (start check 11). Under `igor run` the
 Igor makes both calls where it ships the addon, Linux on x64 and arm64, and elsewhere, such as
 on macOS, starts without them.
@@ -576,9 +586,10 @@ nothing in the lore repository describes it, and `run` spends
 no lent seat. Triage and the worker under `run` both authenticate with it, and the worker's
 environment holds it as it would hold any seat's token.
 
-This does not wait for #171. `token_env`, `token_file` and `token_command` seats are on `main`
-(the in-force `seat-budget` requirement *A seat names its token through exactly one mechanism*,
-read by `parseOrgBudget` in `src/budget.ts`), so every seat can name a token now. What #171
+Every seat could name a token without #171: `token_env`, `token_file` and `token_command` seats
+are on `main` (the in-force `seat-budget` requirement *A seat names its token through exactly one
+mechanism*, read by `parseOrgBudget` in `src/budget.ts`). This change's code is still built
+after #171's seat code, because lore chooses those seats' sources freely (proposal, decision 46). What #171
 removes is the in-force allowance for a seat with no token and for an organization with no
 seats, which run on the ambient login. Until #171 archives, that allowance and the proposal's
 decision 21, that every seat has a token, disagree. Adam accepted that window on 2026-10-19

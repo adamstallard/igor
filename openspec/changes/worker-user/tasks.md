@@ -1,10 +1,10 @@
 ## 0. Order and dependencies
 
 - [ ] 0.1 Build on `main` as it stands at gate two, when the implementation is pushed after this
-      specification is approved. The start-up probe covers every credential path the
-      configuration has by then: `GITHUB_APP_PRIVATE_KEY_FILE`, `seatKey` if #171 has merged,
-      and seat `token_file` paths while they exist. If #171 has not merged, file an issue asking
-      #171 to add `seatKey` to this probe, and link it here.
+      specification is approved, and after #171's seat code has merged (0.12). The start-up
+      probe covers every credential path the configuration has by then:
+      `GITHUB_APP_PRIVATE_KEY_FILE` and #171's `seatKey`. #171 removes `token_file`, so no seat
+      token file is left to probe.
 - [x] 0.2 Run measurements 6.1 to 6.5 before building sections 2 to 4; 6.6 informs the docs, and
       6.7 runs before 8.2 ships. Record each result in
       `design.md`, including any that contradicts it, and change the design before the code where
@@ -49,9 +49,14 @@
       #174's kill of the worker user's processes and its reset of the worker's home before each
       model step, as `design.md` (*The worker is started through `sudo`*) says. If #174 has
       not merged, file an issue saying so, and link it here.
-- [ ] 0.11 Decision 24's `IGOR_RUN_TOKEN` is #171's implicit local seat. If #171 has not merged
-      when 1.3 is built, file an issue asking whichever of the two is built second to give `run`
-      that seat, and link it here.
+- [ ] 0.11 Decision 24's `IGOR_RUN_TOKEN` is #171's implicit local seat, which #171's code,
+      built first (0.12), gives `run`. Build 1.3 on that seat.
+- [ ] 0.12 Build order (Adam, 2026-10-21; proposal, decision 46; issue #204): build this
+      change's code only after #171's seat code and #217's code have merged, although #171
+      archives after this change. On `main` a seat names its token by `token_env`, `token_file`
+      or `token_command`, any of them free, so a lore commit could route the App's key to a
+      worker as its seat token; #171 fixes each seat's source. #217 adds `rememberSecret`, which
+      1.9 calls. If either has not merged when gate two starts, stop and ask Adam.
 
 ## 1. Starting the worker as another user
 
@@ -98,9 +103,9 @@
       can read, never directly in `/tmp`, which the workers share with it under the unit. Test: each
       temporary file's directory has mode `0700` and the Igor's owner.
 - [ ] 1.9 Every secret a process running as the worker user gets is registered with
-      `rememberSecret` (#217) before the spawn: the seat's token, which #217's `resolveToken`
-      already registers, so only a test is owed for it, and #189's check credentials where
-      #189 is built (proposal, decision 41). Keep `SSH_AUTH_SOCK`, `GPG_AGENT_INFO` and any
+      `rememberSecret` (#217) before the spawn. Under `serve` that is only the seat's token,
+      which #217's `resolveToken` already registers, so only a test is owed for it; #189's
+      checks get no secret (proposal, decision 41). Keep `SSH_AUTH_SOCK`, `GPG_AGENT_INFO` and any
       other agent socket variable out of every environment the Igor builds for a worker, a
       model step or a check; `workerEnv` on `main` already passes neither. A secret shorter than 8 characters fails the run, naming its source, and nothing is
       spawned. If #217 has not merged, stop and ask Adam: this task calls its code. Tests: with
@@ -441,8 +446,8 @@
 - [ ] 5.6 A native addon makes the Igor not dumpable (proposal, decision 43; design, *The Igor
       cannot be dumped*). It exports one function that calls `prctl(PR_SET_DUMPABLE, 0)` and
       `setrlimit(RLIMIT_CORE, 0)`, then returns what `prctl(PR_GET_DUMPABLE)` reads. Build it in
-      the language Adam picks (proposal, *Still open*; recommended: Rust through `napi-rs`), with
-      prebuilt binaries for Linux on x64 and arm64 in the package. `serve` and `run` call it
+      Rust through `napi-rs` (Adam, 2026-10-21; proposal, decision 43), with prebuilt binaries
+      for Linux on x64 and arm64 in the package. `serve` and `run` call it
       first in `src/cli.ts`, before anything reads a credential. Under `serve`, an addon that
       will not load, a call that fails or a read-back other than 0 is 5.1's dumpable refusal.
       Under `run` on a platform the addon has no binary for, such as macOS, Igor starts without
@@ -520,9 +525,10 @@ file in the service user's home. Each holds a random string and nothing else. Ne
       without a password, lists `!log_allowed` among its `Defaults`, which 5.1's check reads; if
       it does not, the means of that check goes back to Adam, and the rule stands. Record the
       result in `design.md`.
-- [ ] 6.13 Before section 1 ships, record what `CLAUDE_CODE_MESSAGING_TOKEN`, which Claude Code
-      passes to the commands it runs (6.4), lets a holder do beyond the worker's own session. If
-      it reaches anything else, the design's handling of it goes back to Adam.
+- [ ] 6.13 For information only; nothing waits on it. Record what `CLAUDE_CODE_MESSAGING_TOKEN`,
+      which Claude Code passes to the commands it runs (6.4), lets a holder do beyond the
+      worker's own session. Adam decided on 2026-10-21 that it gets no rule, since the Igor
+      never holds it (proposal, decision 41). Record the result in `design.md`.
 - [ ] 6.14 Once section 3 is built, repeat 6.1's attack through Igor's own code and check that
       no canary string is in the published artifact. Record the result in `design.md`.
 - [ ] 6.15 Before 8.2 ships, on a cloud virtual machine (such as EC2) whose metadata endpoint
@@ -729,9 +735,9 @@ file in the service user's home. Each holds a random string and nothing else. Ne
 
       **Put no credential in a worker user's home, and add it to no `docker` group.** A
       registry token in `~/.npmrc` or a key under `~/.ssh` there reaches whatever the worker
-      runs, and Igor never learns of it, so it cannot redact it. A credential a repository's
-      checks need is declared in the `repos` map of `roles/org.yaml`, and its value goes in
-      `/etc/igor/env`. The `docker` group lets the
+      runs, and Igor never learns of it, so it cannot redact it. Igor gives a repository's
+      checks no credential: a check that needs a secret is marked CI-only in the repository's
+      entry in the `repos` map of `roles/org.yaml`, and the repository's own CI runs it. The `docker` group lets the
       worker start a container as root, so the start check refuses it. The check also refuses
       the `lxd`, `incus` and `disk` groups, and any sudo right for the worker user. On a cloud host, the
       unit blocks the metadata endpoint; the start check refuses where it is reachable anyway.

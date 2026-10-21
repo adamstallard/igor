@@ -749,16 +749,16 @@ credentials. The notice keeps the trade visible.
 A secret SHALL reach a process running as the worker user, or under `igor run` the worker, only
 from the Igor, which SHALL register it with credential redaction, by calling `rememberSecret` (#217's *Credential
 redaction replaces every credential the Igor knows*), before it hands the secret over. Under
-`igor serve` those secrets are the seat's token, which the worker and every later model step get,
-and the credentials #189 declares for a repository's checks, which only the checks get (#189's
-*The loop runs the repository's checks in the worker's tree*). A later change that hands a
-worker user another secret SHALL declare it in the Igor's configuration and register it the same
-way. In both modes, the Igor SHALL NOT hand over a secret shorter than 8 characters, which
-`rememberSecret` does not register; it SHALL fail the run instead, naming the secret's source.
+`igor serve` that secret is the seat's token, which the worker and every later model step get.
+The repository's checks, which #189 runs as the worker user, SHALL get no secret. A later change
+that hands a worker user another secret SHALL declare it in the server's own configuration, never
+in lore, and register it the same way. In both modes, the Igor SHALL NOT hand over a secret shorter than 8 characters,
+which `rememberSecret` does not register; it SHALL fail the run instead, naming the secret's
+source.
 
-No other secret SHALL reach the worker user, with one exception the Igor cannot prevent:
-`CLAUDE_CODE_MESSAGING_TOKEN`, which Claude Code itself sets for the commands the worker runs,
-and which the Igor never sees (task 6.13 measures what it authorizes). Under `igor serve`:
+No other secret SHALL reach the worker user from the Igor. `CLAUDE_CODE_MESSAGING_TOKEN`, which
+Claude Code itself sets for the commands the worker runs, is outside this rule: the Igor never
+holds it. Under `igor serve`:
 
 - The worker user SHALL NOT be able to reach the cloud metadata endpoint, `169.254.169.254` or
   `fd00:ec2::254`. Where `igor serve` runs under the systemd unit, the unit SHALL set
@@ -773,10 +773,10 @@ In both modes, no variable that names an agent's socket, such as `SSH_AUTH_SOCK`
 `GPG_AGENT_INFO`, SHALL be passed to a worker, a model step or a check.
 
 The start check proves the metadata and the groups, sudo and sockets bullets (*Isolation is
-proved before any work is taken*). A
-credential a worker needs is never put in the worker user's home, such as a registry token in
-`~/.npmrc`: it is declared in the Igor's configuration and the Igor hands it over, as the
-deployment guide says.
+proved before any work is taken*). The deployment guide SHALL tell the operator to put no
+credential in the worker user's home, such as a registry token in `~/.npmrc`; a credential a
+worker needs is declared in the server's own configuration, and the Igor hands it over. Nothing
+the Igor runs checks the home.
 
 Under `igor run` the worker runs as the person's own user, so it can use whatever that user
 can: their SSH agent, their Docker, the metadata endpoint, and any credential in their home or
@@ -785,7 +785,8 @@ from finding them. That is `igor run`'s limit, and its notice says so (*serve al
 user, and run never does*).
 
 Credential redaction matches a secret by its value only where the Igor registered that value,
-so a secret that reaches the worker by another route is stored as it stands. The metadata
+so a secret that reaches the worker by another route is stored as it stands. A check runs code
+the worker has just written, so a secret given to a check is given to that code. The metadata
 endpoint hands the host's cloud credentials to any process that reaches it. Each of those groups and sockets lets its holder start a container or read a disk
 as root. And a credential in a tree's git directory would be one the worker could read, since
 the worker user can read that directory.
@@ -795,6 +796,11 @@ the worker user can read that directory.
 - **WHEN** the Igor hands a worker its seat's token, and the worker's output quotes the token
 - **THEN** the token was registered with `rememberSecret` before the worker started
 - **AND** credential redaction replaces it wherever #217 applies redaction to that output
+
+#### Scenario: A check gets no secret
+
+- **WHEN** under `igor serve` the Igor runs a repository's check as the worker user
+- **THEN** the check's environment holds no seat token and no other secret the Igor holds
 
 #### Scenario: A secret too short to register is not handed over
 
@@ -824,13 +830,11 @@ Which secret the Igor hands to which process SHALL be decided only by the Igor's
 server's own configuration: the Igor's environment, which the unit loads, and the files outside
 the lore checkout that it names. Lore, an item and anything a worker writes SHALL NOT decide it.
 Lore MAY choose which seat a role spends and which repositories have checks. It SHALL NOT choose
-which secret a seat or a check resolves to.
+which secret a seat resolves to.
 
 For seats, #171's *A seat file names its token only by ciphertext or its own variable* and *A
-seat's token travels as ciphertext in its file* make this hold. For a check's credential, #189's
-*The org base declares each repository's checks* does. Until #171's code is built, a seat on
-`main` names its token's variable, file or command freely, which breaks this rule (proposal,
-*Still open*).
+seat's token travels as ciphertext in its file* make this hold. A check gets no secret, so
+there is none for lore to route.
 
 A lore commit or an item is not the server's operator. Where lore could name the variable or the
 file a secret is read from, one commit could hand the worker the App's key as its seat token.
