@@ -2,7 +2,7 @@
 
 ## Decisions
 
-[#215](https://github.com/adamstallard/igor/issues/215) records all ninety decisions,
+[#215](https://github.com/adamstallard/igor/issues/215) records all ninety-six decisions,
 and all are Adam's. Where the agent that wrote this change fitted one of them to the spec, that
 decision says so. A *consistency read*
 is a check, by a fresh agent, of this change against every other spec, change and open pull
@@ -27,7 +27,8 @@ request; Adam answered the questions each read raised. He made:
   3. the Igor pushes the citations of an inquisitor run it starts itself (9);
   4. fire counts alone decide whether an entry is proposed as unused (5, 8);
   5. whether a worker reports through its output or #175's outbox follows #175 (Still open);
-  6. a worker's report carries no category (9);
+  6. a worker's report of a citation carries no category (9); decision 92 later puts one in
+     the flag;
   7. this change is the one home of the Igor's push rules (9);
   8. #153 should exempt citation commits from its trailer rule (Still open);
 - last on 2026-10-20, answering this change's open questions: the retry bound of three in
@@ -73,7 +74,9 @@ request; Adam answered the questions each read raised. He made:
 - decisions 82 to 89 on 2026-10-21, answering the five questions the reads of decisions 78 to
   81 raised, a gap shared-skills #25's owner raised, and a gap in worker isolation, and
   decision 90 that day, confirming details the agent that wrote this change had fitted to
-  decisions 71, 73 and 80.
+  decisions 71, 73 and 80;
+- decisions 91 to 96 on 2026-10-21, answering the four questions this change then had for
+  him, confirming more fitted details, and settling how a refused run's reply is kept.
 
 Terms used here:
 - The *destination repository* is the repository the configuration key `destination` names,
@@ -262,8 +265,8 @@ Terms used here:
     reason, never the provider's text, which today's refusal record keeps unredacted
     (`src/execute.ts:2077`). Adam extended the decision to both later on 2026-10-20.
 
-    The Igor learns of such a question from the worker's report: a bare flag saying the run met
-    one, with no category, question or answer. A citation report still carries no category
+    The Igor learns of such a question from the worker's report: a flag saying the run met
+    one, with no question or answer. Decision 92 adds the question's category to the flag. A citation report still carries no category
     (decision 9). The agent that wrote this change proposed the flag, and Adam approved it on
     2026-10-20. A steered worker could leave the flag out, and the transcript would then be
     stored; as with decision 11, nothing but the worker guards against that.
@@ -304,7 +307,8 @@ Terms used here:
     deprecates or rescopes the entry while the run is under way (Adam, 2026-10-20).
 18. **A refused run that met a question with a category keeps no provider reply.** Its
     refusal record, under decision 13, keeps only the limit and reset time Igor parsed from
-    the reply. Every other refused run keeps the provider's whole reply, as today: nobody yet
+    the reply. Every other refused run keeps the provider's whole reply, redacted as decision 96
+    says: nobody yet
     knows where the provider puts its reset time, and those replies are how igor's limit
     patterns get checked. Adam accepted that runs under decision 13 add nothing to that check
     (2026-10-20). Decision 19 counts more refused runs as falling under decision 13.
@@ -834,40 +838,34 @@ Terms used here:
     App's login without GitHub's `[bot]` suffix (Adam, 2026-10-21, a gap shared-skills #25's
     owner raised).
     One changed scenario.
-87. **Each worker run gets its own Claude configuration directory.** Every role and rank runs as
-    the user `igor` with one shared home, and `workerEnv` forwards `HOME`
+87. **Each worker run's Claude state is private to it, and its session log is collected.** Every
+    role and rank runs today as the user `igor` with one shared home, and `workerEnv` forwards `HOME`
     (`src/execute.ts:838`), so every worker could read every other run's Claude Code session log
-    under `~/.claude/projects/`, a run still in progress included. So each worker run gets its
-    own `CLAUDE_CONFIG_DIR`; the Igor collects the session log from it when the run ends, then
-    deletes it. Tool caches and `HOME` stay shared. Every seat must name a token, so the host's
-    login is never copied into a run's directory. On main, `seat-budget`'s *A seat names its
-    token through exactly one mechanism* and *A spend with no seat behind it does not happen*
-    let a seat naming no token run on the ambient login; open pull request #171 removes both and
-    requires every seat to name its token, and Adam decided there that an organization declaring
-    no seats is refused (#171's decision 36). This change relies on #171 for that rule rather
-    than modifying the same requirements, and its `task-execution` delta refuses to spawn a
-    worker for a seat naming no token. What igor gives every worker, such as settings and skills, is laid into each run's
-    directory, and the run's `session` field (`src/execute.ts:114`, documented as the log under
-    `~/.claude/projects/`) names the log in the run's directory.
-    Task 4.11 confirms that `CLAUDE_CONFIG_DIR` relocates all of Claude's per-user state
-    (Adam, 2026-10-21). The agent that wrote this change fitted two details, for Adam to check:
-    the directory is `runs/<run id>/claude` under the Igor's state directory, mode 0700, and a
-    collected log goes to `sessions/<run id>.jsonl` there, mode 0600. `task-execution` gains
-    six scenarios. The agent that wrote this change also fitted, for Adam to check: the
-    directory is owned by the user the worker runs as; the log is read only as a regular file
-    with one link; a flagged run's log never goes to `sessions/` and is deleted where it cannot
-    be kept beside its question; and execution fails, spawning no worker, where the state
-    directory cannot be written.
+    under `~/.claude/projects/`, a run still in progress included. Each worker run's Claude
+    state, its session log included, is private to that run, and the log is collected when the
+    run ends (Adam, 2026-10-21). Open pull request
+    [#174](https://github.com/adamstallard/igor/pull/174) (change `pinned-skills`) is how this
+    is done: `~/.claude` and `~/.claude.json` are reset from a template before each model step,
+    never between a step's first call and its later `claude -p --resume` call, so the resume
+    finds its session; each run has a home of its own; workers
+    use seat tokens only; and the session log is copied out and redacted with #217's
+    credential redaction. Every seat must name a token: open pull request #171 removes main's
+    `seat-budget` text that let a seat naming none run on the ambient login, and Adam decided
+    there that an organization declaring no seats is refused (#171's decision 36), so this
+    change relies on #171 for that rule, and its `task-execution` delta refuses to spawn a
+    worker for a seat naming no token. As first written, this decision gave each run its own
+    `CLAUDE_CONFIG_DIR`; decision 91 replaced that with #174's design. `task-execution` gains
+    two scenarios.
 88. **A held item's session log is kept beside its question.** A flagged run's collected session
     log moves into the `flagged-questions` directory, beside the question's file, mode 0600, and
-    no worker can reach that directory (Adam, 2026-10-21). Until workers run as users of their
-    own, file modes cannot ensure that, and whether that is accepted is open.
+    no worker can reach that directory (Adam, 2026-10-21). The log moved is #174's copy,
+    redacted with #217's credential redaction. Until workers run as users of their own, another
+    worker can read that directory, an accepted limit (decision 94).
 89. **The question's file holds its category, not its text, where it has one.** It holds the
     question's #25 category (`vulnerability`, `secret` or `personal`) where it has one,
     otherwise the question's text, and the path of the moved session log; a categorized
-    question's text is only in the log (Adam, 2026-10-21). How the Igor learns the category is
-    open: decision 13, `task-execution` and #25 all have a worker report only a bare flag, with
-    no category (Still open). Two new `graceful-handoff` scenarios.
+    question's text is only in the log (Adam, 2026-10-21). The Igor learns the category from
+    the worker's flag (decision 92). Two new `graceful-handoff` scenarios.
 90. **The details fitted to decisions 71, 73 and 80 are Adam's.** He confirmed them as written
     (Adam, 2026-10-21): under decision 71, a declining worker's reason is not quoted, and igor's
     own facts, such as a budget's reset time or the setting that would let the run proceed,
@@ -875,6 +873,33 @@ Terms used here:
     the ledger reason `needs a person, question not kept`, the path going only to the Igor's
     host log while the condition's record holds only its key, and the ledger and the log alone
     recording the failure until `condition-backoff` ships.
+91. **#174's design stands over decision 87's first form.** Adam chose #174's design, a home of its
+    own for each run with a template reset,
+    and its copied, redacted session log, over a per-run `CLAUDE_CONFIG_DIR` in one shared home
+    (Adam, 2026-10-21). Decision 87 is rewritten in place to state it; the `runs/<run id>/claude`
+    path and the measurement of `CLAUDE_CONFIG_DIR` are dropped, and #174 owns the work.
+92. **A flagged worker reports the question's category with the flag.** The flag carries one
+    word from shared-skills #25's fixed list, `vulnerability`, `secret` or `personal`, and
+    nothing else about the question. That word goes only into decision 89's question file on
+    the Igor's host, never into the ledger, the state branch, a comment or a label (Adam,
+    2026-10-21, amending decision 13). Two `task-execution` scenarios, one changed and one new;
+    an item for #25, which must allow the worker to report it.
+93. **Gate two depends on #179.** This change's gate two merges only after #179's unit sets
+    `StateDirectory=igor`, so no deployment is left unable to keep a flagged question (Adam,
+    2026-10-21).
+94. **One `igor` user for every worker is an accepted limit until #175.** Until workers run as
+    users of their own, another worker can read `flagged-questions`, its logs and categories
+    included. Adam keeps the flagged log there now (decision 88), knowing that (Adam,
+    2026-10-21). Still open has an item for #175 to close it.
+95. **More fitted details are Adam's.** He confirmed as written (Adam, 2026-10-21) decision 83's
+    fallbacks for a lost record, decision 84's `igor release` details, including deleting the
+    question file and its session log on release, and decision 85's reuse of an open
+    condition.
+96. **A refused run's kept reply is redacted.** Where a refused run keeps the provider's whole
+    reply, it is redacted with #217's credential redaction (change `redact-state-branch`), as
+    its *Every write to the state branch is redacted* requires of every write there (Adam,
+    2026-10-21, his decision on #217). #217's Still open item asking which text to reword is
+    settled by this.
 
 
 **Alignments with shared-skills #25.** These follow from Adam's decisions above and #25's
@@ -923,32 +948,40 @@ decisions 216, 221, 225, 229 and 235 (#25 at 9247d3c), and add no decision:
   commit #208 last applied, whose record governs the relay-file read** of decision 77; the
   processes
   #179 runs for one role, for decision 77's relay files.
-- **For Adam: one user for every worker.** Every role, rank and worker runs as the user `igor`
-  under today's unit, the same user as the Igor itself. File modes then cannot keep a worker out
-  of another run's configuration directory, or out of the `flagged-questions` directory, as
-  decisions 87 and 88 require; only separate worker users, as #175 designs, can. Until #175
-  lands, is that an accepted limit, or should the Igor hold those directories elsewhere?
-- **For Adam: how the Igor learns a question's category** (decision 89). Decision 13,
-  `task-execution` and shared-skills #25 (its spec, *A worker that such a question stops SHALL
-  report only that flag, never the question's category*) all have a worker report a bare flag
-  with no category, so the Igor never sees one, and the question's file can hold no category.
-  Should the worker report the category to the Igor for the file, and #25 change to allow it?
-- **For Adam: decision 87 against #174's home design.** Open pull request #174, whose design
-  Adam chose on 2026-10-17 and 2026-10-19, gives each `igor run` a home of its own in the state
-  directory, resets `~/.claude` and `~/.claude.json` from a template before every `claude -p`,
-  takes skills from `--plugin-dir`, and copies the session log out of `~/.claude/projects/`;
-  #175 gives each worker user a home that lasts across runs. Decision 87 keeps one shared home
-  and moves Claude's state into a per-run `CLAUDE_CONFIG_DIR`, where #174's reset and copy no
-  longer act on what Claude reads. Which design stands?
-- **For Adam: no worker runs on today's unit.** Decision 87's directory is under the state
-  directory, which today's `deploy/igor.service` leaves read-only (`ProtectHome=read-only`,
-  only `/srv/igor` writable), so execution fails and no worker runs on a deployed Igor until
-  #179's unit sets `StateDirectory=igor`. Is that acceptable until then?
-- **For gate two: task 4.11 is unmeasured.** Whether `CLAUDE_CONFIG_DIR` relocates all of Claude's per-user
-  state, and whether a seat token runs `claude -p` in an empty one, is not measured. If it does
-  not relocate everything, a run could still read another's session log under the shared home,
-  and decision 87's isolation would not hold; if a seat's token does not run in an empty one,
-  no worker runs at all.
+- **For [#175](https://github.com/adamstallard/igor/pull/175) (decision 94).** Until workers run
+  as users of their own, every worker runs as `igor`, the Igor's own user, and can read
+  `flagged-questions`, its logs and categories included; Adam accepts that until then. #175's
+  worker users close it.
+- **For Adam: which category the flag carries** (decision 92). Under #25 a worker raises the
+  flag for every question it gives a category, whatever its verdict, not only one it stops on.
+  A run can meet a `secret` question it decides and then stop on a `personal` one, or on one
+  with no category. Which word the flag carries, and how the Igor ties it to the question it
+  stopped on, is not decided.
+- **For Adam: logs that #174 does not copy** (decisions 88 and 89). #174 copies only the
+  worker's session log, and resets the home before each later model step, so a question met
+  in #153's later steps (model steps igor runs after the worker, such as writing the pull
+  request body) is in a log nobody keeps. #189, which can start a second worker run in one
+  execution, gives that run a log of its
+  own. Which log the question file names in those cases is not decided.
+- **For Adam: `igor run` and write access** (decision 94). Under `igor run` workers never get
+  users of their own (#175 leaves it same-user), so the accepted limit is permanent there: two
+  concurrent `igor run`s can read each other's state. A same-user worker can also write under
+  `flagged-questions`: plant a file that holds an item, or delete one. Is write access accepted
+  too, and should decision 87's privacy rule say it binds `igor serve` only?
+- **Task 4.11 is unmeasured, for whichever of gate two and #174 is built first.** Nobody has measured that Claude Code keeps
+  no session or state under `HOME` outside the two paths #174 resets.
+- **For #217 (decision 96).** Its Still open item on which of the two refusal texts to reword is
+  settled by decision 96, so #217 should drop it.
+- **For shared-skills #25 (decision 92).** #25's spec says, in four places, that a worker such a
+  question stops reports only the flag, never the question's category: its requirement, its
+  definition of the bare flag, and two scenarios. Under decision 92 the worker reports the
+  category's word with the flag; #25 must allow it. Under decision 92 the worker reports
+  the category's one word with the flag, for the Igor's host file; #25 must allow it.
+- **Gate two depends on [#179](https://github.com/adamstallard/igor/pull/179) (decision 93).**
+  Today's `deploy/igor.service` sets no `StateDirectory=` and makes the home directory
+  read-only (`ProtectHome=read-only`, only `/srv/igor` writable), so neither #174's per-run
+  home nor the question's file can be written. This change's gate two merges only after #179's
+  unit sets `StateDirectory=igor`.
 - **For shared-skills #25 (decisions 84 and 89).** #25's decision 243 says the question's file
   holds the question and only someone with write access releases a held item. Under decisions
   84 and 89 the file holds the category where there is one, and the operator can also release
@@ -960,25 +993,20 @@ decisions 216, 221, 225, 229 and 235 (#25 at 9247d3c), and add no decision:
   stops its scope. `condition-backoff` also exempts a handoff caused by a fact about the Igor
   from suppression, while decision 82 keeps a held item held. Copying the other's text is not
   enough: whichever archives last must state the exception for a held item itself.
-- **For [#174](https://github.com/adamstallard/igor/pull/174) (decision 87).** What igor gives
-  every worker, such as settings and skills, is laid into each run's own `CLAUDE_CONFIG_DIR`,
-  and the session log is collected from it; #174 states session-log collection too, and one of
-  the two should point to the other once Adam settles the question above.
+- **This change depends on [#174](https://github.com/adamstallard/igor/pull/174) (decisions 87
+  and 88)** for each worker run's private Claude state and the copied, redacted session log;
+  decision 88 moves a flagged run's copy beside its question. #174's record in the execution
+  ledger names the copy's path, which for a flagged run is the moved copy under
+  `flagged-questions`; #174 should allow for the move.
 - **This change depends on [#171](https://github.com/adamstallard/igor/pull/171) (decision
   87)** for the rule that every seat names a token, and that an organization declaring no
   seats is refused (#171's decision 36). Until #171 merges, main's `seat-budget` still lets a
-  seat naming no token run on the ambient login; with its own, empty `CLAUDE_CONFIG_DIR` such a
-  worker would have no login, so execution refuses it instead.
+  seat naming no token run on the ambient login, while this change's execution refuses to spawn
+  a worker for one.
 - **For #179 or the deployment guide: workers cannot write the home.** Today's
-  `deploy/igor.service` sets `ProtectHome=read-only`, with only `/srv/igor` writable, so even
-  once a state directory lets workers run, tool caches under the shared home still cannot be
-  written.
-- **For [#179](https://github.com/adamstallard/igor/pull/179) and gate two: a writable state
-  directory** (decisions 76, 80, 87 and 88), without which no worker runs and no question is
-  kept. Today's `deploy/igor.service` sets no `StateDirectory=`
-  and makes the home directory read-only, so the question's file cannot be written until
-  #179's unit change lands, and under Docker the home directory may not persist. Until then, no
-  worker runs on such a host.
+  `deploy/igor.service` sets `ProtectHome=read-only`, with only `/srv/igor` writable, so tool
+  caches under the home cannot be written there; #179's unit change, on which gate two waits
+  (decision 93), is where that is fixed.
 - **`condition-backoff` and #141 modify the same `work-triage` requirement.** The open change
   `condition-backoff` modifies *An item handed back is not re-worked until something answers*,
   and [#141](https://github.com/adamstallard/igor/pull/141) amends its delta to count only a
@@ -1186,7 +1214,7 @@ decisions 216, 221, 225, 229 and 235 (#25 at 9247d3c), and add no decision:
   explicit environment holding no credential but its seat's*, which the citation requirement
   cites, by adding "token" to its end. Whichever of #171 and this change merges second updates
   the citation requirement to the new name. This change's `task-execution` delta also modifies
-  that requirement, to add `IGOR_RUN`, the per-run `CLAUDE_CONFIG_DIR` and the refusal of a
+  that requirement, to add `IGOR_RUN`, private Claude state per run and the refusal of a
   seat naming no token, under its current name; whichever merges second carries
   both changes. [#175](https://github.com/adamstallard/igor/pull/175) modifies the same
   requirement too, adding `GIT_INDEX_FILE`; each delta replaces the requirement whole, so
@@ -1343,9 +1371,9 @@ reading the codebase. Two cases contradict that:
   and its question and miss files from the role's `allow` list, with two new scenarios.
 - `task-execution`'s *The worker is given an explicit environment holding no credential but
   its seat's* has the Igor set `IGOR_RUN`, which carries no secret, in a worker's environment
-  and its own inquisitor run's, gives each worker run its own `CLAUDE_CONFIG_DIR`, and runs no
-  worker for a seat that names no token, with eight new scenarios: two for `IGOR_RUN` and six
-  for decision 87.
+  and its own inquisitor run's, keeps each worker run's Claude state private by #174's design,
+  and runs no worker for a seat that names no token, with four new scenarios: two for
+  `IGOR_RUN` and two for decision 87.
 - `task-execution`'s *Transcripts and outcomes are captured to the state branch* writes no
   transcript for a run that met a question with a category, and for such a run puts no excerpt
   of the worker's result in the pull request body, and has a refusal record keep only the
@@ -1358,7 +1386,7 @@ reading the codebase. Two cases contradict that:
   words for the kind of reason, such as `error`, or for a worker killed for a limit the hang's
   kind and the limit's duration (decisions 51 and 56). A model step igor runs after the worker,
   such as #153's, is part of the run and counts as a worker run (decisions 60 and 64). It gains
-  nineteen scenarios, and
+  twenty scenarios, and
   *Transcript persisted off the main line* applies only to a run that met none and whose
   worker runs all completed their reports (decisions 13, 19 and 38).
 - `lore-review`'s *An entry already in the store is never overwritten by proposing* reports an
@@ -1412,7 +1440,7 @@ None.
   the role's `allow` list, a worker's environment marks it as in an Igor's run, and a run
   that met a question with a category stores no transcript; a question it could not keep is
   recorded as `question not kept` (decision 80); each worker run has its own
-  `CLAUDE_CONFIG_DIR` (decision 87).
+  private Claude state, by #174's design (decision 87).
 
 ## Impact
 

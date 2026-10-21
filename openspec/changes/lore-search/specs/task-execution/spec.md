@@ -60,25 +60,19 @@ branching and publishing all happen in the loop afterwards, with the loop's own 
 inherited environment is therefore a set of credentials nothing in the worker has a use for,
 one shell command away from a worker an item's text has steered.
 
-Besides the `IGOR_RUN` marker and the `CLAUDE_CONFIG_DIR` below, only what running a toolchain
-requires is passed: the search path, a home directory, and the network settings the host is
-configured with. None of those is a credential, and each fails as something else entirely when
-it is missing. The home directory and the tool caches under it stay shared between runs.
+Besides the `IGOR_RUN` marker below, only what running a toolchain requires is passed: the
+search path, a home directory, and the network settings the host is configured with. None of
+those is a credential, and each fails as something else entirely when it is missing.
 
-Execution SHALL give each worker run its own Claude configuration directory, set as
-`CLAUDE_CONFIG_DIR` in the worker's environment: a new, empty directory
-`runs/<run id>/claude` under the Igor's state directory, which `graceful-handoff` defines, where `<run id>`
-is the run's id that `lore-firing`'s *An Igor publishes the citations its worker reports*
-defines, mode 0700 and owned by the user the worker runs as, that no other run uses. Anything
-igor gives every worker, such as settings or skills, SHALL be laid into each run's directory
-before the worker starts. When the run ends, the Igor SHALL collect the run's Claude Code
-session log from that directory, reading it without following a link and only where it is a
-regular file whose hard-link count is 1, then delete the directory. A collected log goes to
-`sessions/<run id>.jsonl` under the state directory, mode 0600. A flagged run's log never goes
-there: `graceful-handoff` keeps it beside the run's question, and where it cannot, the log is
-deleted with the directory. Where the state directory cannot be written, execution SHALL fail
-naming it rather than spawn a worker without its own directory. Execution SHALL NOT spawn a
-worker for a seat that names no token, and SHALL fail naming the seat.
+Wherever workers run as users of their own (#175), each worker run's Claude state, its session
+log included, SHALL be private to that run, and its session log SHALL be collected when the run
+ends, under `igor run` as well as `igor serve`. Open pull request [#174](https://github.com/adamstallard/igor/pull/174)
+(change `pinned-skills`) is how this is done, in its requirements *Every model step in the
+worker's home starts from Igor's template* and *The worker's session log outlives the reset*;
+this requirement does not restate them. Until then, and always under `igor run`, every worker
+runs as the same user and can read another run's state, which Adam accepts (decision 94);
+whether he accepts a worker's write access there too is open (the proposal's Still open). Execution SHALL NOT spawn
+a worker for a seat that names no token, and SHALL fail naming the seat.
 
 Execution SHALL also set `IGOR_RUN` in the worker's environment, to `worker`, and in the
 environment of an inquisitor run the Igor starts itself with no worker, to `igor`. The
@@ -122,36 +116,11 @@ value says whose run: a worker's or the Igor's own.
 - **WHEN** a worker runs a build or a test in its working tree
 - **THEN** the search path, home directory and network settings it needs are present
 
-#### Scenario: Each worker run has its own Claude configuration directory
+#### Scenario: A worker run's Claude state is private to it
 
-- **WHEN** two worker runs are under way at once
-- **THEN** each has its own `CLAUDE_CONFIG_DIR`, and neither directory holds the other's
-  session log
-- **AND** both share the same home directory
-
-#### Scenario: A run's configuration directory is collected and deleted
-
-- **WHEN** a worker run ends
-- **THEN** the Igor collects the run's session log from its `CLAUDE_CONFIG_DIR` to
-  `sessions/<run id>.jsonl` under the state directory, mode 0600
-- **AND** then deletes that directory
-
-#### Scenario: A run's directory holds what igor gives every worker
-
-- **WHEN** a worker run starts
-- **THEN** its `CLAUDE_CONFIG_DIR` is `runs/<run id>/claude` under the state directory, mode 0700
-- **AND** it holds the settings and skills igor gives every worker
-
-#### Scenario: A linked session log is not collected
-
-- **WHEN** a worker replaces its session log with a link to another file before the run ends
-- **THEN** the Igor collects nothing from it and copies no file the link points to
-
-#### Scenario: No worker runs without a writable state directory
-
-- **WHEN** the Igor's state directory cannot be written
-- **THEN** execution fails naming it
-- **AND** no worker is spawned
+- **WHEN** two worker runs, each as a worker user of its own (#175), are under way at once
+- **THEN** each has its own home, as #174 gives it
+- **AND** neither can read the other's `~/.claude` or session log
 
 #### Scenario: A seat that names no token runs no worker
 
@@ -188,8 +157,7 @@ record of the provider refusing the run SHALL keep only the refusal's reason, ne
 provider's text. The reason is the limit Igor read from the provider's reply and the time
 that limit resets, where Igor read them; where it read neither, the record says only that the
 provider refused the run. A record of the provider refusing any other run SHALL keep the
-provider's whole reply, except where a requirement that redacts credentials from every write
-to the state branch removes them. A *refusal record* is the file execution writes under
+provider's whole reply, redacted as #217's (`redact-state-branch`) *Every write to the state branch is redacted* requires of every write to the state branch. A *refusal record* is the file execution writes under
 `refusals/` on the state branch when the provider's reply names a usage limit.
 
 The ledger row records each shell command the worker's sandbox denied. For a run that met a
@@ -228,8 +196,15 @@ its completed report, as the paragraph below starting "A worker run that ends be
 the rules above then apply to the whole execution, including any summary of an earlier worker
 run.
 
-During a run, the worker SHALL report a bare flag that the run met such a question, with no
-category, question or answer. When the Igor runs the inquisitor skill itself and that skill gives a
+During a run, the worker SHALL report a flag that the run met such a question, together with
+that question's category, one word from shared-skills #25's fixed list (`vulnerability`,
+`secret` or `personal`), and no question or answer. The Igor SHALL write that word into the
+question's file on its own host that `graceful-handoff` keeps, and SHALL NOT write it to the
+execution ledger, the state branch, a comment or a label; it stays, besides, in the worker's
+session log, which #174 copies into the state directory on the host, since credential redaction
+removes credentials, not that word. A flagged run that stops on no question gets no host file,
+so the word is then kept nowhere but that log. Which word the flag carries when a run meets more
+than one such question is not decided (the proposal's Still open). When the Igor runs the inquisitor skill itself and that skill gives a
 question a category, every rule above for a run that met such a question SHALL apply to that
 run.
 
@@ -293,7 +268,8 @@ cannot tell a whole report from a cut one, the report SHALL count as not complet
 
 - **WHEN** the provider refuses a run that met no question with a category
 - **AND** the Igor has the run's completed worker report
-- **THEN** the record of the refusal on the state branch holds the provider's whole reply
+- **THEN** the record of the refusal on the state branch holds the provider's whole reply,
+  redacted
 
 #### Scenario: A refused run with no completed report counts as flagged
 
@@ -379,10 +355,17 @@ cannot tell a whole report from a cut one, the report SHALL count as not complet
 - **THEN** the execution counts as having met a question with a category
 - **AND** no transcript of the worker run or of that step is written to the state branch
 
-#### Scenario: The worker's report of a categorized question names nothing
+#### Scenario: The worker's report of a categorized question names only its category
 
-- **WHEN** a worker reports that its run met a question with a category
-- **THEN** the report is a bare flag, holding no category, question or answer
+- **WHEN** a worker reports that its run met a question with the category `personal`
+- **THEN** the report is the flag with the word `personal`, holding no question or answer
+
+#### Scenario: A reported category reaches only the host file
+
+- **WHEN** a worker reports the flag with the category `secret`, and the run stops on that
+  question
+- **THEN** `secret` appears in the question's file on the Igor's host
+- **AND** it appears in no ledger row, nothing on the state branch, no comment and no label
 
 #### Scenario: The Igor's own inquisitor run that met a categorized question stores no transcript
 

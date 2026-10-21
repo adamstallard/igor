@@ -30,14 +30,18 @@ and otherwise
 `$XDG_STATE_HOME/igor`, which is `~/.local/state/igor` when `XDG_STATE_HOME` is unset. The file
 SHALL be mode 0600, owned by the user the Igor runs as, and the `flagged-questions` directory
 and every directory below it SHALL be mode 0700. The file SHALL hold the question's category under
-shared-skills #25's inquisitor (`vulnerability`, `secret` or `personal`) where the Igor has one,
-which today no worker report gives it (the proposal's Still open), and
-otherwise the question's text as the run would have asked it, and in either case the path of
+shared-skills #25's inquisitor (`vulnerability`, `secret` or `personal`) where it has one, as
+the worker reports it with the flag (`task-execution`); which word the flag carries when the run
+meets more than one such question is not decided (the proposal's Still open). Otherwise the file
+SHALL hold the question's text as the run's handback would have asked it, and in either case the path of
 the run's session log. It SHALL hold no text of a question that has a category; that text is
-only in the session log. When the run ends, the Igor SHALL move that run's session log, collected
-as `task-execution` says, into the same directory beside the file, mode 0600. No worker run
-SHALL be able to reach the `flagged-questions` directory; where workers run as the Igor's own
-user, as under today's unit, file modes cannot ensure that (the proposal's Still open). The question of a later flagged run
+only in the session log. When the run ends, the Igor SHALL move the copy of the session log of the
+worker run that stopped on the question, which open pull request #174 makes, into the same
+directory beside the file, mode 0600. Where #174 made no copy, the file SHALL say so in place of
+a path, and nothing is moved. Once workers run as users of their own (#175),
+no worker run SHALL be able to reach the `flagged-questions` directory; #175 builds that, not
+this change. Until then, and always under `igor run`, another worker running as the same user can
+read it, its logs and categories included, which Adam accepts. The question of a later flagged run
 of the same item that stops on a question replaces the file, and that run's session log
 replaces the earlier one. Where the Igor cannot write the file, it
 SHALL still post the handoff above, the ledger row's `reason` SHALL read

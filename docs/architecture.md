@@ -556,7 +556,10 @@ request body carries no excerpt of the worker's result and no transcript link. I
 provider refuses the run over a usage limit, the record of that refusal keeps only the limit
 and reset time Igor read from the provider's reply. All of these rules hold because free text cannot be redacted reliably, and personal details should not reach everyone
 who can read the item or the destination repository, which holds `igor-state`. The worker's report
-carries a bare flag that its run met such a question, naming nothing about it. A run that
+carries a flag that its run met such a question, with only the question's category, one word
+such as `personal`, which igor writes to no ledger, branch, comment or label, only to the Igor's host file
+described below; it also stays in the worker's session log, whose copy the Igor keeps on its
+own host, since credential redaction removes credentials, not that word. A run that
 ends before the Igor has its worker's completed report (its report of citations and of that
 flag, marked by the worker as whole), for any reason (refused by the
 provider, gone silent, out of time or stopped), is treated the same way. The Igor cannot tell
@@ -587,23 +590,25 @@ lands, the Igor also opens a condition: a stuck-work record whose key gate two n
 condition holds no path; the operator learns which path failed from the Igor's own log on the
 host, where the path goes. The operator finds a kept question under the state directory at
 `flagged-questions/<tracker>/<repo>/<item>.md`, the same `<tracker>/<repo>/<item>` as the item's
-transcript path. The kept file holds the question's category where it has one, otherwise its
-text, and the path of the run's Claude Code session log, which the Igor moves beside it; how the
-Igor learns a category, which the worker's bare flag does not name, is open in pull request
-#216. A reply on the item does not rerun the item: the operator reads the question and decides
-whether it may be worked again. The item stays held, not worked again, whatever else its
+transcript path. For a question with a category, the kept file holds only the category's one word, which the
+worker reports with its flag; for one without, it holds the question's text, as the run's
+handback would have asked it. Either way it names the run's Claude Code session log, which the
+Igor moves beside the file, so the operator reads the question itself in that log. A reply on
+the item does not rerun the item: the operator reads the question and decides whether it may be
+worked again. The item stays held, not worked again, whatever else its
 handoff carries, and its hold record never expires; a lost record leaves it held. The operator
 can always release it with `igor release <tracker>/<repo>/<item>` on the host. An edit, relabel
 or change of holder by someone with write access to the item's repository releases it too,
 where the edit can be attributed, which needs #141; anyone else's edit, or one whose author
 cannot be read, leaves it held.
 
-Each worker run also has its own `CLAUDE_CONFIG_DIR`, a new, empty directory for Claude's
-per-user state, so its session log is not under the shared home's `~/.claude/projects/`. Since
-that directory starts empty, it holds no login, so a worker runs only for a seat that names a
-token. While every worker runs as the Igor's own user, file modes alone cannot keep one run out
-of another's directory; whether that is accepted is open in pull request #216, and task 4.11
-checks that the directory holds all of Claude's per-user state.
+Open pull request #174 gives each worker run a home of its own, resets `~/.claude` and
+`~/.claude.json` there from a template before each model step, has a worker authenticate only
+with its seat's token, so a worker runs only for a seat that names one, and copies the session
+log out, redacted, when the run ends. A flagged run's copy is moved beside its kept question.
+That keeps each run's Claude state private once workers run as users of their own (#175).
+Until then, and always under `igor run`, every worker runs as the same user, so one can read
+another's home and `flagged-questions`, its logs and categories included; Adam accepts that.
 
 For a flagged run's ledger row, the changed paths, and the actions the role's `allow` list
 refused, which differ from the sandbox's denied commands kept by name above, stay in full. Open pull request #188, not yet built, adds a log of each
@@ -616,7 +621,8 @@ request body, counts as a worker run here. When any of its worker runs raises th
 before its completed report, none of them keeps a transcript, and the pull request carries no
 summary of any of them.
 
-A refusal record keeps the provider's whole reply only for a run whose worker completed its
+A refusal record keeps the provider's whole reply, redacted as every write to the state
+branch is, only for a run whose worker completed its
 report without the flag. Those replies are how igor's patterns for reading a limit and its
 reset time get checked, so the check works from those runs alone.
 

@@ -102,18 +102,10 @@
       slug. Tests for *An App whose slug lacks the igor- prefix refuses the start* and *An App
       whose slug starts with igor- passes the check*, and the existing tests of *An Igor knows
       its own bot account* move to an `igor-` slug
-- [ ] 2.13 Execution creates `runs/<run id>/claude` under the state directory, mode 0700, for
-      each worker run, lays in what igor gives every worker (settings and skills, whose source #174 and the
-      proposal's open question on #174 decide), sets
-      `CLAUDE_CONFIG_DIR` to it, and after the run collects the session log to
-      `sessions/<run id>.jsonl` (or beside a kept question) and deletes the directory. The run's
-      `session` field (`src/execute.ts:114`) names the log in the run's directory, not under
-      `~/.claude/projects/`. The directory is owned by the worker's user, the log is read only
-      as a regular file with one link, and a flagged run's log never goes to `sessions/`. A seat that names no token runs no worker. Tests for *Each worker
-      run has its own Claude configuration directory*, *A run's configuration directory is
-      collected and deleted*, *A seat that names no token runs no worker*, *A run's directory holds
-      what igor gives every worker*, *A linked session log is not collected* and *No worker
-      runs without a writable state directory*
+- [ ] 2.13 A seat that names no token runs no worker: execution fails naming the seat. Each
+      worker run's private Claude state and its session log's collection are #174's to build,
+      not this change's. A test for *A seat that names no token runs no worker*, and, once #174
+      is built, for *A worker run's Claude state is private to it*
 
 ## 3. Citations made during a run
 
@@ -158,12 +150,16 @@
       inquisitor run is pushed under the same rules* and *The Igor's own inquisitor run makes
       no citation for a question with a category*
 
-- [ ] 3.7 Define the bare flag a worker reports when its run met a question with a category,
-      naming nothing about it, on the same channel as 3.1. For that run, execution writes no
+- [ ] 3.7 Define the flag a worker reports when its run met a question with a category, with
+      that category's one word from #25's list and nothing else about it, on the same channel
+      as 3.1; the Igor writes the word into the host question file of a run that stopped on a
+      question, and nowhere else. For that run, execution writes no
       transcript, only its outcome, cost and ledger row; `prBody` in `src/execute.ts` puts no
       excerpt of the worker's result and no transcript link in the pull request body; and the
       refusal record keeps only the refusal's reason, while any other run's refusal record
-      keeps the provider's whole reply. A run the provider refuses over a usage limit before
+      keeps the provider's whole reply,
+      redacted as #217's *Every write to the state branch is redacted* requires. A run the
+      provider refuses over a usage limit before
       the Igor has its worker's completed report, or that ends before it for any other reason,
       is treated as flagged, so 3.1's channel must
       carry the worker's mark that its report is whole; a report without the mark counts as
@@ -189,8 +185,8 @@
       `igor:question` label, writes a file to `flagged-questions/<tracker>/<repo>/<item>.md`
       under its state directory, mode 0600 in directories of mode 0700, holding the question's
       category where it has one, otherwise its text, and the path of the run's session log,
-      which it moves beside the file; a later flagged run's question replaces it, and it pushes
-      nothing of it (when the write fails, the handoff still posts,
+      and the Igor moves #174's redacted copy of that log beside the file. A later flagged run's
+      question replaces the file, and the Igor pushes nothing of the file (when the write fails, the handoff still posts,
       the ledger row's `reason` reads `needs a person, question not kept`, a condition, once `condition-backoff`
       is built, opens on the first failure as a notice that stops no work, holding only a key
       gate two names, and the path goes only to the Igor's own log); and work triage keeps
@@ -204,7 +200,7 @@
       met a categorized question publishes no excerpt of its result*, *A refusal on such a
       run keeps only its reason*, *A refusal on any other run keeps the provider's reply*,
       *The worker's report of a categorized question names
-      nothing*, *A refusal Igor could not parse says only that the provider refused*, *A report
+      only its category*, *A reported category reaches only the host file*, *A refusal Igor could not parse says only that the provider refused*, *A report
       the Igor cannot tell is whole counts as cut short*, *A refused run with no completed report counts as flagged*,
       *A worker run that ends without its completed report, for any reason, counts as
       flagged*, *A flagged run's ledger row keeps each denied command by name only*, *A flagged run's
@@ -301,8 +297,6 @@
       finding there before anyone relies on release by edit.
       Until it can, an edit whose
       author it cannot read leaves a flagged item held (decision 79).
-- [ ] 4.11 Whether `CLAUDE_CONFIG_DIR` relocates all of Claude Code's per-user state, including
-      `~/.claude.json` and `projects/`, so that a worker run writes nothing under the shared
-      home's `~/.claude`; and whether a seat's token runs `claude -p` in an empty one. If the first fails, file an issue: runs could still read one another's session
-      logs under the shared home's `~/.claude`. If the second fails, no worker runs at all:
-      file an issue before gate two ships.
+- [ ] 4.11 Whether Claude Code keeps any per-user state or session under `HOME` outside
+      `~/.claude` and `~/.claude.json`, which #174 resets. If it does, one run could read
+      another's there despite decision 87; file an issue against #174 before relying on it.
