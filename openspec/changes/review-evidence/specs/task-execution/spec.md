@@ -45,10 +45,8 @@ the prose pass, as `signed-publishing` (#153) returns any text that fails.
 
 Commands, paths and check output in the table are text the worker wrote or the repository's code
 printed. Each of these SHALL be redacted by *credential redaction*, the requirement *Credential
-redaction replaces every credential the Igor knows* in the change `redact-state-branch` (#217),
-which that requirement defines in full. In short, it matches by exact value each seat token
-and each credential-named variable's value that is at least 8 characters long, and by shape
-any token with a known prefix, a private key, and the credentials in a URL. A
+redaction replaces every credential the Igor knows* in the change `redact-state-branch` (#217).
+That requirement, not this one, lists what the rule matches. A
 command or path SHALL be shown on one line as inline code, and check output in a fenced block,
 each quoted so that it cannot end its code span or block, its cell, or the table.
 
@@ -74,7 +72,7 @@ without a worker leaves the table as it is.
 
 #### Scenario: A credential in a command is redacted in the table
 
-- **WHEN** a command the worker ran holds a GitHub token
+- **WHEN** a command the worker ran holds a GitHub installation token the Igor minted
 - **THEN** the table shows `[redacted]` where the token was
 
 #### Scenario: A command cannot break the table

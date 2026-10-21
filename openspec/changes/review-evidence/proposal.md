@@ -50,8 +50,7 @@ own code around the worker) checked about the run. From that table the loop sets
 
 - **`redact-state-branch` (#217) owns credential redaction**, the rule this change applies to
   every command, path and output in the table, and is built before this change (see
-  *Dependencies*). #217's rule is
-  the one `keep-action-log` (#188) defined, extended with the `user:pass@` part of a URL.
+  *Dependencies*).
   *Rejected:* keeping #188 as the rule's owner, which would have #217 and #188 each define it.
 
 **Decided (Adam, 2026-10-13):**
@@ -85,7 +84,9 @@ own code around the worker) checked about the run. From that table the loop sets
   script as it is: no separate download, and no rewrite in TypeScript. The Igor image carries the `python3` it needs (#192). The script finds the repository's test
   files from its test runner configuration (shared-skills PR #21), so the loop passes no
   patterns. The row reads `not checked`, with the reason, where it cannot apply, including
-  where spec-trace finds no test files. Once #153 has shipped (this change does not wait for it),
+  where spec-trace finds no test files; *Still open* records that spec-trace as merged has no
+  such outcome. `signed-publishing` (#153) is built before this change, as issue #204's order
+  sets, and under it
   a role whose `skills` lists
   `spec-trace` has its worker directed to use `igor:spec-trace`, as #153 does for `prose` and
   `bug-hunter`. #174 already loads every installed skill for every role, so listing it adds only
@@ -123,6 +124,13 @@ as exactly the span between the opening block and the marker, and `prose verify-
 
 - **Task 0.1:** whether an Igor's App, adding a label that does not exist yet, creates it. If it
   does not, the loop creates each label first. Neither answer changes a rule above.
+- **For Adam:** whether the table should show less when the repository is public, as
+  `keep-action-log` (#188) cuts its log by the store's visibility. As written, the table lists
+  every step's shell commands, cut to 200 characters, in every pull request. Credential
+  redaction matches only secrets the Igor holds, by value, and GitHub and Anthropic tokens by
+  their shape. So a command holding a key the worker read from a host file is published as
+  written, and so is a command that quotes a private issue's text, such as an `echo` or a
+  commit message.
 - **For whoever next edits this change,** from a consistency read on 2026-10-21. None is
   decided, and none is fixed in this text. Each needs this change amended, unless the change
   named settles it the other way:
@@ -146,9 +154,37 @@ as exactly the span between the opening block and the marker, and `prose verify-
     `<!--` or code fence that hides the evidence section after it. A scenario name holding a
     backtick or `|` breaks its table cell. And a repository that declined spec-trace shows
     "no test" on every pull request, where `not checked` would be true.
-  - **The spec itself.** Several SHALLs have no scenario; "the sandbox" is defined nowhere; the
-    Sandbox denials row reads `none` for model steps whose denials nothing records; and the
-    redaction requirement summarises #217's rule, which it only needs to cite.
+  - **The spec itself.** Several SHALLs have no scenario; "the sandbox" is defined nowhere; and
+    the Sandbox denials row reads `none` for model steps whose denials nothing records.
+  - **From a second consistency read, the same day:**
+    - **The label.** A resolution's scope part reads "this push was not checked", which the
+      label rule makes `review: read`, while the scenario *A resolution keeps the scope
+      condition it last met* expects `skim`. The label also judges only the latest push: a
+      small push after a large gate two relabels the whole pull request `skim`. Judging only
+      the latest push, and tasks.md's caps of 10 paths outside scope and 10 denied commands,
+      are choices the decisions above do not list.
+    - **spec-trace.** As merged in shared-skills PR #21, it finds tags by searching the
+      repository and has no "no test files" outcome. The Spec scenarios row's `not checked`
+      for that case (*The Spec scenarios row comes from spec-trace*, above) cannot occur as written. Its
+      report is a markdown table for people; nobody has checked that the loop can read it
+      back per spec file, and tell this pull request's scenarios from other open changes'.
+    - **#153.** It no longer refuses an unknown skill at load (its decision 29), so the
+      scenario *A missing skill is not checked*, which assumes that refusal, has a false
+      premise. #153 also adds model steps that fit none of #188's three labels, so the
+      Commands run table cannot label their calls.
+    - **The opening block.** It lists the paths gate one refused to publish, which the worker
+      chose, and bug-hunter's open decisions, both unquoted. Either can hold
+      `<!-- igor:evidence -->`, and the next rebuild of the evidence section would then cut
+      the body at that copy, dropping the description after it.
+    - **Smaller gaps.** An adapter that links an item by branch name has no linkage line for
+      the opening block to hold. The two role keys restate role-config's merge rule, "the
+      most specific level wins", where they belong in its list of settings that follow it.
+      #189 starts the worker a second time after a failed check, and the Cost row does not
+      say whether it sums both passes and #153's steps. "Sentence end" and "catch-up
+      resolution" are undefined in the spec, and several requirements carry rationale that
+      belongs in this proposal.
+    - **The order.** Issue #204's archive order does not list `scope-check` (#187), which this
+      change places after itself.
 
 ## Why
 
@@ -189,10 +225,9 @@ applied to every command, path and output in the table:
 - **`scope-check`** (#187): the scope result (the Files row), including, under the two-gate
   workflow (#150), the result for each gate.
 
-**Build order: `redact-state-branch` (#217), then `keep-action-log` (#188), then this change,
-then `scope-check` (#187) and `loop-verifies-commands` (#189) in either order.** Archive order
-follows the same sequence. This change cites #217's *credential redaction* and reads the calls
-#188 collects. #187 and #189 supply values for rows of this change's table and add no table of
+**This change is built and archived after `redact-state-branch` (#217) and `keep-action-log`
+(#188),** because it cites #217's *credential redaction* and reads the shell calls #188
+collects for the Commands run row. Issue #204 holds the whole archive order. #187 and #189 supply values for rows of this change's table and add no table of
 their own.
 
 The Spec scenarios row needs the `spec-trace` skill, which shared-skills merged on 2026-10-19
