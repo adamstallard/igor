@@ -31,9 +31,12 @@ its `repository` key names.
 
 A search during a run SHALL present only `active` entries as lore. It MAY also return an
 in-scope `provisional` or `deprecated` entry, and SHALL label each one with its status, as not
-lore. It SHALL label a question file it returns as an answer or as input, as the inquisitor's first
-filter (filter 1 in shared-skills #25) labels it, and a miss file as a miss; it SHALL label
-neither as lore.
+lore. It SHALL label each question file it returns as the inquisitor's first filter (filter 1
+in shared-skills #25) labels it. A question file whose frontmatter holds no `authority` key
+holds no answer, and is labelled as unanswered. One that holds an answer is labelled as an
+answer or as input, by the conditions of #25's *Only an answer with authority stops a
+question*. A miss file, which #25's format tells apart from a question file, is labelled as
+a miss. Neither kind of file is labelled as lore.
 
 A search's results SHALL come back to the agent as search output, delimited as data, as
 `task-execution` delimits a work item's text. They MUST NOT be placed in the trusted channel
@@ -74,8 +77,8 @@ A search's results MUST NOT be recorded as firings.
   `questions` branch whose `repository` key names a repository the run's role does not work
 - **AND** the repository of the item the run works is no more visible than that repository
 - **THEN** that file is returned, delimited as data
-- **AND** it is labelled as an answer or as input, as the inquisitor's first filter labels it,
-  and never as lore
+- **AND** it is labelled as an answer, as input or as unanswered, as the inquisitor's first
+  filter labels it, and never as lore
 
 #### Scenario: A search labels in-scope entries that are not active
 
@@ -508,7 +511,8 @@ run's worker SHALL be able to reach that channel. It SHALL apply every rule *Lor
 sets for a search during a run, for the run's role, and SHALL return the results to the worker
 as search output. Each result SHALL be an in-scope entry, with its id, its status and its
 text, marked as lore when `active` and labelled as not lore otherwise, or an in-scope question
-or miss file. It SHALL return a `questions`-branch file only when the repository of the
+or miss file, labelled as *Lore reaches the worker unbidden* sets, the unanswered label
+included. It SHALL return a `questions`-branch file only when the repository of the
 item the run works is no more visible than the repository the file's `repository` key names,
 by the visibility order that *An Igor publishes the citations its worker reports* sets. Here an
 item's repository whose visibility the Igor cannot read counts as public, and a file's
@@ -528,6 +532,15 @@ inheritance cannot remove it (`role-config`'s *Merge semantics differ by field k
 - **THEN** the Igor searches the lore store it injects from and the `questions` branch for the
   run's role
 - **AND** the worker receives the in-scope matches, labelled as search output
+
+#### Scenario: The search command labels an unanswered question file and a miss file
+
+- **WHEN** a worker runs `igor lore-search`
+- **AND** an in-scope question file whose frontmatter holds no `authority` key, and an
+  in-scope miss file, both match the text and pass the visibility rule
+- **THEN** the results show the question file labelled as unanswered and the miss file
+  labelled as a miss
+- **AND** neither is labelled as an answer or as lore
 
 #### Scenario: The search command needs no role listing
 

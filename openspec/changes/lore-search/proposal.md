@@ -253,6 +253,12 @@ Terms used here:
     uses that lore repository, whichever repository its `repository` key names, for the reason
     decision 25 gives. Adam first had the key decide a file's scope,
     then replaced that rule with decision 25 (both 2026-10-20).
+
+    The search labels a question file holding no answer, one whose frontmatter holds no
+    `authority` key, as unanswered. It labels a miss file as a miss, and neither file as an
+    answer. That matches #25's filter 1, which labels them so under #25's
+    decision 183, item 1. Adam accepted that decision in #25, so this is an alignment with
+    #25, not a new decision of his.
 16. **The Igor learns the lore repository's visibility from GitHub, once, at startup.** One
     API call returns the exact visibility: `private`, `internal` or `public`. #212's startup
     check and the citation visibility rule in decision 10 both use it, and `publicStore` no
@@ -661,8 +667,9 @@ reading the codebase. Two cases contradict that:
   `igor lore-search`: it reads a question's text or terms on its standard input, the Igor runs
   it for the role of the run whose channel carried it, every worker has it without its role
   listing it and no role can remove it, it returns no `questions`-branch file about a more
-  private repository than the item's, judged by visibility alone, and it is read-only. It has
-  thirteen scenarios (decisions 23, 27, 29 and 31).
+  private repository than the item's, judged by visibility alone, and it is read-only. The
+  command labels each question and miss file it returns as #25's filter 1 does, labelling a
+  question file that holds no answer as unanswered. The requirement has fourteen scenarios (decisions 15, 23, 27, 29 and 31).
 - `role-config`'s *A role declares its sources, lane, behaviour, permissions, and reviewers*
   makes `igor lore-search` the one command a worker may run that its role's `commands` need
   not list, and its scenario *Declared commands bound what the worker may run* says so.
