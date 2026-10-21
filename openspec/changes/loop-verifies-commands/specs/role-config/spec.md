@@ -3,8 +3,9 @@
 ### Requirement: The org base declares each repository's checks
 
 The org base SHALL accept `repos`, a mapping from a repository, written `owner/name`, to an
-entry holding `checks`, a list of exact command lines, and `check_minutes`, the time limit for
-each round of a run's checks. A round is one pass through every check of the repository; a run
+entry holding `checks`, a list of exact command lines, `check_minutes`, the time limit for
+each round of a run's checks, and `credentials`, a list of the variable names under which
+the repository's checks read the credentials they need. A round is one pass through every check of the repository; a run
 makes one round, or two where the worker is sent a failure (`task-execution`). A key not of the
 form `owner/name`, or an entry holding any other key, SHALL be refused at load, naming that key
 and the repository. Two keys that differ only in case SHALL be refused at load, naming both. An entry with no `checks` declares none. `repos` SHALL be read from
@@ -23,8 +24,30 @@ repository.
 `check_minutes` SHALL default to 15, and a value that is not a whole number from 1 to 60 SHALL be
 refused at load, naming the key and the repository.
 
-An entry refused at load SHALL refuse every role, whether or not its `sources` name that
-repository.
+Each name in `credentials` SHALL be a variable name of capital letters, digits and `_`,
+beginning with a letter. It SHALL NOT be a name Igor sets or withholds in a check's environment
+itself: `PATH`, `HOME`, `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY` and their lowercase forms,
+`NODE_EXTRA_CA_CERTS`, `SSL_CERT_FILE`, `SSL_CERT_DIR`, `CLAUDE_CODE_OAUTH_TOKEN`,
+`ANTHROPIC_API_KEY` or `GIT_INDEX_FILE`.
+
+Its value SHALL come from the *server variable*, one variable of the Igor's own environment.
+The org base chooses only its last part, the declared name, so it cannot name any other
+variable: the server variable is `IGOR_CHECK_`, the owner, `__`, the repository's name, `__`,
+and the declared name as written. In the owner and the name, a letter is uppercased, a digit stays,
+and every other character is written as `_` and its two-digit hexadecimal code in capitals, so
+`-` is `_2D`, `.` is `_2E` and `_` is `_5F`. No two repositories or names then give one
+variable. For `NPM_TOKEN` on `org/web` the server variable is `IGOR_CHECK_ORG__WEB__NPM_TOKEN`;
+on `org/web-x` it is `IGOR_CHECK_ORG__WEB_2DX__NPM_TOKEN`.
+
+A name these rules refuse SHALL be refused at load, naming it and the repository. Where a
+server variable is unset or shorter than 8 characters, `igor serve` and `igor run` SHALL refuse
+to load a role that would run that repository's checks, one whose `sources` name the repository
+and whose `allow` lists `pr` or `draft-pr`, naming the declared name, the server variable and the
+repository and never the value. Every other role loads, and `igor role explain` and a role's
+dry run (*A role can be dry-run without acting*) name the variable as unset rather than refuse.
+
+Apart from an unset or short server variable, an entry refused at load SHALL refuse every
+role, whether or not its `sources` name that repository.
 
 #### Scenario: Every role on a repository gets its checks
 
@@ -64,10 +87,39 @@ repository.
 - **AND** so is a check holding a quote, backslash, `$`, backtick, `*`, a tab or a newline, or
   beginning with a space
 
+#### Scenario: A check credential comes from its own server variable
+
+- **WHEN** the entry for `org/web` declares `credentials: [NPM_TOKEN]`, and the Igor's
+  environment sets `IGOR_CHECK_ORG__WEB__NPM_TOKEN`
+- **THEN** each check of `org/web` gets that value as `NPM_TOKEN`
+
+#### Scenario: An unset check credential refuses only the roles that need it
+
+- **WHEN** the entry for `org/web` declares `credentials: [NPM_TOKEN]`, and
+  `IGOR_CHECK_ORG__WEB__NPM_TOKEN` is unset or shorter than 8 characters
+- **THEN** `igor serve` refuses to load a role whose `sources` name `org/web` and whose `allow`
+  lists `pr`, naming `NPM_TOKEN`, `IGOR_CHECK_ORG__WEB__NPM_TOKEN` and `org/web`, and not the
+  value
+- **AND** a role that does not source `org/web` loads
+
+#### Scenario: A repository name with a hyphen gets its own variable
+
+- **WHEN** the entries for `org/web-x` and `org/web_x` each declare `credentials: [NPM_TOKEN]`
+- **THEN** their server variables are `IGOR_CHECK_ORG__WEB_2DX__NPM_TOKEN` and
+  `IGOR_CHECK_ORG__WEB_5FX__NPM_TOKEN`
+
+#### Scenario: A credential cannot take a name Igor sets or withholds
+
+- **WHEN** an entry declares `credentials: [CLAUDE_CODE_OAUTH_TOKEN]`, `credentials: [PATH]` or
+  `credentials: [npm-token]`
+- **THEN** every role is refused at load, naming the name and the repository
+
 #### Scenario: role explain shows a role's checks
 
 - **WHEN** `igor role explain` is run for a role with `org/web` in its `sources`
 - **THEN** it shows `org/web`'s checks and `check_minutes`
+- **AND** the name and server variable of each credential `org/web` declares, and whether the
+  variable is set, never its value
 
 #### Scenario: The time limit defaults and is capped
 

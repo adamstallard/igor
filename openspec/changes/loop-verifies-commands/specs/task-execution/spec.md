@@ -26,11 +26,25 @@ environment the worker was given, without its model login (`CLAUDE_CODE_OAUTH_TO
 `ANTHROPIC_API_KEY`). Under `igor serve` that user is the worker user `worker-user` (#175)
 defines. Under `igor run` it is the Igor's own account, as it is for the worker.
 
+A check's environment SHALL also hold each credential its repository's entry declares
+(`role-config`'s *The org base declares each repository's checks*), under its declared name.
+Execution registers each such value for credential redaction, with #217's `rememberSecret`,
+before the first check that gets it starts, as #175's *A worker gets a secret only
+through the Igor, which registers it* requires. A worker run SHALL NOT get it in its environment
+(*The worker is given an explicit environment holding no credential but its seat's*).
+
 #### Scenario: A check runs as the worker user
 
 - **WHEN** under `igor serve` a check runs a test the worker wrote
 - **THEN** the test runs as the worker user
 - **AND** its environment holds neither `CLAUDE_CODE_OAUTH_TOKEN` nor `ANTHROPIC_API_KEY`
+
+#### Scenario: A check gets its declared credential, and the worker does not
+
+- **WHEN** `org/web` declares `credentials: [NPM_TOKEN]`, and a check's output quotes the value
+- **THEN** the check's environment holds `NPM_TOKEN`
+- **AND** the worker's environment, in both runs, does not
+- **AND** the value is `[redacted]` wherever execution stores or publishes that output
 
 #### Scenario: A check under igor run runs as the Igor
 

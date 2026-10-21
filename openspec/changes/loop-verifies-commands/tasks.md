@@ -57,7 +57,7 @@
 ## 1. The `repos` map
 
 - [ ] 1.1 In `src/role.ts`, read `repos` from the org base only, as a mapping from `owner/name`
-      to `{ checks, check_minutes }`, where an entry with no `checks` declares none. Match a key
+      to `{ checks, check_minutes, credentials }`, where an entry with no `checks` declares none. Match a key
       to a source's repository ignoring case. Refuse `repos` in an intermediate base or a role
       file as a key nobody reads; refuse a key not of the form `owner/name`, two keys that differ
       only in case, and any other key inside an entry, naming it. A refused entry refuses every
@@ -71,7 +71,21 @@
       its `sources` is a line no effective `commands` entry permits. A `cmd:*` entry permits
       `cmd` alone or followed by a space and arguments; any other entry permits only the
       identical line. Name the check and the repository.
-- [ ] 1.4 Show each of the role's repositories' checks and limit in `igor role explain`.
+- [ ] 1.3a Read each entry's `credentials`, a list of variable names, and resolve each from
+      its server variable, `IGOR_CHECK_<OWNER>__<NAME>__<VAR>`, encoded as role-config's *The
+      org base declares each repository's checks* says (proposal, decisions 32 and 33). Refuse
+      at load, naming the name and the repository, a malformed name, and any name that
+      requirement lists. Build that list from `PATH`, `HOME`, `FORWARDED` in `src/execute.ts`,
+      `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY` and `GIT_INDEX_FILE`, so it follows
+      `FORWARDED` if that changes; the requirement's list names `FORWARDED`'s entries as they
+      stand on `main`. Where a
+      server variable is unset or shorter than 8 characters, refuse under `serve` and `run` only
+      a role whose `sources` name the repository and whose `allow` lists `pr` or `draft-pr`,
+      naming the declared name, the server variable and the repository and never the value.
+      `role explain` and the dry run show the variable as unset. Tests: each scenario of that
+      requirement, and the encoding of `-`, `.` and `_`.
+- [ ] 1.4 Show each of the role's repositories' checks and limit in `igor role explain`, and the
+      names of its credentials and their server variables, never a value.
 - [ ] 1.5 Tests for each scenario in the role-config delta.
 
 ## 2. Running the checks
@@ -92,6 +106,13 @@
       `ANTHROPIC_API_KEY` always removed. The worker's login, including a lent seat's decrypted
       token under `seat-files` (#171), is passed in one of those two variables, so removing both
       removes it.
+- [ ] 2.2a Add each credential 1.3a resolved for the repository to every check's environment,
+      under its declared name, and never to a worker run's. Call `rememberSecret` (#217) on
+      each value before the first check that gets it starts. Under `serve`, pass it through
+      #175's spawn with `--preserve-env`, as the seat token is, never in an argument. Tests: the
+      check's environment holds it; neither worker run's does; a check that prints it leaves
+      `[redacted]` in the Tests row, the comment after a later push and the second run's
+      prompt.
 - [ ] 2.3 Give each round its own deadline of `check_minutes`. At the deadline, kill the running
       check, mark it `timed-out` and the rest of the round `not-run`. Kill a check through
       #175's kill of a worker: under `serve`, every process the worker user owns; under `run`,
@@ -169,4 +190,7 @@
 
 - [ ] 4.1 `README.md` roles section and `templates/org.yaml`: a commented `repos` entry for one
       repository, with `npm test` and `npx tsc --noEmit` under `checks`, beside the commented
-      `commands` entries that permit them.
+      `commands` entries that permit them, and a commented `credentials: [NPM_TOKEN]` with a
+      line naming the server variable `IGOR_CHECK_<OWNER>__<NAME>__NPM_TOKEN` it reads.
+      `docs/deployment.md`: say that a credential a repository's checks need goes in
+      `/etc/igor/env` under that variable, and never in a worker user's home.

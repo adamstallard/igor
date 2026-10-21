@@ -212,26 +212,108 @@
     Igor could not open it as a draft (task 0.5). *Rejected:* publishing nothing, which loses
     the work for a host setting. Decision 31 limits this to a role whose `allow` lists `pr`.
 
-**Decided by Adam on 2026-10-21:** decisions 21 and 22 above are approved, and so are these two.
+**Decided by Adam on 2026-10-21:** decisions 21 and 22 above are approved, and so are these
+three.
 
 30. **Under `igor serve`, the worker user restores gate one's dropped paths to the base before
-    the first round,** from the base's tree, as decision 14 has it restore the tree before the
-    second run. Igor's own account cannot remove a file the worker user made inside a directory
-    the worker user made. Under `igor run`, Igor's own account restores them.
+    the first round,** from the base's tree. Decision 14 has the worker user restore the tree
+    before the second run for the same reason: a dropped path can be a new file the worker made
+    in a new directory, and Igor's own account cannot remove a file the worker user made inside
+    a directory the worker user made. Under `igor run`, Igor's own account restores them.
 31. **A role whose `allow` lists `draft-pr` but not `pr` publishes nothing where the code host
     refuses a draft after its checks fail,** and hands the item off, saying why. Decision 29's
     ready pull request is outside that role's `allow`.
+32. **A credential a repository's checks need is declared in Igor's configuration, in the
+    `repos` map, and Igor provides it and registers it** with #217's `rememberSecret`, so
+    credential redaction matches it by its value in every check output Igor stores or publishes.
+    This follows #175's decision 41: a worker user gets a secret only through Igor, which
+    registers every secret it hands over, so no operator puts one in the worker's home. A worker
+    run does not get it.
+
+**Proposed, for Adam to approve:**
+
+33. **The entry names each credential by the variable its checks read, and the server variable
+    holding it is fixed**: `credentials: [NPM_TOKEN]` on `org/web` reads
+    `IGOR_CHECK_ORG__WEB__NPM_TOKEN` from Igor's environment. A commit to the lore repository,
+    which holds `roles/org.yaml`, can then choose which repositories' checks get a credential and
+    the variable name each check reads it under. It cannot choose which secret on the server the
+    check gets. #175's decision 45 requires that of every secret Igor hands out, and #171 meets
+    it for seats by fixing a seat's variable to `IGOR_SEAT_<ID>`.
+    - **The encoding:** `IGOR_CHECK_`, the owner, `__`, the repository's name, `__`, and the
+      declared name. The owner and the name are uppercased, and every character but a letter or
+      digit is written as `_` and its hexadecimal code, so `org/web-x` gives `ORG__WEB_2DX`. That is one-to-one, so no two repositories share a variable. Replacing such
+      characters with a plain `_` would give `org/web-x` and `org/web_x` one variable, and a
+      lore commit renaming a key would hand one repository's credential to the other's checks.
+    - **An unset variable, or one shorter than 8 characters,** which #217 would not register,
+      refuses under `serve` and `run` only the roles that would run that repository's checks.
+      Every other role loads, and `igor role explain` and a role's dry run (role-config's *A
+      role can be dry-run without acting*) report the variable as unset, so a developer's
+      machine without the variable can still explain and dry-run.
+    - **A name Igor sets or withholds itself,** such as `PATH` or `CLAUDE_CODE_OAUTH_TOKEN`, is
+      refused at load.
+    - **The value goes in `/etc/igor/env`,** which every instance's unit loads (task 4.1).
+    *Rejected:* letting the entry name the server variable, under which a lore commit could hand
+    the checks `GITHUB_APP_PRIVATE_KEY`; and ciphertext in lore, as #171 does for lent seats.
+    Ciphertext lets a person who is not the operator lend a seat without giving it to the
+    operator; a check credential is the operator's own, so the operator can put it on the server
+    directly.
 
 **Still open:**
 
-- **For Adam,** from a consistency read on 2026-10-21:
+- **For Adam, on how decisions 32 and 33 apply.** None of these reopens decision 32, which
+  Adam made; each asks about a consequence of it or about decision 33's shape:
+  - **A worker run gets no check credential.** The worker's own `npm test` then fails where the
+    check passes, for a repository whose tests need the credential. *Recommendation:* keep it so;
+    the in-force rule gives the worker no credential but its seat's.
+  - **A check runs code the worker wrote, so that code can send the credential anywhere.**
+    Registering it keeps it out of what Igor stores, not off the network. *Recommendation:*
+    accept it, and have `docs/deployment.md` say to give a check only a credential scoped to
+    reading, such as a read-only registry token.
+  - **A check can write the credential where a later worker run reads it.** A check runs with
+    the worker's `HOME`, which lasts across runs under #175's decision 14, and in a tree whose
+    ignored files stay for the second run (decision 19). So code the first run wrote, or a
+    tool's own login, can leave the credential in the home or an ignored file, and the second
+    run, #153's model steps and later runs on that host can read it. Keeping it out of the
+    worker's environment does not keep it from the worker. *Recommendation:* accept it under the
+    previous item's answer, since the code that could leave it there could also send it out.
+  - **`/etc/igor/env` or `/etc/igor/<role>.env`.** Decision 33 puts every check credential in
+    the file every instance loads, so each role's process holds every repository's credentials.
+    *Recommendation:* keep the one file. Every Igor process does hold every repository's
+    credentials in its memory, but that process already holds the App's key and every seat
+    token, so holding them adds nothing a reader of its memory lacks. Each credential reaches
+    only the checks of the repository that declares it, and #175's decision 44 keeps it out of
+    `gh` and `git`.
+- **Findings of the 2026-10-21 consistency read that followed decisions 32 and 33, on text
+  older than those two.** None is decided or fixed here:
+  - **For Adam:** #216 (`lore-search`) withholds every worker run's transcript and summary from
+    an execution it counts as flagged, which includes one whose second run ended before
+    reporting, while decision 21 publishes the first run's summary then (#216's proposal hands
+    this to this change). And on a later push, decision 23 sets the summary to the last run's,
+    while #190 leaves the description as it is; #153's *For Adam* 1 raises the same.
+  - **For whoever next edits this change:** under #216 a check would inherit the worker's
+    `CLAUDE_CONFIG_DIR`, naming a directory #216 deletes after the run, and `IGOR_RUN=worker`,
+    which marks repository code as a worker run; the comment after a later push quotes check
+    output with no quoting rule like #190's, so repository code could close a fence or forge the
+    heading; the org base's `repos` is outside the in-force role-file key list, which #216, #153
+    and #143 each modify and this change does not; `check_minutes`' defaults are not marked as
+    starting points, as the in-force role-config asks; and the spec still restates #217's rule
+    and #153's second-commit rule.
+- **#217's requirement matches by value only seat tokens and credential-named variables.**
+  #217's *Credential redaction replaces every credential the Igor knows* matches by value a
+  seat's token and the value of a variable whose name holds `TOKEN`, `KEY`, `SECRET`,
+  `PASSWORD` or `CREDENTIAL`, while its `rememberSecret` redacts every value registered. A check
+  credential declared as `NPM_AUTH` is neither, so the requirement this change cites does not cover it, though the code does. #217
+  needs to widen its requirement to every registered value; #175's decision 41 relies on the same
+  widening. Reported to #217, not edited here.
+
+- **For Adam,** from the consistency read made on 2026-10-21 before decisions 32 and 33:
   - **Whether checks run at gate one at all.** Gate one carries only the specification, so a
     check that fails there fails on the base's own code. Every gate one on a repository whose
     base fails a check would then spend a second run, whose code fix gate one drops again, and
     open a draft.
   - **What decision 29 does until task 0.5 is measured.** Until then a refused draft cannot be
-    told from any other failure of the create call, as the next item says, so either every
-    failed create is retried as a ready pull request or none is.
+    told from any other failure of the create call, as the item on task 0.5 below says, so
+    either every failed create is retried as a ready pull request or none is.
 - **For whoever next edits this change,** from the same read. None is decided, and none is
   fixed in this text:
   - **A claim lost during the first run's #153 steps.** #153 then publishes the work as an
@@ -297,7 +379,9 @@ what its hooks run only by declaring the same commands as checks.
 
 ## What Changes
 
-- A new org-base key, `repos`, mapping each repository to its `checks` and `check_minutes`.
+- A new org-base key, `repos`, mapping each repository to its `checks`, `check_minutes` and
+  `credentials`, each credential read from its own fixed server variable and registered for
+  redaction before a check gets it.
 - After the worker exits and its changes are read, the loop runs the repository's checks in the
   worker's tree, as the worker's user, with the worker's environment less its model login,
   within a time limit for
@@ -317,7 +401,7 @@ None.
 
 ### Modified Capabilities
 
-- `role-config`: the org base's `repos` map, the one key only the org base may hold, and the refusal of a role whose `commands` does not permit its repositories' checks.
+- `role-config`: the org base's `repos` map, with each repository's checks and the credentials they need, the one key only the org base may hold, and the refusal of a role whose `commands` does not permit its repositories' checks.
 - `task-execution`: the loop runs the checks, sends a failure back to the worker once, and
   publishes and records the result.
 
