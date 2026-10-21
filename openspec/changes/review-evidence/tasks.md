@@ -114,8 +114,8 @@
       `keep-action-log` keeps for the store: `whole`, `no-output` or `tools-only`, where
       `tools-only` is the tier for a private worked repository in a public store) and the entries
       it drops for size follow from `keep-action-log`'s deterministic cut. Because the cut is
-      deterministic, the table computes both before the pull request is opened, before the log
-      exists. The log is written afterwards; where that write fails,
+      deterministic, the table computes both the tier and the dropped entries before the pull
+      request is opened, before the log exists. The log is written afterwards; where that write fails,
       the loop rebuilds the section (2.4) with the line for a failed write:
 
       | What the log kept | Line |
@@ -130,10 +130,11 @@
       paths outside scope, and at most 10 denied commands, then `and <m> more`. Cut each
       command shown to 200 characters.
 
-      Quote every command and path the table shows: a newline becomes a space, `|` becomes
-      `\|`, and a value holding a backtick is quoted with a longer run of backticks. Redact each
-      first, with the
-      credential redaction function `keep-action-log` (#188) task 3.1 describes.
+      For every command, path and output the table shows, redact first, then cut, then quote.
+      Redact with credential redaction's function, `redact` in `src/redact.ts`, which
+      `redact-state-branch` (#217) adds; it exists once #217 is built, which 5.1 requires first.
+      Redacting before the 200-character cut means a token the cut would split is still found. To quote: a newline becomes a space, `|` becomes `\|`, and a value holding
+      a backtick is quoted with a longer run of backticks.
 - [ ] 2.2 Write `reviewLabel(record, role)`, returning `review: skim` only when all four
       conditions of *One review label sorts a pull request for triage, never for merging* hold,
       with the role's `skim_max_paths` and `skim_max_lines`, and
@@ -192,6 +193,6 @@ then those rows show `not checked: this Igor's version does not run checks` and
 
 ## 5. Order
 
-- [ ] 5.1 Build this change after `keep-action-log` (#188) and before `scope-check` (#187) and
-      `loop-verifies-commands` (#189). Archive in the same order: after #188, before #187 and
-      #189.
+- [ ] 5.1 Build this change after `redact-state-branch` (#217) and `keep-action-log` (#188),
+      and before `scope-check` (#187) and `loop-verifies-commands` (#189). Archive in the same
+      order: archive after #217 and #188 archive, and before #187 and #189 do.

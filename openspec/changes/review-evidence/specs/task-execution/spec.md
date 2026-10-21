@@ -44,15 +44,18 @@ holding either SHALL NOT be edited, since that would break its signature; it SHA
 the prose pass, as `signed-publishing` (#153) returns any text that fails.
 
 Commands, paths and check output in the table are text the worker wrote or the repository's code
-printed. Each SHALL
-be redacted by *credential redaction*, the rule the change `keep-action-log` (#188) defines. A
+printed. Each of these SHALL be redacted by *credential redaction*, the requirement *Credential
+redaction replaces every credential the Igor knows* in the change `redact-state-branch` (#217),
+which matches seat tokens and credential-named variables' values by value and tokens, private
+keys and URL credentials by pattern. A
 command or path SHALL be shown on one line as inline code, and check output in a fenced block,
 each quoted so that it cannot end its code span or block, its cell, or the table.
 
 Each time a run publishes the worker's changes onto an existing pull request, the loop SHALL
 replace the evidence section with one built from that run, leaving the opening block and the
-description as they are, except on a revision: there the loop recomputes the opening block as
-above, and `signed-publishing` (#153) rewrites the description. A merge of the base that the code host makes
+description as they are. A revision is the exception: there the loop recomputes the opening
+block by the rule for the opening block earlier in this requirement, and `signed-publishing`
+(#153) rewrites the description. A merge of the base that the code host makes
 without a worker leaves the table as it is.
 
 #### Scenario: A long summary is cut and points at the transcript
@@ -67,6 +70,11 @@ without a worker leaves the table as it is.
   line
 - **THEN** the heading's line and the marker are removed from the summary
 - **AND** the body holds exactly one evidence table, built by the loop
+
+#### Scenario: A credential in a command is redacted in the table
+
+- **WHEN** a command the worker ran holds a GitHub token
+- **THEN** the table shows `[redacted]` where the token was
 
 #### Scenario: A command cannot break the table
 

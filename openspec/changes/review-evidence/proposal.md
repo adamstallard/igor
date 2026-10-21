@@ -46,6 +46,14 @@ own code around the worker) checked about the run. From that table the loop sets
    that marking; this change only shows them. *Rejected:* making every resolution `review: read`, which would
    relabel a reviewed pull request each time the base moved.
 
+**Decided (Adam, 2026-10-19):**
+
+- **`redact-state-branch` (#217) owns credential redaction**, the rule this change applies to
+  every command, path and output in the table, and is built before this change (see
+  *Dependencies*). #217's rule is
+  the one `keep-action-log` (#188) defined, extended with the `user:pass@` part of a URL.
+  *Rejected:* keeping #188 as the rule's owner, which would have #217 and #188 each define it.
+
 **Decided (Adam, 2026-10-13):**
 
 - **The loop sets the label without `label` in the role's `allow`**, as it sets its
@@ -67,7 +75,7 @@ own code around the worker) checked about the run. From that table the loop sets
   note that the item changed after approval and bug-hunter's open decisions go in the opening
   block, so rebuilding the evidence section never drops them. `loop-verifies-commands` (#189)
   and `scope-check` (#187) write only into this change's table, never a line of their own; build
-  and archive order is #188, then this change, then #187 and #189. *Rejected:* signing the whole
+  and archive order is #217, #188, then this change, then #187 and #189. *Rejected:* signing the whole
   body, which puts code-assembled text under the model's signature; placing gate two's notes
   after the marker, where a rebuilt section drops them; and letting #187 and #189 write lines of
   their own before the table exists, which gives one result two wordings.
@@ -139,18 +147,22 @@ request. No requirement governs the body: the 700-character limit exists only in
 
 ## Dependencies
 
-Three rows come from changes drafted alongside this one:
+Three rows come from changes drafted alongside this one. A fourth change supplies the redaction
+applied to every command, path and output in the table:
 
 - **`loop-verifies-commands`** (#189): the result of each of the role's `checks` (the Tests row).
 - **`keep-action-log`** (#188): each command the worker ran, with its exit code where it recorded
-  one (the Commands row). It also defines *credential redaction*, which every command, path and
-  output in the table goes through.
+  one (the Commands row).
+- **`redact-state-branch`** (#217): *credential redaction*, which every command, path and output
+  in the table goes through.
 - **`scope-check`** (#187): the scope result (the Files row), including, under the two-gate
   workflow (#150), the result for each gate.
 
-**Build order: `keep-action-log` (#188), then this change, then `scope-check` (#187) and
-`loop-verifies-commands` (#189).** Archive order follows the same sequence. This change points
-at #188's *credential redaction*, and #187 and #189 write only into this change's table.
+**Build order: `redact-state-branch` (#217), then `keep-action-log` (#188), then this change,
+then `scope-check` (#187) and `loop-verifies-commands` (#189) in either order.** Archive order
+follows the same sequence. This change cites #217's *credential redaction* and reads the calls
+#188 collects. #187 and #189 supply values for rows of this change's table and add no table of
+their own.
 
 The Spec scenarios row needs `pinned-skills` (#174), an open change here, and the `spec-trace`
 skill, which is not yet merged into shared-skills.
