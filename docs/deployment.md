@@ -348,11 +348,14 @@ limits. Readable with `git show`, no
 checkout needed.
 
 Igor replaces credentials with `[redacted]` in every file and commit message before writing it
-to the branch: seat tokens, private key blocks, tokens with a known prefix, `user:pass@` in
-URLs, and the values of variables whose names hold `TOKEN`, `KEY`, `SECRET`, `PASSWORD` or
-`CREDENTIAL`. The full rule, with its limits, is the comment at the top of `src/redact.ts`.
-Anything the rule does not name is written as it is, and on a public lore repository anyone can
-read the branch, so keep other secrets out of what Igor's runs print.
+to the branch, and in every comment, issue, pull request and commit message it posts. It
+matches by value every secret it holds or hands a worker: seat tokens, the App's private key,
+its JWT and installation tokens, proxy credentials, and the values of variables in its own
+environment whose names hold `TOKEN`, `KEY`, `SECRET`, `PASSWORD` or `CREDENTIAL`. It also
+matches GitHub and Anthropic tokens by their exact shape, such as a GitHub token whose checksum
+is right, so text that only starts like a token is kept. The full rule is the comment at the top of
+`src/redact.ts`. Anything else is written as it is, and on a public repository anyone can read
+it, so keep other secrets out of what Igor's runs print.
 
 ## When something is wrong
 

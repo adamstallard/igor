@@ -5,6 +5,7 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Artifact, Candidate, ClaimVerdict, CodeHost, InFlight, Tracker } from './adapter.js'
 import { resolveToken, type TokenSource, type Window } from './budget.js'
+import { rememberSecret, rememberUrlCredentials } from './redact.js'
 import { recordObservation, WINDOW_LENGTH } from './capacity.js'
 import type { Action, Role } from './role.js'
 import {
@@ -795,8 +796,8 @@ export function watchWorker(limits: Limits, kill: (why: ExecutionError) => void)
 }
 
 /**
- * Forwarded when the host sets them. None is a credential: each is how this host reaches the
- * network, and dropping one fails as a connection error that looks like anything but a missing
+ * Forwarded when the host sets them. None is a login the worker needs: each is how this host
+ * reaches the network, and dropping one fails as a connection error that looks like anything but a missing
  * variable. Measured: a worker given a proxy address nothing listens on reports
  * `API Error: Connection refused`, naming no proxy.
  */
@@ -811,6 +812,14 @@ const FORWARDED = [
   'SSL_CERT_FILE',
   'SSL_CERT_DIR',
 ] as const
+
+/**
+ * The `FORWARDED` variables that set a proxy. A proxy's URL can carry the proxy's own user name
+ * and password, so each of these is passed to `rememberUrlCredentials` before the worker gets
+ * it. `NO_PROXY` holds a list of hosts, which registers nothing unless an entry holds an `@`; it
+ * is passed too in case one does.
+ */
+const PROXIES = new Set<string>(['HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'http_proxy', 'https_proxy', 'no_proxy'])
 
 /** Where an ambient login lives, for the configuration in which no seat names a token. */
 const AMBIENT_TOKENS = ['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY'] as const
@@ -837,7 +846,11 @@ export async function workerEnv(
   const out: NodeJS.ProcessEnv = {}
   for (const name of ['PATH', 'HOME', ...FORWARDED]) {
     const value = env[name]
-    if (value !== undefined && value !== '') out[name] = value
+    if (value === undefined || value === '') continue
+    // A proxy URL can carry a user name and password. They are registered before the worker is
+    // handed them, so redaction knows them.
+    if (PROXIES.has(name)) rememberUrlCredentials(value)
+    out[name] = value
   }
 
   let token: string | undefined
@@ -860,7 +873,10 @@ export async function workerEnv(
   if (token === undefined) {
     for (const name of AMBIENT_TOKENS) {
       const value = env[name]
-      if (value !== undefined && value !== '') out[name] = value
+      if (value !== undefined && value !== '') {
+        rememberSecret(value)
+        out[name] = value
+      }
     }
     return out
   }

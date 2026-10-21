@@ -3,6 +3,8 @@ import type { Candidate } from '../src/adapter.js'
 import type { ExecutionResult } from '../src/execute.js'
 import type { CycleReport } from '../src/loop.js'
 import type { Role } from '../src/role.js'
+import { rememberSecret } from '../src/redact.js'
+import { githubToken } from './tokens.js'
 
 /**
  * The state branch's Contents API, in memory, keeping every byte each write sent: file
@@ -42,9 +44,13 @@ const { recordDecisions } = await import('../src/loop.js')
 const { recordObservation } = await import('../src/capacity.js')
 
 // Assembled at run time, so no token-shaped literal sits in the source for a scanner to flag.
-const GITHUB = `ghp_${'A1b2C3d4E5'.repeat(4).slice(0, 36)}`
+const GITHUB = githubToken('ghp_')
 const ANTHROPIC = `sk-ant-oat01-${'Zq9_x-Y8'.repeat(6)}`
-const URL = 'https://igor-bot:hunter2secret@github.com/o/r.git'
+// A secret the Igor registered, such as an installation token it minted. The text below puts it
+// in a remote's URL.
+const MINTED = 'hunter2secret-minted'
+rememberSecret(MINTED)
+const URL = `https://x-access-token:${MINTED}@github.com/o/r.git`
 const failure = `git push failed: remote ${URL} rejected ${GITHUB}; provider said ${ANTHROPIC}`
 
 /** Everything written to the state branch, as one string, so no file or message escapes. */
@@ -56,7 +62,7 @@ function expectClean(): void {
   const all = written()
   expect(all).not.toContain(GITHUB)
   expect(all).not.toContain(ANTHROPIC)
-  expect(all).not.toContain('hunter2secret')
+  expect(all).not.toContain(MINTED)
   expect(all).toContain('[redacted]')
 }
 
