@@ -46,8 +46,9 @@ the prose pass, as `signed-publishing` (#153) returns any text that fails.
 Commands, paths and check output in the table are text the worker wrote or the repository's code
 printed. Each of these SHALL be redacted by *credential redaction*, the requirement *Credential
 redaction replaces every credential the Igor knows* in the change `redact-state-branch` (#217),
-which matches seat tokens and credential-named variables' values by value and tokens, private
-keys and URL credentials by pattern. A
+which that requirement defines in full. In short, it matches by exact value each seat token
+and each credential-named variable's value that is at least 8 characters long, and by shape
+any token with a known prefix, a private key, and the credentials in a URL. A
 command or path SHALL be shown on one line as inline code, and check output in a fenced block,
 each quoted so that it cannot end its code span or block, its cell, or the table.
 

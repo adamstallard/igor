@@ -119,6 +119,37 @@ the signed description, then the marker and the evidence section. #153 defines t
 as exactly the span between the opening block and the marker, and `prose verify-post` runs on exactly that span
 (#153, amended 2026-10-13).
 
+**Still open:**
+
+- **Task 0.1:** whether an Igor's App, adding a label that does not exist yet, creates it. If it
+  does not, the loop creates each label first. Neither answer changes a rule above.
+- **For whoever next edits this change,** from a consistency read on 2026-10-21. None is
+  decided, and none is fixed in this text. Each needs this change amended, unless the change
+  named settles it the other way:
+  - **Gate two's push.** The spec keeps the opening block and the description on every later
+    push except a revision. Gate two's push is not a revision, so gate one's opening block and
+    description would stay, where #150 and #153 have gate two replace both.
+  - **What #189 asks.** #189 (`loop-verifies-commands`) makes checks and their time limit,
+    `check_minutes`, belong to the repository, not the role, where this change's wording says
+    the role's. It posts a comment of its own after a later push, against the 2026-10-13
+    decision above. And it needs two more Tests-row wordings: one for a pull request the code
+    host refused to make a draft, and one naming the commit the checks ran on.
+  - **Withheld runs.** #216 (`lore-search`) withholds the transcript of a run whose worker met
+    a question in a sensitive category, and forbids its pull request body any excerpt of the
+    worker's result. This change's summary, transcript pointer and full command lines would
+    publish them.
+  - **The action log's cut.** #188 (`keep-action-log`) decides how much of its log to keep
+    when it writes the log, from a visibility read of the stores made then. This change works
+    out the same cut earlier, when it opens the pull request, so its "more in the action log"
+    line can point at entries the log did not keep.
+  - **Markup and names.** A 700-character cut through the worker's summary can leave an open
+    `<!--` or code fence that hides the evidence section after it. A scenario name holding a
+    backtick or `|` breaks its table cell. And a repository that declined spec-trace shows
+    "no test" on every pull request, where `not checked` would be true.
+  - **The spec itself.** Several SHALLs have no scenario; "the sandbox" is defined nowhere; the
+    Sandbox denials row reads `none` for model steps whose denials nothing records; and the
+    redaction requirement summarises #217's rule, which it only needs to cite.
+
 ## Why
 
 An Igor's pull request shows only the worker's own account of its work (#181). The body is the
@@ -164,8 +195,9 @@ follows the same sequence. This change cites #217's *credential redaction* and r
 #188 collects. #187 and #189 supply values for rows of this change's table and add no table of
 their own.
 
-The Spec scenarios row needs `pinned-skills` (#174), an open change here, and the `spec-trace`
-skill, which is not yet merged into shared-skills.
+The Spec scenarios row needs the `spec-trace` skill, which shared-skills merged on 2026-10-19
+in its PR #21, and `pinned-skills` (#174), the open change that installs it for Igor. Until
+#174 ships, the row says `not checked`.
 
 Until #187 and #189 ship, their rows say `not checked`. A `not checked` Tests or Files row makes the label
 `review: read`; the Commands row never changes the label.
