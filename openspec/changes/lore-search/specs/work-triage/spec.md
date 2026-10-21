@@ -17,14 +17,28 @@ the missing context in a comment.
 
 Where the handoff is a flagged run's that stopped on a question it could not settle
 (`graceful-handoff`'s *A handoff states what was done, what remains, and who could continue*),
-a reply SHALL NOT count as an answer. Only an edit to the item, a relabel or a change of holder
-included, by someone with write access to the item's repository SHALL count; the Igor's
-operator releases the item that way too, and needs that access like anyone else. An edit by
-anyone else SHALL leave the item held, and so SHALL an edit whose author the Igor cannot read.
-How write access is read and who made an edit are #141's rules; until #141 lands, no edit's
-author can be read that way, so every edit leaves such an item held, and how it is then released
-is not decided (the proposal's Still open). The scenario for a write-access edit applies once
-#141 lands.
+the item is *held*, and SHALL stay held whatever else its handoff carries: a cure key
+(`condition-backoff`'s key for a handoff caused by a fact about the Igor, which a question not
+kept is), a question not kept, or anything else that would exempt another handoff from suppression, does
+not release it. A reply SHALL NOT count as an answer. The record this requirement keeps of a held item,
+its *hold record*, SHALL NOT expire, and where that record is missing or unreadable the item
+SHALL stay held rather than be worked again. The Igor SHALL know a held item from its hold
+record, or, where that is lost, from its file under `flagged-questions` on the host or from
+the item's latest ledger row, where that row's `reason` starts `needs a person`.
+
+A held item SHALL be released in either of two ways. The Igor's operator SHALL be able to
+release it on the host with `igor release <tracker>/<repo>/<item>`, such as
+`igor release github/acme/api/12`, whatever an edit's attribution shows. Releasing SHALL mark
+the hold record released, append a ledger row for the item whose `reason` is `released`, and
+delete the item's file under `flagged-questions`, so that no fallback above holds it again;
+every Igor process of the role, each a *rank* under #179, reads the release from the state
+branch, so a rank on another host does not hold the item again from its own file or ledger
+rows. An
+edit to the item, a relabel or a change of holder included, by someone with write access to
+the item's repository SHALL also release it, where the edit can be attributed. An edit by
+anyone else, or one whose author the Igor cannot read, SHALL leave the item held. How write
+access is read and who made an edit are #141's rules; until #141 lands, no edit can be
+attributed, and `igor release` is the way to release a held item.
 
 #### Scenario: A handed-back item does not return unanswered
 
@@ -55,6 +69,34 @@ is not decided (the proposal's Still open). The scenario for a write-access edit
 - **AND** someone with write access to the item's repository then relabels or edits the item
 - **THEN** it is worked again
 
+#### Scenario: The operator releases a held item on the host
+
+- **WHEN** a flagged run stopped on a question and handed the item back
+- **AND** the operator runs `igor release` for that item on the Igor's host
+- **THEN** the item is worked again, whether or not any edit can be attributed
+
+#### Scenario: A released item is not held again by its old ledger row
+
+- **WHEN** the operator released a held item with `igor release`
+- **AND** the item's hold record is later missing
+- **THEN** the item is not held again, since its latest ledger row is `released` and its host
+  file is gone
+
+#### Scenario: A cure key does not release a held item
+
+- **WHEN** a flagged run stopped on a question, and its handoff also carries a cure key, as when
+  the question could not be kept
+- **THEN** the item stays held
+- **AND** it is not worked again until it is released
+
+#### Scenario: A held item's lost record leaves it held
+
+- **WHEN** a flagged run stopped on a question and handed the item back
+- **AND** the item's hold record is later missing or unreadable, or older than the 30 days
+  after which another item's record expires
+- **AND** the item's file under `flagged-questions` is on the host
+- **THEN** the item stays held
+
 #### Scenario: An edit without write access leaves a flagged item held
 
 - **WHEN** a flagged run stopped on a question it could not settle and handed the item back
@@ -75,4 +117,5 @@ is not decided (the proposal's Still open). The scenario for a write-access edit
 #### Scenario: The record is a cache, not a source of truth
 
 - **WHEN** the record is missing or unreadable
+- **AND** the item is not a held item a flagged run handed back
 - **THEN** the item is worked again rather than the cycle failing

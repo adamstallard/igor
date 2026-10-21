@@ -23,19 +23,28 @@ as its reason the fixed words `needs a person`, which `task-execution` sets for 
 the run's question text SHALL NOT reach the item. The Igor SHALL add no `igor:question` label,
 or any other label that routes the item to an inquisitor role, to such a handoff.
 
-The Igor SHALL instead write that question, as the run would have asked it, to a file on its
-own host: `flagged-questions/<tracker>/<repo>/<item>.md` under its state directory, with the
+The Igor SHALL instead write a file about that question on its own host: `flagged-questions/<tracker>/<repo>/<item>.md` under its state directory, with the
 same `<tracker>/<repo>/<item>` the item's transcript path has on the state branch. The state directory is `$STATE_DIRECTORY`
 where systemd sets it, as a unit that sets `StateDirectory=igor` makes it `/var/lib/igor`,
 and otherwise
 `$XDG_STATE_HOME/igor`, which is `~/.local/state/igor` when `XDG_STATE_HOME` is unset. The file
 SHALL be mode 0600, owned by the user the Igor runs as, and the `flagged-questions` directory
-and every directory below it SHALL be mode 0700. The question of a later flagged run of the
-same item that stops on a question replaces the file. Where the Igor cannot write the file, it
+and every directory below it SHALL be mode 0700. The file SHALL hold the question's category under
+shared-skills #25's inquisitor (`vulnerability`, `secret` or `personal`) where the Igor has one,
+which today no worker report gives it (the proposal's Still open), and
+otherwise the question's text as the run would have asked it, and in either case the path of
+the run's session log. It SHALL hold no text of a question that has a category; that text is
+only in the session log. When the run ends, the Igor SHALL move that run's session log, collected
+as `task-execution` says, into the same directory beside the file, mode 0600. No worker run
+SHALL be able to reach the `flagged-questions` directory; where workers run as the Igor's own
+user, as under today's unit, file modes cannot ensure that (the proposal's Still open). The question of a later flagged run
+of the same item that stops on a question replaces the file, and that run's session log
+replaces the earlier one. Where the Igor cannot write the file, it
 SHALL still post the handoff above, the ledger row's `reason` SHALL read
 `needs a person, question not kept`, as `task-execution` sets, and the Igor SHALL open a
-condition for its operator, once `condition-backoff` defines conditions, and write the path
-it could not write to its own log on the host;
+condition for its operator on that first failed write, once `condition-backoff` defines
+conditions, and a later failed write, for any item, reuses a condition already open, and write the path it could not write to its own log on the host. The condition is
+a notice only and SHALL stop no work;
 the failed write SHALL NOT delay or block the handoff. The condition's record on the state
 branch SHALL hold only its key, which gate two names, and the path SHALL appear nowhere on the state branch or the
 item. Gate two MAY ship before `condition-backoff`, the open change that defines conditions,
@@ -80,6 +89,26 @@ NOT push, post or publish the file, or its text, anywhere.
 - **THEN** its handoff on the item asks nothing and holds none of the question's text
 - **AND** it gives the reason as the fixed words `needs a person`, and points to the item's
   transcript path
+
+#### Scenario: A kept question names its category, not its text
+
+- **WHEN** a flagged run stops on a question that #25's inquisitor gives the category `personal`
+- **THEN** the question's file holds `personal` and the path of the run's session log
+- **AND** it holds none of the question's text
+- **AND** the run's session log is beside it, mode 0600
+
+#### Scenario: A kept question without a category holds its text
+
+- **WHEN** a flagged run stops on a question that has no category, reported before the run
+  ended, though the run is flagged because a later worker run of it ended without its completed
+  report
+- **THEN** the question's file holds the question's text and the path of the run's session log
+
+#### Scenario: The question-not-kept condition stops no work
+
+- **WHEN** the Igor cannot write a flagged run's question file for the first time
+- **THEN** it opens a condition, where `condition-backoff` is built, on that first failure
+- **AND** the role goes on taking new items
 
 #### Scenario: A flagged run that stops on a question adds no question label
 

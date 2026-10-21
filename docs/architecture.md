@@ -582,19 +582,31 @@ and never pushes it. Today's unit sets no state directory, so the Igor falls bac
 `~/.local/state/igor`, which that unit's `ProtectHome=read-only` makes read-only: until #179's
 unit lands, a deployed Igor keeps no question, and every such write fails. When the file
 cannot be written, the handoff still posts, the ledger row's `reason` reads `needs a person,
-question not kept`, and once the open change `condition-backoff`, which defines conditions,
-lands, the Igor opens one, a stuck-work record whose key gate two names and which holds no
-path. The path the Igor could not write goes only into its own log on the host. The operator
-finds a kept question under the state directory at `flagged-questions/<tracker>/<repo>/<item>.md`,
-the same `<tracker>/<repo>/<item>` as the item's transcript path. A reply on the item does not rerun the item: the operator reads the
-question and decides whether it may be worked again. The item stays held, not worked again,
-until someone with write access to the item's repository edits it, relabels it or changes its
-holder; the operator needs that access too, as an operator running the Igor
-under its own account may lack it, and anyone else's edit, or one whose author cannot be read,
-leaves it held. Until #141 lets the Igor read who made an edit, no edit can release such an
-item, which #216 leaves open. The ledger
-row's changed paths, and the actions the role's `allow` list refused, which differ from the
-sandbox's denied commands kept by name above, stay in full. Open pull request #188, not yet built, adds a log of each
+question not kept`. Once the open change `condition-backoff`, which defines conditions,
+lands, the Igor also opens a condition: a stuck-work record whose key gate two names. The
+condition holds no path; the operator learns which path failed from the Igor's own log on the
+host, where the path goes. The operator finds a kept question under the state directory at
+`flagged-questions/<tracker>/<repo>/<item>.md`, the same `<tracker>/<repo>/<item>` as the item's
+transcript path. The kept file holds the question's category where it has one, otherwise its
+text, and the path of the run's Claude Code session log, which the Igor moves beside it; how the
+Igor learns a category, which the worker's bare flag does not name, is open in pull request
+#216. A reply on the item does not rerun the item: the operator reads the question and decides
+whether it may be worked again. The item stays held, not worked again, whatever else its
+handoff carries, and its hold record never expires; a lost record leaves it held. The operator
+can always release it with `igor release <tracker>/<repo>/<item>` on the host. An edit, relabel
+or change of holder by someone with write access to the item's repository releases it too,
+where the edit can be attributed, which needs #141; anyone else's edit, or one whose author
+cannot be read, leaves it held.
+
+Each worker run also has its own `CLAUDE_CONFIG_DIR`, a new, empty directory for Claude's
+per-user state, so its session log is not under the shared home's `~/.claude/projects/`. Since
+that directory starts empty, it holds no login, so a worker runs only for a seat that names a
+token. While every worker runs as the Igor's own user, file modes alone cannot keep one run out
+of another's directory; whether that is accepted is open in pull request #216, and task 4.11
+checks that the directory holds all of Claude's per-user state.
+
+For a flagged run's ledger row, the changed paths, and the actions the role's `allow` list
+refused, which differ from the sandbox's denied commands kept by name above, stay in full. Open pull request #188, not yet built, adds a log of each
 run's tool calls; for a flagged run, that
 log keeps only names and numbers: tool names, command names, exit codes, counts and timings.
 

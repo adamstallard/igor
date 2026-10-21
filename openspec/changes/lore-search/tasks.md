@@ -102,6 +102,18 @@
       slug. Tests for *An App whose slug lacks the igor- prefix refuses the start* and *An App
       whose slug starts with igor- passes the check*, and the existing tests of *An Igor knows
       its own bot account* move to an `igor-` slug
+- [ ] 2.13 Execution creates `runs/<run id>/claude` under the state directory, mode 0700, for
+      each worker run, lays in what igor gives every worker (settings and skills, whose source #174 and the
+      proposal's open question on #174 decide), sets
+      `CLAUDE_CONFIG_DIR` to it, and after the run collects the session log to
+      `sessions/<run id>.jsonl` (or beside a kept question) and deletes the directory. The run's
+      `session` field (`src/execute.ts:114`) names the log in the run's directory, not under
+      `~/.claude/projects/`. The directory is owned by the worker's user, the log is read only
+      as a regular file with one link, and a flagged run's log never goes to `sessions/`. A seat that names no token runs no worker. Tests for *Each worker
+      run has its own Claude configuration directory*, *A run's configuration directory is
+      collected and deleted*, *A seat that names no token runs no worker*, *A run's directory holds
+      what igor gives every worker*, *A linked session log is not collected* and *No worker
+      runs without a writable state directory*
 
 ## 3. Citations made during a run
 
@@ -174,13 +186,18 @@
       transcript path, which holds the transcript-withheld note. A flagged run that stopped on
       a question it could not settle posts that handoff asking nothing, with the reason
       `needs a person`, and the ledger row's `reason` is `needs a person` too. It adds no
-      `igor:question` label, writes the question to `flagged-questions/<tracker>/<repo>/<item>.md`
-      under its state directory, mode 0600 in directories of mode 0700, replaced by a later
-      flagged run's question, and pushes nothing of it (when the write fails, the handoff still posts,
+      `igor:question` label, writes a file to `flagged-questions/<tracker>/<repo>/<item>.md`
+      under its state directory, mode 0600 in directories of mode 0700, holding the question's
+      category where it has one, otherwise its text, and the path of the run's session log,
+      which it moves beside the file; a later flagged run's question replaces it, and it pushes
+      nothing of it (when the write fails, the handoff still posts,
       the ledger row's `reason` reads `needs a person, question not kept`, a condition, once `condition-backoff`
-      is built, opens holding only a key gate two names, and the path goes only to the Igor's own log); and work triage counts
-      only an edit by someone with write access to the item's repository, never a reply, as
-      answering that handoff, keeping the item held where it cannot read who edited. Once
+      is built, opens on the first failure as a notice that stops no work, holding only a key
+      gate two names, and the path goes only to the Igor's own log); and work triage keeps
+      the item held whatever its handoff carries, with a hold record that never expires, knows a
+      held item from its record, its host file or a `needs a person` ledger row, and releases it
+      only by `igor release <tracker>/<repo>/<item>` on the host or an attributable edit by someone with write
+      access, never a reply. Once
       #188's action log is built, a
       flagged run's log keeps names only. Tests for *Transcript persisted
       off the main line*, *A run that met a categorized question stores no transcript*, *A run that
@@ -203,7 +220,10 @@
       under the XDG state directory*,
       *A reply does not rerun a flagged item*, *An edit by someone with write access releases a
       flagged item*, *An edit without write access leaves a flagged item held*, *A question that
-      cannot be kept does not block the handoff*,
+      cannot be kept does not block the handoff*, *A kept question names its category, not its
+      text*, *A kept question without a category holds its text*, *The question-not-kept
+      condition stops no work*, *The operator releases a held item on the host*, *A cure key
+      does not release a held item*, *A held item's lost record leaves it held*,
       *A flagged run's budget handoff still gives the reset time*, *Any
       other run's ledger row keeps a denied command whole*, *A flagged run's action log keeps
       names only* once #188 is built, *An execution counts as flagged
@@ -281,3 +301,8 @@
       finding there before anyone relies on release by edit.
       Until it can, an edit whose
       author it cannot read leaves a flagged item held (decision 79).
+- [ ] 4.11 Whether `CLAUDE_CONFIG_DIR` relocates all of Claude Code's per-user state, including
+      `~/.claude.json` and `projects/`, so that a worker run writes nothing under the shared
+      home's `~/.claude`; and whether a seat's token runs `claude -p` in an empty one. If the first fails, file an issue: runs could still read one another's session
+      logs under the shared home's `~/.claude`. If the second fails, no worker runs at all:
+      file an issue before gate two ships.

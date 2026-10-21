@@ -482,7 +482,10 @@ and the Igor SHALL NOT record it as anyone's answer. The Igor SHALL then set the
 authority stops a question* that prove a questions-branch `decision` file's writer through its
 `answer_link` and confirm that its `answered_by` has write access to what the question
 concerns. Where the `answer_link` is a comment by a person's relay App, the Igor SHALL first set
-the file's `answered_by` to that person, whatever the worker wrote. It sets `decision` when
+the file's `answered_by` to that person, whatever the worker wrote; where the relay check, which reads the relay files to find whose App posted the comment,
+cannot be run, as when #208 has applied no commit, or runs and finds no relay file listing the
+App, it SHALL instead set `answered_by` to the comment's actual author, the relay App's
+login without GitHub's `[bot]` suffix, such as `alice-relay`. It sets `decision` when
 every one of those checks passes, and `input` when one fails or cannot be run. The credential
 condition above SHALL then be checked again on the file as it will be pushed, and a file that
 fails it is refused. Which comments count as a
@@ -697,6 +700,7 @@ that requirement sets. These counts SHALL NOT repeat any text the worker wrote.
 - **AND** #208 has applied no commit of the destination repository
 - **AND** the file passes the other rules
 - **THEN** the Igor pushes the file holding `authority: input`, never as that person's decision
+- **AND** the file's `answered_by` is the relay App's login, the comment's actual author
 
 #### Scenario: A person's own answer still counts when #208 has applied no commit
 

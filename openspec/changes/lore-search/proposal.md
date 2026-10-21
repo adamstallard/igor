@@ -2,7 +2,7 @@
 
 ## Decisions
 
-[#215](https://github.com/adamstallard/igor/issues/215) records all eighty-one decisions,
+[#215](https://github.com/adamstallard/igor/issues/215) records all ninety decisions,
 and all are Adam's. Where the agent that wrote this change fitted one of them to the spec, that
 decision says so. A *consistency read*
 is a check, by a fresh agent, of this change against every other spec, change and open pull
@@ -69,7 +69,11 @@ request; Adam answered the questions each read raised. He made:
 - decisions 74 to 77 on 2026-10-21, answering the three questions the consistency read of
   decision 73 raised and the open item on which ref relay files are read from;
 - decisions 78 to 81 on 2026-10-21, answering the three questions the consistency read of
-  decisions 74 to 77 raised and accepting decision 76's fitted details.
+  decisions 74 to 77 raised and accepting decision 76's fitted details;
+- decisions 82 to 89 on 2026-10-21, answering the five questions the reads of decisions 78 to
+  81 raised, a gap shared-skills #25's owner raised, and a gap in worker isolation, and
+  decision 90 that day, confirming details the agent that wrote this change had fitted to
+  decisions 71, 73 and 80.
 
 Terms used here:
 - The *destination repository* is the repository the configuration key `destination` names,
@@ -702,8 +706,7 @@ Terms used here:
     Trimming it to one sentence would mean choosing which part is the answer, which brings back
     the risk decision 67 removed (Adam, 2026-10-21). Shared-skills #25's log format at 9247d3c
     allows it: an answer with an `answer_link` is the comment word for word, in as many quote
-    lines as it has. #25's proposal still marks that format as waiting for Adam (Still
-    open).
+    lines as it has. Adam confirmed that format in #25 (its decision 239).
 71. **A flagged run's handoff comment uses fixed words only.** When a flagged run hands off,
     `graceful-handoff`'s comment on the item states why it stopped only in the fixed words its
     ledger row's `reason` keeps (decisions 51 and 56), quotes no failure detail, and points to
@@ -711,9 +714,10 @@ Terms used here:
     failure's detail (`src/handoff.ts:316`) and, for a run that declined, the worker's own
     account of why (`src/handoff.ts:310-313`, from `declineReason` at `src/loop.ts:510`),
     either of which could repeat what a sensitive question brought into the run (Adam,
-    2026-10-21). The agent that wrote this change fitted the rule: facts igor records itself,
-    such as a budget's reset time or which setting would let the run proceed, still appear,
-    since the run did not produce them. The transcript path is the item's, as there is one
+    2026-10-21). The agent that wrote this change fitted the rule, and Adam confirmed it (decision 90):
+    a declining worker's reason is not quoted either, and facts igor records itself, such as a
+    budget's reset time or which setting would let the run proceed, still appear, since the run
+    did not produce them. The transcript path is the item's, as there is one
     transcript per item, and for a flagged run it holds the transcript-withheld note. This change modifies `graceful-handoff`'s *A
     handoff states what was done, what remains, and who could continue* for it, with four new
     scenarios. [#179](https://github.com/adamstallard/igor/pull/179) and
@@ -734,7 +738,7 @@ Terms used here:
     nothing; whoever picks up the item reruns it or looks into it. Decision 76 says where the
     question goes and that a reply does not rerun the item, and decision 79 says who may release it, that is, let it be worked again. The run's
     question text never reaches the item, since it is text the run produced and could reveal
-    the sensitive matter that flagged the run. The agent that wrote this change gave the
+    the sensitive matter that flagged the run. The agent that wrote this change, as Adam confirmed (decision 90), gave the
     reason such a run stopped, a question it could not settle, the fixed words `needs a person`, in the ledger row's `reason` and in the
     handoff. Because no handback is posted, the Igor records
     no handback question for the run (Adam, 2026-10-21). This change's `graceful-handoff` delta
@@ -790,13 +794,87 @@ Terms used here:
     path it could not write (Adam, 2026-10-21). `graceful-handoff` and `task-execution` say
     so, with one new scenario each. The condition is one of `condition-backoff`'s, an open
     change; its key is gate two's to name. The agent that wrote this change fitted three
-    details, which carry out Adam's wording rather than override it and wait for his check:
-    the condition names the path to the operator through the log line it opens with, while the path is named only in the Igor's own log on the host, never on the state branch;
+    details, which carry out Adam's wording rather than override it, and which Adam confirmed
+    (decision 90):
+    the path is named to the operator only in the Igor's own log on the host, which the
+    operator reads beside the condition, never on the state branch or in the condition;
     the ledger's `reason` reads `needs a person, question not kept`; and where conditions are
     not built, the ledger and the log alone record the failure.
 81. **Decision 76's fitted details are accepted as written:** the path and modes, release by
     an edit, which decision 79 narrows to someone with write access, and `igor run`'s read
     limit (Adam, 2026-10-21).
+82. **A held item stays held whatever else its handoff carries.** An item a flagged run handed
+    back over a question is *held*. A cure key (`condition-backoff`'s key for a handoff caused by
+    a fact about the Igor that a configuration change would cure), a question not kept, or
+    anything else that exempts another handoff from `work-triage`'s rule against working an item
+    again, such as `condition-backoff`'s cure-key exemption
+    and today's `shouldDefer` (`src/deferred.ts:136`), does not release it (Adam, 2026-10-21).
+    The `work-triage` delta says so, with one new scenario.
+83. **A held item's hold record never expires, and a lost record leaves it held.** Unlike
+    today's handed-back record, which expires after 30 days (`src/deferred.ts:43`), and unlike any other item's missing record, which
+    lets it be worked again (Adam, 2026-10-21). The agent that wrote this change fitted how a
+    held item is known when its record is lost, for Adam to check: from its file under
+    `flagged-questions` on the host, or from a ledger row whose `reason` starts
+    `needs a person`. It also fitted what decision 84's `igor release <item>` does: its `<item>` is
+    `<tracker>/<repo>/<item>`, and it marks the hold record released, appends a `released` ledger row
+    and deletes the host file, so no fallback holds the item again. Two new scenarios, and one
+    changed.
+84. **The operator can always release a held item on the host,** with `igor release <item>`,
+    whatever #141 or task 4.10 find. An edit by someone with write access releases it too, where
+    the edit can be attributed (Adam, 2026-10-21, adding to decision 79). One new scenario.
+85. **Decision 80's condition opens on the first failed write, as a notice only.** A condition
+    normally opens only when its key recurs; this is a second exception to that in
+    `condition-backoff`, beside #101's refused credential, and stops no work, since
+    the item is already held (Adam, 2026-10-21). This change does not modify that requirement,
+    so the exception is an item for `condition-backoff` and #101. One new scenario. The agent
+    that wrote this change fitted, for Adam to check, that a later failed write, for any item,
+    reuses a condition already open rather than opening another.
+86. **A relayed answer pushed as `input` names its actual author.** Where decision 78 makes the
+    relay check unrunnable, the file's `answered_by` is the comment's actual author, the relay
+    App's login without GitHub's `[bot]` suffix (Adam, 2026-10-21, a gap shared-skills #25's
+    owner raised).
+    One changed scenario.
+87. **Each worker run gets its own Claude configuration directory.** Every role and rank runs as
+    the user `igor` with one shared home, and `workerEnv` forwards `HOME`
+    (`src/execute.ts:838`), so every worker could read every other run's Claude Code session log
+    under `~/.claude/projects/`, a run still in progress included. So each worker run gets its
+    own `CLAUDE_CONFIG_DIR`; the Igor collects the session log from it when the run ends, then
+    deletes it. Tool caches and `HOME` stay shared. Every seat must name a token, so the host's
+    login is never copied into a run's directory. On main, `seat-budget`'s *A seat names its
+    token through exactly one mechanism* and *A spend with no seat behind it does not happen*
+    let a seat naming no token run on the ambient login; open pull request #171 removes both and
+    requires every seat to name its token, and Adam decided there that an organization declaring
+    no seats is refused (#171's decision 36). This change relies on #171 for that rule rather
+    than modifying the same requirements, and its `task-execution` delta refuses to spawn a
+    worker for a seat naming no token. What igor gives every worker, such as settings and skills, is laid into each run's
+    directory, and the run's `session` field (`src/execute.ts:114`, documented as the log under
+    `~/.claude/projects/`) names the log in the run's directory.
+    Task 4.11 confirms that `CLAUDE_CONFIG_DIR` relocates all of Claude's per-user state
+    (Adam, 2026-10-21). The agent that wrote this change fitted two details, for Adam to check:
+    the directory is `runs/<run id>/claude` under the Igor's state directory, mode 0700, and a
+    collected log goes to `sessions/<run id>.jsonl` there, mode 0600. `task-execution` gains
+    six scenarios. The agent that wrote this change also fitted, for Adam to check: the
+    directory is owned by the user the worker runs as; the log is read only as a regular file
+    with one link; a flagged run's log never goes to `sessions/` and is deleted where it cannot
+    be kept beside its question; and execution fails, spawning no worker, where the state
+    directory cannot be written.
+88. **A held item's session log is kept beside its question.** A flagged run's collected session
+    log moves into the `flagged-questions` directory, beside the question's file, mode 0600, and
+    no worker can reach that directory (Adam, 2026-10-21). Until workers run as users of their
+    own, file modes cannot ensure that, and whether that is accepted is open.
+89. **The question's file holds its category, not its text, where it has one.** It holds the
+    question's #25 category (`vulnerability`, `secret` or `personal`) where it has one,
+    otherwise the question's text, and the path of the moved session log; a categorized
+    question's text is only in the log (Adam, 2026-10-21). How the Igor learns the category is
+    open: decision 13, `task-execution` and #25 all have a worker report only a bare flag, with
+    no category (Still open). Two new `graceful-handoff` scenarios.
+90. **The details fitted to decisions 71, 73 and 80 are Adam's.** He confirmed them as written
+    (Adam, 2026-10-21): under decision 71, a declining worker's reason is not quoted, and igor's
+    own facts, such as a budget's reset time or the setting that would let the run proceed,
+    still appear; under decision 73, the fixed reason `needs a person`; and under decision 80,
+    the ledger reason `needs a person, question not kept`, the path going only to the Igor's
+    host log while the condition's record holds only its key, and the ledger and the log alone
+    recording the failure until `condition-backoff` ships.
 
 
 **Alignments with shared-skills #25.** These follow from Adam's decisions above and #25's
@@ -827,8 +905,11 @@ decisions 216, 221, 225, 229 and 235 (#25 at 9247d3c), and add no decision:
   is given an explicit environment holding no credential but its seat's* says so.
 - **Search ranking and its cap of 20 point to #25's filter 1 rule** (decision 52 above).
 - **A recorded answer is written as #25's quote lines** (decisions 67 and 70), as #25's log
-  format at 9247d3c stores it. #25's proposal marks that format as waiting for Adam (its
-  decision 239, items 1 and 2).
+  format stores it; Adam confirmed that format (#25's decision 239), and answers chosen in a
+  picker are recorded in his own words (#25's decision 240).
+- **Inside an Igor, relay files are read from the commit #208 last applied** (decision 77), and
+  so is their last-change check; outside an Igor, the fetched default branch. #25's decision 241
+  says so (#25 at 2040f88).
 
 **Still open:**
 - **For [#208](https://github.com/adamstallard/igor/pull/208): the Igor must fetch the
@@ -842,48 +923,62 @@ decisions 216, 221, 225, 229 and 235 (#25 at 9247d3c), and add no decision:
   commit #208 last applied, whose record governs the relay-file read** of decision 77; the
   processes
   #179 runs for one role, for decision 77's relay files.
-- **For shared-skills #25 (decision 77).** #25 reads a relay file from the default branch as
-  the clone's remote-tracking branch last fetched it, while decision 77 excludes a fetched
-  commit #208 refused. #25 should allow igor's narrower ref, or say igor's reader differs.
-- **For Adam: #25's quote-line answer format** (decisions 67 and 70). This change writes a
-  recorded answer as #25's quote lines, which #25's proposal marks as waiting for Adam (its
-  decision 239, items 1 and 2). If he changes it there, this change follows.
-- **Found by the consistency read of decisions 78 to 81.** Four are possible questions for
-  Adam, not yet answered, and pull request #216's body, where this change is reviewed, puts
-  them to him; with the two items for other changes below, they are its six open findings:
-  1. *A question-not-kept handoff might not hold the item.* An unwritable state directory is a
-     fact about the Igor, so under `condition-backoff` the handoff carries a cure key, that
-     change's key for a fact about the Igor that a configuration change would cure, and both that
-     change and today's `shouldDefer` (`src/deferred.ts:136-137`) exempt such a handoff from
-     suppression. The item would rerun next cycle, with no edit by anyone, and could meet the
-     sensitive question again. Should it stay held anyway?
-  2. *A condition on the first occurrence.* `condition-backoff` opens a condition only when a
-     cure key recurs, and #101 makes one exception, a refused App credential. Decision 80 opens
-     one on the first failed write. Should `condition-backoff` add this as a second exception,
-     or does "opens a condition" here mean recording an occurrence?
-  3. *What the condition stops.* Under `condition-backoff` a recurring condition stops the scope
-     its key names. With today's unit every write fails, so with #101's threshold of three the third such run
-     would stop that
-     scope, the whole Igor if the key is Igor-scoped. A per-item key would recur only if the item reran. Which
-     scope should it stop?
-  4. *A lost or expired record releases a flagged item.* `work-triage` works an item again when
-     its hand-back record is missing or unreadable, and today's code prunes a record after 30
-     days (`MAX_AGE_DAYS`, `src/deferred.ts:43`). Either releases a flagged item with no edit.
-     Should a flagged item's record be exempt, or is that an accepted limit?
-
-  Two are items for other changes: #141's rule for who made an edit and how write access is
-  read, to which decision 79 now points; and `condition-backoff`, which this change depends on
-  for decision 80's condition.
-- **For Adam: a flagged item that no edit can release.** Under decision 79, an edit whose author
-  the Igor cannot read leaves a flagged item held. Until #141 lands, or where task 4.10 finds
-  that the App cannot read who made an edit, no edit can release one, the operator's included,
-  so it stays held for good. How is such an item released then?
+- **For Adam: one user for every worker.** Every role, rank and worker runs as the user `igor`
+  under today's unit, the same user as the Igor itself. File modes then cannot keep a worker out
+  of another run's configuration directory, or out of the `flagged-questions` directory, as
+  decisions 87 and 88 require; only separate worker users, as #175 designs, can. Until #175
+  lands, is that an accepted limit, or should the Igor hold those directories elsewhere?
+- **For Adam: how the Igor learns a question's category** (decision 89). Decision 13,
+  `task-execution` and shared-skills #25 (its spec, *A worker that such a question stops SHALL
+  report only that flag, never the question's category*) all have a worker report a bare flag
+  with no category, so the Igor never sees one, and the question's file can hold no category.
+  Should the worker report the category to the Igor for the file, and #25 change to allow it?
+- **For Adam: decision 87 against #174's home design.** Open pull request #174, whose design
+  Adam chose on 2026-10-17 and 2026-10-19, gives each `igor run` a home of its own in the state
+  directory, resets `~/.claude` and `~/.claude.json` from a template before every `claude -p`,
+  takes skills from `--plugin-dir`, and copies the session log out of `~/.claude/projects/`;
+  #175 gives each worker user a home that lasts across runs. Decision 87 keeps one shared home
+  and moves Claude's state into a per-run `CLAUDE_CONFIG_DIR`, where #174's reset and copy no
+  longer act on what Claude reads. Which design stands?
+- **For Adam: no worker runs on today's unit.** Decision 87's directory is under the state
+  directory, which today's `deploy/igor.service` leaves read-only (`ProtectHome=read-only`,
+  only `/srv/igor` writable), so execution fails and no worker runs on a deployed Igor until
+  #179's unit sets `StateDirectory=igor`. Is that acceptable until then?
+- **For gate two: task 4.11 is unmeasured.** Whether `CLAUDE_CONFIG_DIR` relocates all of Claude's per-user
+  state, and whether a seat token runs `claude -p` in an empty one, is not measured. If it does
+  not relocate everything, a run could still read another's session log under the shared home,
+  and decision 87's isolation would not hold; if a seat's token does not run in an empty one,
+  no worker runs at all.
+- **For shared-skills #25 (decisions 84 and 89).** #25's decision 243 says the question's file
+  holds the question and only someone with write access releases a held item. Under decisions
+  84 and 89 the file holds the category where there is one, and the operator can also release
+  it with `igor release`.
+- **For `condition-backoff` and [#101](https://github.com/adamstallard/igor/pull/101)
+  (decision 85).** A condition opens on its first occurrence only for #101's refused App
+  credential. Decision 85 adds a second exception, the first failed write of a held question,
+  as a notice that stops no work, against `condition-backoff`'s rule that a recurring condition
+  stops its scope. `condition-backoff` also exempts a handoff caused by a fact about the Igor
+  from suppression, while decision 82 keeps a held item held. Copying the other's text is not
+  enough: whichever archives last must state the exception for a held item itself.
+- **For [#174](https://github.com/adamstallard/igor/pull/174) (decision 87).** What igor gives
+  every worker, such as settings and skills, is laid into each run's own `CLAUDE_CONFIG_DIR`,
+  and the session log is collected from it; #174 states session-log collection too, and one of
+  the two should point to the other once Adam settles the question above.
+- **This change depends on [#171](https://github.com/adamstallard/igor/pull/171) (decision
+  87)** for the rule that every seat names a token, and that an organization declaring no
+  seats is refused (#171's decision 36). Until #171 merges, main's `seat-budget` still lets a
+  seat naming no token run on the ambient login; with its own, empty `CLAUDE_CONFIG_DIR` such a
+  worker would have no login, so execution refuses it instead.
+- **For #179 or the deployment guide: workers cannot write the home.** Today's
+  `deploy/igor.service` sets `ProtectHome=read-only`, with only `/srv/igor` writable, so even
+  once a state directory lets workers run, tool caches under the shared home still cannot be
+  written.
 - **For [#179](https://github.com/adamstallard/igor/pull/179) and gate two: a writable state
-  directory** (decisions 76 and 80). Today's `deploy/igor.service` sets no `StateDirectory=`
+  directory** (decisions 76, 80, 87 and 88), without which no worker runs and no question is
+  kept. Today's `deploy/igor.service` sets no `StateDirectory=`
   and makes the home directory read-only, so the question's file cannot be written until
-  #179's unit change lands, and under Docker the home directory may not persist. Until then,
-  every flagged run that stops on a question records `question not kept` and opens a
-  condition.
+  #179's unit change lands, and under Docker the home directory may not persist. Until then, no
+  worker runs on such a host.
 - **`condition-backoff` and #141 modify the same `work-triage` requirement.** The open change
   `condition-backoff` modifies *An item handed back is not re-worked until something answers*,
   and [#141](https://github.com/adamstallard/igor/pull/141) amends its delta to count only a
@@ -1091,7 +1186,8 @@ decisions 216, 221, 225, 229 and 235 (#25 at 9247d3c), and add no decision:
   explicit environment holding no credential but its seat's*, which the citation requirement
   cites, by adding "token" to its end. Whichever of #171 and this change merges second updates
   the citation requirement to the new name. This change's `task-execution` delta also modifies
-  that requirement, to add `IGOR_RUN`, under its current name; whichever merges second carries
+  that requirement, to add `IGOR_RUN`, the per-run `CLAUDE_CONFIG_DIR` and the refusal of a
+  seat naming no token, under its current name; whichever merges second carries
   both changes. [#175](https://github.com/adamstallard/igor/pull/175) modifies the same
   requirement too, adding `GIT_INDEX_FILE`; each delta replaces the requirement whole, so
   whichever of #175 and this change merges second carries the other's text.
@@ -1247,7 +1343,9 @@ reading the codebase. Two cases contradict that:
   and its question and miss files from the role's `allow` list, with two new scenarios.
 - `task-execution`'s *The worker is given an explicit environment holding no credential but
   its seat's* has the Igor set `IGOR_RUN`, which carries no secret, in a worker's environment
-  and its own inquisitor run's, with two new scenarios.
+  and its own inquisitor run's, gives each worker run its own `CLAUDE_CONFIG_DIR`, and runs no
+  worker for a seat that names no token, with eight new scenarios: two for `IGOR_RUN` and six
+  for decision 87.
 - `task-execution`'s *Transcripts and outcomes are captured to the state branch* writes no
   transcript for a run that met a question with a category, and for such a run puts no excerpt
   of the worker's result in the pull request body, and has a refusal record keep only the
@@ -1275,12 +1373,13 @@ reading the codebase. Two cases contradict that:
   has a flagged run's handoff state why it stopped only in the ledger row's fixed words, quote
   no failure detail or worker's reason and point to the item's transcript path, and has a
   flagged run's handoff ask no question, add no question label and keep its question on the
-  host, with ten new scenarios (decisions 71, 73, 75, 76 and 80).
+  host, with thirteen new scenarios (decisions 71, 73, 75, 76, 80, 85, 88 and 89).
 - `work-triage`'s *An item handed back is not re-worked until something answers* stops a reply
   from rerunning an item a flagged run handed back, and lets only an edit by someone with
-  write access release it, with three new scenarios (one for decision 76, two for 79) and two
-  changed
-  (decisions 76 and 79).
+  write access release it, keeps a held item held whatever its handoff carries and with a
+  record that never expires, and lets the operator release it with `igor release`, with six new
+  seven new scenarios, `igor release`'s included, and three changed (decisions 76, 79, 82, 83
+  and 84).
 - `docs/architecture.md`: §3.3 says every worker is offered `igor lore-search` and what binds it, §3.4.1 says a
   search hit is not a firing and that a review counts citations from the destination repository's
   `questions` branch, and §4.1 says the worker never *has* to search.
@@ -1306,12 +1405,14 @@ None.
 - `graceful-handoff`: a flagged run's handoff states why it stopped only in fixed words,
   points to its transcript path, asks no question, and keeps that question on the host, and
   a failed write does not block it (decisions 71, 73, 75, 76 and 80).
-- `work-triage`: a reply does not rerun an item a flagged run handed back, and only an edit by
-  someone with write access releases it (decisions 76 and 79).
+- `work-triage`: a reply does not rerun an item a flagged run handed back; it stays held, and
+  only `igor release` or an edit by someone with write access releases it (decisions 76, 79 and
+  82 to 84).
 - `task-execution`: pushing a run's citations and its question and miss files is exempt from
   the role's `allow` list, a worker's environment marks it as in an Igor's run, and a run
   that met a question with a category stores no transcript; a question it could not keep is
-  recorded as `question not kept` (decision 80).
+  recorded as `question not kept` (decision 80); each worker run has its own
+  `CLAUDE_CONFIG_DIR` (decision 87).
 
 ## Impact
 

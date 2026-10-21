@@ -60,9 +60,25 @@ branching and publishing all happen in the loop afterwards, with the loop's own 
 inherited environment is therefore a set of credentials nothing in the worker has a use for,
 one shell command away from a worker an item's text has steered.
 
-Besides the `IGOR_RUN` marker below, only what running a toolchain requires is passed: the
-search path, a home directory, and the network settings the host is configured with. None of
-those is a credential, and each fails as something else entirely when it is missing.
+Besides the `IGOR_RUN` marker and the `CLAUDE_CONFIG_DIR` below, only what running a toolchain
+requires is passed: the search path, a home directory, and the network settings the host is
+configured with. None of those is a credential, and each fails as something else entirely when
+it is missing. The home directory and the tool caches under it stay shared between runs.
+
+Execution SHALL give each worker run its own Claude configuration directory, set as
+`CLAUDE_CONFIG_DIR` in the worker's environment: a new, empty directory
+`runs/<run id>/claude` under the Igor's state directory, which `graceful-handoff` defines, where `<run id>`
+is the run's id that `lore-firing`'s *An Igor publishes the citations its worker reports*
+defines, mode 0700 and owned by the user the worker runs as, that no other run uses. Anything
+igor gives every worker, such as settings or skills, SHALL be laid into each run's directory
+before the worker starts. When the run ends, the Igor SHALL collect the run's Claude Code
+session log from that directory, reading it without following a link and only where it is a
+regular file whose hard-link count is 1, then delete the directory. A collected log goes to
+`sessions/<run id>.jsonl` under the state directory, mode 0600. A flagged run's log never goes
+there: `graceful-handoff` keeps it beside the run's question, and where it cannot, the log is
+deleted with the directory. Where the state directory cannot be written, execution SHALL fail
+naming it rather than spawn a worker without its own directory. Execution SHALL NOT spawn a
+worker for a seat that names no token, and SHALL fail naming the seat.
 
 Execution SHALL also set `IGOR_RUN` in the worker's environment, to `worker`, and in the
 environment of an inquisitor run the Igor starts itself with no worker, to `igor`. The
@@ -105,6 +121,43 @@ value says whose run: a worker's or the Igor's own.
 
 - **WHEN** a worker runs a build or a test in its working tree
 - **THEN** the search path, home directory and network settings it needs are present
+
+#### Scenario: Each worker run has its own Claude configuration directory
+
+- **WHEN** two worker runs are under way at once
+- **THEN** each has its own `CLAUDE_CONFIG_DIR`, and neither directory holds the other's
+  session log
+- **AND** both share the same home directory
+
+#### Scenario: A run's configuration directory is collected and deleted
+
+- **WHEN** a worker run ends
+- **THEN** the Igor collects the run's session log from its `CLAUDE_CONFIG_DIR` to
+  `sessions/<run id>.jsonl` under the state directory, mode 0600
+- **AND** then deletes that directory
+
+#### Scenario: A run's directory holds what igor gives every worker
+
+- **WHEN** a worker run starts
+- **THEN** its `CLAUDE_CONFIG_DIR` is `runs/<run id>/claude` under the state directory, mode 0700
+- **AND** it holds the settings and skills igor gives every worker
+
+#### Scenario: A linked session log is not collected
+
+- **WHEN** a worker replaces its session log with a link to another file before the run ends
+- **THEN** the Igor collects nothing from it and copies no file the link points to
+
+#### Scenario: No worker runs without a writable state directory
+
+- **WHEN** the Igor's state directory cannot be written
+- **THEN** execution fails naming it
+- **AND** no worker is spawned
+
+#### Scenario: A seat that names no token runs no worker
+
+- **WHEN** the chosen seat names no token
+- **THEN** execution fails naming the seat
+- **AND** no worker is spawned on the host's own login
 
 #### Scenario: A worker's environment marks it as in an Igor's run
 
