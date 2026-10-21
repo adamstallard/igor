@@ -38,8 +38,12 @@ Bug-hunter SHALL run before the prose pass, and neither step SHALL sign. Where t
 `prose`, Igor SHALL then stage the change in its own index and run prose's first `prose check`
 call on a draft message holding the issue title. The goals of the change's docs and specs SHALL
 be the ones the worker wrote to a goals file in its outbox, passed to prose as a file
-(`--goals-file`), never on a command line; how the message's own goals reach prose is the
-proposal's *For Adam* 2. The worker gives those goals by path pattern, meant to cover a doc a
+(`--goals-file`), never on a command line. The message's own goals SHALL be the ones the worker
+wrote to a goals file of their own in its outbox, passed as `--message-goals-file`, also never
+on a command line. Igor reads both files, and counts a missing or empty one as a failed attempt,
+as the signed-publishing capability requires of every goals file. The worker gives the goals
+of the docs and specs by path pattern, meant to
+cover a doc a
 later step changes too; whether they do is task 0.19, and a second call that refuses such a doc SHALL count
 as a failed attempt. Igor SHALL give the prose pass the rules and the pass token it prints, in its prompt on
 stdin. Where both steps run, Igor SHALL then run bug-hunter's triage on the prose pass's diff,
@@ -108,7 +112,8 @@ description, a reply, a cold-read report and its answers, as #175's *The Igor re
 the worker's behalf through a link* requires of every file the worker wrote, and SHALL pass
 prose only copies it read that way. The commit SHALL carry the message, then the `Bug-hunter:`,
 `Bug-hunter-Tree:` and `Prose:` trailers of the steps that ran. Merge commits carry none of
-these trailers.
+these trailers, and neither do citation commits: the commits that record, on the lore
+repository's `questions` branch, that a lore entry answered a question (#216).
 
 #### Scenario: A closing keyword in a gate-one commit body goes back
 
@@ -290,7 +295,9 @@ these trailers.
 
 - **WHEN** Igor runs prose's first `prose check` call
 - **THEN** the goals the worker wrote for the change's docs and specs reach prose as a file
-  passed with `--goals-file`, and no command line holds them
+  passed with `--goals-file`
+- **AND** the goals it wrote for the commit message reach prose as a file passed with
+  `--message-goals-file`, and no command line holds either
 
 #### Scenario: Answers to the cold read that change code fail the attempt
 
@@ -320,6 +327,11 @@ these trailers.
 
 - **WHEN** Igor merges the base into an artifact's branch
 - **THEN** the merge commit carries no `Bug-hunter:` or `Prose:` trailer
+
+#### Scenario: Citation commits carry no trailers
+
+- **WHEN** Igor commits a citation to the lore repository's `questions` branch
+- **THEN** the commit carries no `Bug-hunter:` or `Prose:` trailer
 
 ### Requirement: The pull request description is written for a reviewer and signed
 

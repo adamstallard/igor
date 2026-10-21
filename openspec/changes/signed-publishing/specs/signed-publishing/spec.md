@@ -60,8 +60,14 @@ git directory:
 
 1. **The first call**, `prose sign` for a post, SHALL run before the step writes, with the
    reader goals a model wrote for that post, passed in a file (`--goals-file`), never on a
-   command line. Igor SHALL give the step the rules and the pass token it prints, in the step's
-   prompt on stdin. That prompt SHALL tell the step to quote untrusted text, such as an item's
+   command line. Where no worker run precedes the post, such as a reply to a mention, the step
+   that writes the post SHALL write its goals file in a first turn, before the first call, into
+   an outbox Igor gives it, and Igor SHALL resume that session (`claude -p --resume`) after the
+   first call. Igor SHALL read every goals file a model step writes, for a post or a commit, as
+   #175's *The Igor reads no file on the worker's behalf through a link* requires of every file
+   the worker user wrote, and SHALL count a missing or empty goals file as a failed attempt. Igor SHALL give the step the rules and the pass token the first
+   call prints, in the step's prompt on stdin. That prompt SHALL tell the step to quote
+   untrusted text, such as an item's
    or a person's words, in code spans, where @-mentions and markup take no effect.
 2. **The second call**, `prose sign --pass <token>`, SHALL run on the text the step hands back,
    given on stdin. Once the cold read below is answered, it appends a `prose ✓ <hash>` footer
@@ -104,8 +110,10 @@ quotes:
 #### Scenario: The step writes with the rules Igor's first call printed
 
 - **WHEN** a model step is to compose a reply to a mention
-- **THEN** Igor runs `prose sign`'s first call first, and the step's prompt holds the rules and
-  the pass token it printed
+- **THEN** the step's first turn writes the reply's goals file, and Igor runs `prose sign`'s
+  first call on that file
+- **AND** Igor resumes the step's session with the rules and the pass token the first call
+  printed, in its prompt on stdin
 - **AND** Igor, not the step, runs the second call on the reply the step hands back
 
 #### Scenario: A worker cannot issue a token

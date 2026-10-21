@@ -14,9 +14,12 @@
       this change builds on #137 (design, item 3 and *Measurements*)
 - [ ] 0.5 The worker's prompt asks it to write the item's reader goals to goals files in its
       outbox: for the change's docs and specs, in `prose check`'s `pattern: goal; goal` form,
-      and for the pull request description, in the form shared-skills PR #27 gives `prose
-      sign` (proposal, decision 32). The goals of the commit message itself wait on the
-      proposal's *For Adam* 2. No prompt, rule or goal goes on any command line (proposal,
+      and for the pull request description, the commit message and, under #150, the reply after
+      a revision (proposal, decision 43), one file each, in the form
+      shared-skills PR #27 gives `prose sign`'s `--goals-file` and `prose check`'s
+      `--message-goals-file`: goals separated by `;`, naming no file (proposal, decisions 32
+      and 41). No prompt, rule or goal goes on
+      any command line (proposal,
       decision 15). Igor's spawn of the worker runs no `prose start` and writes no session mark
       in its home (design, item 1; proposal, decision 25); a test checks that no prose script
       runs as the worker user
@@ -63,10 +66,10 @@
       commands to grant for them
 - [ ] 0.16 Depends on shared-skills
       [PR #27](https://github.com/adamstallard/shared-skills/pull/27), which adds
-      `--goals-file` to prose's `sign`, so that a post's first call puts no goal on a command
-      line (proposal, decisions 15 and 32). Until it lands, the first call of task 1.1 is not
-      built. How the commit message's goals reach `prose check` waits on the proposal's *For
-      Adam* 2. This change does not edit shared-skills
+      `--goals-file` to prose's `sign` and `--message-goals-file` to its `check`, so that no
+      first call puts a goal on a command line (proposal, decisions 15, 32 and 41). Until it
+      lands, the first calls of tasks 1.1 and 2.1 are not built. This change does not edit
+      shared-skills
 - [ ] 0.17 Measure whether `git write-tree` in Igor's index equals the Git Data API's tree for a
       binary file and for a file under a clean filter (`core.autocrlf`, an `eol=` or `text=auto`
       attribute), with paths carried as #137 specifies. Record the result in design,
@@ -81,13 +84,22 @@
       *Measurements*
 - [ ] 0.20 Measure whether sonnet's triage gives the same answer on the same diff from run to
       run. Record the result in design, *Measurements*
+- [ ] 0.21 Measure whether `claude -p --resume` continues the session of decision 40's first
+      turn when #174 resets the step's home before each `claude -p`. Record the result in design,
+      *Measurements*; if it does not, Adam decides between the options of the proposal's *For
+      Adam* 2 before task 1.1 is built
 
 ## 1. Verifying and publishing
 
 
-- [ ] 1.1 One publishing path that runs `prose sign`'s first call, with Igor's own `GIT_DIR`,
+- [ ] 1.1 Waits on tasks 0.16 and 0.21. One publishing path that runs `prose sign`'s first call, with Igor's own `GIT_DIR`,
       `GIT_WORK_TREE` and `GIT_INDEX_FILE` and the model's reader goals as `--goals-file`, before
-      a model step writes a post, gives the step the rules and the token in its prompt, tells it
+      a model step writes a post. Where no worker run precedes the post, such as a reply to a
+      mention, the step that writes it writes its goals file in a first turn into an outbox Igor
+      gives it, Igor reads that file without following a link and counts a missing or empty one
+      as a failed attempt, and Igor resumes
+      that session (`claude -p --resume`) after the first call (proposal, decision 40). It
+      gives the step the rules and the token in its prompt, tells it
       to quote untrusted text in code spans (proposal, decision 31), runs the second call with the cold read, and runs
       `prose verify-post` on the exact text before publishing it, on every surface;
       code-assembled handoffs, receipts and claim messages pass unsigned
@@ -104,7 +116,9 @@
       a new first call; after the second attempt, nothing is published and the failure is
       recorded to the state branch
 - [ ] 1.4 Tests: signed text is published unchanged; edited or unsigned text is sent back;
-      repeated failure publishes nothing; a handoff posts without a model call; a worker user
+      repeated failure publishes nothing; a handoff posts without a model call; a reply to a
+      mention runs the first call on the goals its step's first turn wrote, and the step's
+      resumed session gets the rules and the token; a worker user
       cannot write prose's token store; a kept cold-read finding is a failed attempt
 - [ ] 1.5 Test: with no prose hook installed, Igor's posting code refuses a post without a valid
       footer (design, item 4)
@@ -116,7 +130,8 @@
       #175's *The Igor stages only after its checks, and #153's trailers bind the last staging* requires (proposal, decision 19). After bug-hunter, do that, then stage
       the change in Igor's
       own index and run prose's first `prose check` call as the service user, on a draft message
-      holding the issue title, with the worker's goals file as `--goals-file`; give the prose
+      holding the issue title, with the worker's goals file as `--goals-file` and its file of the
+      message's goals as `--message-goals-file` (proposal, decision 41); give the prose
       pass the rules and the token on stdin (proposal, decisions 12, 16 and 32). Before every
       model step after the worker, check for a stop and the claim: on a stop, publish nothing;
       on a lost claim, run no further model step and publish the worker's change as a draft
@@ -144,10 +159,12 @@
 - [ ] 2.6 In `produce()` and in #150's head push, check that the uploaded tree equals both
       signed trees, that `prose verify-staged` accepts the trailer, and that the subject is the
       issue title with any closing keyword dropped
-- [ ] 2.7 Append the trailers; leave merge commits without them (proposal, decision 30)
+- [ ] 2.7 Append the trailers; leave merge commits and citation commits without them (proposal,
+      decisions 30 and 44)
 - [ ] 2.8 Tests: a tree mismatch, a message mismatch and a changed subject each refuse the
       commit, and a tree mismatch goes back to no step; a prose-pass edit is in the tree both
-      trailers name; a diff the triage skips runs no second bug-hunter iteration and one it does
+      trailers name; a citation commit carries no skill trailer; a diff the triage skips runs
+      no second bug-hunter iteration and one it does
       not skip runs one, after which no prose pass runs; the signing calls run in Igor's code,
       from the pinned skills directory, and a planted `.git` in the tree runs nothing; a
       gate-one commit ends with the adapter's non-closing reference; gate two's head-push commit

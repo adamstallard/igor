@@ -5,7 +5,10 @@ Each decision names who made it and when. Adam decided 1 to 3, 7, 8 and 18 on 20
 #139 differs from decisions 12 and 16, they hold (Adam, 2026-10-18). Decisions 20 to 39 are
 Adam's answers of 2026-10-19 to the twenty questions an earlier revision of this change put to
 him, in the order he was asked them: that revision's *For Adam* 1 is decision 20, and its 20 is
-decision 39. The *For Adam* list at the end of this section holds new questions.
+decision 39. The next revision asked him five more questions. Decisions 40 to 43 are his
+answers of 2026-10-20 to its questions 1, 2, 3 and 5, in that order. Its question 4 has no
+answer yet, and is the first item under *For Adam* at the end of this section. Decision 44 is
+one he made the same day, reviewing #216.
 
 Terms. An *Igor* is one role of the agent, acting under its own GitHub App; the *item* is the
 issue or pull request it works on. Under the two-gate workflow (#150), *gate one* publishes a
@@ -151,7 +154,8 @@ whole change before any hunt. The *state branch* is where Igor records each item
 16. **Igor runs prose's first call itself, as its service user, and gives the rules and the
     pass token to the step in its prompt (Adam, 2026-10-18).** The model does the pass, and Igor
     runs the second call. The worker user never writes prose's token store, so it cannot forge a
-    token. This holds for a commit's `prose check` and a post's `prose sign`, and the worker is
+    token. This holds for a commit's `prose check` and, as Adam confirmed in decision 42, a
+    post's `prose sign`, and the worker is
     granted no prose or bug-hunter script. *Rejected:* the worker running the first call, which
     fails because the token store is in a git directory the worker cannot write (task 0.9); and
     Igor pre-creating a token directory the worker's group can write, which works but lets the
@@ -221,12 +225,12 @@ whole change before any hunt. The *state branch* is where Igor records each item
     cannot neutralise them afterwards.
 32. **The model decides the reader goals for each item (Adam, 2026-10-19).** For a commit and
     its pull request description, the worker writes them to files in its outbox, by path
-    pattern for a commit's docs and specs, and Igor passes each file to prose with
-    `--goals-file`, so no
+    pattern for a commit's docs and specs, and Igor passes each file to prose, so no
     goal reaches a command line (decision 15). `prose check` already takes per-file goals that
     way. `prose sign` gains `--goals-file` in shared-skills
-    [PR #27](https://github.com/adamstallard/shared-skills/pull/27) (task 0.16). Two
-    questions remain: *For Adam* 1 and 2. *Rejected:* fixed goals per kind of text in Igor's
+    [PR #27](https://github.com/adamstallard/shared-skills/pull/27) (task 0.16). Decision 40
+    says who writes the goals for a post no worker run precedes, and decision 41 how a commit
+    message's own goals reach prose. *Rejected:* fixed goals per kind of text in Igor's
     code, which cannot say what this item's reader came for.
 33. **Every model step may read the skills directory (Adam, 2026-10-19).** Bug-hunter's
     instructions tell the model to read files beside its `SKILL.md`, and `--plugin-dir` grants
@@ -258,6 +262,32 @@ whole change before any hunt. The *state branch* is where Igor records each item
     the prose pass run on that commit's diff only, and it carries its own trailers. *Rejected:*
     putting the second run's edits through every step again together with the first run's, as
     one commit, which repeats the full pass over work already signed.
+40. **For a post no worker run precedes, the step that writes it states the reader goals first
+    (Adam, 2026-10-20).** A reply to a mention is one such post. The step writes its goals file
+    in a first turn, before it writes the post. Igor runs `prose sign`'s first call with that
+    file, then resumes the same session (`claude -p --resume`) with the rules and the pass token
+    on stdin, and the step writes the post. The step that already reads the item names its
+    goals, so no second step has to read the item for them.
+41. **A commit message's own goals reach `prose check` in a file (Adam, 2026-10-20).** The
+    worker writes them to a goals file of their own in its outbox, as it writes the goals of the
+    change's docs and specs, and Igor passes it with `--message-goals-file`. `check`'s
+    `--goals-file` holds per-file `pattern: goal; goal` lines and cannot carry the message's
+    goals, so shared-skills [PR #27](https://github.com/adamstallard/shared-skills/pull/27)
+    adds the option, in the format it gives `prose sign`'s file (task 0.16). *Rejected:* a goal
+    fixed in Igor's code, such as "review the change; check it is safe to merge", which would
+    hold no item text but would not be the model's.
+42. **Igor runs a post's first call too (Adam, 2026-10-20)**, confirming decision 16 for
+    `prose sign`.
+43. **In #150's reply after a revision, the part a model writes, saying what changed, is
+    signed (Adam, 2026-10-20).** The list of answered change requests that the code assembles
+    around that part is not signed (decision 8). A worker run precedes that reply, so the worker writes the
+    reply's goals to a file in its outbox, beside the description's. #150 is to specify the
+    reply that way (*Reported to other changes*).
+44. **Citation commits carry no skill trailers** (Adam, 2026-10-20, reviewing #216 and
+    shared-skills #25). A citation commit records, on the lore repository's `questions` branch,
+    that a lore entry answered a question. It is a machine record with no trailer
+    (shared-skills #25's decisions 90 and 110). So it is exempt, as a merge is, from decision
+    5's rule that every commit Igor pushes carries its skills' trailers.
 
 **Reported to other changes**, not edited here:
 
@@ -270,8 +300,6 @@ whole change before any hunt. The *state branch* is where Igor records each item
 - **`lore-from-corrections`** and **#202** (`discussion-scribe`) are each to cite this change
   for the commits they push (decision 36). Their commits have no issue, so decision 6's subject
   rule, the issue title, needs a form for them (*Still open*).
-- **#189** (`loop-verifies-commands`) is to make the second worker run a second commit
-  (decision 39).
 - **#174** (`pinned-skills`) is to fall back to the person's installed skills under `igor run`
   (decision 29). Its decision 14, and #175's decision 15, keep the session mark that
   `prose start` writes in the worker's home; with decision 25 nothing writes it.
@@ -285,17 +313,20 @@ whole change before any hunt. The *state branch* is where Igor records each item
   triages' calls, which this change adds, fit none of the three; both are to add labels.
 - **#190** still refuses an unknown skill name at load, which decision 29 narrows to a command
   that runs a model step.
-- **#150** runs bug-hunter only at gate two, as a pipeline step, and has no rule on whether its
-  reply after a revision is model-written and signed (*For Adam* 5).
+- **#150**'s reply after a revision is to carry what changed, where a model writes it, as signed
+  text, and the code-assembled list of answered requests unsigned (decision 43). Where the signed text sits in the reply, so that
+  `prose verify-post` runs on exactly that span, is #150's to say, as decision 9 says it for a
+  pull request body.
 
 **Still open:**
 
 - **Before building**, six tasks:
   - Task 0.15: whether bug-hunter's regression tests run under the commands a role already
     grants.
-  - Task 0.16: prose's `sign` taking reader goals from a file, in shared-skills
-    [PR #27](https://github.com/adamstallard/shared-skills/pull/27). The first calls of
-    decision 16 wait on it.
+  - Task 0.16: prose's `sign` and `check` taking reader goals from a file, in shared-skills
+    [PR #27](https://github.com/adamstallard/shared-skills/pull/27): `sign` with
+    `--goals-file`, and `check` with `--message-goals-file` for the message's goals (decision
+    41). The first calls of decision 16 wait on it.
   - Task 0.17: whether a binary file and a clean-filtered file give equal trees.
   - Task 0.18: whether bug-hunter's triage runs as its own step on a given diff and model, and
     reports skip or hunt in a form Igor can read.
@@ -304,6 +335,10 @@ whole change before any hunt. The *state branch* is where Igor records each item
     than the token, and whether goals given by path pattern cover a doc first changed after the
     first call. A token prose refuses always gets a new first call.
   - Task 0.20: whether sonnet's triage gives the same answer on the same diff from run to run.
+  - Task 0.21: whether `claude -p --resume` continues the session of decision 40's first turn
+    when #174 resets the step's home before each `claude -p` (*For Adam* 2).
+- Whether the question log files and miss files that #216's Igor pushes to the lore
+  repository are model-written text that prose must sign (*For Adam* 3).
 - Every other measurement has run; `design.md`, *Measurements*, records what each showed.
 - **Findings of the 2026-10-19 consistency read left for the next pass.** Each is the
   author's to fix unless it names another change, and none is built:
@@ -351,33 +386,25 @@ whole change before any hunt. The *state branch* is where Igor records each item
     rationale sentences sit in `task-execution`'s requirement text: that every trailer binds
     the last staging, and that prose keeps its token store in the git directory.
 
-**For Adam,** each a question this change cannot settle alone, with a recommendation:
+**For Adam,** each a question this change cannot settle alone, with a recommendation. The first
+was asked on 2026-10-20 and has no answer yet; the second and third are new:
 
-1. **Which step writes the reader goals for a post no worker run precedes**, such as a reply to
-   a mention (decision 32). Prose's first call runs before the step writes the post, so the
-   goals must exist before that step has written anything. *Recommendation:* the step that
-   writes the post writes its goals file in a first turn; Igor runs the first call; and the same
-   session continues with the rules and the token (`claude -p --resume`), so no extra step
-   reads the item.
-2. **The commit message's own goals.** `prose check`'s `--goals-file` holds per-file goals only,
-   so the message's goals still need `--goals`, on the command line, and shared-skills PR #27
-   does not change that. *Recommendation:* a second shared-skills change that lets `check` take
-   the message's goals from a file too, so that the model decides them as it decides the rest
-   (decision 32). The alternative, a goal fixed in Igor's code such as "review the change;
-   check it is safe to merge", holds no item text and could go on a command line, but would
-   not be the model's.
-3. **Decision 16 applied to posts.** Decision 16 answers measurement 0.9, which was of a
-   commit's first call; this change applies it to a post's `prose sign` too. A worker running a
-   post's first call would need a token store it can write, and could then forge a token.
-   *Recommendation:* confirm.
-4. **A second worker run after a conflict resolution.** `loop-verifies-commands` (#189) joins
-   such a run's edits to the merge commit, which carries no trailers (decision 30), so its
-   model-written fix would be published unsigned. *Recommendation:* decision 39 applies here
+1. **A second worker run after a conflict resolution.** After Igor merges the base in and
+   resolves a conflict, `loop-verifies-commands` (#189) may run the worker again. A merge
+   commit carries no trailers (decision 30), so if that run's fix were folded into the merge
+   commit, it would be published unsigned. *Recommendation:* decision 39 applies here
    too: the second run's edits are a second commit on top of the merge, with its own trailers.
-5. **#150's reply after a revision**, which names each change request answered and says what
-   changed. #150's design files it with the handoff and the claim message, which go unsigned,
-   but "says what changed" reads as model-written. *Recommendation:* where a model writes what
-   changed, the reply is signed; the code-assembled list of answered requests around it is not.
+   #189 now proposes the same, as its decision 22.
+2. **The resumed session of decision 40 under #174.** #174 (`pinned-skills`) replaces the
+   step's `~/.claude` with a fresh template before every `claude -p`, which deletes the first
+   turn's session log, so `--resume` would find no session. *Recommendation:* #174 keeps the
+   home between the two calls of one step, resetting it only before a new step. If that
+   cannot hold, the fallback is a second step given the first turn's goals file, with no
+   resume.
+3. **#216's question log files and miss files.** The inquisitor skill writes them (shared-skills
+   #25), a model step, and #216's Igor pushes them to the lore repository's `questions` branch. *Recommendation:* exempt them as decision 44 exempts citation commits, since
+   they are records a later Igor reads, not text a person reviews. The alternative is to put
+   each through the prose pass and sign it with a `Prose:` trailer.
 
 ## Why
 
@@ -434,11 +461,13 @@ governs them. Neither change is edited here: the rule lives in one place, and th
 - **Six or seven more `claude -p` steps per commit Igor pushes**: bug-hunter, the prose pass,
   the cold read and the prose pass's answers to it, bug-hunter's triage of the prose pass's diff
   and of the answers' diff, and one more bug-hunter iteration where that triage does not skip. A
-  post adds two: the cold read and the answers. A role pays them only for the skills it lists;
+  post adds two: the cold read and the answers; a post no worker run precedes adds a third, the
+  turn that writes its goals (decision 40). A role pays them only for the skills it lists;
   task 4.1 measures the cost per item.
 - **Depends on the prose and bug-hunter skills** from the shared-skills repository, which is
   not public yet. Bug-hunter's caller-commits mode is on its `main` (task 0.2). Prose's `sign`
-  needs a file form for its reader goals before decision 16 is built (task 0.16). Igor loads
+  and `check` need file forms for their reader goals, which shared-skills PR #27 adds, before
+  decision 16 is built (task 0.16). Igor loads
   both as the `igor` plugin, with `--plugin-dir`, as `pinned-skills` (#174) builds it, or under
   `igor run` without the server's install, from the person's own (decision 29).
 - **Builds on `carry-what-a-tree-holds` (#137).** Until it is built, #175's checks stop a

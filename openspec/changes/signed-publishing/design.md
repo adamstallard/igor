@@ -165,11 +165,18 @@ first commit's trailers still verify against the first commit.
 The model decides each item's reader goals (Adam, 2026-10-19; proposal, decision 32). For a
 commit and its pull request description, the worker writes them to goals files in its outbox.
 A commit's docs and specs get theirs in `prose check`'s `pattern: goal; goal` form. The
-description gets goals separated by `;`, the form shared-skills PR #27 gives `prose sign`. Igor
-reads each file as #175 reads every file the worker wrote, and passes a copy to prose with
-`--goals-file`, so none of these goals reaches a command line. Two questions remain, the
-proposal's *For Adam* 1 and 2: which step writes the goals for a post that no worker run
-precedes, and how a commit message's own goals reach `prose check`.
+description and the commit message each get a file of goals separated by `;`, the form
+shared-skills PR #27 gives `prose sign`'s `--goals-file` and `prose check`'s
+`--message-goals-file`. So does the reply Igor posts under the two-gate workflow (#150) after a
+revision, a push answering a reviewer's change request. Igor reads each file as #175 reads every
+file the worker wrote, never through a link, and passes a copy to prose with the matching
+option. None of these goals reaches a command line, which every user on the server can read
+(proposal, decisions 15 and 41).
+
+A post that no worker run precedes, such as a reply to a mention, gets its goals from the step
+that writes it: that step writes its goals file in a first turn, Igor runs the first call with
+it, and resumes the same session (`claude -p --resume`) with the rules and the token (proposal,
+decision 40).
 
 ### A lost claim stops the signing steps
 
@@ -183,7 +190,7 @@ already published, since Igor never rebases, is still open (proposal, *Still ope
 ### A post is signed the same way
 
 Igor runs `prose sign`'s first call and gives the rules and the token to the step that writes
-the post. The step hands back the text. Igor runs the second call, `prose sign --pass <token>`,
+the post (proposal, decision 42). The step hands back the text. Igor runs the second call, `prose sign --pass <token>`,
 with the text on stdin and with the cold read above; it prints the text with its `prose ✓`
 footer. Igor runs `prose verify-post` on that text and publishes it exactly.
 
@@ -363,8 +370,9 @@ design.
   `prose start` and `prose sign` take reader goals only from `--goals`, and `prose check`'s
   `--goals-file` holds per-file goals only, so the message's own goals also need `--goals`.
   Under decision 16 Igor runs those calls, so the goals would sit on Igor's command line.
-  `prose sign` gains a file form in shared-skills PR #27 (task 0.16); the commit message's
-  goals in `prose check` are the proposal's *For Adam* 2.
+  Shared-skills PR #27 adds a file form for each: `--goals-file` for `prose sign`, and
+  `--message-goals-file` for the commit message's own goals in `prose check` (proposal, decision
+  41). Task 0.16 waits on that pull request.
 - **0.14, caller-commits mode as the worker user.** With nothing staged, `caller-result.sh`
   minted HEAD's tree, not the change; after the worker wrote to the copy of the index that #175
   keeps in the worker's outbox (a directory the worker shares with Igor, for `git rm` and `git
