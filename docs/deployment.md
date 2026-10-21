@@ -86,7 +86,7 @@ no server: minting a token and calling the API are outbound, and the Igor polls.
 
    | Field | Value |
    |---|---|
-   | GitHub App name | Any free name, such as `igor-<role>`. Commits and claims show as `<name>[bot]`. |
+   | GitHub App name | A free name starting with `igor-`, such as `igor-<role>`. GitHub makes the App's slug from it, and commits and claims show as `<slug>[bot]`. An Igor whose App's slug does not start with `igor-` refuses to start, naming the slug it read; give it an App whose slug does. The inquisitor skill, which checks who answered a question, never counts an App with that prefix as posting a person's answers, so the prefix keeps an Igor's own comments from passing as a person's. |
    | Homepage URL | Any; the lore repository's URL is fine. |
    | Webhook | Untick **Active**. Igor polls; nothing receives events. |
    | Repository permissions | **Contents**, **Issues** and **Pull requests**: Read and write. **Workflows**: Read and write only if the role changes files under `.github/workflows/`. |

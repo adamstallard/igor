@@ -4,7 +4,7 @@
 
 Execution SHALL be confined to the artifact types the role's effective `allow` list permits,
 which by default are reversible: draft pull requests and comments. The loop MUST NOT act on a
-worker output outside that list, regardless of what the worker produced.
+worker output outside that list, regardless of what the worker produced, except the two below.
 
 Two worker outputs are exempt from the list: the citations a worker reports, and the
 questions-branch files it reports. The Igor pushes them to the lore repository's `questions`
@@ -41,6 +41,82 @@ publishes the questions-branch files its worker reports* allow.
   questions-branch files its worker reports* allows the Igor to push
 - **THEN** the Igor pushes that file all the same
 
+### Requirement: The worker is given an explicit environment holding no credential but its seat's
+
+Execution SHALL construct the worker's environment rather than inheriting the Igor's, and that
+environment SHALL carry no credential other than the token of the seat the work is charged to.
+The tokens of other seats, and the credential the Igor acts on its surfaces with, MUST NOT be
+present. Where the chosen seat names a token source that cannot be read — an unset variable, an
+unreadable or empty file, a command that fails, prints nothing, or never returns — execution
+SHALL fail naming it rather than spawning a worker that authenticates as something else.
+
+For an Igor acting as a GitHub App, the surface credential is anything that yields an App
+token: the token itself, the `GITHUB_APP_*` variables, and a git credential helper or
+`GIT_CONFIG_*` entry that mints one. None of them SHALL reach the worker, and the working tree
+SHALL hold none of them.
+
+The worker needs none of them. It edits files in a disposable tree; claiming, commenting,
+branching and publishing all happen in the loop afterwards, with the loop's own credentials. An
+inherited environment is therefore a set of credentials nothing in the worker has a use for,
+one shell command away from a worker an item's text has steered.
+
+Besides the `IGOR_RUN` marker below, only what running a toolchain requires is passed: the
+search path, a home directory, and the network settings the host is configured with. None of
+those is a credential, and each fails as something else entirely when it is missing.
+
+Execution SHALL also set `IGOR_RUN` in the worker's environment, to `worker`, and in the
+environment of an inquisitor run the Igor starts itself with no worker, to `igor`. The
+variable tells shared-skills #25's inquisitor script that it runs during an Igor's run, and its
+value says whose run: a worker's or the Igor's own.
+`IGOR_RUN` SHALL carry no secret: its value is one of those two words and nothing else.
+
+#### Scenario: The surface credential is absent
+
+- **WHEN** a worker is spawned while the Igor holds a code-host token
+- **THEN** that token is not in the worker's environment
+
+#### Scenario: Nothing that yields an App token reaches the worker
+
+- **WHEN** a worker is spawned for an Igor acting as a GitHub App
+- **THEN** its environment holds no App token, no `GITHUB_APP_*` variable and no `GIT_CONFIG_*`
+  entry
+- **AND** its working tree's git config names no credential helper
+
+#### Scenario: Only the chosen seat's token is present
+
+- **WHEN** several seats are declared and one is chosen for an item
+- **THEN** that seat's token is in the worker's environment
+- **AND** no other seat's token is
+
+#### Scenario: A seat whose token variable is unset fails loudly
+
+- **WHEN** the chosen seat names a token variable that is not set
+- **THEN** execution fails naming the variable
+- **AND** no worker is spawned
+
+#### Scenario: A seat whose file or command yields no token fails loudly
+
+- **WHEN** the chosen seat names a file that cannot be read or is empty, or a command that
+  fails, prints nothing, or is killed at its timeout
+- **THEN** execution fails naming what was tried and why
+- **AND** no worker is spawned
+
+#### Scenario: A toolchain still runs
+
+- **WHEN** a worker runs a build or a test in its working tree
+- **THEN** the search path, home directory and network settings it needs are present
+
+#### Scenario: A worker's environment marks it as in an Igor's run
+
+- **WHEN** a worker is spawned
+- **THEN** its environment holds `IGOR_RUN=worker`
+- **AND** that variable holds no credential or other secret
+
+#### Scenario: The Igor's own inquisitor run is marked as in an Igor's run
+
+- **WHEN** the Igor runs the inquisitor skill itself, with no worker
+- **THEN** that run's environment holds `IGOR_RUN=igor`
+
 ### Requirement: Transcripts and outcomes are captured to the state branch
 
 Execution SHALL record the worker transcript, except as below, the reported cost, and the
@@ -67,11 +143,14 @@ The ledger row records each shell command the worker's sandbox denied. For a run
 question with a category, the row SHALL keep each denied command only as its *name*, without
 its arguments: its first words, up to three, each starting with a lowercase letter and holding
 only lowercase letters, digits and hyphens, ending before the first word that does not. A row
-for any other run keeps the denied command whole, as today.
+for any other run keeps the denied command as it does today.
 
-For a run that met a question with a category, the row's `reason` SHALL keep only a fixed
-word igor sets for the kind of reason, such as `error` for a thrown error, and never an error
-message's text or other text the run produced. The row's changed file
+For a run that met a question with a category, the row's `reason` SHALL keep only fixed words
+igor sets for the kind of reason, such as `error` for a thrown error, and never an error
+message's text or other text the run produced. For a worker killed for a limit, those words
+SHALL name the kind of hang and the limit's duration, as *A killed worker's failure names the
+limit it breached* requires, such as `silent after 10m` or `time ceiling 60m`: words from a
+fixed vocabulary, and numbers, never free text. The row's changed file
 paths, the actions the role refused and the role settings that would have permitted them stay
 as for any other run.
 
@@ -83,10 +162,14 @@ or output, and never more than #188 keeps for a run that met none: #188 chooses 
 log keeps from the visibility of the store and of the worked repository, and keeps no command
 for a public store and a private repository.
 
-In this requirement a *run* is one execution of an item, with every worker run it starts. An
-execution counts as having met a question with a category when any of its worker runs
-reported the flag below, or ended before its completed report, as the paragraph below starting "A worker run that ends before" says; the rules above then
-apply to the whole execution, including any summary of an earlier worker run.
+In this requirement a *run* is one execution of an item, with every worker run it starts and
+every model step igor runs after them in that execution, such as the step of the open pull
+request #153 that writes the pull request body. Each such model step counts as a worker run
+here, and every rule below for a worker run applies to it. An execution counts as having met a
+question with a category when any of its worker runs reported the flag below, or ended before
+its completed report, as the paragraph below starting "A worker run that ends before" says;
+the rules above then apply to the whole execution, including any summary of an earlier worker
+run.
 
 During a run, the worker SHALL report a bare flag that the run met such a question, with no
 category, question or answer. When the Igor runs the inquisitor skill itself and that skill gives a
@@ -185,6 +268,14 @@ cannot tell a whole report from a cut one, the report SHALL count as not complet
 - **THEN** the run's ledger row's `reason` holds only `error`, and none of the message
 - **AND** the row still lists the paths the worker changed
 
+#### Scenario: A flagged run killed for a limit keeps the limit's kind and duration
+
+- **WHEN** a worker is killed after producing nothing for 10 minutes, and its run therefore
+  counts as having met a question with a category
+- **THEN** the run's ledger row's `reason` names only the kind of hang and the duration, such
+  as `silent after 10m`
+- **AND** it holds no other text the run produced
+
 #### Scenario: Any other run's ledger row keeps a denied command whole
 
 - **WHEN** the worker's sandbox denies `gh issue comment 12 --body "…"` in a run that met no
@@ -206,6 +297,14 @@ cannot tell a whole report from a cut one, the report SHALL count as not complet
 - **THEN** no transcript of either worker run is written to the state branch
 - **AND** a pull request the execution publishes holds no summary or excerpt of either
   worker run's result
+
+#### Scenario: A model step after the worker that meets a categorized question flags the execution
+
+- **WHEN** a worker run completes its report without the flag
+- **AND** a later model step of the same execution, such as the step that writes the pull
+  request body, reports the flag
+- **THEN** the execution counts as having met a question with a category
+- **AND** no transcript of the worker run or of that step is written to the state branch
 
 #### Scenario: The worker's report of a categorized question names nothing
 

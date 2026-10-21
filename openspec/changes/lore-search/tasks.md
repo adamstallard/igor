@@ -7,6 +7,13 @@
       no search. The worker still never has to ask: lore is injected before it runs.
 - [ ] 1.3 A test that rendered lore holds every active, in-scope entry when nothing asked for it
       (*Injection does not wait on a search*)
+- [ ] 1.4 Firing drops a `project:` entry when the repository of the item the run works is more
+      visible than the role's source repository the scope names, taking the more private of
+      two sources that share the name, and counting an unreadable visibility of the scope's
+      repository as private and of the item's as public. It drops the entry before the firing
+      budget is applied. One function in `src/firing.ts` decides it, and 2.10's search calls
+      the same function. Tests for *A project entry about a more private repository does not
+      fire* and *A project scope names the more private of two sources with its name*
 
 ## 2. The search igor runs for its workers
 
@@ -48,8 +55,8 @@
       worker's sandbox allows it beside the role's `commands`, whatever the role's monotonic
       restrictions. Under `igor serve`, at the start of each run the Igor fetches the lore
       repository's `questions` branch into a ref of its own, writing nothing to the checkout's
-      working tree, and the run's searches read that ref; `igor run` fetches nothing and reads
-      the ref as last fetched. The command's channel is reachable by that run's
+      working tree, and the run's searches read that ref; under `igor run` no search fetches,
+      and the run reads the ref as last fetched. The command's channel is reachable by that run's
       worker alone, and its results are delimited as data. The Igor runs
       the search over its own lore checkout's entries and the `questions` branch's files, in
       the store as the run read it, through 2.1 and 2.7, and returns the results to the worker.
@@ -75,15 +82,24 @@
       relay App is labelled as an answer* and *A question file keyed to another repository is
       shown as input*
 
-- [ ] 2.10 `igor lore-search` matches plain text: the query's terms against an entry's claim,
-      conditions and body and against a question or miss file's question text, with no
-      embedding or model. It ranks results by how many terms each matches, returns at most 20
-      after every filter, and says when more matched. It returns a `project:` entry only when
-      the item's repository is no more visible than the role's source repository the scope
-      names, counting an unreadable visibility of that repository as private and an
-      unreadable visibility of the item's repository as public. Tests for *The search matches terms and ranks by
-      how many match*, *The search returns at most twenty results and says so* and *A project
+- [ ] 2.10 `igor lore-search` matches, ranks and caps its results by shared-skills #25's
+      filter 1 rule (*Filter 1 searches every place an answer is recorded*): plain text, no
+      embedding or model, ranked by terms matched, at most 20 after every filter, saying when
+      more matched. It drops a `project:` entry that 1.4's
+      function keeps from firing. Tests for *The search matches terms and ranks by
+      how many match*, *The search returns at most twenty results and says so*, *A filtered result takes no place among the twenty* and *A project
       entry about a more private repository is not returned*
+
+- [ ] 2.11 Execution sets `IGOR_RUN=worker` in the environment it builds for each worker, and
+      `IGOR_RUN=igor` for an inquisitor run the Igor starts itself (once 3.6 can be built).
+      The value is only that word. Tests for *A worker's environment marks it as in an Igor's
+      run* and, with 3.6, *The Igor's own inquisitor run is marked as in an Igor's run*
+
+- [ ] 2.12 At startup, before discovery, the Igor refuses to start when its App's slug, read
+      as *An Igor knows its own bot account* reads it, does not start with `igor-`, naming the
+      slug. Tests for *An App whose slug lacks the igor- prefix refuses the start* and *An App
+      whose slug starts with igor- passes the check*, and the existing tests of *An Igor knows
+      its own bot account* move to an `igor-` slug
 
 ## 3. Citations made during a run
 
@@ -101,9 +117,13 @@
 - [ ] 3.2 The Igor mints an opaque run id for each run and records it in the run's record on
       the state branch. A test for *A citation's run can be found from its run id*
 - [ ] 3.3 The Igor creates the `questions` branch as an orphan where it is missing, and retries
-      a push that was rejected because the branch moved, at most three times. Tests for *A
-      missing questions branch is created as an orphan*, *A push that loses a race is retried*
-      and *A push that keeps losing the race is counted as failed*
+      a push that was rejected because the branch moved, at most three times. Under `igor run`
+      it fetches the `questions` branch only when it has a citation or questions-branch file to
+      push, fetches nothing else from the lore repository, and applies nothing it fetches to
+      the lore checkout. Tests for *A missing questions branch is created as an orphan*, *A
+      push that loses a race is retried*, *A push that keeps losing the race is counted as
+      failed*, *Under igor run, the Igor fetches the questions branch only to push* and *Under
+      igor run, a run with nothing to push fetches nothing*
 - [ ] 3.4 The Igor refuses a citation of an id that names no `active` entry in the run's role's
       scope, and withholds one whose item's repository is less visible than the lore
       repository, counting an unreadable visibility as the rule says. Tests for *A citation of
@@ -141,8 +161,12 @@
       ```
 
       Its
-      ledger row keeps each denied command by name only, and its `reason` only a fixed word for
-      the kind of reason, such as `error`. Once #188's action log is built, a
+      ledger row keeps each denied command by name only, and its `reason` only fixed words for
+      the kind of reason, such as `error`, or for a worker killed for a limit the hang's kind
+      and the limit's duration, such as `silent after 10m`. Each model step igor runs after the
+      worker in the same execution, such as #153's step that writes the pull request body,
+      reports the flag and a completed report as a worker run does, and counts as one. Once
+      #188's action log is built, a
       flagged run's log keeps names only. Tests for *Transcript persisted
       off the main line*, *A run that met a categorized question stores no transcript*, *A run that
       met a categorized question publishes no excerpt of its result*, *A refusal on such a
@@ -152,7 +176,9 @@
       the Igor cannot tell is whole counts as cut short*, *A refused run with no completed report counts as flagged*,
       *A worker run that ends without its completed report, for any reason, counts as
       flagged*, *A flagged run's ledger row keeps each denied command by name only*, *A flagged run's
-      ledger row keeps only the kind of its reason*, *Any
+      ledger row keeps only the kind of its reason*, *A flagged run killed for a limit keeps
+      the limit's kind and duration*, *A model step after the worker that meets a categorized
+      question flags the execution*, *Any
       other run's ledger row keeps a denied command whole*, *A flagged run's action log keeps
       names only* once #188 is built, *An execution counts as flagged
       when any of its worker runs does* and, once 3.6 can be built, *The Igor's own inquisitor run that met a
@@ -170,9 +196,12 @@
       copy of it, so #217 merges before this is built. The Igor refuses a worker's file that
       already holds `asked_from`, and sets each file's `asked_from` key to the item's
       repository. It sets an answered log file's `authority` itself by 2.9's checks, reading
-      the relay files as 2.9 does, whatever the worker wrote. When it posts a handback comment, it
-      records the questions it posted there, and the check that an answer's question is one
-      the Igor asked reads that record, never the comment. Tests
+      the relay files as 2.9 does, whatever the worker wrote, and for a relay App's comment
+      sets `answered_by` to the person whose relay file lists that App. When it posts a handback comment, it
+      records on `igor-state`, under the item, the hash of each question it posted there,
+      reduced and hashed as shared-skills #25 does, with the comment's id and time and no
+      question text. The check that an answer's question is one the Igor asked compares the
+      file's question's hash with that record, never with the comment. Tests
       for each of that requirement's scenarios but two: *A worker
       reports no questions-branch file for a question with a category*, which is the inquisitor
       skill's behaviour inside the worker, as in 3.1, and *The Igor's own inquisitor run pushes its questions-branch files under the same rules*,
