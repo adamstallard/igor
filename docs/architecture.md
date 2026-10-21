@@ -323,10 +323,23 @@ from and returns the results. igor runs the search because the worker cannot: it
 run only the commands its role lists, which do not include the inquisitor skill's script, and
 the open pull request #175 designs a worker that cannot read the lore checkout under `igor
 serve`. The command is offered whatever the role's `commands` say, and it is read-only: it
-gives the worker no file access, command or credential it lacked.
+gives the worker no file access, command or credential it lacked. Under `igor run` the worker
+runs as the developer's own user and can read the whole lore checkout; that is accepted, since
+it is the developer's own machine, and `igor serve` is where the boundary holds.
+
+The search matches plain text, as the inquisitor skill's own search does: the query's terms
+against an entry's claim, conditions and body, and against a question file's question text.
+No embedding or model takes part. Results are ranked by how many terms each matches, and at
+most 20 come back, with a note when more matched. An Igor whose work is stopped by a question
+it cannot settle runs the inquisitor skill itself, with no worker (§3.4.1); that run searches
+through `igor lore-search` too, under the same rules.
 
 During an Igor's run, scope binds a search exactly as it binds firing: an entry whose scope
-does not cover the role is never returned (§4.2.2). `igor lore-search` also reads the lore
+does not cover the role is never returned (§4.2.2). An entry scoped to a project's repository
+is also returned only when the item's repository is no more visible than that repository, so
+a worker on a public item never finds an entry about a private one by searching. Firing has no
+such filter yet: it still injects such an entry when it is in the role's scope, and whether it
+should filter too is an open question in the change `lore-search`. `igor lore-search` also reads the lore
 repository's `questions` branch, as the inquisitor skill's own search does. That branch holds
 question files (the inquisitor calls them log files), each logging a question an agent asked
 or decided for itself, and miss files, each logging a question a person said should have been
@@ -354,7 +367,11 @@ last fetched.
 A question file holding an answer is labelled an answer only when it passes the authority
 checks the inquisitor skill's spec states, such as that the person who answered has write
 access to the lore repository. Those checks read GitHub, and the worker has no GitHub login,
-so the Igor runs them itself, as its App. One check is that the comment the file links to
+so the Igor runs them itself, as its App. They also read the relay files on the lore
+repository's default branch, one per person under `relays/`, which list the Apps that post
+that person's answers in comments starting `User says: `. The checks never count an Igor's App
+as a relay App, even where a relay file lists it, so text an Igor posted never proves a
+person's answer. One check is that the comment the file links to
 holds the answer. The Igor judges it in code, by the inquisitor spec's rule: once list markers,
 inline markup and extra whitespace are removed from both texts, the comment must contain the
 file's answer line. No model reads the comment. Whenever a check fails or
@@ -524,7 +541,8 @@ text in its item could end its run on purpose to get what it met saved.
 
 Such a run's ledger row keeps each command the worker's sandbox denied only by its name, such
 as `gh issue comment`, without its arguments: enough for the operator to decide what the role
-should allow. Open pull request #188 adds a log of each run's tool calls; for such a run, that
+should allow. Its `reason` keeps only a fixed word for the kind of reason, such as `error`,
+never an error message's text; its changed paths and refused actions stay. Open pull request #188 adds a log of each run's tool calls; for such a run, that
 log keeps only names and numbers: tool names, command names, exit codes, counts and timings.
 
 In these rules a run is a whole execution of an item, which can start more than one worker
@@ -550,10 +568,20 @@ a question never holds its answer. The answer can reach only a later run on the 
 once someone has replied to the handback, and it is then a comment on that item. The Igor
 therefore pushes only an unanswered question file, one recording the agent's own choice, a miss
 file, or a question file whose answer links to a comment on the run's item and whose question
-is one the Igor recorded posting in its handback. When it posts the handback, the Igor
+is one the Igor recorded posting in its handback. For that last kind, the Igor sets the
+file's `authority` key, which says whether the answer is a person's decision or only input,
+itself, by the same checks its search runs. It never keeps the worker's value, under either
+command: a worker under `igor serve`, barred from the lore checkout, cannot read the relay files
+and so cannot tell whose answer a relay App's comment is, and no worker's word is proof. The Igor refuses a file that already holds `asked_from`, a key only the Igor
+writes. The Igor cannot see a question's category, so a worker steered by its item could report a
+file about a personal or secret matter, and the Igor would push it for every role to find. That
+is a known limit: an honest worker never reports such a question, and the credential check
+below still refuses a file holding a credential. When it posts the handback, the Igor
 records the questions it asked, and it checks against that record, not the comment: anyone with
-write access could later edit the comment to hold a question the Igor never asked. Anything else claiming a
-person's answer could be forged, or pair a real answer with another question. It never pushes one at a path the branch already
+write access could later edit the comment to hold a question the Igor never asked. Any other
+file claiming a person's answer, such as one linking a comment elsewhere or answering a
+question not in that record, could be forged, or pair a real answer with another question, so
+the Igor refuses it. It never pushes one at a path the branch already
 holds, so an answered question file goes beside the unanswered one. The Igor pushes nothing to the `questions` branch from a run treated as having met a
 sensitive question, citations included. It refuses a file holding a credential. It finds one with
 the matcher that redacts every write to `igor-state` (#217). That matcher also matches the

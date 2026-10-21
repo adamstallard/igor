@@ -69,6 +69,12 @@ its arguments: its first words, up to three, each starting with a lowercase lett
 only lowercase letters, digits and hyphens, ending before the first word that does not. A row
 for any other run keeps the denied command whole, as today.
 
+For a run that met a question with a category, the row's `reason` SHALL keep only a fixed
+word igor sets for the kind of reason, such as `error` for a thrown error, and never an error
+message's text or other text the run produced. The row's changed file
+paths, the actions the role refused and the role settings that would have permitted them stay
+as for any other run.
+
 Where a run keeps a log of its model steps' tool calls beside its transcript, as the open
 change `keep-action-log` (#188) specifies, that log SHALL, for a run that met a question with a
 category, keep only names and numbers: each call's tool name, a shell command's name as above,
@@ -171,6 +177,13 @@ cannot tell a whole report from a cut one, the report SHALL count as not complet
 - **WHEN** the worker's sandbox denies `gh issue comment 12 --body "…"` in a run that met a
   question with a category
 - **THEN** the run's ledger row records the denied command as `gh issue comment`
+
+#### Scenario: A flagged run's ledger row keeps only the kind of its reason
+
+- **WHEN** a run that met a question with a category ends with a thrown error whose message
+  quotes the item's text
+- **THEN** the run's ledger row's `reason` holds only `error`, and none of the message
+- **AND** the row still lists the paths the worker changed
 
 #### Scenario: Any other run's ledger row keeps a denied command whole
 

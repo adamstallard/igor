@@ -356,8 +356,9 @@ The Igor SHALL push a questions-branch file only when:
   [*Credential redaction replaces every credential the Igor knows*](https://github.com/adamstallard/igor/blob/fix-213/openspec/changes/redact-state-branch/specs/task-execution/spec.md)
   defines it, would replace nothing in it;
 - it is an unanswered log file, a log file holding `authority: agent` and `answered_by: agent`,
-  a miss file, or a log file holding `authority: decision` or `input` that answers a question
-  the Igor asked, as below;
+  a miss file, or a log file holding `authority: decision` or `input`, whose `answered_by` is
+  not `agent`, that answers a question the Igor asked, as below;
+- it holds no `asked_from` key, which only the Igor writes;
 - no file is already at its path on the `questions` branch;
 - the lore repository is no more visible than the repository of the item the run works, nor
   than the repository its `repository` key names. The visibility order, the rule for an
@@ -369,10 +370,7 @@ The Igor SHALL refuse any questions-branch file that does not meet every conditi
 a refused file writes nothing to the lore repository.
 
 Once a file passes the checks above, and before it pushes the file, the Igor SHALL set the
-file's `asked_from` key to the repository of the item the run works, as `owner/repo`. The format
-check reads the file as the worker wrote it, and #25's format has no `asked_from` key, so a
-worker's file that holds one is refused. If #25 adds the key, the Igor still refuses a worker's
-file that holds it, since only the Igor may write it.
+file's `asked_from` key to the repository of the item the run works, as `owner/repo`.
 
 A *handback comment* is the Igor's handoff comment on the item (*graceful-handoff*) when it
 asks a question the run could not settle. When the Igor posts one, it SHALL record the
@@ -382,7 +380,18 @@ question the Igor asked* when its `answer_link` is a comment on the item the run
 text under its `## Question` matches a question that record holds for a handback comment the
 Igor posted on the item before the answering comment. Two questions match when they are equal once
 each is reduced as shared-skills #25 reduces a question for its hash. A file's `repository` key may name
-any repository, whether or not the run's role works it. A log file holding an answer is pushed
+any repository, whether or not the run's role works it.
+
+The Igor SHALL NOT trust the `authority` a worker's log file holds. Before it pushes a log file holding `authority: decision` or `input`, the Igor SHALL set its
+`authority` itself, by the checks of #25's *Only an answer with authority stops a question*
+that prove a questions-branch `decision` file's writer through its `answer_link` and confirm
+that its `answered_by` has write access to what the question concerns. It sets `decision` when
+every one of those checks passes, and `input` when one fails or cannot be run. Which comments count as
+a person's relayed answer is #25's rule (its decision 216), and this requirement does not
+restate it. For those checks the Igor SHALL read #25's relay files from the lore repository's
+default branch as its checkout last fetched it, never from the checkout's working tree, and
+SHALL make each GitHub read as the installation of its App that covers the repository read, as
+*An Igor runs its worker's lore searches* has its search do. A log file holding an answer is pushed
 as a new file, beside the unanswered log file of the same question, which stays as it is. The Igor SHALL create the `questions` branch where it is missing, commit each file with the
 message #25 sets for a commit to that branch and with no trailer, and retry a push that lost a
 race, as *An Igor publishes the citations its worker reports* does for a citation. The run's
@@ -491,6 +500,35 @@ that requirement sets. These counts SHALL NOT repeat any text the worker wrote.
 - **AND** the Igor pushes the file
 - **THEN** the pushed file's `asked_from` names A
 
+#### Scenario: A worker's file already holding asked_from is refused
+
+- **WHEN** a worker reports a questions-branch file that holds an `asked_from` key
+- **THEN** the Igor pushes nothing for it
+- **AND** the run's record counts one refused file
+
+#### Scenario: The Igor sets decision for an answer a person's relay App posted
+
+- **WHEN** a worker reports a log file holding `authority: input` and `answered_by: alice`, for
+  a question the Igor asked, whose `answer_link` is a comment on the item starting
+  `User says: ` that holds the file's answer
+- **AND** the comment was posted by the App `alice-relay`, which #25's rule counts as
+  `alice`'s GitHub relay App from her relay file on the Igor's checkout of the lore
+  repository's default branch
+- **AND** the question concerns the organization the lore repository serves, and `alice` has
+  write access to the lore repository, which #25 counts as write access to that organization
+- **AND** GitHub reports which App wrote the comment, as #25's task 0.21 checks
+- **AND** the file passes the other rules
+- **THEN** the Igor pushes the file holding `authority: decision`
+
+#### Scenario: The Igor sets input for an answer an Igor's App posted
+
+- **WHEN** a worker reports a log file holding `authority: decision`, for a question the Igor
+  asked, whose `answer_link` is a comment on the item starting `User says: ` that holds the
+  file's answer
+- **AND** the comment was posted by an Igor's App, whatever any relay file lists
+- **AND** the file passes the other rules
+- **THEN** the Igor pushes the file holding `authority: input`
+
 #### Scenario: A worker's file never replaces one on the branch
 
 - **WHEN** a worker reports a questions-branch file at a path the `questions` branch already
@@ -567,7 +605,24 @@ names a repository as `owner/repo`; any other value counts as a repository whose
 cannot read. Here an item's repository whose visibility the Igor cannot read
 counts as public, and a file's repository whose visibility it cannot read counts as private,
 so either counts against returning the file. Visibility alone decides this: the Igor does not compare
-who can read the two repositories.
+who can read the two repositories. The same rule binds lore entries: the search SHALL return an
+entry whose scope is `project:` naming a repository only when the repository of the item the
+run works is no more visible than the repository the scope names. That repository is the
+source repository of the run's role whose name the scope names, as firing's scope rule matches
+it; where the scope names more than one, it counts as the most private of them, and one whose
+visibility the Igor cannot read counts as private.
+
+The search SHALL match plain text, as #25's filter 1 does: the terms of the text on its
+standard input against an entry's claim, conditions and body, and against a question or miss
+file's question text. No embedding and no model SHALL take part. It SHALL rank results by how
+many of the terms each matches, most first, return at most 20, and say when more than 20
+matched. Every rule above that keeps a result out of the results applies before the ranking
+and the cap.
+
+When the Igor runs the inquisitor skill itself, with no worker, that run's filter 1 SHALL
+search through `igor lore-search` too, under every rule of this requirement, and never through
+another search of #25's script. Such a run reads the `questions` branch as the run fetched it,
+once, as a worker's search does.
 
 The Igor SHALL itself run the checks of shared-skills #25's requirement
 [*Only an answer with authority stops a question*](https://github.com/adamstallard/shared-skills/blob/spec/inquisitor/openspec/changes/inquisitor/specs/inquisitor/spec.md)
@@ -575,9 +630,11 @@ on each question file it returns that holds an answer, and label the file by the
 reaches the worker unbidden* sets. #25 states the checks; this requirement does not restate
 them. One is whether the comment a file's `answer_link` points to holds the answer, which #25
 defines as a containment after both texts are normalized; the Igor applies that rule in code,
-with no model call. A *relay* is an App that posts a person's
-answer for them, in a comment starting `User says: `. An Igor's App is never a person's relay:
-a comment it posts, even one starting `User says: `, proves no person's answer. Each read those checks make from GitHub SHALL authenticate as the installation of the
+with no model call. Which comments count as a person's relayed answer is #25's rule (its
+decision 216). For those checks the Igor
+SHALL read #25's relay files from the lore repository's default branch as its checkout last
+fetched it, never from the checkout's working tree, and the worker SHALL read no relay file
+for them. Each read those checks make from GitHub SHALL authenticate as the installation of the
 Igor's App that covers the repository that read is from (`surface-adapter`'s *On GitHub,
 every call an Igor makes acts as its App*); the worker makes none of them. A check cannot be run when, for
 example, GitHub cannot be reached, no installation of the Igor's App covers the repository the
@@ -650,12 +707,54 @@ inheritance cannot remove it (`role-config`'s *Merge semantics differ by field k
   Igor's App
 - **THEN** the results show the file as input, labelled as unconfirmed, never as an answer
 
+#### Scenario: An answer from a person's listed relay App is labelled as an answer
+
+- **WHEN** a worker runs `igor lore-search`
+- **AND** a question file holding `authority: decision` and `answered_by: alice` matches the text
+  and passes the visibility rule
+- **AND** the comment its `answer_link` points to starts with `User says: ` and was posted by
+  the App `alice-relay`, which #25's rule counts as `alice`'s GitHub relay App from her relay
+  file on the Igor's checkout of the lore repository's default branch
+- **AND** GitHub reports which App wrote the comment, as #25's task 0.21 checks
+- **AND** every other check of #25's *Only an answer with authority stops a question* passes
+- **THEN** the results show the file labelled as an answer
+- **AND** the Igor, not the worker, read the relay file
+
 #### Scenario: A question file keyed to another repository is shown as input
 
 - **WHEN** a worker on an item in repository A runs `igor lore-search`
 - **AND** a question file holding `authority: decision`, whose `repository` key names
   repository B, matches the text and passes the visibility rule
 - **THEN** the results show the file as input, labelled as unconfirmed, whatever its proofs
+
+#### Scenario: A project entry about a more private repository is not returned
+
+- **WHEN** a worker on an item in public repository Y runs `igor lore-search`
+- **AND** an entry scoped `project:` naming private repository X, a repository the run's role
+  works, matches the text
+- **THEN** the results neither include that entry nor count or mention it
+
+#### Scenario: The search matches terms and ranks by how many match
+
+- **WHEN** a worker runs `igor lore-search` with the text "retry backoff limit"
+- **AND** one in-scope entry's body holds all three terms and another's claim holds one
+- **THEN** both are returned, the first ranked above the second
+- **AND** no model or embedding took part
+
+#### Scenario: The search returns at most twenty results and says so
+
+- **WHEN** a worker runs `igor lore-search` and 25 in-scope results match the text
+- **THEN** the results hold the 20 that match the most terms
+- **AND** they say that more than 20 matched
+
+#### Scenario: The Igor's own inquisitor run searches through igor lore-search
+
+- **WHEN** the Igor, under `igor run`, runs the inquisitor skill itself, with no worker, on an
+  item in a public repository
+- **AND** a `questions`-branch file about a private repository, and an entry outside the role's
+  scope, match the question
+- **THEN** the run's filter 1 searches through `igor lore-search`, and neither result is shown
+- **AND** nothing is fetched for that search
 
 #### Scenario: The search command needs no role listing
 

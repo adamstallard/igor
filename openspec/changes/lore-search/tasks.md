@@ -64,14 +64,26 @@
       whose check fails or cannot be run, such as with GitHub unreachable or no installation
       covering the repository, is shown as input, labelled as unconfirmed. Whether a linked
       comment holds the answer is checked in code by #25's normalized containment, with no
-      model call. Until #25's branch states them, 2.9 builds two rules the spec states itself: an
-      Igor's App is never a person's relay, and, during a run, a file keyed to another
-      repository than the item's is input. Tests for *A question file that passes
+      model call. The checks read #25's relay files from the Igor's checkout of the lore
+      repository's default branch and apply #25's relay rule, under which an Igor's App is
+      never a person's relay. They also apply a separate rule: during a run, a file keyed to
+      another repository than the item's is input. Tests for *A question file that passes
       #25's authority checks is labelled as an answer*, *An authority check that cannot be run
       labels the file as input*, *A failing authority check labels the file as input*, *A
       linked comment is judged by #25's normalized containment, with no model*, *An answer
-      relayed by an Igor's App proves no person answered* and *A question file keyed to another
-      repository is shown as input*
+      relayed by an Igor's App proves no person answered*, *An answer from a person's listed
+      relay App is labelled as an answer* and *A question file keyed to another repository is
+      shown as input*
+
+- [ ] 2.10 `igor lore-search` matches plain text: the query's terms against an entry's claim,
+      conditions and body and against a question or miss file's question text, with no
+      embedding or model. It ranks results by how many terms each matches, returns at most 20
+      after every filter, and says when more matched. It returns a `project:` entry only when
+      the item's repository is no more visible than the role's source repository the scope
+      names, counting an unreadable visibility of that repository as private and an
+      unreadable visibility of the item's repository as public. Tests for *The search matches terms and ranks by
+      how many match*, *The search returns at most twenty results and says so* and *A project
+      entry about a more private repository is not returned*
 
 ## 3. Citations made during a run
 
@@ -107,7 +119,8 @@
       cannot be pushed is counted*
 - [ ] 3.6 Once #211 specifies how an Igor runs the inquisitor skill itself, with no worker, and
       where that run's transcript goes, the Igor pushes that run's citations by the same rules
-      as 3.1 to 3.5. Tests for *A citation from the Igor's own
+      as 3.1 to 3.5, and that run's filter 1 searches through `igor lore-search` (2.8). Tests
+      for *The Igor's own inquisitor run searches through igor lore-search*, *A citation from the Igor's own
       inquisitor run is pushed under the same rules* and *The Igor's own inquisitor run makes
       no citation for a question with a category*
 
@@ -128,7 +141,8 @@
       ```
 
       Its
-      ledger row keeps each denied command by name only. Once #188's action log is built, a
+      ledger row keeps each denied command by name only, and its `reason` only a fixed word for
+      the kind of reason, such as `error`. Once #188's action log is built, a
       flagged run's log keeps names only. Tests for *Transcript persisted
       off the main line*, *A run that met a categorized question stores no transcript*, *A run that
       met a categorized question publishes no excerpt of its result*, *A refusal on such a
@@ -137,7 +151,8 @@
       nothing*, *A refusal Igor could not parse says only that the provider refused*, *A report
       the Igor cannot tell is whole counts as cut short*, *A refused run with no completed report counts as flagged*,
       *A worker run that ends without its completed report, for any reason, counts as
-      flagged*, *A flagged run's ledger row keeps each denied command by name only*, *Any
+      flagged*, *A flagged run's ledger row keeps each denied command by name only*, *A flagged run's
+      ledger row keeps only the kind of its reason*, *Any
       other run's ledger row keeps a denied command whole*, *A flagged run's action log keeps
       names only* once #188 is built, *An execution counts as flagged
       when any of its worker runs does* and, once 3.6 can be built, *The Igor's own inquisitor run that met a
@@ -152,8 +167,10 @@
       on the `questions` branch, and the Igor pushes it under the rules of *An Igor publishes
       the questions-branch files its worker reports*, reusing 3.3's branch creation and retries
       and 3.5's counts. The credential check calls #217's credential redaction, never a
-      copy of it, so #217 merges before this is built. The Igor sets each file's
-      `asked_from` key to the item's repository. When it posts a handback comment, it
+      copy of it, so #217 merges before this is built. The Igor refuses a worker's file that
+      already holds `asked_from`, and sets each file's `asked_from` key to the item's
+      repository. It sets an answered log file's `authority` itself by 2.9's checks, reading
+      the relay files as 2.9 does, whatever the worker wrote. When it posts a handback comment, it
       records the questions it posted there, and the check that an answer's question is one
       the Igor asked reads that record, never the comment. Tests
       for each of that requirement's scenarios but two: *A worker
@@ -190,3 +207,8 @@
       report on a run that met no question, across roles. Each run without one counts as
       flagged under decision 38. If workers often omit it, file an issue: those runs lose
       their transcripts, pull request summaries and refusal replies.
+- [ ] 4.8 Once shared-skills #25's task 0.21 has run, whether GitHub reports which App wrote a
+      comment. 2.9 and 3.9 ship the relay-App path but leave it off, treating every
+      `User says: ` comment as input, until #25's task shows that GitHub reports the App; then a
+      code change turns it on. Until then, the tests of the relay-App scenarios run the path
+      against a GitHub stub that reports the App.
