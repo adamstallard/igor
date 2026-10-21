@@ -1,8 +1,13 @@
-Build after `condition-backoff` (#101), `read-seat-windows-from-the-stream` (#143), worker-user
-(#175), `pinned-skills` (#174, whose startup skills check and reset tasks 3.10 relies on) and
-`check-a-lore-repository` (#113, which adds `igor doctor`). Line numbers below are main's at the
-time of writing and will have moved under those five changes; the names are
-what to find. *Gate two* is the review of the implementation, after Adam approves this
+Build after six changes:
+- `condition-backoff` (#101);
+- `read-seat-windows-from-the-stream` (#143);
+- `worker-user` (#175);
+- `pinned-skills` (#174), whose startup skills check and reset tasks 3.10 relies on;
+- `check-a-lore-repository` (#113), which adds `igor doctor`;
+- `redact-state-branch` (#217), whose `rememberSecret` task 3.3a calls.
+
+Line numbers below are a rough guide: they are `main`'s from before those six changes, which
+move them. The names are what to find. *Gate two* is the review of the implementation, after Adam approves this
 specification. Where a task quotes text in a fenced block, that text is the deliverable: unless the
 task itself says who may reword it, it may be reworded only where a measurement in section 1
 contradicts it, and then `design.md` records the measurement.
@@ -91,13 +96,32 @@ contradicts it, and then `design.md` records the measurement.
       ```
 
 - [ ] 3.3 Add the `age-encryption` dependency. Decrypt each seat's `encryptedToken` with the
-      identity at `seatKey` on each lore read, at start and at each cycle start (#179's reread,
-      and #208's once built), and hold the plaintext in memory until the next lore read; `resolveToken` returns the held value and
+      identity at `seatKey` on each lore read, at start and at each cycle start (the reread
+      `concurrent-instances` (#179) adds, and `lore-pull` (#208)'s once built), and hold the plaintext in memory until the next lore read; `resolveToken` returns the held value and
       never decrypts. Nothing is decrypted when a worker or a probe starts (proposal, decision 37).
       The plaintext is `<id>:<token>`: split it at the first colon, and fail decryption where
       there is no colon or the id is not the file's own; the seat's token is the part after the
       colon (proposal, decision 40). Tests: *Ciphertext copied into another seat file is refused*
       and *A plaintext with no seat id is refused*
+- [ ] 3.3a Register each seat's token with credential redaction, so redaction matches it by
+      value: pass it to `rememberSecret` in `src/redact.ts`, which `redact-state-branch` (#217)
+      builds, at the lore read that reads it.
+      - For an `encrypted_token`, pass the token part after the colon, never the whole
+        `<id>:<token>` plaintext. An empty token part would register nothing, so it fails
+        decryption, as 3.3's other malformed plaintexts do.
+      - For a `token_env` seat, pass the value of its `IGOR_SEAT_<ID>` variable. Redaction's
+        rule for variables matches only names holding a word such as `TOKEN`, and this name
+        holds none.
+      - Both calls are wanted: the one at the lore read, and the one `resolveToken` already
+        makes, which 3.3's rewrite of `resolveToken` keeps. Text can quote a token before any
+        worker starts, and the lore read is earlier.
+
+      Credential redaction is a backstop on the state branch. The requirement *A decrypted seat
+      token never touches the server's disk* still forbids the token in any record, log or
+      message. A token stays registered after its seat is removed (3.7b), since `src/redact.ts`
+      has no way to forget one; whether it should is open, for Adam. Test: a seat token quoted
+      in an error message that the state branch records has the literal text `[redacted]` in
+      its place there.
 - [ ] 3.4 Decryption failures report the seat unreadable, worded so, after the existing `seat
       "<id>"` subject:
 
