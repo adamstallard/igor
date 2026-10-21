@@ -70,14 +70,15 @@
       reading GitHub as the installation of its App that covers each repository read. A file
       whose check fails or cannot be run, such as with GitHub unreachable or no installation
       covering the repository, is shown as input, labelled as unconfirmed. Whether a linked
-      comment holds the answer is checked in code by #25's normalized containment, with no
-      model call. The checks read #25's relay files from the Igor's checkout of the destination
+      comment matches the answer is checked in code by #25's reduced equality (decision 72):
+      both texts are reduced as #25's rule says and must be equal, with no model call. The checks read #25's relay files from the Igor's checkout of the destination
       repository's default branch and apply #25's relay rule, under which an Igor's App is
       never a person's relay. They also apply a separate rule: during a run, a file keyed to
       another repository than the item's is input. Tests for *A question file that passes
       #25's authority checks is labelled as an answer*, *An authority check that cannot be run
       labels the file as input*, *A failing authority check labels the file as input*, *A
-      linked comment is judged by #25's normalized containment, with no model*, *An answer
+      linked comment is judged by #25's reduced equality, with no model*, *A recorded answer
+      that is only part of its comment is input*, *An answer
       relayed by an Igor's App proves no person answered*, *An answer from a person's listed
       relay App is labelled as an answer* and *A question file keyed to another repository is
       shown as input*
@@ -165,7 +166,11 @@
       the kind of reason, such as `error`, or for a worker killed for a limit the hang's kind
       and the limit's duration, such as `silent after 10m`. Each model step igor runs after the
       worker in the same execution, such as #153's step that writes the pull request body,
-      reports the flag and a completed report as a worker run does, and counts as one. Once
+      reports the flag when it meets a question with a category, always sends a completed
+      report as a worker run does, and counts as one. A flagged run's handoff comment
+      (`composeHandoff`, `src/handoff.ts`) states why it stopped only in the ledger row's fixed
+      words, quotes no worker or provider text about why it stopped, and points to the item's
+      transcript path, which holds the transcript-withheld note. Once
       #188's action log is built, a
       flagged run's log keeps names only. Tests for *Transcript persisted
       off the main line*, *A run that met a categorized question stores no transcript*, *A run that
@@ -179,7 +184,10 @@
       ledger row keeps only the kind of its reason*, *A flagged run killed for a limit keeps
       the limit's kind and duration*, *A model step after the worker that meets a categorized
       question flags the execution*, *A model step after the worker that sends no completed
-      report flags the execution*, *Any
+      report flags the execution*, *A flagged run's handoff quotes no failure detail*, *A flagged
+      run that declined quotes none of the worker's reason*, *A flagged run's handoff still
+      names the setting that would let it proceed*, *A flagged run's budget handoff
+      still gives the reset time*, *Any
       other run's ledger row keeps a denied command whole*, *A flagged run's action log keeps
       names only* once #188 is built, *An execution counts as flagged
       when any of its worker runs does* and, once 3.6 can be built, *The Igor's own inquisitor run that met a
@@ -199,7 +207,8 @@
       repository. It sets an answered log file's `authority` itself by 2.9's checks, reading
       the relay files as 2.9 does, whatever the worker wrote, and for a relay App's comment
       sets `answered_by` to the person whose relay file lists that App. It writes the linked
-      comment's text, word for word, as the file's answer, never the worker's answer line.
+      comment's whole text, word for word, as the file's answer, never the worker's answer
+      line.
       When it posts a handback comment, it
       records on `igor-state`, under the item, the hash of each question it posted there,
       reduced and hashed as shared-skills #25 does, with the comment's id and time and no

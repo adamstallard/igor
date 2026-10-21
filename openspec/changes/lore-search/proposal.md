@@ -2,7 +2,7 @@
 
 ## Decisions
 
-[#215](https://github.com/adamstallard/igor/issues/215) records all sixty-nine decisions,
+[#215](https://github.com/adamstallard/igor/issues/215) records all seventy-two decisions,
 and all are Adam's. Where the agent that wrote this change fitted one of them to the spec, that
 decision says so. A *consistency read*
 is a check, by a fresh agent, of this change against every other spec, change and open pull
@@ -56,10 +56,14 @@ request; Adam answered the questions each read raised. He made:
 - decisions 54 to 61 on 2026-10-21, in a second picker, answering the eight questions this
   change then had for him;
 - decision 62 on 2026-10-21, in the session reviewing shared-skills #25;
-- decisions 63 to 69, answering the seven questions this change then had for him. They carry
-  the date 2026-10-20, as they were handed to the agent that wrote this change, though 63 and
-  64 confirm readings of decisions 54 and 60, dated 2026-10-21; *Still open* asks Adam which
-  date is right.
+- decisions 63 to 69 on 2026-10-21, later in the session that gave decisions 54 to 61,
+  answering the seven questions this change then had for him. They were first recorded as
+  2026-10-20 by mistake in the brief that carried them; the coordinator of that session
+  corrected the date;
+- decisions 70 and 71 on 2026-10-21, answering two questions the consistency read of
+  decisions 63 to 69 raised;
+- decision 72 on 2026-10-21, a rule for shared-skills #25 and this change alike, given in
+  the session reviewing #25.
 
 Terms used here:
 - The *destination repository* is the repository the configuration key `destination` names,
@@ -525,14 +529,11 @@ Terms used here:
     adds the key to it in its decision 221, the same one that records decision 41's hash
     match. Under #25 only an Igor writes the key, so the Igor refuses a worker's file that
     already holds one.
-43. **A linked comment holds the recorded answer by #25's normalized containment.** #25
-    defines the rule once, in the check that proves who wrote a file's answer: both texts are
-    reduced as a question is for its hash (no list markers or inline markup, each run of
-    whitespace one space), a leading `User says: `, the prefix of an answer relayed for a
-    person, is dropped from the comment, and the comment must contain the file's answer
-    line. No model call judges it. The Igor applies that rule (Adam, in the
-    session reviewing shared-skills #25, 2026-10-20/21). Decision 67 has the Igor record the
-    comment's text, never the worker's line, as the answer.
+43. **A linked comment's match with the recorded answer is #25's rule, judged in code.** #25
+    defines the rule once, in the check that proves who wrote a file's answer, and no model
+    call judges it. The Igor applies that rule (Adam, in the session reviewing shared-skills
+    #25, 2026-10-20/21). As first given, the rule was that the reduced comment contains the
+    file's answer line; decision 72 replaced containment with equality.
 44. **Adam intends that a file keyed to another repository than the item's shows as input.**
     During a run, #25 shows a `questions`-branch file whose `repository` key names a repository
     other than the item's as input, whatever its proofs: they show who answered, not that the
@@ -641,21 +642,21 @@ Terms used here:
     budget.** It neither fires nor counts toward the budget, 4000 tokens unless configured
     (`DEFAULT_LORE_BUDGET_TOKENS`, `src/firing.ts:17`), so the budget is judged on what can
     fire. The agent that wrote this change proposed this reading of decision 54, and Adam
-    confirmed it (Adam, 2026-10-20).
+    confirmed it (Adam, 2026-10-21).
 64. **Each model step after the worker counts as a worker run.** Each step that #153 runs after
     the worker in an execution, such as writing the pull request body, reports the flag when it
     meets a question with a category, and sends a completed report, as a worker does. A step
     that sends no completed report flags the whole execution. The agent that wrote this change
-    proposed this reading of decision 60, and Adam confirmed it (Adam, 2026-10-20). #153's side
+    proposed this reading of decision 60, and Adam confirmed it (Adam, 2026-10-21). #153's side
     is in Still open.
 65. **Decision 59's hashes may be guessed.** A reader of `igor-state` could learn a short or
     predictable question, such as "May I merge this?", by hashing likely questions. That
     reveals nothing the handback comment does not already show, and to an audience no wider
-    than the item's (Adam, 2026-10-20). *Rejected:* a salt or a keyed hash.
+    than the item's (Adam, 2026-10-21). *Rejected:* a salt or a keyed hash.
 66. **The `questions` branch, `igor-state` and the relay files live with the lore entries.**
     When #208's `destination` names a repository other than the one holding the Igor
     configuration, all three are in the destination repository, beside the entries (Adam,
-    2026-10-20). The agent that wrote this change resolved the naming clash this raised: this
+    2026-10-21). The agent that wrote this change resolved the naming clash this raised: this
     change first called the repository the entries are read from the *lore repository*, a name
     #208 gives to the configuration's repository. It now calls it the *destination
     repository*, as `lore-store` and `lore-review` call where `destination` points, and leaves
@@ -667,25 +668,54 @@ Terms used here:
     writes under `## Answer` the text of the comment the file's `answer_link` points to, word
     for word, on one line as #25's format requires, in place of the worker's line. So a worker
     that reports "merge it." against a person's comment "Do not merge it." gets "Do not merge
-    it." recorded, never "merge it." (Adam, 2026-10-20). #25 owns decision 43's containment
-    rule, which still decides whether the comment holds the answer. The agent that wrote this
-    change fitted the rule to #25's: a leading `User says: ` is dropped, as #25's containment
-    drops it, so that a relayed answer still reads back as holding its answer, and the Igor
-    checks the file as pushed for credentials, since the comment's text is new to it.
+    it." recorded, never "merge it." (Adam, 2026-10-21). The comment's text is kept word for
+    word, a leading `User says: ` included; decision 72's match ignores that prefix when it
+    reads the file back. The agent that wrote this change added that the Igor checks the file
+    as pushed for credentials, since the comment's text was not in the file the worker
+    reported. Decision 70 keeps the whole comment, however long.
 68. **Under `igor run`, a worker can write the lore checkout, and that is an accepted limit.**
     A worker running as the developer's own user can plant an `active` entry in the checkout's
     working tree, which would fire on the next run, show in `igor lore-search` and pass the
     citation check. That is consistent with #208's decision 28, that `igor run` reads the
     checkout as it finds it, local edits included, and with decision 50: `igor run` runs on the
-    developer's own trusted machine. `igor serve` is unaffected (Adam, 2026-10-20, extending
+    developer's own trusted machine. `igor serve` is unaffected (Adam, 2026-10-21, extending
     decision 50 from reads to writes).
 69. **The review shows citations as not checked whenever no Igor citation reached the branch
     in the period.** The reason does not matter: a failed push, flagged runs, withheld
-    citations, or anything else. Decisions 32 and 39 required both that no Igor citation reached the
-    branch and that the run records count a citation that failed to push. While every run is
-    flagged, or every citation withheld, none fails to push, so the review would have shown people's citations alone as a lower bound,
-    hiding that no Igor citation arrived (Adam, 2026-10-20, amending decisions 32 and 39, which
+    citations, or anything else. Under decisions 32 and 39 as first given, "not checked" also needed a
+    citation that failed to push. While every run is flagged, or every citation withheld, no
+    push fails, so that rule never applied, and the review would have shown people's citations
+    alone as a lower bound, hiding that no Igor citation arrived (Adam, 2026-10-21, amending decisions 32 and 39, which
     now state the rule).
+70. **A long answer is recorded whole.** Under decision 67, the person's whole comment is the
+    record, even when it holds several sentences or quotes the question before answering it.
+    Trimming it to one sentence would mean choosing which part is the answer, which brings back
+    the risk decision 67 removed (Adam, 2026-10-21). Shared-skills #25's log format must allow a
+    multi-sentence answer (Still open, for #25).
+71. **A flagged run's handoff comment uses fixed words only.** When a flagged run hands off,
+    `graceful-handoff`'s comment on the item states why it stopped only in the fixed words its
+    ledger row's `reason` keeps (decisions 51 and 56), quotes no failure detail, and points to
+    the item's transcript path on the state branch instead. Today that comment quotes a
+    failure's detail (`src/handoff.ts:316`) and, for a run that declined, the worker's own
+    account of why (`src/handoff.ts:310-313`, from `declineReason` at `src/loop.ts:510`),
+    either of which could repeat what a sensitive question brought into the run (Adam,
+    2026-10-21). The agent that wrote this change fitted the rule: facts igor records itself,
+    such as a budget's reset time or which setting would let the run proceed, still appear,
+    since the run did not produce them. The transcript path is the item's, as there is one
+    transcript per item, and for a flagged run it holds the transcript-withheld note. This change modifies `graceful-handoff`'s *A
+    handoff states what was done, what remains, and who could continue* for it, with four new
+    scenarios. [#179](https://github.com/adamstallard/igor/pull/179) and
+    [#143](https://github.com/adamstallard/igor/pull/143) modify other `graceful-handoff`
+    requirements, so their deltas and this one do not overlap.
+72. **A logged answer is confirmed only when the linked comment equals it.** Writers record the
+    comment's own text word for word: the Igor, #25's inquisitor script and #25's answer
+    session, the tool in which a person answers logged questions, alike. A reader confirms a logged answer only when the comment its `answer_link`
+    points to, reduced, equals the recorded answer, reduced the same way. Reduced means no list
+    markers or inline markup, each run of whitespace joined to one space, a leading
+    `User says: ` ignored, and a trailing `Re: <URL>` line ignored. Containment is dropped
+    entirely, and a worker's answer line only identifies the comment. This is #25's rule,
+    decided by Adam on 2026-10-21 for both repositories; this change points to it and applies
+    it in `igor lore-search`'s authority checks.
 
 **Alignments with shared-skills #25.** These follow from Adam's decisions above and #25's
 decisions 216, 221, 225 and 229 (#25 at 08951b7), and add no decision:
@@ -996,20 +1026,20 @@ decisions 216, 221, 225 and 229 (#25 at 08951b7), and add no decision:
   - The transcript-withheld note points to an action log, which no run keeps until #188 is
     built.
   - Whether #25's credential prefixes match the seat token is unmeasured; task 4.9 checks.
-- **For Adam: the date of decisions 63 to 69.** They are recorded as 2026-10-20, while 63 and
-  64 confirm readings of decisions 54 and 60, which are dated 2026-10-21.
-- **Found by the consistency read of decisions 63 to 69.** Two are possible questions for Adam:
-  1. *A long comment recorded whole.* Decision 67 records the linked comment's whole text,
-     while #25's format holds "the answer in one sentence under `## Answer`". A comment of
-     several sentences, or one that quotes the handback question before answering, is then
-     recorded whole, the quoted question included.
-  2. *A flagged run's handoff comment.* A flagged run's ledger row keeps only fixed words for
-     its `reason` (decision 51), but `graceful-handoff`'s comment on the item quotes the
-     failure's detail (`src/handoff.ts:316`), so that text can still be posted on the item.
-
-  One is for shared-skills #25: its spec puts a person's relay file beside igor's
-  configuration, while decision 66 puts relay files in the destination repository, beside the
-  entries. #25 should align with decision 66.
+- **For shared-skills #25, from the consistency read of decisions 63 to 69.** Decisions 70 and
+  71 settled the two questions it raised for Adam. Two items remain for #25:
+  - its log format holds "the answer in one sentence under `## Answer`", while decision 70
+    records a person's whole comment, which can hold several sentences. #25's format must
+    allow a multi-sentence answer;
+  - its spec puts a person's relay file beside igor's configuration, while decision 66 puts
+    relay files in the destination repository, beside the entries. #25 should align with
+    decision 66.
+- **For Adam: a flagged run's handback question.** Decision 71 has a flagged run's handoff
+  state why it stopped only in fixed words. A handback comment is a handoff that asks a
+  question the run could not settle, and that question is text the run produced. Whether a
+  flagged run's handback may still carry its question, or how a flagged run asks one, is not
+  decided; the spec bars only the failure's detail and any worker or provider text about why the run
+  stopped.
 ## Why
 
 The requirement *Lore reaches the worker unbidden* forbids offering a worker a search over the
@@ -1062,7 +1092,7 @@ reading the codebase. Two cases contradict that:
   file that already holds one, and sets an answered file's `authority` itself by #25's checks.
   It records the questions of each handback comment on `igor-state` as hashes, with no text.
   The Igor sets a relay App's answer's `answered_by` as well as its `authority`, and records
-  the linked comment's text, never the worker's line, as the answer. It has twenty-seven
+  the linked comment's whole text, never the worker's line, as the answer. It has twenty-eight
   scenarios (decisions 20, 21, 24, 28, 30, 33, 34, 41, 42, 45, 59 and 67, and the alignments
   with #25).
 - A third new `lore-firing` requirement, *An Igor runs its worker's lore searches*, specifies
@@ -1075,12 +1105,12 @@ reading the codebase. Two cases contradict that:
   command labels each question and miss file it returns as #25's filter 1 does, labelling a
   question file that holds no answer as unanswered. The Igor runs #25's authority checks
   before it labels a file an answer, and shows the file as input, labelled as unconfirmed,
-  when a check fails or cannot be run, judging a linked comment by #25's normalized
-  containment with no model call, and reading the relay files for #25's relay rule. It matches,
+  when a check fails or cannot be run, judging a linked comment by #25's reduced equality
+  with no model call (decision 72), and reading the relay files for #25's relay rule. It matches,
   ranks and caps results by #25's filter 1 rule, filters `project:` entries by visibility, and
   serves the Igor's own
-  inquisitor run too. The requirement has thirty-one scenarios (decisions 15, 23, 27, 29, 31,
-  34, 35, 42, 43, 44, 45, 49, 52 and 53).
+  inquisitor run too. The requirement has thirty-two scenarios (decisions 15, 23, 27, 29, 31,
+  34, 35, 42, 43, 44, 45, 49, 52, 53 and 72).
 - `lore-firing`'s *Status and scope are exact filters, always applied* keeps a `project:`
   entry from firing into a run whose item's repository is more visible than the repository
   the scope names, and says which repository that is, with four new scenarios (decisions 54
@@ -1118,6 +1148,10 @@ reading the codebase. Two cases contradict that:
   App on the destination repository too (decision 66); *An Igor
   knows its own bot account* renames its example App to `igor-acme-reviewer` (decision 62).
   `docs/deployment.md` tells a person to name the App with the prefix.
+- `graceful-handoff`'s *A handoff states what was done, what remains, and who could continue*
+  has a flagged run's handoff state why it stopped only in the ledger row's fixed words, quote
+  no failure detail or worker's reason and point to the item's transcript path, with four new
+  scenarios (decision 71).
 - `docs/architecture.md`: §3.3 says every worker is offered `igor lore-search` and what binds it, §3.4.1 says a
   search hit is not a firing and that a review counts citations from the destination repository's
   `questions` branch, and §4.1 says the worker never *has* to search.
@@ -1140,6 +1174,8 @@ None.
   `commands` listing it.
 - `surface-adapter`: an Igor refuses to start when its App's slug does not start with
   `igor-`.
+- `graceful-handoff`: a flagged run's handoff states why it stopped only in fixed words and
+  points to its transcript path (decision 71).
 - `task-execution`: pushing a run's citations and its question and miss files is exempt from
   the role's `allow` list, a worker's environment marks it as in an Igor's run, and a run
   that met a question with a category stores no transcript.

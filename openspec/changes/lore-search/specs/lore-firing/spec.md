@@ -467,19 +467,22 @@ a comment on the item the run works, and the text under its `## Question`, reduc
 the same way, gives a hash the record holds for a handback comment the Igor posted on the item
 before the answering comment.
 
-The Igor SHALL NOT trust the `authority` a worker's log file holds. Before it pushes a log file holding `authority: decision` or `input`, the Igor SHALL set its
-`authority` itself, by the checks of #25's *Only an answer with authority stops a question*
-that prove a questions-branch `decision` file's writer through its `answer_link` and confirm
-that its `answered_by` has write access to what the question concerns. Where the
-`answer_link` is a comment by a person's relay App, the Igor SHALL first set the file's
-`answered_by` to that person, whatever the worker wrote. It sets `decision` when every one of
-those checks passes, and `input` when one fails or cannot be run. Whichever it sets, the Igor
-SHALL write under the file's `## Answer` the text of the comment its `answer_link` points to,
-word for word, with a leading `User says: ` dropped as #25's rule drops it, on one line as
-#25's format requires, in place of the answer line the worker wrote. The credential condition
-above SHALL then be checked again on the file as it will be pushed, and a file that fails it is
-refused. The worker's answer line only identifies which comment holds the answer, and the Igor
-SHALL NOT record it as anyone's answer. Which comments count as a
+The Igor SHALL NOT trust the `authority` a worker's log file holds. Before it pushes a log
+file holding `authority: decision` or `input`, the Igor SHALL first write under the file's
+`## Answer` the text of the comment its `answer_link` points to, word for word, a leading
+`User says: ` included, with each line break written as one space so that it fits on one line
+as #25's format requires, in place of the answer line the worker wrote. It SHALL write the whole
+comment, even when it holds several sentences or quotes the question first, and even while
+#25's format still says one sentence (the proposal's Still open, for #25). The worker's answer line only identifies which comment holds the answer,
+and the Igor SHALL NOT record it as anyone's answer. The Igor SHALL then set the file's
+`authority` itself, on the file as rewritten, by the checks of #25's *Only an answer with
+authority stops a question* that prove a questions-branch `decision` file's writer through its
+`answer_link` and confirm that its `answered_by` has write access to what the question
+concerns. Where the `answer_link` is a comment by a person's relay App, the Igor SHALL first set
+the file's `answered_by` to that person, whatever the worker wrote. It sets `decision` when
+every one of those checks passes, and `input` when one fails or cannot be run. The credential
+condition above SHALL then be checked again on the file as it will be pushed, and a file that
+fails it is refused. Which comments count as a
 person's relayed answer is #25's rule (its decision 216), and so is which relay file counts: a
 person's relay file is `relays/<login>.yaml` in the destination repository, counted only when its last
 change came from that person (its decision 225). This requirement does not restate those
@@ -599,6 +602,16 @@ that requirement sets. These counts SHALL NOT repeat any text the worker wrote.
 - **AND** the file passes the other rules
 - **THEN** the pushed file's answer reads "Do not merge it."
 - **AND** "merge it." is recorded nowhere as that person's answer
+
+#### Scenario: A long answer is recorded whole
+
+- **WHEN** a worker reports a log file holding `authority: decision`, for a question the Igor
+  asked, whose answer line is "Yes."
+- **AND** its `answer_link` is a comment, by a person with write access, that quotes the
+  question and then answers it in three sentences, the first of them "Yes."
+- **AND** the file passes the other rules
+- **THEN** the pushed file's answer holds the whole comment, the quoted question and all three
+  sentences
 
 #### Scenario: A credential in the linked comment keeps the file off the branch
 
@@ -769,8 +782,8 @@ The Igor SHALL itself run the checks of shared-skills #25's requirement
 on each question file it returns that holds an answer, and label the file by them as *Lore
 reaches the worker unbidden* sets. #25 states the checks; this requirement does not restate
 them. One is whether the comment a file's `answer_link` points to holds the answer, which #25
-defines as a containment after both texts are normalized; the Igor applies that rule in code,
-with no model call. Which comments count as a person's relayed answer is #25's rule (its
+defines as the comment, reduced, equalling the recorded answer, reduced the same way (#25's
+rule, decided by Adam on 2026-10-21); the Igor applies that rule in code, with no model call. Which comments count as a person's relayed answer is #25's rule (its
 decision 216), and so is which relay file counts (its decision 225). For those checks the Igor
 SHALL read #25's relay files from the destination repository's default branch as its checkout last
 fetched it, never from the checkout's working tree, and the worker SHALL read no relay file
@@ -830,13 +843,23 @@ inheritance cannot remove it (`role-config`'s *Merge semantics differ by field k
   write access to what a `questions`-branch file's question concerns
 - **THEN** the results show the file as input, labelled as unconfirmed, never as an answer
 
-#### Scenario: A linked comment is judged by #25's normalized containment, with no model
+#### Scenario: A linked comment is judged by #25's reduced equality, with no model
 
-- **WHEN** a question file's answer line is "Back off, capped at a minute."
+- **WHEN** a worker runs `igor lore-search`, and a question file it returns has the answer
+  "Back off, capped at a minute."
 - **AND** the comment its `answer_link` points to reads "User says: **Back off**, capped at a
-  minute." over two lines
-- **THEN** the Igor finds that the comment holds the answer, as #25's rule reduces both texts
+  minute.", with a line break after "**Back off**,", followed by a line `Re: <URL>`
+- **THEN** the Igor finds that the comment matches the answer, as #25's rule reduces both texts
+  to the same text
 - **AND** no model reads the comment
+
+#### Scenario: A recorded answer that is only part of its comment is input
+
+- **WHEN** a worker runs `igor lore-search`
+- **AND** a question file holding `authority: decision`, whose answer is "merge it.", matches
+  the text and passes the visibility rule
+- **AND** the comment its `answer_link` points to reads "Do not merge it."
+- **THEN** the results show the file as input, labelled as unconfirmed, never as an answer
 
 #### Scenario: An answer relayed by an Igor's App proves no person answered
 

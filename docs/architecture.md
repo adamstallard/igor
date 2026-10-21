@@ -391,9 +391,11 @@ a merged pull request they authored, or a commit GitHub verifies as theirs. The 
 count an Igor's App as a relay App, even where a relay file lists it: an Igor's App slug always
 starts with `igor-`, which igor checks at startup, and no App with that prefix counts as a
 relay. So text an Igor posted never proves a person's answer. One check is that the comment the file links to
-holds the answer. The Igor judges it in code, by the inquisitor spec's rule: once list markers,
-inline markup and extra whitespace are removed from both texts, the comment must contain the
-file's answer line. No model reads the comment. Whenever a check fails or
+matches the recorded answer. The Igor judges it in code, by the inquisitor spec's rule: once
+list markers and inline markup are removed from both texts, each run of whitespace, line
+breaks included, becomes one space, and a leading `User says: ` and a trailing line of the
+form `Re: <URL>` are ignored, the comment must equal the file's recorded answer.
+A comment that merely contains it does not count. No model reads the comment. Whenever a check fails or
 cannot be run, the file is shown as input, something the worker may weigh but which does not
 settle the question, labelled as unconfirmed. During a run, a file that names a repository
 other than the item's is always input: its proofs show who answered, not that the answer
@@ -563,8 +565,10 @@ Such a run's ledger row keeps each command the worker's sandbox denied only by i
 as `gh issue comment`, without its arguments: enough for the operator to decide what the role
 should allow. Its `reason` keeps only fixed words for the kind of reason, such as `error`,
 never an error message's text. For a worker killed for a limit, those words name the kind of
-hang and the limit's duration, such as `silent after 10m`. Its changed paths and refused
-actions stay. Open pull request #188 adds a log of each run's tool calls; for such a run, that
+hang and the limit's duration, such as `silent after 10m`. Its handoff comment on the item
+gives the same fixed words, quotes no failure detail or worker's reason, and points to the
+item's transcript path. Facts igor records itself, such as a budget's reset time, still appear
+in that comment. The ledger row's changed paths and refused actions stay in full. Open pull request #188 adds a log of each run's tool calls; for such a run, that
 log keeps only names and numbers: tool names, command names, exit codes, counts and timings.
 
 In these rules a run is a whole execution of an item, which can start more than one worker
@@ -596,7 +600,7 @@ is one the Igor recorded posting in its handback. For that last kind, the Igor s
 file's `authority` key, which says whether the answer is a person's decision or only input,
 itself, by the same checks its search runs. When the answer is a relay App's comment, it also
 sets the file's `answered_by` to the person whose relay file lists that App. It records the
-comment's text, word for word, less a leading `User says: `, as the answer: the answer line the worker wrote only
+comment's whole text, word for word, as the answer, however many sentences it holds: the answer line the worker wrote only
 identifies which comment holds the answer, so a worker that reports "merge it." against a
 comment reading "Do not merge it." cannot record the opposite of what the person said. It
 never keeps the `authority` or `answered_by` the worker wrote, under `igor serve` or `igor run`: a worker
