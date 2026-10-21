@@ -658,9 +658,10 @@ Igor SHALL NOT comment on an open lore pull request about a seat file; its own n
 after a seat-file change lands and Igor pulls it (`lore-pull`, #208).
 
 The lore repository's default branch SHALL require a pull request before merging, because only
-a pull request's notice reaches the lender before the change lands. `igor doctor`
-reports a default branch that does not require one, through `check-a-lore-repository`'s check
-that direct pushes are prevented (#113).
+a pull request's notice reaches the lender before the change lands. As
+`check-a-lore-repository` (#113) requires, `igor doctor` reports a default branch that does not
+require one, or whose rule administrators can bypass, through its check that direct pushes are
+prevented. The GitHub Actions bypass that lore setup grants is expected, and is not reported.
 
 `pull_request_target` runs with a token that can write to the repository. A workflow on it that
 ran or read the pull request's files would hand a fork's code or data that token, so taking only

@@ -26,10 +26,13 @@ contradicts it, and then `design.md` records the measurement.
       `design.md`, *How the token reaches the server*, records it, and the lender guide says so
       (9.4, 9.7)
 
-- [ ] 1.3 Before gate two, create a test `setup-token`, revoke it through the claude.ai web
-      interface, and confirm that a model call with it is then refused. Record the steps and the
-      result in `design.md`, *How the token reaches the server*. If the revoked token still
-      works, decision 3 goes back to Adam before section 7 is built
+- [ ] 1.3 Before gate two, create a throwaway `setup-token`, revoke it through the claude.ai web
+      interface (where to revoke is decision 61; this measurement is decision 74), and confirm
+      that a model call with it is then refused. Make the call right after revoking; if it still
+      works, try again an hour later before deciding. Record the steps, the times and the result
+      in `design.md`, *How the token reaches the server*. If the revoked token still works,
+      decision 3 goes back to Adam before section 7, `igor seat add`, is built, since lending a
+      seat rests on the lender's veto
 
 ## 2. Seats from files
 

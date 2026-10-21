@@ -505,8 +505,10 @@ fixes the file, and the operator guide says to tell such a lender some other way
 
 **Decided 2026-10-17 (Adam): the lore repository's default branch requires a pull request before
 merging.** Only a pull request's notice reaches the lender before the change lands; Igor's
-notice, when it pulls the change, comes after it. `check-a-lore-repository` (#113) already reports a default branch that
-accepts direct pushes.
+notice, when it pulls the change, comes after it. `check-a-lore-repository` (#113) reports a
+default branch that accepts direct pushes from people. The GitHub Actions bypass that lore setup
+grants on purpose is expected, and #113 checks that it is there. Since Adam's answer of
+2026-10-21, #113 also reports a pull-request rule that administrators can bypass.
 
 **Decided 2026-10-17 (Adam): a plain token pasted into a pull request is an accepted risk.** It is
 public once pushed, before Igor can refuse it at load, and the workflow cannot catch it because it

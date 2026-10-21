@@ -61,8 +61,10 @@
     workflow can commit merged lore. A seat-file change can arrive that way only if a workflow
     with that bypass writes one. A seat file changed that way reaches the lender only
     through Igor's notice, the comment Igor posts mentioning the owner once it pulls the change
-    into its lore checkout (decision 26; `lore-pull`, #208); one added, deleted or renamed
-    that way reaches them through nothing, since #208 gives those no notice.
+    into its lore checkout (decision 26; `lore-pull`, #208). Igor's notice covers a changed or
+    added file (decision 75); one deleted or renamed that way reaches the lender through nothing,
+    since #208 gives those no notice. Where branch protection does not bind administrators, an
+    administrator can push past the rule too, and #113 reports that (decision 76).
 15. **An undecryptable seat is passed over where the role has another usable seat** (Adam,
     2026-10-17). Under #101 it would otherwise stop every role its file lists. This decision states
     the whole rule for a role with no eligible seat, as it and decisions 25, 31 and 33 settle it: the
@@ -360,7 +362,7 @@ Adam's answers of 2026-10-19 to the questions this change left open:
 69. **`igor seat add` prompts for `--reserve` and `--roles` when they are left out**, explaining
     each. *`igor seat add` lends a seat in one step*; task 7.1b.
 
-More smaller choices, which Adam approves with the change:
+More smaller choices, which Adam approved on 2026-10-21:
 
 70. **What counts as a push changing a seat file** (decision 66). On a push, the workflow compares
     the pull request's head before and after it. Where the earlier head cannot be fetched, as
@@ -385,27 +387,25 @@ More smaller choices, which Adam approves with the change:
     undecryptable. The same handoff serves any mix in which every seat is under a condition and
     at least one is read-cleared, since no reset brings any of them back.
 
-**Still open,** besides the smaller choices 47 to 56 and 70 to 73, which Adam approves or
-rejects with the change:
+Adam's answers of 2026-10-21:
 
-- **Old ciphertext can bring a deleted seat back, for Adam.** A lender who withdraws by having
-  their seat file deleted, without revoking the token, leaves its ciphertext in git history.
-  Anyone can add `seats/<id>.yaml` again under the same id with that ciphertext and new `roles`
-  and `reserve`; the notice workflow mentions nobody, since the default branch has no copy, and
-  Igor decrypts and spends the token. Binding the ciphertext to its id (decision 40) does not
-  stop it, and task 9.7's line that removing the file "only stops Igor's own use" overstates
-  even that. *Recommendation:* task 9.7's line says instead that a removed file can be added
-  back from history, so only revoking stops Igor's use; and the operator guide tells an
-  operator to check that a new seat file's ciphertext is not one already in history.
-- **Administrators can push past the pull-request rule, for Adam.** Decision 14 names only the
-  Actions bypass, but under GitHub's default branch protection an administrator may also push
-  to the default branch directly, so a seat-file change lands with no notice before it, and
-  #113's check still reports the branch as protected. *Recommendation:* #113's check also
-  reports a rule administrators may bypass.
-- **Whether revoking at claude.ai stops the token is unmeasured.** Adam named where a lender
-  revokes (decision 61), not whether a revoked `setup-token` is then refused; the lender's veto
-  (decision 3) rests on both. *Recommendation:* measure it before gate two (task 1.3): revoke a
-  test token at claude.ai and confirm a call with it is refused.
+74. **Revoking at claude.ai is measured before gate two** (task 1.3). Adam named where a lender
+    revokes (decision 61); the lender's veto (decision 3) also needs a revoked `setup-token` to be
+    refused. Task 1.3 checks it with a throwaway token.
+75. **A seat file added back with old ciphertext gets Igor's notice, like any added file.** A
+    lender who withdraws by having their seat file deleted, without revoking the token, leaves
+    its ciphertext in git history, and anyone whose pull request is merged can add the file again
+    under the same id. The notice workflow mentions nobody for an added file, since the default
+    branch has no copy. After the merge, Igor's notice treats the file as added and mentions the
+    `owner` the added file names, which whoever adds the file writes (see *Still open*): `lore-pull` (#208) records this as its decision 38, which replaces its rule
+    that an added seat file gets no notice.
+76. **`igor doctor` reports a pull-request rule that administrators can bypass** (#113's
+    decision 12). With `enforce_admins` off, an administrator can push a seat-file change straight
+    to the default branch, with no notice before it, so #113 reports that rather than reporting
+    the branch as protected.
+
+**Still open.** The smaller choices 47 to 56 await Adam's approval with the change. Besides them:
+
 - **Findings of a consistency read on 2026-10-21, for whoever next edits this change.** None is
   decided, and none blocks approving the rules above, except where an item says so:
   - **Decision 42 and #143's probe.** #143's probe is minimal: it runs with no tools and loads
@@ -427,6 +427,42 @@ rejects with the change:
   - **Against #216.** The worker-environment requirement this change re-adds drops the
     `IGOR_RUN` variable #216 adds to it.
   - **Task 3.4** quotes the found id in double quotes, where the spec requires a code span.
+- **Findings of a later consistency read on 2026-10-21, after decisions 74 to 76, for the next
+  revision.** Two of its findings, that #208 and #113 did not yet hold decisions 38 and 12, are
+  met by those changes' commits of the same day. None of the rest is fixed here. The items for
+  the author do not block approving the rules above; whether any item for Adam does is his to
+  say.
+  - For Adam: a seat file added back under decision 75 names whatever `owner` the person adding it
+    writes, so where they change it, the real lender is not told. Any writer can push a branch
+    whose `push` workflow commits a seat-file edit to the default branch under the GitHub Actions
+    bypass, with no pull request and no notice before it, so decision 14's notice before landing
+    holds only against people who cannot write. `igor doctor` checks only that `seat-notice.yml`
+    is present and its last run passed, not what it does, so a merged edit that makes it mention
+    nobody passes every check. Decision 19 rejected an npm token because any writer could publish
+    `igor-agent` with it, but any writer can push a version tag, which publishes from a commit of
+    their choosing; and the lender guide's `npx igor-agent` names no version, so a lender runs
+    whatever was last published. A `seatKey` that a later lore commit changes is never probed by
+    #175's start-up check, so a merge could point it at a file the worker can read.
+    `budget_share`, a role's ceiling on its spend, now bounds what the role takes of each seat
+    rather than of its pool, which no decision lists. Task 3.3a's open question, whether a token
+    is forgotten when its seat file goes, sits only in tasks.md, and a token of 1 to 7 characters
+    in a seat file is accepted but never registered by #217's redaction, which matches only tokens
+    of 8 or more.
+  - For the author: "lore read" is used for the gate's single-file re-read, which #208's
+    definition excludes; the reason given for refusing a `seatKey` inside the checkout names a
+    reset #208 never makes; `igor doctor` and `igor budget` print a seat file's `owner` and
+    `token_env` values, against decision 48; a `seats/` holding only malformed files is both "no
+    seats declared" and "a malformed file present"; decision 14 says a change pushed with no pull
+    request reaches the lender only through Igor's notice, which #208 posts as a commit comment,
+    while the scenario *A push runs no notice workflow* says nothing comments on such a commit;
+    #174's startup skills check and the stored-login preference are stated both here and in #174,
+    so the two copies can drift apart; decision 16 describes an edit to #143's text that was not
+    the one made; *What Changes* says decryption waits for a pull, against decision 57; task 9.9
+    points at a wrapper task 9.3 removes; `tasks.md`'s build list omits #75, #120 and #137, which
+    #204 builds first; the revocation and the absent stored login are stated as known in
+    requirement and deliverable text while tasks 1.3 and 3.12 are open; several SHALLs lack a
+    scenario; and some requirement text carries rejected alternatives. #188's scenario on
+    `token_file` tests a key this change removes, for #188 to fix.
 
 Pulling the lore checkout is specified by the open change `lore-pull` (#208, for #176), which
 archives after this one. It defines a *lore read*: a process loading its configuration, role
