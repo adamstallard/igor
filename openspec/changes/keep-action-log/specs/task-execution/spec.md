@@ -102,11 +102,8 @@ SHALL leave an error result with its error status and no code, never with a wron
 The action log SHALL apply credential redaction to each string as the call is collected,
 before any later step, such as `review-evidence` (#190), reads it, so that no copy of a call,
 in memory or in the log, holds a credential. The rule is the requirement *Credential redaction
-replaces every credential the Igor knows* in the change `redact-state-branch` (#217). By exact
-value, it matches each seat token and the value of each variable in the worker's or the Igor's
-environment whose name holds a credential word such as `TOKEN`, where that value is at least 8
-characters long. By shape, it matches tokens with a known prefix, such as GitHub's `ghp_`,
-private keys, and the credentials in a URL.
+replaces every credential the Igor knows* in the change `redact-state-branch` (#217), which
+says what the rule matches. This requirement adds nothing to it.
 
 #### Scenario: The seat token is redacted
 
@@ -114,13 +111,6 @@ private keys, and the credentials in a URL.
 - **THEN** the calls the run collects in memory, which `review-evidence` (#190) reads, hold
   `[redacted]` where the seat token was
 - **AND** so does the log written to the state branch
-
-#### Scenario: A seat token read from a file is redacted
-
-- **WHEN** a seat's token is read from the file named by the seat's `token_file` key, and a
-  command the worker runs prints it
-- **THEN** the calls the run collects in memory, and the log written to the state branch, hold
-  `[redacted]` where the token was
 
 ### Requirement: What the action log keeps follows who can read the store
 

@@ -18,11 +18,10 @@ Each is the reviewer's to decide, except where marked **Decided**.
    This log depends on the rule matching a known secret by its exact value, not only by its
    shape. A seat token is the model-subscription credential an Igor puts in its worker's
    environment (`src/execute.ts:868`), where `env` prints it, and no pattern need fit its
-   shape. The rule matches a seat token, and the value of an environment variable whose name
-   holds a credential word such as `TOKEN`, only where it is at least 8 characters long; a
-   shorter one is not redacted by value. Until
-   `worker-user` (#175) fixes #163, the worker can also read the Igor's own credentials, and a
-   command it runs can print them too.
+   shape. #217's requirement lists every value and shape the rule matches. A credential file
+   on the host that the worker can read, such as `~/.aws/credentials`, holds values the Igor
+   never knew, and the rule's shapes are GitHub and Anthropic tokens only. So where the log
+   keeps output, it keeps such a file's other secrets, an AWS key among them, as printed.
 
    **Decided (Adam, 2026-10-13): there is one redaction rule.** `loop-verifies-commands`
    (#189) redacts published check output by it, and `review-evidence` (#190) redacts every
@@ -31,9 +30,9 @@ Each is the reviewer's to decide, except where marked **Decided**.
    patterns to redact, which lets the sets drift apart, so a value one change redacts another
    could publish.
 
-   **Decided (Adam, 2026-10-19): the rule's definition moves from this change to #217.** #217 defines it,
-   extended with the `user:pass@` part of a URL, and builds its function before this change.
-   This change cites the rule rather than stating it.
+   **Decided (Adam, 2026-10-19): the rule's definition moves from this change to #217.** #217
+   defines it and builds its function before this change. This change cites the rule rather
+   than stating it.
 3. **What is kept depends on who can read the store, asked of GitHub at write time.** A private
    store keeps the whole log. A public store keeps no output text. It keeps commands and paths
    only where the worked repository is public too; otherwise it keeps only which tools ran and
@@ -65,13 +64,24 @@ Each is the reviewer's to decide, except where marked **Decided**.
 
 **Still open:**
 
-- **For Adam:** whether a private store keeps the commands' output, the part of decision 3
-  this pull request asks about.
+- **For Adam:**
+  - whether a private store keeps the commands' output, the part of decision 3 this pull
+    request asks about;
+  - whether the transcript is cut with the log. #217 leaves to this change what the transcript
+    reveals beyond credentials (its proposal, decision 10), and as written a public store whose
+    log is cut to tool names still keeps the worker's whole closing summary of a private
+    repository;
+  - whether choosing what the log keeps (decision 3) should also ask whether the item's
+    tracker is private, besides the store and the worked repository. A command or subagent
+    prompt kept whole can quote a private item's text into a public store.
 - **For whoever next edits this change,** from a consistency read on 2026-10-21. None is
   decided, and none is fixed in this text:
   - **The row and the log's path.** `appendRecord` writes the run's row in `executions.ndjson`,
-    and sets its `at` time, before execution writes the transcript, so a log written after the
-    transcript does not exist yet when the row that must name it is written.
+    and sets its `at` time, before execution writes the transcript. The row therefore names a
+    log that is written later, and stays naming it when that write fails, which the spec
+    allows. Nor can the row know whether the log's path will need a `-2` suffix. The proposal and
+    task 3.4 write a log only where the worker made a tool call, while the spec writes one where
+    any model step did.
   - **Exit codes.** A result that is not an error but carries no exit code, such as a shell
     command run in the background, would be recorded as exit 0. And keeping a long output's
     last 2,000 characters drops the `Exit code <n>` prefix at its start.
@@ -82,13 +92,16 @@ Each is the reviewer's to decide, except where marked **Decided**.
   - **Other changes.** #153 adds model steps of its own, a cold read, its answers and triages,
     that none of the three labels fits. #216 keeps only names for a run it withholds, even in a
     private store. #190 decides what this log keeps before this change reads the stores'
-    visibility. #171 removes the `token_file` source one scenario tests.
+    visibility. #189 posts a comment of its own outside #190's table (its decision 7), though
+    this change says #189 writes only into that table. After a failed check, #189 also starts
+    the worker a second time, so one run can hold two worker passes, each followed by #153's
+    steps. This change does not say how the second pass's calls are labelled or ordered.
   - **A token the Igor never sees.** Claude Code sets `CLAUDE_CODE_MESSAGING_TOKEN` itself. The
     Igor never learns its value, so redaction cannot match it by value, and a private store
     keeps it wherever `env` output is kept.
-  - **The spec itself.** Several SHALLs have no scenario, "the store" is not defined, and the
-    redaction requirement summarises #217's rule where decision 2 says this change only cites
-    it.
+  - **The spec itself.** Several SHALLs have no scenario, and "the store" is not defined.
+    Whether Read, Edit and subagent results carry an error flag and output is unmeasured
+    (task 1.2), and the spec gives no fallback for a result that has neither.
 
 ## Why
 
@@ -130,9 +143,9 @@ None.
 - `src/execute.ts`: collect tool calls in `onEvent`, pair each with its result, and write the
   log in `recordExecution` after the transcript.
 - `src/github.ts`: `isPublic` is reused for the store and the worked repository.
-- Overlaps: #175 (`worker-user`) removes the worker's route to the Igor's credentials; until it
-  lands, decision 2 is all that keeps the Igor's credentials, which the worker can then read,
-  out of this log. `review-evidence` (#190) reads the command
+- Overlaps: #175 (`worker-user`) removes the route by which a worker under `igor serve` reads
+  the Igor's credentials. Under `igor run` the worker runs as the person, and can still read
+  their credential files. `review-evidence` (#190) reads the command
   list this change collects, redacted and before it is cut to what the store's visibility
   allows (decision 3), since the pull request is read by the worked repository's readers, not
   the store's.

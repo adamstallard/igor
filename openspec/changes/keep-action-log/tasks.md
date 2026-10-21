@@ -34,8 +34,10 @@
 
 ## 3. Write
 
-- [ ] 3.1 The redaction of 2.1, which runs once, as each call is collected: `redact` from
-      `src/redact.ts`, the function `redact-state-branch` (#217) builds. This change adds no patterns or values of its own;
+- [ ] 3.1 The redaction of 2.1, as each call is collected: `redact` from `src/redact.ts`, the
+      function `redact-state-branch` (#217) builds. #217 already makes `writeState` redact
+      everything it writes, so the log is redacted a second time on its way to the state branch.
+      That second pass needs no work here. This change adds no patterns or values of its own;
       `loop-verifies-commands` (#189) and `review-evidence` (#190) call the same function.
 - [ ] 3.2 Read the store's and the worked repository's visibility with `isPublic`, treating an
       error on the store as public and on the worked repository as private, and cut the entries to the tier that applies.
@@ -53,7 +55,7 @@
 - [ ] 4.1 A failed `npm test` call is logged with its error and output tail; the ledger row names
       the log.
 - [ ] 4.2 A Read and an Edit log their path and no contents.
-- [ ] 4.3 A seat token in `env` output and a seat token read from `token_file` are
+- [ ] 4.3 A seat token in `env` output is
       `[redacted]` in the calls the run collects in memory, and in the written log.
 - [ ] 4.4 Each tier: private store; public store with public repository; public store with
       private repository; the store's visibility read throws; the worked repository's visibility
