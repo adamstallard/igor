@@ -35,9 +35,11 @@ lore. It SHALL label each question file it returns as the inquisitor's first fil
 in shared-skills #25) labels it. A question file whose frontmatter holds no `authority` key
 holds no answer, and is labelled as unanswered. One that holds an answer is labelled as #25's
 *Only an answer with authority stops a question* labels it: as an answer only when it passes
-every check of that requirement, and otherwise shown as input, which does not settle the
-question, labelled as unconfirmed. A check
-that cannot be run counts as failed. A miss
+every check of that requirement, and otherwise as input, which does not settle the question,
+with the label #25 gives it, such as unconfirmed. A check
+that cannot be run counts as failed. Among that requirement's checks is #25's rule that, during an
+Igor's run, a file whose `repository` key names a repository other than the item's is input,
+never an answer. A miss
 file, which #25's format tells apart from a question file, is labelled as a miss. Neither kind
 of file is labelled as lore.
 
@@ -78,10 +80,12 @@ A search's results MUST NOT be recorded as firings.
 
 - **WHEN** a search during a run matches a question file on the Igor's lore repository's
   `questions` branch whose `repository` key names a repository the run's role does not work
-- **AND** the repository of the item the run works is no more visible than that repository
+- **AND** the file's `asked_from` key names the repository of the item the run works
+- **AND** the repository of the item the run works is no more visible than the repository the
+  `repository` key names
 - **THEN** that file is returned, delimited as data
-- **AND** it is labelled as an answer, as input or as unanswered, as the inquisitor's first
-  filter labels it, and never as lore
+- **AND** it is labelled as input or as unanswered, as the inquisitor's first filter labels
+  it, and never as an answer or as lore
 
 #### Scenario: A search labels in-scope entries that are not active
 
@@ -157,10 +161,11 @@ counts as public, and a repository the question concerns whose visibility it can
 as private. The Igor SHALL read the visibility of the item's repository when it pushes. A citation that
 this rule withholds is not pushed.
 
-The Igor SHALL learn the lore repository's visibility by asking GitHub once, at startup, for
-its exact visibility: `private`, `internal` or `public`, and the citation rule above SHALL use
-that answer until the Igor restarts. The `publicStore` setting SHALL NOT decide it. When
-GitHub's answer cannot be read, the lore repository counts as public.
+The Igor SHALL learn the lore repository's visibility by asking GitHub for its exact
+visibility, `private`, `internal` or `public`, at each push to the `questions` branch, one
+call per push, and the citation rule above SHALL use that push's answer. The `publicStore`
+setting SHALL NOT decide it. When GitHub's answer cannot be read, the lore repository counts
+as public.
 
 The Igor SHALL record, in the run's record on the state branch, how many of the run's
 citations it did not push, by reason: refused, withheld by the visibility rule, failed to push,
@@ -284,8 +289,8 @@ refused.
 
 #### Scenario: An unreadable visibility counts against pushing
 
-- **WHEN** the Igor could not read the lore repository's visibility at startup, or cannot read
-  the visibility of the repository of the item the run works
+- **WHEN** the Igor cannot read the lore repository's visibility, or the visibility of the
+  repository of the item the run works, when it pushes
 - **THEN** it treats the lore repository as public and the item's repository as private
 
 #### Scenario: The item's repository's visibility is read at push time
@@ -298,16 +303,26 @@ refused.
 #### Scenario: The lore repository's visibility comes from GitHub, not publicStore
 
 - **WHEN** the team's configuration sets `publicStore: false`
-- **AND** GitHub reports the lore repository as `internal` at startup
+- **AND** GitHub reports the lore repository as `internal` when the Igor pushes
 - **AND** the repository of the item the run works is private
 - **THEN** the Igor withholds the run's citations
 - **AND** the run's record counts each as withheld
 
-#### Scenario: The lore repository's visibility is read once, at startup
+#### Scenario: The lore repository's visibility is read at each push
 
 - **WHEN** GitHub reported the lore repository as `private` when the Igor started
 - **AND** the lore repository has since been made public
-- **THEN** the Igor's citation rule still treats it as `private` until the Igor restarts
+- **AND** the repository of the item the run works is private
+- **THEN** the Igor asks GitHub again when it pushes the run's citations, and withholds them
+- **AND** the run's record counts each as withheld
+
+#### Scenario: A citation with two reasons is counted once, under the first
+
+- **WHEN** a worker reports a citation of an id that names no `active` entry in the run's role's
+  scope
+- **AND** the run publishes no artifact and does not end in the Igor's handoff comment
+- **THEN** the run's record counts that citation once, as from a run that published neither,
+  and not as refused
 
 #### Scenario: A citation that cannot be pushed is counted
 
@@ -346,26 +361,31 @@ The Igor SHALL push a questions-branch file only when:
 - no file is already at its path on the `questions` branch;
 - the lore repository is no more visible than the repository of the item the run works, nor
   than the repository its `repository` key names. The visibility order, the rule for an
-  unreadable visibility, and the lore repository's visibility read at startup are those *An
-  Igor publishes the citations its worker reports* sets, and the Igor reads the other two
-  repositories' visibility when it pushes.
+  unreadable visibility, and the reading of the lore repository's visibility at each push are
+  those *An Igor publishes the citations its worker reports* sets, and the Igor reads the other
+  two repositories' visibility when it pushes too.
 
-A log file holding `authority: decision` or `input` *answers a question the Igor asked* when
-its `answer_link` is a comment on the item the run works, and its question matches a question
-the Igor posted in the handback comment that the answering comment replies to. A *handback
-comment* is the Igor's handoff comment on the item (*graceful-handoff*) when it asks a question
-the run could not settle, and that definition is settled. Two further rules are
-readings of decision 30 that Adam has not yet confirmed, and may change: the handback comment
-an answering comment replies to is the latest one the Igor posted on the item before it, and
-the question matches when the text under the file's `## Question` equals the posted question's
-text, with each run of whitespace in either made one space. A file's `repository` key may name
+The Igor SHALL refuse any questions-branch file that does not meet every condition above, and
+a refused file writes nothing to the lore repository.
+
+Before it checks and pushes a file, the Igor SHALL set the file's `asked_from` key to the
+repository of the item the run works, as `owner/repo`, replacing any value the worker wrote.
+
+A *handback comment* is the Igor's handoff comment on the item (*graceful-handoff*) when it
+asks a question the run could not settle. When the Igor posts one, it SHALL record the
+questions it posted there, and the record, never the comment's current text, says which
+questions the Igor asked. A log file holding `authority: decision` or `input` *answers a
+question the Igor asked* when its `answer_link` is a comment on the item the run works, and the
+text under its `## Question` matches a question that record holds for a handback comment the
+Igor posted on the item before the answering comment. Two questions match when they are equal once
+each is reduced as shared-skills #25 reduces a question for its hash. A file's `repository` key may name
 any repository, whether or not the run's role works it. A log file holding an answer is pushed
-as a new file, beside the unanswered log file of the same question, which stays as it is. The Igor SHALL refuse any other such file, and a refused
-file writes nothing to the lore repository. It SHALL create the `questions` branch where it is missing, commit each file with the
+as a new file, beside the unanswered log file of the same question, which stays as it is. The Igor SHALL create the `questions` branch where it is missing, commit each file with the
 message #25 sets for a commit to that branch and with no trailer, and retry a push that lost a
 race, as *An Igor publishes the citations its worker reports* does for a citation. The run's
 record SHALL count the run's questions-branch files that the Igor did not push, by the reasons
-that same requirement counts citations by. These counts SHALL NOT repeat any text the worker wrote.
+that same requirement counts citations by, each under the first that applies in the order
+that requirement sets. These counts SHALL NOT repeat any text the worker wrote.
 
 #### Scenario: A worker's question file is published by its Igor
 
@@ -429,8 +449,8 @@ that same requirement counts citations by. These counts SHALL NOT repeat any tex
 
 - **WHEN** an item handed back with a question is worked again after a person answered it
 - **AND** the worker reports a log file holding `authority: decision`, whose `answer_link` is
-  that person's comment on the item, and whose question is the one the Igor posted in the
-  handback comment that the person's comment replies to
+  that person's comment on the item, and whose question is one the Igor's record holds for
+  its handback comment
 - **AND** the file passes the other rules
 - **THEN** the Igor pushes it at a new path on the `questions` branch
 - **AND** the unanswered log file of the same question is unchanged
@@ -447,10 +467,26 @@ that same requirement counts citations by. These counts SHALL NOT repeat any tex
 
 - **WHEN** a worker reports a log file holding `authority: decision`, whose `answer_link` is a
   comment on the item the run works
-- **AND** its question is not one the Igor posted in the handback comment that comment replies
-  to, as when the comment answered a different question
+- **AND** its question is not one the Igor's record holds for a handback comment it posted on
+  the item before the answering comment
 - **THEN** the Igor pushes nothing for it
 - **AND** the run's record counts one refused file
+
+#### Scenario: A question edited into the handback comment is not one the Igor asked
+
+- **WHEN** someone edits the Igor's handback comment on the item to hold a question the Igor
+  did not post
+- **AND** a worker reports a log file holding `authority: decision` for that question, whose
+  `answer_link` is a comment on the item
+- **THEN** the Igor pushes nothing for it, since its record does not hold that question
+- **AND** the run's record counts one refused file
+
+#### Scenario: The Igor records where a questions-branch file came from
+
+- **WHEN** a worker on an item in repository A reports a log file whose `repository` key names
+  repository B, and which holds an `asked_from` key naming B
+- **AND** the Igor pushes the file
+- **THEN** the pushed file's `asked_from` names A
 
 #### Scenario: A worker's file never replaces one on the branch
 
@@ -508,7 +544,11 @@ that same requirement counts citations by. These counts SHALL NOT repeat any tex
 igor SHALL provide every worker the command `igor lore-search`, which reads from its standard
 input the text of a question, or terms to search for, and takes no argument. The Igor, not the
 worker, SHALL run the search, over the lore store it injects from: its entries, in the lore store as the run read it, and the `questions` branch's
-question and miss files, as the Igor fetched that branch when the run started. The Igor SHALL take the run, and
+question and miss files, as they stood when the run started: under `igor serve`, the Igor
+SHALL fetch that branch at the start of each run; `igor run` fetches nothing, and reads the
+branch as it was last fetched. The results SHALL say when the branch the search read was last
+fetched, or that it was never fetched or could not be fetched, so that a search that could not
+read the branch never reads as one that found nothing there. The Igor SHALL take the run, and
 so its role, from the channel the request arrives on, never from the request, and only that
 run's worker SHALL be able to reach that channel. It SHALL apply every rule *Lore reaches the worker unbidden*
 sets for a search during a run, for the run's role, and SHALL return the results to the worker
@@ -516,18 +556,23 @@ as search output. Each result SHALL be an in-scope entry, with its id, its statu
 text, marked as lore when `active` and labelled as not lore otherwise, or an in-scope question
 or miss file, labelled as *Lore reaches the worker unbidden* sets, the unanswered label
 included. It SHALL return a `questions`-branch file only when the repository of the
-item the run works is no more visible than the repository the file's `repository` key names,
-by the visibility order that *An Igor publishes the citations its worker reports* sets. Here an
-item's repository whose visibility the Igor cannot read counts as public, and a file's
-repository whose visibility it cannot read counts as private, so either counts against
-returning the file. Visibility alone decides this: the Igor does not compare
+item the run works is no more visible than the file, by the visibility order that *An Igor
+publishes the citations its worker reports* sets. A file is as visible as the more private of
+the repositories its `repository` and `asked_from` keys name, and as its `repository` alone
+when it holds no `asked_from`. The Igor SHALL pass either key's value to GitHub only when it
+names a repository as `owner/repo`; any other value counts as a repository whose visibility it
+cannot read. Here an item's repository whose visibility the Igor cannot read
+counts as public, and a file's repository whose visibility it cannot read counts as private,
+so either counts against returning the file. Visibility alone decides this: the Igor does not compare
 who can read the two repositories.
 
 The Igor SHALL itself run the checks of shared-skills #25's requirement
 [*Only an answer with authority stops a question*](https://github.com/adamstallard/shared-skills/blob/spec/inquisitor/openspec/changes/inquisitor/specs/inquisitor/spec.md)
 on each question file it returns that holds an answer, and label the file by them as *Lore
 reaches the worker unbidden* sets. #25 states the checks; this requirement does not restate
-them. Each read those checks make from GitHub SHALL authenticate as the installation of the
+them. One is whether the comment a file's `answer_link` points to holds the answer, which #25
+defines as a containment after both texts are normalized; the Igor applies that rule in code,
+with no model call. Each read those checks make from GitHub SHALL authenticate as the installation of the
 Igor's App that covers the repository that read is from (`surface-adapter`'s *On GitHub,
 every call an Igor makes acts as its App*); the worker makes none of them. A check cannot be run when, for
 example, GitHub cannot be reached, no installation of the Igor's App covers the repository the
@@ -583,6 +628,21 @@ inheritance cannot remove it (`role-config`'s *Merge semantics differ by field k
   write access to what a `questions`-branch file's question concerns
 - **THEN** the results show the file as input, labelled as unconfirmed, never as an answer
 
+#### Scenario: A linked comment is judged by #25's normalized containment, with no model
+
+- **WHEN** a question file's answer line is "Back off, capped at a minute."
+- **AND** the comment its `answer_link` points to reads "User says: **Back off**, capped at a
+  minute." over two lines, with the prefix #25 puts before an answer it relays for a person
+- **THEN** the Igor finds that the comment holds the answer, as #25's rule reduces both texts
+- **AND** no model reads the comment
+
+#### Scenario: A question file keyed to another repository is shown as input
+
+- **WHEN** a worker on an item in repository A runs `igor lore-search`
+- **AND** a question file holding `authority: decision`, whose `repository` key names
+  repository B, matches the text and passes the visibility rule
+- **THEN** the results show the file as input, labelled as unconfirmed, whatever its proofs
+
 #### Scenario: The search command needs no role listing
 
 - **WHEN** a role's `commands` do not list `igor lore-search`
@@ -607,6 +667,26 @@ inheritance cannot remove it (`role-config`'s *Merge semantics differ by field k
   the text, as does one whose key names a repository whose visibility cannot be read
 - **THEN** the results neither include them nor count or mention them
 
+#### Scenario: A file is judged by the more private of its two repositories
+
+- **WHEN** a worker on an item in a public repository runs `igor lore-search`
+- **AND** a `questions`-branch file whose `repository` key names a public repository, and
+  whose `asked_from` key names a private one, matches the text
+- **THEN** the results neither include that file nor count or mention it
+
+#### Scenario: A malformed repository key is never looked up
+
+- **WHEN** a worker runs `igor lore-search`
+- **AND** a `questions`-branch file whose `asked_from` key is `o/../../user` matches the text
+- **THEN** the Igor makes no GitHub call with that value
+- **AND** the results neither include that file nor count or mention it
+
+#### Scenario: The search says when it could not read the questions branch
+
+- **WHEN** a worker under `igor run` runs `igor lore-search`, and the `questions` branch has
+  never been fetched
+- **THEN** the results say that the branch was never fetched
+
 #### Scenario: An unreadable item visibility counts against returning a file
 
 - **WHEN** the Igor cannot read the visibility of the repository of the item the run works
@@ -623,9 +703,16 @@ inheritance cannot remove it (`role-config`'s *Merge semantics differ by field k
 
 #### Scenario: The search command reads the questions branch as the run fetched it
 
-- **WHEN** a file is pushed to the `questions` branch after the run started
+- **WHEN** a run under `igor serve` starts, and the Igor fetches the `questions` branch
+- **AND** a file is pushed to the `questions` branch after that
 - **AND** the worker then runs `igor lore-search` with text that matches it
 - **THEN** the results do not include that file
+
+#### Scenario: igor run reads the questions branch as last fetched
+
+- **WHEN** a file was pushed to the `questions` branch after the branch was last fetched
+- **AND** a worker under `igor run` runs `igor lore-search` with text that matches it
+- **THEN** nothing is fetched, and the results do not include that file
 
 #### Scenario: A role cannot restrict the search command away
 

@@ -48,7 +48,10 @@ outcome. These SHALL be written to the state branch, never to the destination's 
 
 A run whose worker reported meeting a question with a *category*, as `lore-firing`'s *An Igor
 publishes the citations its worker reports* defines it, or whose Igor met one in its own
-inquisitor run, SHALL have no transcript written to the state branch.
+inquisitor run, SHALL have no transcript written to the state branch. The file at its
+transcript path SHALL hold only this line: "Transcript withheld: this run met, or may have
+met, a sensitive question. See the action log." The action log is the log of tool calls
+described below; until a run keeps one, the line points to nothing.
 Its outcome, its cost and its row in the execution ledger, `executions.ndjson`, which holds the run's id, its item
 and the citation counts that requirement sets, are still written. For such a run, the pull
 request body SHALL carry no excerpt of the worker's result and no link to a transcript, and a
@@ -60,9 +63,23 @@ provider's whole reply, except where a requirement that redacts credentials from
 to the state branch removes them. A *refusal record* is the file execution writes under
 `refusals/` on the state branch when the provider's reply names a usage limit.
 
+The ledger row records each shell command the worker's sandbox denied. For a run that met a
+question with a category, the row SHALL keep each denied command only as its *name*, without
+its arguments: its first words, up to three, each starting with a lowercase letter and holding
+only lowercase letters, digits and hyphens, ending before the first word that does not. A row
+for any other run keeps the denied command whole, as today.
+
+Where a run keeps a log of its model steps' tool calls beside its transcript, as the open
+change `keep-action-log` (#188) specifies, that log SHALL, for a run that met a question with a
+category, keep only names and numbers: each call's tool name, a shell command's name as above,
+its exit code, and counts and timings. It SHALL keep no argument, path, file content, message
+or output, and never more than #188 keeps for a run that met none: #188 chooses how much its
+log keeps from the visibility of the store and of the worked repository, and keeps no command
+for a public store and a private repository.
+
 In this requirement a *run* is one execution of an item, with every worker run it starts. An
 execution counts as having met a question with a category when any of its worker runs
-reported the flag below, or was refused before its completed report as the paragraph on refused runs below says; the rules above then
+reported the flag below, or ended before its completed report, as the paragraph below starting "A worker run that ends before" says; the rules above then
 apply to the whole execution, including any summary of an earlier worker run.
 
 During a run, the worker SHALL report a bare flag that the run met such a question, with no
@@ -70,9 +87,10 @@ category, question or answer. When the Igor runs the inquisitor skill itself and
 question a category, every rule above for a run that met such a question SHALL apply to that
 run.
 
-A worker run the provider refuses over a usage limit, and that ends before the Igor has that
-worker run's completed report, SHALL count as a run that met a question with a category, and every rule
-above for such a run SHALL apply to it. The worker's *completed report* is its report of the
+A worker run that ends before the Igor has its completed report, for any reason, SHALL count as
+a run that met a question with a category, and every rule above for such a run SHALL apply to
+it, whether the provider refused it, it went silent, it was stopped, or it ended for any other
+reason. The worker's *completed report* is its report of the
 run's citations and of the flag above, on the channel `lore-firing`'s *An Igor publishes the
 citations its worker reports* has it use, marked by the worker as whole. The provider's own
 reply, such as the result that names the limit, is not the worker's report. Where the Igor
@@ -82,8 +100,7 @@ cannot tell a whole report from a cut one, the report SHALL count as not complet
 
 - **WHEN** execution completes
 - **AND** the run met no question with a category
-- **AND** the provider did not refuse it over a usage limit before the Igor had its worker's
-  completed report
+- **AND** the Igor had the completed report of each of its worker runs
 - **THEN** the transcript and outcome are written to the state branch
 - **AND** the default branch is unchanged
 
@@ -97,6 +114,8 @@ cannot tell a whole report from a cut one, the report SHALL count as not complet
 - **WHEN** execution completes for a run whose worker reported meeting a question with a
   category
 - **THEN** no transcript of that run is written to the state branch
+- **AND** the run's transcript path holds only the line "Transcript withheld: this run met, or
+  may have met, a sensitive question. See the action log."
 - **AND** the run's outcome, cost and record, with its citation counts, are written there
 
 #### Scenario: A run that met a categorized question publishes no excerpt of its result
@@ -140,11 +159,37 @@ cannot tell a whole report from a cut one, the report SHALL count as not complet
 - **AND** any pull request the run publishes holds no excerpt of the worker's result and no
   link to a transcript
 
+#### Scenario: A worker run that ends without its completed report, for any reason, counts as flagged
+
+- **WHEN** a worker run goes silent or is stopped
+- **AND** it ends before the Igor has its completed report
+- **THEN** the run counts as having met a question with a category
+- **AND** no transcript of it is written, and its transcript path holds only the withheld note
+
+#### Scenario: A flagged run's ledger row keeps each denied command by name only
+
+- **WHEN** the worker's sandbox denies `gh issue comment 12 --body "…"` in a run that met a
+  question with a category
+- **THEN** the run's ledger row records the denied command as `gh issue comment`
+
+#### Scenario: Any other run's ledger row keeps a denied command whole
+
+- **WHEN** the worker's sandbox denies `gh issue comment 12 --body "…"` in a run that met no
+  question with a category
+- **THEN** the run's ledger row records the whole command
+
+#### Scenario: A flagged run's action log keeps names only
+
+- **WHEN** a run that met a question with a category keeps a log of its tool calls in a
+  private store, where #188's log keeps commands
+- **AND** its worker ran `cat notes.txt` and read a file
+- **THEN** the log holds each call's tool name, `cat` as the command's name, and the exit code
+- **AND** it holds no argument, path, file content, message or output
+
 #### Scenario: An execution counts as flagged when any of its worker runs does
 
 - **WHEN** an execution starts two worker runs
-- **AND** the second reports the flag, or is refused over a usage limit before the Igor has its
-  completed report
+- **AND** the second reports the flag, or ends before the Igor has its completed report
 - **THEN** no transcript of either worker run is written to the state branch
 - **AND** a pull request the execution publishes holds no summary or excerpt of either
   worker run's result
