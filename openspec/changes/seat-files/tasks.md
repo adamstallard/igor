@@ -1,12 +1,15 @@
-Build after six changes:
+Build after five changes:
 - `condition-backoff` (#101);
 - `read-seat-windows-from-the-stream` (#143);
 - `worker-user` (#175);
-- `pinned-skills` (#174), whose startup skills check and reset tasks 3.10 relies on;
 - `check-a-lore-repository` (#113), which adds `igor doctor`;
 - `redact-state-branch` (#217), whose `rememberSecret` task 3.3a calls.
 
-Line numbers below are a rough guide: they are `main`'s from before those six changes, which
+`pinned-skills` (#174) is built after this change (Adam, 2026-10-21, #174's decision 30). Task
+3.10 is built with this change, and the part of its test that covers #174's startup skills
+check is added once #174 is built, before task 3.10 is ticked.
+
+Line numbers below are a rough guide: they are `main`'s from before those five changes, which
 move them. The names are what to find. *Gate two* is the review of the implementation, after Adam approves this
 specification. Where a task quotes text in a fenced block, that text is the deliverable: unless the
 task itself says who may reword it, it may be reworded only where a measurement in section 1
@@ -226,7 +229,8 @@ contradicts it, and then `design.md` records the measurement.
       Triage, worker runs and probes each carry the chosen seat's token, and where the gate names
       no seat no call is made. Test: with a stored login in the home directory of the user Igor
       runs `claude` as, and no seat serving the role, a cycle makes no model call; with a seat, every call carries
-      that seat's token, #174's startup skills check included (proposal, decision 42). The reset
+      that seat's token, #174's startup skills check included, which under `igor serve` is the
+      first probe of a seat when one is due (proposal, decision 42). The reset
       that removes a stored login from a worker's home is #174's and #175's. Under `igor serve`
       no stored login exists. Under `igor run`, #174's task 0.3 found that Claude Code 2.1.303 does
       not prefer a stored login over the token in the environment. Were a version to, a call would

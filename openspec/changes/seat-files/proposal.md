@@ -237,12 +237,17 @@
     with an error is not retried at once. The probe skips a seat Igor could not decrypt,
     and `igor run` makes no probe. This change archives after #143 (decision 32), so the block
     applies to #143's requirement once it is in force. Task 3.11.
-42. **#174's startup skills check spends a seat through the gate, as an ordinary call** (Adam,
-    2026-10-18). The gate is the budget check that chooses which seat a model call is charged to.
-    The seat probe and #143's live `/usage` read stay the only calls the gate does not choose a seat
-    for, each charged to the seat it reads, until the `/usage` read is removed (decision 64). *A spend
-    with no seat behind it is not made*; task 3.10. *Rejected:* a second exception for the
-    startup check.
+42. **#174's startup skills check is charged like a probe when it is one, and otherwise spends a
+    seat through the gate** (Adam, 2026-10-18; amended 2026-10-21 in #174's decision 28). The
+    gate is the budget check that chooses which seat a model call is charged to. Under `igor
+    serve`, where a seat is due a probe when Igor starts, the check's call is that first probe:
+    it is charged to the seat it reads, as every probe is, and its `rate_limit_event` is that
+    seat's first reading. Where no seat is due a probe, and always under `igor run`, which makes
+    no probe, the check goes through the gate like any other call. So the only calls the gate
+    does not choose a seat for stay the seat probe and #143's live `/usage` read, each charged
+    to the seat it reads; the `/usage` read goes in the first change built after this one's code
+    (decision 64). *A spend with no seat behind it is not made*; task 3.10. *Rejected:* letting
+    the check skip the gate even when it is no probe, an exception of its own.
 43. **`igor doctor` invokes the configuration's validation, which reads no secret, and reports
     its findings, each named with its source** (Adam, 2026-10-18). Among them is a seat file
     carrying `encrypted_token` where no `seatKey` is declared, which the validation reports and
@@ -401,6 +406,27 @@ rejects with the change:
   revokes (decision 61), not whether a revoked `setup-token` is then refused; the lender's veto
   (decision 3) rests on both. *Recommendation:* measure it before gate two (task 1.3): revoke a
   test token at claude.ai and confirm a call with it is refused.
+- **Findings of a consistency read on 2026-10-21, for whoever next edits this change.** None is
+  decided, and none blocks approving the rules above, except where an item says so:
+  - **Decision 42 and #143's probe.** #143's probe is minimal: it runs with no tools and loads
+    nothing. The skills check loads the skills it checks. #174 asks Adam whether the check may
+    differ from #143's probe in that way; decision 42 holds as written either way.
+  - **Stopping or handing off.** Where every seat of a role is under a condition, decision 33
+    stops the role, while decisions 15 and 73 have it hand each item off. With no seat, triage
+    claims nothing, so there is no item to hand off.
+  - **The archive commit.** The one-commit archive with #143 names #175, #174 and #113 as the
+    changes between the two. #204 now places seven there, and issue #148 records the
+    one-commit rule as superseded.
+  - **Against #208 (`lore-pull`),** four rules differ: the notice for a seat file pushed with
+    no pull request, when a removed seat file takes effect, whether a restart that removes a
+    role's last seat still starts, and which reads clear a read-cleared condition.
+  - **Against #101 and #143.** A read-cleared condition opens on its first failing read and
+    stops nothing, and #101's *Conditions are counted, not graded*, which this change does not
+    modify, forbids both. #143's scenario refusing `capacity_estimate`, and its reserve rules
+    that always use the role's reserve, stay unmodified here too.
+  - **Against #216.** The worker-environment requirement this change re-adds drops the
+    `IGOR_RUN` variable #216 adds to it.
+  - **Task 3.4** quotes the found id in double quotes, where the spec requires a code span.
 
 Pulling the lore checkout is specified by the open change `lore-pull` (#208, for #176), which
 archives after this one. It defines a *lore read*: a process loading its configuration, role
@@ -532,8 +558,11 @@ it archives first.
 - `docs/deployment.md`, `docs/seats.md`, `docs/architecture.md` §6.5.1, `README.md`,
   `igor.config.example.yaml`, `deploy/`.
 - `adamstallard/igor-lore`: `seats/adam.yaml`.
-- Build order: `condition-backoff` (#101), `read-seat-windows-from-the-stream` (#143),
-  worker-user (#175), `pinned-skills` (#174) and `check-a-lore-repository` (#113), then this. The archive order is the
+- Build order, one after another: `condition-backoff` (#101), `read-seat-windows-from-the-stream`
+  (#143), `worker-user` (#175), `check-a-lore-repository` (#113), `redact-state-branch` (#217),
+  this change, and then `pinned-skills` (#174), whose code Adam placed after this change's on
+  2026-10-21 (#174's decision 30). Build order and archive order differ for #174 alone: it is
+  built after this change but archives before it. The archive order is the
   one issue #204 holds (decision 32). This change and #143 archive in one commit (Adam,
   2026-10-17), so the changes #204 places between them, #175, #174 and #113, archive in that commit too. No commit then
   leaves one of the two archived without the other, so no in-force requirement text names

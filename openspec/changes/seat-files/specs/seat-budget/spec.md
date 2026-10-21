@@ -1033,7 +1033,9 @@ own token as an implicit local seat*). Two calls are
 exceptions to the gate choosing, each charged to the seat it reads and made with that seat's own
 token: a seat probe, and #143's live `/usage` read, made only for a seat whose credential the
 `/usage` endpoint reports windows for, which a `setup-token` does not. Every other call goes through the gate, #174's startup skills check
-included. Where the gate names no seat, the call SHALL NOT be made. Igor SHALL NOT make a model
+included, except where that check is itself a seat's first probe: under `igor serve`, when a
+seat is due a probe at start, as #174's *Igor confirms its skills load before its first model
+call* has it. Where the gate names no seat, the call SHALL NOT be made. Igor SHALL NOT make a model
 call on a stored Claude login (the credentials `claude` keeps in a home directory), or on any
 other credential no seat names, whether in place of a seat or beside one.
 
@@ -1093,7 +1095,8 @@ lenders declares one seat from its own token instead.
 
 #### Scenario: The startup skills check goes through the gate
 
-- **WHEN** Igor makes #174's startup skills check
+- **WHEN** Igor makes #174's startup skills check, and the check is no seat's probe, as under
+  `igor run`
 - **THEN** the call is charged to the seat the gate chose and made with that seat's token
 
 #### Scenario: A call that runs names the seat that paid

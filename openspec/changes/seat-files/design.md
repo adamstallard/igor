@@ -4,8 +4,10 @@ The proposal says what must be true. This file covers the parts where how is a c
 reaches the server, how a seat is chosen without pools, and what a lender's control over their
 seat rests on.
 
-Build order is `condition-backoff` (#101), `read-seat-windows-from-the-stream` (#143),
-worker-user (#175), `pinned-skills` (#174) and `check-a-lore-repository` (#113), then this change.
+Build order, one after another: `condition-backoff` (#101), `read-seat-windows-from-the-stream`
+(#143), `worker-user` (#175), `check-a-lore-repository` (#113), `redact-state-branch` (#217),
+this change, and then `pinned-skills` (#174), which Adam placed after this change on 2026-10-21
+(#174's decision 30).
 
 Two terms come from #143, *line* and *reading*. A seat's *line* for a usage window is the share of the window Igor
 may spend: it rises from `1 − reserve` just after a reset to 100% at the next reset, using the
