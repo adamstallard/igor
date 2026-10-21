@@ -457,7 +457,9 @@ Once a file passes the checks above, and before it pushes the file, the Igor SHA
 file's `asked_from` key to the repository of the item the run works, as `owner/repo`.
 
 A *handback comment* is the Igor's handoff comment on the item (*graceful-handoff*) when it
-asks a question the run could not settle. When the Igor posts one, it SHALL record, on the
+asks a question the run could not settle. A flagged run, as `task-execution` defines it, posts none: its handoff asks nothing,
+as *graceful-handoff*'s *A handoff states what was done, what remains, and who could continue*
+says, so the Igor records no handback question for it. When the Igor posts one, it SHALL record, on the
 state branch under that item, each question it posted there as a hash, the question reduced
 and hashed as shared-skills #25 reduces and hashes a question, with the handback comment's id
 and the time the Igor posted it. The record SHALL hold no text of the question. The record,
@@ -621,6 +623,11 @@ that requirement sets. These counts SHALL NOT repeat any text the worker wrote.
   replace
 - **THEN** the Igor pushes nothing for it
 - **AND** the run's record counts one refused file
+
+#### Scenario: A flagged run records no handback question
+
+- **WHEN** a flagged run stops on a question it could not settle
+- **THEN** the state branch gains no handback question for the item
 
 #### Scenario: The record of handback questions holds hashes, never text
 

@@ -150,7 +150,8 @@ igor sets for the kind of reason, such as `error` for a thrown error, and never 
 message's text or other text the run produced. For a worker killed for a limit, those words
 SHALL name the kind of hang and the limit's duration, as *A killed worker's failure names the
 limit it breached* requires, such as `silent after 10m` or `time ceiling 60m`: words from a
-fixed vocabulary, and numbers, never free text. The row's changed file
+fixed vocabulary, and numbers, never free text. For a run that stopped on a question it could
+not settle, those words SHALL be `needs a person`. The row's changed file
 paths, the actions the role refused and the role settings that would have permitted them stay
 as for any other run.
 

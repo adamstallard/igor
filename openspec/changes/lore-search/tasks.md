@@ -170,7 +170,9 @@
       report as a worker run does, and counts as one. A flagged run's handoff comment
       (`composeHandoff`, `src/handoff.ts`) states why it stopped only in the ledger row's fixed
       words, quotes no worker or provider text about why it stopped, and points to the item's
-      transcript path, which holds the transcript-withheld note. Once
+      transcript path, which holds the transcript-withheld note. A flagged run that stopped on
+      a question it could not settle posts that handoff asking nothing, with the reason
+      `needs a person`, and the ledger row's `reason` is `needs a person` too. Once
       #188's action log is built, a
       flagged run's log keeps names only. Tests for *Transcript persisted
       off the main line*, *A run that met a categorized question stores no transcript*, *A run that
@@ -186,8 +188,9 @@
       question flags the execution*, *A model step after the worker that sends no completed
       report flags the execution*, *A flagged run's handoff quotes no failure detail*, *A flagged
       run that declined quotes none of the worker's reason*, *A flagged run's handoff still
-      names the setting that would let it proceed*, *A flagged run's budget handoff
-      still gives the reset time*, *Any
+      names the setting that would let it proceed*, *A flagged run that stopped on a question
+      posts no question* (its handoff asks nothing and gives the reason `needs a person`),
+      *A flagged run's budget handoff still gives the reset time*, *Any
       other run's ledger row keeps a denied command whole*, *A flagged run's action log keeps
       names only* once #188 is built, *An execution counts as flagged
       when any of its worker runs does* and, once 3.6 can be built, *The Igor's own inquisitor run that met a

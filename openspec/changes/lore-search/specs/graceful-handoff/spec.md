@@ -16,6 +16,12 @@ transcript path on the state branch instead, which for such a run holds the one-
 transcript-withheld note that requirement writes in place of a transcript. Facts igor records itself, such as when a budget resets or which setting would let the
 run proceed, are not text the run produced, and the handoff still states them.
 
+A flagged run's handoff SHALL ask no question. Where the run stopped on a question it could not
+settle, so that its handoff would otherwise be a handback comment (a handoff asking a person
+that question, as `lore-firing` defines it), the Igor SHALL post only the handoff above, giving
+as its reason the fixed words `needs a person`, which `task-execution` sets for such a run, and
+the run's question text SHALL NOT reach the item.
+
 #### Scenario: Handoff content complete
 
 - **WHEN** a handoff is posted
@@ -47,6 +53,13 @@ run proceed, are not text the run produced, and the handoff still states them.
 - **WHEN** a flagged run stops because its role's settings refused an action
 - **THEN** the handoff names the setting that would let the run proceed, as igor records it
 - **AND** it quotes no text the worker or the model provider wrote about why the run stopped
+
+#### Scenario: A flagged run that stopped on a question posts no question
+
+- **WHEN** a flagged run stops on a question it could not settle
+- **THEN** its handoff on the item asks nothing and holds none of the question's text
+- **AND** it gives the reason as the fixed words `needs a person`, and points to the item's
+  transcript path
 
 #### Scenario: A flagged run's budget handoff still gives the reset time
 

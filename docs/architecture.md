@@ -568,7 +568,13 @@ never an error message's text. For a worker killed for a limit, those words name
 hang and the limit's duration, such as `silent after 10m`. Its handoff comment on the item
 gives the same fixed words, quotes no failure detail or worker's reason, and points to the
 item's transcript path. Facts igor records itself, such as a budget's reset time, still appear
-in that comment. The ledger row's changed paths and refused actions stay in full. Open pull request #188 adds a log of each run's tool calls; for such a run, that
+in that comment. A flagged run, one that met or may have met a sensitive question, including
+one that ended before its completed report, posts a handoff that asks no question, even when
+the run stopped on one it could not settle: its reason reads `needs a person`, and the
+question's text never reaches the item. The person who picks the item up learns only that it
+needs one; how they could learn the question is open in #216. The ledger row's changed paths
+and refused actions stay in full. Open pull request #188, not yet built, adds a log of each
+run's tool calls; for a flagged run, that
 log keeps only names and numbers: tool names, command names, exit codes, counts and timings.
 
 In these rules a run is a whole execution of an item, which can start more than one worker

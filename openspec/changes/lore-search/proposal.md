@@ -2,7 +2,7 @@
 
 ## Decisions
 
-[#215](https://github.com/adamstallard/igor/issues/215) records all seventy-two decisions,
+[#215](https://github.com/adamstallard/igor/issues/215) records all seventy-three decisions,
 and all are Adam's. Where the agent that wrote this change fitted one of them to the spec, that
 decision says so. A *consistency read*
 is a check, by a fresh agent, of this change against every other spec, change and open pull
@@ -63,7 +63,9 @@ request; Adam answered the questions each read raised. He made:
 - decisions 70 and 71 on 2026-10-21, answering two questions the consistency read of
   decisions 63 to 69 raised;
 - decision 72 on 2026-10-21, a rule for shared-skills #25 and this change alike, given in
-  the session reviewing #25.
+  the session reviewing #25;
+- decision 73 on 2026-10-21, answering the question the consistency read of decisions 70 to
+  72 raised.
 
 Terms used here:
 - The *destination repository* is the repository the configuration key `destination` names,
@@ -716,6 +718,19 @@ Terms used here:
     entirely, and a worker's answer line only identifies the comment. This is #25's rule,
     decided by Adam on 2026-10-21 for both repositories; this change points to it and applies
     it in `igor lore-search`'s authority checks.
+73. **A flagged run's handback posts no question.** A handback is a handoff that asks a person
+    the question a run could not settle. When a flagged run stops on such a question, it posts
+    decision 71's fixed-words handoff instead, which says the run needs a person, and asks
+    nothing; whoever picks up the item reruns it or looks into it, though what they can learn
+    there is open (*Still open*, question 3 of the read of decision 73). The run's
+    question text never reaches the item, since it is text the run produced and could reveal
+    the sensitive matter that flagged the run. The agent that wrote this change gave the
+    reason such a run stopped, a question it could not settle, the fixed words `needs a person`, in the ledger row's `reason` and in the
+    handoff. Because no handback is posted, the Igor records
+    no handback question for the run (Adam, 2026-10-21). This change's `graceful-handoff` delta
+    says so, and `lore-firing`'s *An Igor publishes the questions-branch files its worker
+    reports* points to it, each with one new scenario.
+
 
 **Alignments with shared-skills #25.** These follow from Adam's decisions above and #25's
 decisions 216, 221, 225 and 229 (#25 at 08951b7), and add no decision:
@@ -1026,6 +1041,25 @@ decisions 216, 221, 225 and 229 (#25 at 08951b7), and add no decision:
   - The transcript-withheld note points to an action log, which no run keeps until #188 is
     built.
   - Whether #25's credential prefixes match the seat token is unmeasured; task 4.9 checks.
+- **Found by the consistency read of decision 73.** Its other findings are fixed in the spec;
+  these three are possible questions for Adam:
+  1. *directed-interaction asks a stuck run to say what it needs.* The open change
+     `directed-interaction` says that where an item cannot be acted on as written, an Igor
+     "SHALL say what it needs rather than choose an interpretation", and its scenario has the
+     message on the item say "what would let it proceed". Decision 73 has a flagged run say
+     only `needs a person`. Neither names the other as an exception; if decision 73 stands,
+     `directed-interaction` needs a pointer to it.
+  2. *#211's inquisitor role never sees a flagged run's question.* #211's decisions 7, 9 and 10
+     have the handback comment carry the prepared question to the inquisitor role, with a
+     label such as `igor:question`. Under decision 73 a flagged run's question never reaches
+     the item, so it never reaches that role, and nothing says whether the label is still
+     added. #211's body does not know about decision 73.
+  3. *Nobody can learn the question.* The transcript path holds only the withheld note, and
+     the action log keeps names only and does not exist until #188. A person's reply lifts
+     the hand-back suppression (`work-triage`'s *A reply lifts the suppression*), so a rerun
+     can meet the same question, flag again and post the same handoff. Whether the question
+     should go somewhere private, or the item be released without a handoff, is not
+     decided.
 - **For shared-skills #25, from the consistency read of decisions 63 to 69.** Decisions 70 and
   71 settled the two questions it raised for Adam. Two items remain for #25:
   - its log format holds "the answer in one sentence under `## Answer`", while decision 70
@@ -1034,12 +1068,6 @@ decisions 216, 221, 225 and 229 (#25 at 08951b7), and add no decision:
   - its spec puts a person's relay file beside igor's configuration, while decision 66 puts
     relay files in the destination repository, beside the entries. #25 should align with
     decision 66.
-- **For Adam: a flagged run's handback question.** Decision 71 has a flagged run's handoff
-  state why it stopped only in fixed words. A handback comment is a handoff that asks a
-  question the run could not settle, and that question is text the run produced. Whether a
-  flagged run's handback may still carry its question, or how a flagged run asks one, is not
-  decided; the spec bars only the failure's detail and any worker or provider text about why the run
-  stopped.
 ## Why
 
 The requirement *Lore reaches the worker unbidden* forbids offering a worker a search over the
@@ -1092,7 +1120,7 @@ reading the codebase. Two cases contradict that:
   file that already holds one, and sets an answered file's `authority` itself by #25's checks.
   It records the questions of each handback comment on `igor-state` as hashes, with no text.
   The Igor sets a relay App's answer's `answered_by` as well as its `authority`, and records
-  the linked comment's whole text, never the worker's line, as the answer. It has twenty-eight
+  the linked comment's whole text, never the worker's line, as the answer. It has twenty-nine
   scenarios (decisions 20, 21, 24, 28, 30, 33, 34, 41, 42, 45, 59 and 67, and the alignments
   with #25).
 - A third new `lore-firing` requirement, *An Igor runs its worker's lore searches*, specifies
@@ -1150,8 +1178,8 @@ reading the codebase. Two cases contradict that:
   `docs/deployment.md` tells a person to name the App with the prefix.
 - `graceful-handoff`'s *A handoff states what was done, what remains, and who could continue*
   has a flagged run's handoff state why it stopped only in the ledger row's fixed words, quote
-  no failure detail or worker's reason and point to the item's transcript path, with four new
-  scenarios (decision 71).
+  no failure detail or worker's reason and point to the item's transcript path, and has a
+  flagged run's handoff ask no question, with five new scenarios (decisions 71 and 73).
 - `docs/architecture.md`: §3.3 says every worker is offered `igor lore-search` and what binds it, §3.4.1 says a
   search hit is not a firing and that a review counts citations from the destination repository's
   `questions` branch, and §4.1 says the worker never *has* to search.
@@ -1174,8 +1202,8 @@ None.
   `commands` listing it.
 - `surface-adapter`: an Igor refuses to start when its App's slug does not start with
   `igor-`.
-- `graceful-handoff`: a flagged run's handoff states why it stopped only in fixed words and
-  points to its transcript path (decision 71).
+- `graceful-handoff`: a flagged run's handoff states why it stopped only in fixed words,
+  points to its transcript path, and asks no question (decisions 71 and 73).
 - `task-execution`: pushing a run's citations and its question and miss files is exempt from
   the role's `allow` list, a worker's environment marks it as in an Igor's run, and a run
   that met a question with a category stores no transcript.
