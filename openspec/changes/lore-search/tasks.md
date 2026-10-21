@@ -72,8 +72,8 @@
       covering the repository, is shown as input, labelled as unconfirmed. Whether a linked
       comment matches the answer is checked in code by #25's reduced equality (decision 72):
       both texts are reduced as #25's rule says and must be equal, with no model call. The checks read #25's relay files from the destination repository as of the
-      commit #208's lore read last applied, never a commit it refused (the case where #208 applied
-      none waits on Adam; see the proposal's Still open), and apply #25's relay rule, under which an Igor's App is
+      commit #208's lore read last applied, never a commit it refused (where #208 applied none, a relayed answer counts as
+      input, decision 78), and apply #25's relay rule, under which an Igor's App is
       never a person's relay. They also apply a separate rule: during a run, a file keyed to
       another repository than the item's is input. Tests for *A question file that passes
       #25's authority checks is labelled as an answer*, *An authority check that cannot be run
@@ -176,9 +176,11 @@
       `needs a person`, and the ledger row's `reason` is `needs a person` too. It adds no
       `igor:question` label, writes the question to `flagged-questions/<tracker>/<repo>/<item>.md`
       under its state directory, mode 0600 in directories of mode 0700, replaced by a later
-      flagged run's question, and pushes nothing of it (what to do when the write fails waits on
-      Adam); and work triage counts
-      only an edit, never a reply, as answering that handoff. Once
+      flagged run's question, and pushes nothing of it (when the write fails, the handoff still posts,
+      the ledger row's `reason` reads `needs a person, question not kept`, a condition, once `condition-backoff`
+      is built, opens holding only a key gate two names, and the path goes only to the Igor's own log); and work triage counts
+      only an edit by someone with write access to the item's repository, never a reply, as
+      answering that handoff, keeping the item held where it cannot read who edited. Once
       #188's action log is built, a
       flagged run's log keeps names only. Tests for *Transcript persisted
       off the main line*, *A run that met a categorized question stores no transcript*, *A run that
@@ -199,7 +201,9 @@
       flagged run that stops on a question adds no question label*, *A flagged run's question is kept on the
       host, never pushed*, *A later flagged run's question replaces the kept one*, *Outside systemd the question goes
       under the XDG state directory*,
-      *A reply does not rerun a flagged item*,
+      *A reply does not rerun a flagged item*, *An edit by someone with write access releases a
+      flagged item*, *An edit without write access leaves a flagged item held*, *A question that
+      cannot be kept does not block the handoff*,
       *A flagged run's budget handoff still gives the reset time*, *Any
       other run's ledger row keeps a denied command whole*, *A flagged run's action log keeps
       names only* once #188 is built, *An execution counts as flagged
@@ -270,3 +274,10 @@
       token. Decision 28 says they miss it. If they match it, the Igor still uses #217's
       matcher, which also knows credentials no prefix shows, and gate two corrects decision 28's
       reasoning in the proposal.
+- [ ] 4.10 Whether the Igor's App installation can read who made each kind of edit to an item
+      (its body, title, labels and assignees), as #141 reads it through GraphQL's
+      `userContentEdits`, and how a non-GitHub tracker reports it. If it cannot, nobody, the operator included, can release a flagged item by an edit, and it
+      stays held until Adam decides how it is released (the proposal's Still open); report the
+      finding there before anyone relies on release by edit.
+      Until it can, an edit whose
+      author it cannot read leaves a flagged item held (decision 79).

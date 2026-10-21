@@ -578,11 +578,23 @@ nothing routes the item to an inquisitor role. The Igor keeps the question in a 
 host, `flagged-questions/<tracker>/<repo>/<item>.md` under its state directory
 (`$STATE_DIRECTORY` under a unit that sets `StateDirectory=igor`, as open pull request #179's
 does, making it `/var/lib/igor`, or else `~/.local/state/igor`), readable only by its own user,
-and never pushes it. Today's unit sets no state directory, and what the Igor does when the file
-cannot be written is open in #216. A reply on the item does not rerun the item: the operator
-reads the question and decides. An edit to the item still lets it be worked again, and who may
-make that edit is open in #216 too. The ledger row's changed paths
-and refused actions stay in full. Open pull request #188, not yet built, adds a log of each
+and never pushes it. Today's unit sets no state directory, so the Igor falls back to
+`~/.local/state/igor`, which that unit's `ProtectHome=read-only` makes read-only: until #179's
+unit lands, a deployed Igor keeps no question, and every such write fails. When the file
+cannot be written, the handoff still posts, the ledger row's `reason` reads `needs a person,
+question not kept`, and once the open change `condition-backoff`, which defines conditions,
+lands, the Igor opens one, a stuck-work record whose key gate two names and which holds no
+path. The path the Igor could not write goes only into its own log on the host. The operator
+finds a kept question under the state directory at `flagged-questions/<tracker>/<repo>/<item>.md`,
+the same `<tracker>/<repo>/<item>` as the item's transcript path. A reply on the item does not rerun the item: the operator reads the
+question and decides whether it may be worked again. The item stays held, not worked again,
+until someone with write access to the item's repository edits it, relabels it or changes its
+holder; the operator needs that access too, as an operator running the Igor
+under its own account may lack it, and anyone else's edit, or one whose author cannot be read,
+leaves it held. Until #141 lets the Igor read who made an edit, no edit can release such an
+item, which #216 leaves open. The ledger
+row's changed paths, and the actions the role's `allow` list refused, which differ from the
+sandbox's denied commands kept by name above, stay in full. Open pull request #188, not yet built, adds a log of each
 run's tool calls; for a flagged run, that
 log keeps only names and numbers: tool names, command names, exit codes, counts and timings.
 

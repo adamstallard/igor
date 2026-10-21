@@ -2,7 +2,7 @@
 
 ## Decisions
 
-[#215](https://github.com/adamstallard/igor/issues/215) records all seventy-seven decisions,
+[#215](https://github.com/adamstallard/igor/issues/215) records all eighty-one decisions,
 and all are Adam's. Where the agent that wrote this change fitted one of them to the spec, that
 decision says so. A *consistency read*
 is a check, by a fresh agent, of this change against every other spec, change and open pull
@@ -67,7 +67,9 @@ request; Adam answered the questions each read raised. He made:
 - decision 73 on 2026-10-21, answering the question the consistency read of decisions 70 to
   72 raised;
 - decisions 74 to 77 on 2026-10-21, answering the three questions the consistency read of
-  decision 73 raised and the open item on which ref relay files are read from.
+  decision 73 raised and the open item on which ref relay files are read from;
+- decisions 78 to 81 on 2026-10-21, answering the three questions the consistency read of
+  decisions 74 to 77 raised and accepting decision 76's fitted details.
 
 Terms used here:
 - The *destination repository* is the repository the configuration key `destination` names,
@@ -730,7 +732,7 @@ Terms used here:
     the question a run could not settle. When a flagged run stops on such a question, it posts
     decision 71's fixed-words handoff instead, which says the run needs a person, and asks
     nothing; whoever picks up the item reruns it or looks into it. Decision 76 says where the
-    question goes and that a reply does not rerun the item; who may release it is open. The run's
+    question goes and that a reply does not rerun the item, and decision 79 says who may release it, that is, let it be worked again. The run's
     question text never reaches the item, since it is text the run produced and could reveal
     the sensitive matter that flagged the run. The agent that wrote this change gave the
     reason such a run stopped, a question it could not settle, the fixed words `needs a person`, in the ledger row's `reason` and in the
@@ -750,7 +752,7 @@ Terms used here:
     item.** The Igor writes the question the run would have asked to a file on its own host,
     readable by its operator and never pushed. A person's reply on the item does not start an
     automatic rerun: the operator reads the question and decides (Adam, 2026-10-21). The agent
-    that wrote this change fitted three details, for Adam to check:
+    that wrote this change fitted three details, which Adam accepted (decision 81):
     - the file is `flagged-questions/<tracker>/<repo>/<item>.md`, with the same
       `<tracker>/<repo>/<item>` as the item's transcript path, under the Igor's state directory: `$STATE_DIRECTORY` where systemd sets it, as
       [#179](https://github.com/adamstallard/igor/pull/179)'s unit sets `StateDirectory=igor`
@@ -770,7 +772,31 @@ Terms used here:
     commit it fetches against igor's startup checks, and applies only one that passes. The
     relay files of a commit it refused do not count. This matches #25, where a last change
     that cannot be verified counts no relay (Adam, 2026-10-21). The ref's name stays gate
-    two's. One new `lore-firing` scenario.
+    two's. One new `lore-firing` scenario. Decision 78 covers the case where #208 applied none.
+78. **Where #208 has applied no commit of the destination repository, a relayed answer is
+    input.** Under `igor run`, or for a destination #208 never fetches, the relay check cannot
+    run, so a file whose answer is a relayed `User says: ` comment is pushed as `input`, never
+    as the person's decision. An answer the person gave in their own comment still counts
+    (Adam, 2026-10-21). Three new `lore-firing` scenarios, two for the push and one for the
+    search.
+79. **Only someone with write access to the item's repository releases a flagged item.** They
+    release it by an edit or a label; the operator releases it the same way and needs that
+    access like anyone else; anyone else's
+    edit leaves it held (Adam, 2026-10-21, narrowing decision 76's release by edit). The
+    `work-triage` delta says so, with two new scenarios and one changed.
+80. **A question that cannot be kept does not block the handoff.** If the Igor cannot write the
+    question's file, the fixed-words handoff still posts, the ledger row records the fixed
+    phrase `question not kept`, and the Igor opens a condition for the operator naming the
+    path it could not write (Adam, 2026-10-21). `graceful-handoff` and `task-execution` say
+    so, with one new scenario each. The condition is one of `condition-backoff`'s, an open
+    change; its key is gate two's to name. The agent that wrote this change fitted three
+    details, which carry out Adam's wording rather than override it and wait for his check:
+    the condition names the path to the operator through the log line it opens with, while the path is named only in the Igor's own log on the host, never on the state branch;
+    the ledger's `reason` reads `needs a person, question not kept`; and where conditions are
+    not built, the ledger and the log alone record the failure.
+81. **Decision 76's fitted details are accepted as written:** the path and modes, release by
+    an edit, which decision 79 narrows to someone with write access, and `igor run`'s read
+    limit (Adam, 2026-10-21).
 
 
 **Alignments with shared-skills #25.** These follow from Adam's decisions above and #25's
@@ -812,32 +838,52 @@ decisions 216, 221, 225, 229 and 235 (#25 at 9247d3c), and add no decision:
   would never update and the `questions` branch would never be fetched. #208 should fetch the
   destination repository too; this change does not edit it. This change's `surface-adapter`
   delta has the startup check require the App on the destination repository as well.
-- **For Adam: where relay files are read from when #208 applies no commit of theirs.**
-  Decision 77 reads them as of the commit #208 last applied. Under `igor run`, which per #208
-  never fetches and keeps no applied ref, and where `destination` names a repository other
-  than #208's lore repository, which #208 never fetches, #208 applies no commit of the
-  destination repository, so the rule names nothing. Which commit counts then, or whether the
-  relay check cannot run and the file is input, is not decided. With several ranks, the
-  several Igor processes #179 runs for one role, whose applied ref counts is gate two's to
-  name.
+- **For gate two: when several Igor processes for one role (#179's ranks) each record which
+  commit #208 last applied, whose record governs the relay-file read** of decision 77; the
+  processes
+  #179 runs for one role, for decision 77's relay files.
 - **For shared-skills #25 (decision 77).** #25 reads a relay file from the default branch as
   the clone's remote-tracking branch last fetched it, while decision 77 excludes a fetched
   commit #208 refused. #25 should allow igor's narrower ref, or say igor's reader differs.
 - **For Adam: #25's quote-line answer format** (decisions 67 and 70). This change writes a
   recorded answer as #25's quote lines, which #25's proposal marks as waiting for Adam (its
   decision 239, items 1 and 2). If he changes it there, this change follows.
-- **For Adam: who may release a flagged item** (decision 76). Under `work-triage`, an edit by
-  anyone lifts the hand-back suppression, so on a public repository the item's author, or
-  anyone who can label, can rerun a flagged item, and the rerun can meet the sensitive
-  question again. Decision 76 meant the operator to decide. Whether only the operator, or only
-  someone with write access, may release it is not decided.
-- **For Adam: when the question cannot be kept** (decision 76). The file needs a writable state
-  directory. Today's `deploy/igor.service` sets no `StateDirectory=` and makes the home
-  directory read-only, so the fallback cannot be written until #179's unit change lands; under
-  Docker the home directory may not persist. What the Igor does when the write fails, and
-  whether that should block the handoff, is not decided. The three details decision 76's
-  fitting chose (the path, an edit releasing the item, and `igor run`'s readable file) wait on
-  his check.
+- **Found by the consistency read of decisions 78 to 81.** Four are possible questions for
+  Adam, not yet answered, and pull request #216's body, where this change is reviewed, puts
+  them to him; with the two items for other changes below, they are its six open findings:
+  1. *A question-not-kept handoff might not hold the item.* An unwritable state directory is a
+     fact about the Igor, so under `condition-backoff` the handoff carries a cure key, that
+     change's key for a fact about the Igor that a configuration change would cure, and both that
+     change and today's `shouldDefer` (`src/deferred.ts:136-137`) exempt such a handoff from
+     suppression. The item would rerun next cycle, with no edit by anyone, and could meet the
+     sensitive question again. Should it stay held anyway?
+  2. *A condition on the first occurrence.* `condition-backoff` opens a condition only when a
+     cure key recurs, and #101 makes one exception, a refused App credential. Decision 80 opens
+     one on the first failed write. Should `condition-backoff` add this as a second exception,
+     or does "opens a condition" here mean recording an occurrence?
+  3. *What the condition stops.* Under `condition-backoff` a recurring condition stops the scope
+     its key names. With today's unit every write fails, so with #101's threshold of three the third such run
+     would stop that
+     scope, the whole Igor if the key is Igor-scoped. A per-item key would recur only if the item reran. Which
+     scope should it stop?
+  4. *A lost or expired record releases a flagged item.* `work-triage` works an item again when
+     its hand-back record is missing or unreadable, and today's code prunes a record after 30
+     days (`MAX_AGE_DAYS`, `src/deferred.ts:43`). Either releases a flagged item with no edit.
+     Should a flagged item's record be exempt, or is that an accepted limit?
+
+  Two are items for other changes: #141's rule for who made an edit and how write access is
+  read, to which decision 79 now points; and `condition-backoff`, which this change depends on
+  for decision 80's condition.
+- **For Adam: a flagged item that no edit can release.** Under decision 79, an edit whose author
+  the Igor cannot read leaves a flagged item held. Until #141 lands, or where task 4.10 finds
+  that the App cannot read who made an edit, no edit can release one, the operator's included,
+  so it stays held for good. How is such an item released then?
+- **For [#179](https://github.com/adamstallard/igor/pull/179) and gate two: a writable state
+  directory** (decisions 76 and 80). Today's `deploy/igor.service` sets no `StateDirectory=`
+  and makes the home directory read-only, so the question's file cannot be written until
+  #179's unit change lands, and under Docker the home directory may not persist. Until then,
+  every flagged run that stops on a question records `question not kept` and opens a
+  condition.
 - **`condition-backoff` and #141 modify the same `work-triage` requirement.** The open change
   `condition-backoff` modifies *An item handed back is not re-worked until something answers*,
   and [#141](https://github.com/adamstallard/igor/pull/141) amends its delta to count only a
@@ -1169,8 +1215,8 @@ reading the codebase. Two cases contradict that:
   file that already holds one, and sets an answered file's `authority` itself by #25's checks.
   It records the questions of each handback comment on `igor-state` as hashes, with no text.
   The Igor sets a relay App's answer's `answered_by` as well as its `authority`, and records
-  the linked comment's whole text, never the worker's line, as the answer. It has thirty
-  scenarios (decisions 20, 21, 24, 28, 30, 33, 34, 41, 42, 45, 59, 67, 70, 73 and 77, and the
+  the linked comment's whole text, never the worker's line, as the answer. It has thirty-two
+  scenarios (decisions 20, 21, 24, 28, 30, 33, 34, 41, 42, 45, 59, 67, 70, 73, 77 and 78, and the
   alignments with #25).
 - A third new `lore-firing` requirement, *An Igor runs its worker's lore searches*, specifies
   `igor lore-search`: it reads a question's text or terms on its standard input, the Igor runs
@@ -1186,8 +1232,8 @@ reading the codebase. Two cases contradict that:
   with no model call (decision 72), and reading the relay files for #25's relay rule. It matches,
   ranks and caps results by #25's filter 1 rule, filters `project:` entries by visibility, and
   serves the Igor's own
-  inquisitor run too. The requirement has thirty-two scenarios (decisions 15, 23, 27, 29, 31,
-  34, 35, 42, 43, 44, 45, 49, 52, 53 and 72).
+  inquisitor run too. The requirement has thirty-three scenarios (decisions 15, 23, 27, 29, 31,
+  34, 35, 42, 43, 44, 45, 49, 52, 53, 72 and 78).
 - `lore-firing`'s *Status and scope are exact filters, always applied* keeps a `project:`
   entry from firing into a run whose item's repository is more visible than the repository
   the scope names, and says which repository that is, with four new scenarios (decisions 54
@@ -1214,7 +1260,7 @@ reading the codebase. Two cases contradict that:
   words for the kind of reason, such as `error`, or for a worker killed for a limit the hang's
   kind and the limit's duration (decisions 51 and 56). A model step igor runs after the worker,
   such as #153's, is part of the run and counts as a worker run (decisions 60 and 64). It gains
-  eighteen scenarios, and
+  nineteen scenarios, and
   *Transcript persisted off the main line* applies only to a run that met none and whose
   worker runs all completed their reports (decisions 13, 19 and 38).
 - `lore-review`'s *An entry already in the store is never overwritten by proposing* reports an
@@ -1229,10 +1275,12 @@ reading the codebase. Two cases contradict that:
   has a flagged run's handoff state why it stopped only in the ledger row's fixed words, quote
   no failure detail or worker's reason and point to the item's transcript path, and has a
   flagged run's handoff ask no question, add no question label and keep its question on the
-  host, with nine new scenarios (decisions 71, 73, 75 and 76).
+  host, with ten new scenarios (decisions 71, 73, 75, 76 and 80).
 - `work-triage`'s *An item handed back is not re-worked until something answers* stops a reply
-  from rerunning an item a flagged run handed back, with one new scenario and one changed
-  (decision 76).
+  from rerunning an item a flagged run handed back, and lets only an edit by someone with
+  write access release it, with three new scenarios (one for decision 76, two for 79) and two
+  changed
+  (decisions 76 and 79).
 - `docs/architecture.md`: §3.3 says every worker is offered `igor lore-search` and what binds it, §3.4.1 says a
   search hit is not a firing and that a review counts citations from the destination repository's
   `questions` branch, and §4.1 says the worker never *has* to search.
@@ -1256,13 +1304,14 @@ None.
 - `surface-adapter`: an Igor refuses to start when its App's slug does not start with
   `igor-`.
 - `graceful-handoff`: a flagged run's handoff states why it stopped only in fixed words,
-  points to its transcript path, asks no question, and keeps that question on the host
-  (decisions 71, 73,
-  75 and 76).
-- `work-triage`: a reply does not rerun an item a flagged run handed back (decision 76).
+  points to its transcript path, asks no question, and keeps that question on the host, and
+  a failed write does not block it (decisions 71, 73, 75, 76 and 80).
+- `work-triage`: a reply does not rerun an item a flagged run handed back, and only an edit by
+  someone with write access releases it (decisions 76 and 79).
 - `task-execution`: pushing a run's citations and its question and miss files is exempt from
   the role's `allow` list, a worker's environment marks it as in an Igor's run, and a run
-  that met a question with a category stores no transcript.
+  that met a question with a category stores no transcript; a question it could not keep is
+  recorded as `question not kept` (decision 80).
 
 ## Impact
 

@@ -689,6 +689,24 @@ that requirement sets. These counts SHALL NOT repeat any text the worker wrote.
 - **THEN** the Igor reads no relay file from the checkout's working tree, and does not count
   that App as anyone's relay App
 
+#### Scenario: A relayed answer is input when #208 has applied no commit
+
+- **WHEN** a worker under `igor run` reports a log file holding `authority: decision`, for a
+  question the Igor asked, whose `answer_link` is a `User says: ` comment by a person's relay
+  App
+- **AND** #208 has applied no commit of the destination repository
+- **AND** the file passes the other rules
+- **THEN** the Igor pushes the file holding `authority: input`, never as that person's decision
+
+#### Scenario: A person's own answer still counts when #208 has applied no commit
+
+- **WHEN** a worker under `igor run` reports a log file holding `authority: decision`, for a
+  question the Igor asked, whose `answer_link` is a comment the person who answered wrote
+  themselves
+- **AND** #208 has applied no commit of the destination repository
+- **AND** every check of #25's *Only an answer with authority stops a question* passes
+- **THEN** the Igor pushes the file holding `authority: decision`
+
 #### Scenario: A relay file in a commit #208 refused does not count
 
 - **WHEN** the destination repository's newest fetched commit adds a relay file listing an App,
@@ -813,7 +831,11 @@ for them. Each read those checks make from GitHub SHALL authenticate as the inst
 Igor's App that covers the repository that read is from (`surface-adapter`'s *On GitHub,
 every call an Igor makes acts as its App*); the worker makes none of them. A check cannot be run when, for
 example, GitHub cannot be reached, no installation of the Igor's App covers the repository the
-check reads, or that installation cannot read a collaborator's permission there.
+check reads, or that installation cannot read a collaborator's permission there. Where #208
+has applied no commit of the destination repository, as always under `igor run`, which applies
+none, and for a destination #208 never fetches, there is no relay file to read, so the check of
+a relayed answer cannot be run; #25's rule then counts such a file as input. A check of an answer the person gave
+in their own comment reads no relay file and is unaffected.
 
 The command SHALL be available to a worker whether or not its role's `commands` list it, and
 listing it SHALL grant nothing more. It SHALL be read-only: it writes nothing to the destination
@@ -846,6 +868,15 @@ inheritance cannot remove it (`role-config`'s *Merge semantics differ by field k
 - **THEN** the results show the file labelled as an answer
 - **AND** every GitHub read those checks made authenticated as that installation, and the
   worker made none of them
+
+#### Scenario: A search under igor run shows a relayed answer as input
+
+- **WHEN** a worker under `igor run` runs `igor lore-search`
+- **AND** #208 has applied no commit of the destination repository
+- **AND** a question file holding `authority: decision`, whose `answer_link` is a
+  `User says: ` comment by a person's relay App, matches the text and passes the visibility
+  rule
+- **THEN** the results show the file as input, labelled as unconfirmed, never as an answer
 
 #### Scenario: An authority check that cannot be run labels the file as input
 

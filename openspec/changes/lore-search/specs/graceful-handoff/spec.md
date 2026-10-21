@@ -31,8 +31,15 @@ and otherwise
 `$XDG_STATE_HOME/igor`, which is `~/.local/state/igor` when `XDG_STATE_HOME` is unset. The file
 SHALL be mode 0600, owned by the user the Igor runs as, and the `flagged-questions` directory
 and every directory below it SHALL be mode 0700. The question of a later flagged run of the
-same item that stops on a question replaces the file. What the Igor does when it cannot write
-the file is not decided (the proposal's Still open). The Igor SHALL
+same item that stops on a question replaces the file. Where the Igor cannot write the file, it
+SHALL still post the handoff above, the ledger row's `reason` SHALL read
+`needs a person, question not kept`, as `task-execution` sets, and the Igor SHALL open a
+condition for its operator, once `condition-backoff` defines conditions, and write the path
+it could not write to its own log on the host;
+the failed write SHALL NOT delay or block the handoff. The condition's record on the state
+branch SHALL hold only its key, which gate two names, and the path SHALL appear nowhere on the state branch or the
+item. Gate two MAY ship before `condition-backoff`, the open change that defines conditions,
+lands; until then the ledger row and the log line alone record the failure. The Igor SHALL
 NOT push, post or publish the file, or its text, anywhere.
 
 #### Scenario: Handoff content complete
@@ -100,6 +107,16 @@ NOT push, post or publish the file, or its text, anywhere.
 - **WHEN** a flagged run under `igor run` stops on a question it could not settle, and neither
   `STATE_DIRECTORY` nor `XDG_STATE_HOME` is set
 - **THEN** the Igor writes the question under `~/.local/state/igor/flagged-questions/`
+
+#### Scenario: A question that cannot be kept does not block the handoff
+
+- **WHEN** a flagged run stops on a question it could not settle
+- **AND** the Igor cannot write the question's file, because its state directory is read-only
+- **THEN** the handoff posts as it would otherwise, giving the reason `needs a person`
+- **AND** the ledger row's `reason` is `needs a person, question not kept`
+- **AND** the Igor writes the path it could not write to its own log on the host
+- **AND**, where `condition-backoff` is built, it opens a condition whose record holds only its
+  key
 
 #### Scenario: A flagged run's budget handoff still gives the reset time
 
