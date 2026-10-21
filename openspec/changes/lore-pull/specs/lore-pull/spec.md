@@ -284,10 +284,21 @@ passing one* defines, keyed by its cure as `condition-backoff`'s *A condition's 
 cure's scope* requires. A refused read by any rank of the role SHALL open it
 where it is not open. The condition is on the role's configuration at the refused commit and
 after it: a passing read by any rank of the role, of the refused commit or of a commit that
-descends from it, SHALL clear it. A passing read of any other commit, such as an ancestor of the
-refused one, SHALL NOT clear it. The condition names the commit whose refusal opened it, and a
-refusal of another commit while it is open SHALL NOT change that commit. A rank whose last read was refused applies the passing commit at its own next cycle
-start after its fetch brings that commit. The condition's report SHALL name the commit, the file that
+descends from it, SHALL clear it. A passing read of the lore branch's head SHALL also clear it
+where the refused commit is no longer in that head's history: the head neither descends from the
+refused commit nor is an ancestor of it, as after a force-push that dropped the refused commit.
+The head counts only where the rank's own last successful fetch, which brought it, finished
+after the time the condition's record gives for its opening. A passing read of an
+ancestor of the refused commit SHALL NOT clear it. The condition names the commit whose refusal opened it, and a refusal of another commit while it is
+open SHALL NOT change that commit. The record that clears the condition names the commit whose
+read cleared it. A rank whose last read was refused applies the passing commit at its own next
+cycle start after its fetch brings that commit.
+
+A refused read SHALL NOT reopen a cleared `lore:config:<role>` where the commit read is the one
+the condition refused, or is the commit whose read cleared it or one of its ancestors. The rank still
+refuses the commit, and runs that cycle on the commit its applied ref names. This exception
+SHALL NOT cover a read the App check refuses (below), nor a read at process start, where the
+condition opens as for any refused read. The condition's report SHALL name the commit, the file that
 failed and the check it failed, and SHALL quote no value from the file.
 
 A lore read *fails for a local reason* where a git or filesystem operation that puts the commit in
@@ -363,6 +374,43 @@ startup checks, so the read is refused under `lore:config:<role>`.
 - **WHEN** rank 1 of `backend` refuses a commit, opening `lore:config:backend`, and rank 2, which
   has not yet fetched that commit, reads the commit before it, which passes
 - **THEN** `lore:config:backend` stays open
+
+#### Scenario: A force-push that drops the refused commit clears it
+
+- **WHEN** rank 1 of `backend` refuses a commit, opening `lore:config:backend`, and the lore
+  branch is then force-pushed to a commit that does not descend from the refused one and passes
+- **AND** rank 1's fetch brings that commit
+- **THEN** rank 1's read of it passes, and `lore:config:backend` clears
+
+#### Scenario: A rank that rereads the refused commit does not reopen it
+
+- **WHEN** rank 1 of `backend` passes on a fix that descends from the refused commit, clearing
+  `lore:config:backend`
+- **AND** rank 2's next cycle start comes before its fetch brings the fix, so it reads the
+  refused commit again and refuses it
+- **THEN** `lore:config:backend` stays clear
+- **AND** rank 2 runs that cycle on the commit its applied ref names, and applies the fix at its
+  next cycle start after its fetch brings it
+
+#### Scenario: A commit before the fix does not reopen it
+
+- **WHEN** `lore:config:backend` refused commit R, a later commit F descends from R and passes,
+  clearing it, and commit B between R and F also fails the startup checks
+- **AND** a rank whose fetch brought B but not yet F reads B
+- **THEN** the rank refuses B, and `lore:config:backend` stays clear
+
+#### Scenario: A head fetched before the refusal clears nothing
+
+- **WHEN** the lore branch was force-pushed, commit R then landed on it and was refused, opening
+  `lore:config:backend`, and a rank whose fetches have failed since before the force-push reads
+  its old head, which passes and is neither an ancestor nor a descendant of R
+- **THEN** `lore:config:backend` stays open
+
+#### Scenario: A new bad commit after the fix reopens it
+
+- **WHEN** `lore:config:backend` has cleared on a passing read, and a later commit that
+  descends from that one fails the startup checks
+- **THEN** a rank's refused read of the later commit opens `lore:config:backend`, naming it
 
 #### Scenario: An App that lost access refuses the read
 
@@ -514,12 +562,16 @@ process the same way.
 
 When an `igor serve` process's lore read passes, it SHALL compare the seat files of the commit it
 reads with those of the commit its applied ref named until then, before moving the ref. For each
-seat file the new commit changes and still holds at the same path, Igor SHALL post one notice
-@-mentioning the seat's owner, saying that the change has landed and is the one Igor now reads.
-The owner is the one the file names just before the most recent commit that changed it, in that
-commit's first parent; where the commit the process applied before names another owner, Igor SHALL mention that one
-too. A seat file the new commit adds, deletes or renames SHALL get no notice. A process with no
-applied ref compares nothing and posts nothing.
+seat file the new commit changes and still holds at the same path, and for each seat file it adds,
+Igor SHALL post one notice @-mentioning the seat's owner, saying that the change has landed and is
+the one Igor now reads. For a changed file, the owner is the one the file names just before the
+most recent commit that changed it, in that commit's first parent; where the commit the process
+applied before names another owner, Igor SHALL mention that one too. For an added file, the owner
+is the one the added file names. A seat file added again with ciphertext from the lore
+repository's history is an added file like any other. A seat file the new commit deletes or renames SHALL get no notice; a renamed file is one
+that git's rename detection pairs with a deleted one. Only a file whose name has a seat id's form,
+#171's `seats/<id>.yaml`, SHALL get a notice, whether changed or added. A process with no applied
+ref compares nothing and posts nothing.
 
 The notice SHALL go on the merged pull request that brought the most recent commit to change that
 file. Where no pull request brought that commit, it SHALL go on the commit itself, as a commit
@@ -535,7 +587,7 @@ the most recent commit that changed the file, with a call that fails where the r
 exists. A process whose call failed because the record exists SHALL NOT post. A call that failed
 for any other reason SHALL be tried again at each later passing read while the process runs.
 Where no process crashes between creating the record and posting, exactly one notice SHALL be
-posted for each change.
+posted for each change a process applies that leaves someone to mention.
 
 #### Scenario: A workflow mention before the merge does not stop the notice
 
@@ -594,10 +646,17 @@ posted for each change.
 - **WHEN** a merged commit changes `seats/bob.yaml` back to a content it held before
 - **THEN** a notice for that commit is posted
 
-#### Scenario: An added seat file is not announced
+#### Scenario: An added seat file is announced to its owner
 
-- **WHEN** a merged commit adds `seats/carol.yaml`
-- **THEN** Igor posts no notice for it
+- **WHEN** a merged commit adds `seats/carol.yaml`, whose `owner` is `carol`, and `carol` did not
+  both open the pull request and push that commit
+- **THEN** Igor's notice after the merge mentions `@carol`
+
+#### Scenario: A seat file added back from history is announced
+
+- **WHEN** `seats/bob.yaml` was deleted, and someone other than `bob` opens and pushes a pull
+  request that adds it again with the ciphertext it held before, which is merged
+- **THEN** Igor's notice after the merge mentions `@bob`, the owner the added file names
 
 #### Scenario: An owner that is not a GitHub login gets no notice
 

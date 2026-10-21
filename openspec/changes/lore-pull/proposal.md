@@ -26,13 +26,15 @@ Terms used here:
 Every decision below is Adam's. Decisions 8 and 9 were this change's proposals, which Adam
 accepted on 2026-10-18; decisions 11 to 31 were its proposals and open questions, which Adam
 answered on 2026-10-19; and decisions 32 to 35 are Adam's answers, given on 2026-10-20, to the
-open questions this change listed on 2026-10-19. Decision 13 is his replacement for the one proposed, narrowed on 2026-10-20. Decision
-10 follows the order Adam set in issue #204.
+open questions this change listed on 2026-10-19. Decisions 36 to 38 are his answers of
+2026-10-21, which amend decisions 13 and 14. Decision 13 replaces the one this change proposed,
+and Adam narrowed it on 2026-10-20. Decision 10 follows the order Adam set in issue #204.
 
 1. **A pull whose configuration fails the startup checks is refused** (Adam, 2026-10-18). The
    process keeps the last configuration that passed and opens a read-cleared condition naming the
-   commit, the failing file and the check it failed. A later passing read of that commit, or of
-   one that descends from it, clears it (decision 13). The
+   commit, the failing file and the check it failed. The condition clears on a later passing
+   read of the refused commit, of a commit that descends from it, or of a branch head that no
+   longer holds the refused commit (decisions 13 and 36). The
    condition takes nothing out of use: the process goes on working under the configuration it
    kept. This holds at every read of pulled configuration, the per-cycle reread #179 adds
    included: a refused read also keeps the roster of the configuration that passed.
@@ -106,8 +108,9 @@ open questions this change listed on 2026-10-19. Decision 13 is his replacement 
     - **A configuration that fails the startup checks** opens one read-cleared condition shared
       by the role, `lore:config:<role>`, keyed as #101 (`condition-backoff`) keys a condition, by
       what would cure it: one commit that passes cures every rank. A refused read by any rank
-      opens it. Only a passing read, by any rank of the role, of the refused commit or a commit
-      that descends from it clears it (Adam, 2026-10-20). A rank that has not yet fetched the refused
+      opens it. It clears only on a passing read, by any rank of the role, of one of these: the
+      refused commit or a commit that descends from it (Adam, 2026-10-20), or a branch head that
+      no longer holds the refused commit (decision 36). A rank that has not yet fetched the refused
       commit, and passes on an older one, has not seen the cure, so its read clears nothing;
       otherwise the condition could open and clear repeatedly until every rank had fetched. A
       rank still on the refused commit fetches the passing one within one poll interval and
@@ -140,9 +143,9 @@ open questions this change listed on 2026-10-19. Decision 13 is his replacement 
     44), so a lender who opened the pull request is told where someone else pushed to it. Where a
     squash or rebase merge made the commit, that exclusion looks at who pushed the pull request's
     own last commit changing the file. Igor's
-    notice after the merge is separate from the workflow's mentions on the pull request. An added seat file gets no notice, as #171's workflow mentions
-    nobody for one, since its `owner` is unvetted. A deleted or renamed seat file gets none from
-    Igor either (decision 31). Before posting, the process creates a record on the state branch, named by the
+    notice after the merge is separate from the workflow's mentions on the pull request. An added
+    seat file gets a notice mentioning the owner it names (decision 38). A deleted or renamed
+    seat file gets none (decision 31). Before posting, the process creates a record on the state branch, named by the
     seat and the commit that last changed the file, with a call that fails where the record
     exists. A process whose call found the record posts nothing, so a change gets one notice
     however many processes apply it; a call that failed otherwise is tried again at each later
@@ -262,20 +265,57 @@ open questions this change listed on 2026-10-19. Decision 13 is his replacement 
     too. Either cure clears the condition at the next passing read, since the refused commit
     read again counts as one that descends from itself (decision 13).
 
-**Still open.** Two for Adam, each with a recommendation; the requirements follow decision 13 as
-written.
+36. **A force-push that drops the refused commit clears `lore:config:<role>`** (Adam,
+    2026-10-21). A passing read of the lore branch's head also clears it where the refused commit
+    is no longer in that head's history. A rank whose head is an ancestor of the refused commit
+    has not fetched it yet, so its passing read still clears nothing (decision 13). Nor does a
+    head whose fetch finished before the condition opened. Such a head is usually an ancestor of
+    the refused commit, but it need not be: a fetched ref taken from the checkout's own
+    remote-tracking ref (decision 16), or one from before an earlier force-push, can hold an
+    unrelated history. Without that limit, a rank whose fetches had failed could clear the
+    condition while the refused commit is still the branch's tip, and decision 37 would then
+    keep it clear.
+37. **A commit already known does not reopen `lore:config:<role>`** (Adam, 2026-10-21). A
+    refused read of the commit the condition refused, or of the commit whose read cleared it or
+    one of its ancestors, leaves the condition clear. A rank whose fetch has not yet brought the fix would
+    otherwise reopen it until that fetch. A read the App check refuses still reopens it, since an
+    App that loses access again refuses a commit that passed before (decision 35). So does a read
+    at process start: a process restarted on a stricter Igor can refuse a commit that older
+    processes passed, and decision 9 has it start on its applied commit with the condition
+    open.
+38. **An added seat file gets a notice mentioning the owner it names** (Adam, 2026-10-21,
+    answering #171's question on a seat file added back with old ciphertext from history). Such a
+    file is an added file like any other, so its owner learns that Igor spends from it again. This
+    replaces decision 14's rule that an added seat file gets no notice.
 
-- **A force-pushed branch that drops the refused commit.** Under decision 13 only a passing read
-  of the refused commit, or of one that descends from it, clears `lore:config:<role>`. A force-push that
-  replaces the refused commit with a passing one that does not descend from it cures every rank,
-  but no read then clears the condition. *Recommended:* a passing read of a commit that is not an
-  ancestor of the refused one clears it too; only a commit older than the refused one does not.
-- **A rank that rereads the refused commit after the fix cleared it.** Every cycle start rereads
-  the commit the fetched ref names. Rank 1 passes on the fix and clears `lore:config:<role>`;
-  rank 2's next cycle start comes before its next fetch, so it refuses the refused commit again
-  and reopens the condition, until its fetch brings the fix. So, as written, the condition can
-  still open and clear more than once, which decision 13 meant to prevent. *Recommended:* a refused read of a commit that is an ancestor of the one whose
-  read last cleared the condition does not reopen it.
+**Still open:** the findings below, for this change's next revision.
+
+**Findings of the 2026-10-21 consistency read, for this change's next revision.** This revision
+fixes five: a stale head clearing the condition, a restart on a stricter Igor, notices for files
+whose names are not seat ids, "exactly one notice" for a change nobody is told of, and two
+untested cases. None of the items below is fixed:
+- For Adam: #171's read-cleared kind lets a rule that uses it state only what is read, what
+  counts as failing, and how many failing reads open it. Decisions 36 and 37 add rules on when
+  the condition clears and when it reopens, which that kind does not allow. Either #171's
+  definition makes room for such rules, or these two are recast as part of what counts as a
+  passing or failing read.
+- For the author: `--first-parent` in the removal command misses a deletion on a merged side
+  branch, which the requirement's "any commit" covers; task 1.1's fetch says
+  `--no-recurse-submodules` and `design.md`'s does not; the open finding that a key file one
+  server cannot read opens `lore:config:<role>` contradicts #171, under which that seat goes
+  under `seat:<id>:decrypt`; #179 refuses a cycle read on any start check, roster and App check
+  included, while this change retires a rank on a roster drop and opens nothing when GitHub
+  does not answer; *startup checks* has three definitions, here, in #171 and in #179; a refused
+  read clears `lore:read:<role>-<rank>`, though the kind clears only on a passing read; #216
+  (`lore-search`) reads its relay files as of the applied commit, which a stuck cycle holds only
+  in memory, where this change keeps only the configuration and lore entries; issue #176's body
+  is stale, naming a per-process condition and nine open questions; `log.showSignature` with a
+  `gpg.program` in `.git/config` would make the removal's `git log` run a command; tasks to
+  measure who pushed a commit to a pull request, and whether the image's user can write the
+  checkout, are missing; decision 9 and `design.md`'s restart section say "the refused-read
+  condition" where they mean `lore:config:<role>`; and several scenarios are missing, among them
+  a refused `.git/config` key reported by its section alone, and a cycle report saying how long
+  ago the last fetch succeeded.
 
 **Findings of the 2026-10-20 consistency reads, for this change's next revision,** none fixed
 yet (the reads' other findings are fixed in this revision):

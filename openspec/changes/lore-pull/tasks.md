@@ -94,7 +94,16 @@
       `lore:config:<role>` where it is not open, whose report names the commit, the file and the
       check and quotes no value from the file, and records the refused commit. A passing read by
       any rank of the role clears it where the commit read is the refused one or descends from it
-      (`git merge-base --is-ancestor`); a passing read of an older commit leaves it open
+      (`git merge-base --is-ancestor`), or is the rank's fetched head, neither descending from the
+      refused commit nor its ancestor, from a fetch that finished after the time the condition's
+      record gives for its opening (keep the last successful fetch's time in memory); a passing
+      read of an older commit leaves it open. The clearing record names the commit read. A
+      refused read of the refused commit, or of the clearing commit or one of its ancestors, does
+      not reopen it, unless the App check refused it or the read is at process start. Task 3.5
+      covers every scenario of the requirement; these five are the ones this rule adds: *A
+      force-push that drops the refused commit clears it*, *A head fetched before the refusal
+      clears nothing*, *A rank that rereads the refused commit does not reopen it*, *A commit
+      before the fix does not reopen it* and *A new bad commit after the fix reopens it*
 - [ ] 3.3b A read that fails while putting the commit in the worktree or reading a file from it,
       the stages `design.md` names, is a local fault: run the cycle on `applied`, open or clear
       no `lore:config:<role>`, and read again at the next cycle start. At the third such cycle
@@ -130,15 +139,17 @@
       `appendRecord` apply (pull request #217, for issue #213). First
       measure that GitHub refuses such a `PUT` on an existing file, and record the result in
       `design.md`
-- [ ] 5.3 For each seat file changed and still at the same path, never one added, deleted or
-      renamed, create
+- [ ] 5.3 For each seat file whose name has a seat id's form, changed and still at the same path
+      or added, never one
+      deleted or renamed (git's rename detection pairs a renamed file with a deleted one), create
       `notices/seats/<seat-id>/<commit-id>.json` on the state branch with that write, the commit
       being the most recent one that changed the file. Post only where the write created it;
       retry a write that failed otherwise at each later passing read while the process runs
 - [ ] 5.4 Post on the merged pull request that brought that commit, found through GitHub's list
-      of pull requests for a commit; where none, post a commit comment. Mention the owner the
-      file names in that commit's first parent, and also the owner the commit applied before
-      names where that differs; mention no owner who both opened the pull request and pushed that commit to it,
+      of pull requests for a commit; where none, post a commit comment. For a changed file,
+      mention the owner the file names in the first parent of 5.3's commit, the most recent one
+      that changed the file, and also the owner the
+      commit applied before names where that differs; for an added file, the owner it names; mention no owner who both opened the pull request and pushed that commit to it,
       as #171's decision 44 settles it, so a lender is mentioned where someone else pushed to the
       pull request they opened, and no `owner` without a GitHub login's form; mention an owner even
       where #171's workflow already mentioned them on that pull request; and post nothing where

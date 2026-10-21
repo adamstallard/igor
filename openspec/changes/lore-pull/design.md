@@ -151,8 +151,23 @@ succeeded, and the second stage found the file absent.
 
 A refused commit opens `lore:config:<role>`. A passing read by any rank clears it, where the
 commit read is the refused one or descends from it (Adam, 2026-10-20): `git merge-base
---is-ancestor <refused> <read>` tells. The condition's record names the commit whose refusal
-opened it; a refusal of another commit while the condition is open changes nothing. A
+--is-ancestor <refused> <read>` tells. A passing read of the branch head the rank fetched also
+clears it where neither `--is-ancestor <refused> <head>` nor `--is-ancestor <head> <refused>`
+holds, so a force-push that dropped the refused commit clears it (Adam, 2026-10-21). The head
+counts only where the rank's last successful fetch finished after the time the condition's
+record gives for its opening; the rank keeps that fetch's time in memory. The condition's
+record names the commit whose refusal opened it; a refusal of another commit while the
+condition is open changes nothing. The record that clears it names the commit whose read
+cleared it, the *clearing commit*.
+
+After the condition clears, a refused read of the refused commit, or of the clearing commit or
+one of its ancestors, does not reopen it (Adam, 2026-10-21). Without that, a rank whose fetch
+lags the fix would reopen the condition at every cycle start until its fetch brought the fix.
+There are two exceptions, both refusals for a reason outside the commit. One is the App check:
+an App that loses access again refuses a commit that passed before, and that refusal reopens
+the condition. The other is a read at process start. A running process's checks never change,
+but a process restarted on a stricter Igor can refuse the clearing commit itself, which older
+processes passed; it then starts with the condition open (decision 9). A
 local fault opens nothing until the third cycle start in a row, then `lore:read:<role>-<rank>`.
 #171's read-cleared kind lets each rule that uses it choose how many failing reads in a row open
 its condition, and this rule chooses three. The count lives in the process's memory
@@ -207,7 +222,12 @@ named in that commit's first parent and, where the commit the process applied be
 another owner, that owner too. A change superseded before any process applied it is not
 announced on its own: the next change to the file is, and since the superseded change may have
 edited `owner`, mentioning both owners means the lender whose token the process last held is
-always told. If the state branch is deleted, which `work-discovery` allows since state is a
+always told. An added seat file has no earlier version in the first parent, so its notice
+mentions only the owner the added file names (Adam, 2026-10-21), even where the commit the
+process applied before held an earlier copy of the file. That covers a seat file added back
+with ciphertext from history. Without the notice, nobody would ever be told: #171's workflow
+mentions nobody on the pull request for an added file, and nothing else speaks after the
+merge. If the state branch is deleted, which `work-discovery` allows since state is a
 cache, a process applying a change late, after another process announced it, would announce it
 again.
 
