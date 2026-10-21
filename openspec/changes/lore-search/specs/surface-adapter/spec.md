@@ -30,7 +30,9 @@ The Igor SHALL NOT read its identity from `GET /user`, which describes a user an
 ### Requirement: An Igor that cannot act as its App does not start
 
 `igor run` and `igor serve` SHALL verify, before discovery, that the Igor can act as its App on
-every repository the role works and on the lore repository, and SHALL refuse to start otherwise,
+every repository the role works, on the lore repository, which holds its configuration, and,
+where the configuration key `destination` names a repository other than the lore repository, on
+that destination repository, and SHALL refuse to start otherwise,
 naming the reason:
 
 - missing or incomplete credential variables in its environment, naming each missing variable;

@@ -324,8 +324,13 @@ run only the commands its role lists, which do not include the inquisitor skill'
 the open pull request #175 designs a worker that cannot read the lore checkout under `igor
 serve`. The command is offered whatever the role's `commands` say, and it is read-only: it
 gives the worker no file access, command or credential it lacked. Under `igor run` the worker
-runs as the developer's own user and can read the whole lore checkout; that is accepted, since
-it is the developer's own machine, and `igor serve` is where the boundary holds.
+runs as the developer's own user and can read and write the whole lore checkout. It could
+plant an `active` entry there, which would fire on the next run, show in a search, and pass
+the check the Igor makes before pushing a citation, that the cited entry is `active` and in the
+role's scope (§3.4.1). That is possible because `igor run` reads the checkout as it finds it,
+local edits included. It is accepted, since `igor run` runs on the developer's own trusted
+machine. `igor serve`, where #175's design bars the worker from the checkout, is where the
+boundary holds.
 
 The search matches, ranks and caps by the inquisitor skill's own rule for its first filter:
 the query's terms against an entry's claim, conditions and body, and against a question file's
@@ -346,14 +351,16 @@ a worker on a public item never finds an entry about a private one by searching.
 applies the same filter, so such an entry is not injected either, and does not count toward
 the firing budget. The repository a scope such as `project:api` names is the repository the
 role works whose short name, the part after the `/`, is `api`; where two share that name, it is
-the more private of them. `igor lore-search` also reads the lore
-repository's `questions` branch, as the inquisitor skill's own search does. That branch holds
+the more private of them. `igor lore-search` also reads the `questions` branch of the
+destination repository, as the inquisitor skill's own search does. The destination repository
+is the repository the configuration key `destination` names; it holds the lore store and
+`igor-state`. That branch holds
 question files (the inquisitor calls them log files), each logging a question an agent asked
 or decided for itself, and miss files, each logging a question a person said should have been
 settled without asking them. Each file names the repository it was asked from, but its
 question concerns the organization or project, so scoping it by that repository would hide an
 organization-wide answer from every other role. Every file on the branch is therefore in scope
-for every role whose Igor uses that lore repository. `igor lore-search` still returns a file
+for every role whose Igor uses that destination repository. `igor lore-search` still returns a file
 only when the repository of the item the run works is no more visible than the file. A file
 an Igor pushed is as visible as the more private of the repository it names and the repository
 of the item whose run pushed it, which the Igor records in the file's `asked_from` key. A file
@@ -362,21 +369,21 @@ worker on a private repository could write that repository's details into a file
 `repository` key names a public repository, and the search would show the file to workers on
 public items. A worker could carry what it read into its pull request, and filtering what it is
 given is the only certain guard. The rule ranks visibility, not readership, so a file about
-one private repository can reach a worker on another. That is a known limit: a team's lore
+one private repository can reach a worker on another. That is a known limit: a team's destination
 repository serves one team, whose private repositories usually share readers, and comparing
 collaborator lists on each search would be costly and brittle.
 
 Under `igor serve`, the Igor fetches the `questions` branch when a run starts, and every
 search in that run reads that copy, so a run's results do not change while it works. Under
 `igor run` a search fetches nothing: it reads the branch as it was last fetched. The only
-fetch `igor run` makes from the lore repository is of the `questions` branch, when the Igor
+fetch `igor run` makes from the destination repository is of the `questions` branch, when the Igor
 pushes a run's citations or question files (§3.4.1), and it applies nothing it fetches to the
 lore checkout, so lore entries are still read as the checkout holds them.
 
 A question file holding an answer is labelled an answer only when it passes the authority
 checks the inquisitor skill's spec states, such as that the person who answered has write
-access to the lore repository. Those checks read GitHub, and the worker has no GitHub login,
-so the Igor runs them itself, as its App. They also read the relay files on the lore
+access to the destination repository. Those checks read GitHub, and the worker has no GitHub login,
+so the Igor runs them itself, as its App. They also read the relay files on the destination
 repository's default branch as the Igor's checkout last fetched it, never its working tree. A
 person's relay file, `relays/<login>.yaml`, lists the Apps that post that person's answers in
 comments starting `User says: `, and counts only when its last change came from that person:
@@ -496,21 +503,22 @@ example while its role's in-scope entries exceed the firing budget. Whether a re
 pruning or promotion, it shows each entry's citations beside its fire count, for the person
 who judges the proposal.
 
-The review reads citations from the lore repository's `questions` branch. Where that branch is
-missing or holds no citation at all, the review shows citations as not checked, never as zero.
-People's own sessions of the inquisitor also push citations there, so the branch can hold
-some while every Igor push has failed, for example while rulesets refuse the Igor's App. The
-review also shows citations as not checked when, within the period the review covers, the run
-records on `igor-state` count at least one citation that failed to push and the branch holds
-no citation an Igor pushed. In that case a count would hold only people's citations, so an
-entry that Igor runs relied on could show zero, and the count would say nothing about Igor
-runs at all.
-Otherwise it shows each count as a lower bound, because the Igor does not push every citation:
+The review reads citations from the destination repository's `questions` branch. Where that
+branch is missing, or holds no citation an Igor pushed dated within the period the review
+covers, the review shows citations as not checked, never as zero. The reason does not
+matter: every push may have failed, for example while rulesets refuse the Igor's App; every
+run may have been flagged, as a run that may have met a sensitive question is (described
+below); or the visibility rule described below may have withheld every citation. People's own
+sessions of the inquisitor also push citations there, so the branch can hold some while none
+from an Igor arrives. Were the review to count them anyway, the count would hold only people's
+citations, so an entry that Igor runs relied on could show zero.
+When the branch does hold an Igor citation from the period, the review shows each count as a
+lower bound, because the Igor does not push every citation:
 the paragraphs below list the ones it holds back. Since citations only hold an entry back, a
 citation missing from the count can only fail to hold back an entry that was cited, and the
 person reviewing the proposal judges that entry.
 
-The `questions` branch is an orphan branch of the lore repository, separate from igor's
+The `questions` branch is an orphan branch of the destination repository, separate from igor's
 `igor-state`, that holds the inquisitor's questions about the organization and its projects
 (shared-skills #25). The inquisitor and the Igor both write citations there, so a review reads
 one file format, which shared-skills #25 defines for both. A citation file holds the cited
@@ -521,12 +529,12 @@ so the id links each citation an Igor pushed to its run, and a review can show w
 citation came from. The run's transcript cannot serve as that link: there is one per item, and
 each run overwrites it.
 
-An entry id is unique within one lore repository, while the inquisitor can be configured with
+An entry id is unique within one lore store, while the inquisitor can be configured with
 several. During a run, `igor lore-search` reads only the Igor's own checkout, the lore store
 it injects from, so a citation's entry id names one entry.
 
 During an Igor's run, the worker reports each citation by the entry's id alone, and the Igor
-pushes them; the worker holds no credential for the lore repository. The push is bookkeeping,
+pushes them; the worker holds no credential for the destination repository. The push is bookkeeping,
 like the firing record, so the role's `allow` list does not govern it. The Igor pushes a run's
 citations only when the run publishes an artifact or ends in the Igor's handoff comment on the
 item, and only of an `active` entry in the run's role's scope, since the worker's output is
@@ -542,8 +550,8 @@ also writes its firing record and, if the provider refused it, the refusal recor
 next. Its pull
 request body carries no excerpt of the worker's result and no transcript link. If the
 provider refuses the run over a usage limit, the record of that refusal keeps only the limit
-and reset time Igor read from the provider's reply. Free text cannot be redacted reliably, and personal details should not reach everyone
-who can read the item or the lore repository, which holds `igor-state`. The worker's report
+and reset time Igor read from the provider's reply. All of these rules hold because free text cannot be redacted reliably, and personal details should not reach everyone
+who can read the item or the destination repository, which holds `igor-state`. The worker's report
 carries a bare flag that its run met such a question, naming nothing about it. A run that
 ends before the Igor has its worker's completed report (its report of citations and of that
 flag, marked by the worker as whole), for any reason (refused by the
@@ -575,10 +583,10 @@ with no worker (#211). It pushes that run's citations by the same rules as a wor
 The inquisitor also puts question and miss files on the `questions` branch: a question file
 for a question about an organization or project, including one recording an agent's own
 choice, and a miss file. A worker cannot push these either. It reports each one, and the Igor pushes it under the citation rules: only
-when the run publishes an artifact or hands off, and never to a lore repository more visible
-than the item's repository or the one the file's `repository` key names. An Igor of any role
-pushes such a file whatever repository its key names, since organization and project
-questions are shared by every role. It sets the file's `asked_from` key to the item's
+when the run publishes an artifact or hands off, and never to a destination repository more visible
+than either the item's repository or the one the file's `repository` key names. Within that
+visibility rule, the role does not matter: an Igor of any role pushes such a file, whatever
+repository its key names, since organization and project questions are shared by every role. It sets the file's `asked_from` key to the item's
 repository. A worker asks a person only in its handback comment, so the run that asks
 a question never holds its answer. The answer can reach only a later run on the same item,
 once someone has replied to the handback, and it is then a comment on that item. The Igor
@@ -587,8 +595,11 @@ file, or a question file whose answer links to a comment on the run's item and w
 is one the Igor recorded posting in its handback. For that last kind, the Igor sets the
 file's `authority` key, which says whether the answer is a person's decision or only input,
 itself, by the same checks its search runs. When the answer is a relay App's comment, it also
-sets the file's `answered_by` to the person whose relay file lists that App. It never keeps
-the `authority` or `answered_by` the worker wrote, under `igor serve` or `igor run`: a worker
+sets the file's `answered_by` to the person whose relay file lists that App. It records the
+comment's text, word for word, less a leading `User says: `, as the answer: the answer line the worker wrote only
+identifies which comment holds the answer, so a worker that reports "merge it." against a
+comment reading "Do not merge it." cannot record the opposite of what the person said. It
+never keeps the `authority` or `answered_by` the worker wrote, under `igor serve` or `igor run`: a worker
 under `igor serve`, barred from the lore checkout, cannot read the relay files
 and so cannot tell whose answer a relay App's comment is, and no worker's word is proof. The Igor refuses a file that already holds `asked_from`, a key only the Igor
 writes. The Igor cannot see a question's category, so a worker steered by its item could report a
@@ -596,7 +607,7 @@ file about a personal or secret matter, and the Igor would push it for every rol
 is a known limit: an honest worker never reports such a question, and the credential check
 below still refuses a file holding a credential. When it posts the handback, the Igor
 records on `igor-state` a hash of each question it asked, with the comment's id and time, and
-no question text, so the record shows a reader of the lore repository nothing of the question.
+no question text, so the record shows a reader of the destination repository nothing of the question.
 It checks a file's question against that record, by hash, not against the comment: anyone with
 write access could later edit the comment to hold a question the Igor never asked. Any other
 file claiming a person's answer, such as one linking a comment elsewhere or answering a
@@ -608,19 +619,19 @@ the matcher that redacts every write to `igor-state` (#217). That matcher also m
 seat token, the model-provider credential in the worker's environment, which a matcher of
 token prefixes would miss. The Igor counts each file it does not push, by reason.
 
-No citation goes to a lore repository more visible than the repository the question concerns,
-which during a run is the repository of the item the run works. A citation tells its readers
+No citation goes to a destination repository more visible than the repository of the item the
+run works. A citation tells its readers
 that work on that repository needed the entry, and when. `igor-state` is also a branch of the
-lore repository, and its records name each run's item, so a lore repository more visible than
+destination repository, and its records name each run's item, so a destination repository more visible than
 a role's repositories would expose those names too. #212, decided and not yet built, has Igor
-refuse to start when the team's lore repository is more visible than the least visible
+refuse to start when the team's destination repository is more visible than the least visible
 repository any role works. That check runs only at startup, so the citation rule still applies
 at each push.
 
-The Igor learns the lore repository's visibility by asking GitHub, which returns `private`,
+The Igor learns the destination repository's visibility by asking GitHub, which returns `private`,
 `internal` or `public`. #212's check asks at startup, and the push rules ask again at each
 push. The `publicStore` setting cannot serve: it says only whether the store is public, so
-an internal lore repository would pass for private. A lore repository whose visibility
+an internal destination repository would pass for private. A destination repository whose visibility
 GitHub does not return counts as public.
 
 A review never sees a citation the Igor did not push, so none of these reaches its count:

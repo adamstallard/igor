@@ -2,9 +2,9 @@
 
 ## Decisions
 
-[#215](https://github.com/adamstallard/igor/issues/215) records all sixty-two decisions,
-and all are Adam's. Where the agent that wrote this change fitted one of them to the spec, the
-list under *Still open* says so. A *consistency read*
+[#215](https://github.com/adamstallard/igor/issues/215) records all sixty-nine decisions,
+and all are Adam's. Where the agent that wrote this change fitted one of them to the spec, that
+decision says so. A *consistency read*
 is a check, by a fresh agent, of this change against every other spec, change and open pull
 request; Adam answered the questions each read raised. He made:
 - decisions 1, 2 and 7 on 2026-10-19, while reviewing
@@ -22,7 +22,7 @@ request; Adam answered the questions each read raised. He made:
   amend decisions 5 and 8 to 12:
   1. the run's id stays (10, 12); its reason, as Adam restated it later that day, is that it
      links a citation to the run's row in the execution ledger;
-  2. the citation visibility rule stays, and #212 keeps the lore repository no more visible
+  2. the citation visibility rule stays, and #212 keeps the destination repository no more visible
      than any repository a role works (10);
   3. the Igor pushes the citations of an inquisitor run it starts itself (9);
   4. fire counts alone decide whether an entry is proposed as unused (5, 8);
@@ -38,7 +38,7 @@ request; Adam answered the questions each read raised. He made:
 - decisions 15 to 18 on 2026-10-20, answering four questions a later consistency read
   raised;
 - decisions 19 and 20 on 2026-10-20: decision 19 answers a question the next consistency
-  read raised, and decision 20 settles how a worker's question and miss files reach the lore
+  read raised, and decision 20 settles how a worker's question and miss files reach the destination
   repository;
 - decisions 21 and 22 on 2026-10-20, answering two questions this change's next consistency
   read raised, and decision 23 that day, settling whether igor offers its workers a search;
@@ -55,9 +55,18 @@ request; Adam answered the questions each read raised. He made:
   change's questions for him;
 - decisions 54 to 61 on 2026-10-21, in a second picker, answering the eight questions this
   change then had for him;
-- decision 62 on 2026-10-21, in the session reviewing shared-skills #25.
+- decision 62 on 2026-10-21, in the session reviewing shared-skills #25;
+- decisions 63 to 69, answering the seven questions this change then had for him. They carry
+  the date 2026-10-20, as they were handed to the agent that wrote this change, though 63 and
+  64 confirm readings of decisions 54 and 60, dated 2026-10-21; *Still open* asks Adam which
+  date is right.
 
 Terms used here:
+- The *destination repository* is the repository the configuration key `destination` names,
+  where the lore store is kept, wherever that is. Unless `destination` names another
+  repository, it is the *lore repository*, the one holding the Igor configuration, as
+  [#208](https://github.com/adamstallard/igor/pull/208) and `docs/deployment.md` call it. The `questions` branch,
+  `igor-state` and the relay files are in the destination repository (decision 66).
 - An *Igor* is a teammate agent that runs one role. A *worker* is the agent an Igor starts to do
   one item, and *during an Igor's run* means while an agent works for an Igor under its role.
 - The *inquisitor* is a shared skill (shared-skills #25) that an agent runs before asking a
@@ -125,8 +134,8 @@ Terms used here:
 7. **No carve-out for one caller.** *Rejected:* allowing only the inquisitor's search. The one
    harm a search could do is show a role entries it may not see, and decision 3 prevents that for
    every caller.
-8. **A review reads an entry's citations from the lore repository's `questions` branch.** That
-   branch is an orphan branch of the lore repository, separate from igor's `igor-state`, holding
+8. **A review reads an entry's citations from the destination repository's `questions` branch.** That
+   branch is an orphan branch of the destination repository, separate from igor's `igor-state`, holding
    the inquisitor's questions about the organization and its projects. Shared-skills #25 moves
    those questions there (its decision 42), and writes citations there. When the inquisitor
    finds the answer to a question in a lore entry, so that nobody is asked, a citation of that
@@ -134,11 +143,9 @@ Terms used here:
    citations in the inquisitor's per-repository question logs, which are scattered across
    repositories, some of them worked by no Igor role.
 
-   Where the branch is missing or holds no citation at all, the review shows citations as not checked,
-   never as zero. It also shows citations as not checked when, within the period the review
-   covers, the run records on the state branch count at least one citation that failed to push
-   and the branch holds no citation an Igor pushed, which is one with a run id (decisions 32
-   and 39). Otherwise it shows each entry's count as a lower bound, and says so beside the count. Missing from the count are the citations the Igor refused, withheld or could not push,
+   Where the branch is missing, or holds no citation an Igor pushed (one with a run id) dated
+   within the period the review covers, the review shows citations as not checked, never as
+   zero, whatever the reason (decisions 32, 39 and 69). Otherwise it shows each entry's count as a lower bound, and says so beside the count. Missing from the count are the citations the Igor refused, withheld or could not push,
    every citation from a run that published neither an artifact nor a handoff (decision 9),
    and every citation from a run that counts as having met a question with a category
    (decision 26).
@@ -147,7 +154,7 @@ Terms used here:
    proposal judges that entry.
 9. **During an Igor's run, the worker reports each citation, and the Igor pushes it.** The Igor
    pushes the citations to the `questions` branch, as the rest of the design has it: *worker
-   edits, Igor publishes*. The worker gets no credential for the lore repository. A worker's
+   edits, Igor publishes*. The worker gets no credential for the destination repository. A worker's
    report of a citation holds the cited entry's id and no category: a question with a category
    (`vulnerability`, `secret` or `personal`, as shared-skills #25's inquisitor gives one) sends
    no citation, so the worker never reports one (#25's decision 104). Because the worker's
@@ -189,22 +196,22 @@ Terms used here:
     readers that work on that repository needed the entry, and when; the cited entry also shows
     what the question was about. This rule is Adam's, given for the inquisitor and for this
     change alike; shared-skills #25 states it for the inquisitor's citations. The Igor reads
-    the lore repository's visibility from GitHub at each push (decisions 16 and 37). A lore repository
+    the destination repository's visibility from GitHub at each push (decisions 16 and 37). A destination repository
     whose visibility cannot be read counts as public, and a concerned repository whose
     visibility cannot be read counts as private. During a run, the repository the question
     concerns is the repository of the item the run works, never one the worker names.
 
-    The state branch, `igor-state`, is a branch of the lore repository too, and its firing
-    records and transcripts name each run's item. A lore repository more visible than a
+    The state branch, `igor-state`, is a branch of the destination repository too, and its firing
+    records and transcripts name each run's item. A destination repository more visible than a
     repository a role works would show those names to its readers. Adam settled that through
-    #212 on 2026-10-20: Igor is to refuse to start when the team's lore repository is more
+    #212 on 2026-10-20: Igor is to refuse to start when the team's destination repository is more
     visible than the least visible repository any role works. #212 is not yet specified. Its
     check runs only at startup, so the citation rule above still applies at each push.
 11. **A forged citation is a known limit.** Item text can steer a worker, and a steered worker
     could report citations of any `active` entry in its role's scope, which would keep that
     entry from being proposed as unused. It could also report a citation for a question that has
     a category and so should send none. The Igor would push it, and the cited entry would show
-    readers of the lore repository what the question was about. A review shows each citation's run and item, so the
+    readers of the destination repository what the question was about. A review shows each citation's run and item, so the
     person reviewing a prune proposal can judge it. Prune proposals are always reviewed by a
     person, and nothing else guards against a forged citation.
 12. **How the Igor dates, pushes and records citations.** Approved by Adam (2026-10-20), as
@@ -225,7 +232,7 @@ Terms used here:
       execution ledger, which holds the run's item, time and outcome; that is the reason Adam
       gave on 2026-10-20. He dropped the reason first approved with this decision, that an item
       reference could show a private item's repository to lore readers who cannot read it. The
-      state branch is in the lore repository, and its records already name each item.
+      state branch is in the destination repository, and its records already name each item.
 
 13. **A run that meets a question with a category stores no transcript.** When a worker meets
     a question in the categories `vulnerability`, `secret` or `personal`, the Igor writes no
@@ -233,7 +240,7 @@ Terms used here:
     cost, run id, item and citation counts, the firing record, and, where the provider refused
     the run, the refusal record decision 18 allows. The same holds for an inquisitor run the Igor starts itself.
     Free text cannot be redacted reliably, and personal details should not reach everyone who
-    can read the lore repository, where `igor-state` lives (Adam, 2026-10-20).
+    can read the destination repository, where `igor-state` lives (Adam, 2026-10-20).
 
     For such a run the pull request body carries no excerpt of the worker's result and no link
     to a transcript, though today's body carries up to 700 characters of it (`prBody`,
@@ -260,7 +267,7 @@ Terms used here:
     The inquisitor's first filter searches them as well as lore entries. Shared-skills #25
     calls a question file a *log file*, and sets both formats in its *A log file and a miss
     file have one format*. Every file on that branch is in scope for every role whose Igor
-    uses that lore repository, whichever repository its `repository` key names, for the reason
+    uses that destination repository, whichever repository its `repository` key names, for the reason
     decision 25 gives. Adam first had the key decide a file's scope,
     then replaced that rule with decision 25 (both 2026-10-20).
 
@@ -269,12 +276,12 @@ Terms used here:
     answer. That matches #25's filter 1, which labels them so under #25's
     decision 183, item 1. Adam accepted that decision in #25, so this is an alignment with
     #25, not a new decision of his.
-16. **The Igor learns the lore repository's visibility from GitHub.** One API call returns
+16. **The Igor learns the destination repository's visibility from GitHub.** One API call returns
     the exact visibility: `private`, `internal` or `public`. #212's startup check and the
     citation visibility rule in decision 10 both ask GitHub, and `publicStore` no longer
-    decides it. `publicStore` says only whether the store is public, so an internal lore
+    decides it. `publicStore` says only whether the store is public, so an internal destination
     repository would read as private, and a private item's citation would go to a repository
-    everyone in the enterprise can read. A lore repository whose visibility GitHub does not
+    everyone in the enterprise can read. A destination repository whose visibility GitHub does not
     return counts as public (Adam, 2026-10-20). The push rules ask at each push (decision 37);
     this decision first had them ask once, at startup.
 17. **A citation is checked against the lore store as the run read it, not at push time.**
@@ -307,13 +314,13 @@ Terms used here:
     run whose worker completed its report without the flag keeps it (Adam, 2026-10-20).
     Decision 38 extends this rule to every run that ends without its worker's completed report.
 20. **The Igor pushes the question and miss files its worker reports, under the citation
-    rules.** An Igor worker cannot push to the lore repository, so it cannot put the
+    rules.** An Igor worker cannot push to the destination repository, so it cannot put the
     inquisitor's files on the `questions` branch itself: a log file for a question about an
     organization or project, including one that records an agent's own choice with
     `authority: agent`, and a miss file. The worker reports each such file on the channel it
     reports citations on, and the Igor pushes it under the same rules as a citation. It pushes
     only when the run publishes an artifact or ends in the Igor's handoff comment on the item,
-    and never to a lore repository more visible than the item's repository or the repository
+    and never to a destination repository more visible than the item's repository or the repository
     the file's `repository` key names. Decision 33 dropped a third condition, that the file's `repository` key name a
     repository the run's role works. The
     worker reports no file for a question with a category, and the Igor pushes none from a
@@ -366,8 +373,8 @@ Terms used here:
     and #25's filter 1 checks that the comment's author has write access. The Igor still
     refuses any other file holding a person's answer (Adam, 2026-10-20, amending decision 21).
     Decision 30 adds that the file's question must be one the Igor asked.
-25. **A questions-branch file is in scope for every role whose Igor uses that lore
-    repository.** A file on a lore repository's `questions` branch concerns an organization or
+25. **A questions-branch file is in scope for every role whose Igor uses that destination
+    repository.** A file on a destination repository's `questions` branch concerns an organization or
     project by definition, but its `repository` key names the one repository it was asked
     from. Scoping it by that key would hide an organization-wide answer from every role that
     does not work that repository, and those roles would ask again. Question and miss files in
@@ -384,9 +391,9 @@ Terms used here:
     less visible than internal and internal less than public: a file about a private
     repository never reaches a worker on a public one. A visibility it cannot read counts
     against returning the file: an unreadable item's repository counts as public, and an
-    unreadable file's repository as private. Decision 25's scope otherwise stands. A worker reading lore
-    about a private repository is not the harm, since the Igor and its worker may see the lore
-    repository; reposting what it read is. A
+    unreadable file's repository as private. Decision 25's scope otherwise stands. The harm is a worker
+    reposting what it read about a private repository, not reading it, since the Igor and its
+    worker may see the destination repository. A
     worker could carry what it read into a more public place, and its pull request body
     quotes up to 700 characters of its result (`prBody`, `src/execute.ts:1169`). Filtering
     what a worker is given is the only certain guard, because what a worker writes cannot be
@@ -405,7 +412,7 @@ Terms used here:
     #217 has not merged (Still open).
 29. **Decision 27 ranks visibility, not readership, as a known limit.** A file about private
     repository X can reach a worker on private repository Y, whose readers need not be X's.
-    Adam accepted that: a team's lore repository serves one team, whose private repositories
+    Adam accepted that: a team's destination repository serves one team, whose private repositories
     usually share readers, and comparing collaborator lists on each search is costly and
     brittle (Adam, 2026-10-20).
 30. **An answer from the run's item is pushed only beside the question the Igor asked.** Under
@@ -422,13 +429,15 @@ Terms used here:
     repository, and of the repository a file's `repository` key names, when it pushes. A
     rejection records a scope only when its file holds the rejected candidate's `scope`
     (Adam, 2026-10-20).
-32. **When every Igor push of citations failed, the review shows citations as not checked.**
-    People's own sessions can put citations on the `questions` branch while every Igor push to
-    it fails, for example while rulesets refuse the Igor's App (task 4.3). Each count would
-    then leave out every citation from an Igor run, so showing it as a lower bound would
-    mislead. Where the run records count at least one citation that failed to push and the
+32. **When no Igor citation reached the branch, the review shows citations as not checked.**
+    People's own sessions can put citations on the `questions` branch while none from an Igor
+    reaches it: every Igor push fails, for example while rulesets refuse the Igor's App (task
+    4.3), every run is flagged, or every citation is withheld. Each count would then leave out
+    every citation from an Igor run, so showing it as a lower bound would mislead. Where the
     branch holds no citation an Igor pushed, the review shows citations as not checked (Adam,
-    2026-10-20). Decision 39 limits both tests to the period the review covers.
+    2026-10-20). Decision 39 limits the test to the period the review covers. As first given,
+    decision 32 showed "not checked" only when, in addition, the run records counted at least
+    one citation that failed to push; decision 69 dropped that condition.
 33. **Any role may push a questions-branch file, whatever repository it names.** Decision 20
     first pushed only a file whose `repository` key names a repository the run's role works.
     Adam dropped that condition: organization and project questions are shared by every role
@@ -462,9 +471,9 @@ Terms used here:
     only the command's name, such as `gh issue comment`, without its arguments: enough to
     decide what to allow, and none of the question's text. Any other run keeps the whole
     command, as today (Adam, 2026-10-20/21).
-37. **The lore repository's visibility is read at every push.** For the push rules, the Igor
+37. **The destination repository's visibility is read at every push.** For the push rules, the Igor
     asks GitHub for it at each push, one API call per push, rather than once at startup. A
-    lore repository made public while the Igor runs then gets no further citation or file of a
+    destination repository made public while the Igor runs then gets no further citation or file of a
     more private item. This matches [#188](https://github.com/adamstallard/igor/pull/188)'s
     read of the store's visibility at each write (Adam, 2026-10-20/21, amending decision 16).
 38. **A run that ends without its worker's completed report, for any reason, counts as
@@ -482,11 +491,10 @@ Terms used here:
     19). #188 is not merged, so this change states the
     names-only form as the rule for a flagged run's log, and #188 must carry it (Still open).
 39. **"Not checked" looks at the period the review covers.** The review shows citations as
-    not checked when no Igor citation push succeeded within the period it covers, where decision
-    32 asked whether one had ever succeeded. The test is that the
-    run records for that period count at least one citation that failed to push, and the
-    branch holds no citation an Igor pushed dated within it (Adam, 2026-10-20/21, amending
-    decision 32).
+    not checked when the branch holds no citation an Igor pushed dated within the period it
+    covers, where decision 32 asked whether one had ever been pushed (Adam, 2026-10-20/21,
+    amending decision 32). Decision 69 dropped the test's other half, that the run records for
+    the period count a citation that failed to push.
 40. **An unpushed citation is counted once, under the first reason in a fixed order:** the
     run is flagged, the run published neither an artifact nor a handoff, the citation is
     refused, it is withheld by the visibility rule, or it failed to push. Adam set the order
@@ -523,14 +531,15 @@ Terms used here:
     whitespace one space), a leading `User says: `, the prefix of an answer relayed for a
     person, is dropped from the comment, and the comment must contain the file's answer
     line. No model call judges it. The Igor applies that rule (Adam, in the
-    session reviewing shared-skills #25, 2026-10-20/21).
+    session reviewing shared-skills #25, 2026-10-20/21). Decision 67 has the Igor record the
+    comment's text, never the worker's line, as the answer.
 44. **Adam intends that a file keyed to another repository than the item's shows as input.**
     During a run, #25 shows a `questions`-branch file whose `repository` key names a repository
     other than the item's as input, whatever its proofs: they show who answered, not that the
     answer belongs to the item's repository. So a log file holding an answer that a run on
     repository A pushes, keyed to repository B, never counts as an answer. During a run on A it
     is input by that rule. During a run on B, its `answer_link`, a comment on A, proves no
-    writer, since #25 accepts only a comment in B or in the lore repository (Adam, in the
+    writer, since #25 accepts only a comment in B or in the destination repository (Adam, in the
     session reviewing shared-skills #25, 2026-10-20/21).
 45. **An Igor's App never relays a person's answer.** This is shared-skills #25's decision
     216, which Adam gave in the session reviewing #25 (2026-10-21). #25's spec states the rule,
@@ -554,13 +563,14 @@ Terms used here:
     `igor lore-search`, so the scope filter, decision 27's visibility filter, decision 35's
     single fetch and decision 34's authority checks apply to it as to a worker's search, and
     #25's script runs no search of its own beside it. #25's script could otherwise read every
-    lore repository its configuration lists, and a citation from that run could carry the id
-    of an entry in another store that happens to name an `active` entry in the Igor's own.
+    lore repository #25's configuration lists, and a citation from that run could carry the id
+    of an entry in another store, where the same id names a different, `active` entry in the
+    Igor's own.
     Through `igor lore-search` the run reads only the Igor's own store.
 50. **Under `igor run`, a worker can read the whole lore checkout, and that is a limit of `igor
     run`.** #175 runs that worker as the developer's own user on their own machine, so the
     scope filter binds its searches, not its reads. `igor serve`, where #175 bars the worker
-    from the checkout, is where the boundary holds.
+    from the checkout, is where the boundary holds. Decision 68 accepts writes too.
 51. **A flagged run's ledger row keeps only the kind of its `reason`:** a fixed word igor
     sets for the kind of reason, such as `error` for a thrown error, never an error message's
     text. Its changed file paths, the actions the role refused and the role settings that
@@ -581,8 +591,8 @@ Terms used here:
     2026-10-21). As in the search, X is the repository decision 55 names, a visibility of X the
     Igor cannot read counts as private, and one of the item's repository counts as public. This
     change modifies `lore-firing`'s *Status and scope are exact filters, always applied* for
-    it. The agent that wrote this change applies the filter before the firing budget, as the
-    scope filter applies, so an entry it keeps out neither fires nor counts toward the budget.
+    it. The filter applies before the firing budget, as the scope filter does, so an entry it
+    keeps out neither fires nor counts toward the budget (decision 63).
 55. **A `project:X` scope names the role's source repository whose short name is X.** Where two
     of the role's sources share that name, the more private is taken. The agent that wrote this
     change proposed this reading, and Adam confirmed it (2026-10-21).
@@ -591,12 +601,12 @@ Terms used here:
     `task-execution` spec has that reason say, such as `silent after 10m` or `time ceiling
     60m`: a fixed vocabulary plus numbers, never free text (Adam, 2026-10-21, amending
     decision 51).
-57. **The Igor reads relay files from the lore repository's default branch as last fetched.**
+57. **The Igor reads relay files from the destination repository's default branch as last fetched.**
     It never reads them from the checkout's working tree, so a worker under `igor run`, running
     as the developer's own user, cannot forge one by writing the checkout. The agent that wrote
     this change proposed this, and Adam confirmed it (2026-10-21).
 58. **Under `igor run`, the Igor fetches only the `questions` branch, and only to push.** It
-    fetches the lore repository's `questions` branch only when it pushes a run's citations or
+    fetches the destination repository's `questions` branch only when it pushes a run's citations or
     questions-branch files, to check what the branch holds and retry on its new tip, and
     applies nothing it fetches to the lore checkout. So #208's rule that `igor run` reads lore
     entries as it finds them still holds, and a search under `igor run` still fetches nothing
@@ -605,16 +615,16 @@ Terms used here:
     question the Igor posts in a handback comment, decision 41's record keeps the question
     reduced and hashed as shared-skills #25 reduces and hashes a question, with the handback
     comment's id and time, and no text of the question; decision 41's match compares hashes
-    (Adam, 2026-10-21). A reader of the lore repository, which holds `igor-state`, then sees no
+    (Adam, 2026-10-21). A reader of the destination repository, which holds `igor-state`, then sees no
     question's text in the record, even for a flagged run or an item more private than the
-    lore repository.
+    destination repository. Decision 65 accepts that a hash can be guessed.
 60. **#153's model steps after the worker are part of the run.** Decision 22's "run" means the
     whole execution, so it covers the steps
     [#153](https://github.com/adamstallard/igor/pull/153) adds after the worker, such as
     writing the pull request body. If any step meets a sensitive question, or the execution
-    ends without a completed report, the whole execution is flagged (Adam, 2026-10-21). The
-    agent that wrote this change reads that as counting each such step as a worker run for
-    decisions 22 and 38, so each step reports the flag and a completed report as a worker does.
+    ends without a completed report, the whole execution is flagged (Adam, 2026-10-21). Each
+    such step counts as a worker run for decisions 22 and 38, so it reports the flag and a
+    completed report as a worker does (decision 64).
 61. **Decision 35's last-fetched note is Adam's.** A search's results say when the `questions`
     branch was last fetched, or that it never was or could not be (Adam, confirmed
     2026-10-21).
@@ -627,11 +637,61 @@ Terms used here:
     (decision 45). It replaces the idea of listing the Igors' Apps in a `relays/_igor.yaml`
     file (Adam, 2026-10-21, in the session reviewing shared-skills #25).
 
+63. **An entry that firing's visibility filter keeps out does not count toward the firing
+    budget.** It neither fires nor counts toward the budget, 4000 tokens unless configured
+    (`DEFAULT_LORE_BUDGET_TOKENS`, `src/firing.ts:17`), so the budget is judged on what can
+    fire. The agent that wrote this change proposed this reading of decision 54, and Adam
+    confirmed it (Adam, 2026-10-20).
+64. **Each model step after the worker counts as a worker run.** Each step that #153 runs after
+    the worker in an execution, such as writing the pull request body, reports the flag when it
+    meets a question with a category, and sends a completed report, as a worker does. A step
+    that sends no completed report flags the whole execution. The agent that wrote this change
+    proposed this reading of decision 60, and Adam confirmed it (Adam, 2026-10-20). #153's side
+    is in Still open.
+65. **Decision 59's hashes may be guessed.** A reader of `igor-state` could learn a short or
+    predictable question, such as "May I merge this?", by hashing likely questions. That
+    reveals nothing the handback comment does not already show, and to an audience no wider
+    than the item's (Adam, 2026-10-20). *Rejected:* a salt or a keyed hash.
+66. **The `questions` branch, `igor-state` and the relay files live with the lore entries.**
+    When #208's `destination` names a repository other than the one holding the Igor
+    configuration, all three are in the destination repository, beside the entries (Adam,
+    2026-10-20). The agent that wrote this change resolved the naming clash this raised: this
+    change first called the repository the entries are read from the *lore repository*, a name
+    #208 gives to the configuration's repository. It now calls it the *destination
+    repository*, as `lore-store` and `lore-review` call where `destination` points, and leaves
+    *lore repository* to #208. The Igor must then fetch the destination repository, which #208
+    does not do (Still open, for #208).
+67. **The Igor records the linked comment's text as the person's answer, never the worker's
+    line.** The answer line a worker writes in a log file only identifies which comment holds
+    the answer. When the Igor pushes a log file holding `authority: decision` or `input`, it
+    writes under `## Answer` the text of the comment the file's `answer_link` points to, word
+    for word, on one line as #25's format requires, in place of the worker's line. So a worker
+    that reports "merge it." against a person's comment "Do not merge it." gets "Do not merge
+    it." recorded, never "merge it." (Adam, 2026-10-20). #25 owns decision 43's containment
+    rule, which still decides whether the comment holds the answer. The agent that wrote this
+    change fitted the rule to #25's: a leading `User says: ` is dropped, as #25's containment
+    drops it, so that a relayed answer still reads back as holding its answer, and the Igor
+    checks the file as pushed for credentials, since the comment's text is new to it.
+68. **Under `igor run`, a worker can write the lore checkout, and that is an accepted limit.**
+    A worker running as the developer's own user can plant an `active` entry in the checkout's
+    working tree, which would fire on the next run, show in `igor lore-search` and pass the
+    citation check. That is consistent with #208's decision 28, that `igor run` reads the
+    checkout as it finds it, local edits included, and with decision 50: `igor run` runs on the
+    developer's own trusted machine. `igor serve` is unaffected (Adam, 2026-10-20, extending
+    decision 50 from reads to writes).
+69. **The review shows citations as not checked whenever no Igor citation reached the branch
+    in the period.** The reason does not matter: a failed push, flagged runs, withheld
+    citations, or anything else. Decisions 32 and 39 required both that no Igor citation reached the
+    branch and that the run records count a citation that failed to push. While every run is
+    flagged, or every citation withheld, none fails to push, so the review would have shown people's citations alone as a lower bound,
+    hiding that no Igor citation arrived (Adam, 2026-10-20, amending decisions 32 and 39, which
+    now state the rule).
+
 **Alignments with shared-skills #25.** These follow from Adam's decisions above and #25's
 decisions 216, 221, 225 and 229 (#25 at 08951b7), and add no decision:
 - **The Igor decides a pushed answer's `authority` itself.** #25's decision 216 counts a
   `User says: ` comment as a person's answer only when that person's relay App posted it, as
-  listed in that person's relay file on the lore repository's default branch. That file is
+  listed in that person's relay file on the destination repository's default branch. That file is
   `relays/<login>.yaml`, and #25's decision 225 counts it only when its last change came from
   that person: a merged pull request they authored, or a commit GitHub verifies as theirs.
   This change points to #25's rules for both. A worker may not be able to read relay
@@ -656,30 +716,18 @@ decisions 216, 221, 225 and 229 (#25 at 08951b7), and add no decision:
 - **Search ranking and its cap of 20 point to #25's filter 1 rule** (decision 52 above).
 
 **Still open:**
-- **For Adam: confirm decision 54's budget reading.** The agent that wrote this change has an
-  entry the visibility filter keeps out count as out of scope for firing, so it neither fires
-  nor counts toward the firing budget, and the budget is judged on what can fire.
-- **For Adam: confirm decision 60's reading.** The agent that wrote this change reads Adam's
-  answer as counting each model step after the worker as a worker run, so each step reports
-  the flag and a completed report, and a step that sends no completed report flags the whole
-  execution. If Adam meant that only the worker's report counts, `task-execution`'s run
-  definition and its scenario change.
-- **A possible question for Adam: which repository holds the `questions` branch,
-  `igor-state` and the relay files when a team's `destination` names another repository than
-  its lore repository.** This change calls the repository the lore store is read from the
-  *lore repository*, while [#208](https://github.com/adamstallard/igor/pull/208) gives that
-  name to the repository holding the Igor configuration, which `destination` can point away
-  from. #208 never fetches the destination repository, so relay files there would never
-  update.
+- **For [#208](https://github.com/adamstallard/igor/pull/208): the Igor must fetch the
+  destination repository.** Under decision 66 the `questions` branch, `igor-state` and the
+  relay files are in the destination repository, which `destination` can point away from #208's
+  lore repository. #208 fetches only its lore repository, so where the two differ, relay files
+  would never update and the `questions` branch would never be fetched. #208 should fetch the
+  destination repository too; this change does not edit it. This change's `surface-adapter`
+  delta has the startup check require the App on the destination repository as well.
 - **Which ref the Igor reads relay files from under #208.** Decision 57 has it read them from
   the default branch as last fetched. Under #208, `igor serve` fetches into a ref of its own
   and leaves the checkout's remote-tracking branch alone, so that branch could be stale. #208's
   ref can also hold a commit whose lore #208 refused to apply. Gate two names the ref, beside
   the `questions` branch's ref; whether a refused commit's relay files may count is open.
-- **A possible question for Adam: decision 59's hashes can be guessed.** A hash of a short or
-  predictable question, such as "May I merge this?", can be matched by hashing likely
-  questions, so a reader of `igor-state` could learn such a question's text. Whether that is an
-  accepted limit, or the record needs a salt or a keyed hash, is not decided.
 - Whether an Igor's worker that runs the inquisitor skill reaches its filter 1 through `igor
   lore-search`. Open pull request [#174](https://github.com/adamstallard/igor/pull/174)
   decides which skills a worker loads, and shared-skills #25 is to have filter 1 call `igor
@@ -707,7 +755,7 @@ decisions 216, 221, 225 and 229 (#25 at 08951b7), and add no decision:
 - How an Igor runs the inquisitor skill itself, with no worker (decision 9), and where that
   run's transcript and count record go. #211 gives the Igor that job and specifies no
   mechanism yet. Task 3.6 waits on it.
-- The review's rules in decisions 5, 8 and 32 (fire counts alone decide "unused", a cited
+- The review's rules in decisions 5, 8, 32, 39 and 69 (fire counts alone decide "unused", a cited
   entry is never proposed as unused, "not checked" and the lower bound) live only in this proposal and
   `docs/architecture.md` §3.4.1, since the review is planned and has no spec. No change
   specifies the review yet; whichever does must carry them as requirements.
@@ -727,14 +775,14 @@ decisions 216, 221, 225 and 229 (#25 at 08951b7), and add no decision:
   those changes carry decision 13's exception, and leave the commands and a model-written body
   free of that run's text, is theirs; this change does not edit them.
 - `lore-review`'s *A public destination refuses privately-sourced entries* is built to
-  take the lore repository's visibility from `publicStore` when it is set
+  take the destination repository's visibility from `publicStore` when it is set
   (`src/propose.ts:297`). Decision 16 covers #212's check and the push rules only. The two
-  can disagree on an internal lore repository: with `publicStore: false`, `lore-review`
+  can disagree on an internal destination repository: with `publicStore: false`, `lore-review`
   treats it as not public and lets a privately-sourced entry into it, while the citation rule
   withholds a private item's citation from it. Whether `lore-review` should ask GitHub too is
   for a change to `lore-review`; this change does not edit it.
 - #212's issue body records decision 16 for its startup check. #212 has no change yet; the
-  change that specifies it must read the lore repository's visibility as decision 16 says.
+  change that specifies it must read the destination repository's visibility as decision 16 says.
   This change's requirements bind only the push rules, which read it at each push (decision
   37).
 - Whether a run the provider refuses over a usage limit ever ends with its worker's
@@ -754,12 +802,12 @@ decisions 216, 221, 225 and 229 (#25 at 08951b7), and add no decision:
   that only the run's worker reaches it and that it widens nothing (task 2.8). So is the ref
   the Igor fetches the `questions` branch into under `igor serve`, and that `igor run` reads
   (decision 35):
-  [#208](https://github.com/adamstallard/igor/pull/208) fetches only the lore repository's
+  [#208](https://github.com/adamstallard/igor/pull/208) fetches only its lore repository's
   default branch, into a ref and a worktree per process, so the `questions` branch needs a ref
   of its own beside them.
 - For [#208](https://github.com/adamstallard/igor/pull/208): its decision 28 says `igor run`
   never fetches lore. Under decision 58 an `igor run` that pushes citations or questions-branch
-  files fetches the lore repository's `questions` branch, and nothing else, and applies
+  files fetches the destination repository's `questions` branch, and nothing else, and applies
   nothing to the lore checkout, so #208's rule for lore entries still holds. #208's text
   should say that it covers lore entries, not the `questions` branch; this change does not
   edit it.
@@ -835,7 +883,7 @@ decisions 216, 221, 225 and 229 (#25 at 08951b7), and add no decision:
   publishes it* refuses, for a role that lists `prose`, model-written text that does not pass
   `prose verify-post`. A question or miss file is model-written text the Igor publishes, so
   under #153 a prose role's Igor would push none. Whether #153 exempts them is #153's to settle.
-- For [#153](https://github.com/adamstallard/igor/pull/153): under decision 60, its model
+- For [#153](https://github.com/adamstallard/igor/pull/153): under decisions 60 and 64, its model
   steps after the worker, such as writing the pull request body, are part of the run.
   `task-execution` here counts each as a worker run, so each must report the flag when it
   meets a question with a category, and send a completed report; a step that sends none flags
@@ -843,11 +891,8 @@ decisions 216, 221, 225 and 229 (#25 at 08951b7), and add no decision:
   execution with those steps would be flagged. That is #153's to add; this change does not
   edit it.
 - [#212](https://github.com/adamstallard/igor/issues/212)'s body says this change's citation rule uses
-  its startup read of the lore repository's visibility. Under decision 37 the push rules read it
+  its startup read of the destination repository's visibility. Under decision 37 the push rules read it
   at each push; #212's body should say so.
-- This change's `lore-firing` and `task-execution` deltas call the execution ledger
-  `executions.ndjson`, while `appendRecord` writes new rows to `executions/<yyyy-mm-dd>.ndjson`
-  (`partitionPath`, `src/state.ts:146`, which `appendRecord` calls). Renaming it in both deltas is decided; the next revision of this change does it.
 - `lore-firing`'s *An entry arrives with what a reader needs to judge it* uses "citations" for an
   entry's provenance, while this change uses it for a record that an entry answered a question.
   One of the two should be renamed.
@@ -917,9 +962,10 @@ decisions 216, 221, 225 and 229 (#25 at 08951b7), and add no decision:
   merges it, and that nothing it proposes *reaches* a worker unreviewed. Decision 3 reads that
   promise as being about injection. That change may want to narrow its wording to say so; this
   change does not edit it.
-- Whether the lore repository's rulesets or branch protection let an Igor's App create and push
-  the orphan `questions` branch. `surface-adapter` already requires the App to hold Contents
-  write on the lore repository. Task 4.3 checks. Until it can, every citation the Igor tries to
+- Whether the destination repository's rulesets or branch protection let an Igor's App create and push
+  the orphan `questions` branch. `surface-adapter` requires the App to hold Contents
+  write on #208's lore repository, which is the destination repository unless `destination`
+  names another (see the item for #208 above). Task 4.3 checks. Until the App can, every citation the Igor tries to
   push is counted as not pushed, and the branch holds none, so a review reports citations as
   not checked.
 - **Found by the consistency read of decisions 46 to 53, for the author's next round:** `role-config` still calls `commands` "the
@@ -936,27 +982,8 @@ decisions 216, 221, 225 and 229 (#25 at 08951b7), and add no decision:
   `tools-only` tier; the spec never defines a *flagged* run; *Status and scope are exact
   filters, always applied* states no scope rule, which only `scopeMatches` holds; some
   requirements still carry rationale.
-- **Found by the consistency reads of decisions 54 to 61.** Three are possible questions for
-  Adam:
-  1. *A worker's answer line can invert a person's answer.* #25's normalized containment
-     (decision 43) accepts any part of the comment, so a steered worker could report the
-     answer "merge it." against a person's comment "Do not merge it.", and the Igor would
-     record it as that person's decision. Nothing checks that the answer line says what the
-     comment says. The rule is #25's.
-  2. *Under `igor run`, a worker can write the lore checkout.* Decision 57 keeps a relay file
-     written into the working tree from counting, but `igor run` reads lore entries and its
-     configuration from the working tree as it finds it (#208). A worker running as the
-     developer's own user could plant an `active` entry there, which would fire on the next
-     run, show in `igor lore-search` and pass the citation check. Decision 50 accepts that such
-     a worker can read the checkout, not that it can write it.
-  3. *"Not checked" may never trigger.* Decisions 32 and 39 show citations as not checked only
-     when some citation failed to push and no Igor citation reached the branch. While workers
-     send no completed report, every run is flagged, and when the lore repository is more
-     visible than the items every citation is withheld; neither counts as failed to push, so
-     the review would show people's citations alone as a lower bound. Counting "no Igor
-     citation in the period, whatever the reason" would close it.
-
-  The rest are for the author's next round, or for other changes:
+- **Found by the consistency reads of decisions 54 to 61,** for the author's next round, or
+  for other changes. Decisions 67, 68 and 69 settled the three questions they raised for Adam.
   - `IGOR_RUN` shares a prefix with #171's `IGOR_RUN_TOKEN`, a seat token. One could be
     renamed so that no prefix match or reader confuses a marker with a secret.
   - #25's format allows `asked_from` only in a file an Igor pushes for its worker, while this
@@ -968,8 +995,21 @@ decisions 216, 221, 225 and 229 (#25 at 08951b7), and add no decision:
     should state each, and the others point to it.
   - The transcript-withheld note points to an action log, which no run keeps until #188 is
     built.
-  - The scenario that a questions-branch file holding the seat token is refused asserts that
-    no prefix of #25's matches the seat token, which nobody has measured.
+  - Whether #25's credential prefixes match the seat token is unmeasured; task 4.9 checks.
+- **For Adam: the date of decisions 63 to 69.** They are recorded as 2026-10-20, while 63 and
+  64 confirm readings of decisions 54 and 60, which are dated 2026-10-21.
+- **Found by the consistency read of decisions 63 to 69.** Two are possible questions for Adam:
+  1. *A long comment recorded whole.* Decision 67 records the linked comment's whole text,
+     while #25's format holds "the answer in one sentence under `## Answer`". A comment of
+     several sentences, or one that quotes the handback question before answering, is then
+     recorded whole, the quoted question included.
+  2. *A flagged run's handoff comment.* A flagged run's ledger row keeps only fixed words for
+     its `reason` (decision 51), but `graceful-handoff`'s comment on the item quotes the
+     failure's detail (`src/handoff.ts:316`), so that text can still be posted on the item.
+
+  One is for shared-skills #25: its spec puts a person's relay file beside igor's
+  configuration, while decision 66 puts relay files in the destination repository, beside the
+  entries. #25 should align with decision 66.
 ## Why
 
 The requirement *Lore reaches the worker unbidden* forbids offering a worker a search over the
@@ -995,7 +1035,7 @@ reading the codebase. Two cases contradict that:
   search, which every worker is offered.
 - *Lore reaches the worker unbidden* also defines a search, a search during a run, and when a scope covers a role.
   It holds a search during a run to firing's scope rule for lore entries, puts every
-  file on the Igor's lore repository's `questions` branch in scope, lets it return in-scope entries that
+  file on the Igor's destination repository's `questions` branch in scope, lets it return in-scope entries that
   are not `active` with a label, keeps its results out of the injected-lore channel and out of
   the firing record, and says what a duplicate check may compare against.
 - The scenario *No search affordance offered* is removed. Seven are added: *Injection does not
@@ -1007,7 +1047,7 @@ reading the codebase. Two cases contradict that:
   who writes a citation during a run, including one from an inquisitor run the Igor starts
   itself, which citations the Igor accepts, what the file holds, where it may go, and that a
   citation it refuses, withholds or cannot push is counted, under one reason in a fixed order.
-  It has the Igor read the lore repository's visibility from GitHub at each push. It is the
+  It has the Igor read the destination repository's visibility from GitHub at each push. It is the
   one statement of the
   Igor's push rules, which shared-skills #25 points to. It sits in
   `lore-firing` beside *What fired is recorded on the state branch*, the other record of an
@@ -1021,9 +1061,10 @@ reading the codebase. Two cases contradict that:
   The Igor sets each file's `asked_from` key to the item's repository, refusing a worker's
   file that already holds one, and sets an answered file's `authority` itself by #25's checks.
   It records the questions of each handback comment on `igor-state` as hashes, with no text.
-  The Igor sets a relay App's answer's `answered_by` as well as its `authority`. It has
-  twenty-five scenarios (decisions 20, 21, 24, 28, 30, 33, 34, 41, 42, 45 and 59, and the
-  alignments with #25).
+  The Igor sets a relay App's answer's `answered_by` as well as its `authority`, and records
+  the linked comment's text, never the worker's line, as the answer. It has twenty-seven
+  scenarios (decisions 20, 21, 24, 28, 30, 33, 34, 41, 42, 45, 59 and 67, and the alignments
+  with #25).
 - A third new `lore-firing` requirement, *An Igor runs its worker's lore searches*, specifies
   `igor lore-search`: it reads a question's text or terms on its standard input, the Igor runs
   it for the role of the run whose channel carried it, every worker has it without its role
@@ -1065,19 +1106,20 @@ reading the codebase. Two cases contradict that:
   keeps names only (decisions 36 and 38), and its ledger row's `reason` keeps only fixed
   words for the kind of reason, such as `error`, or for a worker killed for a limit the hang's
   kind and the limit's duration (decisions 51 and 56). A model step igor runs after the worker,
-  such as #153's, is part of the run and counts as a worker run (decision 60). It gains
-  seventeen scenarios, and
+  such as #153's, is part of the run and counts as a worker run (decisions 60 and 64). It gains
+  eighteen scenarios, and
   *Transcript persisted off the main line* applies only to a run that met none and whose
   worker runs all completed their reports (decisions 13, 19 and 38).
 - `lore-review`'s *An entry already in the store is never overwritten by proposing* reports an
   out-of-scope collision during a run only as "id taken", and then proposes nothing for that
   candidate in the run, with two new scenarios (decisions 6 and 14).
 - `surface-adapter`'s *An Igor that cannot act as its App does not start* refuses to start an
-  Igor whose App's slug does not start with `igor-`, with two new scenarios, and *An Igor
+  Igor whose App's slug does not start with `igor-`, with two new scenarios, and requires the
+  App on the destination repository too (decision 66); *An Igor
   knows its own bot account* renames its example App to `igor-acme-reviewer` (decision 62).
   `docs/deployment.md` tells a person to name the App with the prefix.
 - `docs/architecture.md`: §3.3 says every worker is offered `igor lore-search` and what binds it, §3.4.1 says a
-  search hit is not a firing and that a review counts citations from the lore repository's
+  search hit is not a firing and that a review counts citations from the destination repository's
   `questions` branch, and §4.1 says the worker never *has* to search.
 
 ## Capabilities

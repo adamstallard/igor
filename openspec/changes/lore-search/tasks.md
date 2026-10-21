@@ -43,7 +43,7 @@
       proposed during a run*, built now, though no Igor proposes during its run until
       lore-from-corrections' `propose-lore` lands
 - [ ] 2.7 2.1's function, or one beside it, returns the question and miss files a search
-      finds on the Igor's lore repository's `questions` branch, whatever repository their
+      finds on the Igor's destination repository's `questions` branch, whatever repository their
       `repository` key names. `igor lore-search` (2.8) then drops a file more private than the
       item's repository, judging the file by the more private of its `repository` and
       `asked_from` keys, and counting a visibility it cannot read against the file. Tests
@@ -53,7 +53,7 @@
 - [ ] 2.8 `igor lore-search`: a command offered to every worker whatever its role's
       `commands` list, reading a question's text or search terms from its standard input. The
       worker's sandbox allows it beside the role's `commands`, whatever the role's monotonic
-      restrictions. Under `igor serve`, at the start of each run the Igor fetches the lore
+      restrictions (role validation's monotonic check, which this task exempts it from). Under `igor serve`, at the start of each run the Igor fetches the destination
       repository's `questions` branch into a ref of its own, writing nothing to the checkout's
       working tree, and the run's searches read that ref; under `igor run` no search fetches,
       and the run reads the ref as last fetched. The command's channel is reachable by that run's
@@ -71,7 +71,7 @@
       whose check fails or cannot be run, such as with GitHub unreachable or no installation
       covering the repository, is shown as input, labelled as unconfirmed. Whether a linked
       comment holds the answer is checked in code by #25's normalized containment, with no
-      model call. The checks read #25's relay files from the Igor's checkout of the lore
+      model call. The checks read #25's relay files from the Igor's checkout of the destination
       repository's default branch and apply #25's relay rule, under which an Igor's App is
       never a person's relay. They also apply a separate rule: during a run, a file keyed to
       another repository than the item's is input. Tests for *A question file that passes
@@ -106,7 +106,7 @@
 - [ ] 3.1 Define how a worker reports a citation, by the entry's id alone, in its output or
       through #175's outbox, as #175 settles. The Igor reads the citations from there and,
       only when the run publishes an artifact or ends in its handoff comment on the item, and
-      the run does not count as flagged under 3.7, pushes each to the lore repository's `questions` branch, in the format shared-skills
+      the run does not count as flagged under 3.7, pushes each to the destination repository's `questions` branch, in the format shared-skills
       #25's *A citation file has one format* sets for a citation an Igor pushes from a run.
       Tests for *A worker's citation is published by its Igor*, *A worker's report of a
       citation holds only the entry's id*, *A run that publishes nothing pushes no citations*,
@@ -119,13 +119,13 @@
 - [ ] 3.3 The Igor creates the `questions` branch as an orphan where it is missing, and retries
       a push that was rejected because the branch moved, at most three times. Under `igor run`
       it fetches the `questions` branch only when it has a citation or questions-branch file to
-      push, fetches nothing else from the lore repository, and applies nothing it fetches to
+      push, fetches nothing else from the destination repository, and applies nothing it fetches to
       the lore checkout. Tests for *A missing questions branch is created as an orphan*, *A
       push that loses a race is retried*, *A push that keeps losing the race is counted as
       failed*, *Under igor run, the Igor fetches the questions branch only to push* and *Under
       igor run, a run with nothing to push fetches nothing*
 - [ ] 3.4 The Igor refuses a citation of an id that names no `active` entry in the run's role's
-      scope, and withholds one whose item's repository is less visible than the lore
+      scope, and withholds one whose item's repository is less visible than the destination
       repository, counting an unreadable visibility as the rule says. Tests for *A citation of
       an entry that cannot be cited is refused*, *A citation is not pushed somewhere more
       visible than its question*, *The worker cannot choose the repository a question concerns*
@@ -178,15 +178,16 @@
       flagged*, *A flagged run's ledger row keeps each denied command by name only*, *A flagged run's
       ledger row keeps only the kind of its reason*, *A flagged run killed for a limit keeps
       the limit's kind and duration*, *A model step after the worker that meets a categorized
-      question flags the execution*, *Any
+      question flags the execution*, *A model step after the worker that sends no completed
+      report flags the execution*, *Any
       other run's ledger row keeps a denied command whole*, *A flagged run's action log keeps
       names only* once #188 is built, *An execution counts as flagged
       when any of its worker runs does* and, once 3.6 can be built, *The Igor's own inquisitor run that met a
       categorized question stores no transcript*
-- [ ] 3.8 At each push to the `questions` branch, the Igor asks GitHub once for the lore
+- [ ] 3.8 At each push to the `questions` branch, the Igor asks GitHub once for the destination
       repository's visibility (`private`, `internal` or `public`), counting an answer it
       cannot read as public, and the push rules use that answer, never `publicStore`. Tests
-      for *The lore repository's visibility comes from GitHub, not publicStore* and *The lore
+      for *The destination repository's visibility comes from GitHub, not publicStore* and *The destination
       repository's visibility is read at each push*
 
 - [ ] 3.9 On the channel of 3.1, the worker reports each question and miss file it would put
@@ -197,7 +198,9 @@
       already holds `asked_from`, and sets each file's `asked_from` key to the item's
       repository. It sets an answered log file's `authority` itself by 2.9's checks, reading
       the relay files as 2.9 does, whatever the worker wrote, and for a relay App's comment
-      sets `answered_by` to the person whose relay file lists that App. When it posts a handback comment, it
+      sets `answered_by` to the person whose relay file lists that App. It writes the linked
+      comment's text, word for word, as the file's answer, never the worker's answer line.
+      When it posts a handback comment, it
       records on `igor-state`, under the item, the hash of each question it posted there,
       reduced and hashed as shared-skills #25 does, with the comment's id and time and no
       question text. The check that an answer's question is one the Igor asked compares the
@@ -217,7 +220,7 @@
 - [ ] 4.2 Whether a worker can read the lore checkout's files directly. #175 requires only that
       it cannot write them. If it can read them, file an issue: a worker could then see entries outside its role's
       scope with no search at all.
-- [ ] 4.3 Whether the lore repository's rulesets or branch protection let an Igor's App create
+- [ ] 4.3 Whether the destination repository's rulesets or branch protection let an Igor's App create
       and push the orphan `questions` branch. If they do not, file an issue: until then every
       citation made during a run is counted as not pushed.
 - [ ] 4.4 Whether a run the provider refuses over a usage limit ever ends with its worker's
@@ -241,3 +244,7 @@
       `User says: ` comment as input, until #25's task shows that GitHub reports the App; then a
       code change turns it on. Until then, the tests of the relay-App scenarios run the path
       against a GitHub stub that reports the App.
+- [ ] 4.9 Whether shared-skills #25's credential prefixes, such as `sk-ant-`, match a seat's
+      token. Decision 28 says they miss it. If they match it, the Igor still uses #217's
+      matcher, which also knows credentials no prefix shows, and gate two corrects decision 28's
+      reasoning in the proposal.

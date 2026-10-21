@@ -7,7 +7,7 @@ which by default are reversible: draft pull requests and comments. The loop MUST
 worker output outside that list, regardless of what the worker produced, except the two below.
 
 Two worker outputs are exempt from the list: the citations a worker reports, and the
-questions-branch files it reports. The Igor pushes them to the lore repository's `questions`
+questions-branch files it reports. The Igor pushes them to the destination repository's `questions`
 branch only as `lore-firing`'s *An Igor publishes the citations its worker reports* and *An Igor
 publishes the questions-branch files its worker reports* allow.
 
@@ -128,7 +128,7 @@ inquisitor run, SHALL have no transcript written to the state branch. The file a
 transcript path SHALL hold only this line: "Transcript withheld: this run met, or may have
 met, a sensitive question. See the action log." The action log is the log of tool calls
 described below; until a run keeps one, the line points to nothing.
-Its outcome, its cost and its row in the execution ledger, `executions.ndjson`, which holds the run's id, its item
+Its outcome, its cost and its row in the execution ledger, `executions/<yyyy-mm-dd>.ndjson`, which holds the run's id, its item
 and the citation counts that requirement sets, are still written. For such a run, the pull
 request body SHALL carry no excerpt of the worker's result and no link to a transcript, and a
 record of the provider refusing the run SHALL keep only the refusal's reason, never the
@@ -165,7 +165,8 @@ for a public store and a private repository.
 In this requirement a *run* is one execution of an item, with every worker run it starts and
 every model step igor runs after them in that execution, such as the step of the open pull
 request #153 that writes the pull request body. Each such model step counts as a worker run
-here, and every rule below for a worker run applies to it. An execution counts as having met a
+here: it sends a completed report, as defined below, in the same form as a worker's, and every
+rule below for a worker run applies to it. An execution counts as having met a
 question with a category when any of its worker runs reported the flag below, or ended before
 its completed report, as the paragraph below starting "A worker run that ends before" says;
 the rules above then apply to the whole execution, including any summary of an earlier worker
@@ -303,6 +304,15 @@ cannot tell a whole report from a cut one, the report SHALL count as not complet
 - **WHEN** a worker run completes its report without the flag
 - **AND** a later model step of the same execution, such as the step that writes the pull
   request body, reports the flag
+- **THEN** the execution counts as having met a question with a category
+- **AND** no transcript of the worker run or of that step is written to the state branch
+
+#### Scenario: A model step after the worker that sends no completed report flags the execution
+
+- **WHEN** a worker run completes its report without the flag
+- **AND** a later model step of the same execution, such as the step that writes the pull
+  request body, ends before the Igor has that step's completed report, a report of the flag and
+  of any citations, in the form a worker's takes
 - **THEN** the execution counts as having met a question with a category
 - **AND** no transcript of the worker run or of that step is written to the state branch
 
