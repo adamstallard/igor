@@ -30,7 +30,7 @@ A held item SHALL be released in either of two ways. The Igor's operator SHALL b
 release it on the host with `igor release <tracker>/<repo>/<item>`, such as
 `igor release github/acme/api/12`, whatever an edit's attribution shows. Releasing SHALL mark
 the hold record released, append a ledger row for the item whose `reason` is `released`, and
-delete the item's question file and its session log under `flagged-questions`, so that no
+delete the item's question file and its session logs under `flagged-questions`, so that no
 fallback above holds it again;
 every Igor process of the role, each a *rank* under #179, reads the release from the state
 branch, so a rank on another host does not hold the item again from its own file or ledger
@@ -82,7 +82,7 @@ attributed, and `igor release` is the way to release a held item.
 - **AND** the item's hold record is later missing
 - **THEN** the item is not held again, since its latest ledger row is `released` and its host
   file is gone
-- **AND** the session log kept beside that file is gone too
+- **AND** the session logs kept beside that file are gone too
 
 #### Scenario: A cure key does not release a held item
 

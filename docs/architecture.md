@@ -554,12 +554,15 @@ also writes its firing record and, if the provider refused it, the refusal recor
 next. Its pull
 request body carries no excerpt of the worker's result and no transcript link. If the
 provider refuses the run over a usage limit, the record of that refusal keeps only the limit
-and reset time Igor read from the provider's reply. All of these rules hold because free text cannot be redacted reliably, and personal details should not reach everyone
+and reset time Igor read from the provider's reply. All of these rules for such a run, the ledger row's above included, hold because free text cannot be redacted reliably, and personal details should not reach everyone
 who can read the item or the destination repository, which holds `igor-state`. The worker's report
-carries a flag that its run met such a question, with only the question's category, one word
-such as `personal`, which igor writes to no ledger, branch, comment or label, only to the Igor's host file
-described below; it also stays in the worker's session log, whose copy the Igor keeps on its
-own host, since credential redaction removes credentials, not that word. A run that
+carries a flag that its run met such a question, listing each category met, such as
+`personal`, once each, and marking those of the question or questions the run stopped on. igor
+takes only the three exact words, so anything else a steered worker sends counts as no
+category, and writes them to no ledger, branch, comment or label, only to the Igor's host file
+described below; they also stay in the session logs of the steps that met them, which #174
+copies onto the Igor's own host for every run, since credential redaction removes credentials,
+not those words. A run that
 ends before the Igor has its worker's completed report (its report of citations and of that
 flag, marked by the worker as whole), for any reason (refused by the
 provider, gone silent, out of time or stopped), is treated the same way. The Igor cannot tell
@@ -590,13 +593,15 @@ lands, the Igor also opens a condition: a stuck-work record whose key gate two n
 condition holds no path; the operator learns which path failed from the Igor's own log on the
 host, where the path goes. The operator finds a kept question under the state directory at
 `flagged-questions/<tracker>/<repo>/<item>.md`, the same `<tracker>/<repo>/<item>` as the item's
-transcript path. For a question with a category, the kept file holds only the category's one word, which the
-worker reports with its flag; for one without, it holds the question's text, as the run's
-handback would have asked it. Either way it names the run's Claude Code session log, which the
-Igor moves beside the file, so the operator reads the question itself in that log. A reply on
+transcript path. The kept file records the flag's categories and, for each question the run stopped on, that
+question's category or, for one without, its text, as the run's handback would have asked it.
+It names every Claude Code session log of the execution that #174 copies; this change needs
+#174 to copy one for every model step, before the reset that precedes the next, and the Igor
+moves those copies beside the file, so the operator reads a categorized question itself in those
+logs. A reply on
 the item does not rerun the item: the operator reads the question and decides whether it may be
 worked again. The item stays held, not worked again, whatever else its
-handoff carries, and its hold record never expires; a lost record leaves it held. The operator
+handoff carries, such as a cure key that would release any other item, and its hold record never expires; a lost record leaves it held. The operator
 can always release it with `igor release <tracker>/<repo>/<item>` on the host. An edit, relabel
 or change of holder by someone with write access to the item's repository releases it too,
 where the edit can be attributed, which needs #141; anyone else's edit, or one whose author
@@ -604,11 +609,14 @@ cannot be read, leaves it held.
 
 Open pull request #174 gives each worker run a home of its own, resets `~/.claude` and
 `~/.claude.json` there from a template before each model step, has a worker authenticate only
-with its seat's token, so a worker runs only for a seat that names one, and copies the session
-log out, redacted, when the run ends. A flagged run's copy is moved beside its kept question.
-That keeps each run's Claude state private once workers run as users of their own (#175).
-Until then, and always under `igor run`, every worker runs as the same user, so one can read
-another's home and `flagged-questions`, its logs and categories included; Adam accepts that.
+with its seat's token, so a worker runs only for a seat that names one, and copies each session
+log out, redacted, before the next reset. A flagged execution's copies are moved beside its
+kept question.
+#174's per-run home and reset keep each run's Claude state private once workers run as users of
+their own (#175).
+Until then, and always under `igor run`, the developer's own trusted machine, every worker runs
+as the same user, so one can read another's home and read or write `flagged-questions`, its
+logs and categories included; Adam accepts that.
 
 For a flagged run's ledger row, the changed paths, and the actions the role's `allow` list
 refused, which differ from the sandbox's denied commands kept by name above, stay in full. Open pull request #188, not yet built, adds a log of each
@@ -652,8 +660,11 @@ comment reading "Do not merge it." cannot record the opposite of what the person
 never keeps the `authority` or `answered_by` the worker wrote, under `igor serve` or `igor run`: a worker
 under `igor serve`, barred from the lore checkout, cannot read the relay files
 and so cannot tell whose answer a relay App's comment is, and no worker's word is proof. The Igor refuses a file that already holds `asked_from`, a key only the Igor
-writes. The Igor cannot see a question's category, so a worker steered by its item could report a
-file about a personal or secret matter, and the Igor would push it for every role to find. That
+writes. An unflagged run's report names no category, so the Igor cannot screen its files by
+category, and a flagged run, whose flag does name them, pushes nothing to the `questions`
+branch. So a worker steered by its item could report, from an unflagged run, a file about a
+personal or secret matter, and the Igor would push it for every
+role to find. That
 is a known limit: an honest worker never reports such a question, and the credential check
 below still refuses a file holding a credential. When it posts the handback, the Igor
 records on `igor-state` a hash of each question it asked, with the comment's id and time, and

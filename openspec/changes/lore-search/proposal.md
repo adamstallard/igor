@@ -2,7 +2,7 @@
 
 ## Decisions
 
-[#215](https://github.com/adamstallard/igor/issues/215) records all ninety-six decisions,
+[#215](https://github.com/adamstallard/igor/issues/215) records all ninety-nine decisions,
 and all are Adam's. Where the agent that wrote this change fitted one of them to the spec, that
 decision says so. A *consistency read*
 is a check, by a fresh agent, of this change against every other spec, change and open pull
@@ -76,7 +76,9 @@ request; Adam answered the questions each read raised. He made:
   decision 90 that day, confirming details the agent that wrote this change had fitted to
   decisions 71, 73 and 80;
 - decisions 91 to 96 on 2026-10-21, answering the four questions this change then had for
-  him, confirming more fitted details, and settling how a refused run's reply is kept.
+  him, confirming more fitted details, and settling how a refused run's reply is kept;
+- decisions 97 to 99 on 2026-10-21, answering the three questions the reads of decisions 91 to
+  96 raised.
 
 Terms used here:
 - The *destination repository* is the repository the configuration key `destination` names,
@@ -266,7 +268,7 @@ Terms used here:
     (`src/execute.ts:2077`). Adam extended the decision to both later on 2026-10-20.
 
     The Igor learns of such a question from the worker's report: a flag saying the run met
-    one, with no question or answer. Decision 92 adds the question's category to the flag. A citation report still carries no category
+    one, with no question or answer. Decisions 92 and 97 add the categories met to the flag. A citation report still carries no category
     (decision 9). The agent that wrote this change proposed the flag, and Adam approved it on
     2026-10-20. A steered worker could leave the flag out, and the transcript would then be
     stored; as with decision 11, nothing but the worker guards against that.
@@ -570,7 +572,9 @@ Terms used here:
     comment 12 --body "…"` keeps `gh issue comment`. A plain-word argument can pass as part
     of the name, as `echo alice` keeps `echo alice`, and Adam accepts that.
 48. **A steered worker reporting a question file about a personal or secret matter is a
-    known limit.** The Igor cannot see a category, so it would push such a file for every role
+    known limit.** The Igor sees a category only in a flag, and a flagged run pushes nothing to
+    the `questions` branch; a
+    steered worker that reports such a file from an unflagged run gets it pushed for every role
     to find (decision 25). An honest worker never reports a categorized question, and #217's
     credential check still refuses a file holding a credential.
 49. **An Igor's own inquisitor run searches through `igor lore-search` too.** When the Igor
@@ -823,7 +827,8 @@ Terms used here:
     `<tracker>/<repo>/<item>`, and it marks the hold record released, appends a `released` ledger row
     and deletes the host file, so no fallback holds the item again. Two new scenarios, and one
     changed.
-84. **The operator can always release a held item on the host,** with `igor release <item>`,
+84. **The operator can always release a held item on the host,** with
+    `igor release <tracker>/<repo>/<item>`, as Adam confirmed in decision 95,
     whatever #141 or task 4.10 find. An edit by someone with write access releases it too, where
     the edit can be attributed (Adam, 2026-10-21, adding to decision 79). One new scenario.
 85. **Decision 80's condition opens on the first failed write, as a notice only.** A condition
@@ -865,7 +870,8 @@ Terms used here:
     question's #25 category (`vulnerability`, `secret` or `personal`) where it has one,
     otherwise the question's text, and the path of the moved session log; a categorized
     question's text is only in the log (Adam, 2026-10-21). The Igor learns the category from
-    the worker's flag (decision 92). Two new `graceful-handoff` scenarios.
+    the worker's flag (decisions 92 and 97), and decision 98 has the file list every step's
+    log. Two new `graceful-handoff` scenarios.
 90. **The details fitted to decisions 71, 73 and 80 are Adam's.** He confirmed them as written
     (Adam, 2026-10-21): under decision 71, a declining worker's reason is not quoted, and igor's
     own facts, such as a budget's reset time or the setting that would let the run proceed,
@@ -882,15 +888,17 @@ Terms used here:
     word from shared-skills #25's fixed list, `vulnerability`, `secret` or `personal`, and
     nothing else about the question. That word goes only into decision 89's question file on
     the Igor's host, never into the ledger, the state branch, a comment or a label (Adam,
-    2026-10-21, amending decision 13). Two `task-execution` scenarios, one changed and one new;
-    an item for #25, which must allow the worker to report it.
+    2026-10-21, amending decision 13). Decision 97 widens the flag to list every category
+    met. Two `task-execution` scenarios, one changed and one new; a Still open item asks #25
+    to allow the worker to report the category.
 93. **Gate two depends on #179.** This change's gate two merges only after #179's unit sets
     `StateDirectory=igor`, so no deployment is left unable to keep a flagged question (Adam,
     2026-10-21).
 94. **One `igor` user for every worker is an accepted limit until #175.** Until workers run as
     users of their own, another worker can read `flagged-questions`, its logs and categories
     included. Adam keeps the flagged log there now (decision 88), knowing that (Adam,
-    2026-10-21). Still open has an item for #175 to close it.
+    2026-10-21). Still open has an item for #175 to close that read-access limit. Decision 99
+    makes write access part of the accepted limit too.
 95. **More fitted details are Adam's.** He confirmed as written (Adam, 2026-10-21) decision 83's
     fallbacks for a lost record, decision 84's `igor release` details, including deleting the
     question file and its session log on release, and decision 85's reuse of an open
@@ -900,6 +908,30 @@ Terms used here:
     its *Every write to the state branch is redacted* requires of every write there (Adam,
     2026-10-21, his decision on #217). #217's Still open item asking which text to reword is
     settled by this.
+97. **The flag lists every category met, and marks the stopped question's.** A flagged worker's
+    flag lists each #25 category met in the run (`vulnerability`, `secret`, `personal`), each at
+    most once, and marks which belong to the question or questions the run stopped on; the host
+    question file records both. Where several questions stopped one run, the file lists each
+    with its category, or its text when it has none (Adam, 2026-10-21, amending decision 92).
+    igor writes a category word only when it is exactly one of the three; any other value,
+    which a steered worker could supply, counts as no category, and the run stays flagged.
+    The agent that wrote this change fitted three details, for Adam to check: since the flag
+    gives each category once, the file keeps two separate lists, the marked categories and the
+    texts of stopped questions without one, and neither pairs them nor counts questions that
+    share a category;
+    a value outside the three words counts as no category, so the file leaves it out if
+    unmarked and, if marked, says a stopped question's category could not be read;
+    and the Igor never follows a link under `flagged-questions`. `task-execution` and
+    `graceful-handoff` gain five new scenarios between them, and four change.
+98. **Every step's session log is kept for a flagged execution.** #174 is to copy each step's
+    session log before the next reset, which it does not do yet, #153's later model steps and #189's second worker run
+    included, and the question file lists them all (Adam, 2026-10-21, amending decisions 88 and
+    89). An item for #174.
+99. **Under `igor run`, a same-user worker's write access is accepted too.** Planting or deleting
+    a file under `flagged-questions` is part of decision 94's limit. Decision 87's privacy rule
+    binds only where workers have users of their own, which is `igor serve` once #175 lands;
+    `igor run` is the developer's own trusted machine, as decisions 50 and 68 say (Adam,
+    2026-10-21).
 
 
 **Alignments with shared-skills #25.** These follow from Adam's decisions above and #25's
@@ -952,31 +984,23 @@ decisions 216, 221, 225, 229 and 235 (#25 at 9247d3c), and add no decision:
   as users of their own, every worker runs as `igor`, the Igor's own user, and can read
   `flagged-questions`, its logs and categories included; Adam accepts that until then. #175's
   worker users close it.
-- **For Adam: which category the flag carries** (decision 92). Under #25 a worker raises the
-  flag for every question it gives a category, whatever its verdict, not only one it stops on.
-  A run can meet a `secret` question it decides and then stop on a `personal` one, or on one
-  with no category. Which word the flag carries, and how the Igor ties it to the question it
-  stopped on, is not decided.
-- **For Adam: logs that #174 does not copy** (decisions 88 and 89). #174 copies only the
-  worker's session log, and resets the home before each later model step, so a question met
-  in #153's later steps (model steps igor runs after the worker, such as writing the pull
-  request body) is in a log nobody keeps. #189, which can start a second worker run in one
-  execution, gives that run a log of its
-  own. Which log the question file names in those cases is not decided.
-- **For Adam: `igor run` and write access** (decision 94). Under `igor run` workers never get
-  users of their own (#175 leaves it same-user), so the accepted limit is permanent there: two
-  concurrent `igor run`s can read each other's state. A same-user worker can also write under
-  `flagged-questions`: plant a file that holds an item, or delete one. Is write access accepted
-  too, and should decision 87's privacy rule say it binds `igor serve` only?
+- **For [#174](https://github.com/adamstallard/igor/pull/174) (decision 98).** #174 copies only
+  the worker's session log; for a flagged execution it must copy each step's log before the
+  next reset, #153's later model steps and #189's second worker run included, so that the
+  question file can list them all.
 - **Task 4.11 is unmeasured, for whichever of gate two and #174 is built first.** Nobody has measured that Claude Code keeps
   no session or state under `HOME` outside the two paths #174 resets.
 - **For #217 (decision 96).** Its Still open item on which of the two refusal texts to reword is
   settled by decision 96, so #217 should drop it.
-- **For shared-skills #25 (decision 92).** #25's spec says, in four places, that a worker such a
-  question stops reports only the flag, never the question's category: its requirement, its
-  definition of the bare flag, and two scenarios. Under decision 92 the worker reports the
-  category's word with the flag; #25 must allow it. Under decision 92 the worker reports
-  the category's one word with the flag, for the Igor's host file; #25 must allow it.
+- **For shared-skills #25 (decisions 92 and 97).** #25's decision 244 records that the flag
+  carries the category, citing decision 89, but its proposed decision 245 says a categorized
+  question that does not stop the worker adds no category. That is the conflict; 245's
+  rejection of one word per question agrees with decision 97, which gives one word per
+  category.
+  Under decision 97 the flag lists every category met, each once, and marks those of the
+  question or questions the run stopped on; #25 should amend 245 to match. #25 also lists the
+  words in the order `vulnerability`, `secret`, `personal`, which this change does not
+  require.
 - **Gate two depends on [#179](https://github.com/adamstallard/igor/pull/179) (decision 93).**
   Today's `deploy/igor.service` sets no `StateDirectory=` and makes the home directory
   read-only (`ProtectHome=read-only`, only `/srv/igor` writable), so neither #174's per-run
@@ -1200,9 +1224,12 @@ decisions 216, 221, 225, 229 and 235 (#25 at 9247d3c), and add no decision:
   run id names one execution of an item. The two could be confused, so one of the two should
   be renamed. This change does
   not edit #179.
-- A worker's report of a citation for a question with a category is the worker's to withhold;
-  the Igor cannot see a category, so a worker that reports one anyway gets it pushed (decision
-  11).
+- A worker's report of a citation for a question with a category is the worker's to withhold:
+  only the worker's honesty stops it, not the Igor.
+  The Igor sees the categories a run met only in its flag (decision 97), which does not say
+  which citation or questions-branch file belongs to which question, and a flagged run pushes
+  nothing anyway; a steered worker that reports such a citation from an unflagged run gets it
+  pushed (decision 11).
 - [#153](https://github.com/adamstallard/igor/pull/153) (`signed-publishing`) requires skill
   trailers on every commit an Igor makes for a role that lists those skills. A citation commit
   is a machine record with no trailer (shared-skills #25's decisions 90 and 110). Adam decided
@@ -1386,7 +1413,7 @@ reading the codebase. Two cases contradict that:
   words for the kind of reason, such as `error`, or for a worker killed for a limit the hang's
   kind and the limit's duration (decisions 51 and 56). A model step igor runs after the worker,
   such as #153's, is part of the run and counts as a worker run (decisions 60 and 64). It gains
-  twenty scenarios, and
+  twenty-one scenarios, and
   *Transcript persisted off the main line* applies only to a run that met none and whose
   worker runs all completed their reports (decisions 13, 19 and 38).
 - `lore-review`'s *An entry already in the store is never overwritten by proposing* reports an
@@ -1401,12 +1428,12 @@ reading the codebase. Two cases contradict that:
   has a flagged run's handoff state why it stopped only in the ledger row's fixed words, quote
   no failure detail or worker's reason and point to the item's transcript path, and has a
   flagged run's handoff ask no question, add no question label and keep its question on the
-  host, with thirteen new scenarios (decisions 71, 73, 75, 76, 80, 85, 88 and 89).
+  host, with seventeen new scenarios (decisions 71, 73, 75, 76, 80, 85, 88, 89 and 97).
 - `work-triage`'s *An item handed back is not re-worked until something answers* stops a reply
   from rerunning an item a flagged run handed back, and lets only an edit by someone with
   write access release it, keeps a held item held whatever its handoff carries and with a
-  record that never expires, and lets the operator release it with `igor release`, with six new
-  seven new scenarios, `igor release`'s included, and three changed (decisions 76, 79, 82, 83
+  record that never expires, and lets the operator release it with `igor release`, with seven
+  new scenarios, `igor release`'s included, and three changed (decisions 76, 79, 82, 83
   and 84).
 - `docs/architecture.md`: §3.3 says every worker is offered `igor lore-search` and what binds it, §3.4.1 says a
   search hit is not a firing and that a review counts citations from the destination repository's

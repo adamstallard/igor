@@ -29,21 +29,28 @@ where systemd sets it, as a unit that sets `StateDirectory=igor` makes it `/var/
 and otherwise
 `$XDG_STATE_HOME/igor`, which is `~/.local/state/igor` when `XDG_STATE_HOME` is unset. The file
 SHALL be mode 0600, owned by the user the Igor runs as, and the `flagged-questions` directory
-and every directory below it SHALL be mode 0700. The file SHALL hold the question's category under
-shared-skills #25's inquisitor (`vulnerability`, `secret` or `personal`) where it has one, as
-the worker reports it with the flag (`task-execution`); which word the flag carries when the run
-meets more than one such question is not decided (the proposal's Still open). Otherwise the file
-SHALL hold the question's text as the run's handback would have asked it, and in either case the path of
-the run's session log. It SHALL hold no text of a question that has a category; that text is
-only in the session log. When the run ends, the Igor SHALL move the copy of the session log of the
-worker run that stopped on the question, which open pull request #174 makes, into the same
-directory beside the file, mode 0600. Where #174 made no copy, the file SHALL say so in place of
-a path, and nothing is moved. Once workers run as users of their own (#175),
+and every directory below it SHALL be mode 0700. The file SHALL record every category the worker's flag listed, each at most once, with the
+mark saying which belong to the question or questions the run stopped on (`task-execution`).
+For the questions the run stopped on, it SHALL list each marked category, and the text, as the
+run's handback would have asked it, of each such question that has no category; since the flag
+gives each category once, the file does not say how many stopped questions share one. A value that is not one of #25's three words is no category (`task-execution`): where it was
+marked, the file SHALL say that a stopped question's category could not be read, and an
+unmarked one it SHALL leave out. It SHALL hold no text of a question that has
+a category; that text is only in the session logs. It SHALL also list the path of every session
+log of the execution that open pull request #174 copies: this change depends on #174 copying
+each step's log before the next reset, the worker's, those of #153's later model steps and
+#189's second worker run included (the proposal's Still open). When the execution ends the Igor
+SHALL move every such copy into the same directory beside the file, mode 0600. Where #174 made
+no copy of a step's log, the file SHALL say so in place of that path. The Igor SHALL create,
+move and delete files under `flagged-questions` without following a link, and SHALL refuse to
+act on any path there that is not a directory or a regular file whose hard-link count is 1; a
+refused write counts as a file it cannot write, below. Once workers run as users of their own (#175),
 no worker run SHALL be able to reach the `flagged-questions` directory; #175 builds that, not
 this change. Until then, and always under `igor run`, another worker running as the same user can
-read it, its logs and categories included, which Adam accepts. The question of a later flagged run
-of the same item that stops on a question replaces the file, and that run's session log
-replaces the earlier one. Where the Igor cannot write the file, it
+read it, its logs and categories included, and plant or delete a file in it, which Adam
+accepts. Where the item is worked again after a release, or two
+ranks race, the question of a later flagged run of the same item that stops on a question
+replaces any file still there, and that execution's session logs replace the earlier ones. Where the Igor cannot write the file, it
 SHALL still post the handoff above, the ledger row's `reason` SHALL read
 `needs a person, question not kept`, as `task-execution` sets, and the Igor SHALL open a
 condition for its operator on that first failed write, once `condition-backoff` defines
@@ -97,16 +104,40 @@ NOT push, post or publish the file, or its text, anywhere.
 #### Scenario: A kept question names its category, not its text
 
 - **WHEN** a flagged run stops on a question that #25's inquisitor gives the category `personal`
-- **THEN** the question's file holds `personal` and the path of the run's session log
+- **THEN** the question's file holds `personal`, marked as the stopped question's, and the paths
+  of the execution's session logs
 - **AND** it holds none of the question's text
-- **AND** the run's session log is beside it, mode 0600
+- **AND** those session logs are beside it, mode 0600
+
+#### Scenario: A run stopped on two questions lists both
+
+- **WHEN** a flagged run stops on two questions, one with the category `secret` and one with
+  none
+- **THEN** the question's file lists `secret`, marked, and the second question's text
+- **AND** it lists the path of every session log #174 copied for the execution
+
+#### Scenario: A category met but not stopped on is recorded unmarked
+
+- **WHEN** a flagged run meets a `secret` question it decides, then stops on a `personal` one
+- **THEN** the question's file records `secret` unmarked and `personal` marked
+
+#### Scenario: A step's log #174 did not copy is named as missing
+
+- **WHEN** #174 made no copy of one step's session log in a flagged execution
+- **THEN** the question's file says that step's log was not copied, in place of its path
+
+#### Scenario: A link under flagged-questions is not followed
+
+- **WHEN** the item's path under `flagged-questions` is a symbolic link a worker planted
+- **THEN** the Igor writes, moves and deletes nothing through it
 
 #### Scenario: A kept question without a category holds its text
 
 - **WHEN** a flagged run stops on a question that has no category, reported before the run
   ended, though the run is flagged because a later worker run of it ended without its completed
   report
-- **THEN** the question's file holds the question's text and the path of the run's session log
+- **THEN** the question's file holds the question's text and the paths of the execution's
+  session logs, both worker runs' included
 
 #### Scenario: The question-not-kept condition stops no work
 

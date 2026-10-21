@@ -64,14 +64,14 @@ Besides the `IGOR_RUN` marker below, only what running a toolchain requires is p
 search path, a home directory, and the network settings the host is configured with. None of
 those is a credential, and each fails as something else entirely when it is missing.
 
-Wherever workers run as users of their own (#175), each worker run's Claude state, its session
-log included, SHALL be private to that run, and its session log SHALL be collected when the run
-ends, under `igor run` as well as `igor serve`. Open pull request [#174](https://github.com/adamstallard/igor/pull/174)
+Wherever workers run as users of their own, which is `igor serve` once #175 lands, each worker
+run's Claude state, its session log included, SHALL be private to that run, and its session log
+SHALL be collected when the run ends. Open pull request [#174](https://github.com/adamstallard/igor/pull/174)
 (change `pinned-skills`) is how this is done, in its requirements *Every model step in the
 worker's home starts from Igor's template* and *The worker's session log outlives the reset*;
 this requirement does not restate them. Until then, and always under `igor run`, every worker
-runs as the same user and can read another run's state, which Adam accepts (decision 94);
-whether he accepts a worker's write access there too is open (the proposal's Still open). Execution SHALL NOT spawn
+runs as the same user and can read and write another run's state, which Adam accepts
+(decisions 94 and 99). Execution SHALL NOT spawn
 a worker for a seat that names no token, and SHALL fail naming the seat.
 
 Execution SHALL also set `IGOR_RUN` in the worker's environment, to `worker`, and in the
@@ -196,15 +196,18 @@ its completed report, as the paragraph below starting "A worker run that ends be
 the rules above then apply to the whole execution, including any summary of an earlier worker
 run.
 
-During a run, the worker SHALL report a flag that the run met such a question, together with
-that question's category, one word from shared-skills #25's fixed list (`vulnerability`,
-`secret` or `personal`), and no question or answer. The Igor SHALL write that word into the
-question's file on its own host that `graceful-handoff` keeps, and SHALL NOT write it to the
-execution ledger, the state branch, a comment or a label; it stays, besides, in the worker's
-session log, which #174 copies into the state directory on the host, since credential redaction
-removes credentials, not that word. A flagged run that stops on no question gets no host file,
-so the word is then kept nowhere but that log. Which word the flag carries when a run meets more
-than one such question is not decided (the proposal's Still open). When the Igor runs the inquisitor skill itself and that skill gives a
+During a run, the worker SHALL report a flag that the run met such a question, listing each
+category met in the run from shared-skills #25's fixed list (`vulnerability`, `secret`,
+`personal`), each at most once, and marking which of them belong to the question or questions
+the run stopped on; the flag holds no question or answer. The Igor SHALL take a listed value as
+a category only when it is exactly one of those three words; any other value counts as no
+category, and the run stays flagged. The Igor SHALL write the
+categories, with their marks, into the question's file on its own host that `graceful-handoff`
+keeps, and SHALL NOT write them to the execution ledger, the state branch, a comment or a label;
+they stay, besides, in the session logs of the steps that met them, which #174 copies into the
+state directory on the host, since credential redaction removes credentials, not those words. A
+flagged run that stops on no question gets no host file, so the words are then kept nowhere but
+those logs, which #174 keeps in the state directory as for any run. When the Igor runs the inquisitor skill itself and that skill gives a
 question a category, every rule above for a run that met such a question SHALL apply to that
 run.
 
@@ -357,15 +360,27 @@ cannot tell a whole report from a cut one, the report SHALL count as not complet
 
 #### Scenario: The worker's report of a categorized question names only its category
 
-- **WHEN** a worker reports that its run met a question with the category `personal`
-- **THEN** the report is the flag with the word `personal`, holding no question or answer
+- **WHEN** a worker's run met a `secret` question it decided, then stopped on a `personal`
+  question
+- **THEN** the flag lists `secret` and `personal`, each once, with `personal` marked as the
+  stopped question's
+- **AND** it holds no question or answer
 
 #### Scenario: A reported category reaches only the host file
 
-- **WHEN** a worker reports the flag with the category `secret`, and the run stops on that
-  question
-- **THEN** `secret` appears in the question's file on the Igor's host
+- **WHEN** a worker reports the flag with the category `secret`, marked as the stopped
+  question's
+- **THEN** `secret` appears in the question's file on the Igor's host, with its mark
 - **AND** it appears in no ledger row, nothing on the state branch, no comment and no label
+
+#### Scenario: A value outside #25's list is no category
+
+- **WHEN** a worker's flag lists `secret; see attached` or any other value that is not exactly
+  `vulnerability`, `secret` or `personal`
+- **THEN** the Igor records no category for that value: where it was marked, the question's
+  file says the stopped question's category could not be read, and where unmarked, the file
+  leaves it out
+- **AND** the run still counts as flagged
 
 #### Scenario: The Igor's own inquisitor run that met a categorized question stores no transcript
 
