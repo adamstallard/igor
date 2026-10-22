@@ -144,14 +144,16 @@
       claim was lost.
 - [ ] 3.2 Fill #190's Tests row from the last round's results, in the wording #190's task 2.1
       gives, and put each failed or timed-out check's output block under the table as that task
-      lays it out. Add to the row each `ci_only` line, with this wording unless #190's task 2.1
-      words it; it may be reworded so long as it says Igor did not run the check:
+      lays it out. Add to the row each `ci_only` line, with this wording, which #190's task 2.1
+      adopts (`proposal.md`, decision 33). Whoever builds this may reword it, changing #190's
+      task 2.1 to match, so long as it says Igor did not run the check:
 
       ```
       `<line>`: CI-only, not run by Igor.
       ```
 
-      Do not wait for or read the CI's result. Write nothing else into the body.
+      Do not wait for or read the CI's result. Write nothing into the body beyond the Tests row
+      and the output blocks.
 - [ ] 3.3 On every push of the worker's changes onto an existing pull request (a conflict
       resolution, gate two's push, a revision answering a reviewer; not a clean server-side
       `catchUp`, the path where the code host merges the base with no worker), run the checks

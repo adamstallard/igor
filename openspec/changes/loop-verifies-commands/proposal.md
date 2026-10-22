@@ -213,8 +213,9 @@
     Igor could not open it as a draft (task 0.5). *Rejected:* publishing nothing, which loses
     the work for a host setting. Decision 31 limits this to a role whose `allow` lists `pr`.
 
-**Decided by Adam on 2026-10-21:** decisions 21 and 22 above are approved, and so are these
-three.
+**Decided by Adam on 2026-10-21:** decisions 21 (a second run that cannot finish keeps the first
+run's work) and 22 (a second run after a conflict resolution is a second commit) are approved,
+and so are decisions 30 to 33, below.
 
 30. **Under `igor serve`, the worker user restores gate one's dropped paths to the base before
     the first round,** from the base's tree. Decision 14 has the worker user restore the tree
@@ -224,36 +225,67 @@ three.
 31. **A role whose `allow` lists `draft-pr` but not `pr` publishes nothing where the code host
     refuses a draft after its checks fail,** and hands the item off, saying why. Decision 29's
     ready pull request is outside that role's `allow`.
-32. **Igor's checks get no credentials** (Adam, 2026-10-21). A check runs on the code the
+32. **Igor's checks get no credentials.** A check runs on the code the
     worker has just written, so a credential given to a check is given to model-written code.
     A check that needs a secret is marked CI-only in its repository's entry, under `ci_only`.
-    Igor does not run it, and the pull request's Tests row names it as a check Igor did not run.
+    Igor does not run it, and the Tests row of #190's evidence table, in the pull request body,
+    names it as a check Igor did not run.
     The repository's own CI runs it on the pushed pull request, with the repository's own
     secrets. Igor holds no repository secrets. *Rejected:* declaring a check's credential in the
     `repos` map, with Igor reading it from a server variable whose name it builds from the
-    repository and the variable's name, such as `IGOR_CHECK_ORG__WEB__NPM_TOKEN`, and registering it with #217's
-    `rememberSecret`. Registering a credential keeps it out of what Igor stores, not out of the
+    repository and the variable's name, such as `IGOR_CHECK_ORG__WEB__NPM_TOKEN`, and registering it
+    with #217's `rememberSecret`, the list of values #217's redaction replaces. Registering a
+    credential keeps it out of what Igor stores, not out of the
     reach of the code the check runs, which can send it anywhere or leave it where a later run
     reads it.
+33. **Igor never reads a CI-only check's result.** A pull request whose every
+    check Igor ran passed is not made a draft by a CI-only line, and opens as the role's `allow`
+    has it, even where a CI-only check then fails in the repository's CI. The CI's result shows on the pull request, and the repository's branch protection can
+    require it before a merge. #190 sets a `review: skim` label, for a pull request a reviewer
+    may skim, only where every check Igor ran passed; it leaves CI-only lines out of that test,
+    since Igor checked nothing about them, and adopts task 3.2's wording for a CI-only line in its
+    Tests row.
 
 **Still open:**
 
-- **For Adam: Igor does not read the CI's result of a CI-only check.** A pull request whose
-  every check Igor ran passed opens ready, even where a CI-only check then fails in the
-  repository's CI. *Recommendation:* keep it so. The CI's result shows on the pull request, and
-  the repository's branch protection can require it before a merge.
-- **For Adam: whether a CI-only line keeps a pull request from `review: skim`.** #190 gives
-  `skim` only where every check in the Tests row passed, and a CI-only line never passes there,
-  so every pull request on a repository with one would be `review: read`. *Recommendation:* #190
-  leaves CI-only lines out of that test, since Igor checked nothing about them. Reported to #190.
-- **For Adam: the cases for building this change before #153 can never happen.** Issue #204
-  builds #153 before this change, yet decisions 4 and 22 and the spec say what happens where
-  #153 is not built. *Recommendation:* drop those cases when this change is next edited.
-- **Findings of the second consistency read of 2026-10-21,** made after an earlier text of
-  decision 32 declared check credentials, on passages that text did not change. None is
-  decided or fixed here:
+- **For Adam, held in #175: whether a check may get the proxy's password.** Not yet decided. A
+  check gets the worker's environment less its model login, and that environment carries the
+  host's proxy settings, `HTTPS_PROXY` among them, forwarded so the worker reaches the network.
+  A proxy URL can hold a password, which then reaches model-written code, against decision 32.
+  #175 (`worker-user`), the change that runs the worker as a user of its own, lists the
+  question with a recommendation: leave such a URL out of a check's environment, and put a
+  check that needs it under `ci_only`.
+- **From the third consistency read of 2026-10-21**, a fresh agent's reading of this change
+  against every other spec and change. Each is a defect to fix in this text; the rules above
+  hold until then:
+  - Decision 12 marks a pull request ready when a later push's checks all pass. A role whose
+    `allow` lists both `pr` and `draft-pr` opens a draft whatever the checks say, so decision
+    12 would mark ready a pull request the role keeps a draft.
+  - On a code host that offers no drafts, a role allowing only `draft-pr` posts a comment
+    saying a check failed even when every check passed. And where the claim on the item was
+    lost, so that by the in-force rule the work is published as a draft, decision 29 publishes
+    it ready instead.
+  - Rules stated twice, which can drift: the second run's second commit, here and in #153; the
+    rule that checks get no secret, here and in #175; the outbox beside the tree and the git
+    index copy kept in it, here, in #175 and in #171; and the rule that Igor runs no `ci_only`
+    line, in both of this change's capabilities.
+  - `repos` is added to the org base without modifying the in-force list of keys a role file
+    accepts, so an org base naming it would be refused at load.
+  - The item below on the worker's umask calls it unmeasured, but #175's measurement 6.10
+    gives it as `0022`.
+  - The delimiter that marks check output as untrusted, and the quoting rule for the comment
+    after a later push, are not defined. Refusing every role for one repository's malformed
+    entry is in no decision. The `ci_only` refusal and the stand-down that kills a check have
+    no scenario.
+
+- **For Adam, not yet answered: the cases for building this change before #153 can never
+  happen.** Issue #204 builds #153 before this change, yet decisions 4 and 22 and the spec say
+  what happens where #153 is not built. *Recommendation:* drop those cases when this change is next edited.
+- **Findings of the second consistency read of 2026-10-21,** made while decision 32 still gave
+  checks credentials; none of these passages depends on that. None is decided or fixed here:
   - **For Adam:** #216 (`lore-search`) withholds every worker run's transcript and summary from
-    an execution it counts as flagged, which includes one whose second run ended before
+    the pull request of an execution it counts as flagged, one whose worker met a sensitive
+    question, which includes one whose second run ended before
     reporting, while decision 21 publishes the first run's summary then (#216's proposal hands
     this to this change). And on a later push, decision 23 sets the summary to the last run's,
     while #190 leaves the description as it is; #153's *For Adam* 1 raises the same.
@@ -311,22 +343,22 @@ three.
   - Five SHALLs have no scenario: the first round on the signed commit's tree, the new copy of
     #175's git index in the outbox (decision 19), the two cases where #153 is not built, and `repos` naming a repository no source
     names.
-- **How #175's wrapper reports a check whose program is missing under `igor serve`** is not
-  measured (task 0.6). Until it is, such a check is recorded as failed with whatever exit code
-  the wrapper gives.
+- **How #175's wrapper, the command that starts a check as the worker user, reports a check
+  whose program is missing under `igor serve`** is not measured (task 0.6). Until it is, a check
+  whose program is missing is recorded as failed with whatever exit code the wrapper gives.
+  Neither change defines the wrapper yet.
 - **Whether the GitHub App may call `convertPullRequestToDraft` and
-  `markPullRequestReadyForReview`** is not measured (task 0.4). Where it may not return the pull
-  request to draft, the comment after the push says Igor could not, in place of the Tests row's
-  claim that the pull request is a draft. Where it may not mark it ready, the pull request stays a draft and the
-  comment says Igor could not mark it ready.
+  `markPullRequestReadyForReview`** is not measured (task 0.4). Where the App may not return a
+  pull request to draft (decision 7), the comment Igor posts after the push says it could not,
+  and the Tests row does not claim a draft. Where the App may not mark one ready (decision 12),
+  the pull request stays a draft, and the same comment says Igor could not mark it ready.
 
 **Reported to other changes,** not edited here:
 
 - **#190 (`review-evidence`):** its Tests row names the commit its checks ran on (decision 13),
-  and names each CI-only check as not run by Igor (decision 32; task 3.2 carries a wording #190
-  may adopt). *Impact* lists three more places #190 needs amending.
-- **#175 (`worker-user`):** it still names check credentials, which an earlier text of
-  decision 32 declared in the `repos` map and decision 32 now removes. Its decision 17 says the second run's tree "is recorded, checked
+  and names each CI-only check as not run by Igor, in task 3.2's wording, which #190 adopts
+  (decisions 32 and 33). *Impact* lists three more places #190 needs amending.
+- **#175 (`worker-user`):** its decision 17 says the second run's tree "is recorded, checked
   and published the same way". Under decision 10 it is published as a second commit, on top of
   the first run's. #175 also lists, as a question this change has open, who restores the tree
   before the second run, which decision 14 settles. And this change starts a check through a

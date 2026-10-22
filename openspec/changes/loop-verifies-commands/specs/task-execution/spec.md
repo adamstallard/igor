@@ -46,7 +46,8 @@ declares each repository's checks*).
 #### Scenario: A CI-only check makes no draft
 
 - **WHEN** every check Igor ran on `org/web` passed, and `org/web` lists a `ci_only` line
-- **THEN** the pull request opens ready, without waiting for any CI result
+- **THEN** the pull request is not a draft because of the `ci_only` line, and opens without
+  waiting for any CI result
 
 #### Scenario: A check under igor run runs as the Igor
 
@@ -316,17 +317,18 @@ pass, whether or not `allow` lists `draft-pr`. Where the code host's call to cre
 fails because it does not offer drafts there, what execution does depends on the role's `allow`.
 Where `allow` lists `pr`, execution SHALL create the pull request again, ready, with its Tests
 row saying Igor could not open it as a draft. Where it lists `draft-pr` and not `pr`, execution
-SHALL publish nothing and hand the item off, with a comment on the item saying that a check
-failed, that the code host refused a draft, and that the role may not open a ready pull
+SHALL publish nothing and hand the item off, giving the claim back with a comment on the item
+(`graceful-handoff`), saying that a check failed, that the code host refused a draft, and that the role may not open a ready pull
 request. Whether opened as a draft or ready,
 it SHALL request the role's reviewers, unless the claim was lost.
 
 In the pull request body, the last round's result SHALL appear only in the evidence section that
 `review-evidence` (#190) adds, in the wording #190 gives its Tests row, with the output of each
 check that failed or timed out in the block #190 lays out under its table. The Tests row SHALL
-also name each `ci_only` line as a check Igor did not run, in #190's wording where #190 gives
-one and otherwise in the wording of this change's task 3.2. Execution SHALL NOT wait for or read
-any CI result, and a `ci_only` line makes no pull request a draft.
+also name each `ci_only` line as a check Igor did not run, in the wording of this change's task
+3.2, which #190's Tests row adopts. Igor SHALL NOT wait for or read the result of any check the
+repository's CI runs, a `ci_only` line's included. A `ci_only` line by itself SHALL make no pull
+request a draft; a failed check Igor ran still does.
 
 Before a check's output is published or given to the worker, it SHALL be redacted as
 `redact-state-branch` (#217)'s *Credential redaction replaces every credential the Igor knows*
