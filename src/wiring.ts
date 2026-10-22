@@ -194,11 +194,14 @@ export async function wire(
         try {
           const open = conditionOf(await loadLog(read), name, settings, Date.now(), discriminator)
           const met = answer !== true
-          if (met === (open !== undefined && open.state !== 'counting')) return answer
-          await append(
-            { kind: 'check', key: name, role: role.name, met, ...(met ? { discriminator } : {}) },
-            met ? `GitHub refused the App ${role.name}` : `GitHub accepts the App ${role.name} again`,
-          )
+          const stopped = open !== undefined && open.state !== 'counting'
+          // If the current check doesn't match what's already in the log, append it.
+          if (met !== stopped) {
+            await append(
+              { kind: 'check', key: name, role: role.name, met, ...(met ? { discriminator } : {}) },
+              met ? `GitHub refused the App ${role.name}` : `GitHub accepts the App ${role.name} again`,
+            )
+          }
         } catch (error) {
           warnOnly(`could not record the App credential check for ${role.name}`)(error)
         }
