@@ -102,8 +102,16 @@
 - [ ] 2.3 The worker's home: with #175's worker user, that user's own home; without one, a
       home for the `igor run`, under Igor's state directory, named by the run's id, such as
       `<state directory>/home/<role>-<run>`. It is created when the run first needs it, passed
-      as the worker's `HOME`, and removed when the run ends, on an error too. The run's id is the
-      one #179 gives each `igor run`, which its trees also carry
+      as the worker's `HOME`, and removed when the run ends, whether it ends normally or on an
+      error Igor catches. The run's id is the one #179 gives each `igor run`, which its trees
+      also carry. A run that crashes leaves its home behind. So at its start, before its first
+      cycle, each `igor run` also removes the home, and the plugin directory task 1.3 assembled,
+      of each earlier run of its role whose lock it can take, in the same sweep as #179's task
+      4.5 removes that run's trees; it leaves those of a run whose lock it cannot take. The lock
+      is #179's: each `igor run` holds it, while it runs, on its own file
+      `<role>-0-<run id>.lock` in the trees' directory, rank 0 being `igor run`'s. `igor run
+      --plan` removes nothing. Tests: of two earlier runs' homes and plugin directories, the one
+      whose lock is free is removed and the other kept; `--plan` removes neither
 - [ ] 2.4 The template, shipped in Igor's installation, holding exactly these two files (not to
       be reworded), and no skills and no `CLAUDE.md`. Task 0.3's measurements of a home just reset from the template ran on them:
 

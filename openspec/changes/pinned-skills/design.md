@@ -354,6 +354,16 @@ Which home:
   the user Igor runs as. The worker then never loads the `~/.claude` of the user Igor runs as,
   whether that is the service user or a person running `igor run` on their own machine.
 
+Under `igor run`, a run that crashes leaves behind its own home and the plugin directory it
+assembled from the person's skills (decision 20). A worker user's home is meant to last, so this
+concerns `igor run` alone. The next `igor run` of the same role removes the crashed run's home
+and plugin directory at its start, before its first cycle, in the same sweep in which #179
+removes the crashed run's trees (Adam, 2026-10-21, decision 35). Each `igor run` runs at rank 0,
+and holds a lock on its own file, `<role>-0-<run id>.lock`, in the directory where trees are
+kept, for as long as it runs. The system releases the lock when the run's process ends, so a
+lock the new run can take belongs to a run whose process is gone. Where the new run cannot take
+a run's lock, it removes none of that run's trees, home or plugin directory.
+
 What the template holds. It ships with Igor, in its installation, which #175's start check
 confirms the worker user cannot write:
 

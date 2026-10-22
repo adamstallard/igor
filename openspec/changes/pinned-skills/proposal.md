@@ -170,7 +170,7 @@
     directory that does not exist, whose handling by `claude -p` is unmeasured.
 21. **Citations ahead of the archive order are accepted** (Adam, 2026-10-19). This change cites
     #171's *A spend with no seat behind it is not made*, #82's *A process that refuses to start
-    exits with status 78*, #179's ranks, and #153's `skills` list, prose pass and bug hunt, and
+    exits with status 78*, #179's ranks and its sweep of a crashed run's trees, and #153's `skills` list, prose pass and bug hunt, and
     issue [#204](https://github.com/adamstallard/igor/issues/204) archives all four after this
     one. Decision 29 also cites #217's *Credential redaction replaces every credential the Igor
     knows*, but #204 archives #217 before this change, so that citation is not ahead and needs
@@ -248,8 +248,10 @@
 32. **`lore-search` (#216) owns the definition of Igor's state directory** (Adam, 2026-10-21):
     `$STATE_DIRECTORY`, else `$XDG_STATE_HOME/igor`. This change cites #216's `graceful-handoff`
     requirement *A handoff states what was done, what remains, and who could continue*, which
-    defines it, and names no path itself. #216 has no place yet in issue #204's archive order,
-    so until it archives, this change's spec cites a requirement not yet in force.
+    defines it, and names no path itself. Issue #204's archive order places #216 twelfth,
+    after this change, so until #216 archives, this change's spec cites a requirement not yet in
+    force. Whether Adam's permission to cite ahead covers it is the question *Permission to cite
+    #216 ahead*, under *Still open*.
 33. **Every step's session log is copied before the next reset** (Adam, 2026-10-21, #216's
     decision 98): the worker's, those of #153's later model steps, and #189's second worker
     run's, each redacted with #217's `redact` as decision 29 has it. #216 keeps every step's log
@@ -259,6 +261,17 @@
     #216's decision 102). The record names each copy where Igor wrote it. #216 moves a flagged
     execution's copies into `flagged-questions`, and a copy whose move it refused stays at the
     path the record names.
+35. **A run removes the home and plugin directory a crashed run left** (Adam, 2026-10-21,
+    #179's decision 39). This concerns `igor run` alone: a worker user's home lasts across runs,
+    and `/opt/igor/skills` is never removed. At its start, before its first cycle, an `igor run`
+    removes three things of each earlier `igor run` of its role whose process is gone: its trees,
+    its home, and the per-run plugin directory decision 20 assembles from the person's installed
+    skills. #179's sweep states the rule, the home and plugin directory included, and this
+    change cites it. Each `igor run` runs as rank 0 and, while it runs, holds an exclusive lock
+    on its own file, `<role>-0-<run id>.lock`, in the directory where trees are kept. The system
+    releases the lock when the run's process ends, so a run whose lock another run can take is
+    gone (#179's decision 48, which Adam confirmed on 2026-10-21). Where the new run cannot take
+    an earlier run's lock, it removes nothing of that run's. `igor run --plan` removes nothing.
 
 **Still open:**
 
@@ -269,14 +282,7 @@
   28), and every other call comes after it. This item is a note, not a question: #171's code is
   built first (decision 30), so the code never runs on the ambient login, and the item records
   only that the archived specs allow it until #171 archives.
-- **A home a crashed `igor run` left.** Decision 23 removes a run's home when the run ends, and
-  a run that crashes leaves it under Igor's state directory, holding no token, since the seat's
-  token reaches a call only through its environment. The plugin directory a run assembles from
-  the person's skills (decision 20) is left beside it. Nothing removes either but the person.
-  #175 asks Adam the same of a crashed run's trees, and recommends leaving the trees and this
-  home, with its plugin directory, to the person, with the docs for `igor run` saying where they
-  are.
-- **Questions from the 2026-10-21 consistency read, for Adam,** none yet answered:
+- **Questions from the 2026-10-21 consistency reads, for Adam,** none yet answered:
   - **The check as a probe denies no tools.** #143's probe runs with no tools and on
     `TRIAGE_MODEL`; the check carries `--plugin-dir` and `--model haiku`, and whether a call
     with no tools still lists its skills in `system/init` is unmeasured. Adam chooses: the check
@@ -287,13 +293,42 @@
     recorded as errored and held off by the hourly limit and the five-hour back-off. Whether
     the check has then failed, exiting 78, or waits for the next probe, is unsaid; waiting can
     hold a one-seat deployment's first model call for five hours.
-  - **A dry run** makes a triage call but is neither `igor serve` nor `igor run`, so which
-    skills it loads where `/opt/igor/skills` is missing is unsaid, and #153's name check needs
-    that set.
-- **From the last consistency read of 2026-10-21, for this change's authors.** Each is a fix to
-  make in this text; none is decided:
-  - Task 1.10 of #175, built before this change, removes the usage read, so this change should
-    drop its exception and scenario for that read.
+  - **Permission to cite #216 ahead.** #204 places #216 after this change, and decision 21's
+    permission to cite changes that archive later names #171, #82, #179 and #153, but not #216.
+    *Recommendation:* extend decision 21 to #216, as decision 32 already assumes.
+- **Findings from the same 2026-10-21 consistency reads, for this change's authors.** Each needs
+  a change to this text that the authors can make without Adam; none is made yet:
+  - A dry run is `igor run --plan`, so decision 20's fallback covers it. Whether `--plan`
+    assembles a plugin directory is unsaid; #179 has `--plan` change nothing, so assembling one
+    would break that.
+  - The startup check that is a seat's first probe keeps its own arguments in the spec, though
+    the first question for Adam above leaves that open; the spec should say it waits on his
+    answer.
+  - Decision 13's kill, by user or by the user's systemd slice: #175 measured that on Debian a
+    process `sudo` starts is not in that slice, so the spec should drop the slice.
+  - The execution record names a log copy's host path, which #216 may move, and which puts a
+    person's home path on a state branch that may be public.
+  - Decision 5 says the check "shows the seat's token works", but a check whose call lists the
+    skills and then fails, as on a refused token, still passes; the claim should be narrowed.
+  - #153 gives a role's `skills` list no say in what the worker is told to use, which this
+    change's *Why* assumes; and decision 20 cites #153's question 10, now #153's decision 29.
+  - The log copy omits #175's `lstat` and non-blocking open, so a FIFO hangs it.
+  - Unmeasured facts with no task: a resumed call continues its session (#153's task 0.21);
+    Claude Code keeps nothing under `HOME` outside the two reset paths; a call with no tools
+    still lists its skills; a step's session is one file.
+  - *Skills come from one plugin directory the server names* refuses any lore file that names
+    `skills_dir`, but today only the parsers of `igor.config.yaml`, role files and budget files
+    refuse unknown keys. The term *model step* is defined three ways: in *Every model call names
+    the plugin directory* as one `claude -p` with its resumes, in *Every model step in the
+    worker's home starts from Igor's template* as one session for a run, and in `design.md` as
+    excluding triage and the check. Also: *service user* and *flagged execution* are not
+    defined; rationale sits in requirement text; task 0.3 is ticked though the server's version
+    was never measured; spec choices on the log copy, the check's pass and `plugin.json`'s keys
+    are not among the decisions; and *Why* describes issue #152 as it was.
+  - Task 1.10 of #175, built before this change, removes the usage read (`runUsage`), so this
+    change's exception for that read in *Every model call names the plugin directory*, and its
+    scenario, should go. This change's task 2.1 credits #143's decision 37 with the same removal;
+    one of the two citations is wrong.
   - When the startup check is a seat's first probe, its spend should be recorded as a probe,
     so #143's hourly limit and back-off count it.
   - The scenario on a session log replaced by a link passes on permissions alone; a link to a

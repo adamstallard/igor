@@ -162,8 +162,17 @@ continue*. The home is named by the run's id, such as
 under #179 (`concurrent-instances`), whose *The sweep removes trees by rank, never by age* defines
 it because the run's trees carry it too. Igor SHALL set the worker's `HOME` to it, and SHALL
 remove it when the run ends. No two runs share a home, and within one run the home lasts across
-its tasks. Running with no worker user, so that the worker runs as the user Igor runs as, is
+its tasks.
+
+Running with no worker user, so that the worker runs as the user Igor runs as, is
 same-user mode; `igor run` is the one command that runs that way (#175).
+
+An `igor run` that crashes leaves its home and the plugin directory it assembled (*Skills come
+from one plugin directory the server names*). At its start, before its first cycle, the next
+`igor run` of the role SHALL remove both, with the crashed run's trees, wherever it can take the
+crashed run's lock. #179's (`concurrent-instances`) *The sweep removes trees by rank, never by
+age* defines that lock, on the file `<role>-0-<run id>.lock`, and the sweep. `igor run --plan`
+SHALL remove nothing.
 
 Before every model step Igor starts in that home, Igor SHALL replace `~/.claude` and
 `~/.claude.json` with a fresh copy of a template that ships with Igor, keeping nothing of what
@@ -256,6 +265,14 @@ task.
   directory, which the other run never uses
 - **AND** that home is reset as a worker user's is
 - **AND** each run's home is gone once that run ends
+
+#### Scenario: A run removes what a crashed run left in the state directory
+
+- **WHEN** an `igor run generalist` starts, and Igor's state directory holds the home and the
+  plugin directory of an earlier run of `generalist` that crashed, whose lock on
+  `generalist-0-<run id>.lock` is free, and those of a run still holding that lock on its own file
+- **THEN** before its first cycle it removes the crashed run's home and plugin directory
+- **AND** it leaves the other run's home and plugin directory
 
 #### Scenario: The worker cannot change the template
 
