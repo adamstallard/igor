@@ -186,14 +186,19 @@ and Adam narrowed it on 2026-10-20. Decision 10 follows the order Adam set in is
 21. **The ranks of one role do not agree on a commit** (Adam, 2026-10-19). Each applies the newest
     commit it fetched, at its own cycle start, so for up to about one poll interval two ranks can
     run on different commits. #179 has the same gap without this change: a person restarting
-    ranks one at a time after a change produces the same mix. #179's model, as it stands, holds
-    the roster and the poll interval the same for every process, and its design says TLC checked
-    safety only at fixed ratios of its timings to the poll interval. A rank that has applied a
-    shorter interval would judge a sibling still on the longer one gone while that sibling works.
-    Checking this is #179's task, reported to #179 and not yet taken up there. Its model would
-    give each process its own view of the roster and the poll interval, changing at that
-    process's own cycle start, and keep its invariant of no two workers on one item. If TLC finds a violation, the likely rule is that a heartbeat carries its writer's poll
-    interval and a sibling judges it by that.
+    ranks one at a time after a change produces the same mix. #179's decision 43 settles it the
+    same way: ranks do not coordinate on a lore commit. #179's model gives each process its own
+    roster and poll interval, applied at that process's own cycle start, and finds both safe:
+    - **Different rosters** always keep one worker per item.
+    - **Different poll intervals** are safe by #179's decision 49 (Adam, 2026-10-21), which
+      #179's spec and model carry: each heartbeat declares its process's poll interval. A
+      process counts a sibling gone only after three poll intervals of the longest length it has
+      seen, its own or one that sibling's heartbeat declared. It stands down after two poll
+      intervals of the shortest length it has itself applied since it started. So a rank that
+      stops writing heartbeats has stood down before any sibling counts it gone. Without the
+      rule, TLC found a sibling on the shorter interval counting a rank on the doubled interval
+      gone, and taking over its item, while that rank still worked it. With the rule, TLC finds
+      no two workers on one item in any of #179's configurations.
 22. **A worker publishes under its cycle's commit** (Adam, 2026-10-19), so an item's whole run
     uses one configuration and one set of lore entries. A removed seat is the one exception
     (decision 3). A person who wants a run stopped uses `work-claiming`'s stop, open to anyone.
@@ -290,6 +295,31 @@ and Adam narrowed it on 2026-10-20. Decision 10 follows the order Adam set in is
 
 **Still open:** the findings below, for this change's next revision.
 
+Three consistency reads ran on 2026-10-21; their findings are listed newest first.
+
+**Findings of the newest 2026-10-21 consistency read, made once decision 21 cited #179's
+decisions 43 and 49, for this change's next revision.** None is fixed, and none concerns poll
+intervals:
+- For Adam: whether #220's visibility check at start is one of this change's startup checks.
+  #220 recommends it is, and archives first in #204's order, so this change has to settle it.
+  If it is, a repository made private while Igor runs would open two conditions for one fault,
+  `lore:config:<role>` and #220's own. And decision 37's exception covers only a read the App
+  check refuses, so a commit already known that the visibility check later refuses would not
+  reopen `lore:config:<role>`.
+- For Adam: a process with no applied ref, after a lost checkout or as a new rank, never
+  announces the seat changes it applies; no decision states that.
+- For the author: task 6.2's four "in place of" strings no longer match #171's text. A seat file
+  that one commit deletes and a later commit adds back, both between the applied commit and the
+  fetched one, as a revert does, kills its workers under the design and task 4.1 but not under
+  the requirement; the fixed case below is a file that goes and comes back between two applies.
+  Also: "the condition's record" is defined nowhere,
+  where #171 keeps no condition state apart from the log; a start fetch has no poll interval to
+  bound it before the first read; the object-store limit, a second refused commit while the
+  condition is open, and submodule recursion have no scenario, and *A later passing commit clears
+  the condition* is broader than its rule; `condition-backoff`'s *A condition's scope is its
+  cure's scope* names a change, not the `stuck-conditions` capability; and three requirements
+  carry reasons that belong in `design.md`.
+
 **Findings of a later 2026-10-21 consistency read, run after this revision's first fixes, for the
 next revision.** This revision fixes four: the head rule compared one server's clock with a time
 another wrote; a rank lacking the refused commit's object; a seat file deleted and added back
@@ -354,10 +384,10 @@ yet (the reads' other findings are fixed in this revision):
   commit, and every other server's passing read clears it. Each condition's scope may also be
   wrong, since #101 keys a condition by what cures it: `lore:config:<role>` opens once per role
   although one commit cures every role, and `lore:read:<role>-<rank>` once per rank although a
-  full disk is shared by every rank on the server. A deleted
-  state branch would let a late process announce a seat change again (`design.md`). Whether two
-  ranks on different poll intervals can put two workers on one item waits on #179's model
-  (decision 21).
+  full disk is shared by every rank on the server. Deleting the
+  state branch, the git branch where Igor keeps its records, decision 14's notice records among
+  them, would let a process that applies a seat change after the others announce it a second
+  time, as `design.md` describes.
 - For the author: a force-push followed by a refused commit that adds a removed seat back escapes
   decision 15's derivation; a notice whose record call failed before a clean restart is never
   posted, against "exactly one"; #171's single-file re-read is called a lore read, which this

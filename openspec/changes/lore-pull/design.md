@@ -253,9 +253,12 @@ three such places:
   off one item while ranks run on different commits. Those rules and their invariants live in
   #179's model, so a model here would copy #179's heartbeat and claim logic. The gap exists in
   #179 already: a person restarting ranks one at a time after a lore change gives the ranks
-  different rosters and poll intervals for a while. #179's model holds the roster and the
-  poll interval the same for every process. Decision 21 makes changing that #179's task, reported
-  to #179 and not yet taken up there: its model would give each process its own view of both.
+  different rosters and poll intervals until the last of them restarts. #179's model gives each
+  process its own roster and poll interval (#179's decision 43). Different poll intervals put two
+  workers on one item until #179's decision 49 had each heartbeat declare its process's poll
+  interval, so that a rank stands down before any sibling counts it gone. With that rule, TLC
+  finds no two workers on one item in any of #179's configurations, as this change's decision 21
+  records.
 - **The two refs across a crash.** Each process writes only its own two refs. A crash after
   moving `fetched` and before reading leaves `fetched` ahead of `applied`, which is the state a
   restart already starts from. A crash after a passing read and before moving `applied` reruns
