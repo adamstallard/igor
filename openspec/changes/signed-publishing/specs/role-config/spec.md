@@ -85,7 +85,10 @@ rejected rather than loaded.
 `commands` names the shell commands a worker may run, and is the only thing that lets one
 run anything at all. It is declared on the role and nowhere else: a worker that can edit
 files can edit a settings file in the repository it is working, so an allowlist read from
-there is one the worker can widen for itself.
+there is one the worker can widen for itself. One command is the exception: every worker may
+run `igor lore-search`, whatever its role's `commands` list. `lore-firing`'s *An Igor runs its
+worker's lore searches*, which #216 (`lore-search`) adds, defines the command: the Igor, not
+the worker, runs the search, over the lore store the run already reads.
 
 #### Scenario: Well-formed role accepted
 
@@ -96,7 +99,7 @@ there is one the worker can widen for itself.
 #### Scenario: Declared commands bound what the worker may run
 
 - **WHEN** a role declares `commands` and an item is executed
-- **THEN** the worker may run those commands and nothing else
+- **THEN** the worker may run those commands, `igor lore-search`, and nothing else
 
 #### Scenario: Source without a tracker rejected
 
@@ -115,7 +118,9 @@ Inheritance SHALL apply three merge semantics, selected per field:
 
 - **Monotonic** for permission-shaped fields (`allow`, `commands`, `budget_share`, `reserve`,
   repositories and surfaces in reach): a role MAY restrict what it inherits and MUST NOT
-  widen it. For `reserve` the restriction is a higher value.
+  widen it. For `reserve` the restriction is a higher value. `igor lore-search` is outside
+  this rule: every worker may run it, so a role listing it does not widen its `commands`, and
+  a role cannot restrict it away.
 - **Override** for settings (`seat`, poll interval, settle interval, cooldown): the most specific
   level wins.
 - **Append** for `instructions`, `lane` and `skills`: levels accumulate, with lane constraints
@@ -141,6 +146,12 @@ base should ship with is `[draft-pr, comment]` — everything reversible, nothin
 - **WHEN** the org base permits the command `npm test` and a role also declares `npm install`
 - **THEN** validation fails, for the reason widening `allow` fails: a role that can grant
   itself a command can grant itself every command
+
+#### Scenario: Listing the search command is no widening
+
+- **WHEN** the org base permits the command `npm test` and a role declares `npm test` and
+  `igor lore-search`
+- **THEN** validation passes, and the role's worker may run both
 
 #### Scenario: An action outside the vocabulary is refused
 

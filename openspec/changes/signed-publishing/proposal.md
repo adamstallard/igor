@@ -7,7 +7,8 @@ Adam's answers of 2026-10-19 to the twenty questions an earlier revision of this
 him, in the order he was asked them: that revision's *For Adam* 1 is decision 20, and its 20 is
 decision 39. The next revision asked him five more questions. Decisions 40 to 43 are his
 answers of 2026-10-20 to its questions 1, 2, 3 and 5, in that order. Decision 44 is one he
-made the same day, reviewing #216. Decisions 45, 46 and 48 are his answers of 2026-10-21. Decision 45
+made the same day, reviewing #216. Decisions 45, 46 and 48 are his answers of 2026-10-21, and
+49 is one more decision of his that day. Decision 45
 answers question 4 of the revision that asked five; decisions 46 and 48 answer the two
 questions the revision after that one added, on #216's question files and on decision 40's
 resume. Decision
@@ -322,6 +323,15 @@ whole change before any hunt. The *state branch* is where Igor records each item
     by task 0.21.
     *Rejected:* a second step given the first turn's goals file, with no resume, the fallback
     this change had kept for a reset that deleted the session.
+49. **This change's MODIFIED texts of two `role-config` requirements carry #216's rule on `igor
+    lore-search` (Adam, 2026-10-21).** #216 (`lore-search`) modifies *A role declares its
+    sources, lane, behaviour, permissions, and reviewers* and *Merge semantics differ by field
+    kind*, and archives before this change in the order issue #204 sets. A MODIFIED text replaces
+    the whole requirement when it archives, so both texts here say that every worker may run
+    `igor lore-search` whatever its role's `commands` list, and that listing it does not widen
+    `commands`, with #216's scenario *Listing the search command is no widening*. Without them,
+    archiving this change would drop #216's rule, and `openspec archive` refuses a modified
+    requirement that drops a scenario.
 
 **Reported to other changes**, not edited here:
 
@@ -409,8 +419,6 @@ whole change before any hunt. The *state branch* is where Igor records each item
     decisions: one check per skill written in Igor's code, and one attempt bound for every
     role.
   - **From the 2026-10-21 consistency read:**
-    - Task 5.1 omits #216, which also modifies *A role declares its sources* and *Merge
-      semantics differ by field kind*.
     - The opening block this change defines until #190 is built would carry `main`'s
       `Closes #N`, a closing keyword, into a gate-one body, which #150 forbids because merging
       gate one must not close the issue. It also repeats #190's definition.
@@ -435,6 +443,40 @@ whole change before any hunt. The *state branch* is where Igor records each item
     model step, and a post's cold reader having no tool but Read on the skills directory. Two
     rationale sentences sit in `task-execution`'s requirement text: that every trailer binds
     the last staging, and that prose keeps its token store in the git directory.
+
+- **New from a second consistency read on 2026-10-21,** for whoever next edits this change. The
+  read found no fault in decision 49; none of these is fixed here:
+  - #217 redacts every posted text and commit message after this change verifies and signs it,
+    which breaks the signature of a text that holds a secret, and this change does not mention
+    #217.
+  - #137 archives first, so links and submodules are staged and published, and the "until #137
+    is built" branches here describe a state that cannot exist at merge.
+  - A `resolve` merge commit is written by a model step, against decision 30's reason for
+    exempting merge commits from trailers.
+  - A role's `skills` list never directs the worker to use a listed skill, which #174 and #190
+    assume it does.
+  - Decision 46 says #216's question and miss files are not signed, but only their commits'
+    trailers are exempted; the spec's signing rule still covers the files' text.
+  - A worker's question, quoted in a decline handoff that `directed-interaction` publishes as its
+    question, is signed under *every text a model step writes* and unsigned under the
+    exemption for a worker's reason for declining.
+  - A question posted after a pull request opens has no description rewrite to go into.
+  - The rule for when #189's second worker run makes its second commit is stated here and in
+    #189.
+  - The items reported to #174 and #175 below are out of date.
+  - Nothing requires prose's reads of the tree to follow no link.
+  - The closing-keyword definition does not say whether case is ignored, or cover `Fixes:`,
+    `owner/repo#9` or an issue URL.
+  - Where `prose sign` keeps its token, and whether a code span stops a mention on Discord and
+    Linear, are unmeasured.
+  - No scenario tests a missing or empty goals file; the token-store scenario omits "under
+    `igor serve`"; and no scenario says which tree a lost claim's draft carries.
+  - The `Bug-hunter:` value Igor writes is unchecked.
+  - *What Changes* says six to eight added model calls, and *Impact* six or seven.
+  - `design.md` says a step cannot read the skills directory that decision 33 grants it.
+  - "The two trees differ today only for a symbolic link or a submodule" overlooks binaries.
+  - `design.md`'s Git LFS rule restates #175's.
+  - Some requirement text is rationale, such as "where @-mentions and markup take no effect".
 
 **For Adam,** from the 2026-10-21 consistency read, none with a recommendation yet:
 

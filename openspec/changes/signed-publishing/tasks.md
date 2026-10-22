@@ -218,7 +218,9 @@
       from the requirements as they are in force then, adding only `skills`.
       `read-seat-windows-from-the-stream` (#143) modifies both, adding `reserve`; it archives
       first in the archive order issue #204 sets, and this change's copies already carry its
-      text. `lore-from-corrections` modifies *Merge semantics differ by field kind* too, adding
+      text. `lore-search` (#216) modifies both too, adding the `igor lore-search` exception, and
+      also archives first; this change's copies carry its text as well (proposal, decision 49).
+      `lore-from-corrections` modifies *Merge semantics differ by field kind* too, adding
       `propose-lore` to the `allow` vocabulary. If it has archived by then, the text in force
       already holds its addition, so rewriting from that text keeps it. If it has not,
       `lore-from-corrections` rewrites its own copy from the text in force when it archives.
