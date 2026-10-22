@@ -100,7 +100,11 @@
       posts carries the same sentence: `claimWithdrawn`, right after "Nothing was done, so there
       is nothing to clean up.", or `claimStuck`, where the release did not clear the label, right
       after "Nothing was done.". Either way it comes before a directed claim's relabel sentence.
-      Post it even where the claim message never landed (Adam, 2026-10-19). Count the failure,
+      Post it even where the claim message never landed (Adam, 2026-10-19). Where it never
+      landed, send the label's removal only while less than half a settle interval has passed
+      since the rank started to set the label, by a monotonic clock, and otherwise leave the
+      label, as #179's rule for a claim message that failed to post does (proposal, decision
+      42; Adam, 2026-10-21); test both sides of the bound. Count the failure,
       and post the set-down, only where the item carries no claim message of another rank of
       the role that counts under #179's rules (Adam, 2026-10-19); where it carries one, or where
       the read of the claim messages fails, count nothing, post nothing and leave the role's
@@ -111,8 +115,9 @@
       fails too, count the unreadable claim, the claim-window failure with both failed reads, as
       one `tracker` failure with the fixed message "the item's claim messages could not be
       read", ending no cycle, and set the item down where it is the third identical failure in
-      a row; a read that succeeds appends a row that starts that count again (Adam,
-      2026-10-21). The withdrawal releases only claim messages posted before the rank's read of
+      a row; a second read that succeeds, whatever it finds, appends a `claim-read` row (role,
+      item, time), and the count reader of 3.4, which walks the item's rows back to count failures
+      in a row, treats that row as ending a run of unreadable claims (Adam, 2026-10-21). The withdrawal releases only claim messages posted before the rank's read of
       the claim messages that found no other rank's claim, by the mechanism #179 decides (Adam,
       2026-10-20). Tests for each case,
       and for a set-down posted where the claim message never landed

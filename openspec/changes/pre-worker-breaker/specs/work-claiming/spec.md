@@ -125,6 +125,13 @@ set-down, only where at that moment the item carries no claim message of another
 role that counts under #179's rules. Where it carries one, the rank SHALL count nothing, record
 nothing toward the breaker, and leave the role's label on the item.
 
+**A set-down after a claim message that never posted removes the label only within #179's
+bound.** Where the claim message failed to post, the rank's set-down SHALL remove the role's
+label only within the time bound #179's *Only the rank holding a claim gives it back* sets for a
+process removing a label whose claim message failed to post: less than half a settle interval
+since the rank started to set the label. Outside that bound it SHALL leave the label, and SHALL
+still post the set-down and defer the item.
+
 Where the rank cannot read the item's claim messages, it SHALL count nothing for that failure
 on that run. On that run it SHALL post nothing and leave the role's label on the item, and in
 its next cycle it SHALL read the item's claim messages again. `igor run`, which makes one pass
@@ -138,10 +145,14 @@ out loud*).
 of the item's claim messages failed, followed by a second read that fails too, under `igor run`
 as under `igor serve`. It SHALL count as one failure of source `tracker` toward the item's
 breaker, with the fixed message "the item's claim messages could not be read", so that
-unreadable claims are identical to each other. It SHALL end no cycle. Where it is the third
+unreadable claims are identical to each other. It SHALL end no cycle, and like any failure it
+SHALL NOT count where the outage rule (*Only a tracker or code host failing counts as the
+surface failing*, above) ends the cycle in which its second read failed. Where it is the third
 identical failure in a row, the rank SHALL set the item down; otherwise it SHALL give its claim
-back with the post a refused run makes. A read of the item's claim messages that succeeds SHALL
-append a row that starts that count again, whatever the read finds.
+back with the post a refused run makes. Where a second read succeeds, whatever it finds, the
+rank SHALL append a `claim-read` row, holding only the role, the item and the time, which ends a
+run of unreadable claims and counts toward nothing else; the rank records nothing else toward
+the breaker.
 
 **Identical** means the same source and the same message. The source is one of the tracker, the
 code host, the working tree or the Igor's own code. The message is compared with its variable
@@ -239,6 +250,14 @@ execution log failed to read. The run is refused, and its failure's row is still
 - **WHEN** the third identical failure in the claim window is the failure to post the claim
   message
 - **THEN** the run still posts the withdrawal, saying the Igor has stopped retrying
+- **AND** it removes the role's label only where less than half a settle interval has passed
+  since it started to set the label
+
+#### Scenario: A slow set-down after a claim message that never posted leaves the label
+
+- **WHEN** the third identical failure in the claim window is the failure to post the claim
+  message, and half a settle interval has passed since the rank started to set the label
+- **THEN** the run posts the set-down and defers the item, and leaves the role's label on it
 
 #### Scenario: A claim-window failure beside another rank's claim does not count
 

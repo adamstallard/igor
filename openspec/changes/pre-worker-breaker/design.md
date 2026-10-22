@@ -514,7 +514,10 @@ ends a cycle nor separates the two runs of a pair. **A refused call** forms no p
 (decision 34), but becomes the previous run, so it separates the runs on either side of it. A
 refused call's signatures are `RefusalSigs`.
 
-**Not modelled:** several roles, since the count is per role and roles share nothing here; `Lift`
+**Not modelled:** the role's label, and so the half-settle-interval bound on removing the label
+after a claim message that never posted (the proposal's decision 42); #179's model checks that
+bound. Also several roles, since an item's count is kept per role, so in this model roles share
+nothing; `Lift`
 and `OtherPost` stand for what another role does on the item. Also failures after the worker; the
 masks, since a signature is a model value; a read of the count that fails, since the spec has it
 count nothing and post no set-down, which can only remove set-downs; and an unreadable claim

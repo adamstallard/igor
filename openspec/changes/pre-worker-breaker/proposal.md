@@ -258,10 +258,23 @@ his answers of 2026-10-20, and 33 to 38 his answers of 2026-10-21:
     claim messages can never be read, such as one the tracker answers with a 5xx every time, is
     set down on the third unreadable claim in a row, with the set-down post, where decision 35
     alone would claim it and give it back without end. Each counts with one fixed message, so
-    unreadable claims are identical to each other. A read of the claim messages that succeeds
-    starts the count again. The TLA+ model in `model/` does not yet include unreadable claims
-    (task 3.3a). This change's choice, which approving it approves: an unreadable claim counts
+    unreadable claims are identical to each other. A second read that succeeds, whatever it
+    finds, sets the item's run of unreadable claims back to zero, by appending a `claim-read` row
+    that ends that run and counts toward nothing else. The TLA+ model in `model/` does not yet include unreadable claims
+    (task 3.3a). A choice of this change, not of Adam's, which approving the change approves: an
+    unreadable claim counts
     toward its item's breaker only, as a refused call does under decision 34, and ends no cycle.
+42. **A set-down after a claim message that never posted removes the label only within half a
+    settle interval** (Adam, 2026-10-21). A *settle interval* is the role setting #179 adds for
+    the wait before a claim is verified, 10 seconds by default. The rank sends the label's
+    removal only while less than half a settle interval has passed since it started to set the
+    label, by its own monotonic clock, and otherwise leaves the label; it still posts the
+    set-down and defers the item. The rule is decision 42 of #179's proposal, the same number by
+    coincidence, which bounds every process removing a label whose claim message failed to
+    post; the spec cites #179's rule rather than restating it. #179's TLA+ configuration
+    `negative/NoSettleWithdraw.cfg` shows that, without the bound, a sibling can post its claim
+    message after the rank's test of the item's claim messages, and two workers result. This change's own model does not model the
+    label (*Not modelled*, `design.md`).
 
 **Still open:**
 
@@ -332,6 +345,23 @@ his answers of 2026-10-20, and 33 to 38 his answers of 2026-10-21:
     task 0.3 has still to check, so the claim is unmeasured.
   - `design.md` reports a TLC pass for a `LateRows` configuration with `PromptRows` TRUE that is
     not in `model/findings/`, so nobody can rerun it.
+- **Findings of a fourth consistency read of 2026-10-21, for the next revision,** not fixed here:
+  - **Reported to #179:** after two failed reads #179 posts that the item is still held and
+    removes nothing, where decision 41 posts a refusal or sets the item down; and #179 has a
+    third case, a read that finds no claim message counting, not even the rank's own (whose
+    message may have failed to post, or be outranked under #179's rules), in which it leaves the
+    label and posts that the item is still held.
+  - #179 has added a run id to `igor run`'s claim messages, so the claim-window test should
+    compare run ids, and `design.md`'s statement that two `igor run`s of one role, both rank 0,
+    cannot be told apart is out of date; the *Reported to other changes* entries for #179 describe an earlier #179.
+  - Decision 32's rule that a rank dropping out counts for neither two-in-a-row rule is in no
+    requirement or scenario.
+  - The unkeyed fingerprint lets anyone reading a public state branch confirm a guessed private
+    fact, such as a repository slug, which decision 40 accepts only for short secrets.
+  - Task 0.1 captures no rate-limit 403 or 429, on which the outage rule depends.
+  - Two choices are in the spec with no decision: a failure the outage rule or the two-in-a-row
+    rule excludes does not break an item's count, and a worker start that records a cure key
+    resets that count.
 - **For Adam, from a second consistency read on 2026-10-21:**
   - **A failed set-down post.** The item is deferred whatever the post does, so where the
     tracker is still failing nobody is told why it stopped; decision 23 calls this "no cost".
