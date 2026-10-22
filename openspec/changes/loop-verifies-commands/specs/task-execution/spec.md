@@ -27,7 +27,10 @@ environment the worker was given, without its model login (`CLAUDE_CODE_OAUTH_TO
 defines. Under `igor run` it is the Igor's own account, as it is for the worker.
 
 Execution SHALL add no variable to a check's environment beyond the worker's environment, less
-its model login. Execution SHALL NOT run a `ci_only` line (`role-config`'s *The org base
+its model login. That environment keeps the proxy variables the worker is given, such as
+`HTTPS_PROXY`, a proxy URL's user info included. Which secrets a check may get is #175's rule,
+in *A worker gets a secret only through the Igor, which registers it*: that user info is the
+only one. Execution SHALL NOT run a `ci_only` line (`role-config`'s *The org base
 declares each repository's checks*).
 
 #### Scenario: A check runs as the worker user
@@ -35,6 +38,12 @@ declares each repository's checks*).
 - **WHEN** under `igor serve` a check runs a test the worker wrote
 - **THEN** the test runs as the worker user
 - **AND** its environment holds neither `CLAUDE_CODE_OAUTH_TOKEN` nor `ANTHROPIC_API_KEY`
+
+#### Scenario: A check keeps the worker's proxy settings
+
+- **WHEN** the worker's environment holds `HTTPS_PROXY` with a user and password in its URL,
+  and a check runs
+- **THEN** the check's environment holds the same `HTTPS_PROXY`, user and password included
 
 #### Scenario: A CI-only check is left to the repository's CI
 

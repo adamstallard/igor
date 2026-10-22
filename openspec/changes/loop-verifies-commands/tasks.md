@@ -191,5 +191,5 @@
       Igor does not run them, and that the repository's own CI runs them:
 
       ```
-      # Checks that need a secret. Igor never gives a check a secret and does not run these; the repository's own CI runs them on the pull request, with its own secrets.
+      # Checks that need a secret. Igor does not run these; the repository's own CI runs them on the pull request, with its own secrets.
       ```

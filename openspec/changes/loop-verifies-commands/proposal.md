@@ -185,7 +185,8 @@
     keeps both rounds' checks.
 24. **A check gets the worker's environment without its model login,** both
     `CLAUDE_CODE_OAUTH_TOKEN` and `ANTHROPIC_API_KEY`. A repository whose tests call Anthropic's
-    API gets no key from Igor: Igor adds no credential to a check (decision 32), so the
+    API gets no key from Igor: Igor adds no credential to a check, and the only one a check
+    inherits is a password a proxy URL may hold (decision 32), so the
     repository marks such a check CI-only. Under `igor run` a check can still read a login that
     `claude` stored in the Igor's own home, as decision 5 accepts for the App key there. *Rejected:* passing `ANTHROPIC_API_KEY`, which hands repository
     code the key the seat spends.
@@ -225,7 +226,7 @@ and so are decisions 30 to 33, below.
 31. **A role whose `allow` lists `draft-pr` but not `pr` publishes nothing where the code host
     refuses a draft after its checks fail,** and hands the item off, saying why. Decision 29's
     ready pull request is outside that role's `allow`.
-32. **Igor's checks get no credentials.** A check runs on the code the
+32. **Igor's checks get no credentials but the worker's proxy settings.** A check runs on the code the
     worker has just written, so a credential given to a check is given to model-written code.
     A check that needs a secret is marked CI-only in its repository's entry, under `ci_only`.
     Igor does not run it, and the Tests row of #190's evidence table, in the pull request body,
@@ -238,6 +239,14 @@ and so are decisions 30 to 33, below.
     credential keeps it out of what Igor stores, not out of the
     reach of the code the check runs, which can send it anywhere or leave it where a later run
     reads it.
+    The one exception is a proxy URL's password. A check keeps the proxy variables the worker
+    is given, such as `HTTPS_PROXY`, password included. Adam accepted that on 2026-10-21. #175
+    (`worker-user`) records the acceptance as its decision 47, and states the rule in its
+    requirement *A worker gets a secret only through the Igor, which registers it*; this change
+    cites that requirement. Under it the Igor registers the password with #217's
+    `rememberSecret` before it hands the worker its environment, which keeps the password out of
+    what Igor stores, not out of the check's reach. That is accepted: checks often need the network, and #175's deployment guide advises a proxy that
+    authenticates by network address, so that its URL holds no password.
 33. **Igor never reads a CI-only check's result.** A pull request whose every
     check Igor ran passed is not made a draft by a CI-only line, and opens as the role's `allow`
     has it, even where a CI-only check then fails in the repository's CI. The CI's result shows on the pull request, and the repository's branch protection can
@@ -248,13 +257,6 @@ and so are decisions 30 to 33, below.
 
 **Still open:**
 
-- **For Adam, held in #175: whether a check may get the proxy's password.** Not yet decided. A
-  check gets the worker's environment less its model login, and that environment carries the
-  host's proxy settings, `HTTPS_PROXY` among them, forwarded so the worker reaches the network.
-  A proxy URL can hold a password, which then reaches model-written code, against decision 32.
-  #175 (`worker-user`), the change that runs the worker as a user of its own, lists the
-  question with a recommendation: leave such a URL out of a check's environment, and put a
-  check that needs it under `ci_only`.
 - **From the third consistency read of 2026-10-21**, a fresh agent's reading of this change
   against every other spec and change. Each is a defect to fix in this text; the rules above
   hold until then:
@@ -266,8 +268,8 @@ and so are decisions 30 to 33, below.
     lost, so that by the in-force rule the work is published as a draft, decision 29 publishes
     it ready instead.
   - Rules stated twice, which can drift: the second run's second commit, here and in #153; the
-    rule that checks get no secret, here and in #175; the outbox beside the tree and the git
-    index copy kept in it, here, in #175 and in #171; and the rule that Igor runs no `ci_only`
+    outbox (the directory beside the worker's tree where the worker leaves files for
+    Igor) and the copy of the git index kept in the outbox, here, in #175 and in #171; and the rule that Igor runs no `ci_only`
     line, in both of this change's capabilities.
   - `repos` is added to the org base without modifying the in-force list of keys a role file
     accepts, so an org base naming it would be refused at load.
