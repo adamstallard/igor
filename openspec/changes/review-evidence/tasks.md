@@ -111,20 +111,16 @@
       code, or `no result` for a call that never returned.
 
       Show at most 30 commands in the list. Where more were run, end the list with the line that
-      says what the action log actually kept of the rest. The log's tier (the level of detail
-      `keep-action-log` keeps for the store: `whole`, `no-output` or `tools-only`, where
-      `tools-only` is the tier for a private worked repository in a public store) and the entries
-      it drops for size follow from `keep-action-log`'s deterministic cut. Because the cut is
-      deterministic, the table computes both the tier and the dropped entries before the pull
-      request is opened, before the log exists. The log is written afterwards; where that write fails,
+      says what the action log actually kept of the rest. Which entries the log drops for size
+      follows from `keep-action-log`'s deterministic cut, so `evidenceTable` works them out
+      before the pull request is opened, before the log exists. The log is written afterwards; where that write fails,
       the loop rebuilds the section (2.4) with the line for a failed write:
 
       | What the log kept | Line |
       |---|---|
-      | every one of them (`whole` or `no-output`) | `and <m> more in the action log` |
+      | every one of them | `and <m> more in the action log` |
       | some, the rest dropped for size | `and <m> more, <j> of them in the action log; the rest were dropped from it for size` |
       | none, dropped for size | `and <m> more, dropped from the action log for size` |
-      | none (`tools-only`) | `and <m> more, not kept: the action log of a private repository in a public store keeps no commands` |
       | none, the write failed | `and <m> more, not kept: the action log could not be written` |
 
       `<m>` is how many are left out, and `<j>` how many of those the log kept. Name at most 10

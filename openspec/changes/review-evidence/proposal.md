@@ -58,6 +58,15 @@ service; *the Igor* is the one that opened the pull request. From that table the
   out (decision 3), since Igor checked nothing about them. *Rejected:*
   counting a CI-only line as a check that did not pass, which would make every pull request on
   a repository with one `review: read`.
+- **The table is not trimmed by visibility; the visibility guard covers public stores.** A
+  command the table lists could quote text from a place more private than where the table is
+  read. For the lore store, the change `visibility-guard` (issue #219, pull request #220)
+  settles that: it refuses to work a private repository while its lore store is public, and
+  #188's action log is written or withheld by the same rule. This table is in a pull request
+  in the worked repository, so a command it lists is no more visible there than the repository
+  it ran in, and the table does no trimming of its own. *Rejected:* cutting the table where the
+  repository is public, to keep out text from a private tracker, which would hide what was run
+  from the readers of the repository it ran in.
 
 **Decided (Adam, 2026-10-19):**
 
@@ -135,18 +144,12 @@ as exactly the span between the opening block and the marker, and `prose verify-
 
 - **Task 0.1:** whether an Igor's App, adding a label that does not exist yet, creates it. If it
   does not, the loop creates each label first. Neither answer changes a rule above.
-- **For Adam: visibility-dependent trimming for public repositories.** Should the table show
-  less when the repository is public, as `keep-action-log` (#188) cuts its log by the store's
-  visibility? As written, the table lists every step's shell commands, cut to 200 characters,
-  in every pull request. Credential redaction matches only secrets the Igor holds, by value,
-  and GitHub and Anthropic tokens by their shape. So a command holding a key the worker read
-  from a host file is published as written, and so is a command that quotes a private issue's
-  text, such as an `echo` or a commit message. This ties to a visibility guard nobody has
-  decided yet: Igor writes no private repository's content to a more public lore store.
-  *Recommendation:* no trimming in this change. The pull request lives in the worked
-  repository, so a command is no more visible there than the repository it ran in. What
-  remains, a more private source's text reaching a more public place, is the guard's question:
-  decide the guard once, and have this table and #188's log both cite it.
+- **Text from a more private tracker: accepted for now, or to be guarded by a later change?**
+  Credential redaction matches only secrets the Igor holds, by value, and GitHub and Anthropic
+  tokens by their shape, so a command quoting a private Linear issue's text is published in a
+  public repository's pull request as written. `visibility-guard` compares only the visibility
+  of the worked repository with the lore store's, not trackers, and its own open questions
+  include this one.
 - **From the consistency read of 2026-10-21's last round.** None is decided, and the rules
   above hold until each is settled.
   - For Adam: the loop sets the label though the role's `allow` need not list `label`, while
@@ -176,10 +179,39 @@ as exactly the span between the opening block and the marker, and `prose verify-
     a question in a sensitive category, and forbids its pull request body any excerpt of the
     worker's result. This change's summary, transcript pointer and full command lines would
     publish them.
-  - **The action log's cut.** #188 (`keep-action-log`) decides how much of its log to keep
-    when it writes the log, from a visibility read of the stores made then. This change works
-    out the same cut earlier, when it opens the pull request, so its "more in the action log"
-    line can point at entries the log did not keep.
+  - **The action log's write.** `visibility-guard` decides, just before a run's records are
+    written, whether #188's log and the run's transcript are written at all. This change writes
+    its "more in the action log" line and its transcript pointer earlier, when it opens the pull
+    request, and a rebuilt section keeps the pointer. So the line or the pointer can name a file
+    that is then not written. `visibility-guard` requires that a pull request whose run's
+    records it writes without their content names no transcript, and this change's lines for a
+    log that could not be written do not cover a log the guard withheld.
+  - **New from a further consistency read of 2026-10-21:**
+    - A pull request offered after a lost claim, which the in-force spec keeps out of every
+      review queue, would still get a review label.
+    - A lore proposal an Igor opens falls under "a pull request an Igor opens" too, so it would
+      need both the in-force `lore-review` spec's body for a lore proposal and this change's.
+    - The CI-only wording is carried verbatim here and in #189: this change's task 2.1 says it
+      may not be reworded, and #189's task says whoever builds it may reword it.
+    - #153 is built first and defines the opening block and "revision" itself, so until this
+      change ships there are two definitions, whose contents differ.
+    - This change's text names #189's `repos` and `ci_only` keys, which #189 adds after this
+      change archives, with no record that Adam accepted that citing ahead.
+    - On a gate-one revision, the recomputed opening block leaves out #150's list of dropped
+      paths.
+    - At gate one, where the checks run on the base's own code, nearly every small
+      specification pull request would be `review: skim`, though gate one is the one gate whose
+      point is that a person reads the specification closely.
+    - Running `spec_trace.py` passes the loop's environment, App credentials included, to `git
+      grep` in the worker's tree, whose git configuration can run commands.
+    - A failed evidence replacement has no rule, and task 2.5 records it in `reviewLabel`, a
+      field defined for the label.
+    - These SHALLs, besides the ones listed below, have no scenario: the role key's refusal,
+      keeping the transcript pointer on a rebuild, recomputing the opening block, returning a
+      description to the prose pass, the changed-line count, no model call for the Spec
+      scenarios row, and that row never changing the label.
+    - The `prBody` range is `src/execute.ts:1169-1184`, which corrects both the citation and the
+      earlier correction above.
   - **Markup and names.** A 700-character cut through the worker's summary can leave an open
     `<!--` or code fence that hides the evidence section after it. A scenario name holding a
     backtick or `|` breaks its table cell. And a repository that declined spec-trace shows
