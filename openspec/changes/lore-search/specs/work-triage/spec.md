@@ -34,42 +34,63 @@ the item is *held*, and SHALL stay held whatever else its handoff carries: a cur
 kept is), a question not kept, or anything else that would exempt another handoff from suppression, does
 not release it. A reply SHALL NOT count as an answer. The record this requirement keeps of a held item,
 its *hold record*, SHALL NOT expire, and where that record is missing or unreadable the item
-SHALL stay held rather than be worked again. The hold record SHALL name the *rank*, one of the
-Igor processes #179 runs for the role, that kept the item's question on its host, its
-*keeping rank*. The Igor SHALL know a held item from its hold record, or, where that is lost,
-from its file under `flagged-questions` on the host or from the item's latest ledger row,
-where that row's `reason` starts `needs a person` or is `release requested`, the row a
-release by an edit appends, below.
+SHALL stay held rather than be worked again. A *rank* is one of the Igor processes #179 runs
+for the role. The hold record SHALL hold one *entry* for every host that may hold files under
+`flagged-questions` for the item, each naming the host and the process that wrote the question
+file or moved a session-log copy there: its rank, the entry's *keeping rank*, or `igor run`.
+A rank or `igor run` that writes such a file for an item SHALL add its entry to the record. An
+entry is *cleared* once that host's files for the item are deleted. How a host is named, and
+whether an entry should name the state directory rather than the host, are open (the
+proposal's Still open). The Igor SHALL know a held item from its hold record. Where that
+record is lost, it SHALL know one from its file under `flagged-questions` on the host, from
+the item's latest ledger row where that row's `reason` starts `needs a person`, or from a
+latest row whose `reason` is `release requested`, the row a release by an edit appends,
+below.
 
 A held item SHALL be released in either of two ways. The Igor's operator SHALL be able to
 release it on the host with `igor release <tracker>/<repo>/<item>`, such as
 `igor release github/acme/api/12`, whatever an edit's attribution shows. Releasing SHALL first
-delete the item's session logs and then its question file under `flagged-questions`, by
-`graceful-handoff`'s rule against following a link, so that no fallback above holds it again;
-then it SHALL mark the hold record released and append a ledger row for the item whose
-`reason` is `released`. Where any delete is refused, `igor release` SHALL say that it failed
-and that the path is in the Igor's own log on the host, SHALL leave any file it did not yet
-delete, the question file included, and SHALL mark nothing released and append no row, so the
-item stays held; the operator can run it again;
+delete the item's session logs and then its question file under `flagged-questions` on the host
+it runs on, by `graceful-handoff`'s rule against following a link, so that no fallback above
+holds it again, and clear that host's entry in the hold record. Whenever a rank or
+`igor release` clears an entry, it SHALL then read the hold record again and, where every entry
+is cleared and no `released` row is yet recorded for the item, mark the hold record released
+and append a ledger row whose `reason` is `released`. Until every entry is cleared,
+`igor release` SHALL say which named hosts still hold files. Where any delete
+is refused, `igor release` SHALL say that it failed and that the path is in the Igor's own log
+on the host, SHALL leave any file it did not yet delete, the question file included, and SHALL
+clear nothing and append no row, so the item stays held; the operator can run it again. No
+release SHALL delete files on any host but the one it runs on;
 every Igor process of the role, each a *rank* under #179, reads the release from the state
 branch, so a rank on another host does not hold the item again from its own file or ledger
 rows. An
 edit to the item, a relabel or a change of holder included, by someone with write access to
 the item's repository SHALL also release it, where the edit can be attributed. A rank that
 sees such an edit SHALL append a ledger row for the item whose `reason` is `release
-requested`, unless one is already recorded for that edit, and the item stays held. The keeping rank, on its next poll, SHALL delete the
-item's session logs and then its question file on its host exactly as `igor release` does,
-and only then mark the hold record released and append a ledger row whose `reason` is
-`released`; every other rank learns of the release from that row on the state branch. Where
-a delete is refused, the keeping rank SHALL write the path only to its own log on the host,
-leave any file it did not yet delete, and append no `released` row, so the item stays held;
-it SHALL try the deletes again on every later poll until they succeed, and, once
-`condition-backoff` defines conditions, SHALL open the notice condition `graceful-handoff`
-opens for a question it could not keep, once for the item rather than once per poll, reusing
-a condition already open as `graceful-handoff` says. Where the keeping rank has left #179's
-roster, or no rank kept the question, the item stays held until `igor release` is run on the
-host that holds its files; what else happens then is open (the proposal's Still open). An edit by
-anyone else, or one whose author the Igor cannot read, SHALL leave the item held. How write
+requested`, unless one is already recorded for that edit, and the item stays held. Each
+keeping rank named in the hold record, on its next poll, SHALL delete the item's session logs
+and then its question file on its own host exactly as `igor release` does and clear its entry,
+releasing the item as above once every entry is cleared; every other rank learns of the
+release from the `released` row on the state branch. Where a delete is refused, the keeping rank SHALL write the path only to
+its own log on the host, leave any file it did not yet delete, and clear nothing, so the item
+stays held, and SHALL try the deletes again on every later poll until they succeed. No rank
+SHALL take over another's release, and none SHALL delete on a host other than its own.
+
+An edit by anyone without write access, or one whose author the Igor cannot read, SHALL leave
+the item held.
+
+A requested release is *stuck* where a keeping rank's delete is refused, or where an uncleared
+entry remains that no rank can clear: its keeping rank has left #179's roster, or it names
+`igor run`. Any rank that polls and finds a requested release stuck, the keeping rank for a
+refused delete and otherwise any rank of the role, which reads the roster as #179 says, SHALL,
+once `condition-backoff` defines conditions, open a notice condition for the operator under a
+key of its own, distinct from the one `graceful-handoff` opens for a question it could not
+keep, such as `release stuck`, which gate two names. It SHALL open it once for the item rather
+than once per poll, reusing a condition of that key already open, and it SHALL stop no work.
+The notice SHALL tell the operator to run `igor release <tracker>/<repo>/<item>` on each named
+host whose entry is not cleared, and SHALL name those hosts and the item and nothing else of
+it. How such a condition names more than one item, and how it clears, are open (the
+proposal's Still open). The item stays held until every entry is cleared. How write
 access is read and who made an edit are #141's rules; until #141 lands, no edit can be
 attributed, and `igor release` is the way to release a held item.
 
@@ -139,9 +160,57 @@ attributed, and `igor release` is the way to release a held item.
 - **WHEN** an item's release by an edit has been requested
 - **AND** the keeping rank's delete of one of its files is refused on two polls in a row
 - **THEN** the keeping rank tries the delete again on each poll
-- **AND**, where `condition-backoff` is built, opens `graceful-handoff`'s notice condition once,
-  not once per poll
+- **AND**, where `condition-backoff` is built, opens the stuck-release notice once, not once per
+  poll, under a key distinct from the one for a question not kept
 - **AND** appends no `released` row until the deletes succeed
+
+#### Scenario: A release with a retired keeping rank waits for the operator
+
+- **WHEN** an item's release by an edit has been requested
+- **AND** the rank its hold record names on host H has left #179's roster
+- **THEN** no other rank deletes the files on H or clears H's entry
+- **AND** the item stays held
+- **AND**, where `condition-backoff` is built, the stuck-release notice tells the operator to run
+  `igor release` for the item on H
+
+#### Scenario: A question kept by igor run waits for the operator
+
+- **WHEN** `igor run` kept a held item's question on a developer's machine D, and its hold
+  record names D and `igor run`
+- **AND** the item's release by an edit has been requested
+- **THEN** no rank deletes anything on D, and the item stays held
+- **AND** running `igor release` for the item on D deletes its files there and releases it
+
+#### Scenario: Two hosts that raced both release their files
+
+- **WHEN** ranks on hosts H1 and H2 each kept a question file for the same held item, and its
+  hold record names both
+- **AND** the item's release by an edit has been requested
+- **AND** only the rank on H1 has deleted its files
+- **THEN** the item stays held, and no `released` row is appended
+- **AND** once the rank on H2 deletes its files and finds every entry cleared, it appends the
+  `released` row
+
+#### Scenario: igor release names the hosts still to clear
+
+- **WHEN** a held item's hold record names hosts H1 and H2
+- **AND** the operator runs `igor release` for the item on H1, and its deletes succeed
+- **THEN** H1's entry is cleared, the item stays held, and `igor release` says that H2 still
+  holds files
+
+#### Scenario: A stuck-release notice names only the item and its hosts
+
+- **WHEN** a requested release is stuck because its keeping rank on H has left #179's roster
+- **AND** `condition-backoff` is built
+- **THEN** the notice names the item and H and tells the operator to run `igor release` there
+- **AND** it holds nothing else of the item: no question, category or path
+
+#### Scenario: Log copies from a question that was not kept are released
+
+- **WHEN** a flagged run's question file could not be written, but a session-log copy was moved
+  under `flagged-questions` on host H
+- **THEN** the hold record names H and the rank that moved the copy
+- **AND** a release deletes that copy on H before the item is worked again
 
 #### Scenario: The operator releases a held item on the host
 

@@ -204,10 +204,16 @@
       requested` one, records its keeping rank in the hold record, and releases it only by
       `igor release <tracker>/<repo>/<item>` on the host, which deletes the logs and then the
       question file first and, where a delete is refused, says it failed and leaves the item
-      held, or by an attributable edit by someone with write access, never a reply: a rank
-      that sees the edit appends one `release requested` row for it, and the keeping rank does
-      the deletes on its next poll, retries a refused one on every poll, opens the notice
-      condition once where conditions exist, and appends `released` when they succeed. Once
+      held. It also releases it by an attributable edit by someone with write access, never a
+      reply: the hold
+      record names every host that may hold the item's files, each with its keeping rank or
+      `igor run`; a rank that sees the edit appends one `release requested` row for it; each
+      keeping rank deletes on its own host on its next poll and clears its entry, retrying a
+      refused delete on every poll; `igor release` clears the entry of the host it runs on;
+      whoever clears an entry reads the record again and, finding every entry cleared and no
+      `released` row yet, appends one; no rank deletes on another's host; and a stuck release,
+      meaning a refused delete or an entry no rank can clear, opens once, where conditions
+      exist, a notice under its own key naming the item and the hosts still to clear. Once
       #188's action log is built, a
       flagged run's log keeps names only. Tests for *Transcript persisted
       off the main line*, *A run that met a categorized question stores no transcript*, *A run that
@@ -235,7 +241,7 @@
       flagged item*, *An edit without write access leaves a flagged item held*, *A question that
       cannot be kept does not block the handoff*, *A kept question names its category, not its
       text*, *A kept question without a category holds its text*, *The question-not-kept
-      condition stops no work*, *A release by an edit deletes the item's files*, *A refused delete keeps an edited item held*, *The keeping rank deletes on a release another rank saw*, *A requested release is not a release*, *A refused delete on a requested release is retried and noticed once* (its notice once `condition-backoff` is built), *The operator releases a held item on the host*, *A refused delete keeps the item held*, *A cure key
+      condition stops no work*, *A release by an edit deletes the item's files*, *A refused delete keeps an edited item held*, *The keeping rank deletes on a release another rank saw*, *A requested release is not a release*, *A refused delete on a requested release is retried and noticed once* and *A release with a retired keeping rank waits for the operator* (their notices once `condition-backoff` is built), *A question kept by igor run waits for the operator*, *Two hosts that raced both release their files*, *Log copies from a question that was not kept are released*, *igor release names the hosts still to clear*, *A stuck-release notice names only the item and its hosts* (once `condition-backoff` is built), *The operator releases a held item on the host*, *A refused delete keeps the item held*, *A cure key
       does not release a held item*, *A held item's lost record leaves it held*,
       *A flagged run's budget handoff still gives the reset time*, *Any
       other run's ledger row keeps a denied command whole*, *A flagged run's action log keeps
@@ -325,6 +331,10 @@
 - [ ] 4.11 Whether Claude Code keeps any per-user state or session under `HOME` outside
       `~/.claude` and `~/.claude.json`, which #174 resets. If it does, one run could read
       another's there despite decision 87; file an issue against #174 before relying on it.
+- [ ] 4.13 Which host name a hold record's entry uses that stays the same for a host and its
+      `igor release` (decision 110), measured under Docker, where a recreated container gets a
+      new hostname unless `deploy/docker-compose.yml` sets `hostname:`. Where the name does not
+      match, an entry stays uncleared and the release stuck, which its notice then reports.
 - [ ] 4.12 How igor, a Node program, opens each path component from the state directory
       itself down to a file under `flagged-questions`, and down to a move's source, #174's
       copy, without following a link (decisions 101 and 102). A move is a rename, which opens

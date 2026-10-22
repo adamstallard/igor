@@ -612,9 +612,14 @@ before the item counts as released, the question file last so that a refused del
 it in place and the item still known as held. For an edit, the Igor process of the role
 that sees it, one of #179's *ranks*, appends a `release requested` row to the ledger, and the
 rank that kept the question on its host does the deletes on its next poll, retrying a
-refused one on every poll; if that rank no longer runs, the item stays held until the
-operator runs `igor release` on that host; anyone else's edit, or one whose author
-cannot be read, leaves it held.
+refused one on every poll. The hold record names every host that may hold the item's files,
+each with the rank that kept them there or `igor run`; because every such host is named, two
+ranks that raced are both cleaned up, and the item is released once every host's files are
+gone. No rank deletes on another's host. If a host's rank has left #179's roster, or the
+files were kept by `igor run`, the item stays held; once `condition-backoff` defines
+conditions, a notice under a key of its own, a stuck release, tells the operator to run
+`igor release` on that host. An edit by anyone without write access, or one whose author
+cannot be read, leaves the item held.
 
 Open pull request #174 gives each worker run a home of its own, resets `~/.claude` and
 `~/.claude.json` there from a template before each model step, has a worker authenticate only

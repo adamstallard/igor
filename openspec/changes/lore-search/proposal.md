@@ -2,10 +2,10 @@
 
 ## Decisions
 
-[#215](https://github.com/adamstallard/igor/issues/215) records all one hundred and nine decisions, as this list does too,
+[#215](https://github.com/adamstallard/igor/issues/215) records all one hundred and twelve decisions, as this list does too,
 and all are Adam's. Where the agent that wrote this change fitted
-details Adam had not stated, that decision says so, and where Adam has since confirmed them,
-a later decision records it. A *consistency read*
+details Adam had not stated, that decision says so; where Adam has since confirmed them, a
+later decision records it, and where he has not, Still open lists them. A *consistency read*
 is a check, by a fresh agent, of this change against every other spec, change and open pull
 request; Adam answered the questions each read raised. He made:
 - decisions 1, 2 and 7 on 2026-10-19, while reviewing
@@ -87,7 +87,9 @@ request; Adam answered the questions each read raised. He made:
   this change's archive order;
 - decisions 108 and 109 on 2026-10-21, answering which rank deletes on a release by an edit
   and confirming the `released` row on such a release and `lore-firing`'s new requirement
-  name.
+  name;
+- decisions 110 to 112 on 2026-10-21, answering the two questions the reads of decision 108
+  raised and confirming its fitted details.
 
 Terms used here:
 - The *destination repository* is the repository the configuration key `destination` names,
@@ -1029,18 +1031,44 @@ Terms used here:
     rank named in the hold record, the one that kept the question on its host, does the
     deletes on its next poll, in decision 102's order, then appends `released`; other ranks
     learn the release from that row on the state branch. A *rank* is one of the several Igor
-    processes #179 runs for one role. A refused delete is retried on every poll and opens
-    decision 80's notice, the question-not-kept condition that stops no work, once for the
-    item, reusing an open condition as decision 85 says, and the item stays held until
-    `released` is written. The agent that wrote this change
-    fitted that the hold record names the keeping rank, that a lost hold record leaves an
+    processes #179 runs for one role. A refused delete is retried on every poll and opens,
+    once for the item, a notice condition that stops no work, which decision 111 gives a key of
+    its own, reusing an open condition as decision 85 says, and the item stays held until
+    `released` is written. The agent that wrote this change fitted, and Adam confirmed (decision 112), that the hold record names the keeping rank, that a lost hold record leaves an
     item held when its latest ledger row is `release requested`, and that a rank appends no
     second `release requested` row for an edit that already has one; and, as for decision
-    80's own notice, that the notice opens only once `condition-backoff` defines conditions. What happens when the
-    keeping rank leaves #179's roster is open (Still open). Three new `work-triage` scenarios.
+    80's own notice, that the notice opens only once `condition-backoff` defines conditions.
+    Decision 110 settles what happens when the keeping rank leaves #179's roster, and when no
+    rank can finish. Three new `work-triage` scenarios.
 109. **Two details are Adam's** (Adam, 2026-10-21): a release by an edit appends the `released`
     row once its deletes succeed (decision 104), and `lore-firing`'s re-added requirement is
     named *Lore reaches the worker unbidden, beside a search it may run* (decision 107).
+110. **The hold record names the host** (Adam, 2026-10-21). It names the host holding the
+    item's files, with the keeping rank, or `igor run` where no rank kept them. When no rank can
+    finish a `release requested` (the keeping rank was retired from #179's roster, an `igor run`
+    ended, a question's write failed after log copies existed, or two ranks raced on different
+    hosts), the item stays held, and the notice tells the operator to run `igor release` on the
+    named host. No rank takes over another's release, and nothing deletes on a host other than
+    the one named. For the race, Adam asked that the record name every host that may hold
+    files, or say how the race is resolved. The agent that wrote this change fitted, for Adam
+    to check: the record holds one entry per host, which the rank or `igor run` that writes a
+    file there adds; each entry is cleared when that host's files are deleted, by its keeping
+    rank or by `igor release` run on that host; and `released` is appended once every entry is
+    cleared, by whoever clears the last, with `igor release` naming the hosts still to clear.
+    Under those details the ranks finish the race and a not-kept question's log copies
+    themselves, though decision 110 listed both among the cases no rank can finish (Still
+    open). Six new `work-triage` scenarios.
+111. **A stuck release has a condition key of its own** (Adam, 2026-10-21, amending decision
+    108). A refused delete, or an entry no rank can clear, opens a notice condition whose key
+    is separate from `question not kept`, such as `release stuck`, which gate two names, so the
+    operator can tell a stuck release from a question never written. The Still open item for `condition-backoff` and
+    #101 keeps asking that a recurring refused delete not count toward stopping a scope. The
+    agent that wrote this change fitted, for Adam to check, that the rank that finds a release
+    stuck opens the notice, and that its notice names the item and the hosts still to clear
+    and nothing else of the item.
+112. **Decision 108's fitted details are Adam's** (Adam, 2026-10-21): the hold record names the
+    keeping rank; a lost record stays held when the latest ledger row is `release requested`;
+    one `release requested` row per edit; and the notice waits on `condition-backoff`.
 
 
 **Alignments with shared-skills #25.** These follow from Adam's decisions above and #25's
@@ -1117,9 +1145,11 @@ decisions 216, 221, 225, 229 and 235 (#25 at 9247d3c), and add no decision:
   from suppression, while decision 82 keeps a held item held. This change archives after
   #101, so its `work-triage` delta carries `condition-backoff`'s exemption and states that a
   held item stays held despite it. What stays open is the first point: `condition-backoff`
-  should name decision 85's notice as a second exception to its rule, and decision 108's
-  refused delete, which recurs on every poll for one held item, should not count toward
-  stopping a scope either, since `condition-backoff`'s probe item cannot observe it.
+  should name decision 85's notice as a second exception to its rule, and decision 111's
+  stuck-release notice, whose refused delete recurs on every poll for one held item, should
+  not count toward stopping a scope either. `condition-backoff` clears a condition when a
+  *probe item*, the one item a stopped scope takes after a cooldown, does not meet it, and no
+  probe item can observe a delete stuck on one held item.
 - **This change depends on [#174](https://github.com/adamstallard/igor/pull/174) (decisions 87
   and 88)** for each worker run's private Claude state and the copied, redacted session log;
   decision 88 moves a flagged run's copy beside its question. #174's record in the execution
@@ -1135,26 +1165,43 @@ decisions 216, 221, 225, 229 and 235 (#25 at 9247d3c), and add no decision:
   `XDG_STATE_HOME` set, #174's log copy and the question file sit in different state
   directories, and decision 102's check of a move's source, from the state directory down,
   starts from the wrong one.
-- **For Adam: a requested release with no keeping rank to act on it** (decision 108). The
-  keeping rank does the deletes, but no rule here or in #179 says who deletes, or how the
-  `release requested` item is ever released, in these cases:
-  - #179 shut the keeping rank down after the roster dropped it. #179 sweeps a gone rank's
-    working trees, not its `flagged-questions`.
-  - The question was kept by `igor run`, which is always rank 0 and outside the roster, on a
-    developer's machine that nothing polls once the run ends. Every `igor run` is rank 0, so
-    the hold record does not say which machine holds the files, and another developer's
-    `igor run` could "delete" on the wrong machine and append `released`.
-  - No rank kept the question: its write failed (`question not kept`), though log copies may
-    sit under `flagged-questions` already.
-  - Two ranks raced on different hosts, and each kept a file.
-  The spec has such an item stay held until the operator runs `igor release` by hand on the
-  host that holds its files. Should the hold record name the host as well as the rank, and
-  who acts when that host's rank is gone?
-- **For Adam: one notice for two kinds of failure** (decision 108). Decision 108 reuses
-  decision 80's question-not-kept condition for a refused delete, where the question was
-  kept. The condition holds only its key and is reused for any item, so the operator cannot
-  tell a lost question from a stuck delete. Keep one condition, or give a refused delete a key
-  of its own?
+- **For gate two: how a host is named, and how ranks update one hold record** (decision 110,
+  task 4.13). The hold record names each host that may hold an item's files; gate two picks a
+  name that a rank and `igor release` both read the same way, and that survives a Docker
+  container being recreated, and how several ranks add or clear entries in one record on the
+  state branch without losing a write, which #179's rules for state-branch writes govern;
+  #179's task 5.1 does not yet list hold records among its keyed state.
+- **For Adam: the details fitted to decisions 110 and 111.** One entry per host, added by the
+  writer; each cleared when that host's files are deleted; `released` appended by whoever,
+  after clearing an entry, finds every entry cleared and no `released` row yet; `igor release`
+  naming the hosts still to clear; any rank that finds a release stuck opening the notice; and
+  the notice naming the item and the hosts and nothing else. Decision 110 named the race and a
+  question whose write failed after log copies existed among the cases no rank can finish;
+  under these details the ranks finish both themselves, by their own entries.
+- **For Adam: the release rule's open edges** (decisions 110 and 111), raised by the
+  consistency read of those decisions:
+  - *`igor run` is rank 0 under #179.* An entry naming `igor run` is stuck from the moment it
+    exists, though the run may still be going; nothing tells a running `igor run` to delete,
+    and nothing tells a rank when that run has ended. Should rank 0 delete on its next cycle
+    like any keeping rank, and be stuck only once ended?
+  - *Roster or "gone"?* The spec takes a rank that has left #179's roster as unable to finish.
+    #179 judges a rank unavailable by its heartbeat, and its ranks may read different rosters,
+    so a declared rank whose host died is never stuck, and two ranks may disagree. Which test
+    applies?
+  - *Host or state directory?* One host can hold a serving rank's files under
+    `/var/lib/igor` and an `igor run`'s under `~/.local/state/igor`; two ranks on one host share
+    a state directory; and #179 does not bind a rank to a host. Should an entry name the state
+    directory instead, and may any live rank sharing it clear the entry?
+  - *No entries.* Where the hold record was lost, or a crash came between writing a file and
+    adding its entry, `igor release` on one host clears "every entry" at once, and a requested
+    release has no entry to be stuck on, so another host's files stay and no notice opens.
+  - *One condition for many items.* `condition-backoff` keys a condition by its cure key and
+    has it name no item, so a second stuck item reuses the open condition and its hosts are
+    never shown; and a probe item, never meeting it, clears it while the release stays stuck.
+  - *Host names on the state branch.* The hold record and the notice are on the state branch,
+    which can be public, so an `igor run` developer's hostname would sit beside an item that
+    met a `personal` or `secret` question. Is a hostname acceptable there, or should an entry
+    use an opaque host id?
 - **This change depends on [#171](https://github.com/adamstallard/igor/pull/171) (decisions
   87 and 107)** for the rule that every seat names a token, and that an organization declaring no
   seats is refused (#171's decision 36). It archives after #171 (decision 107). Until #171 merges, main's `seat-budget` still lets a
@@ -1575,8 +1622,10 @@ reading the codebase. Two cases contradict that:
   record that never expires, and lets the operator release it with `igor release`, which
   keeps the item held when a delete is refused; a release by an edit deletes the files the
   same way, done by the rank that kept the question, and also keeps the item held when a
-  delete is refused. It has thirteen new scenarios, including those for `igor release`, and
-  three changed (decisions 76, 79, 82, 83, 84, 102, 104 and 108). It also carries `condition-backoff`'s rule that a handoff caused by a fact
+  delete is refused, the hold record naming every host that holds the item's files and a
+  stuck release opening its own notice. It has nineteen new scenarios, including those for
+  `igor release`, and three changed (decisions 76, 79, 82, 83, 84, 102, 104, 108, 110 and
+  111). It also carries `condition-backoff`'s rule that a handoff caused by a fact
   about the Igor is not suppressed, with that rule's scenario (decision 107).
 - `docs/architecture.md`: §3.3 says every worker is offered `igor lore-search` and what binds it, §3.4.1 says a
   search hit is not a firing and that a review counts citations from the destination repository's
