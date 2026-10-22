@@ -5,16 +5,18 @@
 The cycle stops on two surface failures in a row (*A claim that cannot be kept is given back, out
 loud*); this capability calls that the *outage rule*. A run SHALL count toward it only where a call
 to the tracker or the code host got no answer. *No answer* has the meaning #101
-(`condition-backoff`) gives it for a claim, which its `passesMark` reads from the response's
-status: no status at all, a 5xx, a 408, a 429, or a 403 for a rate limit. A call the surface
-answered and refused, such as a 403 for a missing permission, SHALL NOT count toward the outage
-rule.
+(`condition-backoff`) gives it for a claim, and #101's function `passesMark` reads it from the
+response's status, reading a 403's message only to tell a rate limit: no status at all, a 5xx, a
+408, a 429, or a 403 for a rate limit. A call the surface
+answered and refused, such as a 404 for an item deleted since discovery, SHALL NOT count toward
+the outage rule.
 
 A run that failed in its working tree, such as a branch set up or a full disk, or in the Igor's
 own code SHALL NOT count either, whether it failed before or after the worker ran. One working-tree
 call is the code host's: a clone that fails because the code host did not answer SHALL count as a
-code-host failure. A clone whose failure the tree provider cannot tell was unanswered, and a token
-mint that fails inside a clone, SHALL count as working-tree failures.
+code-host failure. Two other clone failures SHALL count as working-tree failures: a clone whose
+failure the tree provider cannot tell was unanswered, and a token mint that fails inside a
+clone, unless that mint's run records a cure key.
 
 Which surface's call threw SHALL be known from the call itself, and SHALL NOT be read back out of
 the error's wording.
@@ -181,12 +183,16 @@ turns out to be part of an outage stands, and lifts like any other.
 **A fault in the Igor's own setup is not the item's failure.** A failure whose run records a
 *cure key* SHALL NOT count toward any item's breaker; its row says that it recorded one. A cure
 key is what #101's `condition-backoff` change records for a fault in the Igor's own setup, such as
-a seat whose token is unset, naming what would cure it.
+a seat whose token is unset, naming what would cure it. A call the tracker or code host refuses
+because the GitHub App lacks a permission is such a fault: its run SHALL record a cure key naming the
+permission, so a refusal every item meets for that reason sets no item down (Adam, 2026-10-21).
+How such a 403 is told from other refusals is measured by task 0.1; until it can be told, it
+counts as a refused call.
 
 A failure before the worker that does not count, because an outage or the rule on two identical
 failures excluded it or because its run records a cure key, SHALL NOT start the count again
-either: the count passes over it. A run that started the worker starts the count again whether
-or not it records a cure key.
+either: the count passes over it. A run that started the worker starts the count again from zero
+whether or not it records a cure key.
 
 **What lifts a set-down.** A set-down SHALL lift on a person's change to the item, such as a
 reply or an edit, or on another role's successful run on it, such as a pull request that role
@@ -378,6 +384,13 @@ execution log failed to read. The run is refused, and its failure's row is still
   and each run records the same cure key
 - **THEN** none of the three counts toward its breaker, and the item is not set down
 
+#### Scenario: A missing App permission sets no item down
+
+- **WHEN** the GitHub App lacks the permission to add the claim label, and every item's claim is
+  refused with a 403 for it in three cycles in a row
+- **THEN** each run records a cure key naming the permission, none of the failures counts toward
+  its item's breaker, and no item is set down
+
 #### Scenario: The deferral lifts as a handoff's does
 
 - **WHEN** an item was set down by its breaker and a person then replies on it
@@ -461,8 +474,8 @@ Neither run SHALL count toward its item's breaker.
 never one of the two runs that end a cycle, and it does not separate two runs that are.
 
 **A refused call SHALL take no part in this rule either.** A failure before the worker whose
-tracker or code-host call was answered and refused, such as a 403 for a missing permission,
-counts toward its own item's breaker only. It is never one of the two runs that end a cycle, so
+tracker or code-host call was answered and refused, such as a 404 for an item deleted since
+discovery, counts toward its own item's breaker only, unless its run records a cure key. It is never one of the two runs that end a cycle, so
 the in-force scenario *A refusal about the item does not stop the cycle* holds, and it never holds
 the discovery watermark below the items after it. Like any failure that is not identical to the
 one before it, it separates the runs on either side of it.
@@ -505,7 +518,8 @@ worker that repeats sets the item down*).
 #### Scenario: Two identical refused calls on different items do not end the cycle
 
 - **WHEN** two runs in a row, of different items, fail before the worker because the tracker
-  refused adding the claim label, each with the same 403 that is not a rate limit
+  answered adding the claim label with the same 404, the items having been deleted since
+  discovery
 - **THEN** the cycle continues to the remaining items
 - **AND** each failure counts toward its own item's breaker
 

@@ -21,11 +21,14 @@ can read the row.
 - `source` is which surface's call threw: `tracker`, `code-host`, `tree` or `igor`.
 - `httpStatus` or `exitCode` holds the failure's status, where it has one. #99
   (`structured-failure-record`) asks for that status to be readable apart from the message.
-- `cured` says whether the run recorded a cure key, #101's name for a fault in the Igor's own
-  setup.
+- `cured` says whether the run recorded a cure key. A cure key is the name #101 records for a
+  fault in the Igor's own setup, saying what would fix it, such as `seat:<id>:token` for a seat
+  whose token is unset.
 - `fingerprint` is an unkeyed SHA-256 of the failure's masked message (*What "identical" means*,
   below). It exists to match repeats. Being unkeyed, it does not hide a message: someone who
-  guesses a masked message can confirm the guess.
+  guesses a masked message can confirm the guess. A secret shorter than 8 characters, which
+  credential redaction does not register, stays in the masked text, so it can be recovered from
+  a public row by trying every short string; that is accepted (proposal, decision 40).
 
 The failure's full message goes to the Igor process's own log on its server, which the server's
 journal keeps, after credential redaction. That rule is `task-execution`'s requirement
@@ -35,7 +38,8 @@ says what the rule matches. #217 builds the rule's function, `redact`, before th
 (the proposal's decision 14).
 
 A failure that records a cure key writes its `pre-worker` row, with `cured: true`, and also its
-ordinary run row, carrying `cures`: the row without a `kind` that the log holds for each run.
+ordinary run row in the execution log, the row without a `kind` that every run writes, whose
+`cures` field lists the cure keys.
 #101 builds its conditions from run rows that carry a cure key, never from a `pre-worker` row, so
 the run row is what keeps the fault visible to #101. For a thrown failure that records a cure key,
 the in-force code writes no run row, so this change writes one. #101 builds how `runItem` learns a throw's cure key.
@@ -143,19 +147,21 @@ decision 4). The wrapper also records whether the surface answered, by the respo
 message says it is a rate limit is no answer. GitHub answers both its primary and secondary rate
 limits with a 403 as often as a 429, so a 403 needs its message read. Only a `tracker` or
 `code-host` failure with no answer sets `surfaceFailed`, the mark on a run that the outage rule
-counts. A refused call, such as a 403 for a missing permission, counts toward its own item's
-breaker and toward nothing else (Adam, 2026-10-21; the proposal's decision 34): two identical
-ones on different items do not end the cycle under the identical-failure rule either, so the
-in-force scenario *A refusal about the item does not stop the cycle* holds. Since a refused
+counts. A refused call, such as a 404 for an item deleted since discovery, counts toward its own
+item's breaker and toward nothing else (the proposal's decision 34). A 403 for a permission the
+App lacks counts toward nothing at all, since its run records a cure key (decision 39). Two
+identical refused calls on different items do not end the cycle under the identical-failure rule
+either, so the in-force scenario *A refusal about the item does not stop the cycle* holds. Since a refused
 call never ends a cycle, it leaves no item unreached on its account. So the discovery watermark,
 which the proposal's decision 12 holds below the items an early-ended cycle never reached, is
 never held back for one.
 
 **A clone is the one working-tree call that can be the code host's.** A clone that fails because
 the code host did not answer is tagged `code-host`, with no answer, so two in a row end the cycle
-as an outage. The tree provider also mints its git token through the code host's credential, and
-a mint that fails inside a clone stays tagged `tree` (the proposal's decision 17): an expired
-clone token fails every item, and the identical-failure rule catches it (*A failure every item
+as an outage. The tree provider also mints its git token through the code host's credential. A
+mint that fails inside a clone stays tagged `tree` (the proposal's decision 17), and counts as a
+working-tree failure, unless it records a cure key (task 0.1 measures whether it does). An
+expired clone token fails every item that way, and the identical-failure rule catches it (*A failure every item
 meets ends the cycle*, below). git exits 128 for most failures, so how the tree provider tells
 that the code host did not answer a clone is unmeasured (task 0.1).
 

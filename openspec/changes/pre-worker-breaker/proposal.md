@@ -213,20 +213,22 @@ his answers of 2026-10-20, and 33 to 38 his answers of 2026-10-21:
 34. **A refused call never ends a cycle** (Adam, 2026-10-21). The in-force scenario *A refusal
     about the item does not stop the cycle* wins: a refusal about the item counts toward that
     item's set-down only, never toward ending the cycle or holding the watermark. Two identical
-    refused calls on different items, such as a 403 on adding the claim label to every item, no
-    longer end the cycle under the identical-failure rule, so decision 12 never holds the
-    watermark below the items after them. Like any failure that is not identical to the one
-    before it, a refused call separates the runs on either side of it. `NoCycleEndOnRefusal` in
-    the model.
+    refused calls on different items, such as a 404 on adding the claim label to items deleted
+    since discovery, no longer end the cycle under the identical-failure rule. So decision 12,
+    which holds the discovery watermark below the items a cycle ended early never reached, never
+    holds it back for them. Like any failure that is not identical to the one before it, a
+    refused call separates the runs on either side of it. The TLA+ model in `model/` checks this
+    as the invariant `NoCycleEndOnRefusal`.
 35. **A failed read of the item's claim messages is retried next cycle, then given back out
     loud** (Adam, 2026-10-21, amending decision 22). On the failing run the rank counts nothing,
     posts nothing and leaves the label. In its next cycle it reads the item's claim messages
     again. Where it then finds another rank's claim that counts, it drops out silently; where it
-    finds none, or still cannot read, it gives the claim back with the refusal post, the one a
-    run makes when it gives the claim back to be tried again next cycle. So a claim never ends in
-    silence, as the in-force *A claim that cannot be kept is given back, out loud* requires. The
-    claim-window failure whose read failed never counts toward the breaker, and nor does a
-    second failed read.
+    finds none, or still cannot read, it gives the claim back with the refusal post, the fixed
+    post (task 3.2) a run makes when it gives the claim back to be tried again next cycle. So a
+    claim never ends in silence, as the in-force *A claim that cannot be kept is given back, out
+    loud* requires. As decided, the claim-window failure whose read failed never counts toward
+    the breaker, and nor does a second failed read; whether to add a retry limit for that case
+    is held for Adam under *Still open*.
 36. **The refusals before a set-down name the failure in plain words** (Adam, 2026-10-21), like
     the set-down post (decision 31): where the run failed and its HTTP status or exit code, with
     no quote of the error. The full text goes to the process's own log.
@@ -239,11 +241,31 @@ his answers of 2026-10-20, and 33 to 38 his answers of 2026-10-21:
     records a cure key writes a `pre-worker` row marked `cured: true` beside its run row
     (decision 2).
 
+39. **A missing App permission records a cure key, so it sets no item down** (Adam,
+    2026-10-21). A call the tracker or code host refuses because the GitHub App lacks a
+    permission, such as a 403 on adding the claim label, is a fault in the Igor's own setup. Its run records a cure
+    key, #101's mechanism, naming the permission, so under *A fault in the Igor's own setup is
+    not the item's failure* it counts toward no item's breaker. Every item meeting the same 403
+    then cannot set the whole backlog down, which decision 34 alone, counting a refused call per
+    item, would allow.
+40. **The fingerprint stays unkeyed, and its weakness for a short secret is a known limit**
+    (Adam, 2026-10-21). Credential redaction (#217) registers no secret shorter than 8
+    characters, so a short secret in a failure's message, such as a 6-character proxy password,
+    stays in the masked text, and anyone reading a public state branch can recover it from the
+    row's unkeyed SHA-256 by trying every short string. *Rejected:* a keyed hash, such as an
+    HMAC under a key every process of the role holds and the state branch does not.
+
 **Still open:**
 
 - **The masks are unmeasured.** Nobody has checked that real repeated failures give one
   signature, the masked message `design.md` defines (task 0.1). If they never match, the breaker
   never trips, and every failure is retried as in the in-force code.
+- **How a missing-permission 403 is told from other refusals is unmeasured** (task 0.1).
+  #101 adds a cure key only from a structured verdict, never from a message's wording, and
+  GitHub's "Resource not accessible by integration" is a message. If no structured field tells
+  it apart, decision 39's cure key cannot be recorded, and such a 403 counts per item as
+  decision 34 has it. #101 has no delta adding this cure key, and a key that recurs stops the
+  role's scope under #101 (reported to #101).
 - **A refused App credential inside a clone is unmeasured** (task 0.1). The tree provider mints
   its clone token from the App's credential. Whether a refusal there reaches #101's App
   condition, and so records a cure key, or is tagged `tree` and counted per item, is not known.
@@ -289,22 +311,16 @@ his answers of 2026-10-20, and 33 to 38 his answers of 2026-10-21:
   - Missing scenarios: a 429 or rate-limit 403 counting toward the outage rule, a clone whose
     failure cannot be told unanswered, and masking after redaction.
 - **For Adam, from a second consistency read on 2026-10-21:**
-  - **The fingerprint can leak a short secret.** Credential redaction (#217) works two ways:
-    it replaces each secret on a list the Igor keeps of the secrets it holds, and separately it
-    matches GitHub and Anthropic tokens by their shape. A secret shorter than 8 characters is
-    never put on that list. So a short secret in a failure's message, such as a 6-character
-    proxy password in a URL, stays in the masked text. On a public state branch, anyone can
-    then recover it offline from the row's unkeyed SHA-256 by trying every short string. A
-    keyed hash, such as an HMAC under a key every process of the role holds and the state
-    branch does not, would prevent that.
-  - **A refusal every item meets.** Decision 34 counts a refused call, such as a 403 for a
-    missing App permission, per item only. Every item then gets the same 403, and after three
-    cycles the whole backlog is set down, the harm the identical-failure rule exists to stop.
-  - **A claim-window failure whose re-read also fails** counts nothing (decision 35). Take an
-    item whose claim messages can never be read, because the tracker returns a 5xx for them
-    every time. One cycle claims it and fails, the next rereads, fails again and gives it back,
-    and the pair repeats with no bound. That is the endless retry #155 asks the breaker to
-    end. The model leaves this case out because doing so is safe for its invariants.
+  - **A retry limit for an item whose claim messages cannot be read.** A claim-window failure
+    whose re-read also fails counts nothing (decision 35). Take an item whose claim messages can
+    never be read, because the tracker returns a 5xx for them every time. One cycle claims it
+    and fails, the next rereads, fails again and gives it back, and the pair repeats with no
+    bound. That is the endless retry #155 asks the breaker to end. The TLA+ model leaves this case
+    out, since leaving it out breaks none of its invariants. Until Adam answers, decision 35
+    stands. **Recommended:** count each pair that ends
+    in a failed re-read toward the item's breaker as one failure of source `tracker`, so the
+    third such pair in a row sets the item down with the set-down post, as any repeated failure
+    does; a read that succeeds, or another rank's claim found, starts the count again.
   - **A failed set-down post.** The item is deferred whatever the post does, so where the
     tracker is still failing nobody is told why it stopped; decision 23 calls this "no cost".
   - **Decision 17's rejection** of tagging a failed mint `code-host` gives a reason decision 4
@@ -315,12 +331,28 @@ his answers of 2026-10-20, and 33 to 38 his answers of 2026-10-21:
     through. This change does not record that it reverses that rejection, or answer it.
   - #141 makes a writer's reply or edit the only lift for any deferral, and uses "set down" for
     its own deferral; this change adds a lift on another role's successful run.
+- **From the consistency read of 2026-10-21's last round.** None is decided; the rules above
+  hold until each is settled.
+  - For Adam: a claim the tracker refuses before its claim message posts leaves the item
+    unchanged, so nothing moves its `updatedAt`. #101's watermark then passes the item, so it is
+    not tried again and its breaker never reaches three.
+  - For Adam: decision 35 holds a claim in silence for a cycle, or indefinitely after a restart,
+    against the in-force `graceful-handoff` rule that silence after a claim is never permitted.
+  - For the author: a claim-window refusal before a set-down posts nothing, or posts
+    `claimWithdrawn`, the fixed text saying a claim was withdrawn, never the plain-words post
+    decision 36 asks for.
+  - For the author: this change and #179 each say the other owns who posts the set-down; one
+    should state it and the other cite it.
+  - For the author: `deferred.json` prunes records after 30 days or past 500, which lifts a
+    set-down silently.
+  - For the author: recording a cycle ended by the identical-failure rule as failed is a choice
+    no decision states.
 - **For this change's next revision, from the same read:**
   - #101 tests whether a fault is cured by a probe run, and voids the probe where that run
     writes no run row. `design.md` says a thrown failure on a probe writes none, but this
     change has a thrown failure that records a cure key write one, so such a failure would end
-    the probe instead. And `design.md` says #101 builds how `runItem` learns a thrown failure's
-    cure key, but #101's branch as written gives a thrown run no cure keys (`standIn` in its
+    the probe instead. And `design.md` says #101 builds the way `runItem` learns a thrown
+    failure's cure key, but #101's branch as written gives a thrown run no cure keys (`standIn` in its
     `src/loop.ts`). The rows this change writes for thrown cure-key failures then rest on
     nothing; it needs a task, or #101 a change.
   - Before a set-down, a claim-window failure posts `claimWithdrawn`, which names no failure

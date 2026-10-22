@@ -7,11 +7,13 @@
       match, change the masks; a breaker whose signatures never match never trips, and every
       failure is retried as in the in-force code.
       Check too that a tracker call answered 404 and one answered 500 give different
-      signatures. Also capture a clone whose token mint the code host refuses because the App's
+      signatures. Also capture a 403 for a permission the App lacks, such as on adding the claim
+      label, and record which field of the response, other than its message, tells it from any
+      other 403 (`proposal.md`, decision 39), so that 3.4a can record its cure key. Also capture a clone whose token mint the code host refuses because the App's
       credential is refused. Record whether, during the run of the item whose clone failed, the
       failure reaches #101's App condition and so records a cure key. Also capture a clone the
       code host does not answer, and record how the tree provider can tell it from a clone the
-      code host refused: git exits 128 for both
+      code host refused, since git exits 128 for both. Each capture feeds a mask or a tag above
 - [ ] 0.2 Sections 2 to 4 wait until `condition-backoff` (#101) merges (Adam, 2026-10-18), and
       until #213's redaction function merges (pull request #217; Adam, 2026-10-20). Tasks 3.1
       and 4.1 call that function
@@ -121,11 +123,17 @@
       `pre-worker` row is still written. Where a role runs several ranks under #179, only the
       rank holding the claim does any of this; a rank that another rank's claim outranks drops
       out silently, writing no `pre-worker` row. Rank 0, `igor run`'s, is one of those ranks.
-      In the claim window, 3.3's test of the item's claim messages decides instead. Before
+      In the claim window, task 3.3's test of the item's claim messages, not the holder rule,
+      decides which rank counts and posts. Before
       posting a set-down, read the item's record in `deferred.json`; where it holds a set-down by
       this role that has not lifted, post no set-down, and give the claim back with the refusal,
-      leaving out its "It will try again next cycle" (Adam, 2026-10-20). `deferred.json` is
-      keyed by item alone, so a set-down's record names its role
+      leaving out its "It will try again next cycle" (Adam, 2026-10-20). `deferred.json` holds
+      one record per item, not per role, so a set-down's record must name its role for this
+      check to tell whose set-down it is
+- [ ] 3.4a A call the tracker or code host refuses because the GitHub App lacks a permission
+      records a cure key under #101's mechanism, naming the permission, once task 0.1 has found
+      how to tell such a 403, so the breaker does not count it (proposal,
+      decision 39). Test: *A missing App permission sets no item down*
 - [ ] 3.5 The threshold is a named constant, 3, with a comment saying why three
 - [ ] 3.6 Tests, one per scenario in *A failure before the worker that repeats sets the item
       down*, including a restart (a fresh loop reading the same rows) and a deferral lifted by
