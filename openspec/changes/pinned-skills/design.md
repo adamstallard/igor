@@ -238,8 +238,8 @@ Igor at another directory of skills, the same reason #175 keeps its worker user 
 `igor.config.yaml`. A lore file that names `skills_dir` is refused by the strict unknown-key
 check, with no message of its own.
 
-Two smaller choices here are the authoring agents', which Adam accepted on 2026-10-19
-(proposal, decision 19). `IGOR_SKILLS_DIR` must be absolute, so it never depends on the directory Igor starts in.
+Two of the six smaller choices in proposal decision 19, which the authoring agents made and Adam
+accepted on 2026-10-19, govern `skills_dir`. `IGOR_SKILLS_DIR` must be absolute, so it never depends on the directory Igor starts in.
 Which skills Igor expects is read from the directory itself: every entry under
 `<skills_dir>/skills/`.
 
@@ -249,19 +249,21 @@ naming the path, and exits with status 78.
 **Where `skills_dir` does not exist, `igor run` uses the skills the person installed (Adam,
 2026-10-19, answering question 10 of #153's *For Adam* list; proposal, decision 20).** `/opt/igor/skills` is the server's path, but a person's machine
 has skills too: the shared-skills manager installs each one in the person's home as an entry of
-`~/.claude/skills`, a link into the person's shared-skills clone. The manager's own skill,
+`~/.claude/skills`, a link into the person's shared-skills clone; a skill is an entry, a link or a
+directory, whose top level holds a `SKILL.md`. The manager's own skill,
 `manage-skills`, is a copied directory instead. A run's `HOME` is its own home (decision 23), so Claude Code does not find them there,
 and Igor passes them explicitly:
 
 1. Igor reads `~/.claude/skills` from the `HOME` it started with, the person's own, before it
-   sets the worker's `HOME` to the run's home. A skill is an entry that holds a `SKILL.md`.
+   sets the worker's `HOME` to the run's home.
 2. `--plugin-dir` takes a plugin directory, which `~/.claude/skills` is not: it has no
    `.claude-plugin/plugin.json` and no `skills/` level. So Igor assembles one for the run, in
-   its state directory beside the run's home, such as
-   `~/.local/state/igor/plugin/<role>-<run>`. It holds `.claude-plugin/plugin.json`, as
+   its state directory beside the run's home, at a path whose name holds the run's id, such as
+   `<state directory>/plugin/<role>-<run>`, where the state directory is the one decision 32
+   names. It holds `.claude-plugin/plugin.json`, as
    `{"name": "igor", "version": "0.0.0", "description": "the person's installed skills"}`, and
-   under `skills/` one link per skill, to the entry's resolved path, so each link goes straight
-   to a directory, as the manager's own links do.
+   under `skills/` one link per skill, to the entry's resolved path. Each link then points
+   straight at a directory, never through a chain of links, as the manager's own links do.
 3. For the run, that directory is `skills_dir`. Every call that carries `--plugin-dir` names it,
    each skill loads as `igor:<name>`, and the startup check runs against it, including its refusal of a
    directory holding anything but `.claude-plugin/plugin.json` and `skills/`. #153's check of a role's skill names reads it too.
@@ -269,9 +271,9 @@ and Igor passes them explicitly:
 
 The startup check reports each skill's commit as it does on a server. The person's clone is
 owned by the user Igor runs as, so Igor reads its commit without the `-c safe.directory` option
-it passes for a root-owned clone (proposal, decision 19). The copy of `manage-skills` is in no
-clone, and its commit is reported as not checked. The run says as it starts
-that it loaded the person's skills, naming `~/.claude/skills`.
+it passes for a root-owned clone (proposal, decision 19). The copied `manage-skills` directory
+is in no clone, so its commit is reported as not checked. As the run starts, before the startup
+check, it prints a line saying it loaded the person's skills, naming `~/.claude/skills`.
 
 Where `~/.claude/skills` is missing or holds no skill either, the run loads none: no call
 carries `--plugin-dir`, no startup check is made, and the run says so as it starts, naming
@@ -330,8 +332,9 @@ and the repository's local and nested files as well.
 ### The worker's home, and its reset before every model step
 
 **Decided by Adam, 2026-10-17: the worker runs in a home that lasts, and Igor resets that
-home's `~/.claude` and `~/.claude.json` from a built-in template before each model step.** Adam set the
-reset per step, not per `claude -p`, on 2026-10-21 (proposal, decision 31).
+home's `~/.claude` and `~/.claude.json` from a built-in template before each model step.** A model step is the worker,
+or one of #153's later steps; Adam set the reset per step, not per `claude -p`, on 2026-10-21
+(proposal, decision 31), since one step may make two calls.
 `--setting-sources user` still loads the user's settings, skills and `CLAUDE.md` from
 `~/.claude`, and the worker writes its home, so without a reset a worker steered by an item's text could
 plant hooks, a `CLAUDE.md`, skills or an MCP server for every later call. Task 5.3's note to the
@@ -343,10 +346,12 @@ Which home:
   where `<rank>` numbers the instances of one role (#179).
 - **Without one:** a home for each `igor run`, under Igor's state directory, the directory where
   Igor keeps its own files on the machine, named by the run's id, such as
-  `~/.local/state/igor/home/<role>-<run>` (Adam, 2026-10-19). Igor sets it as the worker's
-  `HOME` and removes it when the run ends, so two runs of one role at once share no home. The
-  run id is the one #179 gives each run, which the run's trees also carry. Having no worker user
-  is #175's same-user mode, `igor run`, where the worker runs as the user Igor runs as. The worker then never loads the `~/.claude` of the user Igor runs as,
+  `<state directory>/home/<role>-<run>` (Adam, 2026-10-19), the state directory being the one
+  #216 defines (proposal, decision 32). Igor sets it as the worker's
+  `HOME` and removes it when the run ends. The run id is the one #179 gives each run, which the
+  run's trees also carry; since the home's name holds it, two runs of one role at once share no
+  home. Only `igor run` runs with no worker user, #175's same-user mode, where the worker runs as
+  the user Igor runs as. The worker then never loads the `~/.claude` of the user Igor runs as,
   whether that is the service user or a person running `igor run` on their own machine.
 
 What the template holds. It ships with Igor, in its installation, which #175's start check

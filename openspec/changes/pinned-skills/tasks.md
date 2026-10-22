@@ -58,7 +58,7 @@
 - [ ] 1.3 Where `skills_dir` does not exist, `igor serve` refuses to start, exiting 78. `igor
       run` instead reads the entries holding a `SKILL.md` in `~/.claude/skills` of the `HOME` it
       started with, before it sets the worker's `HOME`, and assembles a plugin directory for the
-      run in its state directory, such as `~/.local/state/igor/plugin/<role>-<run>`: a
+      run in its state directory, such as `<state directory>/plugin/<role>-<run>`: a
       `.claude-plugin/plugin.json` of
       `{"name": "igor", "version": "0.0.0", "description": "the person's installed skills"}`,
       and under `skills/` one symbolic link per entry, to its resolved path. That directory is the
@@ -71,7 +71,8 @@
       ```
 
       Where `~/.claude/skills` is missing or holds no such entry, the run passes no
-      `--plugin-dir`, makes no startup check, and prints this as it starts (may be reworded):
+      `--plugin-dir`, makes no startup check, and prints this as it starts (the line may be
+      reworded, keeping what it says):
 
       ```
       ! neither <configured path> nor ~/.claude/skills holds a skill, so this run loads no skills
@@ -79,9 +80,9 @@
 
       Tests: `serve` refuses with that path named and exits 78; `run` with a person's
       `~/.claude/skills` holding two linked skills assembles a directory whose `skills/` links
-      to their resolved paths, every call but the usage read carries `--plugin-dir` naming it,
+      to their resolved paths, every call carries `--plugin-dir` naming it (#175's task 1.10 has removed the usage read),
       the startup check runs against it, and it is gone once the run ends; `run` with neither
-      prints the second line, and no call's arguments carry `--plugin-dir`
+      prints the second fenced line above, and no call's arguments carry `--plugin-dir`
 
 ## 2. The flag on every call
 
@@ -100,11 +101,11 @@
       `--strict-mcp-config`; no call's arguments include `--bare`
 - [ ] 2.3 The worker's home: with #175's worker user, that user's own home; without one, a
       home for the `igor run`, under Igor's state directory, named by the run's id, such as
-      `~/.local/state/igor/home/<role>-<run>`. It is created when the run first needs it, passed
+      `<state directory>/home/<role>-<run>`. It is created when the run first needs it, passed
       as the worker's `HOME`, and removed when the run ends, on an error too. The run's id is the
       one #179 gives each `igor run`, which its trees also carry
 - [ ] 2.4 The template, shipped in Igor's installation, holding exactly these two files (not to
-      be reworded), and no skills and no `CLAUDE.md`. Task 0.3's measurement ran on them:
+      be reworded), and no skills and no `CLAUDE.md`. Task 0.3's measurements of a home just reset from the template ran on them:
 
       `.claude/settings.json`:
 
@@ -126,9 +127,10 @@
       its model steps to call this reset first, as it calls 2.1's argument builder
 - [ ] 2.6 With a worker user, before every reset, kill every
       process that user owns, by user or by the user's systemd slice, whichever the
-      implementer finds works (Adam left the means open). Not by process group: each command a
-      worker runs starts in a session of its own (#175's measurement 6.2). Build it once #175's
-      `sudo` spawn exists
+      implementer finds kills them all in the tests below (Adam left the means open). Not by
+      process group: each command a worker runs starts in a session of its own, as #175's
+      measurement 6.2 found. #175 is built before this change, so its `sudo` spawn exists by
+      then
 - [ ] 2.7 Tests: a hook, a `CLAUDE.md` and a skill a worker wrote under `~/.claude`, and an MCP
       server it wrote into `~/.claude.json`, are gone before the next worker and before a model
       step after the worker; so is a `~/.claude/.credentials.json`; `~/.gitconfig` and a file
@@ -137,14 +139,20 @@
       homes, and a run's home is gone once it ends; the kill names the worker user and runs before
       every reset, including the one before #153's first step after the worker; a step's
       `claude -p --resume` runs with no reset before it and finds the step's session
-- [ ] 2.8 When the worker exits, copy its session log, the file under `~/.claude/projects/` for
-      its session id, into Igor's state directory (`/var/lib/igor` under the unit,
-      `~/.local/state/igor` elsewhere) before any reset of that home, mode `0600`. With a worker
+- [ ] 2.8 When each model step in the worker's home exits (the worker, #153's later steps, and
+      #189's second worker run), copy its session log, the file under `~/.claude/projects/` for
+      its session id, into Igor's state directory before the next reset of that home (decision
+      33), mode `0600`. The state directory is the one #216's `graceful-handoff` requirement
+      *A handoff states what was done, what remains, and who could continue* defines (decision
+      32). With a worker
       user, read it as that user through #175's spawn, opened without following a link and only
       where `fstat` shows a regular file whose hard-link count is 1. The run's record in `executions.ndjson`
-      names the copy's path beside its session id, or says the log was not copied. Redact the
+      names each copy's path, where Igor wrote it, beside its step's session id, or says the log
+      was not copied. Where #216 later fails to move a copy, the record's path is still right
+      (decision 34). Redact the
       log as it is copied, with `redact` from #217's `src/redact.ts` (proposal, decision 29).
-      Tests: a seat token the worker printed reads `[redacted]` in the copy; after
+      Tests: each of the worker's, the bug hunt's and the prose pass's logs is copied and named in
+      the record; a seat token the worker printed reads `[redacted]` in the copy; after
       the worker exits and a later call resets the home, the record names a file that still
       exists and holds the log; a log replaced by a link to a file only Igor can read is not
       copied, and the record says so

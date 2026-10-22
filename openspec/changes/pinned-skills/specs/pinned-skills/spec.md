@@ -22,16 +22,17 @@ with status 78.
 Where `skills_dir` does not exist, `igor run` SHALL use the skills the person installed: the
 entries holding a `SKILL.md` in `~/.claude/skills` of the `HOME` Igor starts with, read before
 Igor sets the worker's `HOME` to the run's home. Igor SHALL assemble a plugin directory for the
-run in its state directory, at a path of Igor's choosing named by the run's id (for example
-`~/.local/state/igor/plugin/<role>-<run>`), holding a `.claude-plugin/plugin.json` naming the plugin `igor` and, under `skills/`, one symbolic link
+run in its state directory, at a path of Igor's choosing whose name holds the run's id (for example
+`<state directory>/plugin/<role>-<run>`), holding a `.claude-plugin/plugin.json` naming the plugin `igor` and, under `skills/`, one symbolic link
 per such entry, to the entry's resolved path. For that run, that directory SHALL be
-`skills_dir`, and every rule of this capability that names `skills_dir` applies to it. The run
+`skills_dir`, and every rule of this capability that names `skills_dir` applies to it; none of
+them requires a skill to be at a particular commit, so none is exempt. The run
 SHALL remove the directory when it ends, and SHALL say as it starts that it loaded the person's
-skills, naming `~/.claude/skills`. These skills are not pinned, and the worker can write them;
-both are limits of `igor run`.
+skills, naming `~/.claude/skills`. That these skills are not pinned, and that the worker can
+write them, are limits of `igor run`.
 
-Where `~/.claude/skills` is missing or holds no such entry either, `igor run` SHALL load no
-skills: no call it makes SHALL carry `--plugin-dir`, it SHALL make no startup check (*Igor
+Where `skills_dir` does not exist and `~/.claude/skills` is missing or holds no such entry,
+`igor run` SHALL load no skills: no call it makes SHALL carry `--plugin-dir`, it SHALL make no startup check (*Igor
 confirms its skills load before its first model call*), and it SHALL say as it starts that the
 skills were not loaded, naming `skills_dir` and `~/.claude/skills`.
 
@@ -154,8 +155,10 @@ to keep them out.
 
 With a worker user (#175), the worker's home SHALL be that user's own home, and it SHALL last
 across runs. With none, each `igor run` SHALL have a home of its own in Igor's state directory, the
-directory where Igor keeps its own files on the machine, named by the run's id, such as
-`~/.local/state/igor/home/<role>-<run>`, where `<run>` is the run id each `igor run` picks
+directory where Igor keeps its own files on the machine, which `lore-search` (#216) defines in
+its `graceful-handoff` requirement *A handoff states what was done, what remains, and who could
+continue*. The home is named by the run's id, such as
+`<state directory>/home/<role>-<run>`, where `<run>` is the run id each `igor run` picks
 under #179 (`concurrent-instances`), whose *The sweep removes trees by rank, never by age* defines
 it because the run's trees carry it too. Igor SHALL set the worker's `HOME` to it, and SHALL
 remove it when the run ends. No two runs share a home, and within one run the home lasts across
@@ -164,8 +167,8 @@ same-user mode; `igor run` is the one command that runs that way (#175).
 
 Before every model step Igor starts in that home, Igor SHALL replace `~/.claude` and
 `~/.claude.json` with a fresh copy of a template that ships with Igor, keeping nothing of what
-was there, a stored login in `~/.claude/.credentials.json` included. The steps Igor starts in
-that home are the worker and the model steps #153 runs after it, such as the prose pass and the
+was there, a stored login in `~/.claude/.credentials.json` included. A model step is one
+`claude -p` session Igor starts for a run; the model steps Igor starts in that home are the worker and the model steps #153 runs after it, such as the prose pass and the
 bug hunt. Triage and the startup check do not run there. Igor SHALL NOT reset the home between the calls of one step, so
 a `claude -p --resume` finds the session its step's first call left. Under `igor run`, Igor
 SHALL neither hide nor refuse a login the
@@ -190,8 +193,9 @@ Nothing else in the home SHALL be reset: `~/.gitconfig`, and the files a reposit
 cache in the home, persist for as long as the home does.
 
 With a worker user, before every reset, Igor SHALL kill every process that user owns, either by
-user or by the user's systemd slice; either way meets this requirement, and a kill of the
-worker's process group alone does not. #175's *A kill, a release and a sweep reach what the
+user or by the user's systemd slice; either way meets this requirement, while a kill of the
+worker's process group alone does not meet it, since each command a worker runs starts in a
+session of its own. #175's *A kill, a release and a sweep reach what the
 worker owns* makes the same kill before a tree is released, so no such process outlives its
 task.
 
@@ -268,18 +272,27 @@ task.
 
 ### Requirement: The worker's session log outlives the reset
 
-When the worker exits, Igor SHALL copy its session log, the file Claude Code writes for the
-session under `~/.claude/projects/`, into Igor's state directory, before any reset of that home.
-Igor SHALL redact the log as it copies it, with credential redaction, as #217's
-(`redact-state-branch`) *Credential redaction replaces every credential the Igor knows* defines
-it, so that the copy never holds a credential the worker printed, such as its seat's token.
-The state directory is `/var/lib/igor` under the shipped unit, and `~/.local/state/igor`
-elsewhere. Only the user Igor runs as SHALL be able to read the copy. With a worker user, Igor
+When each model step Igor starts in the worker's home exits, Igor SHALL copy that step's session
+log, the file Claude Code writes for the session under `~/.claude/projects/`, into Igor's state
+directory, before the next reset of that home. The steps are the worker, the model steps #153
+runs after it, and #189's second run of the worker after a failed check. Igor's state directory
+is the one #216's `graceful-handoff` requirement *A handoff states what was done, what remains, and who could continue* defines.
+
+Igor SHALL redact each log as it copies it, with credential redaction, as `redact-state-branch`
+(#217) defines it in *Credential redaction replaces every credential the Igor knows*, where *the
+Igor* is a running Igor process, so that the copy holds no credential Igor registered that the worker printed, such as its
+seat's token.
+Only the user Igor runs as SHALL be able to read the copy. With a worker user, Igor
 SHALL read the log as that user, without following a link and only where it is a regular file
-whose hard-link count is 1, as #175's (`worker-user`) requirement *The Igor reads no file on the worker's behalf through a link* reads a
-file the worker wrote; a log that fails that is not copied, and the record says so. The run's
-record in the execution log (`executions.ndjson` on the state branch) SHALL name the copy's path
-beside the session id it already records.
+whose hard-link count is 1, as #175's (`worker-user`) requirement *The Igor reads no file on the
+worker's behalf through a link* has the Igor read any file the worker wrote; a log that fails that is not copied, and the record says so.
+
+The run's record in the execution log (`executions.ndjson` on the state branch, the git branch
+in the lore repository where Igor keeps its records, not the state directory on its host) SHALL
+name each copy's path, where Igor wrote it, beside the session id of its step. For a flagged execution,
+#216 then moves the copies into its `flagged-questions` directory. A copy whose move #216
+refused stays where Igor wrote it (#216's decision 102), so the record may name a copy that #216
+could not move, and that path still holds the copy.
 
 #### Scenario: The record points at a log the reset did not delete
 
@@ -287,6 +300,13 @@ beside the session id it already records.
 - **THEN** a copy of the worker's session log is in Igor's state directory, readable by Igor's
   user alone
 - **AND** the run's record names that copy, which the reset left in place
+
+#### Scenario: Every step's session log is copied
+
+- **WHEN** the worker exits, and #153's bug hunt and prose pass then run in the same home, each
+  after a reset
+- **THEN** the state directory holds a copy of each of the three steps' session logs
+- **AND** the run's record names each copy beside its step's session id
 
 #### Scenario: A token the worker printed is redacted in the copy
 

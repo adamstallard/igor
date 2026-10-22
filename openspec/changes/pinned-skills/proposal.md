@@ -126,10 +126,11 @@
     is reported as not checked, and the start goes on; Igor reports each skill's commit but does
     not refuse one older than decision 4's `075a73a`; Igor trusts a skill's clone for that read
     only when root owns it, since trusting a clone turns off git's guard against running
-    configuration another user controls, and Igor also turns git's file-system monitor off for
-    that read; and the start is refused when `skills_dir` holds anything but
-    `.claude-plugin/plugin.json` and `skills/`, so
-    the plugin cannot add a hook, an MCP server, a command or an agent to every call.
+    configuration another user controls, and for the same reason it turns git's file-system
+    monitor off for that read, so the clone's configuration cannot name a program for git to
+    run; and the start is refused when `skills_dir` holds anything besides
+    `.claude-plugin/plugin.json` and `skills/`, so the plugin cannot add a hook, an MCP server, a
+    command or an agent to every call.
 
 20. **Where `skills_dir` does not exist, `igor serve` refuses to start, and `igor run` uses the
     skills the person installed** (Adam, 2026-10-19; the half for `igor run` amended the same
@@ -144,20 +145,22 @@
     - **How it passes them:** `--plugin-dir` takes a plugin directory, with
       `.claude-plugin/plugin.json` and `skills/`, which `~/.claude/skills` is not. So Igor
       assembles one for the run in its state directory, such as
-      `~/.local/state/igor/plugin/<role>-<run>`: a `plugin.json` naming the plugin `igor`, and
+      `<state directory>/plugin/<role>-<run>`: a `plugin.json` naming the plugin `igor`, and
       under `skills/` one link per entry of `~/.claude/skills` that holds a `SKILL.md`, to that
       entry's resolved path. For that run, this directory is `skills_dir`: every call that
       carries `--plugin-dir` names it, the startup check checks it, and #153's check of a
       role's skill names reads it. The run removes it when it ends.
     - **Where `~/.claude/skills` holds no skill either:** the run loads no skills. No call
-      carries `--plugin-dir`, no startup check is made, and the run says so as it starts, naming
-      `skills_dir` and `~/.claude/skills`. #153 refuses a role that lists a skill not installed, wherever a model step runs,
-      a dry run included, so such a run starts only for a role whose `skills` list is empty.
+      carries `--plugin-dir`, no startup check is made, and the run says as it starts that the
+      skills were not loaded, naming `skills_dir` and `~/.claude/skills`. Under #153, every command that runs a model step
+      refuses a role that lists a skill it does not load, so such a run starts only for a role
+      whose `skills` list is empty. Which skills a dry run loads is open (*Still open*).
 
     The run says as it starts which skills it loaded and from where. The person's skills are
     not pinned: they are at whatever commit the person's clone is at, which the manager's
-    `update` moves by pulling the clone. Like `skills_dir` itself in same-user mode (decision 25), the worker can write them.
-    Both are limits of `igor run`.
+    `update` moves by pulling the clone. And the worker can write them, as it can `skills_dir`
+    itself in same-user mode (decision 25). Their being unpinned and writable are both limits of
+    `igor run`.
     *Rejected:* refusing under `igor run` too, which would stop every development run on a
     machine without `/opt/igor/skills`; loading no skills under `igor run`, which the first
     half of this decision had, and under which #153 refuses every role whose `skills` lists
@@ -169,10 +172,9 @@
     #171's *A spend with no seat behind it is not made*, #82's *A process that refuses to start
     exits with status 78*, #179's ranks, and #153's `skills` list, prose pass and bug hunt, and
     issue [#204](https://github.com/adamstallard/igor/issues/204) archives all four after this
-    one. Decision 29 adds a fifth citation: the session log's copy is redacted with the function
-    #217 builds for its *Credential redaction replaces every credential the Igor knows*, and
-    #204 archives #217 after this change too. Whether this decision's acceptance covers that
-    fifth citation, as it covers the four Adam accepted, is his to confirm (*Still open*). Until they archive, the in-force text cites rules not yet in force; every cited change
+    one. Decision 29 also cites #217's *Credential redaction replaces every credential the Igor
+    knows*, but #204 archives #217 before this change, so that citation is not ahead and needs
+    no acceptance. Until the four archive, the in-force text cites rules not yet in force; every cited change
     archives in the same series.
 22. **In same-user mode the reset may follow a link** (Adam, 2026-10-19). The worker can make
     `~/.claude` or `~/.claude.json` a link to a file the person owns, and a reset run as the
@@ -180,7 +182,7 @@
     its limits. *Rejected:* a reset that never follows a link, which the authoring agents
     recommended.
 23. **Each `igor run` has a home of its own, removed when the run ends** (Adam, 2026-10-19). The
-    home is named by the run's id, such as `~/.local/state/igor/home/<role>-<run>`, under Igor's
+    home is named by the run's id, such as `<state directory>/home/<role>-<run>`, under Igor's
     state directory, so two `igor run`s of one role at once share no home and neither's reset
     replaces `~/.claude` under the other's call. The run id is the one #179 gives each run, which its
     trees also carry, and the run removes only its own trees (#179, #175). Within one run the home lasts across its tasks.
@@ -243,6 +245,20 @@
     this per-step reset of the run's home, with the session log's copy of decision 26, over
     giving each run a Claude Code configuration directory of its own (`CLAUDE_CONFIG_DIR`),
     which #216 had proposed. #216 is to cite this change for the reset.
+32. **`lore-search` (#216) owns the definition of Igor's state directory** (Adam, 2026-10-21):
+    `$STATE_DIRECTORY`, else `$XDG_STATE_HOME/igor`. This change cites #216's `graceful-handoff`
+    requirement *A handoff states what was done, what remains, and who could continue*, which
+    defines it, and names no path itself. #216 has no place yet in issue #204's archive order,
+    so until it archives, this change's spec cites a requirement not yet in force.
+33. **Every step's session log is copied before the next reset** (Adam, 2026-10-21, #216's
+    decision 98): the worker's, those of #153's later model steps, and #189's second worker
+    run's, each redacted with #217's `redact` as decision 29 has it. #216 keeps every step's log
+    of a flagged execution, and an execution is known to be flagged only once it ends, so every
+    step's log is copied. Decision 26 copied the worker's alone.
+34. **The execution record may name a log copy that #216 could not move** (Adam, 2026-10-21,
+    #216's decision 102). The record names each copy where Igor wrote it. #216 moves a flagged
+    execution's copies into `flagged-questions`, and a copy whose move it refused stays at the
+    path the record names.
 
 **Still open:**
 
@@ -250,23 +266,22 @@
   lets a seat name no token and run on the login stored on the host, which decision 17 forbids;
   an organization with no seats runs its calls that way too. Under this change no call runs
   without a seat: the startup check spends a seat it probes or one the gate names (decision
-  28), and every other call comes after it. Nothing in this item is for Adam to decide: #171's
-  code is built first (decision 30), so the code never runs on the ambient login. The item
-  records only that the archived specs allow it until #171 archives.
+  28), and every other call comes after it. This item is a note, not a question: #171's code is
+  built first (decision 30), so the code never runs on the ambient login, and the item records
+  only that the archived specs allow it until #171 archives.
 - **A home a crashed `igor run` left.** Decision 23 removes a run's home when the run ends, and
   a run that crashes leaves it under Igor's state directory, holding no token, since the seat's
   token reaches a call only through its environment. The plugin directory a run assembles from
   the person's skills (decision 20) is left beside it. Nothing removes either but the person.
-  #175 asks Adam the same of a crashed run's trees, and recommends leaving both to the person,
-  with the docs for `igor run` saying where they are.
-- **Questions from the 2026-10-21 consistency read, for Adam:**
-  - **Decision 21's fifth citation.** Whether Adam's acceptance of citations ahead of the
-    archive order covers this change's citation of #217, added by decision 29.
+  #175 asks Adam the same of a crashed run's trees, and recommends leaving the trees and this
+  home, with its plugin directory, to the person, with the docs for `igor run` saying where they
+  are.
+- **Questions from the 2026-10-21 consistency read, for Adam,** none yet answered:
   - **The check as a probe denies no tools.** #143's probe runs with no tools and on
     `TRIAGE_MODEL`; the check carries `--plugin-dir` and `--model haiku`, and whether a call
-    with no tools still lists its skills in `system/init` is unmeasured. Either the check keeps
-    its own arguments as an exception to #143's minimal probe, or it denies tools once a
-    measurement shows the list survives.
+    with no tools still lists its skills in `system/init` is unmeasured. Adam chooses: the check
+    keeps its own arguments as an exception to #143's minimal probe, or it denies tools once a
+    measurement shows the list survives. No recommendation until that measurement.
   - **A probe #143 refuses to spawn.** Where #143's check of the probe's two directories (*A
     seat probe runs where only the Igor can write*) fails, the probe is
     recorded as errored and held off by the hourly limit and the five-hour back-off. Whether
@@ -275,11 +290,20 @@
   - **A dry run** makes a triage call but is neither `igor serve` nor `igor run`, so which
     skills it loads where `/opt/igor/skills` is missing is unsaid, and #153's name check needs
     that set.
-  - **Igor's state directory** is defined here as `/var/lib/igor` under the unit or
-    `~/.local/state/igor`, and in #216 through `$STATE_DIRECTORY` and `$XDG_STATE_HOME`; one
-    change should own the definition. Under the shipped unit on `main`, `/var/lib/igor` is not
-    writable: the unit gains `StateDirectory=` only
-    in #179's task 1.8, which this change does not cite.
+- **From the last consistency read of 2026-10-21, for this change's authors.** Each is a fix to
+  make in this text; none is decided:
+  - Task 1.10 of #175, built before this change, removes the usage read, so this change should
+    drop its exception and scenario for that read.
+  - When the startup check is a seat's first probe, its spend should be recorded as a probe,
+    so #143's hourly limit and back-off count it.
+  - The scenario on a session log replaced by a link passes on permissions alone; a link to a
+    file the worker user can read would test the rule.
+  - Nobody has measured that Claude Code keeps nothing under `HOME` outside the two reset
+    paths; that needs a task.
+  - Under the shipped systemd unit, the run's home is under `/var/lib/igor`, not
+    `~/.local/state`, so decision 16's stated reason needs rewording.
+  - The session log copy's mode `0600`, and exit 78 under `igor run`, need decisions of their
+    own.
 - **Other findings of the 2026-10-21 consistency read, for this change's authors:** the session
   log's copy reads the log without following a link and only as a regular file with one link,
   but #175's *The Igor reads no file on the worker's behalf through a link* also has an `lstat`
