@@ -241,10 +241,10 @@
     in the developer's own home, beside their own Claude login, and still spends the token:
     #174's measurement 0.3 found that a valid token in the environment wins over a stored login,
     and that an invalid one fails rather than falling back to the login.
-25. **`igor run` sweeps only the trees it made** (Adam, 2026-10-18; narrowed to its own run on
-    2026-10-19, decision 39). Under #179 `run` is rank 0, outside the roster, so its trees are
-    named `<role>-0-<id>`. It removes only its own, as the Igor's own user and
-    with no `sudo`, since its worker runs as that user. It never removes a tree a `serve` instance left. No worker user
+25. **`igor run` sweeps only rank-0 trees of its own role** (Adam, 2026-10-18; which of them,
+    decision 39). Under #179 `run` is rank 0, outside the roster, so its trees are named
+    `<role>-0-<id>`. It removes them as the Igor's own user and with no `sudo`, since its worker
+    runs as that user. It never removes a tree a `serve` instance left. No worker user
     `igor-worker-<role>-0` is needed, because no other user ever acts on a rank-0 tree: under
     #179 a serving rank never removes one.
 26. **Decision 21 needs no seat mechanism of #171's** (checked 2026-10-18). Seats that name
@@ -340,14 +340,19 @@
 38. **The start check reads `sudo -n -l`, and refuses with status 78 unless `!log_allowed` applies
     to the service user** (Adam, 2026-10-19). Without it, sudo writes the seat token to the
     journal on every worker start, and nothing else notices.
-39. **Each `igor run` has a run id, its trees carry it, and it removes only those** (Adam,
-    2026-10-19). #179's *The sweep removes trees by rank, never by age* gives the run id and the
-    tree names, and has `igor run` make no startup sweep. Two `igor run`s of one role are both
-    rank 0, so a sweep of every rank-0 tree, which this change first specified, removed the
-    other run's live tree. Each run also gets its own worker home, the `HOME` #174 sets for the
-    run's `claude -p` calls, which #174 removes when the run
-    ends. A tree a crashed run left carries a run id no later run has, so no run removes it
-    (*Still open*).
+39. **Each `igor run` has a run id, which its trees carry; a run removes its own trees, and a
+    gone run's trees and home, never a live run's** (Adam, 2026-10-19 and 2026-10-21). #179's
+    requirement *The sweep removes trees by rank, never by age* gives the run id and the tree
+    names, and states the sweep; this change cites that requirement, ahead of #179 archiving, as
+    decision 35 accepts. Two `igor run`s of one role are both rank 0, so a sweep of every rank-0
+    tree would remove the other run's live tree. Each run also gets its own worker home, the
+    `HOME` #174 sets for the run's `claude -p` calls, which #174 removes when the run ends. At
+    its start, before its first cycle, a run also removes the trees and the worker home that an
+    earlier run of its role left where that run's process is gone. This is #179's own decision
+    39, which shares the number by coincidence (Adam, 2026-10-21). A run tells that another
+    run's process is gone by a lock: each run holds an exclusive lock on `<role>-0-<run id>.lock`
+    in the trees' directory for as long as it runs, the system releases the lock when the process
+    ends, and a run that can take another run's lock knows that run is gone. #179 builds the lock.
 40. **The live `/usage` read, and with it `runUsage`, is removed in the first change built after
     #171's code lands** (Adam, 2026-10-19, #143's decision 37). Since decision 46, which builds
     #171's code just before this change's, that change is this one, so task 1.10 removes it (Adam, 2026-10-21), and task 1.7 has no `runUsage` to
@@ -508,7 +513,7 @@ or on another change.
   it as not checked. This
   change has the Igor make three prose calls, the second only after the last staging, while
   #153 makes a signing call before the last staging and another after it. #216 modifies the
-  worker-environment requirement this change modifies, and has no place in #204's order. *The Igor
+  worker-environment requirement this change modifies, and #204 places #216 after this change, so #216's copy must carry this change's text. *The Igor
   publishes the tree it recorded before the checks* lets the Igor record the tree, as a git tree
   object, after its first read of the tree; it should say the record is made after the last
   staging. The sweep of a gone rank's
@@ -518,6 +523,27 @@ or on another change.
   and "model step" are not defined in the spec. Nothing measures `--append-system-prompt-file`
   under `-p`, or what `sudo -n -l` shows for a worker rule that needs a password.
 
+- **A fourth consistency read on 2026-10-21,** the newest, listed first, made after decision 39 gained the sweep of a gone
+  run's trees, found these, left for the next pass.:
+  - **For Adam: a proxy URL with a user name and no password.** Decision 47 counts the user
+    info as a secret handed over, which must be registered on its own, while #217 registers a
+    user name with no password only together with its host, never on its own, so the two rules
+    cannot both hold for such a URL; and a name under 8 characters, such as
+    `alice`, would fail every run under the short-secret rule. *Recommendation:* count only a
+    proxy URL's password as the secret, and leave a bare user name to #217's rule.
+  - Under the shipped unit, `SupplementaryGroups=` and `ReadWritePaths=` fail the unit before
+    Igor runs where the worker user's group or home is missing, so the start check's refusal and
+    its status 78 never happen there; unmeasured.
+  - #192's container sets no `STATE_DIRECTORY`, so under #179 and #216 its trees would go to
+    `~/.local/state/igor/trees`, not the `/var/lib/igor/trees` volume task 8.3 mounts.
+  - #174 relies on *The Igor reads no file on the worker's behalf through a link* for session
+    logs in the worker's home, which the requirement does not cover.
+  - Task 0.1 says no seat token file is left to probe, while task 5.1 keeps a refusal for one.
+  - The rule that the Igor's git directory defines no filter does not hold under `igor run`,
+    where the git directory sits inside the tree and the worker, running as the same user, can
+    write a filter into its configuration; the rule needs an "under `igor serve`" scope.
+  - The metadata probe's mechanism is in no decision; `LimitCORE=0` has no scenario; and #192's
+    Dockerfile comment on killing by process group goes stale.
 - **A third consistency read on 2026-10-21 found more, also left for the next pass.** Only the
   first item below comes from decision 47:
   - **For Adam: a proxy password shorter than 8 characters.** The rule that the Igor hands over
@@ -526,9 +552,7 @@ or on another change.
     such a proxy would fail every run. *Recommendation:* refuse the start
     where a forwarded proxy URL holds a password under 8 characters, naming the variable, rather
     than failing each run.
-  - #179 now has `igor run` remove the rank-0 trees a crashed run left (Adam, 2026-10-21), which
-    this change's rule that `igor run` removes only its own trees forbids, and which the *Still
-    open* item on a crashed run's tree no longer describes. #179's decision 48 already takes
+  - #179's decision 48 already removes
     `<tree>-prompt` with each tree, and #153's decision 25 already says Igor runs no `prose
     start`, so the *Reported to #179* item below and the sentence in decision 15 that leaves
     `prose start` to #153 are out of date.
@@ -599,12 +623,6 @@ or on another change.
 
 - **Reported to #179:** a crash leaves `<tree>-prompt` beside a tree, and #179's sweep removes
   only the outbox and the git directory beside it.
-
-- **A tree a crashed `igor run` left, for Adam.** Its release never ran, and its run id is one no
-  later run has, and #179 gives `igor run` no startup sweep, so nothing removes it (decision
-  39); #174's home of a crashed run is left the same way. *Recommendation:* leave both to the
-  person, since `igor run` is a developer at their own terminal, and have the docs for
-  `igor run` say where a crashed run leaves them. #179 and #174 would carry that answer too.
 
 - **Git LFS and #137.** #137's *An artifact carries a changed path as the tree holds it*
   publishes a file stored through a clean filter as the filter's output. Under decision 33 the

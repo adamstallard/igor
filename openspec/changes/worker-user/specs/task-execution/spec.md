@@ -461,7 +461,9 @@ so a kill or a removal that runs only as the Igor leaves both behind.
 
 - **WHEN** a worker leaves a directory in its tree with mode `0700`
 - **THEN** releasing the tree removes it
-- **AND** under `igor serve`, a tree left by a crash is removed by the startup sweep
+- **AND** under `igor serve`, a tree left by a crash is removed by the startup sweep, and under
+  `igor run` by the start of the next `igor run` of the same role, once the crashed run's lock is
+  free
 
 #### Scenario: A command still running after the checks is killed before the release
 
@@ -727,9 +729,14 @@ the Igor's own user. `igor run`, the one-shot command for development, SHALL alw
 worker as the Igor's own user, and SHALL say so when it starts, naming what the worker can then
 read. Nothing else SHALL tell the Igor whether it has a worker user. Under #179 `igor run` is
 rank 0, and each run's trees carry its own run id (#179's *The sweep removes trees by rank, never
-by age*). `igor run` SHALL remove only trees carrying its own run id, as the Igor's own user and
-without `sudo`; it SHALL NOT remove a tree another run, another rank or another role left. Two
-`igor run`s of one role can then run at once without either removing the other's tree.
+by age*). `igor run` SHALL remove trees as the Igor's own user and without `sudo`: its own trees,
+and, at its start, the trees and the worker home #174 gives each run, of an earlier run of its
+role whose process is gone, as #179's requirement says. A run is gone where its lock on
+`<role>-0-<run id>.lock` can be taken. Under `igor run` the
+trees and their lock files sit in `<state dir>/trees`, where `<state dir>` is the state
+directory #216 (`lore-search`) defines. It SHALL NOT remove a tree
+of a run whose lock it cannot take, nor one another rank or another role left. Two `igor run`s
+of one role can then run at once without either removing the other's tree.
 
 The notice SHALL also say that the worker can use whatever the person's own user can, since
 nothing keeps it from their SSH agent, their Docker or credentials in their home (*A worker gets
@@ -750,12 +757,19 @@ credentials. The notice keeps the trade visible.
 - **THEN** it runs the worker as the same user, and its first line says workers run as its own
   user, can read its credentials, and can use whatever the person's own user can
 
-#### Scenario: run sweeps only its own trees
+#### Scenario: run leaves a live run's tree
 
 - **WHEN** an `igor run` for the role `generalist` releases its tree on a host that also holds a
-  rank-0 tree carrying another run's id, and the tree `generalist-1-b2`
+  rank-0 tree of another run whose lock is held, and the tree `generalist-1-b2`
 - **THEN** it removes its own tree, as its own user and without `sudo`
 - **AND** it leaves the other run's tree and `generalist-1-b2`
+
+#### Scenario: run removes a gone run's tree and home at its start
+
+- **WHEN** an `igor run` for the role `generalist` starts on a host that holds a rank-0 tree and a
+  worker home of an earlier run whose lock it can take
+- **THEN** before its first cycle it removes that tree and that home, as its own user and
+  without `sudo`
 
 #### Scenario: run ignores a worker user on the host
 

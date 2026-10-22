@@ -310,11 +310,13 @@
       `sudo -n -u <worker> -- rm -rf -- <tree> <outbox>`, then the Igor's own removal of the
       tree, the outbox and the git directory. The second runs even when the first fails. Under
       `run`, which #179 makes rank 0, the trees carry the run id #179's *The sweep removes trees
-      by rank, never by age* gives each run, and `run` removes only trees carrying its own, as
-      the Igor's own user with no `sudo`. It leaves a tree another run, another rank or another
-      role left (proposal, decisions 25 and 39).
-- [ ] 4.3 Tests with an injected runner: `run`'s sweep leaves another run's rank-0 tree and
-      another rank's tree; two runs of one role at once make trees with different names; the kill and
+      by rank, never by age* gives each run, and the lock each run holds on
+      `<role>-0-<run id>.lock`, which #179's tasks build. `run` removes its own trees and, at its
+      start, the trees and the #174 worker home of an earlier run of its role whose lock it can
+      take, as the Igor's own user with no `sudo`. It leaves a tree of a run whose lock it cannot
+      take, and any other rank's or role's (proposal, decisions 25 and 39).
+- [ ] 4.3 Tests with an injected runner: `run`'s sweep leaves a live run's rank-0 tree and
+      another rank's tree, and removes a gone run's tree and home; two runs of one role at once make trees with different names; the kill and
       the removal argv; the kill by user before the tree is read and after the checks; a failed
       first removal still leads to the second.
 

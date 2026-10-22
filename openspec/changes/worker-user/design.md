@@ -647,12 +647,16 @@ checks worker isolation when it starts. That is a later edit to its branch, not 
 - **`run` always runs the worker as the same user**, with a notice. It is the one-shot command
   for development: a person at a terminal, usually on a laptop with their own login, where a
   second account is friction for no gain. The notice puts the choice in every log.
-- **`run` sweeps only its own trees** (Adam, 2026-10-18 and 2026-10-19). Under #179 `run` is
-  rank 0, so its trees are `<role>-0-<id>`, and each run's `<id>` begins with its own run id
-  (#179), so two runs of one role at once make different trees. It removes only trees carrying
-  its run id, as the Igor's own user with no `sudo`, which is the user its worker ran
-  as. Each run also gets its own worker home, the `HOME` #174 sets for the run's `claude -p`
-  calls, apart from the developer's own home, and #174 removes it when the run ends. A tree a `serve` instance
+- **`run` sweeps its own trees and a gone run's** (Adam, 2026-10-18, 2026-10-19 and
+  2026-10-21). Under #179 `run` is rank 0, so its trees are `<role>-0-<id>`, and each run's
+  `<id>` begins with its own run id (#179), so two runs of one role at once make different
+  trees. It removes its own trees. At its start it also removes the trees and the worker home of
+  an earlier run of its role that is gone (#179's decision 39). Each run holds a lock on
+  `<role>-0-<run id>.lock`, in the trees' directory, which the system releases when the run's
+  process ends, so a run that can take another run's lock knows that run is gone. It removes
+  them as the Igor's own user, with no `sudo`, the user its worker ran as. The worker home is
+  the `HOME` #174 sets for each run's `claude -p` calls, apart from the developer's own home,
+  and #174 removes it when the run ends. A tree a `serve` instance
   left belongs to that instance's worker user, which `run` cannot act as, and `run` leaves it.
 
 So the command says whether there is a worker user, and no setting does. The alternatives:
