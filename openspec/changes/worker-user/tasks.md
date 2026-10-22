@@ -90,12 +90,12 @@
       asks for this too.
 - [ ] 1.7 Every `claude -p` the Igor starts takes its prompt on stdin, its system prompt from
       `--system-prompt-file`, and any text appended to it from `--append-system-prompt-file`: `claudeWorker` (`src/execute.ts`), `runClaude` (`src/triage.ts`),
-      `runUsage` (`src/budget.ts`) while it exists, #143's seat probe and #174's startup check
-      where those are built. The first change built after #171's code lands removes `runUsage`
-      (proposal, decision 40); where that has happened, skip it. The Igor writes the system prompt file before the spawn and removes it after the
+      #143's seat probe and #174's startup check where those are built. `runUsage` is not among
+      them: task 1.10 removes it. The Igor writes the system prompt file before the spawn and removes it after the
       process exits. For a process running as the worker user, it goes in a directory the Igor
-      owns beside the tree, `<tree>-prompt`, mode `2750` with the worker's group; never in the tree or the
-      outbox. For a process running as the Igor, it goes in a directory only the Igor can read. Build after 6.9. Tests: each call's argv holds no prompt, no `--system-prompt` and
+      owns beside the tree, `<tree>-prompt`, mode `2750`, group the worker user's primary group, so the worker user can
+      read it and not write it; never in the tree or the
+      outbox. For a process running as the Igor, it goes in a directory only the Igor can read. Build after measurement 6.9, which confirmed that `claude -p` reads its prompt from stdin. Tests: each call's argv holds no prompt, no `--system-prompt` and
       no `--append-system-prompt`;
       the prompt arrives on stdin; the file exists during the call and not after it, also when
       the call fails.
@@ -107,12 +107,18 @@
       which #217's `resolveToken` already registers, so only a test is owed for it; #189's
       checks get no secret (proposal, decision 41). Keep `SSH_AUTH_SOCK`, `GPG_AGENT_INFO` and any
       other agent socket variable out of every environment the Igor builds for a worker, a
-      model step or a check; `workerEnv` on `main` already passes neither. A secret shorter than 8 characters fails the run, naming its source, and nothing is
+      model step or a check; `workerEnv` on `main` already passes neither of those two. A secret shorter than 8 characters fails the run, naming its source, and nothing is
       spawned. If #217 has not merged, stop and ask Adam: this task calls its code. Tests: with
       `SSH_AUTH_SOCK` and `GPG_AGENT_INFO` set in the Igor's environment, neither is in the
       environment of a worker, a model step or a check, in either mode; a seat token quoted in
       the worker's output is `[redacted]` in the stored transcript; a 7-character seat token
       starts no worker.
+- [ ] 1.10 Remove the live `/usage` read (proposal, decision 40; #143's decision 37):
+      `readUsage`, `runUsage`, `hasSubscription` and `parseUsage` in `src/budget.ts`, and the
+      paths of `chooseSeat`, `budgetGate` and `renderBudget` that take a live reading through
+      them. The gate and `igor budget` then read a seat only from #143's stream and probe, which #204
+      builds before this change. Remove the
+      tests of the removed functions, and test that no `claude -p` runs `/usage`.
 
 ## 2. The tree and the outbox
 

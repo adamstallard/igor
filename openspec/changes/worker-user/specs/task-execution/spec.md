@@ -210,13 +210,21 @@ count is 1, so a file swapped after the `lstat` is caught too. Otherwise the run
 is published, naming the file. An error parsing a file read from the worker SHALL NOT quote the
 file's content, in a refusal, a comment, a record or a log.
 
-Once #137 has archived its requirement *An artifact carries a changed path as the tree holds
-it* into this spec, a changed path that is itself a link SHALL be published as a link, as that
-requirement carries one. The Igor SHALL NOT follow the link to do so. Until then, a changed
-link SHALL stop the run before anything is published, naming the path.
+Where #137's requirement *An artifact carries a changed path as the tree holds it* is in this
+spec, a changed path that is itself a link SHALL be published as a link, as that requirement
+carries one. The Igor SHALL NOT follow the link to do so. Where it is not, a changed link SHALL
+stop the run before anything is published, naming the path. Issue #204 archives #137 before
+this change, so the first case is the one in force.
+
+These rules cover every read of the worker's tree or outbox by the Igor, or by a process it runs
+as its service user, not only the read of the changed paths: #187's (`scope-check`) reads for
+its comparison of changed paths with the item, and the signing scripts #153
+(`signed-publishing`) runs over the tree, prose's calls and bug-hunter's minting script, among
+them. Each such read SHALL follow no link, and a file it reads SHALL pass the `lstat` and `fstat`
+checks above.
 
 The Igor can read its own credentials and the worker cannot. A link the worker makes to the
-App's key, read by the Igor and published as the content of a file, would publish the key in a
+GitHub App's private key, read by the Igor and published as the content of a file, would publish the key in a
 pull request. A hard link the worker made to a credential is a regular file inside the tree,
 which the symbolic-link rules here do not catch.
 
@@ -233,6 +241,13 @@ which the symbolic-link rules here do not catch.
 - **AND** a worker creates `notes.txt` as a link to a file only the Igor can read
 - **THEN** the run stops naming `notes.txt`
 - **AND** the linked file's content is in no artifact, comment or record
+
+#### Scenario: The signing scripts follow no link
+
+- **WHEN** a worker replaces a file in its tree with a link to a file only the Igor can read, and
+  a signing script of #153's reads that path
+- **THEN** the read does not follow the link, and the run stops naming the path
+- **AND** the linked file's content is in no artifact, comment, record or trailer
 
 #### Scenario: A path beneath a linked directory stops the run
 
@@ -493,11 +508,14 @@ reads 0 (*The Igor's memory is never written out by a crash dump*).
 
 A path the check is given to probe that does not exist SHALL refuse the start, naming it: a
 probe of a missing file would pass, and proves nothing. A file the check has no path for, such
-as an environment file where `IGOR_ENV_FILES` is unset, SHALL be reported as not checked, never
+as an environment file where `IGOR_ENV_FILES`, the list of environment files the unit loads,
+which the operator sets in the unit, is unset, SHALL be reported as not checked, never
 as passed. Any failure, a successful create among them, SHALL refuse the start, naming what
 failed and the path or setting involved, and the process SHALL then exit with status 78, as
 #82's (`stopped-scope-visible`) *A process that refuses to start exits with status 78*
-requires.
+requires. Under the shipped compose file, whose `restart: unless-stopped` restarts every exit,
+that same requirement has a process marked with `IGOR_REFUSAL_WAIT=1` wait before it exits 78,
+longer with each refusal in a row, so compose retries a refused start more slowly each time.
 
 A worker user that can read the key protects nothing, and nothing else would notice. The process
 that holds the credentials is the only one that knows where they are, so it checks. systemd
@@ -643,7 +661,7 @@ journal on every worker start.
 
 Every `claude -p` the Igor starts SHALL take its prompt on stdin: the worker, every later model
 step in the worker's tree, triage, #143's seat probe (a minimal call that reads a seat no run
-has read), the usage read and #174's startup skills check, which is a model call and not this spec's isolation check. No
+has read) and #174's startup skills check, which is a model call and not this spec's start check. No
 prompt and no system prompt SHALL appear in any process's arguments. A system prompt, and text
 appended to one, SHALL reach `claude` through a file, named by `--system-prompt-file` or
 `--append-system-prompt-file`. The Igor writes that file where the
@@ -673,7 +691,7 @@ on a kernel without per-mount `hidepid`, and out of `sudo`'s log.
 
 #### Scenario: Every other call takes its prompt on stdin
 
-- **WHEN** the Igor starts #143's seat probe, the usage read or #174's startup skills check
+- **WHEN** the Igor starts #143's seat probe or #174's startup skills check
 - **THEN** its prompt reaches `claude` on stdin, and no argument holds it
 
 #### Scenario: Text appended to a system prompt goes through a file
@@ -746,10 +764,12 @@ credentials. The notice keeps the trade visible.
 
 ### Requirement: A worker gets a secret only through the Igor, which registers it
 
-A secret SHALL reach a process running as the worker user, or under `igor run` the worker, only
-from the Igor, which SHALL register it with credential redaction, by calling `rememberSecret` (#217's *Credential
-redaction replaces every credential the Igor knows*), before it hands the secret over. Under
-`igor serve` that secret is the seat's token, which the worker and every later model step get.
+Under `igor serve`, a secret SHALL reach a process running as the worker user only from the
+Igor. In both modes, the Igor SHALL register every secret it hands a worker, a model step or a
+check with credential redaction, by calling `rememberSecret` (#217's *Credential redaction
+replaces every credential the Igor knows*), before it hands the secret over. Under `igor serve`
+the one secret it hands over is the seat's token, which the worker and every later model step
+get.
 The repository's checks, which #189 runs as the worker user, SHALL get no secret. A later change
 that hands a worker user another secret SHALL declare it in the server's own configuration, never
 in lore, and register it the same way. In both modes, the Igor SHALL NOT hand over a secret shorter than 8 characters,
@@ -781,14 +801,16 @@ the Igor runs checks the home.
 Under `igor run` the worker runs as the person's own user, so it can use whatever that user
 can: their SSH agent, their Docker, the metadata endpoint, and any credential in their home or
 their git configuration. The Igor passes it none of them, but nothing it does keeps the worker
-from finding them. That is `igor run`'s limit, and its notice says so (*serve always has a worker
-user, and run never does*).
+from finding them, so this requirement's rule that a secret reaches the worker only from the Igor
+does not bind `igor run`. That is `igor run`'s limit, and its notice says so (*serve always has a
+worker user, and run never does*).
 
-Credential redaction matches a secret by its value only where the Igor registered that value,
-so a secret that reaches the worker by another route is stored as it stands. A check runs code
+This change relies on a limit of #217's credential redaction: it matches a secret by its value
+only for the values the Igor registered, so a secret that reaches the worker by another route is
+stored as it stands, unless it has one of the token shapes #217 matches. A check runs code
 the worker has just written, so a secret given to a check is given to that code. The metadata
-endpoint hands the host's cloud credentials to any process that reaches it. Each of those groups and sockets lets its holder start a container or read a disk
-as root. And a credential in a tree's git directory would be one the worker could read, since
+endpoint hands the host's cloud credentials to any process that reaches it. Each of the groups and sockets the second bullet above names lets its holder start a
+container or read a disk as root. And a credential in a tree's git directory would be one the worker could read, since
 the worker user can read that directory.
 
 #### Scenario: A secret is registered before the worker gets it
@@ -796,6 +818,13 @@ the worker user can read that directory.
 - **WHEN** the Igor hands a worker its seat's token, and the worker's output quotes the token
 - **THEN** the token was registered with `rememberSecret` before the worker started
 - **AND** credential redaction replaces it wherever #217 applies redaction to that output
+
+#### Scenario: Under `igor run`, the worker can use its person's own credentials
+
+- **WHEN** under `igor run` the person's home holds `~/.netrc`, and a test the worker wrote reads
+  it
+- **THEN** the test reads it, since the worker runs as the person's own user
+- **AND** the Igor handed the worker no secret but the run's token, which it registered first
 
 #### Scenario: A check gets no secret
 

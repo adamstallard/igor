@@ -35,10 +35,10 @@ sudo --non-interactive --user=<worker> --preserve-env=<names> -- \
   preserves, value included (measurement 6.5), so the sudoers file turns that log off for the
   service user (below).
 - **The prompt goes on stdin, and the system prompt in a file** (Adam, 2026-10-18), for the
-  same reason: a prompt holds the item's text and the lore its scope allows. Today both are
+  same reason: a prompt holds the item's text and the lore its scope allows. On `main`, both are
   arguments. The file is one the Igor writes where the worker user can read it and cannot write
-  it, and removes once the process exits. Every other `claude -p` the Igor starts, triage and
-  the usage read included, does the same (*Prompts go on stdin*, below).
+  it, and removes once the process exits. Every other `claude -p` the Igor starts, triage
+  included, does the same (*Prompts go on stdin*, below).
 - **`PATH` goes through `env`**, because Debian and Ubuntu set `secure_path` in sudoers, and
   that replaces a preserved `PATH`. `PATH` is not a secret.
 - **`HOME` is the worker's own**, which sudo sets for the target user, and it lasts across
@@ -47,11 +47,13 @@ sudo --non-interactive --user=<worker> --preserve-env=<names> -- \
   Igor, so nothing a worker planted there loads in a later call, and the rest of the home stays.
   The reset keeps nothing it replaces, a stored login in `~/.claude/.credentials.json`
   included (Adam, 2026-10-18): every seat has a token, and Igor never uses a stored login, so
-  the seat's token in the environment is the worker's only credential. The Igor does the reset as the worker user, through this same `sudo`.
+  the seat's token in the environment is the worker's only credential. The Igor runs the reset as the worker user, as part of the same `sudo` spawn that starts
+  `claude`, so the reset can write the worker user's home.
   #174 (`pinned-skills`, an open change) specifies the reset and its template in its decision 9,
   and the kill of every process the worker user owns before every reset in its decision 13
-  (Adam, 2026-10-17). Whichever of this change and #174 is built second makes this `sudo`
-  spawn run #174's reset and kill (task 0.10).
+  (Adam, 2026-10-17); the kill stops anything a worker left running from seeing the reset.
+  #174 decides the reset and kill. Whichever of this change and #174 is built second wires them
+  into this `sudo` spawn (task 0.10).
 - **No prose or bug-hunter script runs through this `sudo`** (Adam, 2026-10-18; proposal,
   decision 15). The Igor runs every prose and bug-hunter script itself, as the service user, and
   the model steps get what they need from the prose skill in their prompts (*#153's steps run
@@ -562,7 +564,8 @@ ships a small native addon of three calls: `prctl(PR_SET_DUMPABLE, 0)`, `setrlim
 0)`, and `prctl(PR_GET_DUMPABLE)` to read the flag back. It is written in Rust through
 `napi-rs`, with prebuilt Linux binaries for x64 and arm64, so installing needs no compiler
 (Adam, 2026-10-21; proposal, decision 43). Under `serve`, an addon that fails to load, a call that fails, or a flag that reads
-back as anything but 0 refuses the start with status 78 (start check 11). Under `igor run` the
+back as anything but 0 refuses the start with status 78 (check 11 of the start check, numbered in *What each start checks*,
+above). Under `igor run` the
 Igor makes both calls where it ships the addon, Linux on x64 and arm64, and elsewhere, such as
 on macOS, starts without them.
 
@@ -571,11 +574,11 @@ on macOS, starts without them.
 Every `claude -p` the Igor starts authenticates with the token of the seat it spends, from its
 environment, under `serve` and `run` alike. The worker and the model steps after it run as the
 worker user with the seat's token; triage runs as the Igor with the token of the seat the budget
-gate chose (#171's *Triage's model call is made only where a seat can pay for it*); a usage read
-and a seat probe use the token of the seat they read. #171 refuses a seat file that names no
-token. A seat with no token would run on whatever login the calling user holds, the service
-user's for a usage read and the worker user's for the worker, so it could be read under one
-login and spent under another; with no such seat, that cannot happen. Neither the service user
+gate chose (#171's *Triage's model call is made only where a seat can pay for it*); a seat probe
+uses the token of the seat it reads, and task 1.10 removes the usage read. #171 refuses a seat file that names no
+token, and #171 is built before this change. A seat with no token would run on whatever login
+the calling user holds, the service user's for triage and the worker user's for the worker, so
+the seat's usage could be read under one login and spent under another; with no such seat, that cannot happen. Neither the service user
 nor any worker user is logged in to Claude, and #174's reset deletes a login stored in the
 worker's home, so there is no stored login for the worker user to come by. How a person creates
 a token is in #171's guides (its task 9.5).

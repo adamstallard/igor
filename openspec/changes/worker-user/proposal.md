@@ -183,16 +183,16 @@
 21. **Every seat has a Claude token, and Igor never uses a stored Claude login, under `serve`
     or `run`** (Adam, 2026-10-18). Every `claude -p` the Igor starts authenticates with the token
     of the seat it spends, from its environment: the worker and every later model step as the
-    worker user, and triage and usage reads as the Igor. Triage spends the token of the seat the
+    worker user, and triage as the Igor. Triage spends the token of the seat the
     budget gate chose (#171's *Triage's model call is made only where a seat can pay for it*).
     Neither the service user nor any worker user is logged in to Claude, and #174's reset deletes
     a login stored in the worker's home. A seat with no token would run on whatever login the
-    calling user holds: the service user's for triage and usage reads, the worker user's for
+    calling user holds: the service user's for triage, the worker user's for
     the worker, so it could be read under one login and spent under another. #171 refuses a seat
     file that names no token, so no seat runs on a login. That includes #174's startup skills
     check, which spends a seat through the budget gate like any other call (Adam, 2026-10-18).
-    The only calls whose seat the gate does not choose are #143's seat probe and a usage read;
-    each authenticates with the token of the seat it reads, and with no stored login. How a person creates a
+    The only call whose seat the gate does not choose is #143's seat probe, since task 1.10
+    removes the usage read; it authenticates with the token of the seat it reads, and with no stored login. How a person creates a
     token is in
     #171's guides (its task 9.5). *Rejected:* keeping `~/.claude/.credentials.json` so an
     organization with no seats runs on a stored login; such an organization adds one seat from
@@ -349,11 +349,14 @@
     ends. A tree a crashed run left carries a run id no later run has, so no run removes it
     (*Still open*).
 40. **The live `/usage` read, and with it `runUsage`, is removed in the first change built after
-    #171's code lands** (Adam, 2026-10-19, #143's decision 37). Task 1.7's change to `runUsage`
-    applies only while it exists.
+    #171's code lands** (Adam, 2026-10-19, #143's decision 37). Since decision 46, which builds
+    #171's code just before this change's, that change is this one, so task 1.10 removes it (Adam, 2026-10-21), and task 1.7 has no `runUsage` to
+    change.
 
-Decisions 41 and 43 to 46 are Adam's, made on 2026-10-21. So are three extensions, each marked
-where it appears: rules a consistency read added to his decisions, which he kept.
+Decisions 41 and 43 to 46 are Adam's, made on 2026-10-21. So are three extensions, rules a
+consistency read added to his decisions, which he kept: in decision 41, the groups and sockets
+of point 3 and the refusal of a secret under 8 characters; and in decision 43, the
+`fs.suid_dumpable` check.
 Decision 42 is a mechanism proposed for 41's first point, which waits for his approval.
 
 41. **A worker gets a secret only through the Igor, which registers every secret it hands
@@ -383,12 +386,15 @@ Decision 42 is a mechanism proposed for 41's first point, which waits for his ap
        repository's own CI runs it on the pushed pull request.
 
     The Igor refuses to hand over a secret shorter than 8 characters, which `rememberSecret`
-    does not register: the run fails, naming the secret's source. Adam kept this extension too.
+    does not register, since #217 matches no value that short (an `igor` placeholder would
+    rewrite item ids): the run fails, naming the secret's source. Adam kept this extension too.
     `CLAUDE_CODE_MESSAGING_TOKEN`, which Claude Code itself sets for the commands the worker
     runs, gets no rule: the Igor never holds it, so it has nothing to register or withhold.
 
-    `igor run` runs the worker as the person's own user and can prevent none of these, so its
-    notice says so (task 5.4).
+    This rule is scoped to `igor serve` (Adam, 2026-10-21). `igor run` runs the worker as the
+    person's own user and can prevent none of these, so the requirement states that limit
+    without binding it, and `igor run`'s notice says so (task 5.4). The Igor's own part, that
+    it registers every secret it hands over and passes no agent socket, holds in both modes.
 42. **The unit sets `IPAddressDeny=169.254.169.254 fd00:ec2::254`** (proposed 2026-10-21, for
     Adam to approve). systemd applies `IPAddressDeny=` to the unit's whole control group, which a
     process started through `sudo` stays in unless sudo's PAM stack moves it out, so one line
@@ -444,8 +450,8 @@ Decision 42 is a mechanism proposed for 41's first point, which waits for his ap
     - **Proxy URLs:** hold. They come from the Igor's own environment, and #217 registers a
       forwarded proxy URL's credentials as secrets to redact when `workerEnv` hands it over.
       With a password, it registers the user info, password and whole URL. With none, it
-      registers the user name only where #217's rule takes it for a token: once decoded, 20
-      characters or more and not a plain name such as `ci-runner-2024`.
+      registers the user name only with its host, as `<user>@<host>`, never bare (#217's
+      decision 14).
     - **`seatKey`:** `igor.config.yaml`, a lore file, names the path of the key that decrypts
       seat files. The Igor reads that key and hands it to no process, so no secret is routed by
       it. A lore commit can point it at another file on the server, which then fails to
@@ -478,17 +484,6 @@ or on another change.
   holding no credential but its seat's token*, which keeps the same sentence. So the sentence is left as
   it is here, and #171's text is the one to reword (reported to #171).
 
-- **Under decision 40, this change removes the `/usage` read, and no task here does it.**
-  Decision 40 says the read and `runUsage`, the `claude -p` call that makes it, are removed
-  by the first change built after #171's code. Since decision 46 (2026-10-21), issue #204's
-  build order puts this change straight after #171, so that first change is this one. No task
-  here removes the read. Task 1.7 moves `runUsage`'s prompt to stdin, and skips `runUsage` if
-  it has already been removed, so it neither removes it nor stands in the way.
-  *Recommendation:* add a task here that removes the read, since task 1.7 already edits every
-  `claude -p` call. The other choice, removing the read when #171's code is built (its gate
-  two, the implementation pushed onto its pull request), would change decision 40. Which to
-  take is for Adam.
-
 - **Findings of the 2026-10-21 consistency read left for the next pass.** None of them comes
   from decision 41, 43, 45 or 46. A missing-path refusal would refuse
   `/proc/<igor pid>/environ`, which `ProtectProc=invisible` hides from the worker, and
@@ -509,22 +504,26 @@ or on another change.
   under `-p`, or what `sudo -n -l` shows for a worker rule that needs a password.
 
 - **A second consistency read on 2026-10-21 found more in older text, also left for the next
-  pass.** For Adam:
-  - a refused start exits 78, but the container's `restart: unless-stopped` (#192) restarts
-    it forever;
-  - a check inherits the worker's forwarded proxy settings, so a proxy URL holding a password
-    reaches it, against *A check gets no secret*;
-  - the requirement *A worker gets a secret only through the Igor* applies to `igor run`, yet
-    the same requirement says a worker under `igor run` can use whatever its person's user can;
-  - whether the rule that the Igor reads a tree's files without following a link covers every
-    read of a tree. Two reads may not be covered: #187's scope check, and the signing scripts,
-    which run as the service user over the worker's tree.
+  pass.** None blocks approving the rules above. Three are settled (Adam, 2026-10-21): a refused start under compose waits and exits 78
+  as #82's *A process that refuses to start exits with status 78* has it, under
+  `restart: unless-stopped` and `IGOR_REFUSAL_WAIT=1`; *A worker gets a secret only through the
+  Igor* binds `igor serve` and states `igor run`'s limit; and the rule that the Igor follows no
+  link covers #187's scope check and #153's signing scripts. For Adam:
+  - **Whether a check may get the proxy's password.** A check, one of the repository's commands
+    such as its tests that #189 runs on the worker's tree, inherits the worker's forwarded proxy
+    settings, so a proxy URL holding a password reaches it, against *A check gets no
+    secret*. #217 registers the password, so it is redacted wherever it is quoted, but the
+    check runs code the worker has just written, which can use it. *Recommendation:* give a
+    check the forwarded proxy settings only where they hold no credential: a proxy URL with
+    user info is left out of a check's environment, and a check that needs the network
+    through such a proxy goes under `ci_only`, as any check needing a secret does.
 
   For the author: `--ignore-submodules=all` hides a moved gitlink that the spec stops on; #137
   and this change disagree on where a submodule's commit is read; the rule that kills the
   worker user's processes before staging is not limited to `igor serve`, though under `igor
   run` there is no worker user to kill by; a home reset before each `claude -p` deletes the
-  session #174's `--resume` reads. Several statements about other changes are out of date:
+  session #174's `--resume` reads. Several statements here about other changes are out of date, and the fix is to update this
+  text:
   #174's startup check can itself be the seat probe, so the budget gate does not choose its
   seat; #189 publishes its second run as a second commit, not the same way as the first;
   #153's cold reader runs as the worker user with no tree for its prompt file; #153 has
@@ -537,8 +536,25 @@ or on another change.
   holds the outbox. Several SHALLs have no scenario, and some carry their reasons inside the
   SHALL sentence, where a reader applying the rule has to skip them.
 
-- **Credential files in the worker's home, for Adam.** Decision 41's fifth point binds the
-  operator, and nothing checks it. *Recommendation:* have the start check refuse, naming the
+- **From the third consistency read of 2026-10-21, left for the next pass.** None blocks
+  approving the rules above; each is a fix to this text or another change's. Task 1.10 removes
+  the live `/usage` read, but #143's *A seat's fullness is read from the seat, not supplied by a
+  person* still requires it, and #171's *A spend with no seat behind it is not made* names it;
+  one of the three changes needs a `seat-budget` delta. `igor run`'s sweep of its own trees
+  restates #179's rule and scenario. The proposal says the spec states a conflict with #137
+  over clean filters, which the spec does not, and #137 may not conflict at all. With this
+  change built before #179 and #174, as issue #204 builds them, `/etc/igor/%i.env` is neither
+  probed nor reported as not checked, and the probes of #174's template and `skills_dir` have
+  nothing to probe and no "not checked" outcome. The refusal for a dumpable Igor points at a
+  deployment-guide section that says nothing about `fs.suid_dumpable`. The refusal naming the
+  metadata endpoint's proxy prints its URL, user info included, to the journal. The spec says a
+  secret reaching the worker by another route is stored as it stands, though #217 still
+  matches GitHub and Anthropic tokens by shape. `ExecStart=` already passes `%i` on `main`.
+  What `sudo -n -l` prints for a user with no sudoers entry has no measuring task. #153 has
+  decided that Igor runs no `prose start`, which the proposal calls #153's to say.
+
+- **Credential files in the worker's home, for Adam.** Decision 41's fifth point, no credential
+  an operator put in the worker's home, binds the operator, and nothing checks it. *Recommendation:* have the start check refuse, naming the
   file, where the worker's home holds `~/.npmrc`, `~/.netrc`, `~/.git-credentials`,
   `~/.docker/config.json`, `~/.aws/credentials` or `~/.config/gh/hosts.yml`. No Igor run needs
   any of them, and since the home lasts across runs (decision 14), the refusal also catches one
@@ -597,12 +613,6 @@ or on another change.
   take a usage reading under a person's stored login, which decision 21 forbids. #143 withdraws
   that change, archives before this change (#204), and removes `igor observe` when #143's code
   is built. The item stays here until then; nothing in it waits on Adam.
-
-- **The usage read under a token.** Decision 21 has every usage read authenticate with its
-  seat's token. With a token in the environment, `/usage` on Claude Code 2.1.303 printed no
-  `% used` lines (measurement 6.9), so `parseUsage` on `main` fails on every such read. Decision
-  40 removes the read in the first change built after #171's code, which is now this change;
-  the item *Under decision 40, this change removes the `/usage` read* asks which change does.
 
 - **The in-force scenario *No state carries between tasks*** and this change's lasting home
   disagree until #174, which rewords it (its decision 15), archives after this change (issue
@@ -691,9 +701,8 @@ that doesn't depend on Claude Code enforcing anything.
   lines, and its compose file mounts the trees volume at `/var/lib/igor/trees`. `claude` moves
   out of the service user's home, because the worker must be able to run it.
 
-Not changed: triage and usage reads still run `claude` as the Igor, because triage allows no
-tools and a usage read, the `claude` call that reads a seat's
-quota, runs no item text. Each authenticates with a seat's token, never a stored login
+Not changed: triage still runs `claude` as the Igor. It allows no tools, so the model can run
+nothing that would read the Igor's files. It authenticates with a seat's token, never a stored login
 (decision 21), and takes its prompt on stdin (decision 22).
 
 ## Capabilities
@@ -726,8 +735,8 @@ None.
   module for the start-up probe.
 - `src/gh.ts` (`ghEnv`) and `src/worktree.ts` (`gitEnv`, `networkEnv`), for decision 44.
 - A native addon that makes the Igor not dumpable (decision 43), and its build and packaging.
-- `src/triage.ts` (`runClaude`) and, while it exists, `src/budget.ts` (`runUsage`), for the
-  prompt on stdin (decision 40).
+- `src/triage.ts` (`runClaude`), for the prompt on stdin, and `src/budget.ts`, which loses
+  the live `/usage` read (decision 40).
 - `deploy/igor.service`, `Dockerfile` (#192), `deploy/docker-compose.yml`, a new `deploy/sudoers.example`,
   `docs/deployment.md`, and a paragraph in `docs/architecture.md` §6.3.2.
 - `igor doctor` (#113) gains no check (Adam, 2026-10-11); design.md says why.
