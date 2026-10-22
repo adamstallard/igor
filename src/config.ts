@@ -4,6 +4,7 @@ import { dirname, isAbsolute, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parse as parseYaml } from 'yaml'
 import { parseOrgBudget, type OrgBudget } from './budget.js'
+import { CONDITION_DEFAULTS, COUNTED_NOT_GRADED, type ConditionSettings } from './conditions.js'
 import { keyCheck } from './keys.js'
 
 export const DEFAULT_CONFIG_FILENAME = 'igor.config.yaml'
@@ -23,6 +24,12 @@ export interface Config {
   publicStore?: boolean
   /** Seats and pools an Igor may spend from. Absent means budget is not being enforced. */
   budget: OrgBudget
+  /**
+   * When a condition stops its scope, and how long before one item may probe it. One setting for
+   * every condition and every Igor, because a condition is shared: several Igors meeting one cure
+   * key are one condition, counted once, and two thresholds would stop it twice.
+   */
+  conditions: ConditionSettings
 }
 
 export class ConfigError extends Error {}
@@ -30,7 +37,41 @@ export class ConfigError extends Error {}
 const refuseUnknownKeys = keyCheck(ConfigError)
 
 /** Every key this file may name. Anything else is refused by name — see `keyCheck`. */
-const CONFIG_KEYS = ['destination', 'reviewers', 'experts', 'publicStore', 'budget']
+const CONFIG_KEYS = ['destination', 'reviewers', 'experts', 'publicStore', 'budget', 'conditions']
+
+const CONDITION_KEYS = ['threshold', 'cooldown_minutes', 'max_cooldown_minutes']
+
+/**
+ * The `conditions` mapping, over the defaults. Every key it may name is a count or a duration;
+ * any other is refused with the reason, since the likeliest other key is a grade.
+ */
+function parseConditions(raw: unknown): ConditionSettings {
+  if (raw === undefined) return CONDITION_DEFAULTS
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+    throw new ConfigError(`conditions must be a mapping: ${COUNTED_NOT_GRADED}`)
+  }
+  const data = raw as Record<string, unknown>
+  for (const key of Object.keys(data)) {
+    if (!CONDITION_KEYS.includes(key)) throw new ConfigError(`conditions names "${key}", and ${COUNTED_NOT_GRADED}`)
+  }
+  const positive = (key: string, whole: boolean): number | undefined => {
+    const value = data[key]
+    if (value === undefined) return undefined
+    if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0 || (whole && !Number.isInteger(value))) {
+      throw new ConfigError(`conditions.${key} must be a positive ${whole ? 'whole ' : ''}number`)
+    }
+    return value
+  }
+  const threshold = positive('threshold', true) ?? CONDITION_DEFAULTS.threshold
+  const cooldown = positive('cooldown_minutes', false)
+  const ceiling = positive('max_cooldown_minutes', false)
+  const cooldownMs = cooldown === undefined ? CONDITION_DEFAULTS.cooldownMs : cooldown * 60_000
+  const maxCooldownMs = ceiling === undefined ? Math.max(CONDITION_DEFAULTS.maxCooldownMs, cooldownMs) : ceiling * 60_000
+  if (maxCooldownMs < cooldownMs) {
+    throw new ConfigError('conditions.max_cooldown_minutes must be at least conditions.cooldown_minutes')
+  }
+  return { threshold, cooldownMs, maxCooldownMs }
+}
 
 /** The root of the Igor installation — lore must never be written inside it. */
 export function igorRoot(): string {
@@ -186,6 +227,7 @@ export function resolveConfig(raw: unknown, configDir: string): Config {
   return {
     destination,
     budget: parseOrgBudget(data['budget']),
+    conditions: parseConditions(data['conditions']),
     reviewers: requireStringArray(data['reviewers'], 'reviewers'),
     experts: requireStringArray(data['experts'], 'experts'),
     ...(publicStore === undefined ? {} : { publicStore }),
