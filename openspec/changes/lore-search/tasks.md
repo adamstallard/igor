@@ -232,7 +232,7 @@
       flagged item*, *An edit without write access leaves a flagged item held*, *A question that
       cannot be kept does not block the handoff*, *A kept question names its category, not its
       text*, *A kept question without a category holds its text*, *The question-not-kept
-      condition stops no work*, *The operator releases a held item on the host*, *A refused delete keeps the item held*, *A cure key
+      condition stops no work*, *A release by an edit deletes the item's files*, *A refused delete keeps an edited item held*, *The operator releases a held item on the host*, *A refused delete keeps the item held*, *A cure key
       does not release a held item*, *A held item's lost record leaves it held*,
       *A flagged run's budget handoff still gives the reset time*, *Any
       other run's ledger row keeps a denied command whole*, *A flagged run's action log keeps
@@ -265,6 +265,17 @@
       reports no questions-branch file for a question with a category*, which is the inquisitor
       skill's behaviour inside the worker, as in 3.1, and *The Igor's own inquisitor run pushes its questions-branch files under the same rules*,
       which waits on 3.6; and for *A questions-branch file push needs no allow action*
+
+- [ ] 3.10 `deploy/docker-compose.yml` sets `STATE_DIRECTORY=/var/lib/igor` on a named volume
+      (decision 103), as #179's unit sets `StateDirectory=igor` under systemd, so a Docker-run
+      `igor serve` keeps its question files when the container is recreated and its state
+      path lies outside the workers' home, so #174's reset of that home cannot remove the
+      files and a worker reading its home does not meet them;
+      `docs/deployment.md`'s Docker section says so. Check, before relying on it, that the
+      volume comes up writable by the image's user, which a named volume does only if the image
+      creates `/var/lib/igor` for that user, and that #175's trees volume at
+      `/var/lib/igor/trees` (#175's task 8.3) mounts inside it without hiding it or changing
+      its owner.
 
 ## 4. Facts to check before anyone relies on a search or a citation in a run
 
@@ -320,3 +331,20 @@
       mechanism that does not race, such as a native helper, or #175's `O_NOFOLLOW` with a
       check that the real path stays inside the tree, and open a file with `O_NONBLOCK` and
       check it with `fstat` before writing.
+
+## 5. Before archiving
+
+- [ ] 5.1 Once #171 merges, and before this change archives (decision 107), rewrite the
+      `task-execution` delta against #171's requirement *The worker is given an explicit
+      environment holding no credential but its seat's token*: keep #171's text, rules and
+      scenarios, #175's `GIT_INDEX_FILE` rule among them, add this change's `IGOR_RUN`,
+      private Claude state and seat-naming-no-token rules and their four scenarios, and point
+      `lore-firing`'s citation of it at the new name.
+- [ ] 5.2 Before this change archives, carry the text of each change #204 archives before it
+      into the requirements this change replaces whole, beyond `condition-backoff`'s, which
+      `work-triage` already carries: #143's `reserve` field and its merge
+      rule into `role-config`'s two requirements; #179's rank-named `igor serve reviewer-1`
+      into `surface-adapter`'s *An Igor that cannot act as its App does not start*; and, in
+      `task-execution`, point decision 56's citation at #179's *A killed worker's failure names
+      the silence it breached* and drop the `time ceiling` example. Then run #204's archive
+      check with this change in its place.

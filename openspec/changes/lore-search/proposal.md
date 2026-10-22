@@ -2,7 +2,7 @@
 
 ## Decisions
 
-[#215](https://github.com/adamstallard/igor/issues/215) records all one hundred and two decisions, as this list does too,
+[#215](https://github.com/adamstallard/igor/issues/215) records all one hundred and seven decisions, as this list does too,
 and all are Adam's. Where the agent that wrote this change fitted
 details Adam had not stated, that decision says so, and where Adam has since confirmed them,
 a later decision records it. A *consistency read*
@@ -81,7 +81,10 @@ request; Adam answered the questions each read raised. He made:
 - decisions 97 to 99 on 2026-10-21, answering the three questions the reads of decisions 91 to
   96 raised, and decision 100 that day, confirming the details fitted to decision 97;
 - decision 101 on 2026-10-21, answering the question the reads of decision 100 raised, and
-  decision 102 that day, answering the three questions the reads of decision 101 raised.
+  decision 102 that day, answering the three questions the reads of decision 101 raised;
+- decisions 103 to 107 on 2026-10-21, answering the two questions the reads of decision 102
+  raised, confirming its fitted details, and settling the state directory's definition and
+  this change's archive order.
 
 Terms used here:
 - The *destination repository* is the repository the configuration key `destination` names,
@@ -800,7 +803,8 @@ Terms used here:
     release it by an edit or a label; the operator releases it the same way and needs that
     access like anyone else; anyone else's
     edit leaves it held (Adam, 2026-10-21, narrowing decision 76's release by edit). The
-    `work-triage` delta says so, with two new scenarios and one changed.
+    `work-triage` delta says so, with two new scenarios and one changed. Decision 104 has such
+    a release delete the item's session-log copies and question file, as `igor release` does.
 80. **A question that cannot be kept does not block the handoff.** If the Igor cannot write the
     question's file, the fixed-words handoff still posts, the ledger row records the fixed
     phrase `question not kept`, and the Igor opens a condition for the operator naming the
@@ -972,7 +976,7 @@ Terms used here:
     - *A refused delete under `igor release` keeps the item held.* Release reports the
       failure and marks nothing released, so the hold record and the files never disagree;
       the operator fixes the path and runs it again.
-    The agent that wrote this change fitted, for Adam to check: the Igor moves the log copies
+    The agent that wrote this change fitted, and Adam confirmed (decision 106): the Igor moves the log copies
     before it writes the question file, so the file can name a refused one; the move's source
     is checked from the state directory down, like the destination; `igor release` deletes the
     session logs before the question file, so a refused delete leaves the question file and
@@ -983,6 +987,38 @@ Terms used here:
     refused move or delete leaves the path in place, and the Igor writes the path only to its
     own log on the host, never to the state branch. Three new `graceful-handoff` scenarios and
     one new `work-triage` scenario.
+103. **A Docker-run Igor keeps its state on a volume** (Adam, 2026-10-21).
+    `deploy/docker-compose.yml` sets `STATE_DIRECTORY=/var/lib/igor` on a named volume, so a
+    Docker-run `igor serve` keeps its question files when the container is recreated, and its
+    state path lies outside the workers' home, so #174's reset of that home cannot remove the
+    files, as #179's `StateDirectory=igor` does under systemd. Task 3.10 builds it.
+104. **A release by an edit deletes the files too** (Adam, 2026-10-21, amending decision 79). A
+    release through an attributable edit by someone with write access deletes the item's
+    session-log copies and then its question file under `flagged-questions`, exactly as
+    `igor release` does, and a refused
+    delete leaves the item held in the same way. Two new `work-triage` scenarios. The agent that
+    wrote this change fitted, for Adam to check, that such a release also appends the
+    `released` ledger row once its deletes succeed; Still open asks which rank deletes.
+105. **This change owns the state directory's definition** (Adam, 2026-10-21):
+    `$STATE_DIRECTORY`, else `$XDG_STATE_HOME/igor`, as `graceful-handoff` states it. #174 and #143
+    should cite it rather than define their own; an item below asks them.
+106. **The details fitted to decision 102 are Adam's** (Adam, 2026-10-21): the Igor moves the
+    log copies before writing the question file; a move's source is checked from the state
+    directory down; release deletes the logs before the question file; release's report says
+    only that it failed and that the path is in the Igor's log; and a refused delete of an
+    earlier execution's log, when a later one replaces it, leaves that log in place.
+107. **This change archives after #171** (Adam, 2026-10-21). igor issue #204, which orders the
+    open changes' archives, lists this change after #171 and #179. Its `task-execution` delta
+    stays on main's requirement *The worker is given an explicit environment holding no
+    credential but its seat's* for now, so spec-check, which cannot see #171's rename from
+    this branch, passes; once #171 merges, and before this change archives, the delta is
+    rewritten against #171's requirement *…but its seat's token*, keeping #171's rules and
+    scenarios (task 5.1). #204's order also puts #101 and #143 before #179, so this change
+    carries their text, and #179's, into the requirements it replaces whole:
+    `condition-backoff`'s (#101) in `work-triage` now, and #143's and #179's before it
+    archives (task 5.2). Recorded alongside, not decided by Adam: `lore-firing` removes *Lore
+    reaches the worker unbidden* and re-adds it under a new name, since `openspec archive`
+    refuses a modified requirement that drops a scenario in force.
 
 
 **Alignments with shared-skills #25.** These follow from Adam's decisions above and #25's
@@ -1030,19 +1066,6 @@ decisions 216, 221, 225, 229 and 235 (#25 at 9247d3c), and add no decision:
 - **For gate two: how a Node program opens a path without following a link** (decisions 101
   and 102, task 4.12). Node's `fs` has no `openat2` and no directory-relative calls, and its
   `O_NOFOLLOW` guards only the last component, so the mechanism is unmeasured.
-- **For Adam: a parent swapped under `igor serve`** (decision 102). Decision 102 accepts a
-  swapped parent of the state directory as decision 99's `igor run` limit. But
-  `deploy/docker-compose.yml` runs `igor serve` with no `STATE_DIRECTORY`, so the state
-  directory falls back to `~/.local/state/igor` in the container, and until #175 a same-user
-  worker can swap its parents there too, redirecting the Igor's writes outside the state
-  directory. Decision 99 accepts planting or deleting a file under `flagged-questions`, not
-  that redirect. Is it accepted under `igor serve` until #175, or should compose set
-  `STATE_DIRECTORY`? Compose also keeps no state volume, so kept questions are lost when the
-  container is recreated.
-- **For Adam: an edit release leaves the files** (decision 79). `igor release` deletes the
-  item's question file and logs so that no fallback holds it again, but a release by an edit
-  from someone with write access deletes nothing. If the hold record is later lost, the file
-  left behind holds the item again. Should an edit release delete the files too?
 - **For gate two: when several Igor processes for one role (#179's ranks) each record which
   commit #208 last applied, whose record governs the relay-file read** of decision 77; the
   processes
@@ -1059,43 +1082,49 @@ decisions 216, 221, 225, 229 and 235 (#25 at 9247d3c), and add no decision:
   no session or state under `HOME` outside the two paths #174 resets.
 - **For #217 (decision 96).** Its Still open item on which of the two refusal texts to reword is
   settled by decision 96, so #217 should drop it.
-- **For shared-skills #25 (decisions 92 and 97).** #25's decision 244 records that the flag
-  carries the category, citing decision 89, but its proposed decision 245 says a categorized
-  question that does not stop the worker adds no category. That is the conflict; 245's
-  rejection of one word per question agrees with decision 97, which gives one word per
-  category.
-  Under decision 97 the flag lists every category met, each once, and marks those of the
-  question or questions the run stopped on; #25 should amend 245 to match. #25 also lists the
-  words in the order `vulnerability`, `secret`, `personal`, which this change does not
-  require.
 - **Gate two depends on [#179](https://github.com/adamstallard/igor/pull/179) (decision 93).**
   Today's `deploy/igor.service` sets no `StateDirectory=` and makes the home directory
   read-only (`ProtectHome=read-only`, only `/srv/igor` writable), so neither #174's per-run
   home nor the question's file can be written. This change's gate two merges only after #179's
   unit sets `StateDirectory=igor`.
-- **For shared-skills #25 (decisions 84 and 89).** #25's decision 243 says the question's file
-  holds the question and only someone with write access releases a held item. Under decisions
-  84 and 89 the file holds the category where there is one, and the operator can also release
-  it with `igor release`.
 - **For `condition-backoff` and [#101](https://github.com/adamstallard/igor/pull/101)
   (decision 85).** A condition opens on its first occurrence only for #101's refused App
   credential. Decision 85 adds a second exception, the first failed write of a held question,
   as a notice that stops no work, against `condition-backoff`'s rule that a recurring condition
   stops its scope. `condition-backoff` also exempts a handoff caused by a fact about the Igor
-  from suppression, while decision 82 keeps a held item held. Copying the other's text is not
-  enough: whichever archives last must state the exception for a held item itself.
+  from suppression, while decision 82 keeps a held item held. This change archives after
+  #101, so its `work-triage` delta carries `condition-backoff`'s exemption and states that a
+  held item stays held despite it. What stays open is the first point: `condition-backoff`
+  should name decision 85's notice as a second exception to its rule.
 - **This change depends on [#174](https://github.com/adamstallard/igor/pull/174) (decisions 87
   and 88)** for each worker run's private Claude state and the copied, redacted session log;
   decision 88 moves a flagged run's copy beside its question. #174's record in the execution
   ledger names the copy's path, which for a flagged run is the moved copy under
   `flagged-questions`, or the unmoved copy where decision 102's rule refused the move; #174
-  should allow for both. #174 also defines the state directory as `/var/lib/igor` or
-  `~/.local/state/igor`, while `graceful-handoff` here uses `$STATE_DIRECTORY` or
-  `$XDG_STATE_HOME/igor`; one change should own the definition, or with `XDG_STATE_HOME` set
-  a move's source and destination sit in different state directories.
-- **This change depends on [#171](https://github.com/adamstallard/igor/pull/171) (decision
-  87)** for the rule that every seat names a token, and that an organization declaring no
-  seats is refused (#171's decision 36). Until #171 merges, main's `seat-budget` still lets a
+  should allow for both.
+- **For [#174](https://github.com/adamstallard/igor/pull/174) and
+  [#143](https://github.com/adamstallard/igor/pull/143) (decision 105).** This change owns the
+  state directory's definition, in `graceful-handoff`: `$STATE_DIRECTORY` where set, else
+  `$XDG_STATE_HOME/igor`, which is `~/.local/state/igor` when `XDG_STATE_HOME` is unset. #174
+  defines it as `/var/lib/igor` or `~/.local/state/igor`, and #143's seat-budget equates it
+  with `/var/lib/igor`; both should cite this change's definition instead. Otherwise, with
+  `XDG_STATE_HOME` set, #174's log copy and the question file sit in different state
+  directories, and decision 102's check of a move's source, from the state directory down,
+  starts from the wrong one.
+- **For Adam: which rank deletes the files on a release by an edit** (decision 104). Any rank
+  of the role can see the edit, but the question file and logs sit on the host of the rank
+  that kept them. The spec does not say whether the rank that sees the edit waits for the
+  holding rank, or how a rank on another host learns that the deletes succeeded. Nor does it
+  say whether, after a refused delete, the Igor tries again on a later poll or needs another
+  edit, or how anyone learns of the failure besides the Igor's own log.
+- **The agent that wrote this change fitted, for Adam to check (decision 104):** a release by
+  an edit also appends the `released` ledger row once its deletes succeed, as `igor release`
+  does. Where the hold record is lost, `work-triage` knows a held item from its latest ledger
+  row starting `needs a person`, so without that row a lost record would hold the item
+  again.
+- **This change depends on [#171](https://github.com/adamstallard/igor/pull/171) (decisions
+  87 and 107)** for the rule that every seat names a token, and that an organization declaring no
+  seats is refused (#171's decision 36). It archives after #171 (decision 107). Until #171 merges, main's `seat-budget` still lets a
   seat naming no token run on the ambient login, while this change's execution refuses to spawn
   a worker for one.
 - **For #179 or the deployment guide: workers cannot write the home.** Today's
@@ -1105,9 +1134,12 @@ decisions 216, 221, 225, 229 and 235 (#25 at 9247d3c), and add no decision:
 - **`condition-backoff` and #141 modify the same `work-triage` requirement.** The open change
   `condition-backoff` modifies *An item handed back is not re-worked until something answers*,
   and [#141](https://github.com/adamstallard/igor/pull/141) amends its delta to count only a
-  reply from someone with write access. This change's delta, for decision 76, is built on the
-  base text. Each replaces the requirement whole, so whichever archives last carries the text of
-  the others.
+  reply from someone with write access. Each replaces the requirement whole, so whichever
+  archives last carries the text of the others. This change archives after
+  `condition-backoff` (#101), so its delta carries `condition-backoff`'s rule that a handoff
+  caused by a fact about the Igor is not suppressed, and that rule's scenario. #141 is not yet
+  in #204's order, so whether this change or #141 carries the other's reply rule is decided
+  when Adam places #141.
 - **For gate two: the ref relay files are read from, where #208 did apply a commit.** Decision 77 has them read as of the
   commit #208 last applied; gate two names the ref that holds it, beside the `questions`
   branch's ref.
@@ -1227,7 +1259,11 @@ decisions 216, 221, 225, 229 and 235 (#25 at 9247d3c), and add no decision:
   declares its sources, lane, behaviour, permissions, and reviewers*, and they and the open
   change `lore-from-corrections` modify *Merge semantics differ by field kind*. Whichever of
   them and this change merges later carries this change's `igor lore-search` exception into
-  its text.
+  its text. Under #204's order #143 archives before this change, so this change carries
+  #143's `reserve` field and merge rule (task 5.2), and #153 archives after it, so #153
+  carries this change's exception, with the
+  scenario *Listing the search command is no widening*; #204's archive check refuses #153
+  until it does.
 - This change defines a *handback comment* as the Igor's handoff comment when it asks a
   question the run could not settle. Decision 41 needs the Igor's record of the questions it
   posted in each one. `graceful-handoff`'s handoff comment holds no question today, and #211,
@@ -1309,23 +1345,23 @@ decisions 216, 221, 225, 229 and 235 (#25 at 9247d3c), and add no decision:
   question and miss files to the `questions` branch with no trailer, which #153's exemption
   does not yet name.
 - [#171](https://github.com/adamstallard/igor/pull/171) renames *The worker is given an
-  explicit environment holding no credential but its seat's*, which the citation requirement
-  cites, by adding "token" to its end. Whichever of #171 and this change merges second updates
-  the citation requirement to the new name. This change's `task-execution` delta also modifies
-  that requirement, to add `IGOR_RUN`, private Claude state per run and the refusal of a
-  seat naming no token, under its current name; whichever merges second carries
-  both changes. [#175](https://github.com/adamstallard/igor/pull/175) modifies the same
-  requirement too, adding `GIT_INDEX_FILE`; each delta replaces the requirement whole, so
-  whichever of #175 and this change merges second carries the other's text.
+  explicit environment holding no credential but its seat's* by adding "token" to its end.
+  This change archives after #171 (decision 107). Once #171 merges, this change's `task-execution` delta
+  is rewritten against the renamed requirement, over #171's text, and the citation
+  requirement cites the new name (task 5.1). [#175](https://github.com/adamstallard/igor/pull/175) modifies the same
+  requirement too, adding `GIT_INDEX_FILE`. #175 archives before #171, which removes the
+  requirement and re-adds it under the new name keeping that rule, so the rule reaches this
+  change through #171's text.
 - [#179](https://github.com/adamstallard/igor/pull/179) also modifies `surface-adapter`'s *An
   Igor that cannot act as its App does not start*, which this change modifies for decision
-  62's `igor-` check. Each delta replaces the requirement whole, so whichever merges second
-  carries the other's text.
+  62's `igor-` check. Each delta replaces the requirement whole, and #179 archives first, so
+  this change carries #179's text, its rank-named `igor serve reviewer-1`, before it
+  archives (task 5.2).
 - [#179](https://github.com/adamstallard/igor/pull/179) removes `task-execution`'s *A killed
   worker's failure names the limit it breached*, which decision 56's rule cites, and replaces
   it with *A killed worker's failure names the silence it breached*, with no ceiling case.
-  Whichever of #179 and this change merges second points the citation at the new requirement
-  and drops the `time ceiling` example.
+  #179 archives first, so this change points the citation at the new requirement and drops
+  the `time ceiling` example before it archives (task 5.2).
 - The run's transcript holds the worker's output, so it can repeat the id of a citation the
   Igor refused, and #188's log of the worker's tool calls might too. Neither is the count
   record that decision 12 keeps free of worker text. This change does not keep refused ids out
@@ -1405,10 +1441,10 @@ reading the codebase. Two cases contradict that:
 
 ## What Changes
 
-- `lore-firing`'s *Lore reaches the worker unbidden* keeps injection, now saying it happens
+- `lore-firing`'s *Lore reaches the worker unbidden* is removed and re-added as *Lore reaches the worker unbidden, beside a search it may run*, since openspec will not archive a modified requirement that drops a scenario in force. It keeps injection, now saying it happens
   whenever the entries fit the firing budget, and replaces the ban on a search with igor's
   search, which every worker is offered.
-- *Lore reaches the worker unbidden* also defines a search, a search during a run, and when a scope covers a role.
+- *Lore reaches the worker unbidden, beside a search it may run* also defines a search, a search during a run, and when a scope covers a role.
   It holds a search during a run to firing's scope rule for lore entries, puts every
   file on the Igor's destination repository's `questions` branch in scope, lets it return in-scope entries that
   are not `active` with a label, keeps its results out of the injected-lore channel and out of
@@ -1468,7 +1504,7 @@ reading the codebase. Two cases contradict that:
 - `task-execution`'s *Only reversible artifacts are produced* exempts pushing a run's citations
   and its question and miss files from the role's `allow` list, with two new scenarios.
 - `task-execution`'s *The worker is given an explicit environment holding no credential but
-  its seat's* has the Igor set `IGOR_RUN`, which carries no secret, in a worker's environment
+  its seat's*, which #171 renames by adding "token" (task 5.1), has the Igor set `IGOR_RUN`, which carries no secret, in a worker's environment
   and its own inquisitor run's, keeps each worker run's Claude state private by #174's design,
   and runs no worker for a seat that names no token, with four new scenarios: two for
   `IGOR_RUN` and two for decision 87.
@@ -1504,8 +1540,11 @@ reading the codebase. Two cases contradict that:
   from rerunning an item a flagged run handed back, and lets only an edit by someone with
   write access release it, keeps a held item held whatever its handoff carries and with a
   record that never expires, and lets the operator release it with `igor release`, which
-  keeps the item held when a delete is refused, with eight new scenarios,
-  including those for `igor release`, and three changed (decisions 76, 79, 82, 83, 84 and 102).
+  keeps the item held when a delete is refused; a release by an edit deletes the files the
+  same way and also keeps the item held when a delete is refused. It has ten new
+  scenarios, including those for `igor release`, and three changed (decisions 76, 79, 82, 83,
+  84, 102 and 104). It also carries `condition-backoff`'s rule that a handoff caused by a fact
+  about the Igor is not suppressed, with that rule's scenario (decision 107).
 - `docs/architecture.md`: §3.3 says every worker is offered `igor lore-search` and what binds it, §3.4.1 says a
   search hit is not a firing and that a review counts citations from the destination repository's
   `questions` branch, and §4.1 says the worker never *has* to search.
@@ -1518,7 +1557,7 @@ None.
 
 ### Modified Capabilities
 
-- `lore-firing`: *Lore reaches the worker unbidden* allows a search over the store and says what
+- `lore-firing`: *Lore reaches the worker unbidden, beside a search it may run* allows a search over the store and says what
   a search may return. *Status and scope are exact filters, always applied* keeps a `project:`
   entry about a more private repository from firing. Three new requirements have the Igor run its worker's searches and
   publish its worker's citations and its question and miss files.

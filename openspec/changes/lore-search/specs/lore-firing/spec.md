@@ -1,6 +1,73 @@
 ## MODIFIED Requirements
 
-### Requirement: Lore reaches the worker unbidden
+### Requirement: Status and scope are exact filters, always applied
+
+Only entries whose status is `active` SHALL fire. Only entries whose scope covers the running
+role SHALL fire. Both filters are exact and MUST NOT be delegated to any inexact mechanism.
+
+An entry whose scope is `project:` SHALL NOT fire into a run when the repository of the item
+the run works is more visible than the repository the scope names, where private is less
+visible than internal and internal less than public. The repository a `project:` scope names
+is the repository the running role works whose short name, the part after the `/`, is the
+name the scope gives. Where two repositories the role works share that name, it is the more
+private of them. A `project:` scope that names no repository the role works does not cover
+the role, so this filter never meets it. The Igor reads both visibilities from GitHub when it injects. A repository the scope
+names whose visibility it cannot read counts as private, and an item's repository whose
+visibility it cannot read counts as public. An entry this filter keeps out counts as out of
+scope for firing: it neither fires nor counts toward the firing budget, and *The whole in-scope
+store is injected while it fits* does not count it. The filter is not part of the scope rule by
+which a scope *covers* a role: a rule that relies on *covers*, such as the search's scope
+rule, does not apply this filter unless that rule names it.
+
+These are review state and visibility, not relevance. A wrong relevance judgment costs a
+worker some attention; a wrong visibility judgment shows one team's material to another.
+
+#### Scenario: Provisional entries do not fire
+
+- **WHEN** an entry is `provisional`
+- **THEN** it does not reach the worker, however well it matches
+- **AND** review therefore determines what an Igor knows
+
+#### Scenario: Out-of-scope entries do not fire
+
+- **WHEN** an entry is scoped to a project the running role does not cover
+- **THEN** it does not reach the worker
+
+#### Scenario: Deprecated entries do not fire
+
+- **WHEN** an entry is `deprecated`
+- **THEN** it does not reach the worker
+
+#### Scenario: A project entry about a more private repository does not fire
+
+- **WHEN** a run works an item in public repository Y
+- **AND** an `active` entry is scoped `project:` naming private repository X, a repository
+  the running role works
+- **THEN** the entry is not injected into the worker
+- **AND** it does not count toward the firing budget
+
+#### Scenario: An unreadable visibility keeps a project entry from firing
+
+- **WHEN** a run works an item in a public repository, and the Igor cannot read the visibility
+  of the repository an `active` entry's `project:` scope names
+- **THEN** that entry does not fire into the run
+
+#### Scenario: An unreadable item visibility keeps a private project entry from firing
+
+- **WHEN** the Igor cannot read the visibility of the repository a run's item is in
+- **AND** an `active` entry's `project:` scope names a private repository the role works
+- **THEN** that entry does not fire into the run
+
+#### Scenario: A project scope names the more private of two sources with its name
+
+- **WHEN** the running role's sources include a private and a public repository that share the
+  short name `api`
+- **AND** a run works an item in a public repository
+- **THEN** an `active` entry scoped `project:api` does not fire into that run
+
+## ADDED Requirements
+
+### Requirement: Lore reaches the worker unbidden, beside a search it may run
 
 Active, in-scope entries that *Status and scope are exact filters, always applied* lets fire
 SHALL be injected into the worker's context before it runs, whenever they fit the firing budget
@@ -114,70 +181,6 @@ A search's results MUST NOT be recorded as firings.
 - **AND** it compares against no entry or rejected candidate whose scope does not cover that
   Igor's role, nor against a rejection that records no scope
 
-### Requirement: Status and scope are exact filters, always applied
-
-Only entries whose status is `active` SHALL fire. Only entries whose scope covers the running
-role SHALL fire. Both filters are exact and MUST NOT be delegated to any inexact mechanism.
-
-An entry whose scope is `project:` SHALL NOT fire into a run when the repository of the item
-the run works is more visible than the repository the scope names, where private is less
-visible than internal and internal less than public. The repository a `project:` scope names
-is the repository the running role works whose short name, the part after the `/`, is the
-name the scope gives. Where two repositories the role works share that name, it is the more
-private of them. The Igor reads both visibilities from GitHub when it injects. A repository the scope
-names whose visibility it cannot read counts as private, and an item's repository whose
-visibility it cannot read counts as public. An entry this filter keeps out counts as out of
-scope for firing: it neither fires nor counts toward the firing budget, and *The whole in-scope
-store is injected while it fits* does not count it. The filter is not part of the scope rule by
-which a scope *covers* a role.
-
-These are review state and visibility, not relevance. A wrong relevance judgment costs a
-worker some attention; a wrong visibility judgment shows one team's material to another.
-
-#### Scenario: Provisional entries do not fire
-
-- **WHEN** an entry is `provisional`
-- **THEN** it does not reach the worker, however well it matches
-- **AND** review therefore determines what an Igor knows
-
-#### Scenario: Out-of-scope entries do not fire
-
-- **WHEN** an entry is scoped to a project the running role does not cover
-- **THEN** it does not reach the worker
-
-#### Scenario: Deprecated entries do not fire
-
-- **WHEN** an entry is `deprecated`
-- **THEN** it does not reach the worker
-
-#### Scenario: A project entry about a more private repository does not fire
-
-- **WHEN** a run works an item in public repository Y
-- **AND** an `active` entry is scoped `project:` naming private repository X, one of the
-  running role's sources
-- **THEN** the entry is not injected into the worker
-- **AND** it does not count toward the firing budget
-
-#### Scenario: An unreadable visibility keeps a project entry from firing
-
-- **WHEN** a run works an item in a public repository, and the Igor cannot read the visibility
-  of the repository an `active` entry's `project:` scope names
-- **THEN** that entry does not fire into the run
-
-#### Scenario: An unreadable item visibility keeps a private project entry from firing
-
-- **WHEN** the Igor cannot read the visibility of the repository a run's item is in
-- **AND** an `active` entry's `project:` scope names a private repository the role works
-- **THEN** that entry does not fire into the run
-
-#### Scenario: A project scope names the more private of two sources with its name
-
-- **WHEN** the running role's sources include a private and a public repository that share the
-  short name `api`
-- **AND** a run works an item in a public repository
-- **THEN** an `active` entry scoped `project:api` does not fire into that run
-
-## ADDED Requirements
 
 ### Requirement: An Igor publishes the citations its worker reports
 
@@ -790,11 +793,11 @@ of each run. Under `igor run`, no search fetches anything, and the run reads the
 was last fetched. The results SHALL say when the branch the search read was last
 fetched, or that it was never fetched or could not be fetched. The Igor SHALL take the run, and
 so its role, from the channel the request arrives on, never from the request, and only that
-run's worker SHALL be able to reach that channel. It SHALL apply every rule *Lore reaches the worker unbidden*
+run's worker SHALL be able to reach that channel. It SHALL apply every rule *Lore reaches the worker unbidden, beside a search it may run*
 sets for a search during a run, for the run's role, and SHALL return the results to the worker
 as search output. Each result SHALL be an in-scope entry, with its id, its status and its
 text, marked as lore when `active` and labelled as not lore otherwise, or an in-scope question
-or miss file, labelled as *Lore reaches the worker unbidden* sets, the unanswered label
+or miss file, labelled as *Lore reaches the worker unbidden, beside a search it may run* sets, the unanswered label
 included. It SHALL return a `questions`-branch file only when the repository of the
 item the run works is no more visible than the file, by the visibility order that *An Igor
 publishes the citations its worker reports* sets. A file is as visible as the more private of
@@ -1089,3 +1092,15 @@ inheritance cannot remove it (`role-config`'s *Merge semantics differ by field k
 - **WHEN** a worker runs `igor lore-search` and an entry outside its role's scope matches the
   text
 - **THEN** the results neither include it nor count or mention it
+
+## REMOVED Requirements
+
+### Requirement: Lore reaches the worker unbidden
+
+**Reason**: Its scenario *No search affordance offered* is false once a worker is offered
+`igor lore-search`, and openspec will not archive a `MODIFIED` block that drops a scenario in
+force. The requirement is therefore removed and re-added under a new name, *Lore reaches the worker unbidden, beside a search it may run*, which keeps
+its injection rule and its scenario *Entries present without being requested*.
+
+**Migration**: nothing to migrate. Read *Lore reaches the worker unbidden, beside a search it
+may run* in place of the removed requirement.

@@ -25,9 +25,10 @@ or any other label that routes the item to an inquisitor role, to such a handoff
 
 The Igor SHALL instead write a file about that question on its own host: `flagged-questions/<tracker>/<repo>/<item>.md` under its state directory, with the
 same `<tracker>/<repo>/<item>` the item's transcript path has on the state branch. The state directory is `$STATE_DIRECTORY`
-where systemd sets it, as a unit that sets `StateDirectory=igor` makes it `/var/lib/igor`,
-and otherwise
-`$XDG_STATE_HOME/igor`, which is `~/.local/state/igor` when `XDG_STATE_HOME` is unset. The file
+where it is set, and otherwise `$XDG_STATE_HOME/igor`, which is `~/.local/state/igor` when
+`XDG_STATE_HOME` is unset. A systemd unit that sets `StateDirectory=igor` sets
+`STATE_DIRECTORY` to `/var/lib/igor`, and `deploy/docker-compose.yml` sets the variable to the
+same path itself. The file
 SHALL be mode 0600, owned by the user the Igor runs as, and the `flagged-questions` directory
 and every directory below it SHALL be mode 0700. The file SHALL record every category the worker's flag listed, each at most once, with the
 mark saying which belong to the question or questions the run stopped on (`task-execution`).

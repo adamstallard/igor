@@ -15,6 +15,18 @@ or an edit to the item itself, except as the next paragraph says. Outside that c
 suppressed until its title or labels change would stay silent precisely where a person supplied
 the missing context in a comment.
 
+Suppression follows from the item having produced the outcome. Where the cause was a fact about
+the Igor — a seat whose token is unset, a command its allowlist refuses, a seat whose capacity
+igor has never observed — the item SHALL NOT be suppressed: it did not produce that outcome,
+and nothing anyone could say on it would cure such a cause. Budget is one instance of this rule and not the whole of
+it.
+
+Written as a rule rather than an enumeration, because such causes are indistinguishable from
+the item's side and identical in consequence: each recurs on the next item and every one after
+until somebody changes a configuration. Suppressing on one parks a backlog behind a cure nobody
+has been told to make, and every parked item then has to be answered individually to release
+it. A cause arriving later has a rule to satisfy rather than a list to be added to.
+
 Where the handoff is a flagged run's that stopped on a question it could not settle
 (`graceful-handoff`'s *A handoff states what was done, what remains, and who could continue*),
 the item is *held*, and SHALL stay held whatever else its handoff carries: a cure key
@@ -40,7 +52,13 @@ every Igor process of the role, each a *rank* under #179, reads the release from
 branch, so a rank on another host does not hold the item again from its own file or ledger
 rows. An
 edit to the item, a relabel or a change of holder included, by someone with write access to
-the item's repository SHALL also release it, where the edit can be attributed. An edit by
+the item's repository SHALL also release it, where the edit can be attributed. Such a release
+SHALL delete the item's session logs and then its question file exactly as `igor release`
+does, on the host that holds them (which rank does so is open, in the proposal's Still
+open), and only then mark the hold record released and append a ledger row whose `reason` is
+`released`; where a delete is refused, the Igor SHALL write the path only to its own log on
+the host, leave any file it did not yet delete, and mark nothing released and append no row,
+so the item stays held. An edit by
 anyone else, or one whose author the Igor cannot read, SHALL leave the item held. How write
 access is read and who made an edit are #141's rules; until #141 lands, no edit can be
 attributed, and `igor release` is the way to release a held item.
@@ -73,6 +91,24 @@ attributed, and `igor release` is the way to release a held item.
 - **WHEN** a flagged run stopped on a question it could not settle and handed the item back
 - **AND** someone with write access to the item's repository then relabels or edits the item
 - **THEN** it is worked again
+
+#### Scenario: A release by an edit deletes the item's files
+
+- **WHEN** a held item's question file and session logs are under `flagged-questions`
+- **AND** someone with write access to the item's repository edits the item, where the edit
+  can be attributed
+- **THEN** the Igor deletes the session logs and then the question file before the item is
+  worked again
+
+#### Scenario: A refused delete keeps an edited item held
+
+- **WHEN** someone with write access to the item's repository edits a held item, where the
+  edit can be attributed
+- **AND** a worker running as the Igor's user has replaced one of the item's session-log
+  copies with a symbolic link
+- **THEN** the Igor deletes nothing through the link and writes its path only to its own log
+- **AND** the hold record stays held, no `released` row is appended, and the item is not
+  worked again
 
 #### Scenario: The operator releases a held item on the host
 
@@ -129,6 +165,13 @@ attributed, and `igor release` is the way to release a held item.
 
 - **WHEN** an item was handed back because the budget was exhausted
 - **THEN** it is not suppressed, because nothing about the item produced that outcome
+
+#### Scenario: A seat that could not be read is no more a decision about the item
+
+- **WHEN** an item was handed back because the worker could not start, the variable naming
+  its seat's token unset, so igor could not read the token
+- **THEN** it is not suppressed, on the same grounds: the Igor's configuration produced that
+  outcome, and the next item would meet it identically
 
 #### Scenario: The record is a cache, not a source of truth
 

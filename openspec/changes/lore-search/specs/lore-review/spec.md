@@ -33,7 +33,7 @@ SHALL report that it was not proposed; a person may propose it outside a run. Th
 report and the refusal to propose hold even where the checkout holds the same name in the same
 kind. Minting's silence about such a name, set out above, applies only outside a run, or to a
 holder whose scope covers the run's role. *Covers* is
-as `lore-firing`'s *Lore reaches the worker unbidden* defines it, and so are *during an Igor's
+as `lore-firing`'s *Lore reaches the worker unbidden, beside a search it may run* defines it, and so are *during an Igor's
 run* and how a rejection that records no scope counts.
 
 This governs the id space and nothing else. A checkout that is behind is still behind on the

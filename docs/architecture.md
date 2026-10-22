@@ -582,8 +582,10 @@ the run stopped on one it could not settle: its reason reads `needs a person`, a
 question's text never reaches the item. The handoff gets no `igor:question` label, so
 nothing routes the item to an inquisitor role. The Igor keeps the question in a file on its own
 host, `flagged-questions/<tracker>/<repo>/<item>.md` under its state directory
-(`$STATE_DIRECTORY` under a unit that sets `StateDirectory=igor`, as open pull request #179's
-does, making it `/var/lib/igor`, or else `~/.local/state/igor`), readable only by its own user,
+(`$STATE_DIRECTORY` where it is set, and otherwise `$XDG_STATE_HOME/igor`, which is
+`~/.local/state/igor` when `XDG_STATE_HOME` is unset; a systemd unit that sets
+`StateDirectory=igor`, such as open pull request #179's, sets `STATE_DIRECTORY` to
+`/var/lib/igor`, and `deploy/docker-compose.yml` sets the variable to the same path itself), readable only by its own user,
 and never pushes it. Today's unit sets no state directory, so the Igor falls back to
 `~/.local/state/igor`, which that unit's `ProtectHome=read-only` makes read-only: until #179's
 unit lands, a deployed Igor keeps no question, and every such write fails. When the file
@@ -604,7 +606,10 @@ worked again. The item stays held, not worked again, whatever else its
 handoff carries, such as a cure key that would release any other item, and its hold record never expires; a lost record leaves it held. The operator
 can always release it with `igor release <tracker>/<repo>/<item>` on the host. An edit, relabel
 or change of holder by someone with write access to the item's repository releases it too,
-where the edit can be attributed, which needs #141; anyone else's edit, or one whose author
+where the edit can be attributed, which needs #141, so until #141 lands only `igor release`
+does; either way of releasing deletes the item's session logs and then its question file
+before the item counts as released, the question file last so that a refused delete leaves
+it in place and the item still known as held; anyone else's edit, or one whose author
 cannot be read, leaves it held.
 
 Open pull request #174 gives each worker run a home of its own, resets `~/.claude` and
