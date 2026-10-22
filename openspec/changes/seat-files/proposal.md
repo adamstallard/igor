@@ -420,19 +420,35 @@ Adam's answers of 2026-10-21:
     too** (Adam, 2026-10-21). `igor serve` decrypts no `encrypted_token` while its code has no
     worker users, as #175's `task-execution` defines them; with this change built before #175,
     `serve` uses no lent seat until #175's code lands (task 3.8b). A lent seat under such a
-    `serve` raises no condition, as under `igor run`, and serves no role. Two consequences were
-    chosen by the agent that wrote this rule, and are for Adam to check: a role whose only seats
-    are lent is refused at load, as a role with no seat is; and `igor budget` shows each lent seat
-    as not used. *Rejected:* relying on decision 11's instruction that no
-    seat be lent until #175 is built, which nothing in the code enforced while the lender guide
-    and `igor-agent`, which invite lending, ship with this change.
+    `serve` raises no condition, as under `igor run`, and serves no role. Two consequences
+    follow, both confirmed by Adam on 2026-10-21: a role whose only seats are lent is refused at
+    load, as a role with no seat is; and `igor budget` shows each lent seat as not used.
+    *Rejected:* relying on decision 11's instruction that no seat be lent until #175 is built.
+    Nothing in the code enforced that instruction, and the lender guide and `igor-agent`, which
+    invite lending, ship with this change.
 
 **Still open.** The smaller choices 47 to 56 await Adam's approval with the change. Besides them:
 
-- **For Adam to check, from decision 78:** under an `igor serve` without worker users, a role
-  whose only seats are lent is refused at load, and `igor budget` shows each lent seat as not
-  used. The spec states both as rules, since they follow from a lent seat serving no role
-  there; the agent that wrote decision 78 chose them.
+- **Findings of a further consistency read on 2026-10-21, new and not fixed here,** for whoever
+  next edits this change. A read-cleared condition that opens only after several failing reads
+  writes no row to the execution log for the reads before the one that opens it, so its count
+  lives only in memory and resets on restart, against the rule that a condition is rebuilt from
+  the log. `igor run`'s implicit seat has no
+  file, against two unqualified rules that every seat is a file and every role spends only from
+  seats whose files list it. Two servers whose reads of the same seat file disagree for good,
+  such as servers without the same `seatKey`, open and clear its condition every cycle, and
+  nothing says every server must hold the same key. Decision 78's interim rules describe a
+  `serve` without worker users. Once this change and #175 have both archived, #175's rule that
+  `igor serve` always runs its worker as its worker user forbids such a `serve`, and after task
+  8.4a removes the guard no test can reach those rules. Until #175's code lands, the operator and lender guides
+  invite lending a seat that serves nothing. `igor budget` under #82 (`stopped-scope-visible`)
+  shows a malformed-file seat as stopped, though its condition stops nothing. When the last seat
+  file serving a role is removed, the role hands its item back to the tracker with no handoff
+  reason the spec defines. A role whose `seat:` names a malformed file's seat is exempt from
+  decision 5, which refuses a role its named seat's file does not list, even where that file's
+  `roles` can be read; decision 72 exempts only a file whose `roles` cannot be read. Some terms in the proposal are used before they are defined. The lender guide's claim
+  that a `setup-token` only makes model requests is unmeasured. The rule that Igor holds no
+  holder's GitHub credentials has no scenario.
 - **Findings of the consistency read of 2026-10-21's last round, for whoever next edits this
   change.** None is decided, and each says what is wrong, not which way to fix it. The build order in *Impact* and `design.md` puts #113 before #217,
   where issue #204 puts #217 first. The worker-environment requirement this change removes is

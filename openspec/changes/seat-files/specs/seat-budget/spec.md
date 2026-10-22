@@ -964,8 +964,8 @@ two cases:
 A lent seat left undecrypted in either case has no fault in its file, so it SHALL raise no
 condition. Under such a `serve`, a lent seat SHALL count as serving no role. So a role whose
 only seats are lent has no seat there, and *A role's seats are the seats whose files list it*
-refuses it at load, although its seat files exist. `igor budget` SHALL show each such seat as not used, saying that this `serve` has no
-worker users.
+refuses it at load, although its seat files exist; the refusal SHALL say that this `serve` has no worker users, so it uses no lent seat. `igor budget`, which reports through the same code a `serve` runs, SHALL show each such seat
+as not used where that code has no worker users, saying so.
 
 Not decrypting is not enough where `igor run` can read the key itself, as when someone runs it as
 the service user on the server, which normally only `igor serve` runs as: its worker, running as
@@ -991,7 +991,14 @@ naming the path.
 
 - **WHEN** `igor serve` runs its workers as its own user, because its code has no worker users,
   and the only seat serving a role names `encrypted_token`
-- **THEN** the role is refused at load, as a role with no seat is
+- **THEN** the role is refused at load, as a role with no seat is, and the refusal says that
+  this `serve` has no worker users, so it uses no lent seat
+
+#### Scenario: igor budget shows a lent seat unused without worker users
+
+- **WHEN** `igor budget` runs from code that has no worker users, and a seat names
+  `encrypted_token`
+- **THEN** it shows that seat as not used, saying that this version of Igor has no worker users
 
 #### Scenario: `igor run` decrypts no lent seat
 

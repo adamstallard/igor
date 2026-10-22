@@ -273,6 +273,7 @@ contradicts it, and then `design.md` records the measurement.
       role "<role>" names seat "<seat>", which has no seat file. Seats: <ids>
       role "<role>" names seat "<seat>", and seats/<seat>.yaml does not list it. The seat's holder lists the roles it serves in that file.
       role "<role>" is served by no seat. A seat serves a role when its file under seats/ lists the role in `roles`. With no lender, declare one from your own token: docs/deployment.md, "Declaring a seat by hand".
+      role "<role>" is served by no seat this igor serve can use: its seats are lent, and this version of igor serve has no worker users, so it decrypts no lent seat. Until you install a version that has them, declare a seat by token_env: docs/deployment.md, "Declaring a seat by hand".
       ```
 
 - [ ] 4.2 `poolFor` is replaced by a function returning the seats serving a role, and `budgetGate`
