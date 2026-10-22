@@ -2,7 +2,7 @@
 
 ## Decisions
 
-[#215](https://github.com/adamstallard/igor/issues/215) records all one hundred and one decisions, as this list does too,
+[#215](https://github.com/adamstallard/igor/issues/215) records all one hundred and two decisions, as this list does too,
 and all are Adam's. Where the agent that wrote this change fitted
 details Adam had not stated, that decision says so, and where Adam has since confirmed them,
 a later decision records it. A *consistency read*
@@ -80,7 +80,8 @@ request; Adam answered the questions each read raised. He made:
   him, confirming more fitted details, and settling how a refused run's reply is kept;
 - decisions 97 to 99 on 2026-10-21, answering the three questions the reads of decisions 91 to
   96 raised, and decision 100 that day, confirming the details fitted to decision 97;
-- decision 101 on 2026-10-21, answering the question the reads of decision 100 raised.
+- decision 101 on 2026-10-21, answering the question the reads of decision 100 raised, and
+  decision 102 that day, answering the three questions the reads of decision 101 raised.
 
 Terms used here:
 - The *destination repository* is the repository the configuration key `destination` names,
@@ -829,8 +830,9 @@ Terms used here:
     `flagged-questions` on the host, or from a ledger row whose `reason` starts
     `needs a person`. It also fitted what decision 84's `igor release <item>` does: its `<item>` is
     `<tracker>/<repo>/<item>`, and it marks the hold record released, appends a `released` ledger row
-    and deletes the host file, so no fallback holds the item again. Two new scenarios, and one
-    changed.
+    and deletes the host file, so no fallback holds the item again; decision 102 has it
+    delete first and mark the record released only once every delete succeeds. Two new
+    scenarios, and one changed.
 84. **The operator can always release a held item on the host,** with
     `igor release <tracker>/<repo>/<item>`, as Adam confirmed in decision 95,
     whatever #141 or task 4.10 find. An edit by someone with write access releases it too, where
@@ -954,9 +956,33 @@ Terms used here:
     change had added, since a planted hard link or special file there could carry a write
     elsewhere just as a link could. A refused write is a failed write under decision 80:
     the ledger row records `question not kept`, and decision 80's notice condition opens once
-    `condition-backoff` defines conditions (Adam, 2026-10-21). How the rule treats the state
-    directory itself, a refused move and a refused delete is open (Still open). Four new
-    `graceful-handoff` scenarios.
+    `condition-backoff` defines conditions (Adam, 2026-10-21). Decision 102 settles the state
+    directory itself, a refused move and a refused delete. Four new `graceful-handoff`
+    scenarios.
+102. **The rule's three edges** (Adam, 2026-10-21), which the consistency read of decision 101
+    raised:
+    - *The state directory itself is checked, its parents are not.* The rule covers the state
+      directory (`/var/lib/igor`, or `~/.local/state/igor`) and everything below it. Its
+      parents are left alone, because a legitimate `$HOME` or `$XDG_STATE_HOME` may pass
+      through a link; a worker that swaps one of them is within decision 99's limit under
+      `igor run`.
+    - *A refused move of a session-log copy is not `question not kept`,* since the question
+      was kept. The question file notes that copy as missing, as for a log #174 did not copy.
+      The move's source, #174's copy, is also opened without following a link.
+    - *A refused delete under `igor release` keeps the item held.* Release reports the
+      failure and marks nothing released, so the hold record and the files never disagree;
+      the operator fixes the path and runs it again.
+    The agent that wrote this change fitted, for Adam to check: the Igor moves the log copies
+    before it writes the question file, so the file can name a refused one; the move's source
+    is checked from the state directory down, like the destination; `igor release` deletes the
+    session logs before the question file, so a refused delete leaves the question file and
+    the item stays known as held; its report says only that it failed and that the path is in
+    the Igor's log; and a refused delete of an earlier execution's log, when a later one
+    replaces it, leaves that log in place.
+    He also confirmed the detail the agent that wrote this change fitted to decision 101: a
+    refused move or delete leaves the path in place, and the Igor writes the path only to its
+    own log on the host, never to the state branch. Three new `graceful-handoff` scenarios and
+    one new `work-triage` scenario.
 
 
 **Alignments with shared-skills #25.** These follow from Adam's decisions above and #25's
@@ -1001,28 +1027,22 @@ decisions 216, 221, 225, 229 and 235 (#25 at 9247d3c), and add no decision:
   would never update and the `questions` branch would never be fetched. #208 should fetch the
   destination repository too; this change does not edit it. This change's `surface-adapter`
   delta has the startup check require the App on the destination repository as well.
-- **For Adam: three edges of decision 101's rule.** The consistency read of decision 101 raised
-  them; the agent that wrote this change left each open rather than fit it.
-  - *The state directory itself.* `flagged-questions` sits directly in the Igor's state
-    directory, so the rule covers `flagged-questions` and everything below it. Under `igor run`
-    the state directory is `~/.local/state/igor`, and a same-user worker could replace it, or
-    `~/.local/state`, with a link to a working tree, the redirect decision 101 closes one level
-    down. Checking the state directory and its parents too would close that, but would refuse
-    every write where a legitimate `$XDG_STATE_HOME` or `$HOME` passes through a link. Which
-    should apply?
-  - *A refused move of a log copy.* When the question file is written but moving one of
-    #174's session-log copies beside it is refused, should the ledger read `question not
-    kept`, or should the file note that copy as missing, as it notes a log #174 did not copy?
-    And should the move's source, #174's copy outside `flagged-questions`, be opened without
-    following a link too? Before #175 a same-user worker can replace it with a link, which a
-    rename would carry into `flagged-questions`.
-  - *A refused delete under `igor release`.* The spec leaves the path in place and writes it to
-    the Igor's own log. A file left in place can hold the item again if its hold record is
-    later lost, which undoes `work-triage`'s reason for deleting it. Should `igor release`
-    report the refusal as a failure, and should it still mark the record released?
-- **For gate two: how a Node program opens a path without following a link** (decision 101,
-  task 4.12). Node's `fs` has no `openat2` and no directory-relative calls, and its
+- **For gate two: how a Node program opens a path without following a link** (decisions 101
+  and 102, task 4.12). Node's `fs` has no `openat2` and no directory-relative calls, and its
   `O_NOFOLLOW` guards only the last component, so the mechanism is unmeasured.
+- **For Adam: a parent swapped under `igor serve`** (decision 102). Decision 102 accepts a
+  swapped parent of the state directory as decision 99's `igor run` limit. But
+  `deploy/docker-compose.yml` runs `igor serve` with no `STATE_DIRECTORY`, so the state
+  directory falls back to `~/.local/state/igor` in the container, and until #175 a same-user
+  worker can swap its parents there too, redirecting the Igor's writes outside the state
+  directory. Decision 99 accepts planting or deleting a file under `flagged-questions`, not
+  that redirect. Is it accepted under `igor serve` until #175, or should compose set
+  `STATE_DIRECTORY`? Compose also keeps no state volume, so kept questions are lost when the
+  container is recreated.
+- **For Adam: an edit release leaves the files** (decision 79). `igor release` deletes the
+  item's question file and logs so that no fallback holds it again, but a release by an edit
+  from someone with write access deletes nothing. If the hold record is later lost, the file
+  left behind holds the item again. Should an edit release delete the files too?
 - **For gate two: when several Igor processes for one role (#179's ranks) each record which
   commit #208 last applied, whose record governs the relay-file read** of decision 77; the
   processes
@@ -1068,7 +1088,11 @@ decisions 216, 221, 225, 229 and 235 (#25 at 9247d3c), and add no decision:
   and 88)** for each worker run's private Claude state and the copied, redacted session log;
   decision 88 moves a flagged run's copy beside its question. #174's record in the execution
   ledger names the copy's path, which for a flagged run is the moved copy under
-  `flagged-questions`; #174 should allow for the move.
+  `flagged-questions`, or the unmoved copy where decision 102's rule refused the move; #174
+  should allow for both. #174 also defines the state directory as `/var/lib/igor` or
+  `~/.local/state/igor`, while `graceful-handoff` here uses `$STATE_DIRECTORY` or
+  `$XDG_STATE_HOME/igor`; one change should own the definition, or with `XDG_STATE_HOME` set
+  a move's source and destination sit in different state directories.
 - **This change depends on [#171](https://github.com/adamstallard/igor/pull/171) (decision
   87)** for the rule that every seat names a token, and that an organization declaring no
   seats is refused (#171's decision 36). Until #171 merges, main's `seat-budget` still lets a
@@ -1475,13 +1499,13 @@ reading the codebase. Two cases contradict that:
   has a flagged run's handoff state why it stopped only in the ledger row's fixed words, quote
   no failure detail or worker's reason and point to the item's transcript path, and has a
   flagged run's handoff ask no question, add no question label and keep its question on the
-  host, with twenty-one new scenarios (decisions 71, 73, 75, 76, 80, 85, 88, 89, 97 and 101).
+  host, with twenty-four new scenarios (decisions 71, 73, 75, 76, 80, 85, 88, 89, 97, 101 and 102).
 - `work-triage`'s *An item handed back is not re-worked until something answers* stops a reply
   from rerunning an item a flagged run handed back, and lets only an edit by someone with
   write access release it, keeps a held item held whatever its handoff carries and with a
-  record that never expires, and lets the operator release it with `igor release`, with seven
-  new scenarios, `igor release`'s included, and three changed (decisions 76, 79, 82, 83
-  and 84).
+  record that never expires, and lets the operator release it with `igor release`, which
+  keeps the item held when a delete is refused, with eight new scenarios,
+  including those for `igor release`, and three changed (decisions 76, 79, 82, 83, 84 and 102).
 - `docs/architecture.md`: §3.3 says every worker is offered `igor lore-search` and what binds it, §3.4.1 says a
   search hit is not a firing and that a review counts citations from the destination repository's
   `questions` branch, and §4.1 says the worker never *has* to search.

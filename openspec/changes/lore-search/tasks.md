@@ -189,17 +189,21 @@
       categories with their marks and, for each question the run stopped on, its category or
       else its text, and listing every session log of the execution; for every create, move
       and delete under `flagged-questions`, the Igor opens each path component from the state
-      directory down to the file without following a link, and a link, a hard-linked file or
-      a non-regular file makes it refuse, a refused create or move counting as a failed write;
+      directory itself down to the file, and each move's source, without following a link,
+      and a link, a hard-linked file or a non-regular file makes it refuse; a refused create
+      counts as a failed write, a refused move of a log copy is noted in the question file as
+      a missing copy, and the path of a refused move or delete is recorded only in the Igor's own log;
       the Igor moves #174's
-      redacted copy of each step's log beside the file. A later flagged run's
+      redacted copy of each step's log beside the file, before writing the file. A later flagged run's
       question replaces the file, and the Igor pushes nothing of the file (when the write fails, the handoff still posts,
       the ledger row's `reason` reads `needs a person, question not kept`, a condition, once `condition-backoff`
       is built, opens on the first failure as a notice that stops no work, holding only a key
       gate two names, and the path goes only to the Igor's own log); and work triage keeps
       the item held whatever its handoff carries, with a hold record that never expires, knows a
       held item from its record, its host file or a `needs a person` ledger row, and releases it
-      only by `igor release <tracker>/<repo>/<item>` on the host or an attributable edit by someone with write
+      only by `igor release <tracker>/<repo>/<item>` on the host, which deletes the logs
+      and then the question file first and, where a delete is refused, says it failed and
+      leaves the item held, or an attributable edit by someone with write
       access, never a reply. Once
       #188's action log is built, a
       flagged run's log keeps names only. Tests for *Transcript persisted
@@ -210,7 +214,7 @@
       only its category*, *A reported category reaches only the host file*, *A value outside
       #25's list is no category*, *A run stopped on two questions lists both*, *A category met
       but not stopped on is recorded unmarked*, *A step's log #174 did not copy is named as
-      missing*, *A link under flagged-questions is not followed*, *A flagged-questions directory replaced by a link is refused*, *A hard-linked file under flagged-questions is refused*, *A pipe planted as the question file is refused without blocking*, *A link below flagged-questions is refused*, *A refusal Igor could not parse says only that the provider refused*, *A report
+      missing*, *A link under flagged-questions is not followed*, *A flagged-questions directory replaced by a link is refused*, *A hard-linked file under flagged-questions is refused*, *A pipe planted as the question file is refused without blocking*, *A link below flagged-questions is refused*, *A state directory replaced by a link is refused*, *A link above the state directory is followed*, *A refused move of a session-log copy leaves the question kept*, *A refusal Igor could not parse says only that the provider refused*, *A report
       the Igor cannot tell is whole counts as cut short*, *A refused run with no completed report counts as flagged*,
       *A worker run that ends without its completed report, for any reason, counts as
       flagged*, *A flagged run's ledger row keeps each denied command by name only*, *A flagged run's
@@ -228,7 +232,7 @@
       flagged item*, *An edit without write access leaves a flagged item held*, *A question that
       cannot be kept does not block the handoff*, *A kept question names its category, not its
       text*, *A kept question without a category holds its text*, *The question-not-kept
-      condition stops no work*, *The operator releases a held item on the host*, *A cure key
+      condition stops no work*, *The operator releases a held item on the host*, *A refused delete keeps the item held*, *A cure key
       does not release a held item*, *A held item's lost record leaves it held*,
       *A flagged run's budget handoff still gives the reset time*, *Any
       other run's ledger row keeps a denied command whole*, *A flagged run's action log keeps
@@ -307,8 +311,10 @@
 - [ ] 4.11 Whether Claude Code keeps any per-user state or session under `HOME` outside
       `~/.claude` and `~/.claude.json`, which #174 resets. If it does, one run could read
       another's there despite decision 87; file an issue against #174 before relying on it.
-- [ ] 4.12 How igor, a Node program, opens each path component under `flagged-questions`
-      without following a link (decision 101). Node's `fs` has no `openat2` and no
+- [ ] 4.12 How igor, a Node program, opens each path component from the state directory
+      itself down to a file under `flagged-questions`, and down to a move's source, #174's
+      copy, without following a link (decisions 101 and 102). A move is a rename, which opens
+      nothing, so the rename must be made relative to directory handles already checked. Node's `fs` has no `openat2` and no
       directory-relative calls, and its `O_NOFOLLOW` guards only the last component; a walk
       of `lstat` then `open` races the same-user worker the rule defends against. Choose a
       mechanism that does not race, such as a native helper, or #175's `O_NOFOLLOW` with a

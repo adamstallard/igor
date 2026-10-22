@@ -28,10 +28,14 @@ the item's latest ledger row, where that row's `reason` starts `needs a person`.
 
 A held item SHALL be released in either of two ways. The Igor's operator SHALL be able to
 release it on the host with `igor release <tracker>/<repo>/<item>`, such as
-`igor release github/acme/api/12`, whatever an edit's attribution shows. Releasing SHALL mark
-the hold record released, append a ledger row for the item whose `reason` is `released`, and
-delete the item's question file and its session logs under `flagged-questions`, so that no
-fallback above holds it again;
+`igor release github/acme/api/12`, whatever an edit's attribution shows. Releasing SHALL first
+delete the item's session logs and then its question file under `flagged-questions`, by
+`graceful-handoff`'s rule against following a link, so that no fallback above holds it again;
+then it SHALL mark the hold record released and append a ledger row for the item whose
+`reason` is `released`. Where any delete is refused, `igor release` SHALL say that it failed
+and that the path is in the Igor's own log on the host, SHALL leave any file it did not yet
+delete, the question file included, and SHALL mark nothing released and append no row, so the
+item stays held; the operator can run it again;
 every Igor process of the role, each a *rank* under #179, reads the release from the state
 branch, so a rank on another host does not hold the item again from its own file or ledger
 rows. An
@@ -75,6 +79,16 @@ attributed, and `igor release` is the way to release a held item.
 - **WHEN** a flagged run stopped on a question and handed the item back
 - **AND** the operator runs `igor release` for that item on the Igor's host
 - **THEN** the item is worked again, whether or not any edit can be attributed
+
+#### Scenario: A refused delete keeps the item held
+
+- **WHEN** the operator runs `igor release` for a held item
+- **AND** a worker running as the Igor's user has replaced one of the item's session-log
+  copies with a symbolic link
+- **THEN** `igor release` deletes nothing through the link, keeps the question file, and says
+  that it failed and that the path is in the Igor's own log
+- **AND** the hold record stays held, no `released` row is appended, and the item is not
+  worked again
 
 #### Scenario: A released item is not held again by its old ledger row
 

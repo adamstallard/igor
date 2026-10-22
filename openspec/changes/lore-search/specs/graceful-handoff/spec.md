@@ -40,20 +40,27 @@ a category; that text is only in the session logs. It SHALL also list the path o
 log of the execution that open pull request #174 copies: this change depends on #174 copying
 each step's log before the next reset, the worker's, those of #153's later model steps and
 #189's second worker run included (the proposal's Still open). When the execution ends the Igor
-SHALL move every such copy into the same directory beside the file, mode 0600. Where #174 made
+SHALL move every such copy into the same directory beside the file, mode 0600, and SHALL do
+so before it writes the file, so the file can name a copy whose move was refused. Where #174 made
 no copy of a step's log, the file SHALL say so in place of that path. Whenever the Igor
 creates, moves or deletes a file under `flagged-questions`, the question file and the session
-log copies alike, it SHALL open every component of that path below its state directory, `flagged-questions`
-itself and each directory under it down to the file, without following a link, such as with
-Linux's `openat2` and `RESOLVE_NO_SYMLINKS` or with `O_NOFOLLOW` on each component, as gate two
-chooses (task 4.12). Whether the state directory itself, and the directories above it, are
-opened the same way is open (the proposal's Still open). The Igor SHALL refuse the action when
-any such component is a link, or when the file already exists and either is not a regular file
-or has more than one hard link, a file a later question would replace included; checking a
-file SHALL NOT block on it, so a planted pipe is refused, not waited on. A refused create counts
-as a file it cannot write, below. A refused move or delete leaves the path in place, and the
-Igor writes the path to its own log on the host; what else it records is open (the proposal's
-Still open). Once workers run as users of their own (#175),
+log copies alike, it SHALL open every component of that path from its state directory down,
+the state directory itself, `flagged-questions` and each directory under it to the file,
+without following a link, such as with Linux's `openat2` and `RESOLVE_NO_SYMLINKS` or with
+`O_NOFOLLOW` on each component, as gate two chooses (task 4.12). The source of each move,
+#174's copy of a session log in the state directory, SHALL be checked the same way, every
+component from the state directory down to the copy. The Igor SHALL NOT check the
+directories above the state directory. The Igor SHALL refuse the action when any checked
+component is a link, or when the file, the source of a move included, already exists and
+either is not a regular file or has more than one hard link; this covers an existing question
+file a later flagged run would replace. Checking a file SHALL NOT block on it, so a planted
+pipe is refused, not waited on. A refused create counts as a file it cannot write, below. A
+refused move or delete leaves the path in place, and the Igor records the refusal and the path
+only in its own log on the host, adding nothing about it to the state branch. A refused move
+of a session-log copy SHALL NOT count as a file it cannot write: the question file SHALL say
+that copy is missing, as for a log #174 did not copy. A refused delete of an earlier
+execution's session log, which a later one replaces below, leaves that log in place. What a
+refused delete does to `igor release` is `work-triage`'s rule. Once workers run as users of their own (#175),
 no worker run SHALL be able to reach the `flagged-questions` directory; #175 builds that, not
 this change. Until then, and always under `igor run`, another worker running as the same user can
 read it, its logs and categories included, and plant or delete a file in it, which Adam
@@ -169,6 +176,28 @@ NOT push, post or publish the file, or its text, anywhere.
   symbolic link
 - **AND** a flagged run of a GitHub item then stops on a question
 - **THEN** the Igor writes nothing through the link and counts the write as failed
+
+#### Scenario: A state directory replaced by a link is refused
+
+- **WHEN** a worker running as the Igor's user replaces the Igor's state directory with a
+  symbolic link
+- **AND** a flagged run then stops on a question
+- **THEN** the Igor writes nothing through the link and counts the write as failed
+
+#### Scenario: A link above the state directory is followed
+
+- **WHEN** the operator's `$XDG_STATE_HOME` passes through a symbolic link
+- **AND** a flagged run stops on a question
+- **THEN** the Igor writes the question file under its state directory as usual
+
+#### Scenario: A refused move of a session-log copy leaves the question kept
+
+- **WHEN** a flagged run stops on a question
+- **AND** #174's copy of one of its session logs is a symbolic link
+- **THEN** the Igor moves nothing through it and records the copy's path only in its own log on
+  the host
+- **AND** the question file it then writes says that copy is missing
+- **AND** the ledger row's `reason` is `needs a person`, without `question not kept`
 
 #### Scenario: A kept question without a category holds its text
 

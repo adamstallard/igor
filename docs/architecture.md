@@ -619,10 +619,15 @@ as the same user, so one can read another's home and read or write `flagged-ques
 logs and categories included; Adam accepts that.
 A worker could use that access to plant a link that sends igor's own writes elsewhere, such as
 into a working tree a pull request is pushed from. So whenever igor creates, moves or deletes a
-file under `flagged-questions`, it opens `flagged-questions` and every path component below it
-without following a link. It refuses when any of them is a link, or when the file already
-exists and is hard-linked or not a regular file. A refused write counts as a question not
-kept.
+file under `flagged-questions`, it opens the state directory and every path component below it
+without following a link, for the destination and for the source of each move, #174's copy in
+the state directory. It does not check the directories above the state directory, since
+`$HOME` or `$XDG_STATE_HOME` may legitimately pass through a link. It refuses when any checked
+component is a link, or when an existing file is hard-linked or not a regular file. A refused
+write of the question file counts as a question not kept. A refused move of a session-log copy
+does not; igor moves the copies before writing the question file, which notes such a copy as
+missing. When `igor release` meets a refused delete, it says it failed and leaves the item
+held. igor records the path of a refused move or delete only in its own log on the host.
 
 For a flagged run's ledger row, the changed paths, and the actions the role's `allow` list
 refused, which differ from the sandbox's denied commands kept by name above, stay in full. Open pull request #188, not yet built, adds a log of each
