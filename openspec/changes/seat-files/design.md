@@ -62,10 +62,12 @@ operator must get right:
 - **A leak:** treat every seat token as leaked. Rotate the key, and every holder revokes at
   Anthropic and re-issues.
 - **Who must not read it: the worker.** A worker running as the Igor's own user could read the
-  key, and with it every lent token. The worker runs as the Igor's own user only under `igor run`
-  (#175), and there Igor decrypts no lent seat (Adam, 2026-10-17). Lending needs #175's worker-user setup, in which each worker runs as a user of its own. `igor run` spends
-  only its own token in any case (*`igor run` spends its own token*, below), so it draws on no
-  seat file's seat, lent or not.
+  key, and with it every lent token. `worker-user` (#175) runs each worker under `igor serve` as
+  a Unix user of its own. With #175 built, the worker runs as the Igor's own user only under
+  `igor run`, and there Igor decrypts no lent seat (Adam, 2026-10-17); `igor run` never spends a
+  seat file's seat anyway, lent or not (*`igor run` spends its own token*, below). Without #175's
+  worker users, `igor serve` runs every worker as its own user too, so it decrypts no lent seat
+  either (proposal, decision 78). So a lent seat is usable only once #175's worker users exist.
 - **A token Igor cannot decrypt** (Adam, 2026-10-17). Whatever the reason (no `seatKey`, a key
   file Igor cannot read, a wrong key, or a corrupt file), the seat is ineligible: seat choice
   never picks it and #143's probe skips it, and it is under a condition on the seat. For a wrong
@@ -73,18 +75,21 @@ operator must get right:
   says its lender re-lends it. It does not name the lender: a handoff may quote the report on a
   public issue, so a lender's login appears only in `igor doctor` and `igor budget`, which the
   operator reads (Adam, 2026-10-19). For a missing `seatKey` or an unreadable key file the
-  cure is the operator's, and the report names the key, as task 3.4 words it.
-- **That condition is tied to reading seat files** (Adam, 2026-10-17). #101 opens a seat's
-  condition when handoffs keep naming it, and clears it with #143's probe. A seat that is never
+  cure is the operator's, and the report names the key, in the wording task 3.4 gives.
+- **That condition is tied to reading seat files** (Adam, 2026-10-17). Under
+  `condition-backoff` (#101), a condition is a fault recorded so every Igor sees it; #101 opens a
+  seat's condition when handoffs keep naming it, and clears it with #143's probe, the minimal
+  model call that reads how full a seat is. A seat that is never
   picked causes no handoff, and the probe skips it, so neither path reaches it. Instead Igor
-  opens the condition when a lore read fails to decrypt the seat's file, at start and at each cycle start, and clears it when a later lore read decrypts
+  opens the condition when a lore read (loading the configuration and seat files from one
+  commit, at start and at each cycle start) fails to decrypt the seat's file, and clears it when a later lore read decrypts
   the file, as when the lender re-lends. The condition stops no role: a role with no other
   usable seat hands off rather than stops. Its handoff is a condition handoff, naming the
   condition and its cure, with no return time, since no reset brings the seat back (Adam,
   2026-10-19). A condition handoff is not a budget handoff, so graceful-handoff's rule that a
   budget handoff states when capacity returns does not reach it. The `stuck-conditions` delta
-  carries both rules. Its block on #101's *A condition that recurs stops the affected scope
-  from taking new work* says this condition opens on its first occurrence and clears on a good
+  carries both rules. The delta's `MODIFIED` block on #101's *A condition that recurs stops the
+  affected scope from taking new work* says this condition opens on its first occurrence and clears on a good
   read, not by a probe item (proposal, decision 32). Its block on *A condition's scope is its
   cure's scope* says the condition stops no role. Both cite the delta's definition of a
   read-cleared condition, the kind this is. The delta's third block, on #101's *A condition

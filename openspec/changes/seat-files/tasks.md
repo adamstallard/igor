@@ -201,6 +201,15 @@ contradicts it, and then `design.md` records the measurement.
       ```
 
       Test: *`igor run` refuses where it can read the server's key*
+- [ ] 3.8b `igor serve` decrypts no seat's `encrypted_token`, and neither draws on nor probes a
+      lent seat, raising no condition for it, while its code has no worker users (#175's
+      `task-execution`; proposal, decision 78). Test: *`igor serve` without worker users decrypts
+      no lent seat*. Such a seat serves no role there: a role whose only seats are lent is
+      refused at load, and `igor budget` shows the seat as not used, saying this `serve` has no
+      worker users. Test: *A role whose only seat is lent is refused without worker users*.
+      Task 8.4a lifts this guard with #175's build. Until #175's code lands, no `serve` decrypts
+      a seat, so the tests of decryption under `serve`, such as task 3.9's, stand in a fake
+      worker-user setup for #175's, passed to the code under test.
 - [ ] 3.9 A seat whose file Igor fails to decrypt, for any reason, on a lore read, opens a condition on the seat, and a later read that decrypts it
       clears the condition (Adam, 2026-10-17). The seat is ineligible, #143's probe skips it,
       and its condition stops no role: a role with no other
@@ -437,10 +446,14 @@ first (Adam, 2026-10-17).
       ```
       seats/<id>.yaml carries an encrypted token, and igor.config.yaml names no seatKey, so Igor cannot read that seat. Set seatKey to the private key whose public half is seats/recipient.txt.
       ```
-- [ ] 8.4 Add `seatKey` to worker-user's (#175) start-up probe, once #175 is built: the worker
-      user cannot read the file `seatKey` names, and a start where it can is refused, naming the
-      path. Test it with the probe's other paths. #175's task 0.1 lists the same path; where #175
-      already added it, this task is the test alone
+- [ ] 8.4 Test that worker-user's (#175) start check covers `seatKey`: the worker user cannot
+      read the file `seatKey` names, and a start where it can is refused, naming the path. #175
+      already lists that path (its task 0.1), so this task is the test alone, with the start
+      check's other paths. Built by whoever builds #175, and ticked then
+- [ ] 8.4a Once #175 is built, remove task 3.8b's guard, so `igor serve` decrypts lent seats on
+      a lore read: its workers now run as worker users of their own. Built by whoever builds
+      #175, and ticked then, like task 8.4. Test: a lent seat is decrypted and drawn on
+      under `igor serve` with #175's worker users
 - [ ] 8.5 The owner check, per *The check says whether each seat's owner is a GitHub login*, with a
       test for each of its scenarios. The finding, worded so:
 

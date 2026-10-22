@@ -254,13 +254,14 @@ token in a seat file is a credential in git history, and the refusal is the only
 told. So, unlike every other refusal of a seat file, this one fails the configuration (*A
 malformed seat file takes only its own seat out*).
 
-`igor serve` SHALL decrypt a seat's token only on a lore read, `lore-pull`'s (#208) term for an
-Igor process loading its configuration, role files and seat files
-from one commit: at start, and at each cycle start, where #179 rereads the configuration and,
-once built, #208 makes its lore read. Besides those, the gate's re-read of a single seat file,
-below, is a lore read of that one file. Until #208 pulls the checkout, the seat files change only
-when someone updates the checkout by hand. `igor run` decrypts nothing (*A lent seat is decrypted
-only where the worker has a user of its own*). It SHALL NOT decrypt when it starts a worker or a
+`igor serve` SHALL decrypt a seat's token only on a lore read. A lore read is `lore-pull`'s
+(#208) term for an Igor process loading its configuration, role files and seat files from one
+commit. It happens at start, and at each cycle start, where #179 rereads the configuration and
+#208 makes its lore read. Besides those, the gate's re-read of a single seat file, below, is a
+lore read of that one file. Without #208's pull, the seat files change only when someone
+updates the checkout by hand. `igor run` decrypts nothing, and neither does an `igor serve`
+whose code has no worker users (*A lent seat is decrypted only where the worker has a user of its
+own*). `igor serve` SHALL NOT decrypt when it starts a worker or a
 probe: each is given the plaintext Igor holds from its last read, held as *A decrypted seat token
 never touches the server's disk* requires.
 
@@ -948,15 +949,27 @@ copy, and whoever replaces `recipient.txt` receives every token encrypted to it 
 
 ### Requirement: A lent seat is decrypted only where the worker has a user of its own
 
-Under `igor run`, Igor SHALL NOT decrypt any seat's `encrypted_token`. Its worker runs as the
-Igor's own user (#175's `task-execution`), and so could read the key `seatKey` names, and with it
-every lent token. A lent seat left undecrypted there has no fault in its file, so it SHALL raise no
-condition. `igor run` spends no seat file's seat in any case (*`igor run` spends its own token as
-an implicit local seat*).
+Igor SHALL decrypt a seat's `encrypted_token` only in a process whose workers each run as a
+worker user of their own, #175's `task-execution`. A worker that runs as the Igor's own user could
+read the key `seatKey` names, and with it every lent token. So no process decrypts one in these
+two cases:
+
+- under `igor run`, whose worker runs as the Igor's own user (#175's `task-execution`), and which
+  spends no seat file's seat in any case (*`igor run` spends its own token as an implicit local
+  seat*);
+- under an `igor serve` whose code has no worker users, as when this change's code is built
+  without #175's. Such a `serve` runs every worker as its own user, so it uses no lent seat: it
+  neither draws on nor probes one.
+
+A lent seat left undecrypted in either case has no fault in its file, so it SHALL raise no
+condition. Under such a `serve`, a lent seat SHALL count as serving no role. So a role whose
+only seats are lent has no seat there, and *A role's seats are the seats whose files list it*
+refuses it at load, although its seat files exist. `igor budget` SHALL show each such seat as not used, saying that this `serve` has no
+worker users.
 
 Not decrypting is not enough where `igor run` can read the key itself, as when someone runs it as
-the service user on the server: its worker, running as the same user, could read the key and
-decrypt every lent token without Igor. So where the configuration names a `seatKey` and `igor
+the service user on the server, which normally only `igor serve` runs as: its worker, running as
+the same user, could read the key and decrypt every lent token itself, without Igor. So where the configuration names a `seatKey` and `igor
 run` can read the file at that path, `igor run` SHALL refuse to start, before any model call,
 naming the path.
 
@@ -965,6 +978,20 @@ naming the path.
 - **WHEN** `igor run` starts as a user who can read the file `seatKey` names
 - **THEN** it refuses before any model call, naming that path
 - **AND** no worker starts
+
+#### Scenario: `igor serve` without worker users decrypts no lent seat
+
+- **WHEN** `igor serve` runs its workers as its own user, because its code has no worker users,
+  and the seats serving a role are one naming `encrypted_token` and one naming `token_env`
+- **THEN** the `encrypted_token` is not decrypted, and that seat is neither drawn on nor probed,
+  and no condition is raised for it
+- **AND** the role draws on the `token_env` seat
+
+#### Scenario: A role whose only seat is lent is refused without worker users
+
+- **WHEN** `igor serve` runs its workers as its own user, because its code has no worker users,
+  and the only seat serving a role names `encrypted_token`
+- **THEN** the role is refused at load, as a role with no seat is
 
 #### Scenario: `igor run` decrypts no lent seat
 
@@ -1133,11 +1160,14 @@ itself writes.
 
 When a pull of the lore checkout (`lore-pull`, #208) removes a seat file, the removal SHALL take
 effect even where the rest of the pull is refused for failing the startup checks, the
-configuration checks Igor makes before its first cycle, such as config validation. The removal applies at
-the next cycle start's lore read. Until #208 pulls the lore checkout, a seat file leaves the
+configuration checks Igor makes before its first cycle, such as config validation. Igor applies
+the removal at the next cycle start's lore read. Without #208's pull, a seat file leaves the
 checkout only when someone updates the checkout by hand. When the removal applies, Igor SHALL
 drop the seat's decrypted token from memory, give the seat to no new worker, and kill every worker using
-it. Under `igor serve` that is the `claude -p` child and every process its worker user owns. Under
+it. Under `igor serve` with #175's worker users, that is the `claude -p` child and every process
+its worker user owns; without them, it is the `claude -p` child's process group, since the
+worker's user is then the Igor's own. Without worker users only a `token_env` seat can be in
+use, since no lent seat is. Under
 #175 each process has its own worker user, `igor-worker-<role>-<rank>`, which runs only that
 process's worker, so this reaches no other process's worker. Under `igor run` no worker uses a
 seat file's seat (*`igor run` spends its own token as an implicit local seat*), so a removal kills

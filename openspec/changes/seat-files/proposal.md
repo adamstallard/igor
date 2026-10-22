@@ -45,12 +45,14 @@
     configuration. *Rejected:* allowing it behind a flag the operator sets.
     Such a file would spend whatever login the server holds, which can be a pay-per-use API key.
 11. **This change's code is built before worker-user's (#175)** (Adam, 2026-10-21; on
-    2026-10-17 he had placed #175 first). The reason is the GitHub App's key: on `main`, a seat's
+    2026-10-17 he had placed #175 first). The reason is the GitHub App's key. On `main`, a seat's
     token sources (`token_env` with any variable name, `token_file` and `token_command`) could
-    route it to a worker, and this change removes all but `token_env: IGOR_SEAT_<ID>` (decision
-    4). The cost is `seatKey`: until #175 is built, every worker runs as the same Unix user as the
-    Igor process, so it could read `seatKey`, and with it every lent token. So no seat is to be lent with `encrypted_token` until then; `igor-lore`'s one seat
-    names `token_env` (task 6.1). Nothing in the code enforces that yet (*Still open*). Once #175
+    name the App's key, or a variable holding it, as a seat's token, which would hand the key to
+    a worker. This change removes all but `token_env: IGOR_SEAT_<ID>` (decision 4), so building
+    it first closes that sooner. The cost is `seatKey`: until #175 is built, every worker runs as the same Unix user as the
+    Igor process, so it could read `seatKey`, and with it every lent token. So `igor serve`
+    decrypts no lent seat until then (decision 78); `igor-lore`'s one seat names `token_env`
+    (task 6.1). Once #175
     is built, its start-up probe checks, as the worker user, that the worker cannot read the
     Igor's credentials, and task 8.4 adds the file `seatKey` names to what it checks.
 12. **`igor seat add` and `igor doctor` check that `owner` is a GitHub login**, with
@@ -348,8 +350,9 @@ Adam's answers of 2026-10-19 to the questions this change left open:
     budget handoff states when capacity returns* needs no `MODIFIED` block. *A role draws on the
     seat with the most headroom*.
 64. **#143's live `/usage` read is removed in the first change built after this one's code**
-    (Adam, on #143). Until then this change's spend requirement keeps listing it, beside the
-    probe, as the second call the gate does not choose a seat for.
+    (Adam, in #143's review). That change is #175, whose task 1.10 removes the read (Adam,
+    2026-10-21). Until #175's code lands, this change's spend requirement keeps listing the read,
+    beside the probe, as the second call the gate does not choose a seat for.
 65. **`igor run` refuses to start where it can read the file `seatKey` names**, since its worker
     runs as the same user and could read every lent token without Igor. *A lent seat is decrypted
     only where the worker has a user of its own*; task 3.8a.
@@ -413,19 +416,40 @@ Adam's answers of 2026-10-21:
     is (task 3.3a). A seat's token stays registered after its seat is removed (Adam, 2026-10-21);
     #217's *Credential redaction replaces every credential the Igor knows* states that rule.
 
+78. **A lent seat is decrypted only where the worker has a user of its own, under `igor serve`
+    too** (Adam, 2026-10-21). `igor serve` decrypts no `encrypted_token` while its code has no
+    worker users, as #175's `task-execution` defines them; with this change built before #175,
+    `serve` uses no lent seat until #175's code lands (task 3.8b). A lent seat under such a
+    `serve` raises no condition, as under `igor run`, and serves no role. Two consequences were
+    chosen by the agent that wrote this rule, and are for Adam to check: a role whose only seats
+    are lent is refused at load, as a role with no seat is; and `igor budget` shows each lent seat
+    as not used. *Rejected:* relying on decision 11's instruction that no
+    seat be lent until #175 is built, which nothing in the code enforced while the lender guide
+    and `igor-agent`, which invite lending, ship with this change.
+
 **Still open.** The smaller choices 47 to 56 await Adam's approval with the change. Besides them:
 
-- **For Adam: should the code refuse lent seats until #175 is built?** Decision 11 builds this
-  change's code first. Until #175 is built, `igor serve` runs every worker as the same Unix user
-  as the Igor process, so a worker could read `seatKey` and every lent token. The requirement
-  *A lent seat is decrypted only where the worker has a user of its own* applies only to `igor
-  run`, the one command where #175 keeps the worker on the Igor's user. So nothing in the code
-  stops `igor serve` decrypting a lent seat in that window; only decision 11's rule that no seat
-  is lent with `encrypted_token` until #175 is built does. The lender guide and `igor-agent`,
-  which invite lending, ship with this change. Recommended: widen that requirement to every
-  command whose worker runs as the Igor's own user, which before #175 is `igor serve` too, so
-  Igor decrypts no lent seat until #175 is built.
-
+- **For Adam to check, from decision 78:** under an `igor serve` without worker users, a role
+  whose only seats are lent is refused at load, and `igor budget` shows each lent seat as not
+  used. The spec states both as rules, since they follow from a lent seat serving no role
+  there; the agent that wrote decision 78 chose them.
+- **Findings of the consistency read of 2026-10-21's last round, for whoever next edits this
+  change.** None is decided, and each says what is wrong, not which way to fix it. The build order in *Impact* and `design.md` puts #113 before #217,
+  where issue #204 puts #217 first. The worker-environment requirement this change removes is
+  still cited by name by #175 and #189, and its re-added copy drops #216's rule that each
+  worker run's Claude state is private to it, besides `IGOR_RUN`. A push that merges the base
+  branch into a pull request names seat files other pull requests changed, so their owners are
+  mentioned. A failing re-read of one seat file is called a lore read, which would open the
+  condition the re-read rule says it does not. The read-cleared kind's fixed counts are
+  neither configurable nor provisional, as #101's *No recurrence count or cooldown is fixed
+  here* asks. A condition handoff defers for a reason other than budget, against the in-force
+  *Busy is not a reason*. With no eligible seat, triage claims nothing, so no handoff names the
+  condition. #75's scenario on a triage call with no seat can no longer occur. Decision 11
+  says task 8.4 adds `seatKey` to #175's start check, which #175 already lists, so decision 11
+  should say task 8.4 tests it. #188's
+  `token_file` item is stale. `docs/deployment.md` step 2 and *When a seat token expires*,
+  README's `seat: pool:engineering` example, and `docs/architecture.md`'s npm passages are left
+  out of tasks 9.3, 9.9 and 9.10, and `init` does not list `seats/recipient.txt`.
 - **Findings of a consistency read on 2026-10-21, for whoever next edits this change.** None is
   decided, and none blocks approving the rules above, except where an item says so:
   - **Decision 42 and #143's probe.** #143's probe is minimal: it runs with no tools and loads
