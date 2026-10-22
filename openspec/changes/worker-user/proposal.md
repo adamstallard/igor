@@ -442,7 +442,10 @@ Decision 42 is a mechanism proposed for 41's first point, which waits for his ap
     - **`IGOR_RUN_TOKEN`:** holds. It comes from the environment of the person running `igor
       run`.
     - **Proxy URLs:** hold. They come from the Igor's own environment, and #217 registers a
-      forwarded proxy URL's user info, password and whole URL when `workerEnv` hands it over.
+      forwarded proxy URL's credentials as secrets to redact when `workerEnv` hands it over.
+      With a password, it registers the user info, password and whole URL. With none, it
+      registers the user name only where #217's rule takes it for a token: once decoded, 20
+      characters or more and not a plain name such as `ci-runner-2024`.
     - **`seatKey`:** `igor.config.yaml`, a lore file, names the path of the key that decrypts
       seat files. The Igor reads that key and hands it to no process, so no secret is routed by
       it. A lore commit can point it at another file on the server, which then fails to
@@ -468,16 +471,23 @@ or on another change.
 - **The in-force wording that no network setting is a credential.** *The worker is given an
   explicit environment holding no credential but its seat's* passes the host's network
   settings, `HTTPS_PROXY` among them, and says none of them is a credential. A proxy URL can
-  hold a password. #217 registers a forwarded proxy URL's user info, password and whole URL,
-  so decision 41 holds, but the sentence is wrong for such a URL. #171, which archives after
+  hold a password. #217 registers such a URL's user info, password and whole URL for
+  redaction, so decision 41, that every secret a worker gets is registered, holds. The in-force
+  sentence that no network setting is a credential is still wrong for such a URL. #171, which archives after
   this change, replaces the requirement with *The worker is given an explicit environment
   holding no credential but its seat's token*, which keeps the same sentence. So the sentence is left as
   it is here, and #171's text is the one to reword (reported to #171).
 
-- **#171 still says this change is built first.** #171's decision 11 (Adam, 2026-10-17) and
-  its tasks and spec say this change is built before #171, and #171's text is written over
-  this change's. Decision 46 now builds #171's seat code first. Reported to #171, which
-  either splits its seat code from its lending or restates its order.
+- **Under decision 40, this change removes the `/usage` read, and no task here does it.**
+  Decision 40 says the read and `runUsage`, the `claude -p` call that makes it, are removed
+  by the first change built after #171's code. Since decision 46 (2026-10-21), issue #204's
+  build order puts this change straight after #171, so that first change is this one. No task
+  here removes the read. Task 1.7 moves `runUsage`'s prompt to stdin, and skips `runUsage` if
+  it has already been removed, so it neither removes it nor stands in the way.
+  *Recommendation:* add a task here that removes the read, since task 1.7 already edits every
+  `claude -p` call. The other choice, removing the read when #171's code is built (its gate
+  two, the implementation pushed onto its pull request), would change decision 40. Which to
+  take is for Adam.
 
 - **Findings of the 2026-10-21 consistency read left for the next pass.** None of them comes
   from decision 41, 43, 45 or 46. A missing-path refusal would refuse
@@ -497,6 +507,35 @@ or on another change.
   `GPG_AGENT_INFO`), decision 30 has no requirement, and a scenario cites task 8.1. "Cold read"
   and "model step" are not defined in the spec. Nothing measures `--append-system-prompt-file`
   under `-p`, or what `sudo -n -l` shows for a worker rule that needs a password.
+
+- **A second consistency read on 2026-10-21 found more in older text, also left for the next
+  pass.** For Adam:
+  - a refused start exits 78, but the container's `restart: unless-stopped` (#192) restarts
+    it forever;
+  - a check inherits the worker's forwarded proxy settings, so a proxy URL holding a password
+    reaches it, against *A check gets no secret*;
+  - the requirement *A worker gets a secret only through the Igor* applies to `igor run`, yet
+    the same requirement says a worker under `igor run` can use whatever its person's user can;
+  - whether the rule that the Igor reads a tree's files without following a link covers every
+    read of a tree. Two reads may not be covered: #187's scope check, and the signing scripts,
+    which run as the service user over the worker's tree.
+
+  For the author: `--ignore-submodules=all` hides a moved gitlink that the spec stops on; #137
+  and this change disagree on where a submodule's commit is read; the rule that kills the
+  worker user's processes before staging is not limited to `igor serve`, though under `igor
+  run` there is no worker user to kill by; a home reset before each `claude -p` deletes the
+  session #174's `--resume` reads. Several statements about other changes are out of date:
+  #174's startup check can itself be the seat probe, so the budget gate does not choose its
+  seat; #189 publishes its second run as a second commit, not the same way as the first;
+  #153's cold reader runs as the worker user with no tree for its prompt file; #153 has
+  decided its triage line, and its measurement 0.13 confirms `--append-system-prompt-file`
+  under `-p`, so the item above saying nothing measures it is stale; #101's condition rules
+  are misquoted; #216's block would drop this change's scenario; and this change and #179
+  each credit the other with placing the trees. `IGOR_ENV_FILES` is undefined, the 2-second
+  probe is in no decision, what `sudo -n -l` prints for a user with no sudoers entry is
+  unmeasured, and `Group=` is new on the unit, not kept. Architecture §6.7.2b, not §6.7.2a,
+  holds the outbox. Several SHALLs have no scenario, and some carry their reasons inside the
+  SHALL sentence, where a reader applying the rule has to skip them.
 
 - **Credential files in the worker's home, for Adam.** Decision 41's fifth point binds the
   operator, and nothing checks it. *Recommendation:* have the start check refuse, naming the
@@ -556,14 +595,14 @@ or on another change.
 
 - **`igor observe`.** The open change `scheduled-observation`, and `igor observe` on `main`,
   take a usage reading under a person's stored login, which decision 21 forbids. #143 withdraws
-  that change, archives first (#204), and removes `igor observe` when it is built; nothing here
-  waits on Adam.
+  that change, archives before this change (#204), and removes `igor observe` when #143's code
+  is built. The item stays here until then; nothing in it waits on Adam.
 
 - **The usage read under a token.** Decision 21 has every usage read authenticate with its
   seat's token. With a token in the environment, `/usage` on Claude Code 2.1.303 printed no
-  `% used` lines (measurement 6.9), so `parseUsage` on `main` fails on every such read. The
-  first change built after #171's code lands removes the read (decision 40); until then this
-  change only moves its prompt to stdin.
+  `% used` lines (measurement 6.9), so `parseUsage` on `main` fails on every such read. Decision
+  40 removes the read in the first change built after #171's code, which is now this change;
+  the item *Under decision 40, this change removes the `/usage` read* asks which change does.
 
 - **The in-force scenario *No state carries between tasks*** and this change's lasting home
   disagree until #174, which rewords it (its decision 15), archives after this change (issue
