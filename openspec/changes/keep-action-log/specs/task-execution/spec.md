@@ -4,7 +4,9 @@
 
 Every run that started the worker SHALL write an action log to the state branch at
 `transcripts/<tracker>/<repo>/<native>.<at>.actions.json`, whatever the run's outcome, a killed
-worker included. `<tracker>`, `<repo>` and `<native>` are those of the item's transcript path.
+worker included. Two runs write none: a run whose steps made no tool call (below), and a run
+whose log the requirement *A public store holds no action log of a private repository*
+withholds. The row of a run that writes no log SHALL name none. `<tracker>`, `<repo>` and `<native>` are those of the item's transcript path.
 `<at>` is the millisecond time on the run's `executions.ndjson` row (its ledger row), with every
 run of characters outside `[A-Za-z0-9_-]` replaced by `-`. Where a log already exists at that
 path, `-2`, `-3` and so on SHALL be added to `<at>` until the path is free, so no run's log
@@ -107,43 +109,31 @@ says what the rule matches. This requirement adds nothing to it.
 
 #### Scenario: The seat token is redacted
 
-- **WHEN** the worker runs `env` in a private store, whose log keeps command output
+- **WHEN** the worker runs `env`, whose output the log keeps
 - **THEN** the calls the run collects in memory, which `review-evidence` (#190) reads, hold
   `[redacted]` where the seat token was
 - **AND** so does the log written to the state branch
 
-### Requirement: What the action log keeps follows who can read the store
+### Requirement: A public store holds no action log of a private repository
 
-At write time, the Igor SHALL ask GitHub whether the store and the worked repository are
-private. It SHALL NOT rely on the `publicStore` config key for this, since a cached flag can
-be out of date (#91). A store whose visibility cannot
-be read SHALL be treated as public, and a worked repository whose visibility cannot be read as
-private, so that each unknown keeps the least.
+The action log SHALL keep every entry as *Every model step's tool calls are recorded beside the
+transcript* describes, whatever the store's visibility. Whether a run's log is written to the
+state branch at all SHALL follow `visibility-guard`'s *Nothing from a private repository is
+written to a public state branch*. That requirement counts the log of a run's tool calls as
+content, and where it finds the worked repository private and the store public just before
+the write, it writes the run's ledger row with its structured fields only, such as cost and
+outcome, and no text of the run. Such a run writes no action log to the state branch.
 
-The log SHALL be cut to one of three tiers, and SHALL record which one applied:
+#### Scenario: A public repository's log in a public store is kept whole
 
-- `whole`, for a private store: every entry as "Every model step's tool calls are recorded beside the
-  transcript" describes;
-- `no-output`, for a public store and a public worked repository: every entry without its
-  output;
-- `tools-only`, for a public store and a private worked repository: each entry's tool name,
-  error status and exit code.
+- **WHEN** a worker on a public repository runs commands, and the store is public
+- **THEN** the log keeps each call's command and output, redacted and capped
 
-#### Scenario: A private repository's commands stay out of a public store
+#### Scenario: A store made public during a run gets no log
 
-- **WHEN** a worker on a private repository runs commands, and the store is public
-- **THEN** the log lists each call's tool and error status, with no command, path or output
-
-#### Scenario: An unknown worked repository counts as private
-
-- **WHEN** the store is public and GitHub cannot be asked whether the worked repository is
-  private
-- **THEN** the log is cut to `tools-only`
-
-#### Scenario: Unknown visibility keeps the least
-
-- **WHEN** GitHub cannot be asked whether the store is private
-- **THEN** the log is cut as it would be for a public store
+- **WHEN** a run on a private repository is under way, and the store is made public before the
+  run's records are written
+- **THEN** no action log of the run is written to the state branch
 
 ### Requirement: The action log is bounded
 

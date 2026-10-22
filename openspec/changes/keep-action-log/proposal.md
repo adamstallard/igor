@@ -33,22 +33,23 @@ Each is the reviewer's to decide, except where marked **Decided**.
    **Decided (Adam, 2026-10-19): the rule's definition moves from this change to #217.** #217
    defines it and builds its function before this change. This change cites the rule rather
    than stating it.
-3. **What is kept depends on who can read the store, asked of GitHub at write time.** A private
-   store keeps the whole log. A public store keeps no output text. It keeps commands and paths
-   only where the worked repository is public too; otherwise it keeps only which tools ran and
-   whether they failed. Each unknown resolves toward keeping the least: a store whose visibility cannot be read is
-   treated as public, and a worked repository whose visibility cannot be read as private, since
-   a public store with a private worked repository is the tier that keeps the least: only which
-   tools ran and whether they failed.
-   *Rejected:* one rule for both, which is either useless in a private store or leaks in a public
-   one. *Rejected:* trusting `publicStore`, a cached config flag that can be out of date (#91).
+3. **The log is not cut by who can read the store; the visibility guard decides whether it is
+   written** (Adam, 2026-10-21). The change `visibility-guard` (issue #219, pull request
+   #220) refuses to work a private repository while the store is public. It also reads both
+   visibilities again just before a run's records are written, and where it then finds the
+   worked repository private and the store public, because one of them changed during the run,
+   it writes no transcript or other text of that run. So a public store never holds a private
+   repository's log, and this change keeps every entry as decision 1 describes, whatever the
+   store's visibility. This supersedes the earlier decision 3, which cut the log to one of
+   three tiers by the store's and the worked repository's visibility. *Rejected:* keeping the
+   tiers beside the guard, which would state a second rule for the same case.
 
    **Open question for the reviewer:** a private store is readable by its own collaborators,
-   who need not be able to read the worked repository. Under this decision they can read the
-   output of what the worker ran there, `cat` of a private file included, as they can already
-   read its closing summary. The alternative is to treat a private store whose collaborators are
-   not all readers of the worked repository like a public one, which needs a collaborator
-   comparison on every write.
+   who need not be able to read the worked repository. They can read the output of what the
+   worker ran in the worked repository, `cat` of a private file included, as they can already
+   read the worker's closing summary. The alternative is to treat a private store whose collaborators are not all
+   readers of the worked repository like a public one, which needs a collaborator comparison on
+   every write.
 4. **Capped at 512 KiB, trimmed from the start.** A run's end, where it failed or finished, is
    what an auditor opens the log for. *Rejected:* dropping the latest calls, which loses the run's
    end.
@@ -65,49 +66,27 @@ Each is the reviewer's to decide, except where marked **Decided**.
 **Still open:**
 
 - **For Adam:**
-  - **Held for Adam's review (2026-10-21): visibility-dependent trimming for public stores.**
-    This is decision 3 as a whole: cutting what the log keeps by who can read the store, the
-    repository whose state branch holds the log. It ties to a guard nobody has decided yet:
-    Igor writes no private repository's content to a store more public than that repository.
-    Under that guard, a public store would hold nothing from a private worked repository, so
-    decision 3's cut for that pairing, which keeps only which tools ran and whether they
-    failed, would be the guard's rule rather than this change's. *Recommendation:* keep
-    decision 3's cuts as written, since they keep the least wherever visibility is unknown;
-    decide the guard on its own; and once it is decided, have decision 3 cite it for a private
-    worked repository, as #190's evidence table should for the same case, so the rule is stated
-    once. Deciding the guard would also settle two gaps in decision 3. The in-force
-    `lore-review` spec lets the store's visibility be declared in configuration, which
-    decision 3 does not trust, since it asks GitHub at write time instead. And that question
-    is asked once, when the log is written, so a private store made public later would publish
-    every earlier log it kept whole;
-  - whether a private store keeps the commands' output, the part of decision 3 this pull
-    request asks about;
-  - whether the transcript is cut with the log. #217 leaves to this change what the transcript
-    reveals beyond credentials (its proposal, decision 10), and as written a public store whose
-    log is cut to tool names still keeps the worker's whole closing summary of a private
-    repository;
-  - whether choosing what the log keeps (decision 3) should also ask whether the item's
-    tracker is private, besides the store and the worked repository. A command or subagent
-    prompt kept whole can quote a private item's text into a public store.
+  - whether a private store keeps the commands' output, the open question under decision 3;
+  - whether a public store keeps a public repository's commands' output whole. A command can
+    print a secret Igor never held, such as a key read from a host file, which redaction does
+    not match;
+  - whether a log should also be withheld where the item's tracker is private. The guard
+    compares repositories only, and a command or subagent prompt kept whole can quote a private
+    Linear issue's text into a public store; `visibility-guard` lists the same question.
 - **For whoever next edits this change,** from a consistency read on 2026-10-21. None is
   decided, and none is fixed in this text:
   - **The row and the log's path.** `appendRecord` writes the run's row in `executions.ndjson`,
     and sets its `at` time, before execution writes the transcript. The row therefore names a
     log that is written later, and stays naming it when that write fails, which the spec
-    allows. Nor can the row know whether the log's path will need a `-2` suffix. The proposal and
-    task 3.4 write a log only where the worker made a tool call, while the spec writes one where
-    any model step did.
+    allows. Nor can the row know whether the log's path will need a `-2` suffix.
   - **Exit codes.** A result that is not an error but carries no exit code, such as a shell
     command run in the background, would be recorded as exit 0. And keeping a long output's
     last 2,000 characters drops the `Exit code <n>` prefix at its start.
-  - **Labels and kept input.** The level of decision 3 that keeps only tools and error status
-    drops the label naming which model step made each call, which every entry must carry. An
-    edit or write tool that the spec does not list among the file tools keeps its whole input,
+  - **Kept input.** An edit or write tool that the spec does not list among the file tools keeps its whole input,
     and so does a subagent call's prompt.
   - **Other changes.** #153 adds model steps of its own, a cold read, its answers and triages,
     that none of the three labels fits. #216 keeps only names for a run it withholds, even in a
-    private store. #190 decides what this log keeps before this change reads the stores'
-    visibility. #189 posts a comment of its own outside #190's table (its decision 7), though
+    private store. #189 posts a comment of its own outside #190's table (its decision 7), though
     this change says #189 writes only into that table. After a failed check, #189 also starts
     the worker a second time, so one run can hold two worker passes, each followed by #153's
     steps. This change does not say how the second pass's calls are labelled or ordered.
@@ -117,19 +96,18 @@ Each is the reviewer's to decide, except where marked **Decided**.
   - **From a consistency read of 2026-10-21's last round:**
     - #216 asks this change to keep, in the log of a run #216 withholds because it met a
       sensitive question, only each call's tool name, command name and exit code.
-    - #190 works out the log's cut before the log exists, while decision 3's question to
-      GitHub at write time can change it.
     - #153 runs more model steps than the labels `worker`, `bug-hunter` and `prose` name: its
       triages, an extra bug-hunter iteration and a cold read.
     - Tasks and *Impact* restate the build order, which issue #204 alone should hold, and so
       fix a place for #187 that #204 has not given it.
-    - The level that keeps commands but no output publishes a command line holding a secret
-      Igor never held, such as one read from a host file.
-    - GitHub reports an enterprise's internal repository as private, so the log keeps it whole
-      although every member of the enterprise can read it.
     - Three choices are made in the spec with no numbered decision: the log's path and its
       `-2` suffix, writing no log for a run with no tool call, and a failed write not stopping
       the run's later writes.
+  - **New from a consistency read on 2026-10-21, after decision 3 was replaced,** not fixed
+    here; the read also found again most of the items above. The redaction requirement promises
+    that no copy of a call holds a credential, which a rule matching only known values and two
+    token shapes cannot keep. And the last-2,000-character cut of a long output drops the
+    `Exit code <n>` prefix that the spec says the entry keeps.
   - **The spec itself.** Several SHALLs have no scenario, and "the store" is not defined.
     Whether Read, Edit and subagent results carry an error flag and output is unmeasured
     (task 1.2), and the spec gives no fallback for a result that has neither.
@@ -144,13 +122,13 @@ what changed as a result". A run keeps only the worker's closing summary as its 
 
 ## What Changes
 
-- Each run whose worker made a tool call writes
+- Each run in which any model step made a tool call writes
   `transcripts/<tracker>/<repo>/<native>.<at>.actions.json` to the state branch, beside the
   item's transcript (`<native>` is the item's id in its tracker, `<at>` the run's time), and its
   `executions.ndjson` row names it.
 - Every kept string is redacted as it is collected, and every entry and the whole file are
   capped.
-- How much is kept follows the store's visibility, read from GitHub.
+- No log reaches a public store from a private repository, by `visibility-guard`'s rules.
 
 Not in this change: the pull request body. `review-evidence` decides what of this reaches it.
 The commands the loop itself re-runs (`loop-verifies-commands`) are not the worker's, and are
@@ -166,20 +144,16 @@ None.
 
 - `task-execution`: the tool calls of every model step in a run (the worker, and the
   bug-hunter step and prose pass that the open change `signed-publishing` (#153) adds) are
-  recorded to the state branch, redacted, capped, and
-  cut according to who can read the store.
+  recorded to the state branch, redacted and capped.
 
 ## Impact
 
 - `src/execute.ts`: collect tool calls in `onEvent`, pair each with its result, and write the
   log in `recordExecution` after the transcript.
-- `src/github.ts`: `isPublic` is reused for the store and the worked repository.
 - Overlaps: #175 (`worker-user`) removes the route by which a worker under `igor serve` reads
   the Igor's credentials. Under `igor run` the worker runs as the person, and can still read
   their credential files. `review-evidence` (#190) reads the command
-  list this change collects, redacted and before it is cut to what the store's visibility
-  allows (decision 3), since the pull request is read by the worked repository's readers, not
-  the store's.
+  list this change collects, redacted.
 - Build order: this change, then `review-evidence` (#190), then `scope-check` (#187) and
   `loop-verifies-commands` (#189), in either order; archive order follows the same sequence.
   `redact-state-branch` (#217) builds credential redaction's function before this change, and

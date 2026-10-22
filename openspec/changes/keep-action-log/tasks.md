@@ -39,16 +39,17 @@
       everything it writes, so the log is redacted a second time on its way to the state branch.
       That second pass needs no work here. This change adds no patterns or values of its own;
       `loop-verifies-commands` (#189) and `review-evidence` (#190) call the same function.
-- [ ] 3.2 Read the store's and the worked repository's visibility with `isPublic`, treating an
-      error on the store as public and on the worked repository as private, and cut the entries to the tier that applies.
+- [ ] 3.2 Write the log only where `visibility-guard`'s visibility check just before the write
+      (that change's task 4.1) lets the run's content be written; otherwise write none, and name
+      none in the run's row.
 - [ ] 3.3 Cap inputs at 1,000 characters and output at its last 2,000, then trim the document to
       512 KiB from the start, recording how many entries were dropped.
 - [ ] 3.4 In `recordExecution`, write the log after the transcript, catching and reporting its
       failure, at the path the spec gives, named from the `at` of the run's row in
       `executions.ndjson`. Reuse the character rule of `refusalPath` (`src/execute.ts`), which
       already names refusal envelopes from a time, and add the numeric suffix where a file
-      already exists at that path. Name the log's path in that row as `actions` only where the
-      worker made a tool call, and record the tier as `tier` in the log.
+      already exists at that path. Name the log's path in that row as `actions` only where a
+      model step made a tool call and the log is written.
 
 ## 4. Tests
 
@@ -57,9 +58,9 @@
 - [ ] 4.2 A Read and an Edit log their path and no contents.
 - [ ] 4.3 A seat token in `env` output is
       `[redacted]` in the calls the run collects in memory, and in the written log.
-- [ ] 4.4 Each tier: private store; public store with public repository; public store with
-      private repository; the store's visibility read throws; the worked repository's visibility
-      read throws.
+- [ ] 4.4 A public repository's log in a public store keeps commands and output; a run whose
+      records `visibility-guard` writes with structured fields only writes no log, and its row
+      names none.
 - [ ] 4.5 A log past 512 KiB keeps its latest calls and counts the dropped ones.
 - [ ] 4.6 A failed log write still lets `recordExecution` write the capacity observation,
       the record of a budget stop that it writes last.
