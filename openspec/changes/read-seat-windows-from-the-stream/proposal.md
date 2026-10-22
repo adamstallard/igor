@@ -182,12 +182,14 @@ weekly (Adam, 2026-09-28). The smallest gap between observed resets is a fallbac
     `2026-10-11-three-call-run-its-one-event.jsonl`, since that run got one event, after its
     first call (task 1.1a); whether ordinary runs do too is task 1.1b.
 
-41. **A probe runs from `/var/lib/igor/probes`, and only where no directory from its own up to `/`
+41. **A probe runs from a probe directory under `<state dir>/probes`, and only where no directory from its own up to `/`
     can be written by any user but root and the Igor.** This change's choice, which approving the
     change approves. It fixes a gap the 2026-10-19 consistency read found: the probe ran under
-    `/tmp`, which every user can write. `/var/lib/igor` is the state directory the shipped systemd
-    unit gives Igor, and the container image creates it too. Each probe gets two new directories in
-    `/var/lib/igor/probes`, its working directory and its `HOME`. Immediately before the probe,
+    `/tmp`, which every user can write. `<state dir>` is the Igor's state directory as #216
+    (`lore-search`) defines it, by Adam's decision of 2026-10-21 (decision 42). Under the shipped
+    systemd unit and the shipped compose file, the only ways `igor serve` runs, it is
+    `/var/lib/igor`. Each probe gets two new directories in its process's probe directory
+    (decision 43), its working directory and its `HOME`. Immediately before the probe,
     each directory from the working directory up to `/` must be owned by root or the Igor, writable
     by no other user, and hold no `.claude` or `CLAUDE.md`. Once #175's (`worker-user`) code runs
     the worker as a separate user, nobody else can write those directories, so nothing can be
@@ -201,9 +203,25 @@ weekly (Adam, 2026-09-28). The smallest gap between observed resets is a fallbac
     *Rejected:* a directory under the system's temporary directory with only decision 29's check,
     for a `.claude` or `CLAUDE.md` alone. Any user, the worker user among them, can write
     `/tmp/.claude`, which fails every probe if it is there at the check, or loads into a call
-    holding a seat token if it is written after. *Rejected:* `~/.local/state/igor`, #174's state
-    directory where Igor runs off the shipped unit: it lies under the Igor user's home, whose
-    `~/.claude`, which Claude Code creates, would fail every probe.
+    holding a seat token if it is written after.
+42. **The probe directory is named by #216's state-directory definition, not by a path of its
+    own** (Adam, 2026-10-21). #216's decision 105 makes that change the one owner of the state
+    directory: `$STATE_DIRECTORY` where it is set, else `$XDG_STATE_HOME/igor`, as #216's
+    `graceful-handoff` delta states it. This change cites it. #216 archives after this change in
+    issue #204's order, so until #216 archives this change cites a requirement not yet in force,
+    which Adam accepted with the decision. Where `STATE_DIRECTORY` and `XDG_STATE_HOME` are both
+    unset, the state directory is `~/.local/state/igor`, under the Igor user's home. Claude Code
+    creates `~/.claude` in that home, so the home fails the ancestor check, and every probe is
+    refused and recorded as one that errored. Neither shipped way of running `igor serve` leaves
+    `STATE_DIRECTORY` unset.
+43. **Each process keeps its probes in a directory of its own, and sweeps only that one at
+    start.** This change's choice, which approving the change approves. Every role and rank on a host shares the state directory, so a sweep of all of
+    `<state dir>/probes` at one process's start would delete a probe another process is making.
+    A process's probe directory is `<state dir>/probes/<role>-<rank>`, `<rank>` as #179
+    (`concurrent-instances`) numbers a role's `igor serve` processes. Only `igor serve` probes,
+    so `igor run` has none. *Rejected:* one shared
+    `probes/` swept by every start, which a consistency read found deletes a running sibling's
+    probe.
 
 **Still open:**
 
@@ -244,13 +262,31 @@ weekly (Adam, 2026-09-28). The smallest gap between observed resets is a fallbac
   - #82 (`stopped-scope-visible`) shows a seat as unread using only the seat's own reserve, where
     this change uses the larger of the seat's and the role's.
   - #174's task 5.3 note to operators says the service user's home "reaches every triage
-    call and seat probe". A seat probe runs with its own `HOME` in `/var/lib/igor/probes`
+    call and seat probe". A seat probe runs with its own `HOME` in `<state dir>/probes`
     (decision 41), so the note is wrong for the probe.
   - #171's copy of the probe requirement drops "In a deployment that declares seats". It also
     still says the probe runs from "an empty temporary directory", which decision 41 replaces
     with a pointer to *A seat probe runs where only the Igor can write*. #204, the issue that
     sets the order every open change archives in, puts #171 after this change, so #171's copy
     replaces this change's text, and #171 must copy the requirement again.
+  - **From the 2026-10-21 consistency read, new and not yet fixed.** Unlike the items above,
+    the first four concern another change as well as this one, and are reported to it: #174
+    makes the skills check it runs at startup one of this change's seat probes while keeping arguments that load skills and
+    allow tools, against the probe's "no tools" rule (#174 lists it as open); #216's
+    `role-config` copies drop `reserve`, which task 16.3 and #216's task 5.2 must carry; #179
+    restates the gate and names pacing, which decision 10 withdraws; #171 forbids the live
+    `/usage` read that decision 37 keeps until the change after #171. The rest are this
+    change's: the probe's spend row must be a run row for `loadSpend` to return it, and #101
+    counts every run row as evidence for each condition on its seat, so a probe would count
+    toward conditions it says nothing about; an error exit and a 401 both bring no event, so each trips the five-hour
+    back-off the spec says a 401 must not; a seat that names no token contradicts "the
+    credential a seat holds is a `setup-token` one"; the post-reset probe's fixed delay
+    contradicts "no behaviour SHALL require a reading at a particular time"; the per-model
+    weekly window is unmeasured but specified; the crossing instant and the reserve's
+    monotonic rule are each stated twice; the ancestor check names `.claude` and `CLAUDE.md`
+    but not `CLAUDE.local.md` or `.mcp.json`; keeping the probe's row out of what #101's
+    condition reader counts is a choice with no decision; and task 1.1a is ticked though its ordinary-run
+    half was not done.
   - A post-reset probe's scenario omits that it is due only until the window is measured, then
     about weekly.
   - The instant a handoff names is not when the seat admits work, since a crossing probe comes

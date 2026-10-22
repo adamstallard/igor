@@ -404,10 +404,16 @@ its credential were cleared, so it stays unprobed until it could be used.
 ### Requirement: A seat probe runs where only the Igor can write
 
 For each seat probe, the Igor SHALL create two new, empty directories of mode `0700` in
-`/var/lib/igor/probes`: the probe's working directory and its `HOME`. The shipped systemd unit
-SHALL give Igor `/var/lib/igor` with `StateDirectory=igor`, and the container image SHALL create
-it for the user Igor runs as. The Igor SHALL remove both directories once the probe
-exits, and `igor serve` SHALL remove any left in `/var/lib/igor/probes` when it starts.
+`<state dir>/probes/<role>-<rank>`, the probe directory of the `igor serve` process making the
+probe: the probe's working directory and its `HOME`. `<rank>` is the process's rank as
+`concurrent-instances` (#179) numbers it. `<state dir>` is the Igor's state directory as #216
+(`lore-search`) defines it. #216 states that definition in `graceful-handoff`'s *A handoff
+states what was done, what remains, and who could continue*, beside the question files it keeps
+there. The shipped systemd unit SHALL set
+`StateDirectory=igor`, which makes the state directory `/var/lib/igor`, and the container image
+SHALL create `/var/lib/igor` for the user Igor runs as. The Igor SHALL remove both directories
+once the probe exits, and `igor serve` SHALL remove any left in its own probe directory when
+it starts, and none in another process's.
 
 Immediately before each seat probe, the Igor SHALL check every directory from the probe's working
 directory up to the root. Each SHALL be owned by root or by the Igor's own user, SHALL have
@@ -425,14 +431,21 @@ spawn; one that no user but root and the Igor can write cannot.
 
 - **WHEN** `igor serve` probes a seat
 - **THEN** the probe's working directory and its `HOME` are new directories of mode `0700` in
-  `/var/lib/igor/probes`
+  `<state dir>/probes/<role>-<rank>`, which under the shipped unit is in `/var/lib/igor/probes`
 - **AND** neither is under the system's temporary directory
 
 #### Scenario: A probe's directories do not outlive it
 
 - **WHEN** a seat probe exits, or `igor serve` starts after a crash left a probe's directories
   behind
-- **THEN** no directory of that probe remains in `/var/lib/igor/probes`
+- **THEN** no directory of that probe remains in the probe directory of the process that made
+  it
+
+#### Scenario: A start leaves another process's probe alone
+
+- **WHEN** `igor serve` for rank 1 of a role starts while rank 2 of the same role is making a
+  seat probe
+- **THEN** rank 2's probe directories remain until rank 2's probe exits
 
 #### Scenario: A directory others could write stops the probe
 

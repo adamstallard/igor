@@ -620,7 +620,10 @@ every directory above the one it runs in: in task 6.0's measurement, below, the 
 a directory under `/Users/adam` loaded that home's skills, though its own `HOME` was empty.
 
 So each probe runs from a fresh empty directory, with `HOME` a second one, both in
-`/var/lib/igor/probes` (*A seat probe runs where only the Igor can write*). Before each probe the
+`<state dir>/probes/<role>-<rank>` (*A seat probe runs where only the Igor can write*).
+`<state dir>` is the state directory #216 (`lore-search`) defines, and `<role>-<rank>` names the
+`igor serve` process that makes the probe, so each process has a probe directory of its own
+(proposal, decision 43). Before each probe the
 Igor checks every directory from the probe's working directory up to the root: owned by root or the
 Igor, writable by neither group nor others, and holding no `.claude` or `CLAUDE.md`. `HOME` sits
 beside the working directory, so the directories above it are the same ones. The ownership and mode
@@ -628,15 +631,19 @@ conditions are what close the gap between the check and the spawn. A content che
 not: a `.claude` planted after it would still load. With no ancestor writable by anyone but root
 and the Igor, nobody else can plant one.
 
-Why `/var/lib/igor`. `igor serve` runs under the shipped systemd unit or in the container image
-(#175's decision 20), and the probe runs only under `serve`. The unit's `StateDirectory=igor` makes
-`/var/lib/igor`, whose ancestors `/var/lib`, `/var` and `/` are root's; #179's task 1.8 adds that
-line, and task 6.9 adds it where #179's task 1.8 has not landed. The image creates the same directory for the
-user Igor runs as (task 6.9). #174's state directory off the unit, `~/.local/state/igor`, would
-not do: it lies under the Igor user's home, which holds the `~/.claude` that Claude Code creates
-there, so every probe would fail. #175 (`worker-user`) keeps the worker from writing the Igor
-user's home, and lets it write its tree and outbox, which sit in `/var/lib/igor/trees`, so
-`probes/` is a sibling of `trees/`, never inside it. The ownership check holds even if #175's layout
+Why the state directory works. `igor serve` runs under the shipped systemd unit or in the
+container image (#175's decision 20), and the probe runs only under `serve`. The unit's
+`StateDirectory=igor` sets `STATE_DIRECTORY` to `/var/lib/igor`, whose ancestors `/var/lib`,
+`/var` and `/` are root's. #179's task 1.8 adds `StateDirectory=igor` to the unit, and task 6.9
+adds it where #179's task 1.8 has not landed. The compose file sets `STATE_DIRECTORY=/var/lib/igor` (#216's decision
+103), and the image creates that directory for the user Igor runs as (task 6.9). Where
+`STATE_DIRECTORY` and `XDG_STATE_HOME` are both unset, the state directory is
+`~/.local/state/igor`. The Igor user's home is then one of the directories above every probe, and
+it holds the `~/.claude` that Claude Code creates, so the ancestor check refuses every probe.
+Where only `XDG_STATE_HOME` is set, the state directory is `$XDG_STATE_HOME/igor`, wherever the
+operator put it, so whether probes pass depends on that path. #175 (`worker-user`) lets the worker write
+its own tree and outbox, which sit in `<state dir>/trees`. A probe directory inside `trees/`
+would be one the worker could write, so `probes/` is a sibling of `trees/`, never inside it. The ownership check holds even if #175's layout
 changes: a directory the worker could write fails it.
 
 Until #175's code is built, the worker runs as the Igor's own user, and so can write anything the

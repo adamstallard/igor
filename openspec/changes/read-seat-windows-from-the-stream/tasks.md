@@ -240,9 +240,12 @@
       before its crossing staying held until the hour has passed
 - [ ] 6.9 **The probe's directories** (*A seat probe runs where only the Igor can write*). For
       each probe, make two new directories of mode `0700` with `mkdtemp` in
-      `/var/lib/igor/probes`, creating `probes/` with mode `0700` where it is missing: one is the
-      probe's working directory, the other its `HOME`. Remove both once the probe exits, and
-      remove whatever is left in `probes/` when `igor serve` starts. Immediately before
+      `<state dir>/probes/<role>-<rank>`, the state directory as #216 (`lore-search`) defines
+      it and the process's own directory (proposal, decision 43). Create `<state dir>/probes` and
+      `<state dir>/probes/<role>-<rank>` with mode `0700` where either is missing. One new
+      directory is the probe's working directory, the other its `HOME`. Remove
+      both once the probe exits, and remove whatever is left in the process's own directory,
+      and nothing in another's, when `igor serve` starts. Immediately before
       spawning, resolve the working directory's real path and walk from it to `/`. Using
       `lstat`, refuse the probe where any directory is owned by neither root nor the Igor's
       user, has the group or other write bit set, or holds an entry named `.claude` or
@@ -253,7 +256,8 @@
       Where #179's (`concurrent-instances`) task 1.8 has not landed, add `StateDirectory=igor`
       to `deploy/igor.service`. Where the container image exists (#192, `deploy-image`), its
       `Dockerfile` creates `/var/lib/igor` owned by the user Igor runs as, mode `0755`.
-      Tests: both directories are in `/var/lib/igor/probes` and neither is under the system's
+      Tests: both directories are in `<state dir>/probes/<role>-<rank>`, a start leaves another
+      process's probe directory alone, and neither is under the system's
       temporary directory; both are gone after the probe exits, and a start removes ones a crash
       left; an ancestor that is group-writable, one that is world-writable with the sticky bit as
       `/tmp` is, one owned by another user, and one holding a `CLAUDE.md` each refuse the probe;
