@@ -2,7 +2,7 @@
 
 ## Decisions
 
-[#215](https://github.com/adamstallard/igor/issues/215) records all one hundred and seven decisions, as this list does too,
+[#215](https://github.com/adamstallard/igor/issues/215) records all one hundred and nine decisions, as this list does too,
 and all are Adam's. Where the agent that wrote this change fitted
 details Adam had not stated, that decision says so, and where Adam has since confirmed them,
 a later decision records it. A *consistency read*
@@ -84,7 +84,10 @@ request; Adam answered the questions each read raised. He made:
   decision 102 that day, answering the three questions the reads of decision 101 raised;
 - decisions 103 to 107 on 2026-10-21, answering the two questions the reads of decision 102
   raised, confirming its fitted details, and settling the state directory's definition and
-  this change's archive order.
+  this change's archive order;
+- decisions 108 and 109 on 2026-10-21, answering which rank deletes on a release by an edit
+  and confirming the `released` row on such a release and `lore-firing`'s new requirement
+  name.
 
 Terms used here:
 - The *destination repository* is the repository the configuration key `destination` names,
@@ -997,8 +1000,9 @@ Terms used here:
     session-log copies and then its question file under `flagged-questions`, exactly as
     `igor release` does, and a refused
     delete leaves the item held in the same way. Two new `work-triage` scenarios. The agent that
-    wrote this change fitted, for Adam to check, that such a release also appends the
-    `released` ledger row once its deletes succeed; Still open asks which rank deletes.
+    wrote this change fitted that such a release also appends the `released` ledger row once
+    its deletes succeed, which Adam confirmed (decision 109); decision 108 says which rank
+    deletes.
 105. **This change owns the state directory's definition** (Adam, 2026-10-21):
     `$STATE_DIRECTORY`, else `$XDG_STATE_HOME/igor`, as `graceful-handoff` states it. #174 and #143
     should cite it rather than define their own; an item below asks them.
@@ -1018,7 +1022,25 @@ Terms used here:
     `condition-backoff`'s (#101) in `work-triage` now, and #143's and #179's before it
     archives (task 5.2). Recorded alongside, not decided by Adam: `lore-firing` removes *Lore
     reaches the worker unbidden* and re-adds it under a new name, since `openspec archive`
-    refuses a modified requirement that drops a scenario in force.
+    refuses a modified requirement that drops a scenario in force. Decision 109 confirms the
+    new name.
+108. **The keeping rank deletes on a release by an edit** (Adam, 2026-10-21). Whichever rank
+    sees the attributable write-access edit appends a `release requested` ledger row. The
+    rank named in the hold record, the one that kept the question on its host, does the
+    deletes on its next poll, in decision 102's order, then appends `released`; other ranks
+    learn the release from that row on the state branch. A *rank* is one of the several Igor
+    processes #179 runs for one role. A refused delete is retried on every poll and opens
+    decision 80's notice, the question-not-kept condition that stops no work, once for the
+    item, reusing an open condition as decision 85 says, and the item stays held until
+    `released` is written. The agent that wrote this change
+    fitted that the hold record names the keeping rank, that a lost hold record leaves an
+    item held when its latest ledger row is `release requested`, and that a rank appends no
+    second `release requested` row for an edit that already has one; and, as for decision
+    80's own notice, that the notice opens only once `condition-backoff` defines conditions. What happens when the
+    keeping rank leaves #179's roster is open (Still open). Three new `work-triage` scenarios.
+109. **Two details are Adam's** (Adam, 2026-10-21): a release by an edit appends the `released`
+    row once its deletes succeed (decision 104), and `lore-firing`'s re-added requirement is
+    named *Lore reaches the worker unbidden, beside a search it may run* (decision 107).
 
 
 **Alignments with shared-skills #25.** These follow from Adam's decisions above and #25's
@@ -1095,7 +1117,9 @@ decisions 216, 221, 225, 229 and 235 (#25 at 9247d3c), and add no decision:
   from suppression, while decision 82 keeps a held item held. This change archives after
   #101, so its `work-triage` delta carries `condition-backoff`'s exemption and states that a
   held item stays held despite it. What stays open is the first point: `condition-backoff`
-  should name decision 85's notice as a second exception to its rule.
+  should name decision 85's notice as a second exception to its rule, and decision 108's
+  refused delete, which recurs on every poll for one held item, should not count toward
+  stopping a scope either, since `condition-backoff`'s probe item cannot observe it.
 - **This change depends on [#174](https://github.com/adamstallard/igor/pull/174) (decisions 87
   and 88)** for each worker run's private Claude state and the copied, redacted session log;
   decision 88 moves a flagged run's copy beside its question. #174's record in the execution
@@ -1111,17 +1135,26 @@ decisions 216, 221, 225, 229 and 235 (#25 at 9247d3c), and add no decision:
   `XDG_STATE_HOME` set, #174's log copy and the question file sit in different state
   directories, and decision 102's check of a move's source, from the state directory down,
   starts from the wrong one.
-- **For Adam: which rank deletes the files on a release by an edit** (decision 104). Any rank
-  of the role can see the edit, but the question file and logs sit on the host of the rank
-  that kept them. The spec does not say whether the rank that sees the edit waits for the
-  holding rank, or how a rank on another host learns that the deletes succeeded. Nor does it
-  say whether, after a refused delete, the Igor tries again on a later poll or needs another
-  edit, or how anyone learns of the failure besides the Igor's own log.
-- **The agent that wrote this change fitted, for Adam to check (decision 104):** a release by
-  an edit also appends the `released` ledger row once its deletes succeed, as `igor release`
-  does. Where the hold record is lost, `work-triage` knows a held item from its latest ledger
-  row starting `needs a person`, so without that row a lost record would hold the item
-  again.
+- **For Adam: a requested release with no keeping rank to act on it** (decision 108). The
+  keeping rank does the deletes, but no rule here or in #179 says who deletes, or how the
+  `release requested` item is ever released, in these cases:
+  - #179 shut the keeping rank down after the roster dropped it. #179 sweeps a gone rank's
+    working trees, not its `flagged-questions`.
+  - The question was kept by `igor run`, which is always rank 0 and outside the roster, on a
+    developer's machine that nothing polls once the run ends. Every `igor run` is rank 0, so
+    the hold record does not say which machine holds the files, and another developer's
+    `igor run` could "delete" on the wrong machine and append `released`.
+  - No rank kept the question: its write failed (`question not kept`), though log copies may
+    sit under `flagged-questions` already.
+  - Two ranks raced on different hosts, and each kept a file.
+  The spec has such an item stay held until the operator runs `igor release` by hand on the
+  host that holds its files. Should the hold record name the host as well as the rank, and
+  who acts when that host's rank is gone?
+- **For Adam: one notice for two kinds of failure** (decision 108). Decision 108 reuses
+  decision 80's question-not-kept condition for a refused delete, where the question was
+  kept. The condition holds only its key and is reused for any item, so the operator cannot
+  tell a lost question from a stuck delete. Keep one condition, or give a refused delete a key
+  of its own?
 - **This change depends on [#171](https://github.com/adamstallard/igor/pull/171) (decisions
   87 and 107)** for the rule that every seat names a token, and that an organization declaring no
   seats is refused (#171's decision 36). It archives after #171 (decision 107). Until #171 merges, main's `seat-budget` still lets a
@@ -1541,9 +1574,9 @@ reading the codebase. Two cases contradict that:
   write access release it, keeps a held item held whatever its handoff carries and with a
   record that never expires, and lets the operator release it with `igor release`, which
   keeps the item held when a delete is refused; a release by an edit deletes the files the
-  same way and also keeps the item held when a delete is refused. It has ten new
-  scenarios, including those for `igor release`, and three changed (decisions 76, 79, 82, 83,
-  84, 102 and 104). It also carries `condition-backoff`'s rule that a handoff caused by a fact
+  same way, done by the rank that kept the question, and also keeps the item held when a
+  delete is refused. It has thirteen new scenarios, including those for `igor release`, and
+  three changed (decisions 76, 79, 82, 83, 84, 102, 104 and 108). It also carries `condition-backoff`'s rule that a handoff caused by a fact
   about the Igor is not suppressed, with that rule's scenario (decision 107).
 - `docs/architecture.md`: §3.3 says every worker is offered `igor lore-search` and what binds it, §3.4.1 says a
   search hit is not a firing and that a review counts citations from the destination repository's

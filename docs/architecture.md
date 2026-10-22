@@ -609,7 +609,11 @@ or change of holder by someone with write access to the item's repository releas
 where the edit can be attributed, which needs #141, so until #141 lands only `igor release`
 does; either way of releasing deletes the item's session logs and then its question file
 before the item counts as released, the question file last so that a refused delete leaves
-it in place and the item still known as held; anyone else's edit, or one whose author
+it in place and the item still known as held. For an edit, the Igor process of the role
+that sees it, one of #179's *ranks*, appends a `release requested` row to the ledger, and the
+rank that kept the question on its host does the deletes on its next poll, retrying a
+refused one on every poll; if that rank no longer runs, the item stays held until the
+operator runs `igor release` on that host; anyone else's edit, or one whose author
 cannot be read, leaves it held.
 
 Open pull request #174 gives each worker run a home of its own, resets `~/.claude` and

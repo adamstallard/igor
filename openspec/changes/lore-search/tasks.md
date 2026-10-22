@@ -200,11 +200,14 @@
       is built, opens on the first failure as a notice that stops no work, holding only a key
       gate two names, and the path goes only to the Igor's own log); and work triage keeps
       the item held whatever its handoff carries, with a hold record that never expires, knows a
-      held item from its record, its host file or a `needs a person` ledger row, and releases it
-      only by `igor release <tracker>/<repo>/<item>` on the host, which deletes the logs
-      and then the question file first and, where a delete is refused, says it failed and
-      leaves the item held, or an attributable edit by someone with write
-      access, never a reply. Once
+      held item from its record, its host file, a `needs a person` ledger row or a `release
+      requested` one, records its keeping rank in the hold record, and releases it only by
+      `igor release <tracker>/<repo>/<item>` on the host, which deletes the logs and then the
+      question file first and, where a delete is refused, says it failed and leaves the item
+      held, or by an attributable edit by someone with write access, never a reply: a rank
+      that sees the edit appends one `release requested` row for it, and the keeping rank does
+      the deletes on its next poll, retries a refused one on every poll, opens the notice
+      condition once where conditions exist, and appends `released` when they succeed. Once
       #188's action log is built, a
       flagged run's log keeps names only. Tests for *Transcript persisted
       off the main line*, *A run that met a categorized question stores no transcript*, *A run that
@@ -232,7 +235,7 @@
       flagged item*, *An edit without write access leaves a flagged item held*, *A question that
       cannot be kept does not block the handoff*, *A kept question names its category, not its
       text*, *A kept question without a category holds its text*, *The question-not-kept
-      condition stops no work*, *A release by an edit deletes the item's files*, *A refused delete keeps an edited item held*, *The operator releases a held item on the host*, *A refused delete keeps the item held*, *A cure key
+      condition stops no work*, *A release by an edit deletes the item's files*, *A refused delete keeps an edited item held*, *The keeping rank deletes on a release another rank saw*, *A requested release is not a release*, *A refused delete on a requested release is retried and noticed once* (its notice once `condition-backoff` is built), *The operator releases a held item on the host*, *A refused delete keeps the item held*, *A cure key
       does not release a held item*, *A held item's lost record leaves it held*,
       *A flagged run's budget handoff still gives the reset time*, *Any
       other run's ledger row keeps a denied command whole*, *A flagged run's action log keeps

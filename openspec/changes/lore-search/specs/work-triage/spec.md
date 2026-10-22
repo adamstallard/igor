@@ -11,7 +11,7 @@ lane still admits it and the model gives the same verdict on the same text. The 
 and re-works it every poll interval, at full worker cost, forever.
 
 An answer is anything that could change the outcome: a reply from anyone other than the Igor,
-or an edit to the item itself, except as the next paragraph says. Outside that case both are required, because a handoff *invites* a reply — an item
+or an edit to the item itself, except for a held item, below. Outside that case both are required, because a handoff *invites* a reply — an item
 suppressed until its title or labels change would stay silent precisely where a person supplied
 the missing context in a comment.
 
@@ -34,9 +34,12 @@ the item is *held*, and SHALL stay held whatever else its handoff carries: a cur
 kept is), a question not kept, or anything else that would exempt another handoff from suppression, does
 not release it. A reply SHALL NOT count as an answer. The record this requirement keeps of a held item,
 its *hold record*, SHALL NOT expire, and where that record is missing or unreadable the item
-SHALL stay held rather than be worked again. The Igor SHALL know a held item from its hold
-record, or, where that is lost, from its file under `flagged-questions` on the host or from
-the item's latest ledger row, where that row's `reason` starts `needs a person`.
+SHALL stay held rather than be worked again. The hold record SHALL name the *rank*, one of the
+Igor processes #179 runs for the role, that kept the item's question on its host, its
+*keeping rank*. The Igor SHALL know a held item from its hold record, or, where that is lost,
+from its file under `flagged-questions` on the host or from the item's latest ledger row,
+where that row's `reason` starts `needs a person` or is `release requested`, the row a
+release by an edit appends, below.
 
 A held item SHALL be released in either of two ways. The Igor's operator SHALL be able to
 release it on the host with `igor release <tracker>/<repo>/<item>`, such as
@@ -52,13 +55,20 @@ every Igor process of the role, each a *rank* under #179, reads the release from
 branch, so a rank on another host does not hold the item again from its own file or ledger
 rows. An
 edit to the item, a relabel or a change of holder included, by someone with write access to
-the item's repository SHALL also release it, where the edit can be attributed. Such a release
-SHALL delete the item's session logs and then its question file exactly as `igor release`
-does, on the host that holds them (which rank does so is open, in the proposal's Still
-open), and only then mark the hold record released and append a ledger row whose `reason` is
-`released`; where a delete is refused, the Igor SHALL write the path only to its own log on
-the host, leave any file it did not yet delete, and mark nothing released and append no row,
-so the item stays held. An edit by
+the item's repository SHALL also release it, where the edit can be attributed. A rank that
+sees such an edit SHALL append a ledger row for the item whose `reason` is `release
+requested`, unless one is already recorded for that edit, and the item stays held. The keeping rank, on its next poll, SHALL delete the
+item's session logs and then its question file on its host exactly as `igor release` does,
+and only then mark the hold record released and append a ledger row whose `reason` is
+`released`; every other rank learns of the release from that row on the state branch. Where
+a delete is refused, the keeping rank SHALL write the path only to its own log on the host,
+leave any file it did not yet delete, and append no `released` row, so the item stays held;
+it SHALL try the deletes again on every later poll until they succeed, and, once
+`condition-backoff` defines conditions, SHALL open the notice condition `graceful-handoff`
+opens for a question it could not keep, once for the item rather than once per poll, reusing
+a condition already open as `graceful-handoff` says. Where the keeping rank has left #179's
+roster, or no rank kept the question, the item stays held until `igor release` is run on the
+host that holds its files; what else happens then is open (the proposal's Still open). An edit by
 anyone else, or one whose author the Igor cannot read, SHALL leave the item held. How write
 access is read and who made an edit are #141's rules; until #141 lands, no edit can be
 attributed, and `igor release` is the way to release a held item.
@@ -100,6 +110,20 @@ attributed, and `igor release` is the way to release a held item.
 - **THEN** the Igor deletes the session logs and then the question file before the item is
   worked again
 
+#### Scenario: The keeping rank deletes on a release another rank saw
+
+- **WHEN** rank 1 kept a held item's question on its host
+- **AND** rank 2 sees an attributable edit to the item by someone with write access
+- **THEN** rank 2 appends a `release requested` row and the item stays held
+- **AND** on its next poll rank 1 deletes the session logs and then the question file, marks
+  the hold record released and appends a `released` row
+- **AND** rank 2 learns of the release from that row
+
+#### Scenario: A requested release is not a release
+
+- **WHEN** an item's latest ledger row is `release requested` and its hold record is lost
+- **THEN** the item stays held
+
 #### Scenario: A refused delete keeps an edited item held
 
 - **WHEN** someone with write access to the item's repository edits a held item, where the
@@ -109,6 +133,15 @@ attributed, and `igor release` is the way to release a held item.
 - **THEN** the Igor deletes nothing through the link and writes its path only to its own log
 - **AND** the hold record stays held, no `released` row is appended, and the item is not
   worked again
+
+#### Scenario: A refused delete on a requested release is retried and noticed once
+
+- **WHEN** an item's release by an edit has been requested
+- **AND** the keeping rank's delete of one of its files is refused on two polls in a row
+- **THEN** the keeping rank tries the delete again on each poll
+- **AND**, where `condition-backoff` is built, opens `graceful-handoff`'s notice condition once,
+  not once per poll
+- **AND** appends no `released` row until the deletes succeed
 
 #### Scenario: The operator releases a held item on the host
 
