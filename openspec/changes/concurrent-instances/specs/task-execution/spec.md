@@ -59,8 +59,9 @@ At startup, before its first cycle, a serving process SHALL remove the trees of 
 rank.
 At the start of each cycle, it SHALL remove the trees of each rank of its role that the roster
 does not declare and that is gone, as `work-claiming` defines. With each tree it SHALL remove
-the tree's outbox and the tree's git directory, `<tree>-git`, where there is one, both beside it
-as #175 lays them out. It SHALL NOT remove a tree of another
+what #175 lays out beside it, where there is one: the tree's outbox, its git directory
+`<tree>-git`, and its prompt directory `<tree>-prompt`, which holds the system prompt file a crash
+can leave. It SHALL NOT remove a tree of another
 declared rank, of a rank that is not gone, or of another role, whatever its age.
 
 Rank 0 is `igor run`'s (`work-claiming`'s *A run by hand runs as rank 0*). The roster declares no
@@ -69,18 +70,26 @@ of eight lowercase letters and digits when it starts. The id in each tree's name
 `<role>-0-<id>`, SHALL be that run id followed by an id of the tree's own, of any length, so two
 runs of one role at once never share a tree and a run tells its own trees by the first eight
 characters of their id. A run SHALL remove each of its own trees as it releases it when the
-task ends, under its own user, since `igor run` has no worker user, and SHALL remove no other
-tree, a rank-0 tree of another run included; it has no startup sweep. `igor run
---plan` SHALL remove no tree.
+task ends, under its own user, since `igor run` has no worker user. At its start, before its
+first cycle, it SHALL also remove the rank-0 trees of its role whose run's process is gone (Adam,
+2026-10-21), each with its outbox, `<tree>-git` and `<tree>-prompt`, and the home #174 gives
+that run. A run tells that
+another run's process is gone by a lock: each run holds an exclusive lock on a file in the trees'
+directory named `<role>-0-<run id>.lock` for as long as it runs, which the system releases when
+its process ends, and a run whose lock another run can take is gone. A run SHALL remove no tree
+of a run whose lock it cannot take, and removes a gone run's lock file last. Where the run's own
+user cannot remove what another person's run left, it leaves it and logs the paths. `igor run --plan`
+SHALL remove no tree.
 
 A serving process SHALL remove each tree and its outbox as the worker user of the rank that made it, as
-#175 has a release remove them, and each `<tree>-git` as the service user, which owns it under
-#175.
+#175 has a release remove them, and each `<tree>-git` and `<tree>-prompt` as the service user,
+which owns them under #175.
 
 #### Scenario: A predecessor's tree is removed
 
 - **WHEN** a process starts and finds a tree named with its own role and rank
-- **THEN** it removes the tree, its outbox and its git directory before its first cycle
+- **THEN** it removes the tree, its outbox, its git directory and its prompt directory before its
+  first cycle
 
 #### Scenario: A sibling's tree is left
 
@@ -103,7 +112,7 @@ A serving process SHALL remove each tree and its outbox as the worker user of th
   declares, and it has watched that rank's heartbeat fail to change for three poll
   intervals
 - **THEN** it removes the tree and its outbox as `igor-worker-<role>-<rank>` for that rank, and the
-  tree's git directory as the service user
+  tree's git directory and prompt directory as the service user
 
 #### Scenario: A retired rank's tree is left while the rank runs
 
@@ -114,14 +123,22 @@ A serving process SHALL remove each tree and its outbox as the worker user of th
 #### Scenario: A serving rank leaves a run's trees
 
 - **WHEN** a serving process of `backend` finds a tree named `backend-0-k3x9`
-- **THEN** it leaves the tree, however old it is and whether or not rank 0 is gone
+- **THEN** it leaves the tree, however old it is and whether or not the run that made it is gone
 
 #### Scenario: A run removes only its own trees
 
 - **WHEN** an `igor run backend` that picked the run id `r7k2m9x4` ends a task whose tree is
   `backend-0-r7k2m9x4a1`, beside `backend-0-q2b4n8c6z3` from another run and `backend-1-p2q7`
-- **THEN** it removes `backend-0-r7k2m9x4a1`, its outbox and its git directory, and leaves the
-  other two
+- **THEN** it removes `backend-0-r7k2m9x4a1`, its outbox, its git directory and its prompt
+  directory, and leaves the other two
+
+#### Scenario: A run removes what a crashed run left
+
+- **WHEN** an `igor run backend` starts and finds `backend-0-q2b4n8c6z3`, whose run, with the run
+  id `q2b4n8c6`, crashed, so the lock on `backend-0-q2b4n8c6.lock` is free, beside `backend-0-m5t8w1y3b2` of a run still
+  holding its lock
+- **THEN** before its first cycle it removes `backend-0-q2b4n8c6z3`, its outbox, `<tree>-git` and
+  `<tree>-prompt`, and that run's home, and leaves `backend-0-m5t8w1y3b2`
 
 #### Scenario: Every rank on the host sees the trees
 

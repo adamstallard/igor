@@ -54,6 +54,8 @@ jobs:
           - ConcurrentInstancesRunRankZero.cfg
           - ConcurrentInstancesRunRankZeroMisses.cfg
           - ConcurrentInstancesLivenessRankZero.cfg
+          - ConcurrentInstancesTwoRuns.cfg
+          - ConcurrentInstancesTwoRunsGiveBacks.cfg
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
@@ -73,9 +75,14 @@ jobs:
             -config "${{ matrix.config }}" ConcurrentInstances.tla
 
   negative:
-    name: TLC negative configurations
+    name: TLC negative configurations ${{ matrix.files }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        # Two jobs, by the letter after "No", so each stays well within the hour.
+        files: ['No[A-L]*.cfg', 'No[M-Z]*.cfg']
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
@@ -95,7 +102,7 @@ jobs:
           # runs on one worker: they are small, and a liveness check on several
           # workers stalled for minutes in a local run.
           failed=""
-          for cfg in negative/*.cfg; do
+          for cfg in negative/${{ matrix.files }}; do
             echo "::group::TLC $cfg"
             set +e
             java -XX:+UseParallelGC -cp "$RUNNER_TEMP/tla2tools.jar" tlc2.TLC \

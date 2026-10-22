@@ -28,7 +28,7 @@
       The unit's header comment, which may be reworded, names the instance with its rank:
       `igor@<role>-<rank>`, and installs one as `sudo systemctl enable --now igor@maintenance-1`.
       The unit's restart lines are #82's (`stopped-scope-visible`): `Restart=on-failure` and
-      `RestartPreventExitStatus=78`, with no `SuccessExitStatus=`. A rank the roster no longer
+      `RestartPreventExitStatus=78`, with `RestartSec=30s` and no `SuccessExitStatus=`. A rank the roster no longer
       declares exits 0 (4.25), which that policy does not restart; this change adds no line for it
 
       `ProtectProc=invisible`, which PR #175 (`worker-user`) adds to the same unit, stays in it;
@@ -57,17 +57,23 @@
       single-quoted private key across several lines are each judged as `role-config` says, and
       the refusal in 1.6 never holds the value
 - [ ] 1.8 `deploy/igor.service` sets `StateDirectory=igor`, and working trees are made under
-      `/var/lib/igor/trees`, which every instance of the template shares, rather than under the
-      temporary directory, which `PrivateTmp=true` makes private to each instance
+      `<state dir>/trees`, where the state directory is as #216 (`lore-search`, its decision 105)
+      defines it: `$STATE_DIRECTORY`, which `StateDirectory=igor` sets, and otherwise
+      `$XDG_STATE_HOME/igor`. Every instance of the template shares it, unlike the temporary
+      directory, which `PrivateTmp=true` makes private to each instance
 - [ ] 1.9 `igor run <role>` runs as rank 0 whatever the roster declares, with no wait and no
-      check of any serving rank. Without `--plan` it writes `heartbeats/<role>-0.json` from the
-      timer of 4.15, its first write before its first cycle, and its claim messages carry
-      `Igor-Rank: 0`. It passes over every labelled item that carries any claim message posted
+      check of any serving rank. Without `--plan` it writes `heartbeats/<role>-0-<run id>.json`
+      from the timer of 4.15, its first write before its first cycle, and its claim messages
+      carry `Igor-Rank: 0` and `Igor-Run: <run id>`, the run id of 4.5. Where the rank is 0,
+      verification compares the run id too. A sibling judges a run's claim messages gone by that
+      run's own file. It passes over every labelled item that carries any claim message posted
       since its latest release, whatever its rank and whether or not that rank is gone, posting
       nothing. It spends only `IGOR_RUN_TOKEN`; #171's tasks build that spending. `igor run --plan` writes no heartbeat, claims nothing and removes no
       tree. Test: a run beside a serving rank 1 starts at once and writes its heartbeat before
-      its cycle; a run passes over an item held by a gone rank and one held by rank 0; `--plan`
-      writes nothing and removes no tree
+      its cycle; a run passes over an item held by a gone rank and one held by rank 0; two runs
+      that both claim one item read different run ids, and only the earlier message's run works
+      it; a crashed run's claim is taken over once its own file stops changing, while another
+      run's file still changes; `--plan` writes nothing and removes no tree
 - [ ] 1.10 Refuse, when the configuration loads, a role whose name does not match
       `[a-z][a-z0-9-]*`, or for which `igor-worker-<role>-<rank>` is longer than 32 characters for
       any rank the role may run, with these messages, as written:
@@ -98,8 +104,10 @@
 - [ ] 2.6 A process that loses a claim to a process of its own role leaves the role's label in
       place
 - [ ] 2.7 The re-read that verifies a claim comes within one poll interval of the claim message;
-      a later re-read stands down without working the item
-- [ ] 2.8 Tests: a same-role loser keeps the label on the item; a late verification stands down; a claim
+      a later re-read works nothing, and gives the claim back as 4.21 gives back a failed
+      verification
+- [ ] 2.8 Tests: a same-role loser keeps the label on the item; a late verification works
+      nothing and, holding the item, removes the label and gives the claim back out loud; a claim
       message from before a release does not count
 - [ ] 2.9 A claim message counts only when its timestamp is later than the item's latest release,
       read from the item's label events; a message in the release's second does not count, and
@@ -152,8 +160,8 @@
       decided 2.17 reads `lastEditedAt` instead (`design.md`, *An edit is read from GraphQL
       `lastEditedAt`*)
 - [ ] 2.19 Measure on GitHub which repository roles can edit or delete a comment the role's App
-      wrote: write, triage, maintain or admin. Record the result in `design.md`; if anything below
-      maintain can, decision 30's reason goes back to Adam
+      wrote: write, triage, maintain or admin. Record the result in `design.md`. It is for
+      information only: decision 30's accepted risk stands whatever it shows (Adam, 2026-10-21)
 
 ## 3. Contention
 
@@ -182,7 +190,8 @@
 - [ ] 4.2 A claim carrying another rank that is not gone is left alone
 - [ ] 4.3 A claim carrying a rank the roster does not declare is adoptable only once that rank
       is gone
-- [ ] 4.4 Every process overwrites `heartbeats/<role>-<rank>.json` on the state branch every half
+- [ ] 4.4 Every serving process overwrites `heartbeats/<role>-<rank>.json` on the state branch,
+      and each `igor run` overwrites `heartbeats/<role>-0-<run id>.json`, every half
       poll interval, from the timer of 4.15, which keeps running while a worker runs. The file holds an id the
       process chose at random when it started, a counter it increments on each write, and
       whether the process is available: free, with no claim in hand and not stood down, and with
@@ -195,14 +204,18 @@
       the end of the name. At startup a serving process removes those of its own
       role and rank. At the start of each cycle it removes those of every rank the roster does not
       declare and that is gone to it. Never by age. With each tree go its outbox and its
-      `<tree>-git` directory, where there is one. Each tree and its outbox are removed as the
-      worker user of the rank that made it, as #175's release removes them, and each `<tree>-git`
-      as the service user. A serving process never removes a tree of rank 0. Each `igor run`
+      `<tree>-git` and `<tree>-prompt` directories, where there are any. Each tree and its
+      outbox are removed as the worker user of the rank that made it, as #175's release removes
+      them, and each `<tree>-git` and `<tree>-prompt` as the service user. A serving process never removes a tree of rank 0. Each `igor run`
       picks a run id of eight lowercase letters and digits at its start, names every tree it
       makes `<role>-0-<id>` with an id starting with that run id, and removes each of its own
-      trees as it releases it when the task ends, under its own user; it has no startup sweep.
-      `igor run --plan` removes nothing. Tests: two runs at once each keep and remove only their
-      own trees; `--plan` removes no tree
+      trees as it releases it when the task ends, under its own user. Each run holds an
+      exclusive lock on `<role>-0-<run id>.lock` in the trees' directory while it runs; at its
+      start, before its first cycle, it finds every other run of its role whose lock it can take.
+      For each such run it removes the run's trees, with their outboxes, `<tree>-git` and
+      `<tree>-prompt`, and #174's home of that run, and then that run's lock file. `igor run --plan`
+      removes nothing. Tests: two runs at once each keep and remove only their own trees; a run
+      removes what a crashed run left and leaves what a live run holds; `--plan` removes no tree
 - [ ] 4.6 Remove `ABSOLUTE_CEILING_MS`, the worker's kill at it, and the failure reason that names it
 - [ ] 4.7 `docs/architecture.md` §6.7.2 pins the sweep threshold to that ceiling; restate it to
       describe the sweep by rank
@@ -249,11 +262,16 @@
       declared, it starts no claim, finishes its item or hands it off out loud, as shutdown
       does, keeps writing heartbeats meanwhile, and then exits as 4.25 says. Where the
       configuration read at a cycle fails a check a starting process makes, the process goes on
-      under the last configuration that passed and raises a condition naming the failing file
-      and check, of the read-cleared kind #171 (`seat-files`) defines in `stuck-conditions`; it
-      never exits for it. Whichever of #171 and this build lands second makes the condition that
-      kind. Test: a malformed roster at a cycle keeps the last roster and raises the condition,
-      and a fixed one clears it
+      under the last configuration that passed and raises #208's `lore:config:<role>`, naming
+      the failing file and check, of the read-cleared kind #171 (`seat-files`) defines in
+      `stuck-conditions`; it never exits for it. The condition opens and clears by #208's rules:
+      only a passing read of the refused commit or one descending from it, or of a head that no
+      longer holds it, clears it, and a commit already known does not reopen it. A roster that
+      drops the process's own rank is no failed check: that read passes and retires the rank.
+      Whichever of #171, #208 and this build lands last wires the condition to those rules. Each
+      process applies the newest lore commit it has fetched, with no coordination between ranks.
+      Test: a malformed roster at a cycle keeps the last roster and raises the condition, and a
+      fixed commit descending from it clears it; a roster that drops the rank retires it
 - [ ] 4.18 Tests for 4.16 and 4.17: a recovered claim with the Igor's pull request open is caught
       up, whether its own predecessor's or a gone sibling's, and a person's label stays; a
       returning rank does not count its superseded message; a rank removed from the roster is
@@ -267,20 +285,31 @@
       on a running multi-rank Igor and an App's key
 - [ ] 4.20 PR #175 (`worker-user`) adds a git directory, `<tree>-git`, beside each tree. 4.5
       sweeps it already, assuming that name; check the name against #175 as merged. Trees and
-      their git directories live in `/var/lib/igor/trees` (1.8). #175 keeps `PrivateTmp=true`
+      their git directories live in `<state dir>/trees` (1.8). #175 keeps `PrivateTmp=true`
       for everything else, and records its side of this itself, including the sibling's removal
       as the gone rank's worker user (4.5)
-- [ ] 4.21 Only the rank whose claim message holds an item removes the role's label: standing
-      down after a failed verification, setting an item down after a repeated failure before the
-      worker (#173), and answering a stop. Any other rank drops out silently, removing and
-      posting nothing. Which failures count toward a set-down, and who posts it, are #173's
-      rules; whichever of #173's build and this build lands second wires them to the holder test
-      here
+- [ ] 4.21 Only the rank whose claim message holds an item removes the role's label: a
+      withdrawal after a failed post or a failed verification, setting an item down after a
+      repeated failure before the worker (#173), and answering a stop. Any other rank drops out
+      silently, removing and posting nothing. After a failed post or verification, the process
+      reads the item's claim messages (#173's test): another process's message counting means
+      silence; its own message holding means a withdrawal, out loud, whose removal follows a
+      fresh read of the heartbeat files and claim messages and happens only where its own
+      message still holds the item; no message counting means out loud with the label left,
+      except as 4.26 says; a failed read means nothing now and a reread at the next cycle's
+      start, or before `igor run` exits, which decides the same way and, failing again, posts
+      that the item is still held and removes nothing. Which failures count toward a set-down, and what is
+      posted, are #173's rules; whichever of #173's build and this build lands second wires
+      them to the holder test here
 - [ ] 4.22 A stop said on a handed-over item is answered only by the rank whose claim message
       holds it; other ranks ignore it. Where no claim message counts, the rank that reaches the
       item answers it
-- [ ] 4.23 Tests for 4.21 and 4.22: a rank that does not hold the item and fails its verification
-      leaves the label; the holder sets an item down; a stop on a handed-over item a sibling
+- [ ] 4.23 Tests for 4.21, 4.22 and 4.26: a rank that does not hold the item and fails its
+      verification leaves the label; a holder whose verification fails withdraws out loud; a
+      claim message posted between the test and the removal keeps the label on; a failed test
+      is read again at the next cycle; a failed post sends the removal of the label it set
+      while under half a settle interval has passed since it started setting it, and later
+      sends no removal and leaves the label; the holder sets an item down; a stop on a handed-over item a sibling
       works is ignored by the other rank; a stop on a hand-over nobody has claimed is answered
 - [ ] 4.24 A heartbeat read is used only to judge whether each file changed and whether its
       rank is available. A process does not stop for anything it finds in its own file, such
@@ -293,6 +322,12 @@
       ```text
       The roster no longer declares rank <rank> of <role>. Exiting; systemd will not restart this rank.
       ```
+- [ ] 4.26 A process that set the role's label in this claim and whose claim message failed to
+      post removes that label where its test finds no claim message that counts. It checks the
+      time before sending the removal: it sends it only while less than half a settle interval
+      has passed since it started to set the label, by its own monotonic clock, and otherwise
+      sends none and leaves the label. This is the one listed exception to
+      4.21 (Adam, 2026-10-21)
 
 ## 5. State
 
@@ -370,6 +405,8 @@
       abandonment bound, the heartbeat period and the stand-down threshold follow the poll
       interval and have no settings of their own, and that the settle interval must be shorter
       than the poll interval
-- [ ] 6.6 `docs/deployment.md` says `igor run` runs as rank 0 beside any serving rank, and that
-      two people running `igor run` for one role at once can both work one item (proposal,
-      *Still open*)
+- [ ] 6.6 `docs/deployment.md` says `igor run` runs as rank 0 beside any serving rank, that
+      two people may run `igor run` for one role at once, each with its own run id, trees,
+      home and heartbeat file, and that a run removes at its start what a crashed run left
+- [ ] 6.7 At archive, point `.github/workflows/tla-concurrent-instances.yml`'s paths and working
+      directory at where the model then lives, so TLC keeps checking it
