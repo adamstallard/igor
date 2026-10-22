@@ -106,10 +106,18 @@
       the read of the claim messages fails, count nothing, post nothing and leave the role's
       label on the item (Adam, 2026-10-20). Where the read failed, keep the item in memory and
       read its claim messages again in the rank's next cycle: drop out silently where another
-      rank's claim message counts, and otherwise, or where the read fails again, give the claim
-      back with a refused run's post, counting nothing (Adam, 2026-10-21). The withdrawal releases only claim messages posted
-      before that test, by the mechanism #179 decides (Adam, 2026-10-20). Tests for each case,
+      rank's claim message counts, and where the read succeeds and finds none, give the claim
+      back with a refused run's post, counting nothing (Adam, 2026-10-21). Where the second read
+      fails too, count the unreadable claim, the claim-window failure with both failed reads, as
+      one `tracker` failure with the fixed message "the item's claim messages could not be
+      read", ending no cycle, and set the item down where it is the third identical failure in
+      a row; a read that succeeds appends a row that starts that count again (Adam,
+      2026-10-21). The withdrawal releases only claim messages posted before the rank's read of
+      the claim messages that found no other rank's claim, by the mechanism #179 decides (Adam,
+      2026-10-20). Tests for each case,
       and for a set-down posted where the claim message never landed
+- [ ] 3.3a Add 3.3's unreadable claims to the TLA+ model in `model/`, and run TLC on every
+      configuration
 - [ ] 3.4 In `runItem`, on a failure before the worker (a refused claim window, a throw raised
       before `execute` spawned the worker, or a failure `execute` returns before spawning it;
       #101's `workerless` mark on a run row tells that last kind apart from a worker that

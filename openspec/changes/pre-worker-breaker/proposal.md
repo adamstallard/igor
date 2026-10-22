@@ -223,12 +223,10 @@ his answers of 2026-10-20, and 33 to 38 his answers of 2026-10-21:
     loud** (Adam, 2026-10-21, amending decision 22). On the failing run the rank counts nothing,
     posts nothing and leaves the label. In its next cycle it reads the item's claim messages
     again. Where it then finds another rank's claim that counts, it drops out silently; where it
-    finds none, or still cannot read, it gives the claim back with the refusal post, the fixed
-    post (task 3.2) a run makes when it gives the claim back to be tried again next cycle. So a
-    claim never ends in silence, as the in-force *A claim that cannot be kept is given back, out
-    loud* requires. As decided, the claim-window failure whose read failed never counts toward
-    the breaker, and nor does a second failed read; whether to add a retry limit for that case
-    is held for Adam under *Still open*.
+    finds none, it gives the claim back with the refusal post, the fixed post (task 3.2) a run
+    makes when it gives the claim back to be tried again next cycle; where it still cannot read,
+    decision 41 applies. So a claim never ends in silence, as the in-force *A claim that cannot be
+    kept is given back, out loud* requires. The failing run counts nothing by itself.
 36. **The refusals before a set-down name the failure in plain words** (Adam, 2026-10-21), like
     the set-down post (decision 31): where the run failed and its HTTP status or exit code, with
     no quote of the error. The full text goes to the process's own log.
@@ -254,6 +252,16 @@ his answers of 2026-10-20, and 33 to 38 his answers of 2026-10-21:
     stays in the masked text, and anyone reading a public state branch can recover it from the
     row's unkeyed SHA-256 by trying every short string. *Rejected:* a keyed hash, such as an
     HMAC under a key every process of the role holds and the state branch does not.
+41. **An unreadable claim counts as one `tracker` failure** (Adam, 2026-10-21, amending
+    decision 35). An *unreadable claim* is a claim-window failure whose read of the item's claim
+    messages fails, followed by a re-read in the next cycle that fails too. So an item whose
+    claim messages can never be read, such as one the tracker answers with a 5xx every time, is
+    set down on the third unreadable claim in a row, with the set-down post, where decision 35
+    alone would claim it and give it back without end. Each counts with one fixed message, so
+    unreadable claims are identical to each other. A read of the claim messages that succeeds
+    starts the count again. The TLA+ model in `model/` does not yet include unreadable claims
+    (task 3.3a). This change's choice, which approving it approves: an unreadable claim counts
+    toward its item's breaker only, as a refused call does under decision 34, and ends no cycle.
 
 **Still open:**
 
@@ -310,17 +318,21 @@ his answers of 2026-10-20, and 33 to 38 his answers of 2026-10-21:
     otherwise identical messages might never match.
   - Missing scenarios: a 429 or rate-limit 403 counting toward the outage rule, a clone whose
     failure cannot be told unanswered, and masking after redaction.
+- **Findings of the third consistency read of 2026-10-21, for this change's next revision,** none
+  fixed yet:
+  - Task 5.0 expects #106 (`role-keyed-watermark`) to have edited the watermark requirement by
+    the time task 5.0 is done, but #106 archives after this change in issue #204's order. Nor
+    does #204 or #106's task 1.6 say that #106 must carry the two reasons and scenarios this
+    change adds to the watermark requirement, so #106's `MODIFIED` block would drop them when it
+    archives (reported to #106 and #204).
+  - The spec and `design.md` name #101's `passesMark` as what reads a response's status; on
+    #101's branch the status test is `unanswered` in `src/claiming.ts`, and `passesMark` reads
+    the flag `unanswered` sets.
+  - Decision 19 states that #179's retry of state writes covers this change's appends, which
+    task 0.3 has still to check, so the claim is unmeasured.
+  - `design.md` reports a TLC pass for a `LateRows` configuration with `PromptRows` TRUE that is
+    not in `model/findings/`, so nobody can rerun it.
 - **For Adam, from a second consistency read on 2026-10-21:**
-  - **A retry limit for an item whose claim messages cannot be read.** A claim-window failure
-    whose re-read also fails counts nothing (decision 35). Take an item whose claim messages can
-    never be read, because the tracker returns a 5xx for them every time. One cycle claims it
-    and fails, the next rereads, fails again and gives it back, and the pair repeats with no
-    bound. That is the endless retry #155 asks the breaker to end. The TLA+ model leaves this case
-    out, since leaving it out breaks none of its invariants. Until Adam answers, decision 35
-    stands. **Recommended:** count each pair that ends
-    in a failed re-read toward the item's breaker as one failure of source `tracker`, so the
-    third such pair in a row sets the item down with the set-down post, as any repeated failure
-    does; a read that succeeds, or another rank's claim found, starts the count again.
   - **A failed set-down post.** The item is deferred whatever the post does, so where the
     tracker is still failing nobody is told why it stopped; decision 23 calls this "no cost".
   - **Decision 17's rejection** of tagging a failed mint `code-host` gives a reason decision 4

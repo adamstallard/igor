@@ -125,14 +125,23 @@ set-down, only where at that moment the item carries no claim message of another
 role that counts under #179's rules. Where it carries one, the rank SHALL count nothing, record
 nothing toward the breaker, and leave the role's label on the item.
 
-Where the rank cannot read the item's claim messages, it SHALL count nothing and record nothing
-toward the breaker for that failure, then or later. On that run it SHALL post nothing and leave
-the role's label on the item, and in its next cycle it SHALL read the item's claim messages
-again. `igor run`, whose process runs no next cycle, SHALL make that second read before it
-exits. Where that read finds another rank's claim message that counts, the rank drops out
-silently, as above. Where it finds none, or fails again, the rank SHALL give its claim back with
-the post a refused run makes, so that the claim never ends in silence (*A claim that cannot be
-kept is given back, out loud*).
+Where the rank cannot read the item's claim messages, it SHALL count nothing for that failure
+on that run. On that run it SHALL post nothing and leave the role's label on the item, and in
+its next cycle it SHALL read the item's claim messages again. `igor run`, which makes one pass
+and exits, SHALL make that second read at once, before it exits. Where that read finds another
+rank's claim message that counts, the rank drops out silently, as above. Where it finds none,
+the rank SHALL give its claim back with the post a refused run makes, naming the claim-window
+failure, so that the claim never ends in silence (*A claim that cannot be kept is given back,
+out loud*).
+
+**An unreadable claim counts once.** An *unreadable claim* is a claim-window failure whose read
+of the item's claim messages failed, followed by a second read that fails too, under `igor run`
+as under `igor serve`. It SHALL count as one failure of source `tracker` toward the item's
+breaker, with the fixed message "the item's claim messages could not be read", so that
+unreadable claims are identical to each other. It SHALL end no cycle. Where it is the third
+identical failure in a row, the rank SHALL set the item down; otherwise it SHALL give its claim
+back with the post a refused run makes. A read of the item's claim messages that succeeds SHALL
+append a row that starts that count again, whatever the read finds.
 
 **Identical** means the same source and the same message. The source is one of the tracker, the
 code host, the working tree or the Igor's own code. The message is compared with its variable
@@ -250,10 +259,10 @@ execution log failed to read. The run is refused, and its failure's row is still
   HTTP 500, with messages otherwise the same
 - **THEN** the item is not set down, and the newest failure is the first of its count
 
-#### Scenario: A claim-window failure whose read of the claim messages fails does not count
+#### Scenario: A claim-window failure whose read of the claim messages fails does not count yet
 
 - **WHEN** a rank's run fails in the claim window, and its read of the item's claim messages fails
-- **THEN** the rank records nothing toward the item's breaker and posts nothing
+- **THEN** the rank records nothing toward the item's breaker on that run, and posts nothing
 - **AND** it leaves the role's label on the item, and reads the claim messages again in its next
   cycle
 
@@ -261,8 +270,21 @@ execution log failed to read. The run is refused, and its failure's row is still
 
 - **WHEN** a rank's read of an item's claim messages failed after a claim-window failure, and
   its read in its next cycle fails too
-- **THEN** the rank gives its claim back with the post a refused run makes
-- **AND** it records nothing toward the item's breaker
+- **THEN** the rank records one failure of source `tracker` toward the item's breaker
+- **AND** it gives its claim back with the post a refused run makes, unless that failure is the
+  third identical one in a row
+
+#### Scenario: The third unreadable claim sets the item down
+
+- **WHEN** a rank's claim on an item fails in the claim window and both its reads of the item's
+  claim messages fail, for the third time in a row
+- **THEN** the rank sets the item down, with the set-down post
+
+#### Scenario: A read of the claim messages that succeeds starts the count again
+
+- **WHEN** an item has had two unreadable claims in a row, and the rank's next read of its claim
+  messages succeeds
+- **THEN** the next unreadable claim is the first of a new count
 
 #### Scenario: A reread that finds no other claim gives the claim back out loud
 

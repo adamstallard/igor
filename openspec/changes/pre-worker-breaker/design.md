@@ -348,16 +348,23 @@ label (Adam, 2026-10-20; the proposal's decision 22), as it would beside a sibli
 
 **A failed read is tried again next cycle** (Adam, 2026-10-21; the proposal's decision 35). The
 rank keeps the item in memory and reads its claim messages again in its next cycle. Where it
-finds another rank's claim message that counts, it drops out silently. Where it finds none, or
-the read fails again, it gives the claim back with the refusal post, so the claim
-does not end in silence, as the in-force *A claim that cannot be kept is given back, out loud*
-requires. `igor run` runs no next cycle, so it makes the second read before it exits.
+finds another rank's claim message that counts, it drops out silently. Where it finds none, it
+gives the claim back with the refusal post, so the claim does not end in silence, as the
+in-force *A claim that cannot be kept is given back, out loud* requires. `igor run` makes one
+pass and exits, so it has no next cycle: it makes the second read at once, before it exits.
 
-The claim-window failure whose read failed is never counted, whatever the reread finds, and a
-second failed read is not a failure that counts either. Counting the first would mean writing
-its row a cycle late, by when the item's claim messages may have changed. A restart between the
-two reads loses the memory, and the claim then waits for #179 to free an item that no running
-rank works.
+**An unreadable claim counts as one `tracker` failure** (Adam, 2026-10-21; the proposal's
+decision 41). An *unreadable claim* is a claim-window failure whose read of the item's claim
+messages failed, followed by a second read that fails too. It is counted when the second read
+fails, as one failure of source `tracker` with the fixed message "the item's claim messages could
+not be read", so unreadable claims are identical to each other whatever the errors said. It
+counts toward the item's breaker only, and ends no cycle. On the third unreadable claim in a
+row, with no other failure or worker start of the item between them, the rank sets the item
+down; otherwise it gives the claim back with the refusal post. A read of the claim messages that
+succeeds appends a row that starts the count again. A claim-window failure whose read failed is
+not counted on its own: whether it should count depends on whether another rank's claim was on
+the item, which that failed read could not show. A restart between the two reads loses the
+memory, and the claim then waits for #179 to free an item that no running rank works.
 
 **The withdrawal releases only claim messages posted before the test** (Adam, 2026-10-20; the
 proposal's decision 29). The test and the withdrawal are two tracker calls, and a sibling's claim
@@ -509,9 +516,10 @@ refused call's signatures are `RefusalSigs`.
 
 **Not modelled:** several roles, since the count is per role and roles share nothing here; `Lift`
 and `OtherPost` stand for what another role does on the item. Also failures after the worker; the
-masks, since a signature is a model value; a read of the count that fails, and a failed read of
-the item's claim messages in the claim window, since the spec has each count nothing and post no
-set-down, which can only remove set-downs (the reread a cycle later counts nothing either);
+masks, since a signature is a model value; a read of the count that fails, since the spec has it
+count nothing and post no set-down, which can only remove set-downs; and an unreadable claim
+(decision 41), which counts as one `tracker` failure and can add a set-down, so the model's
+passes above do not cover it until task 3.3a adds it. Also left out:
 `igor run --claim`, whose failure counts like a rank's and never pairs, since it runs outside any
 cycle, so leaving it out can only add cycle ends; the discovery watermark; and how #179 frees an item that carries
 claim messages while no running rank is working it (`Recover` stands for that).
