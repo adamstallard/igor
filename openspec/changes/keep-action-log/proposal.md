@@ -65,6 +65,21 @@ Each is the reviewer's to decide, except where marked **Decided**.
 **Still open:**
 
 - **For Adam:**
+  - **Held for Adam's review (2026-10-21): visibility-dependent trimming for public stores.**
+    This is decision 3 as a whole: cutting what the log keeps by who can read the store, the
+    repository whose state branch holds the log. It ties to a guard nobody has decided yet:
+    Igor writes no private repository's content to a store more public than that repository.
+    Under that guard, a public store would hold nothing from a private worked repository, so
+    decision 3's cut for that pairing, which keeps only which tools ran and whether they
+    failed, would be the guard's rule rather than this change's. *Recommendation:* keep
+    decision 3's cuts as written, since they keep the least wherever visibility is unknown;
+    decide the guard on its own; and once it is decided, have decision 3 cite it for a private
+    worked repository, as #190's evidence table should for the same case, so the rule is stated
+    once. Deciding the guard would also settle two gaps in decision 3. The in-force
+    `lore-review` spec lets the store's visibility be declared in configuration, which
+    decision 3 does not trust, since it asks GitHub at write time instead. And that question
+    is asked once, when the log is written, so a private store made public later would publish
+    every earlier log it kept whole;
   - whether a private store keeps the commands' output, the part of decision 3 this pull
     request asks about;
   - whether the transcript is cut with the log. #217 leaves to this change what the transcript
@@ -99,6 +114,22 @@ Each is the reviewer's to decide, except where marked **Decided**.
   - **A token the Igor never sees.** Claude Code sets `CLAUDE_CODE_MESSAGING_TOKEN` itself. The
     Igor never learns its value, so redaction cannot match it by value, and a private store
     keeps it wherever `env` output is kept.
+  - **From a consistency read of 2026-10-21's last round:**
+    - #216 asks this change to keep, in the log of a run #216 withholds because it met a
+      sensitive question, only each call's tool name, command name and exit code.
+    - #190 works out the log's cut before the log exists, while decision 3's question to
+      GitHub at write time can change it.
+    - #153 runs more model steps than the labels `worker`, `bug-hunter` and `prose` name: its
+      triages, an extra bug-hunter iteration and a cold read.
+    - Tasks and *Impact* restate the build order, which issue #204 alone should hold, and so
+      fix a place for #187 that #204 has not given it.
+    - The level that keeps commands but no output publishes a command line holding a secret
+      Igor never held, such as one read from a host file.
+    - GitHub reports an enterprise's internal repository as private, so the log keeps it whole
+      although every member of the enterprise can read it.
+    - Three choices are made in the spec with no numbered decision: the log's path and its
+      `-2` suffix, writing no log for a run with no tool call, and a failed write not stopping
+      the run's later writes.
   - **The spec itself.** Several SHALLs have no scenario, and "the store" is not defined.
     Whether Read, Edit and subagent results carry an error flag and output is unmeasured
     (task 1.2), and the spec gives no fallback for a result that has neither.
