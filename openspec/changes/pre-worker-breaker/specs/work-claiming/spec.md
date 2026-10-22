@@ -409,12 +409,11 @@ execution log failed to read. The run is refused, and its failure's row is still
 
 #### Scenario: A failure's row holds no message text
 
-- **WHEN** an item's clone fails before the worker with a message that holds a token and a URL
-  with a user name and password in it
+- **WHEN** an item's clone fails before the worker with a message that holds a seat's token, the
+  model-subscription credential the Igor gives its worker
 - **THEN** the row the failure appends to the execution log holds its fields and fingerprint, and
   no part of the message
-- **AND** the Igor process's own log holds the message, with neither the token nor the user name
-  and password
+- **AND** the Igor process's own log holds the message, with `[redacted]` where the token was
 
 #### Scenario: Another role's post does not lift a set-down
 

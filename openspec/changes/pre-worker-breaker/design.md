@@ -28,10 +28,11 @@ can read the row.
   guesses a masked message can confirm the guess.
 
 The failure's full message goes to the Igor process's own log on its server, which the server's
-journal keeps, after credential redaction: `task-execution`'s *Credential redaction replaces every
-credential the Igor knows*, which [#213](https://github.com/adamstallard/igor/issues/213) adds in
-pull request #217. That rule is #188's, extended with the `user:pass@` part of a URL, and #213
-builds it before this change's code (the proposal's decision 14).
+journal keeps, after credential redaction. That rule is `task-execution`'s requirement
+*Credential redaction replaces every credential the Igor knows*, added for
+[#213](https://github.com/adamstallard/igor/issues/213) by pull request #217; the requirement
+says what the rule matches. #217 builds the rule's function, `redact`, before this change's code
+(the proposal's decision 14).
 
 A failure that records a cure key writes its `pre-worker` row, with `cured: true`, and also its
 ordinary run row, carrying `cures`: the row without a `kind` that the log holds for each run.

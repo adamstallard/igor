@@ -72,7 +72,7 @@
       `design.md` in order, and returns the masked text's unkeyed SHA-256 as the fingerprint;
       and a pure `trailing(rows, item, role, source, fingerprint)` counting as `design.md`
       *Counting* says. Tests for each mask, for three-digit statuses and exit codes kept, for a
-      token and a URL's credentials stripped before the masks run, for each way the count stops,
+      seat's token redacted before the masks run, for each way the count stops,
       for a `cured` row skipped, and for the outage exclusion
 - [ ] 3.2 A `failure` handoff's `next` gains `'set-down'`, whose tail is, exactly, with `<N>` the
       number of identical failures in a row, 3 or more:
@@ -146,7 +146,7 @@
       run`'s cycle in `src/cli.ts`, over the items it claims and over its catch-ups, and
       `igor run --claim`'s catch-up path, which must also defer a set-down item. Write the full
       message, after #213's redaction, to the process's own log. Tests check that no part of the
-      message reaches the row, and that a token and a URL's credentials do not reach the log. A
+      message reaches the row, and that a seat's token does not reach the log. A
       failure that records one of #101's cure keys writes its `pre-worker` row with `cured:
       true`, and keeps its ordinary run row, with its `cures`, so #101's conditions still see
       it. A failure

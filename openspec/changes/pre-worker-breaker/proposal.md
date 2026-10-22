@@ -177,15 +177,15 @@ his answers of 2026-10-20, and 33 to 38 his answers of 2026-10-21:
     an item's history, and two extra retries of a cheap step cost little. *Rejected:* deferring
     returned failures at once and counting only thrown ones.
 27. **One credential redaction applies to everything Igor writes to the state branch** (Adam,
-    2026-10-19 and 2026-10-20; [#213](https://github.com/adamstallard/igor/issues/213)). It is
-    #188's *credential redaction* rule, which strips GitHub's and Anthropic's token prefixes and
-    known secrets by their exact value, extended with the `user:pass@` part of a URL. #213 builds
-    it first, in its own pull request, #217, whose OpenSpec change `redact-state-branch` states
-    it as `task-execution`'s *Credential redaction replaces every credential the Igor knows*, and
-    applies it to every write to the state branch: the run row's `reason`, the transcript, the
-    refusal envelope and `deferred.json`. This change cites that requirement. Its own rows hold no
-    message text (decision 15), so it applies the redaction to the message it writes to the
-    process's log.
+    2026-10-19 and 2026-10-20; [#213](https://github.com/adamstallard/igor/issues/213)). The rule
+    is `task-execution`'s requirement *Credential redaction replaces every credential the Igor
+    knows*, which says what the rule matches. The OpenSpec change `redact-state-branch` adds the
+    requirement, and its pull request, #217, is built first. #217 applies the rule to every write
+    to the state branch: the run row's `reason`, the transcript, the refusal envelope and
+    `deferred.json`. This change cites that requirement. The only message text this change
+    writes anywhere is the full message it sends to the process's log, since its own rows hold
+    none (decision 15). It applies the redaction to that message too, although the log is not
+    the state branch.
 28. **A run posts no set-down on an item already deferred** (Adam, 2026-10-20). Two ranks can
     both read an item as free; one sets it down and releases it, and the other's claim message
     lands on the released item, holds it and fails the same way. That run gives the claim back
@@ -283,12 +283,65 @@ his answers of 2026-10-20, and 33 to 38 his answers of 2026-10-21:
     so its "SHALL NOT count" needs "toward a later count".
   - The set-down sentence's "somebody replies" omits the successful-run lift, and the scenario
     *The deferral lifts as a handoff's does* names the opposite of its rule.
-  - The restated credential-redaction rule is older than #217's, and should only cite it.
   - Task 0.1 should capture failures from two different items, since the identical-failure rule
     compares across items, and the masks keep repository slugs and issue paths, so two items'
     otherwise identical messages might never match.
   - Missing scenarios: a 429 or rate-limit 403 counting toward the outage rule, a clone whose
     failure cannot be told unanswered, and masking after redaction.
+- **For Adam, from a second consistency read on 2026-10-21:**
+  - **The fingerprint can leak a short secret.** Credential redaction (#217) works two ways:
+    it replaces each secret on a list the Igor keeps of the secrets it holds, and separately it
+    matches GitHub and Anthropic tokens by their shape. A secret shorter than 8 characters is
+    never put on that list. So a short secret in a failure's message, such as a 6-character
+    proxy password in a URL, stays in the masked text. On a public state branch, anyone can
+    then recover it offline from the row's unkeyed SHA-256 by trying every short string. A
+    keyed hash, such as an HMAC under a key every process of the role holds and the state
+    branch does not, would prevent that.
+  - **A refusal every item meets.** Decision 34 counts a refused call, such as a 403 for a
+    missing App permission, per item only. Every item then gets the same 403, and after three
+    cycles the whole backlog is set down, the harm the identical-failure rule exists to stop.
+  - **A claim-window failure whose re-read also fails** counts nothing (decision 35). Take an
+    item whose claim messages can never be read, because the tracker returns a 5xx for them
+    every time. One cycle claims it and fails, the next rereads, fails again and gives it back,
+    and the pair repeats with no bound. That is the endless retry #155 asks the breaker to
+    end. The model leaves this case out because doing so is safe for its invariants.
+  - **A failed set-down post.** The item is deferred whatever the post does, so where the
+    tracker is still failing nobody is told why it stopped; decision 23 calls this "no cost".
+  - **Decision 17's rejection** of tagging a failed mint `code-host` gives a reason decision 4
+    voids: a refused token is answered, so it could not end a cycle either way.
+  - Decision 4 tells a surface that did not answer by the response's status: no status, a 5xx,
+    a 408, a 429 or a rate-limit 403. The archived `release-a-claim-that-cannot-be-kept` design
+    rejected deciding by such a list of statuses, because a status it does not list falls
+    through. This change does not record that it reverses that rejection, or answer it.
+  - #141 makes a writer's reply or edit the only lift for any deferral, and uses "set down" for
+    its own deferral; this change adds a lift on another role's successful run.
+- **For this change's next revision, from the same read:**
+  - #101 tests whether a fault is cured by a probe run, and voids the probe where that run
+    writes no run row. `design.md` says a thrown failure on a probe writes none, but this
+    change has a thrown failure that records a cure key write one, so such a failure would end
+    the probe instead. And `design.md` says #101 builds how `runItem` learns a thrown failure's
+    cure key, but #101's branch as written gives a thrown run no cure keys (`standIn` in its
+    `src/loop.ts`). The rows this change writes for thrown cure-key failures then rest on
+    nothing; it needs a task, or #101 a change.
+  - Before a set-down, a claim-window failure posts `claimWithdrawn`, which names no failure
+    and says nothing of trying again, against the spec's wording for those posts.
+  - The proposal says all paths are masked; the spec and design mask the tree's path and
+    temporary paths only.
+  - Under #179's spec, where the claim message holding an item is a rank's own, that rank
+    re-works the item; and a re-read of the claim messages more than one poll interval after
+    the claim stands the rank down in silence. This change's second read comes a cycle later
+    and gives the claim back, which conflicts with both. After a restart #179 has a serving
+    rank recover its own claim at once, so decision 35's wait for #179 to free the item holds
+    only for rank 0, `igor run`'s. Decision 22's reason for reading the item
+    rather than the roster contradicts #179's definition of a role run by several processes.
+  - #99 wants a state-branch failure record to carry the fault's origin chain and a readable
+    line; the `outage` row carries neither.
+  - A watermark rule sits in `work-claiming` that belongs in `work-discovery`, decision 12 has
+    no requirement of its own, and Capabilities does not list `work-discovery`.
+  - "Breaker" is used before it is defined, "`outage` row" is defined only in `design.md`, and
+    several requirements carry rationale. Two choices the spec makes are not among the decisions:
+    that `igor run`, which runs no next cycle, rereads the claim messages before it exits
+    (decision 35's second read), and that the masks run after redaction.
 
 **Reported to other changes:**
 
