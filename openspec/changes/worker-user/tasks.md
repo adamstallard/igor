@@ -103,9 +103,10 @@
       can read, never directly in `/tmp`, which the workers share with it under the unit. Test: each
       temporary file's directory has mode `0700` and the Igor's owner.
 - [ ] 1.9 Every secret a process running as the worker user gets is registered with
-      `rememberSecret` (#217) before the spawn. Under `serve` that is only the seat's token,
-      which #217's `resolveToken` already registers, so only a test is owed for it; #189's
-      checks get no secret (proposal, decision 41). Keep `SSH_AUTH_SOCK`, `GPG_AGENT_INFO` and any
+      `rememberSecret` (#217) before the spawn. Under `serve` those are the seat's token, which
+      #217's `resolveToken` already registers, and a forwarded proxy URL's user info, which
+      #217 registers in `workerEnv`, so only a test is owed for each; #189's checks get no
+      secret except that user info, with the proxy settings (proposal, decisions 41 and 47). Keep `SSH_AUTH_SOCK`, `GPG_AGENT_INFO` and any
       other agent socket variable out of every environment the Igor builds for a worker, a
       model step or a check; `workerEnv` on `main` already passes neither of those two. A secret shorter than 8 characters fails the run, naming its source, and nothing is
       spawned. If #217 has not merged, stop and ask Adam: this task calls its code. Tests: with
@@ -742,7 +743,8 @@ file in the service user's home. Each holds a random string and nothing else. Ne
       **Put no credential in a worker user's home, and add it to no `docker` group.** A
       registry token in `~/.npmrc` or a key under `~/.ssh` there reaches whatever the worker
       runs, and Igor never learns of it, so it cannot redact it. Igor gives a repository's
-      checks no credential: a check that needs a secret is marked CI-only in the repository's
+      checks no credential except a password in the proxy URL (*A proxy*, below): a check that
+      needs a secret is marked CI-only in the repository's
       entry in the `repos` map of `roles/org.yaml`, and the repository's own CI runs it. The `docker` group lets the
       worker start a container as root, so the start check refuses it. The check also refuses
       the `lxd`, `incus` and `disk` groups, and any sudo right for the worker user. On a cloud host, the
@@ -756,6 +758,21 @@ file in the service user's home. Each holds a random string and nothing else. Ne
       `igor serve` never does: it needs its worker user.
       ````
 
+- [ ] 8.4b `docs/deployment.md`, in the section of 8.4, after its paragraph that begins **Put no
+      credential in a worker user's home**: add this
+      subsection (proposal, decision 47). It may be reworded, as long as it still says that a
+      check gets the proxy URL whole and advises a proxy that authenticates by network address.
+
+      ```markdown
+      ### A proxy
+
+      The worker, and every check Igor runs as the worker user, gets this host's proxy settings,
+      such as `HTTPS_PROXY`, so that tests needing the network can reach it. A proxy URL that
+      holds a user and password gives that password to code the worker wrote. Igor redacts it
+      wherever it records or posts text, but the code can still use it. Use a proxy that
+      authenticates by network address, accepting connections from this host only, and put no
+      user or password in its URL.
+      ```
 - [ ] 8.5 `docs/deployment.md`, *What the machine needs*: the paragraph on `PATH` says `claude`
       goes in `/usr/local/bin`, with a link to the new section, instead of telling the reader
       to check the service user's `~/.local/bin`.

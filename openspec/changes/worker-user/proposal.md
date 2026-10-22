@@ -353,7 +353,7 @@
     #171's code just before this change's, that change is this one, so task 1.10 removes it (Adam, 2026-10-21), and task 1.7 has no `runUsage` to
     change.
 
-Decisions 41 and 43 to 46 are Adam's, made on 2026-10-21. So are three extensions, rules a
+Decisions 41 and 43 to 47 are Adam's, made on 2026-10-21. So are three extensions, rules a
 consistency read added to his decisions, which he kept: in decision 41, the groups and sockets
 of point 3 and the refusal of a secret under 8 characters; and in decision 43, the
 `fs.suid_dumpable` check.
@@ -378,9 +378,11 @@ Decision 42 is a mechanism proposed for 41's first point, which waits for his ap
        for that command alone. `gitEnv` in `src/worktree.ts` on `main` already does this.
     5. **No credentials an operator put in the worker's home**, such as a registry token in
        `~/.npmrc`. A credential a worker needs is declared in the server's own configuration,
-       never in lore, and handed over by the Igor, which registers it. Today that is only the seat's token. The
-       repository's checks, which #189 runs, get no credential: they run on code the worker
-       has just written, so a credential given to a check is given to model-written code. A
+       never in lore, and handed over by the Igor, which registers it. Today those are the
+       seat's token and, with the proxy settings, a proxy URL's password (decision 47). The
+       repository's checks, which #189 runs, get no credential except that password. A check
+       runs on code the worker has just written, so any credential given to it is given to
+       model-written code; decision 47 accepts that for the proxy password alone. A
        check that needs a secret is marked CI-only in its repository's entry in the `repos` map of
        `roles/org.yaml`, and the
        repository's own CI runs it on the pushed pull request.
@@ -457,7 +459,8 @@ Decision 42 is a mechanism proposed for 41's first point, which waits for his ap
       it. A lore commit can point it at another file on the server, which then fails to
       decrypt every seat; #171 refuses a path inside the lore checkout.
 
-    The repository's checks hold no secret to route (decision 41's fifth point).
+    No one routes a secret to the repository's checks (decision 41's fifth point): the one they
+    may get, a proxy URL's password, comes with the server's own proxy settings (decision 47).
 46. **#171's seat code is built before this change's, and #217 archives just before this
     change** (Adam, 2026-10-21; issue #204 holds both orders). On `main` a seat in lore names its
     token by `token_env`, `token_file` or `token_command`, any of them free. So a lore commit
@@ -467,6 +470,18 @@ Decision 42 is a mechanism proposed for 41's first point, which waits for his ap
     such a seat. #217 adds `rememberSecret`, which decision 41 calls, and the requirement this
     change cites for it, so #204 places #217 sixth and this change seventh; #217 cites no other
     change's requirement, so nothing requires it to archive later than sixth.
+47. **A check inherits the worker's proxy settings, password included** (Adam, 2026-10-21,
+    reversing this change's recommendation to strip such a URL from a check's environment).
+    Under `serve` the worker is given the
+    host's proxy settings, `HTTPS_PROXY` among them, and a check, one of the repository's
+    commands #189 runs as the worker user, inherits them. A proxy URL holding a password
+    therefore reaches code the worker has just written. That is accepted and stated, for three
+    reasons: checks often need the network; #217 registers the URL's password for redaction;
+    and the deployment guide advises a proxy that authenticates by network address, so that a
+    URL holds no password (task 8.4b). *Rejected:* leaving a proxy URL with user info out of a
+    check's environment, and putting a check that needs it under `ci_only`, the CI-only list in
+    its repository's entry in the `repos` map (decision 41's fifth point), which would move
+    every networked check of such a host to CI.
 
 **Still open:** an item marked *for Adam* waits on his decision; the rest wait on a measurement
 or on another change.
@@ -503,20 +518,31 @@ or on another change.
   and "model step" are not defined in the spec. Nothing measures `--append-system-prompt-file`
   under `-p`, or what `sudo -n -l` shows for a worker rule that needs a password.
 
+- **A third consistency read on 2026-10-21 found more, also left for the next pass.** Only the
+  first item below comes from decision 47:
+  - **For Adam: a proxy password shorter than 8 characters.** The rule that the Igor hands over
+    no secret under 8 characters, and fails the run instead, reaches the proxy password the
+    worker and its checks are given, now that decision 47 counts it a secret handed over, so
+    such a proxy would fail every run. *Recommendation:* refuse the start
+    where a forwarded proxy URL holds a password under 8 characters, naming the variable, rather
+    than failing each run.
+  - #179 now has `igor run` remove the rank-0 trees a crashed run left (Adam, 2026-10-21), which
+    this change's rule that `igor run` removes only its own trees forbids, and which the *Still
+    open* item on a crashed run's tree no longer describes. #179's decision 48 already takes
+    `<tree>-prompt` with each tree, and #153's decision 25 already says Igor runs no `prose
+    start`, so the *Reported to #179* item below and the sentence in decision 15 that leaves
+    `prose start` to #153 are out of date.
+  - #192's container image appears to have no `pkill`, so `sudo -n -u <worker> -- pkill` would
+    exit 1, the status task 4.1 reads as "nothing to kill", and every kill would pass silently.
+    Task 8.3 should add `procps`, and a start check should prove `pkill` runs.
+  - No rule sets the owner or mode of `/var/lib/igor/trees` itself, which every worker user must
+    traverse and none must be able to write.
 - **A second consistency read on 2026-10-21 found more in older text, also left for the next
   pass.** None blocks approving the rules above. Three are settled (Adam, 2026-10-21): a refused start under compose waits and exits 78
   as #82's *A process that refuses to start exits with status 78* has it, under
   `restart: unless-stopped` and `IGOR_REFUSAL_WAIT=1`; *A worker gets a secret only through the
   Igor* binds `igor serve` and states `igor run`'s limit; and the rule that the Igor follows no
-  link covers #187's scope check and #153's signing scripts. For Adam:
-  - **Whether a check may get the proxy's password.** A check, one of the repository's commands
-    such as its tests that #189 runs on the worker's tree, inherits the worker's forwarded proxy
-    settings, so a proxy URL holding a password reaches it, against *A check gets no
-    secret*. #217 registers the password, so it is redacted wherever it is quoted, but the
-    check runs code the worker has just written, which can use it. *Recommendation:* give a
-    check the forwarded proxy settings only where they hold no credential: a proxy URL with
-    user info is left out of a check's environment, and a check that needs the network
-    through such a proxy goes under `ci_only`, as any check needing a secret does.
+  link covers #187's scope check and #153's signing scripts.
 
   For the author: `--ignore-submodules=all` hides a moved gitlink that the spec stops on; #137
   and this change disagree on where a submodule's commit is read; the rule that kills the

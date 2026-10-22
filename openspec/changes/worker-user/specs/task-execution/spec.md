@@ -768,9 +768,13 @@ Under `igor serve`, a secret SHALL reach a process running as the worker user on
 Igor. In both modes, the Igor SHALL register every secret it hands a worker, a model step or a
 check with credential redaction, by calling `rememberSecret` (#217's *Credential redaction
 replaces every credential the Igor knows*), before it hands the secret over. Under `igor serve`
-the one secret it hands over is the seat's token, which the worker and every later model step
-get.
-The repository's checks, which #189 runs as the worker user, SHALL get no secret. A later change
+the secrets it hands over are the seat's token, which the worker and every later model step
+get, and the user info, the `user:password@` part, of a proxy URL the Igor passes on from its
+own environment, which the worker, every later model step and every check get with the proxy
+settings.
+The repository's checks, which #189 runs as the worker user, SHALL get no secret except the
+user info of a proxy URL in the network settings the worker is given, which a check inherits
+with them; the Igor registers that user info as #217 says. A later change
 that hands a worker user another secret SHALL declare it in the server's own configuration, never
 in lore, and register it the same way. In both modes, the Igor SHALL NOT hand over a secret shorter than 8 characters,
 which `rememberSecret` does not register; it SHALL fail the run instead, naming the secret's
@@ -826,10 +830,18 @@ the worker user can read that directory.
 - **THEN** the test reads it, since the worker runs as the person's own user
 - **AND** the Igor handed the worker no secret but the run's token, which it registered first
 
-#### Scenario: A check gets no secret
+#### Scenario: A check gets no secret where no proxy URL holds one
 
-- **WHEN** under `igor serve` the Igor runs a repository's check as the worker user
+- **WHEN** under `igor serve` the Igor runs a repository's check as the worker user, and no proxy
+  URL in the Igor's environment holds user info
 - **THEN** the check's environment holds no seat token and no other secret the Igor holds
+
+#### Scenario: A check inherits the proxy's password
+
+- **WHEN** under `igor serve` the Igor's environment sets `HTTPS_PROXY` to a URL holding a user
+  and password, and the Igor runs a repository's check as the worker user
+- **THEN** the check's environment holds that `HTTPS_PROXY`, user and password included
+- **AND** the password was registered for redaction before the check started
 
 #### Scenario: A secret too short to register is not handed over
 
@@ -862,8 +874,9 @@ Lore MAY choose which seat a role spends and which repositories have checks. It 
 which secret a seat resolves to.
 
 For seats, #171's *A seat file names its token only by ciphertext or its own variable* and *A
-seat's token travels as ciphertext in its file* make this hold. A check gets no secret, so
-there is none for lore to route.
+seat's token travels as ciphertext in its file* make this hold. A check gets no secret except a
+proxy URL's user info, which comes with the server's own proxy settings, so no secret reaches a
+check that lore could route.
 
 A lore commit or an item is not the server's operator. Where lore could name the variable or the
 file a secret is read from, one commit could hand the worker the App's key as its seat token.

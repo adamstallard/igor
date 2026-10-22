@@ -486,9 +486,12 @@ A worker gets a secret only from the Igor, and the Igor registers each one with
 Credential redaction then matches the secret by its value in every record, transcript and check
 output the Igor stores. A secret that reaches the worker any other way is one the registry never
 saw, so redaction stores it as it stands. A secret shorter than 8 characters, which
-`rememberSecret` does not register, is never handed over. Under `serve` the only secret handed
-over is the seat's token. #189's checks get none, because they run code the worker has just
-written (Adam, 2026-10-21). `CLAUDE_CODE_MESSAGING_TOKEN`, which Claude Code sets for the
+`rememberSecret` does not register, is never handed over. Under `serve` the Igor hands over two
+secrets. One is the seat's token, which the worker and every later model step get. The other is
+the user info, the `user:password@` part, of a proxy URL the Igor passes on from its own
+environment; the worker and #189's checks get it with the proxy settings. A check gets no seat
+token, because it runs code the worker has just written; Adam accepted the proxy password
+reaching that code (2026-10-21; proposal, decision 47). `CLAUDE_CODE_MESSAGING_TOKEN`, which Claude Code sets for the
 commands the worker runs, is outside the rule, since the Igor never holds it.
 
 Adam named five side channels, routes by which a secret could reach the worker without passing
@@ -532,7 +535,8 @@ settings and its own token, and nothing else.
 **Lore picks a seat, never its secret** (Adam, 2026-10-21; proposal, decision 45). Only the
 Igor's code and the server's own configuration decide which secret goes to which process. #171
 fixes a seat's variable to `IGOR_SEAT_<ID>`, binds its ciphertext to its id, and removes
-`token_file` and `token_command`; #189's checks get no secret. The proposal checks every token
+`token_file` and `token_command`; #189's checks get no secret except a proxy URL's user info, which
+comes from the server's own environment, not from lore (proposal, decision 47). The proposal checks every token
 source against the rule. Seats break the rule on `main`, where a seat names its variable, file
 or command freely, so #171's seat code is built before this change's (proposal, decision 46).
 
