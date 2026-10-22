@@ -1,5 +1,6 @@
 **In short:** the pull request body gains an evidence section, a table of what the loop (Igor's
-own code around the worker) checked about the run. From that table the loop sets one label,
+own code around the worker) checked about the run. An Igor is one running instance of Igor, the
+service; *the Igor* is the one that opened the pull request. From that table the loop sets one label,
 `review: skim` or `review: read`, which sorts pull requests for a reviewer.
 
 ## Decisions for the reviewer
@@ -17,7 +18,9 @@ own code around the worker) checked about the run. From that table the loop sets
    *Rejected:* leaving the row out. Without the row, a reviewer cannot tell a check that passed
    from one that never ran.
 3. **The rule for the label:** `review: skim` only when all four hold:
-   - every one of the role's `checks` (`loop-verifies-commands`) passed when the loop ran it;
+   - every one of the role's `checks` (`loop-verifies-commands`) passed when the loop ran it. A
+     CI-only check, which the repository's own CI runs and Igor never does, is left out, since
+     Igor checked nothing about it (Adam, 2026-10-21);
    - the scope result for this push (decision 6) found no changed path outside scope;
    - the run's change is small, and it did not declare that it undoes a change the base branch
      made. A catch-up resolution, a run that merges the base branch into the pull request and
@@ -30,8 +33,8 @@ own code around the worker) checked about the run. From that table the loop sets
    *Rejected:* making any non-zero exit mean `read`, since a worker that writes the test first
    runs it and watches it fail.
 4. **The label sorts pull requests and does nothing else.** A person still approves every Igor
-   pull request (`task-execution`, *A person approves every Igor pull request*). Under #150 the
-   go signal for gate two, the implementation, is still a person's approving review. The label never approves, merges, skips a
+   pull request (`task-execution`, *A person approves every Igor pull request*). Under #150, the
+   two-gate workflow that reviews a spec before its code, the go signal for gate two, the implementation, is still a person's approving review. The label never approves, merges, skips a
    reviewer request or marks a draft ready.
    *Rejected:* requesting no reviewer on a `skim` pull request.
 5. **The evidence section is assembled by Igor's code, so it is not signed.** Under #153
@@ -45,6 +48,16 @@ own code around the worker) checked about the run. From that table the loop sets
    last checked one, marked as from an earlier push. `scope-check` supplies both the result and
    that marking; this change only shows them. *Rejected:* making every resolution `review: read`, which would
    relabel a reviewed pull request each time the base moved.
+
+**Decided (Adam, 2026-10-21):**
+
+- **Igor never reads a CI-only check's result** (#189's decision 33). A repository's `ci_only`
+  lines, in its entry in #189's `repos` map, are the checks it leaves to its own CI, such as one
+  that needs a secret; Igor never runs them. The Tests row names each as a check Igor did not
+  run, in #189's wording, which task 2.1 carries, and the `review: skim` test leaves those lines
+  out (decision 3), since Igor checked nothing about them. *Rejected:*
+  counting a CI-only line as a check that did not pass, which would make every pull request on
+  a repository with one `review: read`.
 
 **Decided (Adam, 2026-10-19):**
 
@@ -84,35 +97,33 @@ own code around the worker) checked about the run. From that table the loop sets
   script as it is: no separate download, and no rewrite in TypeScript. The Igor image carries the `python3` it needs (#192). The script finds the repository's test
   files from its test runner configuration (shared-skills PR #21), so the loop passes no
   patterns. The row reads `not checked`, with the reason, where it cannot apply, including
-  where spec-trace finds no test files; *Still open* records that spec-trace as merged has no
-  such outcome. `signed-publishing` (#153) is built before this change, as issue #204's order
-  sets, and under it
-  a role whose `skills` lists
-  `spec-trace` has its worker directed to use `igor:spec-trace`, as #153 does for `prose` and
+  where spec-trace finds no test files, though spec-trace as merged reports no such case, as
+  *Still open* records. `signed-publishing` (#153) is built before this change, as issue #204's
+  order sets. Under #153, a role whose `skills` lists `spec-trace` has its worker directed to use `igor:spec-trace`, as #153 does for `prose` and
   `bug-hunter`. #174 already loads every installed skill for every role, so listing it adds only
   that direction. The worker so directed tags the scenario on each test it writes. The loop's run of the script is
   the check: deterministic, with no model call. The row never changes the label. *Rejected:*
   fetching or porting the script, which leaves two copies to keep in step; and a test-pattern
   setting in Igor, which spec-trace's own detection makes unnecessary; and letting the row change
   the label, which would make every repository without specs `review: read`.
-- **Past its cap of 30, the commands list ends with a line that says only what #188's action
-  log actually kept of the commands left out**, including when the log could not be written at
-  all. *Rejected:* always pointing at the action log, which is
+- **The commands list shows at most 30 commands, and its last line counts the rest.** That line
+  says only what #188's action log kept of the commands left out, including that the log could
+  not be written at all, where that is so. *Rejected:* always pointing at the action log, which is
   false where the log keeps no commands or was never written.
 - **The Files changed row shows whatever `scope-check` (#187) states for a push**, including
   its result when the earlier scope results it keeps in `executions.ndjson` are lost, and a
-  carried-forward `not checked`, in this change's wording; #187 decides
+  carried-forward `not checked`, in this change's wording; #187 decides both of
   those cases. *Rejected:* a scope rule of this change's own, which could drift from #187's.
 
 - **The opening block is defined once, in this change's requirement *A pull request body holds a
   capped summary, then the loop's evidence*; #153 points at it.** On a revision, a push
   answering a reviewer's change request under #150, it is recomputed from the latest
   bug-hunter run, and the "item changed" note compares the item with
-  the version approved at gate one (decided 2026-10-13). *Rejected:* keeping gate two's block
+  the version approved at gate one (*Decided (Adam, 2026-10-13)*, above). *Rejected:* keeping gate two's block
   unchanged, which would show bug-hunter decisions a revision has already settled.
 - **The Commands row, renamed "Commands run", shows the shell calls of every model step #188
   logs**: the worker (its subagents included) and #153's bug-hunter step and prose pass. #188
-  labels each call with its step, `worker`, `bug-hunter` or `prose` (decided 2026-10-13). *Rejected:* the
+  labels each call with its step, `worker`, `bug-hunter` or `prose` (*Decided (Adam, 2026-10-13)*, above). *Rejected:* the
   worker's calls alone, which hides the tests bug-hunter ran.
 
 **Where this meets #153.** For a role that lists `prose`, the body is the opening block, then
@@ -124,15 +135,34 @@ as exactly the span between the opening block and the marker, and `prose verify-
 
 - **Task 0.1:** whether an Igor's App, adding a label that does not exist yet, creates it. If it
   does not, the loop creates each label first. Neither answer changes a rule above.
-- **For Adam:** whether the table should show less when the repository is public, as
-  `keep-action-log` (#188) cuts its log by the store's visibility. As written, the table lists
-  every step's shell commands, cut to 200 characters, in every pull request. Credential
-  redaction matches only secrets the Igor holds, by value, and GitHub and Anthropic tokens by
-  their shape. So a command holding a key the worker read from a host file is published as
-  written, and so is a command that quotes a private issue's text, such as an `echo` or a
-  commit message.
+- **For Adam: visibility-dependent trimming for public repositories.** Should the table show
+  less when the repository is public, as `keep-action-log` (#188) cuts its log by the store's
+  visibility? As written, the table lists every step's shell commands, cut to 200 characters,
+  in every pull request. Credential redaction matches only secrets the Igor holds, by value,
+  and GitHub and Anthropic tokens by their shape. So a command holding a key the worker read
+  from a host file is published as written, and so is a command that quotes a private issue's
+  text, such as an `echo` or a commit message. This ties to a visibility guard nobody has
+  decided yet: Igor writes no private repository's content to a more public lore store.
+  *Recommendation:* no trimming in this change. The pull request lives in the worked
+  repository, so a command is no more visible there than the repository it ran in. What
+  remains, a more private source's text reaching a more public place, is the guard's question:
+  decide the guard once, and have this table and #188's log both cite it.
+- **From the consistency read of 2026-10-21's last round.** None is decided, and the rules
+  above hold until each is settled.
+  - For Adam: the loop sets the label though the role's `allow` need not list `label`, while
+    the in-force *Only reversible artifacts are produced* confines execution to what `allow`
+    permits, and no requirement here exempts the label. And the two label names are fixed in
+    code, though `docs/architecture.md` §6.0 records a fixed, canonical label as a past
+    mistake, since teams name labels their own way.
+  - For whoever next edits this text: #217 redacts the whole pull request body after #153 has
+    signed the description, so a description quoting a secret no longer verifies. Igor cuts a
+    command the sandbox denied to 200 characters as it reads the run, before this change
+    redacts it, so a token the cut splits is published. The spec does not say which user runs
+    `spec_trace.py`, or with which git directory. The citation of `prBody` should end at
+    `src/execute.ts:1185`, not 1180. And the caps of 10 paths, 10 denied commands and 200
+    characters per command are in tasks but in no decision.
 - **For whoever next edits this change,** from a consistency read on 2026-10-21. None is
-  decided, and none is fixed in this text. Each needs this change amended, unless the change
+  decided, and none is fixed in this text; the rules above hold until each is. Each needs this change amended, unless the change
   named settles it the other way:
   - **Gate two's push.** The spec keeps the opening block and the description on every later
     push except a revision. Gate two's push is not a revision, so gate one's opening block and

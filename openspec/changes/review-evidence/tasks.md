@@ -54,6 +54,7 @@
       |---|---|
       | Tests | ``**fail**: <result>; <result>; the pull request is a draft because of it`` |
       | Tests | `not checked: the role declares no checks` |
+      | Tests, after the results whether they passed or failed, once per `ci_only` line, `<line>` being that line | `` `<line>`: CI-only, not run by Igor. `` |
       | Tests | `not checked: this Igor's version does not run checks` |
       | Files changed | ``**<n>, <k> outside <scope>:** `<path>`, `<path>` `` |
       | Files changed | `<n>, not checked against scope: this Igor's version has no scope check` |
@@ -131,14 +132,15 @@
       command shown to 200 characters.
 
       For every command, path and output the table shows, redact first, then cut, then quote.
-      Redact with credential redaction's function, `redact` in `src/redact.ts`, which
-      `redact-state-branch` (#217) adds; it exists once #217 is built, which 5.1 requires first.
+      Redact with `redact` in `src/redact.ts`, credential redaction's function, which
+      `redact-state-branch` (#217) adds. Task 5.1 has #217 built before this change.
       Redacting before the 200-character cut means a token the cut would split is still found. To quote: a newline becomes a space, `|` becomes `\|`, and a value holding
       a backtick is quoted with a longer run of backticks.
 - [ ] 2.2 Write `reviewLabel(record, role)`, returning `review: skim` only when all four
       conditions of *One review label sorts a pull request for triage, never for merging* hold,
-      with the role's `skim_max_paths` and `skim_max_lines`, and
-      `review: read` otherwise. The label names are the deliverable and may not be reworded:
+      with the role's `skim_max_paths` and `skim_max_lines` as the role file resolves them (task
+      1.4), and `review: read` otherwise. A `ci_only` line is left out of the label's test
+      (proposal, decision 3). Test: *A CI-only check does not keep a pull request from skim*. The label names are the deliverable and may not be reworded:
 
       ```text
       review: skim

@@ -93,11 +93,15 @@ The evidence table SHALL have these rows, each filled only from the loop's recor
   records it after the worker finished: passed, failed with its exit code, timed out, or not
   run. Where any did not pass, `loop-verifies-commands` makes the pull request a draft, the row
   says so, and the
-  end of the output of each check that failed or timed out follows the table.
+  end of the output of each check that failed or timed out follows the table. The row also names
+  each of the repository's `ci_only` lines, the checks its `repos` entry leaves to its own CI
+  (#189), as a check Igor did not run, in #189's wording for it, and shows no CI result for any
+  of them.
 - **Commands run:** how many shell (`Bash`) calls the run's model steps made, and how many of
   them failed, whichever step made them. The steps are the worker, its subagents counted as the
   worker, and #153's bug-hunter step and prose pass; `keep-action-log` (#188) labels each call
-  `worker`, `bug-hunter` or `prose`, the only three labels. A call failed where it exited non-zero, failed with no code, or never returned.
+  `worker`, `bug-hunter` or `prose`, the only three labels. A call failed where it exited non-zero, failed with no exit code, as a tool error does, or
+  never returned.
   The commands are listed, up to a cap, each with what `keep-action-log` (#188) recorded for it:
   its exit code, an error with no code, or no result for a call that never returned. Any beyond
   the cap are counted.
@@ -190,15 +194,17 @@ The Spec scenarios row SHALL NOT change the review label.
 
 Each time a run opens a pull request or publishes the worker's changes onto one, the Igor SHALL
 set exactly one of the labels `review: skim` and `review: read` on it, and SHALL remove the
-other. The loop sets this label itself, as it sets the `igor:<role>` claim label, so the role's
+other. The loop sets this label itself, as it sets the `igor:<role>` claim label it adds when it claims an item, so the role's
 `allow` need not list `label`.
 
 The label SHALL be `review: skim` only when all four hold:
 
-- every check in the Tests row passed;
+- every check Igor ran, in the Tests row, passed. A `ci_only` line is left out of this test;
 - the Files changed row's scope result found no path outside scope, whether it is this push's or,
-  for a push `scope-check` does not check, the last checked push's;
-- the run published at most the role's `skim_max_paths` paths, added and removed at most its
+  for a push `scope-check` does not check, such as a catch-up resolution, the last checked
+  push's;
+- the run published at most the role's `skim_max_paths` paths (its own value, or else the org
+  base's or the default), added and removed at most its
   `skim_max_lines` lines between them, and declared no base change undone. For a catch-up
   resolution these count only what the Igor's own resolution changed, never what the base
   brought in;
@@ -213,6 +219,14 @@ requested. A pull request labelled `review: skim` still needs a person's approva
 
 A failure to set the label SHALL leave the pull request open as it is, and the execution record
 SHALL note the failure.
+
+#### Scenario: A CI-only check does not keep a pull request from skim
+
+- **WHEN** every check Igor ran passed, the repository lists `npm run test:e2e` under `ci_only`,
+  and every other condition for `review: skim` holds
+- **THEN** the Tests row names `npm run test:e2e` as a check Igor did not run
+- **AND** the pull request is labelled `review: skim`, whatever the repository's CI reports for
+  that check, since Igor never reads that result
 
 #### Scenario: A clean small change is labelled skim
 
