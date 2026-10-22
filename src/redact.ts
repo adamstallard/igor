@@ -22,8 +22,8 @@ import { crc32 } from 'node:zlib'
  * - the App's signed JWT and each installation token it mints (`src/app.ts`), each until it
  *   expires;
  * - every credential `workerEnv` puts in a worker's environment, the credentials in a forwarded
- *   proxy URL included (`rememberUrlCredentials`), and a proxy's user name with no password
- *   where it looks like a token;
+ *   proxy URL included (`rememberUrlCredentials`), and a proxy's user name with no password,
+ *   registered with its host as `<user>@<host>`;
  * - the value of every variable in the Igor's environment whose name contains `TOKEN`, `KEY`,
  *   `SECRET`, `PASSWORD` or `CREDENTIAL` (case-sensitively, anywhere in the name).
  *
@@ -36,8 +36,8 @@ import { crc32 } from 'node:zlib'
  * length, and an Anthropic key with its type and version. Any other secret the Igor never held
  * is not redacted. Such a secret usually reaches the Igor's text from the repository it works
  * on or the item it reads, where anyone who can read the state branch or the post can already
- * read it; the cases where it does not are listed under Still open in
- * `openspec/changes/redact-state-branch/proposal.md`.
+ * read it. The cases where a secret Igor never held does reach its text from elsewhere are listed
+ * under Still open in `openspec/changes/redact-state-branch/proposal.md`.
  */
 
 export const REDACTED = '[redacted]'
@@ -93,55 +93,42 @@ export function rememberKey(pem: string): void {
 }
 
 /**
- * A user name with no password that is shorter than this is taken for a name, never a token.
- * GitHub, Anthropic and most other providers issue tokens of 20 characters or more; a shorter
- * token used as a proxy's user name is missed, by decision 14 of `redact-state-branch`.
- */
-const MIN_TOKEN_USER_LENGTH = 20
-
-/**
- * A plain name: words joined by `.`, `-`, `_`, `@` or `\`, holding at least one letter, such as
- * `build-agent.proxy-user01`, `ci-runner-2024`, `jdoe-3rd-party`, `jane.doe@corp.example` or
- * `CORP\jane.doe`. A word is not empty: optional digits, then optionally one run of letters in a
- * single case pattern (`doe`, `DOE` or `Doe`, in any script that has case), then optional digits.
- *
- * A token's random characters break this almost every time: letters resume after digits within a
- * word (`a3f9…`), or a run of letters changes case midway (`eIdz…`, `ejQ5`). So a user name that is
- * not this shape is taken for a token.
- */
-const LETTER_RUN = String.raw`(?:\p{Lu}?\p{Ll}+|\p{Lu}+)`
-// Each word has one way to match. Don't write a word as `[0-9]+`, optional letters, then
-// `[0-9]*`: with no letters between them, the two could split a run of digits many ways, and a
-// failed match would retry every split of every word, taking minutes on 80 characters.
-const WORD = String.raw`(?:[0-9]+(?:${LETTER_RUN}[0-9]*)?|${LETTER_RUN}[0-9]*)`
-const PLAIN_NAME = new RegExp(String.raw`^(?=.*\p{L})${WORD}(?:[._@\\-]${WORD})*$`, 'u')
-
-/**
  * Registers the credentials in a URL such as a proxy's, `http://user:pass@proxy:3128`: the whole
- * URL, its user info (`user:pass`), and its password, the password percent-decoded as well. The scheme is optional, since
- * `gh` and `git` read `user:pass@proxy:3128` as an `http://` proxy. The user info runs to the last
- * `@` before the host, since a password can hold a raw `@`. A URL naming no user info registers
- * nothing.
+ * URL, its user info (`user:pass`), and its password, the password percent-decoded as well. The
+ * scheme is optional, since `gh` and `git` read `user:pass@proxy:3128` as an `http://` proxy. The
+ * user info runs to the last `@` before the host, since a password can hold a raw `@`. A URL
+ * naming no user info registers nothing.
  *
  * A Kerberos or NTLM proxy takes a user name with no password, or with an empty one (`user:`, as
- * curl writes it for Negotiate). Such a user name is registered only where it looks like a token
- * (`http://<token>@proxy`): once percent-decoded, 20 characters or more and not a `PLAIN_NAME`.
- * Then the whole URL, the user info, and the user name as written and decoded are registered. **Don't register every such user name:** it is usually a person's login, often
- * equal to a GitHub owner, and would then be redacted from item ids, state-branch keys and
- * posted links.
+ * curl writes it for Negotiate). Such a user name is registered only with its host, as
+ * `<user>@<host>`: the user name as written, percent-decoded and percent-encoded, each followed
+ * by `@` and the host without its port. The whole URL is registered too, and so is
+ * `<user info>@<host>`, which differs from `<user>@<host>` where an empty password leaves a `:`
+ * after the name (`user:@proxy`). Such a URL naming no host registers nothing; a URL with a
+ * password is registered as above whether or not it names a host.
+ *
+ * **Don't register such a user name bare**, by its shape or any other test. It is usually a
+ * person's login, often equal to a GitHub owner, and would then be redacted from item ids,
+ * state-branch keys and posted links. A test of its shape errs both ways: decision 14 in
+ * `openspec/changes/redact-state-branch/proposal.md` records a length and plain-name test taking
+ * real logins for tokens and single-case tokens for names. No item id holds `<user>@<host>`, and
+ * a tool that quotes a proxy's credential is expected to quote its host with it (task 3.9 checks
+ * that).
  */
 export function rememberUrlCredentials(url: string): void {
-  const userinfo = /^(?:[a-z][a-z0-9+.-]*:\/\/)?([^/?#]*)@/i.exec(url)?.[1]
-  if (userinfo === undefined || userinfo === '') return
+  const authority = /^(?:[a-z][a-z0-9+.-]*:\/\/)?([^/?#]*)/i.exec(url)?.[1] ?? ''
+  const at = authority.lastIndexOf('@')
+  if (at <= 0) return
+  const userinfo = authority.slice(0, at)
   const colon = userinfo.indexOf(':')
   const password = colon === -1 ? '' : userinfo.slice(colon + 1)
   if (password === '') {
+    const host = hostOf(authority.slice(at + 1))
+    if (host === '') return
     const user = colon === -1 ? userinfo : userinfo.slice(0, colon)
-    if (!looksLikeToken(user)) return
     rememberSecret(url)
-    rememberSecret(userinfo)
-    rememberSecret(user)
-    rememberSecret(decoded(user))
+    rememberSecret(`${userinfo}@${host}`)
+    for (const name of new Set([user, decoded(user), encoded(decoded(user))])) rememberSecret(`${name}@${host}`)
     return
   }
   rememberSecret(url)
@@ -150,10 +137,23 @@ export function rememberUrlCredentials(url: string): void {
   rememberSecret(decoded(password))
 }
 
-/** A user name with no password that is taken for a token, by the rule `rememberUrlCredentials` gives. */
-function looksLikeToken(user: string): boolean {
-  const name = decoded(user)
-  return name.length >= MIN_TOKEN_USER_LENGTH && !PLAIN_NAME.test(name)
+/** The host of `host:port`, without its port; an IPv6 address keeps its brackets. */
+function hostOf(hostPort: string): string {
+  if (hostPort.startsWith('[')) {
+    const close = hostPort.indexOf(']')
+    return close === -1 ? hostPort : hostPort.slice(0, close + 1)
+  }
+  const colon = hostPort.indexOf(':')
+  return colon === -1 ? hostPort : hostPort.slice(0, colon)
+}
+
+/** Percent-encoded, or as given where a lone surrogate cannot be encoded. */
+function encoded(text: string): string {
+  try {
+    return encodeURIComponent(text)
+  } catch {
+    return text
+  }
 }
 
 /** Percent-decoded, or as written where a malformed escape cannot be decoded. */

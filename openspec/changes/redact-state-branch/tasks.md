@@ -11,8 +11,8 @@
 - [x] 1.4 Remove key-block detection, URL-credential patterns, the JWT pattern, and the AWS,
       Slack and `age` patterns.
 - [x] 1.5 `rememberUrlCredentials`: a user name with no password, or an empty one, is
-      registered, with the whole URL, only where it is, once decoded, 20 characters or more and
-      not a plain name (decision 14). The plain-name test runs in linear time.
+      registered only with its host, as `<user>@<host>` written, percent-decoded and
+      percent-encoded, and with the whole URL, never bare (decision 14).
 
 ## 2. Every write
 
@@ -36,14 +36,14 @@
       expiry; the longer of two secrets whole, where one holds the other; a private key whole, and each line of
       it behind any prefix; its `BEGIN` line is not redacted.
 - [x] 3.3 Registration (`test/redact-registry.test.ts`): the App's key from its file, its JWT,
-      a minted installation token, an ambient login and a forwarded proxy URL's credentials are
+      a minted installation token, an ambient login (the host's own Claude login, handed over when a
+      seat names no token) and a forwarded proxy URL's credentials are
       each redacted with an empty environment, a proxy URL written without a scheme too; a
-      proxy URL with no credentials is not. In `test/redact-proxy-user.test.ts`: a passwordless
-      user name that looks like a token is redacted, mixed-case and base64url ones included.
-      These are not: a plain name; one under 20 characters; a login with a word of digits; a
-      `DOMAIN\user` login; one with accented letters; one with an empty password; and one that
-      is 20 characters percent-encoded but under 20 decoded. A long name of digit words is
-      judged in under a second.
+      proxy URL with no credentials is not. In `test/redact-proxy-user.test.ts`: a
+      passwordless user name, and one with an empty password, is redacted quoted with its host,
+      as written, percent-decoded and percent-encoded, and an IPv6 host keeps its brackets. The
+      bare name is not redacted, even where it is shaped like a token, nor is a login in an item
+      id, nor anything from a passwordless URL naming no host.
 - [x] 3.4 One test per write site, each with a registered secret and a real-shaped token in an
       error message: a run row's reason, the transcript, the refusal envelope, `deferred.json`,
       triage's `decisions.ndjson`, a capacity observation's reset phrase, and one test each
@@ -58,5 +58,10 @@
       (`test/fixtures/igor-state.json`), `redact` changes nothing.
 - [x] 3.7 Linear time: 64 KiB of `sk-ant-api03-`, `ghp_` or `github_pat_` repeated, each nearly a
       token, is redacted in under 200 ms, so no pattern backtracks over the text.
-- [ ] 3.8 Measure a real fine-grained `github_pat_` token's length and character set, and
-      correct the pattern if it differs from 82 letters, digits or `_` (decision 12).
+- [x] 3.8 Measure a real fine-grained `github_pat_` token's length and character set, and
+      correct the pattern if it differs from 82 letters, digits or `_` (decision 12). Moved to
+      issue #218, which outlives this change.
+- [ ] 3.9 Check that curl, git and npm, quoting a proxy URL's credential in an error, quote its
+      host with it, as decision 14 assumes. Record what each prints under decision 14 in the
+      proposal; where one quotes the credential without its host, add that tool to decision 14's
+      accepted limits, or raise it with Adam if the miss matters

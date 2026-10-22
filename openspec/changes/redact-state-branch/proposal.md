@@ -17,12 +17,13 @@
    redacted too, since anyone who can read the file can read it. *Rejected:* redacting at each
    caller, because a caller that forgets publishes the token.
 
-   Redaction on write also changes records the Igor reads back, such as `deferred.json`,
+   Redaction on write also changes records the Igor (one running instance of Igor) reads back, such as `deferred.json`,
    which is keyed by item. An item id holding a registered value is read back as
    `[redacted]`, so its deferral no longer matches its item, and the item is worked again each
    poll. A seat token or a variable's secret is random, so no item id is expected to hold one.
-   A proxy login that decision 14's rule takes for a token can equal a GitHub owner, and so
-   appear in item ids; that case is under Still open.
+   A proxy's user name with no password can be a login equal to a GitHub owner, and so appear in
+   item ids. It is registered only together with its host, as `<user>@<host>`, never alone
+   (decision 14), and no item id holds `<user>@<host>`.
 
    A file the Igor rewrites whole, such as `deferred.json`, is redacted whole. An appended
    file, such as `executions.ndjson`, keeps the lines it already had as they were, and the
@@ -64,13 +65,12 @@
     (`resolveToken`); the App's private key, whole and line by line (`readCredentials`); the
     App's JWT and each installation token it mints (`appJwt`, `mint`); every credential
     `workerEnv` hands a worker, including the user info, password and whole URL of a forwarded
-    proxy, within decision 14's limit on a user name with no password; and the value of every
+    proxy, a user name with no password only with its host (decision 14); and the value of every
     credential-named variable. Each is matched as written, JSON-escaped and URL-encoded,
     longest first, by a plain loop over the values; there are few enough that no
     multi-pattern matcher is needed. The registry lives only in memory and
     is never written or logged. A variable is credential-named where its name holds `TOKEN`,
-    `KEY`, `SECRET`, `PASSWORD` or `CREDENTIAL`, case-sensitively and anywhere in the name, the
-    list `keep-action-log` (#188) defined.
+    `KEY`, `SECRET`, `PASSWORD` or `CREDENTIAL`, case-sensitively and anywhere in the name.
 12. **Patterns are a backstop for exact token shapes only** (Adam, 2026-10-21): a GitHub
     `gh[pousr]_` token whose CRC32 checksum is right; a fine-grained `github_pat_` token of its
     full length; and an Anthropic `sk-ant-` key with its type and version. Removed: private key
@@ -82,31 +82,37 @@
     passes each found another way of writing a key that the scan of decisions 5 and 6 missed.
     GitHub documents only the fine-grained token's prefix; its 82-character body is the length
     gitleaks' `github-fine-grained-pat` rule matches, and no real token has been measured
-    (task 3.8).
+    (issue #218).
 13. **An acceptance test runs `redact` over real text and expects no change**: this
     repository's commit messages, docs and specs, and state-branch records taken from
     `adamstallard/igor-throwaway-lore`. The patterns decision 12 removes changed three of those texts.
-14. **A proxy URL's user name with no password is registered only where it looks like a
-    token** (Adam, 2026-10-21): once percent-decoded, 20
-    characters or more and not a plain name. A Kerberos or NTLM proxy takes a user name with no
+14. **A proxy URL's user name with no password is registered only with its host** (Adam,
+    2026-10-21): as `<user>@<host>`, the user name as written, percent-decoded and
+    percent-encoded, each followed by `@` and the host without its port, and never as the bare
+    name. The whole URL is registered too. A Kerberos or NTLM proxy takes a user name with no
     password (`http://adamstallard@proxy:3128`), or with an empty one (`adamstallard:`, as curl
-    writes it for Negotiate), and the rule treats the two alike. The 20 is the shortest token
-    GitHub, Anthropic and most other providers issue; a shorter token used as a user name is
-    missed. Such a name is usually a person's login, often equal to a GitHub owner, and registering it would redact that owner from item ids,
-    state-branch keys and posted links. A token used as the user name (`http://<token>@proxy`)
-    is still registered.
+    writes it for Negotiate), and the rule treats the two alike. Such a name is usually a
+    person's login, often equal to a GitHub owner. No item id, state-branch key or posted link
+    holds `<user>@<host>`, so the rule never redacts a login from one, and a tool that echoes a
+    proxy's credential echoes its host with it, so a token used as the user name is caught
+    wherever the URL appears. That tools quote the host with the credential is unmeasured (task
+    3.9); where one does not, the rule misses the credential in that tool's output. These limits
+    are accepted: the rule misses a bare token quoted without its host, and one quoted with its
+    host in another case or in punycode, as a URL parser such as Node's rewrites a host when it
+    prints the URL. Where the proxy's host is a mail domain, the rule redacts that user's
+    address at it (`jdoe@corp.example`).
 
-    A plain name is words joined by `.`, `-`, `_`, `@` or `\`, with at least one letter. Each
-    word holds at least one character: optional digits, then optionally one run of letters in a single case pattern
-    (`doe`, `DOE` or `Doe`, in any script that has case), then optional digits. So
-    `ci-runner-2024`, `jdoe-3rd-party` and `CORP\jane.doe` are plain names. A token's random
-    characters almost always break the shape: letters resume after digits inside a word
-    (`a3f9…`), or a run of letters changes case midway (`eIdz…`). Measured on random
-    20-character tokens: no base62 token in 200,000 is taken for a name, 2 base64url tokens are,
-    and so are 0.3% of lowercase base36 or hex tokens and 2.6% of uppercase base32 tokens, where
-    case gives no signal in either of those last two alphabets. Each alphabet was sampled
-    200,000 times. *Rejected:* registering every such user name, which redacts the owner;
-    and exempting every one, which lets a token used as the user name through.
+    *Rejected:* registering the bare name where it looks like a token: once percent-decoded,
+    20 characters or more and not a plain name (words of letters and digits, each word's letters
+    in one case pattern). That rule failed both ways. It took real logins of 20 characters or
+    more for tokens and redacted them wherever they appeared, item ids included: camelCase
+    (`JaneDoeContractor2024`), letters after digits inside a word (`team-infra-k8s-runners`), an
+    apostrophe (`patrick.o'brien.contractor`), and a script without case
+    (`li.wei@公司.example.com`). It took single-case tokens for names: measured on 200,000
+    random 20-character tokens of each alphabet, 0.3% of lowercase base36 or hex tokens and
+    2.6% of uppercase base32 tokens passed, and every token shorter than 20 characters. Also
+    rejected: registering every such user name bare, which redacts the owner; and exempting
+    every one, which lets a token used as the user name through.
 
 **Still open:**
 
@@ -127,18 +133,6 @@
   outside the credential words, such as `DATABASE_URL` holding `postgres://u:pw@…` or a
   lower-case `_authToken`, is not matched either. No pattern catches these since decision 12.
   Whether to accept that exposure, or how to close it, is for Adam.
-- Decision 14's shape rule errs both ways. It takes some logins for tokens, which are then
-  redacted wherever they appear, where they are 20 characters or more: camelCase
-  (`JaneDoeContractor2024`), letters after digits inside a word (`team-infra-k8s-runners`), an
-  apostrophe (`patrick.o'brien.contractor`), and a script without case
-  (`li.wei@公司.example.com`). It also takes some single-case tokens for names, as measured
-  under decision 14. A rule with neither of those errors would register such a user name only
-  together with its host: the whole URL, `<user>@<host>` and `<user>@<host>:<port>`, never
-  the bare name. No item id or link holds `<user>@<host>`, and a tool that echoes a proxy's
-  credential echoes its host too. It would miss a bare token quoted without its host. Whether
-  to replace decision 14's rule with that is for Adam. A login the rule takes for a token is
-  also redacted from item ids, so a deferral keyed by such an id no longer matches its item
-  (decision 2).
 - Branch names and state-branch file paths are not redacted. A branch whose name holds a
   token is pushed under that name, while only its merge commit's message is redacted, and a
   transcript path holding a registered value is written as it is while the pull request's link
@@ -155,6 +149,23 @@
   holds a path, which is then redacted from every record and post that names it, including the
   error saying which key file failed to read. `KEY` also matches inside a word such as
   `MONKEY`. Nobody has measured which such variables a deployed Igor has.
+
+- **Found by the consistency read of 2026-10-21's last round, for whoever next edits this
+  change.** None blocks building the rule, and none is decided:
+  - Redacting a commit message after #153's `Prose:` trailer is bound to it breaks the trailer,
+    as the first item above says redacting a signed post breaks its footer.
+  - #190 (`review-evidence`) edits a pull request body through a path the posting functions
+    listed in decision 8 do not cover; #190 should call `redact` for it.
+  - Nothing redacts the Igor process's own log, where #173 writes failure text.
+  - `docs/deployment.md` already sets `GITHUB_APP_PRIVATE_KEY_FILE` and a seat's `token_file`
+    to paths, so an error naming either path is posted as `[redacted]`.
+  - The unmeasured 82-character length of a fine-grained token (issue #218) is in decision 12
+    rather than here, and the gap for `CLAUDE_CODE_MESSAGING_TOKEN` is in *Impact*.
+  - In this change's spec, these SHALLs have no scenario: the rules for where a token's shape
+    starts and ends, the registry never being written, an issue's body, the transcript, and
+    files sent as written. The order of the base62 alphabet is not stated.
+  - #216 (`lore-search`) restates this rule as matching token prefixes, and cites a requirement
+    title that does not exist; it should cite this change's requirement instead.
 
 ## Why
 

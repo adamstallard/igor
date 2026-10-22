@@ -17,11 +17,10 @@ message can quote it. The registered secrets are:
 - the App's signed JWT and each installation token it mints, each until it expires;
 - every credential the Igor puts in a worker's environment, including a forwarded proxy URL's
   user info, password and whole URL. A proxy URL's user name with no password, or with an
-  empty one (`user:`), is registered, with the whole URL, only where it looks like a token:
-  once percent-decoded, 20 characters or more and not a plain name. A plain name is words
-  joined by `.`, `-`, `_`, `@` or `\`, with at least one letter, where each word holds at least
-  one character: optional digits, then optionally one run of letters that is all lower case,
-  all upper case, or one capital and then lower case, then optional digits;
+  empty one (`user:`), is registered only with its host, never bare, in each of these forms:
+  `<user>@<host>`, the user name as written, percent-decoded and percent-encoded, each followed
+  by `@` and the host without its port; the user info, the user name with its `:` where the
+  password is empty, followed by `@` and that host, such as `user:@proxy`; and the whole URL;
 - the value of every variable in the Igor's environment whose name contains `TOKEN`, `KEY`,
   `SECRET`, `PASSWORD` or `CREDENTIAL`, matched case-sensitively anywhere in the name;
 - every other secret the Igor obtains; a change that adds a way of obtaining one SHALL register
@@ -84,28 +83,30 @@ Nothing else is matched by pattern.
 - **WHEN** `HTTPS_PROXY` is `http://user:<password>@proxy:3128`, and text quotes the password
 - **THEN** credential redaction replaces it with `[redacted]`
 
-#### Scenario: A proxy's plain user name is not registered
+#### Scenario: A proxy's user name is redacted with its host
 
-- **WHEN** `HTTPS_PROXY` is `http://build-agent.proxy-user01@proxy:3128`, with no password,
-  and text holds the item id `github:build-agent.proxy-user01/igor#3`
-- **THEN** credential redaction leaves the id unchanged
-
-#### Scenario: A proxy's plain user name with an empty password is not registered
-
-- **WHEN** `HTTPS_PROXY` is `http://build-agent.proxy-user01:@proxy:3128`, and text holds
-  `@build-agent.proxy-user01: approved`
-- **THEN** credential redaction leaves the text unchanged
-
-#### Scenario: A proxy's user name that looks like a token is registered
-
-- **WHEN** `HTTPS_PROXY` is `http://eIdzgfAshpjKnBZECmsq@proxy:3128`, with no password, and
-  text quotes `eIdzgfAshpjKnBZECmsq`
+- **WHEN** `HTTPS_PROXY` is `http://x7Kp2mQ9vL@proxy:3128`, with no password, and text quotes
+  `x7Kp2mQ9vL@proxy`
 - **THEN** credential redaction replaces it with `[redacted]`
 
-#### Scenario: A minted token is no longer matched once it expires
+#### Scenario: A proxy's user name is not redacted on its own
 
-- **WHEN** a secret was registered with an expiry, and that time has passed
-- **THEN** credential redaction leaves text quoting it unchanged
+- **WHEN** `HTTPS_PROXY` is `http://JaneDoeContractor2024@proxy:3128`, with no password, and
+  text holds the item id `github:JaneDoeContractor2024/igor#3`
+- **THEN** credential redaction leaves the id unchanged
+
+#### Scenario: A proxy's user name with an empty password is redacted with its host
+
+- **WHEN** `HTTPS_PROXY` is `http://build-agent.proxy-user01:@proxy:3128`, and text holds
+  `build-agent.proxy-user01@proxy` and `@build-agent.proxy-user01: approved`
+- **THEN** credential redaction replaces the first with `[redacted]` and leaves the second
+  unchanged, since no host follows the name there
+
+#### Scenario: A registered secret is no longer matched by value once it expires
+
+- **WHEN** a secret with no token shape was registered with an expiry, and that time has passed
+- **THEN** credential redaction leaves text quoting it unchanged; a token with one of the shapes
+  above would still be matched by its shape
 
 #### Scenario: A credential-named variable's value is redacted
 

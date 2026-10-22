@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { appJwt, GitHubApp, readCredentials, type Fetch } from '../src/app.js'
 import { workerEnv } from '../src/execute.js'
-import { redact, rememberUrlCredentials } from '../src/redact.js'
+import { redact } from '../src/redact.js'
 import { tempDir } from './tmp.js'
 
 /**
@@ -65,24 +65,5 @@ describe('the Igor registers each secret as it obtains it', () => {
   it("a proxy URL's credentials where the URL names no scheme, as gh and git accept", async () => {
     await workerEnv({}, { PATH: '/bin', HTTPS_PROXY: 'alice:s3cretpassw0rd@proxy.corp:3128', CLAUDE_CODE_OAUTH_TOKEN: 'ambient-login-0123456789' })
     expect(redact('proxy said s3cretpassw0rd', {})).toBe('proxy said [redacted]')
-  })
-  it('a proxy URL whose user name is a token and has no password registers the user name', () => {
-    const token = 'tok3n9f8a7b6c5d4e3f2a1b0'
-    rememberUrlCredentials(`http://${token}@proxy.corp:3128`)
-    expect(redact(`proxy refused ${token}`, {})).toBe('proxy refused [redacted]')
-  })
-
-  it('a proxy URL whose user name is a plain name and has no password registers nothing', () => {
-    rememberUrlCredentials('http://build-agent.proxy-user01@proxy.corp:3128')
-    expect(redact('github:build-agent.proxy-user01/igor#3', {})).toBe('github:build-agent.proxy-user01/igor#3')
-    expect(redact('via http://build-agent.proxy-user01@proxy.corp:3128', {})).toBe(
-      'via http://build-agent.proxy-user01@proxy.corp:3128',
-    )
-  })
-
-  it('a proxy URL whose user name is under 20 characters and has no password registers nothing', () => {
-    rememberUrlCredentials('http://adamstallard@proxy.corp:3128')
-    rememberUrlCredentials('http://a1b2c3d4e5f6a7b8c9@proxy.corp:3128')
-    expect(redact('github:adamstallard/igor#12 a1b2c3d4e5f6a7b8c9', {})).toBe('github:adamstallard/igor#12 a1b2c3d4e5f6a7b8c9')
   })
 })
