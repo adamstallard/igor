@@ -4,7 +4,8 @@ import type { Role } from '../src/role.js'
 import { claimStuck, claimWithdrawn } from '../src/claiming.js'
 
 vi.mock('../src/state.js', () => ({
-  readState: async () => undefined, writeState: async () => true, appendRecord: async () => {},
+  readState: async () => undefined, readStateForUpdate: async () => ({ value: undefined }), writeState: async () => true,
+  appendRecord: async () => {},
 }))
 const { runItem, planCycle } = await import('../src/loop.js')
 

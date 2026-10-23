@@ -6,7 +6,8 @@ import { labelVerdictFrom } from '../src/github-adapter.js'
 import { IGORS } from './igors.js'
 
 vi.mock('../src/state.js', () => ({
-  readState: async () => undefined, writeState: async () => true, appendRecord: async () => {},
+  readState: async () => undefined, readStateForUpdate: async () => ({ value: undefined }), writeState: async () => true,
+  appendRecord: async () => {},
 }))
 const { runItem } = await import('../src/loop.js')
 
