@@ -141,6 +141,15 @@ The state branch lives here too, so it has to be a repository the Igor can push 
    then silently never fires. The job runs the same `reconcile` you would run locally, so it
    promotes what merged and records what a reviewer deleted — run `reconcile` yourself on a
    store without the workflow, or to read the report of proposals that have gone quiet.
+
+   **A proposal with no activity for a week gets one comment on its own pull request**, which
+   notifies its assignees. The comment says how long it has been quiet, names the store
+   reviewers, and spells out the three ways to end it, rejection being the one remembered.
+   It is posted once per quiet spell: a reply followed by another quiet week earns a second,
+   and silence earns nothing more. Whichever run posts it, the job's or your own, the next
+   recognizes it. The workflow needs `pull-requests: write` to comment, and a run that cannot
+   comment fails, after committing its promotions and rejections.
+
    Exactly one job may promote lore on push: two of them race on the same commit and disagree
    about what a reviewer deleted, so delete any other workflow in `.github/workflows` that
    promotes or reconciles lore. Where a later Igor ships a new version of that file,
@@ -305,7 +314,7 @@ In a proposal pull request: **delete** a file to reject it, **edit** one to amen
 to accept the rest, **close without merging** to defer. Merging is what counts as approval
 here, so a single maintainer is never stuck reviewing their own proposal.
 
-A deletion is permanent: the next `reconcile` writes `rejected/<id>.md` into the store, keeping
+A deletion is remembered: the next `reconcile` writes `rejected/<id>.md` into the store, keeping
 the candidate's claim and provenance so a later reader can see what was turned down, and
 nothing proposes that id again while the record stands. **Delete that file to un-reject** — a
 rejection is undone the same way it was made, by removing a file in a pull request.
