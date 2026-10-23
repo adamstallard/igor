@@ -184,6 +184,7 @@ describe('who could continue', () => {
 describe('a budget handoff says when capacity returns', () => {
   const resetAt = new Date(NOW + 3 * 3600_000).toISOString()
 
+  // @scenario graceful-handoff: Reset time included
   it('states the reset time rather than reporting itself unavailable', () => {
     const text = composeHandoff(role(), candidate(), {
       reason: { kind: 'budget', seat: 'igor-1', resetAt }, done: [], remaining: [], suggested: ['alice'],
@@ -330,11 +331,13 @@ describe('a failure handoff', () => {
     expect(none).toMatch(/will not retry/i)
   })
 
+  // @scenario graceful-handoff: Artifact referenced in the handoff
   it('links partial work so the next party resumes rather than restarts', () => {
     expect(text).toContain('https://example.test/9')
     expect(text).toMatch(/rather than starting over/)
   })
 
+  // @scenario graceful-handoff: Handoff content complete
   it('states what was done, what remains, and who could continue', () => {
     expect(text).toMatch(/\*\*Done:\*\*/)
     expect(text).toMatch(/\*\*Left:\*\*/)
@@ -355,6 +358,8 @@ describe('a failure handoff', () => {
 })
 
 describe('posting it', () => {
+  // @scenario graceful-handoff: Handoff posted on exhaustion
+  // Not "Handoff posted after the budget is exhausted": this test does not show that no worker is invoked.
   it('posts before releasing, so the item is never unclaimed and unexplained', async () => {
     const order: string[] = []
     const { t } = tracker()
@@ -435,6 +440,8 @@ describe('posting it', () => {
     expect(log.reported).toHaveLength(1)
   })
 
+  // @scenario graceful-handoff: Handoff posted on unrecoverable failure
+  // Not "Handoff posted after an unrecoverable failure": this test does not check that the handoff says what remains.
   it('still posts when the worker could not be invoked at all', async () => {
     // The case the whole design is for: nothing ran, so nothing can be asked to explain it.
     const { t, log } = tracker()

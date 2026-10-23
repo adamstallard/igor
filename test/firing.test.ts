@@ -50,6 +50,8 @@ describe('what may be seen', () => {
     expect(scopeMatches('role', role())).toBe(false)
   })
 
+  // @scenario lore-firing: Provisional entries do not fire
+  // @scenario lore-firing: Deprecated entries do not fire
   it('never fires an unreviewed or retired entry', () => {
     // Review is what gives an entry force; firing a provisional one would make it ceremony.
     for (const status of ['provisional', 'deprecated'] as const) {
@@ -63,6 +65,7 @@ describe('what may be seen', () => {
 })
 
 describe('injecting everything that fits', () => {
+  // @scenario lore-firing: Everything in scope reaches the worker
   it('fires the whole in-scope store', () => {
     const store = [entry({ id: 'a' }), entry({ id: 'b' }), entry({ id: 'c' })]
     expect(selectEntries(store, role()).fired).toHaveLength(3)
@@ -85,6 +88,7 @@ describe('injecting everything that fits', () => {
 describe('the budget reports rather than truncates', () => {
   const many = Array.from({ length: 60 }, (_, i) => entry({ id: `e${i}` }))
 
+  // @scenario lore-firing: No silent truncation
   it('injects nothing at all when over budget', () => {
     // Not a subset. Whichever entries a rule discarded, nobody chose that rule.
     const r = selectEntries(many, role(), { budgetTokens: 500 })
@@ -127,11 +131,13 @@ describe('what an entry looks like when it arrives', () => {
     expect(rendered.split('\n')[0]).toContain('Read the assignees back')
   })
 
+  // @scenario lore-firing: Conditions travel with the claim
   it('says when it applies, because relevance is the reader’s call', () => {
     expect(rendered).toContain('When assigning anyone to an issue.')
     expect(rendered).toContain('src/github*.ts')
   })
 
+  // @scenario lore-firing: Support accompanies the entry
   it('states how firmly the lesson is held without ranking by it', () => {
     expect(rendered).toMatch(/2 independent citations, 1 from experts/)
     expect(rendered).toContain('newest 2026-09-13')
@@ -179,6 +185,7 @@ describe('lore is trusted, the item is not', () => {
     expect(forged).not.toBe('')
   })
 
+  // @scenario lore-firing: No search affordance offered
   it('offers a worker no way to search the store', () => {
     // Lore exists for what a worker would not know to ask for, so an affordance to ask
     // addresses the case that needed no mechanism. The rendered form is the whole interface.
