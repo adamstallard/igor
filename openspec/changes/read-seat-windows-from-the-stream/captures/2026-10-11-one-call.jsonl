@@ -1,0 +1,2 @@
+{"type":"system","subtype":"init","claude_code_version":"2.1.296","model":"claude-haiku-5-5","apiKeySource":"none"}
+{"type":"rate_limit_event","rate_limit_info":{"status":"allowed","resetsAt":1791755400,"rateLimitType":"five_hour","overageStatus":"rejected","overageDisabledReason":"org_level_disabled","isUsingOverage":false,"unifiedWindows":{"five_hour":{"utilization":0.43,"resetsAt":1791755400},"seven_day":{"utilization":0.11,"resetsAt":1792227600}}},"uuid":"5b86b1ca-25e3-4808-8a83-03f273fc7065","session_id":"65d42943-7738-42c5-9e66-c90ff65a6692"}
