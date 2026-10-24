@@ -14,7 +14,13 @@ The terms, as this requirement uses them:
 - A **void row** names a probe row's identifier, and says that the probe row will produce no run.
 - A probe row **ends** with a run row for its item written after it, with a void row naming it, or
   when it **lapses**: when the log shows its Igor can no longer be working it. Whatever rule decides
-  a lapse SHALL be one every Igor in the scope judges alike from the log. The probe's outcome, which
+  a lapse SHALL be one every Igor in the scope judges alike from the log, such as a row's age
+  against a bound every Igor shares. This requirement does not choose that rule. The rule in
+  force lapses a row older than a fixed bound; #179 (`concurrent-instances`) replaces it with a
+  keepalive in its own requirement, which binds through that change: the Igor working a probe
+  item appends a keepalive row every poll interval of its own role, a row that does not end the
+  probe row, and the probe lapses once 90 minutes pass after the latest of them, or after the
+  probe row where there is none. The probe's outcome, which
   *A condition's scope is its cure's scope* and *A condition clears by not recurring, and a probe
   is what observes that* wait for, is whichever of these ends its row.
 - The **append deadline** is how long an Igor waits for an append, retries included, before it

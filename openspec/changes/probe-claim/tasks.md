@@ -7,6 +7,13 @@
       as a partition's line order, earlier days first, which matches the order the store accepted
       the rows except at midnight (`design.md`, *The settle interval, and its one gap*). This
       replaces the walk that answers from the newest probe row
+- [ ] 1.2a The lapse 1.2 uses is the one the code on `main` has when this is built. Where #179's
+      task 4.9 has landed, a probe row lapses once 90 minutes pass after its latest keepalive
+      row, or after the probe row itself where it has none; otherwise it lapses after
+      `SWEEP_AFTER_MS`, as now. Tests for whichever rule is on `main`: under the keepalive rule, a
+      row whose keepalives stopped 91 minutes ago, or that never had one and is 91 minutes old,
+      has lapsed, and a row with a keepalive 89 minutes old has not; under `SWEEP_AFTER_MS`, a row
+      older than it has lapsed and a younger one has not
 - [ ] 1.3 A void row ends only the probe row whose identifier it carries; a run row ends every
       earlier probe row naming its item, as now
 - [ ] 1.4 Expose, beside `conditionOf`, which probe row holds the scope, so the caller can tell
@@ -18,7 +25,9 @@
       again, and takes the item only where the row holding the scope is its own for every key it
       probed
 - [ ] 2.2 Give `appendRecord` an append deadline that bounds the whole append, retries included
-      where #179's retry has landed, and set the probe settle interval above it
+      where #179's retry has landed, and set the probe settle interval above it. Make task 4.1's
+      measurement of an append to the state branch, the git branch the log is written to, first,
+      since the deadline is set from it
 - [ ] 2.3 The read in 2.1 reads every partition fresh, bypassing `readLog`'s cache of past days
 - [ ] 2.4 Every path that appended a probe row and takes no item appends a void row naming it: a
       row that does not decide, a row that decides for one key and not another, a read that
@@ -36,8 +45,5 @@
 
 ## 4. Coordination and measurement
 
-- [ ] 4.1 If #179's task 4.9 has landed when this is built, make a probe row whose rank is gone
-      count as lapsed in 1.2's rule. If it has not, this build keeps `SWEEP_AFTER_MS`, and #179's
-      task 4.9 must keep 1.2's rule when it changes the lapse
-- [ ] 4.2 Measure how long an append to the state branch takes, retries included, to choose the
+- [ ] 4.1 Measure how long an append to the state branch takes, retries included, to choose the
       append deadline, and record the figure in `design.md`

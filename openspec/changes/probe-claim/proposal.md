@@ -22,9 +22,16 @@
 5. **An item that probes several conditions is taken only where its rows decide for all of them**,
    and its rows are otherwise all voided.
 6. **A lapse is judged alike by every Igor in the scope, from the log.** Otherwise Igors disagree on
-   the oldest unended row. `SWEEP_AFTER_MS` meets this. #179's lapse, when a probe's rank is gone,
-   meets it only for a role-scoped condition: a process of another role on the same seat cannot
-   see that rank's heartbeat. #179 already records that gap as a conflict with #101.
+   the oldest unended row. This change decides only that property; it does not choose the lapse
+   rule. The code on `main` lapses a row older than `SWEEP_AFTER_MS`, the worker's run ceiling
+   plus an hour, counted from the timestamp in the row, which every Igor reads alike, and this
+   change leaves that rule as it is. #179 removes that ceiling, and Adam decided on 2026-10-24
+   that #179's task 4.9 replaces the rule with a keepalive: the Igor working a probe item
+   appends a row naming its probe row every poll interval of its own role, and the probe lapses
+   once 90 minutes, three times #179's 30-minute maximum poll interval, pass with no such row.
+   A process of any role can judge that lapse from the log alone. A rank's heartbeat, the rule
+   #179 first had, could not be judged that way, since a process sees only its own role's
+   heartbeat files.
 7. **A TLA+ model, `model/ProbeClaim.tla`, proves the requirement**, with one negative
    configuration per rule, run by `.github/workflows/tla-probe-claim.yml`.
 
@@ -36,8 +43,9 @@
   needs a write the store accepts after its deadline, at midnight, while two Igors race for one
   probe. Revisit the conditional append if it is ever seen.
 - **The append deadline and the probe settle interval.** *Recommended:* fix both in code rather
-  than configure them, with the deadline set from task 4.2's measurement and the settle interval
-  twice the deadline. A probe is rare, so the wait costs little.
+  than configure them, with the deadline set from the measurement of `tasks.md`'s task 4.1 and
+  the settle interval twice the deadline. Any interval longer than the deadline meets the
+  requirement; twice is a margin chosen because a probe is rare, so the wait costs little.
 
 ## Why
 

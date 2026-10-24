@@ -159,15 +159,18 @@ change edits it.
 ## Coordination
 
 - **#179 (`concurrent-instances`)** numbers the processes serving one role as ranks, and judges a
-  rank gone when its heartbeat file stops changing. It changes how a probe lapses: by its rank being gone rather than
-  after `SWEEP_AFTER_MS` (its decision 22 and task 4.9), and records an unresolved conflict with
-  #101 over seat- and Igor-scoped probes: a process of another role cannot tell whether a probe's
-  rank is gone. This change needs every Igor in a scope to agree on which rows have lapsed, or they
-  disagree on the oldest unended row, so the requirement says a lapse is judged alike by every Igor
-  from the log. `SWEEP_AFTER_MS`, measured from the row's own timestamp, meets that. #179's rank
-  rule meets it for a role-scoped condition only, which sharpens the conflict #179 already records
-  and is for #179 to settle. The probe settle interval is not #179's claim settle interval: it
-  follows the append deadline, not the poll interval.
+  rank gone when its heartbeat file stops changing. This change needs every Igor in a scope to
+  agree on which rows have lapsed, or they disagree on the oldest unended row, so the requirement
+  says a lapse is judged alike by every Igor from the log. A condition scoped to a seat or to
+  the whole Igor is shared by every role on it, and a process of one role cannot see another
+  role's heartbeat files, so a rank's heartbeat cannot meet that rule. The code on `main` lapses
+  a probe row once it is older than `SWEEP_AFTER_MS`, the worker's run ceiling plus an hour,
+  measured from the timestamp written in the row; every Igor reads the same timestamp, so that
+  meets the rule too, but #179 removes the run ceiling it rests on. So Adam decided on
+  2026-10-24 that #179 replaces `SWEEP_AFTER_MS` with a keepalive in the log (its decision 22 and
+  task 4.9): the Igor working a probe item appends a row naming its probe row every poll interval
+  configured for its own role, and the probe lapses once 90 minutes pass with no such row, three times #179's
+  30-minute maximum poll interval, the longest any role may set: an Igor that misses three of its keepalives in a row is treated as no longer working the item. The probe settle interval is unrelated to the keepalive: it is derived from the append deadline, not from any poll interval, and is not #179's claim settle interval.
 - **The in-force scenario *A probe is taken once*** (under *A condition's scope is its cure's
   scope*), and #171's copy of it, stay true under this change: no other Igor takes a probe item
   until the probe's outcome is in. This change defines that outcome, which includes a void row and
