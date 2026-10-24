@@ -46,7 +46,8 @@ unreadable the item SHALL stay flagged-held rather than be worked again. The fla
 one *entry* for each flagged hold, naming the *state-directory id* (`graceful-handoff`) of the
 directory the run keeps its files in, the random name of its question file, which also
 prefixes the name of each of its session-log copies (`graceful-handoff`), and the process:
-its rank, or `igor run` with that run's id. It SHALL name no host. A run SHALL add its flagged hold's
+its rank, or `igor run` with the id #179 gives that process, which is not the
+id `lore-firing` gives a run of an item (the proposal's Still open item on #179's run id). It SHALL name no host. A run SHALL add its flagged hold's
 entry before it writes any file under `flagged-questions`. Its `needs a person` row SHALL name
 the same state-directory id and question file name, both opaque, so that nothing about the
 host leaks; where the record has lost the run's entry by the time it appends the row, the run
@@ -119,9 +120,13 @@ directory that no open entry names, by the same rule against following a link; t
 passes it after reading any question file among those files.
 
 `igor release` SHALL also release in a batch, with flags gate two names, but only flagged holds
-that leave no question file to read. A batch *by cause* acts only on entries naming the id of
-the state directory it runs against, the one directory whose files it can see, and releases
-those whose named question file is absent there. A batch *by id* names the id of a state
+that leave no question file to read. A batch *by cause*, the cause being a question file that is
+absent, acts only on entries naming the id of the state directory it runs against, the one
+directory whose files it can see, and releases those whose named question file is absent there
+and none of whose session-log copies remain; since copying a live state directory is
+unsupported (`graceful-handoff`), a file absent there is taken as absent everywhere. Log copies
+are left alone because they hold the question's text. A flagged hold whose question was not kept, or whose log copies remain, is left to `igor release`
+naming its item. A batch *by id* names the id of a state
 directory no live process answers for, the second stuck case below, which the operator
 states no longer exists by passing that flag with its id; it releases every entry naming that id. A batch clears such entries,
 appends their `released` rows and deletes nothing. A flagged hold whose question file

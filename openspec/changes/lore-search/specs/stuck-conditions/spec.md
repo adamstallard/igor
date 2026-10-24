@@ -16,7 +16,9 @@ it. A notice SHALL have no stored record. Like the conditions `condition-backoff
 are rebuilt from the execution log, the ledger, each process rebuilds it each cycle from what
 affects it: the ledger rows and `work-triage`'s flagged-hold record entries, #179's heartbeat
 files, and two sources on its own host. It reads its own state directory for files that are
-absent and files no entry names, and its own log for refused deletes. The Igor's own log on the host
+absent and files no entry names, and its own log for refused deletes. A notice only one host can observe, a
+release stuck on a refused delete there, or a mismatch found by comparing the record with that
+host's own state directory, is listed only by `igor conditions` run on that host. The Igor's own log on the host
 SHALL list the items that keep each notice open, each time that list changes. Three conditions
 are notices: the one `graceful-handoff` opens for a question the Igor could not keep, whose
 item is affected while it is flagged-held; the stuck-release one `work-triage` opens, whose item

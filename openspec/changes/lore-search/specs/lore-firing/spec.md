@@ -835,7 +835,7 @@ once, as a worker's search does.
 The Igor SHALL itself run the checks of shared-skills #25's requirement
 [*Only an answer with authority stops a question*](https://github.com/adamstallard/shared-skills/blob/spec/inquisitor/openspec/changes/inquisitor/specs/inquisitor/spec.md)
 on each question file it returns that holds an answer, and label the file by them as *Lore
-reaches the worker unbidden* sets. #25 states the checks; this requirement does not restate
+reaches the worker unbidden, beside a search it may run* sets. #25 states the checks; this requirement does not restate
 them. One is whether the comment a file's `answer_link` points to holds the answer, which #25
 defines as the comment, reduced, equalling the recorded answer, reduced the same way (#25's
 rule, decided by Adam on 2026-10-21); the Igor applies that rule in code, with no model call. Which comments count as a person's relayed answer is #25's rule (its

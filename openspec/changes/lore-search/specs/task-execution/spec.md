@@ -160,7 +160,7 @@ record of the provider refusing the run SHALL keep only the refusal's reason, ne
 provider's text. The reason is the limit Igor read from the provider's reply and the time
 that limit resets, where Igor read them; where it read neither, the record says only that the
 provider refused the run. A record of the provider refusing any other run SHALL keep the
-provider's whole reply, redacted as #217's (`redact-state-branch`) *Every write to the state branch is redacted* requires of every write to the state branch. A *refusal record* is the file execution writes under
+provider's whole reply, redacted as #217's (`redact-state-branch`) *Every write to the state branch, and every text the Igor posts, is redacted* requires of every write to the state branch. A *refusal record* is the file execution writes under
 `refusals/` on the state branch when the provider's reply names a usage limit.
 
 The ledger row records each shell command the worker's sandbox denied. For a run that met a

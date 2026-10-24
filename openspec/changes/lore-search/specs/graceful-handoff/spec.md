@@ -43,7 +43,7 @@ unmarked one it SHALL leave out. It SHALL hold no text of a question that has
 a category; that text is only in the session logs. It SHALL also list the path of every session
 log of the execution that open pull request #174 copies: this change depends on #174 copying
 each step's log before the next reset, the worker's, those of #153's later model steps and
-#189's second worker run included (the proposal's Still open). When the execution ends the Igor
+#189's second worker run included, which #174 does. When the execution ends the Igor
 SHALL move every such copy into the same directory beside the file, each named with the
 question file's random `<name>` as its prefix, so that the entry naming that `<name>` names
 the copies too, mode 0600, and SHALL do
@@ -191,6 +191,22 @@ NOT push, post or publish the file, or its text, anywhere.
 - **WHEN** the Igor first uses a state directory that holds no id
 - **THEN** it creates a random id there
 - **AND** every later process using that directory reads the same id
+
+#### Scenario: An id file that is a link counts as no id
+
+- **WHEN** the state directory's id file is a symbolic link, hard-linked, not a regular file or
+  unreadable
+- **THEN** the Igor treats the directory as having no id
+- **AND** by `work-triage`'s rule for a run with no readable id, a flagged run there writes no
+  file, adds no entry, and its execution-ledger row reads `needs a person, question not kept`
+  and names no id
+
+#### Scenario: Session-log copies carry the question file's name
+
+- **WHEN** a flagged run keeps its question as `flagged-questions/github/acme/api/12/<name>.md`
+- **THEN** each session-log copy moved beside it has a name starting with `<name>`
+- **AND** the entry naming `<name>` names those copies, so a release deletes them and the
+  mismatch comparison counts them as named
 
 #### Scenario: A link below flagged-questions is refused
 

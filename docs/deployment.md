@@ -378,7 +378,10 @@ reply never releases it. Where `igor release` says other state directories still
 find the hosts whose directories have those ids, since `igor release` prints its own
 directory's id on each host, and run it there.
 
-`igor conditions` can list three notices about flagged holds. None stops any work, and each
+`igor conditions` can list three notices about flagged holds. A release stuck on a refused delete, and
+any hold mismatch, are seen only on the host whose state directory is involved, since only
+that host can look in it; the other notices show from any host. So run `igor conditions` on
+each host. None stops any work, and each
 names its section below. The Igor's log on the host names the items and state-directory ids
 behind each one; the notices themselves name no item.
 
@@ -424,7 +427,10 @@ The Igor's log says which of three things it found:
   taken before the file was written. Check that no state directory with that id still has the
   file, looking under `flagged-questions/` on each host whose `igor release` prints that id,
   then run `igor release <tracker>/<repo>/<item> --files-gone`. To clear every hold of
-  this kind on this host's state directory at once, run `igor release --batch --files-gone`.
+  this kind on this host's state directory at once, run `igor release --batch --files-gone`; copying a
+  live state directory is unsupported, so the batch takes a file absent here as absent
+  everywhere. It leaves out any hold whose session-log copies remain, since those copies hold
+  the question's text and you have not read them.
 - **Files are there that no hold names.** A copy of the directory released the hold first, the
   directory took a new id after its id file was lost, a lost record dropped a run that stopped
   part-way, or a process went on writing after its heartbeat had stopped long enough for the

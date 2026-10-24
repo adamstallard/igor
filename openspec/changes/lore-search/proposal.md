@@ -2,7 +2,7 @@
 
 ## Decisions
 
-The numbered list below records all one hundred and forty-five decisions, which
+The numbered list below records all one hundred and forty-six decisions, which
 [#215](https://github.com/adamstallard/igor/issues/215) tracks too, and all are Adam's. Where the agent that wrote this change fitted
 details Adam had not stated, that decision says so; where Adam has since confirmed them, a
 later decision records it, and where he has not, Still open lists them. A *consistency read*
@@ -104,8 +104,9 @@ request; Adam answered the questions each read raised. He made:
   file and a crash before an entry is cleared, as accepted limits,
   answering the questions the reads of decisions 125 to 132 raised, and naming this change's
   hold the *flagged hold*;
-- decisions 140 to 145 that day too, replacing the case-by-case rules for when the record and the files
-  disagree with one notice, giving each notice a runbook and limiting batch release.
+- decisions 140 to 145 that day too, replacing, with one notice, the case-by-case rules for when the
+  record and the files disagree, giving each notice a runbook and limiting batch release;
+- decision 146 that day too, confirming the details fitted to decisions 141 and 144.
 
 Terms used here:
 - The *destination repository* is the repository the configuration key `destination` names,
@@ -937,7 +938,8 @@ Terms used here:
     condition.
 96. **A refused run's kept reply is redacted.** Where a refused run keeps the provider's whole
     reply, it is redacted with #217's credential redaction (change `redact-state-branch`), as
-    its *Every write to the state branch is redacted* requires of every write there (Adam,
+    #217's *Every write to the state branch, and every text the Igor posts, is redacted* requires
+    of every write to the state branch (Adam,
     2026-10-21, his decision on #217). #217's Still open item asking which text to reword is
     settled by this.
 97. **The flag lists every category met, and marks the stopped question's.** A flagged worker's
@@ -1282,7 +1284,8 @@ Terms used here:
     flags and keeps the guide in step.
 144. **Release in a batch only where no question file is left to read** (Adam, 2026-10-24).
     `igor release` releases in a batch, by cause or by state-directory id, only flagged holds
-    whose question file was lost or never written, or whose state directory is gone. A flagged
+    whose question file and session-log copies are all gone, which leaves out a hold whose
+    question was not kept, or whose state directory is gone. A flagged
     hold whose question file still exists is released only by `igor release` naming its item,
     after the operator has read it. Gate two names the batch flags. The agent that wrote this
     change fitted how a batch knows a question file is absent and a directory gone, since
@@ -1296,6 +1299,13 @@ Terms used here:
     run counts as flagged and many items will be flagged-held. Adam accepts that, since no one uses
     Igor yet and task 3.1 has workers send the report, with task 4.7 measuring how reliably
     they do. Still open says so.
+146. **The details fitted for decisions 141 and 144 are confirmed** (Adam, 2026-10-24). The
+    one fitted for decision 141, to tell which files an entry names: each session-log copy's
+    name starts with the random `<name>` of its question file, so the entry naming that `<name>`
+    names the copies too. Those fitted for decision 144: a batch by cause acts only on entries naming
+    the id of the state directory `igor release` runs against; and a batch by id, naming a
+    directory no live process answers for, one whose id no live process's heartbeat records, is the operator's statement that the directory is
+    gone.
 
 
 
@@ -1352,10 +1362,10 @@ decisions 216, 221, 225, 229 and 235 (#25 at 9247d3c), and add no decision:
   as users of their own, every worker runs as `igor`, the Igor's own user, and can read
   `flagged-questions`, its logs and categories included; Adam accepts that until then. #175's
   worker users close it.
-- **For [#174](https://github.com/adamstallard/igor/pull/174) (decision 98).** #174 copies only
-  the worker's session log; for a flagged execution it must copy each step's log before the
-  next reset, #153's later model steps and #189's second worker run included, so that the
-  question file can list them all.
+- **Not open, recorded for the reviewer: settled by
+  [#174](https://github.com/adamstallard/igor/pull/174) (decisions 98, 102 and 105).** #174 now copies each step's log before the next reset of the worker's home, #153's
+  later model steps and #189's second worker run included; cites this change's state directory; and lets its record
+  name a log copy this change could not move.
 - **Task 4.11 is unmeasured, for whichever of gate two and #174 is built first.** Nobody has measured that Claude Code keeps
   no session or state under `HOME` outside the two paths #174 resets.
 - **For #217 (decision 96).** Its Still open item on which of the two refusal texts to reword is
@@ -1380,12 +1390,18 @@ decisions 216, 221, 225, 229 and 235 (#25 at 9247d3c), and add no decision:
   added requirement that names the `condition-backoff` requirements that do not apply to a
   notice, rather than modified copies of them: #171 and #82, which archive before this
   change, modify them, so modified copies would have to carry their text.
-- **For Adam: details fitted this round** (decisions 141 and 144). A session-log copy is tied to
-  its entry by its name, which starts with the random `<name>` of the question file the entry
-  names. A batch by cause acts only on entries naming the id of the state directory
-  `igor release` runs against, since that is the only directory whose files it can see; a batch
-  by id names a directory no live process answers for, and the operator's word that it no
-  longer exists is what makes it gone.
+- **For Adam: the `igor release` flag names** (decision 143). The agent that wrote this change
+  fitted `--files-gone`, `--delete-unnamed`, `--batch` and `--directory` for the runbook in
+  `docs/deployment.md`; gate two names the flags. Should the guide keep these names, or wait for
+  gate two's?
+- **For Adam: a lost or reset state branch releases every flagged hold.** The flagged-held
+  item is known from the ledger's `needs a person` rows, and the ledger is on the state branch,
+  which `work-discovery`'s *State is a cache and correctness never depends on it* lets be lost
+  at the cost of redundant work, and which #179 specifies being lost or reset. Losing the
+  state branch releases every flagged hold. One whose question was kept leaves its files, which
+  the mismatch notice then finds, since no entry names them; one whose question was not kept
+  leaves no file, so it vanishes silently. Accept this as a known limit, or keep the
+  flagged holds somewhere `work-discovery`'s rule does not cover?
 - **Flagged holds will be common at first** (decision 145). Until workers send their
   completed report (task 3.1, measured by task 4.7), every run counts as flagged, so nearly
   every item a run hands back over a question will be flagged-held and need `igor release` or
@@ -1402,15 +1418,15 @@ decisions 216, 221, 225, 229 and 235 (#25 at 9247d3c), and add no decision:
   and 88)** for each worker run's private Claude state and the copied, redacted session log;
   decision 88 moves a flagged run's copy beside its question. #174's record in the execution
   ledger names the copy's path, which for a flagged run is the moved copy under
-  `flagged-questions`, or the unmoved copy where decision 102's rule refused the move; #174
-  should allow for both.
+  `flagged-questions`, or the unmoved copy where decision 102's rule refused the move, and #174
+  allows for both.
 - **For [#174](https://github.com/adamstallard/igor/pull/174) and
   [#143](https://github.com/adamstallard/igor/pull/143) (decision 105).** This change owns the
   state directory's definition, in `graceful-handoff`: `$STATE_DIRECTORY` where set, else
   `$XDG_STATE_HOME/igor`, which is `~/.local/state/igor` when `XDG_STATE_HOME` is unset. #174
-  defines it as `/var/lib/igor` or `~/.local/state/igor`, and #143's seat-budget equates it
-  with `/var/lib/igor`; both should cite this change's definition instead. Otherwise, with
-  `XDG_STATE_HOME` set, #174's log copy and the question file sit in different state
+  now cites it, but #143's seat-budget equates it
+  with `/var/lib/igor`; it should cite this change's definition instead. Otherwise, with
+  `XDG_STATE_HOME` set, a log copy and the question file could sit in different state
   directories, and decision 102's check of a move's source, from the state directory down,
   starts from the wrong one.
 - **For gate two: the state-directory id, and how processes update one flagged-hold record**
@@ -1832,7 +1848,7 @@ reading the codebase. Two cases contradict that:
   has a flagged run's handoff state why it stopped only in the ledger row's fixed words, quote
   no failure detail or worker's reason and point to the item's transcript path, and has a
   flagged run's handoff ask no question, add no question label and keep its question on the
-  host, with twenty-five new scenarios (decisions 71, 73, 75, 76, 80, 85, 88, 89, 97, 101, 102, 128
+  host, with twenty-seven new scenarios (decisions 71, 73, 75, 76, 80, 85, 88, 89, 97, 101, 102, 128
   and 133).
 - `work-triage`'s *An item handed back is not re-worked until something answers* stops a reply
   from rerunning an item a flagged run handed back, and lets only an edit by someone with
@@ -1847,7 +1863,8 @@ reading the codebase. Two cases contradict that:
   directory, opens a notice of its own, and `igor release` releases in a batch only flagged
   holds with no question file left to read. It has thirty-six new scenarios, including those for
   `igor release`, and four changed (decisions 76, 79, 82, 83, 84, 102, 104, 108, 110, 111, 113
-  to 117, 120, 121, 125 to 132 and 134 to 144). It keeps `condition-backoff`'s rule, now in force, that a handoff caused by a fact about
+  to 117, 120, 121, 125 to 132, 134 to 144 and 146). The `work-triage` delta keeps `condition-backoff`'s rule, in force since #101 merged, that a
+  handoff caused by a fact about
   the Igor is not suppressed, with that rule's scenario.
 - `stuck-conditions` gains *A notice opens at once, stops nothing, and stays open while an
     item is affected*, a kind of condition of its own with no stored record, with five
@@ -1885,7 +1902,7 @@ None.
   (decisions 71, 73, 75, 76, 80 and 133).
 - `work-triage`: a reply does not rerun an item a flagged run handed back; it stays flagged-held, and
   only `igor release` or an edit by someone with write access releases it (decisions 76, 79,
-  82 to 84, 102, 104, 108, 110, 111, 113 to 117, 120, 121, 125 to 132 and 134 to 144); any
+  82 to 84, 102, 104, 108, 110, 111, 113 to 117, 120, 121, 125 to 132, 134 to 144 and 146); any
   mismatch between its record, the ledger and the files opens a notice, and `igor release`
   releases in a batch only flagged holds with no question file left to read.
 - `stuck-conditions`: a notice, a kind of condition of its own, opens on its first

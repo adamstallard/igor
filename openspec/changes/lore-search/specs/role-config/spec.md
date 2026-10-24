@@ -7,8 +7,8 @@ A role file SHALL support: `extends`, `seat`, `sources`, `lane`, `instructions`,
 `tracker` and carry that tracker's own query verbatim. Entries failing validation SHALL be
 rejected rather than loaded.
 
-`commands` names the shell commands a worker may run, and is the only thing that lets one
-run anything at all. It is declared on the role and nowhere else: a worker that can edit
+`commands` names the shell commands a worker may run, and is the only thing that lets a worker
+run anything at all, but for one command below. It is declared on the role and nowhere else: a worker that can edit
 files can edit a settings file in the repository it is working, so an allowlist read from
 there is one the worker can widen for itself. One command is the exception: every worker may
 run `igor lore-search`, whatever its role's `commands` list (`lore-firing`'s *An Igor runs its
