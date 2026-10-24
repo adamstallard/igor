@@ -1,0 +1,109 @@
+# Runs TLC on the TLA+ model of the OpenSpec change lore-search: the hold that
+# keeps a flagged item, one handed back to a person, from being worked again,
+# and the release that lets it be worked again.
+#
+# - "TLC <config>": the change as specified. Each configuration the matrix
+#   below lists must pass, so a failure is a regression in the spec or the
+#   model. A configuration added to model/ runs only once it is listed.
+# - "TLC negative configurations": each rule the model showed the change
+#   needs is a constant in the model, and each file in model/negative/,
+#   named No<rule>.cfg, turns one of those rules off. TLC must find a violation there; a file that
+#   passes means the model does not show that rule is needed.
+# - No job runs model/findings/. Each file there finds a violation the rules
+#   do not prevent, recorded for the repository's owner to decide on; it
+#   keeps finding it until the spec's rules change.
+#
+# To move to another tla2tools.jar release, change TLA_TOOLS_VERSION and
+# TLA_TOOLS_SHA256 together: the checksum step rejects any other file.
+name: TLA+ lore-search
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'openspec/changes/lore-search/**'
+      - '.github/workflows/tla-lore-search.yml'
+  pull_request:
+    paths:
+      - 'openspec/changes/lore-search/**'
+      - '.github/workflows/tla-lore-search.yml'
+
+permissions:
+  contents: read
+
+env:
+  TLA_TOOLS_VERSION: v1.7.4
+  TLA_TOOLS_SHA256: 936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88
+
+jobs:
+  tlc:
+    name: TLC ${{ matrix.config }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - LoreSearchHolds.cfg
+          - LoreSearchHoldsShared.cfg
+          - LoreSearchHoldsLostRecord.cfg
+          - LoreSearchHoldsLiveness.cfg
+          - LoreSearchHoldsNotice.cfg
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Fetch tla2tools.jar and check its checksum
+        run: |
+          curl -fsSLo "$RUNNER_TEMP/tla2tools.jar" \
+            "https://github.com/tlaplus/tlaplus/releases/download/$TLA_TOOLS_VERSION/tla2tools.jar"
+          echo "$TLA_TOOLS_SHA256  $RUNNER_TEMP/tla2tools.jar" | sha256sum -c -
+      - name: Run TLC
+        working-directory: openspec/changes/lore-search/model
+        run: |
+          java -XX:+UseParallelGC -cp "$RUNNER_TEMP/tla2tools.jar" tlc2.TLC \
+            -workers auto -cleanup -metadir "$RUNNER_TEMP/states" \
+            -config "${{ matrix.config }}" LoreSearchHolds.tla
+
+  negative:
+    name: TLC negative configurations
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Fetch tla2tools.jar and check its checksum
+        run: |
+          curl -fsSLo "$RUNNER_TEMP/tla2tools.jar" \
+            "https://github.com/tlaplus/tlaplus/releases/download/$TLA_TOOLS_VERSION/tla2tools.jar"
+          echo "$TLA_TOOLS_SHA256  $RUNNER_TEMP/tla2tools.jar" | sha256sum -c -
+      - name: Run TLC on each negative configuration, expecting a violation
+        working-directory: openspec/changes/lore-search/model
+        run: |
+          # TLC exits 12 for a broken invariant and 13 for a broken temporal
+          # or action property. Any other code, including 0, fails this step.
+          failed=""
+          for cfg in negative/No*.cfg; do
+            echo "::group::TLC $cfg"
+            set +e
+            java -XX:+UseParallelGC -cp "$RUNNER_TEMP/tla2tools.jar" tlc2.TLC \
+              -workers 1 -cleanup -metadir "$RUNNER_TEMP/states-$(basename "$cfg")" \
+              -config "$cfg" LoreSearchHolds.tla
+            code=$?
+            set -e
+            echo "::endgroup::"
+            case $code in
+              12|13) echo "$cfg: violation found, as required" ;;
+              *) echo "::error file=openspec/changes/lore-search/model/$cfg::TLC exited $code; a violation was required"
+                 failed="$failed $cfg" ;;
+            esac
+          done
+          if [ -n "$failed" ]; then
+            echo "Failed:$failed"
+            exit 1
+          fi
