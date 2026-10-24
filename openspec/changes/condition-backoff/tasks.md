@@ -11,41 +11,98 @@
       seat token names the seat, an action-space refusal names the role's `allow`, and a crash
       whose cause is unknown still mints none and still defers
 
-## 2. The condition record
+## 2. Conditions from the execution log
 
-- [ ] 2.1 One record — cure key, scope, first and last occurrence, count, state — in the state
-      branch, keyed by cure key so several Igors write one condition
-- [ ] 2.2 Scope derived from the key rather than declared alongside it: role, seat or Igor
-- [ ] 2.3 Concurrent writers converge on one count rather than overwriting each other
-- [ ] 2.4 Tests: two Igors on one key, a restart mid-condition, a key whose scope is a seat
+- [x] 2.1 Rebuild each condition (cure key, scope, first and last occurrence, count, state,
+      cooldown, and the discriminator, a credential's hash, where the cure key does not identify
+      what is stuck) from `executions.ndjson`: every row carrying the cure key, of whatever kind
+      (a run, or a check row such as #143's seat probe writes), and its condition rows. A row of
+      the condition's scope without the key is an outcome that does not meet it. Store nothing
+      else
+- [x] 2.2 Scope derived from the key rather than declared alongside it: role, seat or Igor
+- [x] 2.3 Add a `kind` to execution-log rows, defaulting to a run so existing rows stay valid,
+      and append a condition row when a probe is taken. Update every reader of the log that
+      counts runs (spend attribution, capacity, `igor budget`, the credential report) to skip
+      rows of any other kind
+- [x] 2.4 A handoff observed against a different discriminator closes the open occurrence and
+      starts a new count rather than adding to it, with scope still derived from the key alone
+- [x] 2.5 Tests: two Igors on one key, a restart mid-condition, a key whose scope is a seat, and
+      a seat's second credential counting from one rather than inheriting the first's count
 
 ## 3. Stopping
 
-- [ ] 3.1 The gate declines where an open condition covers the role, before triage rather than
+- [x] 3.1 The gate declines where an open condition covers the role, before triage rather than
       per item
-- [ ] 3.2 The decline names the cure key and what would change it
-- [ ] 3.3 A distinct reason from exhaustion, pacing and an empty queue, in the cycle report and
+- [x] 3.2 The decline names the cure key and what would change it
+- [x] 3.3 A distinct reason from exhaustion, pacing and an empty queue, in the cycle report and
       the decision record
-- [ ] 3.4 Tests: a role stopped and a role sharing nothing still working; an operator telling
+- [x] 3.4 Tests: a role stopped and a role sharing nothing still working; an operator telling
       the four idle reasons apart from the record alone
+- [x] 3.5 Resolve each seat's credential and its hash before the condition gate declines a scope,
+      so a credential condition still sees a replaced credential while its scope is stopped and
+      clears at once rather than after the cooldown. Test: a seat stopped on token A, given token
+      B, is chosen on the next cycle with no probe taken
+- [x] 3.6 Settle the discovery watermark after the items are worked, keeping it earlier than any
+      item a cycle chose to claim and never took: because a condition opened, the budget ran out,
+      or the tracker gave no answer to its claim. An item whose claim the tracker answered and
+      refused is passed (Adam, 2026-10-13): every retry would meet the same refusal until the item
+      or a permission changed, and holding the mark would triage every later item again each
+      cycle. The `work-discovery` delta says so. Tests: an item left untaken by a budget, a
+      condition or an unanswered claim is triaged again next cycle; one whose claim the tracker
+      refused is not
 
 ## 4. Clearing
 
-- [ ] 4.1 After the cooldown, one item — whichever the scope would take next — runs with the
+- [x] 4.1 After the cooldown, one item — whichever the scope would take next — runs with the
       condition still open
-- [ ] 4.2 An outcome without the condition closes it; one with it reopens and lengthens the
-      cooldown
-- [ ] 4.3 A probe that produces no outcome at all leaves the condition open rather than
+- [x] 4.2 An outcome without the condition closes it; one with it stops the scope again, for a
+      longer cooldown
+- [x] 4.3 A probe that produces no outcome at all leaves the condition open rather than
       clearing it by default
-- [ ] 4.4 Tests: cured, still broken, probe item unavailable, a second probe after a longer
-      cooldown
+- [x] 4.4 A condition carrying a discriminator also clears the moment a different one resolves,
+      with no cooldown waited and no item spent
+- [x] 4.5 Build the credential condition from #65's branch (`breaker`), which is folded in here
+      instead of merging (Adam, 2026-10-11). Carry over `credentialCure`, the full-hash
+      `tokenFingerprint` on execution records (including `ambientFingerprint` for a seat naming no
+      token source, built as `credentialFingerprint`), the 401 test with its two paths (a worker
+      that threw and one that returned), the `rejected` verdict that `chooseSeat` checks before
+      any headroom, `igor budget --credentials`, and their tests. Leave out
+      `credentialBreaker`'s own trailing count, trip count and cooldown: the condition's count,
+      rebuilt from the log, and its threshold and cooldown replace them, so no seat is held by two
+      mechanisms
+- [x] 4.6 The seat's credential line in `igor budget` is its condition line, and its messages say
+      that a credential condition clears both on a different credential and on a probe that does
+      not meet it
+- [x] 4.7 Tests: cured, still broken, probe item unavailable, a second probe after a longer
+      cooldown, a replaced credential clearing at once, and no seat held by two mechanisms
+- [x] 4.8 The GitHub App credential stop `serve` holds in memory becomes an Igor-scoped
+      condition, `app:<identity>:credential`, observed against a full hash of the App's private
+      key, so a rotated key clears it at once as a replaced seat token does (#170). It opens on
+      the first refusal, not after the recurrence threshold, as the `app-identity` spec requires:
+      a refused App can do nothing on GitHub, so no item could find the cure. Its clearing check is
+      `serve`'s mint attempt, which spends no item, as a seat probe does for a seat
 
 ## 5. Not grading
 
-- [ ] 5.1 Config validation rejects any severity, rank or fatal flag on a condition
-- [ ] 5.2 Test that it does, with the rejection saying why rather than naming an unknown key
+- [x] 5.1 Config validation rejects any severity, rank or fatal flag on a condition
+- [x] 5.2 Test that it does, with the rejection saying why rather than naming an unknown key
 
 ## 6. Constants
 
-- [ ] 6.1 Threshold and cooldown configurable, defaults marked provisional in the code
-- [ ] 6.2 Record what they were reasoned from, since nothing has measured them
+- [x] 6.1 Threshold and cooldown configurable, defaults marked provisional in the code
+- [x] 6.2 Record what they were reasoned from, since nothing has measured them. #65's reasoning
+      is the starting point (`design.md`, *Folded in from #65*): a threshold of 3, and a cooldown
+      of 15 minutes doubling to a ceiling of 6 hours
+
+## 7. Merging
+
+- [x] 7.1 When merging, reword `docs/architecture.md` §6.3.4's "or by the condition record if
+      #101 lands" as present
+- [x] 7.2 When merging, if `main` still says "until a reply or an edit answers it"
+      (`docs/architecture.md` §5.0.2), reword it to say only someone with write access lifts a
+      deferral. #141 carries the same task; whichever merges first does it.
+      **Done here by moving it** (Adam, 2026-10-13); nothing of it remains open in this change.
+      `main` still lets a reply from anyone but the Igor lift a deferral, so the new wording would
+      be false until #141's implementation makes only a writer's reply lift one. The rewording
+      ships with that implementation, as task 6.1 of `defer-a-closed-pull-request` (PR #141,
+      branch `closed-pr-defers`)

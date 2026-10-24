@@ -170,7 +170,7 @@ function touched(...files: (string | [string, string])[]): { filename: string; s
 }
 
 function config(destination: string): Config {
-  return { destination, reviewers: ['abram'], experts: [], budget: { seats: [], pools: [] } }
+  return { destination, reviewers: ['abram'], experts: [], budget: { seats: [], pools: [] }, conditions: { threshold: 3, cooldownMs: 900_000, maxCooldownMs: 21_600_000 } }
 }
 
 function mergedPr(number: number): void {
