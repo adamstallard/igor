@@ -1370,8 +1370,9 @@ The probe is one minimal `claude -p` call with that seat's own configured token,
 stream-json --verbose`, run from an empty directory that *A seat probe runs where only the Igor
 can write* places and checks, so that no project's settings, skills, hooks or `CLAUDE.md` load
 beside the seat's token. Its environment SHALL be built entry by entry, not inherited from the
-Igor's, as task-execution
-requires of a worker's, holding no credential but the seat's token, with `HOME` set to a second
+Igor's, as task-execution requires of a worker's. Like a worker's, it SHALL hold the host's
+network settings and no credential but the seat's token and, where the host's proxy URL holds
+user info, that URL with its user info. Its `HOME` SHALL be set to a second
 empty directory that *A seat probe runs where only the Igor can write* places, so that no user-level settings or hooks of the account
 running Igor load either. It SHALL read the call's `rate_limit_event` and record
 it as a `stream` reading of that seat, exactly as a worker run's event is recorded. Where the seat's
@@ -1486,10 +1487,11 @@ its credential were cleared, so it stays unprobed until it could be used.
 - **WHEN** a seat is probed
 - **THEN** the call uses the cheapest model, a trivial prompt and no tools
 
-#### Scenario: A probe's environment holds only the seat's token
+#### Scenario: A probe's environment holds no credential but the seat's token and the host's proxy
 
 - **WHEN** a seat is probed
-- **THEN** the call's environment holds that seat's token and no other credential
+- **THEN** the call's environment holds that seat's token and no other credential but the user
+  info of the host's proxy URL, where the host's proxy URL holds user info
 
 #### Scenario: A probe that exits with an error is not retried at once
 

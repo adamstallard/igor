@@ -3,7 +3,8 @@
 ### Requirement: The worker is given an explicit environment holding no credential but its seat's token
 
 Execution SHALL construct the worker's environment rather than inheriting the Igor's, and that
-environment SHALL carry no credential other than the token of the seat the work is charged to. The
+environment SHALL carry no credential other than the token of the seat the work is charged to
+and, where a proxy URL in the host's network settings holds user info, that user info (below). The
 tokens of other seats, and the credential the Igor acts on its surfaces with (the code host and
 tracker it claims, comments and publishes on), MUST NOT be present. Where the chosen seat names a
 token variable that cannot be read — one that is unset, or set but empty — execution SHALL fail
@@ -25,8 +26,15 @@ inherited environment is therefore a set of credentials nothing in the worker ha
 one shell command away from a worker an item's text has steered.
 
 Only what running a toolchain requires is passed: the search path, a home directory, and the network
-settings the host is configured with. None of those is a credential, and a missing one shows as a
-toolchain error, never as the worker authenticating as something else. Under `igor serve`,
+settings the host is configured with. A missing one shows as a toolchain error, never as the
+worker authenticating as something else. The search path and the home directory hold no
+credential. A network setting can carry one: a proxy URL's user info, the host's own proxy
+credential. The worker gets it because a proxy that needs it is the worker's only way to the
+network, and it opens nothing but that proxy, none of the surfaces the Igor acts on. So that a
+worker that prints the proxy URL leaks nothing into what the Igor stores or posts,
+`redact-state-branch`'s (#217) *Credential redaction replaces every credential the Igor knows*
+registers that user info for redaction: the password and the whole URL, and a user name with no
+password only as `<user>@<host>`, never on its own. Under `igor serve`,
 where the worker runs as its worker user, `GIT_INDEX_FILE` is passed too, naming the index copy: the copy of git's index that #175
 keeps in the worker's outbox, the directory beside its tree where the worker leaves files for
 the Igor. It lets
@@ -72,6 +80,12 @@ the Igor. It lets
 
 - **WHEN** a worker runs a build or a test in its working tree
 - **THEN** the search path, home directory and network settings it needs are present
+
+#### Scenario: A proxy URL's user info reaches the worker
+
+- **WHEN** the host's `HTTPS_PROXY` is `http://alice:s3cretpass@proxy.internal:3128`
+- **THEN** the worker's environment holds that `HTTPS_PROXY`, user info included
+- **AND** it holds no other credential but the seat's token
 
 #### Scenario: A worker running as its own user is given its index copy
 

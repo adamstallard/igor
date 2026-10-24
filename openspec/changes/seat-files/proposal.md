@@ -426,8 +426,28 @@ Adam's answers of 2026-10-21:
     *Rejected:* relying on decision 11's instruction that no seat be lent until #175 is built.
     Nothing in the code enforced that instruction, and the lender guide and `igor-agent`, which
     invite lending, ship with this change.
+79. **A proxy URL's user info is the one credential besides the seat's token that the worker
+    gets** (Adam, 2026-10-21, from #217's consistency read). `task-execution`'s requirement *The
+    worker is given an explicit environment holding no credential but its seat's token* said no
+    network setting is a credential. But #217 registers a forwarded proxy URL's password and
+    whole URL as credentials to redact, and a user name with no password as `<user>@<host>`,
+    never on its own. That requirement now says a network setting can carry this user info,
+    which #217 registers. Its title is unchanged for now (see *Still open*).
+80. **A seat probe's environment carries the proxy URL's user info too** (proposed by this
+    change's author on 2026-10-24, from a consistency read, for Adam's approval). The probe's
+    environment is built as a worker's, and on a host whose proxy needs the user info, a probe
+    without it could not reach Anthropic, so the seat would never be read. *Rejected:* keeping the
+    probe to the seat's token alone, which would break every probe on such a host.
 
 **Still open.** The smaller choices 47 to 56 await Adam's approval with the change. Besides them:
+
+- **For Adam: the title of *The worker is given an explicit environment holding no credential
+  but its seat's token*.** Since decision 79 the body also allows a proxy URL's user info, so
+  the title says less than the rule. Renaming it would also change one line of #216's task 5.1,
+  which cites this title. *Recommendation:* rename it to *The worker is given an explicit
+  environment holding no credential but its seat's token and its proxy URL's user info*, and
+  report the new name to #216.
+- **For Adam: decision 80**, the seat probe's proxy user info, proposed for approval.
 
 - **Findings of a further consistency read on 2026-10-21, new and not fixed here,** for whoever
   next edits this change. A read-cleared condition that opens only after several failing reads
