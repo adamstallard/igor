@@ -24,15 +24,16 @@ entries holding a `SKILL.md` in `~/.claude/skills` of the `HOME` Igor starts wit
 Igor sets the worker's `HOME` to the run's home. Igor SHALL assemble a plugin directory for the
 run in its state directory, at a path of Igor's choosing whose name holds the run's id (for example
 `<state directory>/plugin/<role>-<run>`), holding a `.claude-plugin/plugin.json` naming the plugin `igor` and, under `skills/`, one symbolic link
-per such entry, to the entry's resolved path. For that run, that directory SHALL be
+per such entry that the role's `skills` list (#153) names, to the entry's resolved path, and none
+for an installed skill the role does not list (Adam, 2026-10-24). For that run, that directory SHALL be
 `skills_dir`, and every rule of this capability that names `skills_dir` applies to it; none of
 them requires a skill to be at a particular commit, so none is exempt. The run
 SHALL remove the directory when it ends, and SHALL say as it starts that it loaded the person's
 skills, naming `~/.claude/skills`. That these skills are not pinned, and that the worker can
 write them, are limits of `igor run`.
 
-Where `skills_dir` does not exist and `~/.claude/skills` is missing or holds no such entry,
-`igor run` SHALL load no skills: no call it makes SHALL carry `--plugin-dir`, it SHALL make no startup check (*Igor
+Where `skills_dir` does not exist and `~/.claude/skills` holds no entry the role's `skills` list
+names, as when it is missing or the role lists no skill, `igor run` SHALL load no skills: no call it makes SHALL carry `--plugin-dir`, it SHALL make no startup check (*Igor
 confirms its skills load before its first model call*), and it SHALL say as it starts that the
 skills were not loaded, naming `skills_dir` and `~/.claude/skills`.
 
@@ -44,18 +45,20 @@ skills were not loaded, naming `skills_dir` and `~/.claude/skills`.
 
 #### Scenario: run uses the skills the person installed
 
-- **WHEN** `igor run` starts on a machine where `skills_dir` does not exist, and the person's
-  `~/.claude/skills` holds `prose` and `bug-hunter`, each a link into their shared-skills clone
+- **WHEN** `igor run` starts on a machine where `skills_dir` does not exist, the person's
+  `~/.claude/skills` holds `prose`, `bug-hunter` and `slack-post`, each a link into a clone,
+  and the role's `skills` list names `prose` and `bug-hunter`
 - **THEN** each call that carries `--plugin-dir` names a directory the run assembled, whose
-  `skills/` links to those two skills, and they load as `igor:prose` and `igor:bug-hunter`
+  `skills/` links to those two skills and not to `slack-post`, and they load as `igor:prose`
+  and `igor:bug-hunter`
 - **AND** the run says as it starts that it loaded the skills in `~/.claude/skills`
 - **AND** the startup check runs against that directory
 - **AND** the directory is gone once the run ends
 
 #### Scenario: run loads no skills where neither is installed
 
-- **WHEN** `igor run` starts on a machine where `skills_dir` does not exist and the person's
-  `~/.claude/skills` holds no skill
+- **WHEN** `igor run` starts on a machine where `skills_dir` does not exist, and the person's
+  `~/.claude/skills` holds no skill, or holds `slack-post` only and the role lists only `prose`
 - **THEN** it says as it starts that the skills were not loaded, naming both paths
 - **AND** no call it makes carries `--plugin-dir`, and it makes no startup check
 
@@ -91,8 +94,7 @@ skills were not loaded, naming `skills_dir` and `~/.claude/skills`.
 
 Every `claude -p` process Igor spawns SHALL carry `--plugin-dir <skills_dir>`, with two
 exceptions. The usage read (`runUsage`, which the budget gate and `igor budget` run) only reads a
-seat's usage and SHALL NOT carry it. And under `igor run` where neither `skills_dir` nor the
-person's installed skills exist, no call carries it (*Skills come from one plugin directory the
+seat's usage and SHALL NOT carry it. And under `igor run` where `skills_dir` does not exist and the person's installed skills hold none the role's `skills` list names, no call carries it (*Skills come from one plugin directory the
 server names*). Otherwise, the calls that carry it are the worker, triage, the startup check,
 #143's seat probe and every other model step. A *model step* is one part of Igor's work done by
 a model: one `claude -p`, alone or with the `claude -p --resume` calls that continue its session,
@@ -102,8 +104,10 @@ call SHALL pass `--bare`.
 The worker invokes an `igor:<name>` skill itself, through the Skill tool, when its task calls
 for it.
 
-The flag loads every skill installed under `skills_dir` for every role. A role's `skills` list
-(#153) does not decide what loads.
+Under `igor serve`, the flag loads every skill installed under `skills_dir` for every role, and a
+role's `skills` list (#153) does not decide what loads. Under `igor run` where `skills_dir` does
+not exist, the run's assembled plugin directory takes its place, and it holds only the installed
+skills the role's list names, so there the list decides what loads.
 
 #### Scenario: The worker names the directory
 
@@ -291,7 +295,10 @@ task.
 When each model step Igor starts in the worker's home exits, Igor SHALL copy that step's session
 log, the file Claude Code writes for the session under `~/.claude/projects/`, into Igor's state
 directory, before the next reset of that home. The steps are the worker, the model steps #153
-runs after it, and #189's second run of the worker after a failed check. Igor's state directory
+runs after it, and #189's second run of the worker after a failed check. Igor SHALL delete no copy of a flagged execution itself: #216 keeps those copies until `igor
+release` of the execution's hold deletes them, and no longer (Adam, 2026-10-24). How long a copy
+from an execution that ends unflagged, which no release reaches, is kept is open, and no
+scenario covers it until Adam decides. Igor's state directory
 is the one #216's `graceful-handoff` requirement *A handoff states what was done, what remains, and who could continue* defines.
 
 Igor SHALL redact each log as it copies it, with credential redaction, as `redact-state-branch`
@@ -363,9 +370,11 @@ Which seat it spends:
   list says.
 - **Under `igor run`,** which makes no probe (#171), the call spends the run's implicit local
   seat, the one seat `igor run` makes from the token in `IGOR_RUN_TOKEN` (#171), through the
-  gate; its two directories are new temporary directories.
+  gate; its two directories are new directories under Igor's state directory, as #216 defines
+  it, not under the system's temporary directory, which other users of the host can write
+  (Adam, 2026-10-24).
 
-Under `igor run` where neither `skills_dir` nor the person's installed skills exist, no check is
+Under `igor run` where `skills_dir` does not exist and the person's installed skills hold none the role's `skills` list names, no check is
 made (*Skills come from one plugin directory the server names*); where the run assembled a
 plugin directory from the person's skills, the check runs against it. Where Igor can neither
 probe a seat nor spend one the gate names when it starts, as when the gate has found every seat
@@ -488,8 +497,15 @@ checked, and the check still passes on the list alone.
 
 #### Scenario: A single held-off seat with no reading waits
 
-- **WHEN** `igor serve` starts with one seat, which has no reading and is in #143's back-off
+- **WHEN** `igor serve` starts with one seat, which keeps a reserve, so the gate draws on it only
+  once it has a reading, has no reading, and is in #143's back-off
 - **THEN** the gate has no seat to spend, and no check runs until that seat may be probed
+
+#### Scenario: Under igor run, the check's directories are under the state directory
+
+- **WHEN** `igor run` makes its startup check
+- **THEN** the check's working directory and `HOME` are new directories under Igor's state
+  directory, not under the system's temporary directory
 
 #### Scenario: No seat to spend, no check yet
 

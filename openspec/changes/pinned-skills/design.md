@@ -262,7 +262,12 @@ and Igor passes them explicitly:
    `<state directory>/plugin/<role>-<run>`, where the state directory is the one decision 32
    names. It holds `.claude-plugin/plugin.json`, as
    `{"name": "igor", "version": "0.0.0", "description": "the person's installed skills"}`, and
-   under `skills/` one link per skill, to the entry's resolved path. Each link then points
+   under `skills/` one link per skill the role's `skills` list names (proposal, decision 37), to
+   the entry's resolved path. Where the role lists none of the installed skills, no directory is
+   built and the run loads no skills, as where `~/.claude/skills` holds none. Linking only the
+   listed skills keeps a skill that acts with the person's own credentials, such as one that
+   posts to chat, out of a worker whose role does not ask for it; on a server, by contrast,
+   `/opt/igor/skills` holds only the pinned shared skills, which act with no one's credentials. Each link then points
    straight at a directory, never through a chain of links, as the manager's own links do.
 3. For the run, that directory is `skills_dir`. Every call that carries `--plugin-dir` names it,
    each skill loads as `igor:<name>`, and the startup check runs against it, including its refusal of a
@@ -271,11 +276,12 @@ and Igor passes them explicitly:
 
 The startup check reports each skill's commit as it does on a server. The person's clone is
 owned by the user Igor runs as, so Igor reads its commit without the `-c safe.directory` option
-it passes for a root-owned clone (proposal, decision 19). The copied `manage-skills` directory
-is in no clone, so its commit is reported as not checked. As the run starts, before the startup
+it passes for a root-owned clone (proposal, decision 19). A skill linked into the run's
+plugin directory whose entry is in no clone, such as the copied `manage-skills` directory, has
+its commit reported as not checked. As the run starts, before the startup
 check, it prints a line saying it loaded the person's skills, naming `~/.claude/skills`.
 
-Where `~/.claude/skills` is missing or holds no skill either, the run loads none: no call
+Where `~/.claude/skills` is missing or holds no skill the role lists, the run loads none: no call
 carries `--plugin-dir`, no startup check is made, and the run says so as it starts, naming
 `skills_dir` and `~/.claude/skills`. #153 refuses a role that lists a skill not installed, in every command that runs a model
 step, a dry run included, so such a run starts only for a role whose `skills` list is empty.
@@ -298,9 +304,12 @@ the name differs, because no `igor:<name>` would be listed.
 ### One plugin directory for every role
 
 **The coordinating agent's choice (2026-10-11), which Adam let stand on 2026-10-19.** Every call
-carries the one `--plugin-dir <skills_dir>`, so every installed skill loads for every role. A
-role's `skills` list (#153) decides which skills its worker is directed to use and which Igor
-verifies, not what loads. A plugin directory per role would mean one directory per distinct
+carries the one `--plugin-dir <skills_dir>`, so on a server every pinned skill loads for every
+role. A role's `skills` list (#153) decides which skills its worker is directed to use and which
+Igor verifies, not what loads. Under `igor run` without `skills_dir`, the run's own plugin
+directory holds only the listed skills (proposal, decision 37), for the reason under *Where the
+skills are*: the person's skills may act with their credentials. The reasoning below is for the
+server's one directory. A plugin directory per role would mean one directory per distinct
 list to install, pin and check at start, and it would protect little: a loaded skill the role
 does not list is neither directed nor run by Igor's code, which #153 does per listed skill. The
 worker can still invoke such a skill through the Skill tool, but that only runs the pinned,
@@ -451,9 +460,11 @@ ranks shares no home with them, and two `igor run`s of one role at once each hav
 reading the skill list from the `system/init` event of one call. Issue #152 suggests reading that
 list from #144's startup self-test, which #144 proposes to run once per seat and which is not yet
 specified. The check here runs once per start:
-`claude -p --model haiku --plugin-dir <skills_dir>`, from an empty temporary directory, with an
-environment holding only `PATH`, the host's network settings, a `HOME` that is another empty
-temporary directory, and one seat's token. Its prompt is one word, such
+`claude -p --model haiku --plugin-dir <skills_dir>`, with the `--setting-sources user` every
+call carries, from an empty directory, with an environment holding only `PATH`, the host's
+network settings, a `HOME` that is another empty directory, and one seat's token. Where the
+check is a seat's probe, both directories are #143's probe directories; under `igor run` they
+are new directories under Igor's state directory (proposal, decision 39). Its prompt is one word, such
 as `ok`, and goes on stdin, as #175 requires of every call's prompt. It is an ordinary call: it
 spends that seat and is recorded like any other, and that it authenticates shows the seat's token
 works. The empty `HOME` keeps the service user's home skills out of the list the check reads, and
@@ -479,7 +490,10 @@ with an empty `HOME`, as the paragraph above requires. The check keeps its own a
 model, may differ in that way is a question for Adam in the proposal's *Still open*. Where every seat already has an unexpired reading at start, no probe is due, and the
 check spends the seat the gate chooses. `igor run` makes no probe (#171), so there the check
 spends the run's implicit local seat, the one seat `igor run` makes from the token in
-`IGOR_RUN_TOKEN`, through the gate, from two new temporary directories.
+`IGOR_RUN_TOKEN`, through the gate, from two new directories under Igor's state directory
+(proposal, decision 39). Where a seat is due a probe but #143's hourly limit or back-off holds
+it off, the check does not wait for it: it spends the seat the gate chooses (proposal, decision
+36).
 
 **It runs on haiku** (Adam, 2026-10-18): the skill list does not depend on the model, and
 haiku costs about a twentieth of the default model's price for the same call.

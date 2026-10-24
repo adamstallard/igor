@@ -61,7 +61,8 @@
       run in its state directory, such as `<state directory>/plugin/<role>-<run>`: a
       `.claude-plugin/plugin.json` of
       `{"name": "igor", "version": "0.0.0", "description": "the person's installed skills"}`,
-      and under `skills/` one symbolic link per entry, to its resolved path. That directory is the
+      and under `skills/` one symbolic link per entry the role's `skills` list (#153) names, to
+      its resolved path, and none for an entry the role does not list (proposal, decision 37). That directory is the
       run's `skills_dir` for every rule here, and the run removes it when it ends, on an error
       too. It prints this as it starts, where `<configured path>` is `/opt/igor/skills` or the
       path `IGOR_SKILLS_DIR` names, not the assembled directory (may be reworded):
@@ -164,6 +165,10 @@
       the worker exits and a later call resets the home, the record names a file that still
       exists and holds the log; a log replaced by a link to a file only Igor can read is not
       copied, and the record says so
+- [ ] 2.9 Add no deletion of session log copies of your own: #216's `igor release` deletes a
+      flagged execution's, and how long an unflagged execution's are kept waits on Adam
+      (proposal, decision 38 and *Still open*). Test: a flagged execution's copies are still
+      there after it ends
 
 ## 3. Startup check
 
@@ -179,9 +184,10 @@ check exits 78 wherever it runs.
       directory, and one seat's token. Under `igor serve`, make it the first seat probe after
       the start, through #143's probe code, in the two directories #143 places under
       `/var/lib/igor/probes`, recording its `rate_limit_event` as that seat's reading; where no
-      seat is due a probe, spend the seat the budget gate chose. Under `igor run`, spend the
-      implicit local seat, with the token in `IGOR_RUN_TOKEN`, from two new temporary
-      directories (proposal, decision 28). Let the call run to its `result` event and record its
+      seat may be probed, because none is due or #143's hourly limit or back-off holds off every
+      seat that is, spend the seat the budget gate chose (proposal, decision 36). Under `igor run`, spend the
+      implicit local seat, with the token in `IGOR_RUN_TOKEN`, from two new directories under
+      Igor's state directory (proposal, decisions 28 and 39). Let the call run to its `result` event and record its
       cost against that seat as any call's is. Where no seat can be probed and the gate names
       none, make no call, and run the check before the first model call, once a seat can be
       probed or the gate names one. Read
@@ -242,7 +248,10 @@ check exits 78 wherever it runs.
       even when the process has one; its `HOME` is not the service user's; its spend is recorded
       against that seat; under `igor serve` with one reserved seat and no reading, the check is
       that seat's probe and its reading is recorded; with every seat read, it spends the seat
-      the gate chose; and with no seat to probe or spend it is not made
+      the gate chose; with a seat due a probe but held off by the hourly limit or back-off,
+      and another seat read, it spends the seat the gate chose; under `igor run` its working
+      directory and `HOME` lie under the state directory; and with no seat to probe or spend it
+      is not made
 
 ## 4. The pinned shared-skills commit
 
