@@ -229,11 +229,12 @@ environment (the worker-environment requirement), so the start-up check sets `sa
   decision 33; task 3.6). Two costs follow. A Git LFS repository is not supported until a later
   change defines filters the Igor trusts: an LFS file is checked out, read and published as its
   pointer. And #137 publishes a file stored through a clean filter as the filter's output; with
-  no filter defined, that output is the file as it stands, which the proposal lists as a
-  conflict. The checkout runs without the global configuration too. The code on `main` checks
-  out with it, so LFS's smudge filter writes each file's real content; a later read without
-  it, which runs no clean filter, would then see every LFS file as changed. Checking out
-  without it leaves pointers in the tree, which every later read agrees with.
+  no filter defined, that output is the file as it stands, the pointer, which may be what #137
+  expects or may not, if #137 means the real content. The checkout leaves out the global
+  configuration for a reason of its own: a checkout made with it, as the code on `main` makes
+  one, runs LFS's smudge filter and writes each file's real content, and a later read without
+  it, which runs no clean filter, would then see every LFS file as changed. A checkout without
+  it leaves pointers in the tree, which every later read agrees with.
 - A nested repository is the exception: its own `.git/config` is the worker's, and git running
   in the outer tree can recurse into it and run a filter that file defines. So every git command
   the Igor runs in a tree also passes `-c submodule.recurse=false` and `--ignore-submodules=all`
@@ -650,11 +651,15 @@ checks worker isolation when it starts. That is a later edit to its branch, not 
 - **`run` sweeps its own trees and a gone run's** (Adam, 2026-10-18, 2026-10-19 and
   2026-10-21). Under #179 `run` is rank 0, so its trees are `<role>-0-<id>`, and each run's
   `<id>` begins with its own run id (#179), so two runs of one role at once make different
-  trees. It removes its own trees. At its start it also removes the trees and the worker home of
-  an earlier run of its role that is gone (#179's decision 39). Each run holds a lock on
+  trees. It removes its own trees. At its start it also removes the trees, the worker home and
+  the plugin directory of an earlier run of its role that is gone; the plugin directory is the
+  one #174 assembles for each run from the person's installed skills. Which of these a run
+  removes, and when, is #179's rule (#179's decision 39), which this change cites; what this
+  change decides is the user that removes them. Each run holds a lock on
   `<role>-0-<run id>.lock`, in the trees' directory, which the system releases when the run's
-  process ends, so a run that can take another run's lock knows that run is gone. It removes
-  them as the Igor's own user, with no `sudo`, the user its worker ran as. The worker home is
+  process ends, so a run that can take another run's lock knows that run is gone. The run
+  removes its own trees and the gone run's as the Igor's own user, with no `sudo`, since that
+  is the user its worker ran as. The worker home is
   the `HOME` #174 sets for each run's `claude -p` calls, apart from the developer's own home,
   and #174 removes it when the run ends. A tree a `serve` instance
   left belongs to that instance's worker user, which `run` cannot act as, and `run` leaves it.

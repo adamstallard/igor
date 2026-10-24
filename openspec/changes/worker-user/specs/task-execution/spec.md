@@ -11,7 +11,12 @@ gone rank of its role left SHALL build that rank's worker user the same way, as
 `igor-worker-<role>-<rank>` from its own role and the number of the gone rank that #179's sweep
 finds. The unit's `User=` and `Group=` SHALL name the service user and its group. The name SHALL NOT be read from `igor.config.yaml` or any other lore file. Under `igor serve`, execution
 SHALL run the worker as that user, and every process the worker starts SHALL run as that user
-too. Every other `claude -p` the Igor starts with the
+too. Before each `sudo` that passes the worker a secret, which is the worker's spawn and each
+later `claude -p` started in the worker's tree, the Igor SHALL run
+`sudo -n -u <worker user> true`, which passes none, and where that is refused SHALL fail the run
+without the spawn, so a refusal sudo logs never holds the seat token. A refused check SHALL be
+recorded as a failed spawn of the worker is, under the condition key decision 31 of this
+change's proposal scopes to the whole Igor. Every other `claude -p` the Igor starts with the
 worker's tree as its working directory SHALL run as that user as well, such as #153's bug hunt
 and prose pass. No prose or bug-hunter script SHALL run as that user: the Igor runs them as the
 service user (*The Igor stages only after its checks, and #153's trailers bind the last staging*). No
@@ -41,6 +46,13 @@ system's file permissions are the barrier that holds whatever the worker runs.
 
 - **WHEN** a worker reads the Igor process's environment through `/proc`
 - **THEN** the read is refused
+
+#### Scenario: A refused sudo logs no seat token
+
+- **WHEN** a sudoers line the start check found was removed after the start, and `igor serve`
+  is about to spawn a worker
+- **THEN** its `sudo -n -u igor-worker-<role>-<rank> true`, which carries no secret, is refused,
+  and the Igor fails the run without spawning, so no journal line holds the seat token
 
 #### Scenario: The seat token is not on a command line
 
@@ -789,7 +801,9 @@ with them; the Igor registers that user info as #217 says. A later change
 that hands a worker user another secret SHALL declare it in the server's own configuration, never
 in lore, and register it the same way. In both modes, the Igor SHALL NOT hand over a secret shorter than 8 characters,
 which `rememberSecret` does not register; it SHALL fail the run instead, naming the secret's
-source.
+source. A proxy URL's user name with no password is registered with the rest of the user info,
+but bound to its host, as `<user>@<host>`, which is how #217 registers it, and so is not a
+secret this 8-character rule applies to.
 
 A proxy URL's password is the exception to failing the run. Where a proxy URL the Igor would pass
 on from its own environment holds a password of 1 to 7 characters, counted after

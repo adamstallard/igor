@@ -303,20 +303,23 @@
 - [ ] 4.1 Under `serve`, `killTree` and `killLiveWorkers` run
       `sudo -n -u <worker> -- pkill -KILL -u <worker>`, synchronously in the `exit` handler, and
       the Igor runs the same kill before each reset of the worker's home, once the last model
-      step exits, after #189's checks and before a release (proposal, decision 27). No process
-      left to kill, `pkill`'s status 1, is not an error. Under `run` the kill stays a kill of the
+      step exits, after #189's checks and before a release (proposal, decision 27). Each kill
+      also runs the check that 5.8 runs before a spawn, `sudo -n -u <worker> true`, though a kill
+      passes no secret: a refused `sudo` exits 1, as `pkill` does when no process is left to
+      kill, so the check is how the two are told apart. No process left is not an error; a
+      refused check fails the run before anything is read or staged. Under `run` the kill stays a kill of the
       worker's process group.
 - [ ] 4.2 `ClonedTree.release()` and the startup sweep first run
       `sudo -n -u <worker> -- rm -rf -- <tree> <outbox>`, then the Igor's own removal of the
       tree, the outbox and the git directory. The second runs even when the first fails. Under
-      `run`, which #179 makes rank 0, the trees carry the run id #179's *The sweep removes trees
-      by rank, never by age* gives each run, and the lock each run holds on
-      `<role>-0-<run id>.lock`, which #179's tasks build. `run` removes its own trees and, at its
-      start, the trees and the #174 worker home of an earlier run of its role whose lock it can
-      take, as the Igor's own user with no `sudo`. It leaves a tree of a run whose lock it cannot
-      take, and any other rank's or role's (proposal, decisions 25 and 39).
+      `run`, which #179 makes rank 0, each run's trees carry the run id #179's *The sweep removes
+      trees by rank, never by age* gives it, and each run holds a lock on
+      `<role>-0-<run id>.lock`; #179's tasks build both. `run` removes its own trees and, at its
+      start, the trees, the #174 worker home and the #174 plugin directory of an earlier run of
+      its role whose lock it can take, as the Igor's own user with no `sudo`. It leaves a tree of a run whose lock it cannot
+      take, and any other rank's or role's (this change's decisions 25, 39 and 50).
 - [ ] 4.3 Tests with an injected runner: `run`'s sweep leaves a live run's rank-0 tree and
-      another rank's tree, and removes a gone run's tree and home; two runs of one role at once make trees with different names; the kill and
+      another rank's tree, and removes a gone run's tree, home and plugin directory; two runs of one role at once make trees with different names; the kill and
       the removal argv; the kill by user before the tree is read and after the checks; a failed
       first removal still leads to the second.
 
@@ -485,6 +488,11 @@
       holds `HTTPS_PROXY` but neither `pw12` nor the URL; `http://alice@proxy.internal:3128` and
       `http://alice:@proxy.internal:3128` start, with the name registered with its host and never
       as `alice` alone
+- [ ] 5.8 Before each `sudo` that passes the worker a secret, the worker's spawn and each later
+      `claude -p` in its tree, the Igor runs
+      `sudo -n -u <worker user> true`, and where that is refused, fails the run without the spawn
+      (proposal, decision 52). Test: with the worker's sudoers line removed after the start
+      check, the run fails, no worker is spawned, and the token appears in no journal line
 
 ## 6. Measurements
 

@@ -314,15 +314,15 @@
     name a filter the service user's or the system's configuration defines, such as
     `filter.lfs`, and the Igor's `git add` would run it. With both variables set, the only
     configuration is the Igor's own git directory's, which defines none. The clone and checkout
-    run the same way, so an LFS file is checked out and published as its pointer. This
-    conflicts with #137's rule that a file stored through a clean filter is published as the
-    filter's output; the spec says so.
+    run the same way, so an LFS file is checked out and published as its pointer. #137
+    publishes a file stored through a clean filter as the filter's output, which with no filter
+    defined is the pointer; that conflicts only if #137 means the real content, which is open.
 34. **The in-force ambient login stands until #171 archives** (Adam, 2026-10-19). The in-force
     `seat-budget` lets a seat name no token, and an organization with no seats run on the ambient
     login, until #171 removes both; it archives after this change in #204's order. What is built
     follows decision 21, so the disagreement is in the spec text only.
 35. **Citations ahead of #204's order are accepted** (Adam, 2026-10-19). This change archives
-    seventh in #204's order, after #120, #137 and #217, whose requirements it cites, but it cites text
+    eighth in #204's order, after #120, #137 and #217, whose requirements it cites, but it cites text
     that #174, #171, #179, #82, #208, #153 and #189 add later. #189, #137 and #120 had no place
     in #204's order before; they now have one, so the order says when each requirement this
     change cites comes into force.
@@ -474,8 +474,8 @@ both wait for his approval.
     key file, and the worker would get the key as its seat token; `token_command` runs a command
     lore names, as the service user. Built after #171's seat code, the worker spawn never meets
     such a seat. #217 adds `rememberSecret`, which decision 41 calls, and the requirement this
-    change cites for it, so #204 places #217 sixth and this change seventh; #217 cites no other
-    change's requirement, so nothing requires it to archive later than sixth.
+    change cites for it, so #204 places #217 seventh and this change eighth. #217 cites no other
+    change's requirement, so it depends on none archived after it, and seventh is allowed.
 47. **A check inherits the worker's proxy settings, password included** (Adam, 2026-10-21,
     reversing this change's recommendation to strip such a URL from a check's environment).
     Under `serve` the worker is given the
@@ -511,6 +511,23 @@ both wait for his approval.
     only that `igor run` removes them as the Igor's own user and without `sudo`. This change's
     spec had stated the rule itself, and had left out the plugin directory.
 
+51. **A proxy user name with no password is not a secret on its own** (Adam, 2026-10-24).
+    Decision 48 keeps such a URL from refusing the start; this decision also keeps it from
+    failing each run. #217 registers the name bound to its host, as `<user>@<host>`, so the rule
+    that fails a run rather than hand over a secret under 8 characters does not apply to it.
+    It stands whatever Adam decides on decision 49, whose scenario covers this case too.
+52. **Before each `sudo` that passes the worker a secret, the Igor runs
+    `sudo -n -u <worker user> true`** (Adam, 2026-10-24). Sudo writes a command it refuses to
+    the journal with the variables it would have passed, so a refused spawn would log the seat
+    token. Where a sudoers line was removed or edited after the start check, the check is
+    refused instead, carrying no secret, and the Igor fails the run without spawning. A line
+    broken in the milliseconds between the check and the spawn would still log the token; that
+    window is accepted. The `sudo` calls that pass a secret are the worker's spawn and each
+    later `claude -p` in the worker's tree. A refused check counts as a failed `sudo` spawn
+    under decision 31, recorded under its key scoped to the whole Igor, so the Igor stops taking
+    items rather than fail each in turn; that is this change's reading of decision 31, which
+    Adam can change with it (*Where a failed `sudo` spawn's condition stops*, below).
+
 **Still open:** an item marked *for Adam* waits on his decision; the rest wait on a measurement
 or on another change.
 
@@ -520,22 +537,20 @@ or on another change.
   proxy password is not refused, and the refusal for a metadata endpoint names the variable,
   not the URL. If he turns it down, those two passages go, with the scenario *A proxy user name
   with no password is registered with its host*.
-- **For Adam, from the 2026-10-24 consistency read: does a proxy user name with no password
-  count as a secret handed over?** The spec hands the worker the user info of a proxy URL, and
-  fails each run, though not the start, that would hand over a secret under 8 characters. So
-  with a URL such as `alice@proxy`, every run fails, the endless failure decision 48 rejected,
-  while the spec's passage on short passwords says such a URL does not refuse the start.
-  `<user>@<host>` can also be under 8 characters, and #217 registers nothing that short, so
-  such a name would go unredacted. *Recommendation:* a user name with no password is not a
-  secret, neither for the 8-character rule nor for redaction, so nothing changes in #217.
-- **For Adam, from the same read: whether a refused `sudo` logs the seat token.** Sudo logs
-  every preserved variable with its value (measurement 6.5); whether a refused spawn's journal
-  line carries `ENV=` with the seat token is unmeasured (task 6.12). A spawn would be refused
-  if someone removed or edited a sudoers line after the start check passed. *Recommendation:*
-  before each spawn, Igor runs `sudo -n -u <worker> true`, which carries no token, and where
-  that is refused, it fails the run without spawning, so a refusal it causes carries no token.
-  A line broken between the two calls, milliseconds apart, would still log it.
 - **Other findings of the 2026-10-24 consistency read, for this change's authors:**
+  - From a second consistency read on 2026-10-24, after the first one listed above: no release
+    removes the `<tree>-prompt` directory, so a long-running `igor serve` leaves one per run
+    until its rank restarts; the deployment guide's note that `serve` under `launchd` refuses
+    for `protected_hardlinks` names a refusal macOS never reaches, since marking the Igor not
+    dumpable, the first thing it does, already refuses there; task 1.2's spawn command has no
+    step resetting the worker's home, though the design makes that reset part of the spawn;
+    whether `gh` finds a person's login from decision 44's list of the environment variables a
+    person's `gh` call keeps is unmeasured, the keyring needing `DBUS_SESSION_BUS_ADDRESS` and
+    `XDG_RUNTIME_DIR`, and the list drops `GH_ENTERPRISE_TOKEN` and `GITHUB_ENTERPRISE_TOKEN`;
+    whether the worker user's `sudo -n -l` mails root "user NOT in sudoers" on every start is
+    unmeasured; the *lore checkout* is defined here and in #208 in different words; and the
+    spec restates #82's rule that a refusing process marked as running under compose waits
+    before it exits, where a citation would do.
   - The start check proves the worker can execute `claude` but not that it cannot write
     `claude`, `git` or `gh`, or the directories they resolve from, which the Igor runs as its own
     user; a writable `claude` would run the worker's code as the Igor the next time the Igor
@@ -638,9 +653,7 @@ or on another change.
   approving the rules above; each is a fix to this text or another change's. Task 1.10 removes
   the live `/usage` read, but #143's *A seat's fullness is read from the seat, not supplied by a
   person* still requires it, and #171's *A spend with no seat behind it is not made* names it;
-  one of the three changes needs a `seat-budget` delta. `igor run`'s sweep of its own trees
-  restates #179's rule and scenario. The proposal says the spec states a conflict with #137
-  over clean filters, which the spec does not, and #137 may not conflict at all. With this
+  one of the three changes needs a `seat-budget` delta. With this
   change built before #179 and #174, as issue #204 builds them, `/etc/igor/%i.env` is neither
   probed nor reported as not checked, and the probes of #174's template and `skills_dir` have
   nothing to probe and no "not checked" outcome. The refusal for a dumpable Igor points at the
@@ -674,9 +687,9 @@ or on another change.
 
 - **Git LFS and #137.** #137's *An artifact carries a changed path as the tree holds it*
   publishes a file stored through a clean filter as the filter's output. Under decision 33 the
-  Igor defines no filter, so that output is the file as it stands. The spec states the
-  conflict; #137 says whether its rule waits for the later change that defines trusted
-  filters.
+  Igor defines no filter, so that output is the file as it stands, the pointer. That conflicts
+  only if #137 means the real content; the question is #137's to answer, with whether its rule
+  waits for the later change that defines trusted filters.
 
 - **Where a failed `sudo` spawn's condition stops, for Adam.** Decision 31 records it under a
   cure key scoped to the whole Igor. Under #101 that scope is the Igor's App identity, which is
