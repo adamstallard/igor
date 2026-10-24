@@ -276,6 +276,15 @@
     gone (#179's decision 48, which Adam confirmed on 2026-10-21). Where the new run cannot take
     an earlier run's lock, it removes nothing of that run's. `igor run --plan` removes nothing.
 
+36. **Where no seat may be probed at start, the startup check spends the seat the gate
+    chooses** (Adam, 2026-10-24). A seat due a probe may be held off by #143's hourly limit, for
+    up to an hour, or by its back-off after a failed probe, for up to five hours. Where some seat
+    may be probed, the check is that seat's probe. Where none may, the check makes its call on
+    the seat the budget gate chooses, the same as where no seat is due a probe at all, rather
+    than wait for a held-off seat. Where the gate has no seat to spend either, as with a single
+    seat held off and holding no reading, the check waits, as *No seat to spend, no check yet*
+    says.
+
 **Still open:**
 
 - **The ambient login until #171 archives.** Until #171 archives, the in-force `seat-budget`
@@ -299,12 +308,21 @@
   - **Permission to cite #216 ahead.** #204 places #216 after this change, and decision 21's
     permission to cite changes that archive later names #171, #82, #179 and #153, but not #216.
     *Recommendation:* extend decision 21 to #216, as decision 32 already assumes.
-  - **A seat due a probe that #143 forbids probing** (2026-10-24 read). Where a seat is due a
-    probe at start but #143's hourly limit or five-hour back-off holds it off, while another seat
-    has a reading the gate would choose, the check may not probe that seat, and decision 28 has
-    it spend the gate's seat only where no seat is due a probe. Whether it spends the gate's seat
-    or waits is unsaid. *Recommendation:* the check
-    spends the seat the gate chooses whenever no seat may be probed.
+  - **Which skills `igor run` links when the server's skills directory is absent** (second
+    2026-10-24 read). Decision 20 then builds a plugin directory from every skill the person
+    installed, so a skill that acts with their own credentials, such as
+    one that posts to chat or writes to a tracker, loads into every worker as `igor:<name>`, where
+    an item's text can steer the worker to invoke it. *Recommendation:* link only the skills the
+    role lists.
+  - **How long session log copies are kept** (same read). Decision 33 copies every step's log
+    into the state directory, and only #216's flagged executions are ever moved and later
+    deleted, so the rest pile up on the host, each holding whatever the worker read, which may be
+    sensitive. *Recommendation:* keep a
+    copy for as long as #216 keeps a flagged execution's, then delete it.
+  - **Where the `igor run` check's two directories go** (same read). The spec puts them under
+    the system's temporary directory, which #143 keeps its probe's directories out of, since
+    other users of the host can write there. *Recommendation:* put them under Igor's state
+    directory, as #143's probe does.
 - **Findings of the 2026-10-24 consistency read, for this change's authors:**
   - Under #153 the one model step with a resumed call is the step that writes a post where no
     worker run came before it, such as a reply to a mention. *Every model step in the worker's
@@ -316,12 +334,22 @@
     tree and outbox only, not the worker's home this change cites it for. #175 records the gap;
     either #175 widens the rule to the home, or this change states its own rule for reading
     session logs there.
-  - #175 restates #179's sweep of a crashed run's home and leaves out the plugin directory;
-    #175 should cite #179's *The sweep removes trees by rank, never by age*, as this change does.
-  - No scenario tests a probe exclusion holding off the check, the check under `igor run`
-    spending the run's local seat, or the copy of #189's second worker run's log.
+  - No scenario tests the check under `igor run` spending the run's local seat, or the copy of
+    #189's second worker run's log.
   - Igor's startup check refusing a plugin directory whose `skills/` is empty (*Igor confirms its
     skills load before its first model call*) is a choice no decision lists.
+  - From the second read that day: the scenario *Each igor run has a home of its own* puts triage
+    and the check in the run's home, which *Every model step in the worker's home starts from
+    Igor's template* keeps them out of, and nothing says which `HOME` triage gets under `igor
+    run`; that requirement and *The worker's session log outlives the reset* each list the steps
+    that run in the worker's home, and only the second names #189's second worker run; #175 restates this change's
+    reset as one before every call, which deletes the session a resume reads (#175's to fix);
+    issue #152's body still states the reset and the check as they were before decisions 28 and
+    31; no rule says removing a run's home and plugin directory, or writing a log copy, follows no
+    link; the commit Igor reports for a skill does not prove the files on disk are that commit's,
+    since the clone may hold uncommitted edits; no scenario shows Igor reading the commit of a
+    clone owned by the user Igor runs as, which it trusts without `safe.directory`; and the execution record is named
+    `executions.ndjson`, where the state branch keeps `executions/<day>.ndjson`.
 - **Findings from the 2026-10-21 consistency reads, for this change's authors.** Each needs
   a change to this text that the authors can make without Adam; none is made yet:
   - A dry run is `igor run --plan`, so decision 20's fallback covers it. Whether `--plan`
@@ -378,9 +406,8 @@
   rests on a script the worker can write, a limit decision 20 does not name; and several
   refusals and choices lack a scenario or a decision (an extra file in `.claude-plugin/`, a
   hard-linked or FIFO log, fsmonitor off, exit 78 for a relative `IGOR_SKILLS_DIR`).
-- **Findings of the 2026-10-19 consistency read left for the next pass.** Task 5.3's note says
-  the service user's home reaches every seat probe, but #171 gives the probe an empty `HOME`.
-  Four rules are each stated in two or three changes, which will drift apart unless one states
+- **Findings of the 2026-10-19 consistency read, left for a later revision by this change's
+  authors.** Four rules are each stated in two or three changes, which will drift apart unless one states
   it and the others cite it: that `igor run` accepts a login the developer keeps outside `HOME`
   (here and #171); that the startup check is charged through the gate (here and #171); the kill
   before a reset (here and #175); and that a role's `skills` does not decide what loads (here,

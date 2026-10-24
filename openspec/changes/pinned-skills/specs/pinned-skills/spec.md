@@ -348,16 +348,19 @@ recorded against that seat as any call's is.
 
 Which seat it spends:
 
-- **Under `igor serve`, where a seat is due a probe when Igor starts,** the call SHALL be the
-  first seat probe Igor makes, of a
-  seat that #143's (`read-seat-windows-from-the-stream`) *A seat nothing has read is probed on
-  the Igor server with its own token* calls a probe for. It spends that seat, as any probe does,
+- **Under `igor serve`, where a seat may be probed when Igor starts,** the call SHALL be the
+  first seat probe Igor makes, of a seat due a probe by #143's
+  (`read-seat-windows-from-the-stream`) *A seat nothing has read is probed on the Igor server
+  with its own token*. It spends that seat, as any probe does,
   so the budget gate chooses no seat for it. Igor SHALL record its `rate_limit_event` as that
   seat's reading. Every limit and exclusion of a probe applies to it, such as #143's hourly
   limit and its skip of a refused seat, but the call keeps the arguments above. Its two directories
   are the ones #143's *A seat probe runs where only the Igor can write* places and checks.
-- **Under `igor serve` where no seat is due a probe when Igor starts,** because each has an
-  unexpired reading, the call spends the seat the gate chooses for it, as for any call.
+- **Under `igor serve` where no seat may be probed when Igor starts,** because each has an
+  unexpired reading or #143's hourly limit or back-off holds it off, the call spends the seat the
+  gate chooses for it, as for any call, and does not wait for a held-off seat (Adam,
+  2026-10-24). Where the gate has no seat to spend, the call waits as the paragraph after this
+  list says.
 - **Under `igor run`,** which makes no probe (#171), the call spends the run's implicit local
   seat, the one seat `igor run` makes from the token in `IGOR_RUN_TOKEN` (#171), through the
   gate; its two directories are new temporary directories.
@@ -469,6 +472,24 @@ checked, and the check still passes on the list alone.
 
 - **WHEN** `igor serve` starts, and every seat has an unexpired reading
 - **THEN** the check spends the seat the gate chooses for it
+
+#### Scenario: Under igor serve, a seat held off from probing is not waited for
+
+- **WHEN** `igor serve` starts, one seat is due a probe but #143's hourly limit holds it off, and
+  another seat has an unexpired reading
+- **THEN** the check spends the seat the gate chooses, and does not wait for the held-off seat's
+  probe
+
+#### Scenario: Under igor serve, a seat in back-off is not waited for
+
+- **WHEN** `igor serve` starts, one seat is in #143's five-hour back-off after a failed probe, and
+  another seat has an unexpired reading
+- **THEN** the check spends the seat the gate chooses, without waiting out the back-off
+
+#### Scenario: A single held-off seat with no reading waits
+
+- **WHEN** `igor serve` starts with one seat, which has no reading and is in #143's back-off
+- **THEN** the gate has no seat to spend, and no check runs until that seat may be probed
 
 #### Scenario: No seat to spend, no check yet
 
